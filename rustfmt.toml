@@ -1,0 +1,8 @@
+unstable_features = true
+max_width = 100
+tab_spaces = 4
+edition = "2021"
+use_small_heuristics = "Max"
+imports_granularity = "Crate"
+wrap_comments = false
+normalize_doc_attributes = false
