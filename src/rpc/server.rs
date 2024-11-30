@@ -4,7 +4,7 @@ use jsonrpsee::{
 };
 use std::net::SocketAddr;
 
-use super::rpc::KoraRpc;
+use super::lib::KoraRpc;
 
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));

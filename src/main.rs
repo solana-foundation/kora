@@ -18,7 +18,7 @@ async fn main() {
     let rpc_client = common::rpc::get_rpc_client(&args.rpc_url);
     log::debug!("RPC client initialized with URL: {}", args.rpc_url);
 
-    let rpc_server = rpc::rpc::KoraRpc::new(rpc_client);
+    let rpc_server = rpc::lib::KoraRpc::new(rpc_client);
     log::debug!("RPC server instance created");
 
     log::info!("Attempting to start RPC server on port {}", args.port);
