@@ -13,18 +13,10 @@ pub struct KoraResponse<T> {
 
 impl<T> KoraResponse<T> {
     pub fn ok(data: T) -> Self {
-        KoraResponse {
-            success: true,
-            data: Some(data),
-            error: None,
-        }
+        KoraResponse { success: true, data: Some(data), error: None }
     }
 
     pub fn err(error: KoraError) -> Self {
-        KoraResponse {
-            success: false,
-            data: None,
-            error: Some(error),
-        }
+        KoraResponse { success: false, data: None, error: Some(error) }
     }
 }

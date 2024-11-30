@@ -1,8 +1,7 @@
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use jsonrpsee::core::Error as RpcError;
 use jsonrpsee::types::error::CallError;
-
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub enum KoraError {
@@ -17,7 +16,9 @@ pub enum KoraError {
 impl From<KoraError> for RpcError {
     fn from(err: KoraError) -> Self {
         match err {
-            KoraError::AccountDoesNotExist(account) => invalid_request(KoraError::AccountDoesNotExist(account)),
+            KoraError::AccountDoesNotExist(account) => {
+                invalid_request(KoraError::AccountDoesNotExist(account))
+            }
             KoraError::NotEnoughFunds => invalid_server_error(),
             KoraError::RpcError(e) => invalid_request(KoraError::RpcError(e)),
         }

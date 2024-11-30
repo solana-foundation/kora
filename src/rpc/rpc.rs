@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use solana_client::nonblocking::rpc_client::RpcClient;
 use super::{error::KoraError, response::KoraResponse};
+use solana_client::nonblocking::rpc_client::RpcClient;
 
 pub struct KoraRpc {
     rpc_client: Arc<RpcClient>,
-
 }
 
 impl KoraRpc {

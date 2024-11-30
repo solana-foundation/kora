@@ -1,7 +1,7 @@
 mod args;
 use core::fmt;
-use std::env;
 use log;
+use std::env;
 
 use clap::{Parser, ValueEnum};
 use kora::{common, rpc};
@@ -11,10 +11,10 @@ async fn main() {
     let args = args::Args::parse();
     setup_metrics(args.metrics_endpoint.clone());
     setup_logging(args.logging_format.clone());
-    
+
     log::info!("Starting Kora server");
     log::debug!("Command line arguments: {:?}", args);
-    
+
     let rpc_client = common::rpc::get_rpc_client(&args.rpc_url);
     log::debug!("RPC client initialized with URL: {}", args.rpc_url);
 
@@ -26,7 +26,7 @@ async fn main() {
         Ok(handle) => {
             log::info!("Server started successfully");
             handle
-        },
+        }
         Err(e) => {
             log::error!("Failed to start server: {}", e);
             return;

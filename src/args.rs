@@ -16,7 +16,7 @@ pub struct Args {
     #[arg(short, long, default_value = "standard")]
     pub logging_format: LoggingFormat,
 
-    /// Metrics 
+    /// Metrics
     #[arg(long, default_value = None)]
     pub metrics_endpoint: Option<String>,
 }
