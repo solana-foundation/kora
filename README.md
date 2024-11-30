@@ -1,6 +1,6 @@
 # Kora
 
-A Rust-based RPC server that provides a JSON-RPC interface.
+A paymaster node that provides a JSON-RPC interface.
 
 ## Features
 

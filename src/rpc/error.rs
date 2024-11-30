@@ -1,5 +1,4 @@
-use jsonrpsee::core::Error as RpcError;
-use jsonrpsee::types::error::CallError;
+use jsonrpsee::{core::Error as RpcError, types::error::CallError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
