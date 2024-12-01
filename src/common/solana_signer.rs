@@ -2,7 +2,7 @@ use super::{
     error::KoraError,
     signer::{Signature, Signer},
 };
-use solana_sdk::{signature::Keypair,signer::Signer as SolanaSigner};
+use solana_sdk::{signature::Keypair, signer::Signer as SolanaSigner};
 
 /// A Solana-based signer that uses an in-memory keypair
 pub struct SolanaMemorySigner {

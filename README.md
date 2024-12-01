@@ -5,9 +5,10 @@ A paymaster node that provides a JSON-RPC interface.
 ## Features
 
 - JSON-RPC server with middleware support
+- Transaction fee estimation
 - Health check endpoint (`/liveness`)
 - Configurable logging (JSON or standard format)
-- Optional metrics endpoint
+- CORS support
 - Customizable RPC endpoint
 
 ## Usage
@@ -29,8 +30,11 @@ Options:
   -l, --logging-format <FORMAT>
           Logging format (standard or json) [default: "standard"]
 
-  --metrics-endpoint <ENDPOINT>
+      --metrics-endpoint <ENDPOINT>
           Optional metrics endpoint URL
+
+      --private-key <PRIVATE_KEY>
+          Base58-encoded private key for signing
 
   -h, --help
           Print help information
@@ -39,6 +43,37 @@ Options:
 ### Environment Variables
 
 - `RUST_LOG`: Controls log level and filtering (e.g., "info,sqlx=error,sea_orm_migration=error,jsonrpsee_server=warn")
+- `RPC_URL`: Alternative way to specify the RPC URL
+- `KORA_PRIVATE_KEY`: Alternative way to specify the signing private key
+
+## RPC Methods
+
+### estimateTransactionFee
+
+Estimates the transaction fee for a given Solana transaction.
+
+Request:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "estimateTransactionFee",
+    "params": {
+        "transaction_data": "<base58-encoded-transaction>"
+    }
+}
+```
+
+Response:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "fee": "<estimated-fee-in-lamports>"
+    }
+}
+```
 
 ## Development
 
@@ -52,6 +87,16 @@ cargo build
 
 ```bash
 cargo test
+```
+
+### Linting
+
+```bash
+# Run clippy with warnings as errors
+make lint
+
+# Run clippy with auto-fix
+make lint-fix
 ```
 
 ### Running the Server
@@ -69,9 +114,4 @@ cargo test
 3. Enable JSON logging:
    ```bash
    cargo run -- --logging-format json
-   ```
-
-4. Enable metrics:
-   ```bash
-   cargo run -- --metrics-endpoint http://localhost:9090
    ```
