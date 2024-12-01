@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
-use crate::common::{error::KoraError, jup::get_quote};
+use crate::common::{error::KoraError, jup::get_quote, transaction::decode_b58_transaction};
 
-use bincode;
-use bs58;
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::transaction::Transaction;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EstimateTransactionFeeRequest {
@@ -25,31 +22,8 @@ pub async fn estimate_transaction_fee(
 ) -> Result<EstimateTransactionFeeResponse, KoraError> {
     // Deserialize the transaction from base58
     log::info!("Called estimate_transaction_fee with transaction: {}", request.transaction);
-    let decoded_bytes = match bs58::decode(&request.transaction).into_vec() {
-        Ok(bytes) => {
-            log::debug!("Successfully decoded base58 data, length: {} bytes", bytes.len());
-            bytes
-        }
-        Err(e) => {
-            log::error!("Failed to decode base58 data: {}", e);
-            return Err(KoraError::InvalidTransaction(format!("Invalid base58: {}", e)));
-        }
-    };
 
-    let transaction = match bincode::deserialize::<Transaction>(&decoded_bytes) {
-        Ok(tx) => {
-            log::debug!("Successfully deserialized transaction");
-            tx
-        }
-        Err(e) => {
-            log::error!(
-                "Failed to deserialize transaction: {}; Decoded bytes length: {}",
-                e,
-                decoded_bytes.len()
-            );
-            return Err(KoraError::InvalidTransaction(format!("Invalid transaction: {}", e)));
-        }
-    };
+    let transaction = decode_b58_transaction(&request.transaction)?;
 
     // Get prio fee from tx accounts
     let addresses = transaction.message.account_keys;

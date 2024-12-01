@@ -1,0 +1,8 @@
+{
+	"jsonrpc": "2.0",
+	"id": 1,
+	"method": "signAndSend",
+	"params": [
+		"6TTogkeZ2pbZr8cSTFKVr4pi8S1bLpjmFzU43wh1bTUYNdbdbj8eskpn9j4RqJgWhoK858nAuWFb14BqTQiF1yj3bLiRTedeudc8cZPivftDkrGMeYYA2kH6EbNMM87YKtumFv1hYkUaSuFfoFi8HNibvMFGPzVCbN8eFMLu1u7yiv7ea5Bk4YBihiyQSfTTBdrhT1gGf1fxCiWb7HQKLziM1m1PDJZQZLgf7DMwfKUoTxg8N7pyGPcdv1dNBWW5Tw2Zaxw9djUJjsDKvSNumUJAFPMjpt5Fgs4zj"
+	]
+}

@@ -27,6 +27,10 @@ test:
 build:
 	cargo build --release
 
+# Run presigned release binary
+run-presigned:
+	cargo run --bin presigned
+
 # Run with default configuration
 run:
 	cargo run

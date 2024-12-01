@@ -24,10 +24,8 @@ impl SolanaMemorySigner {
 
     /// Creates a new signer from a base58-encoded private key string
     pub fn from_base58(private_key: &str) -> Result<Self, KoraError> {
-        let bytes = bs58::decode(private_key)
-            .into_vec()
-            .map_err(|e| KoraError::Signer(format!("Invalid base58 private key: {}", e)))?;
-        Self::from_bytes(&bytes)
+        let keypair = Keypair::from_base58_string(private_key);
+        Ok(Self { keypair })
     }
 
     /// Get the public key of this signer
@@ -43,9 +41,7 @@ impl SolanaMemorySigner {
 
 impl Clone for SolanaMemorySigner {
     fn clone(&self) -> Self {
-        // Create a new Keypair from the private key bytes
-        let bytes = self.keypair.to_bytes();
-        Self::from_bytes(&bytes).expect("Failed to clone keypair")
+        Self::from_bytes(&self.keypair.to_bytes()).expect("Failed to clone keypair")
     }
 }
 
@@ -53,8 +49,6 @@ impl Signer for SolanaMemorySigner {
     type Error = KoraError;
 
     fn partial_sign(&self, message: &[u8]) -> Result<Signature, Self::Error> {
-        // In Solana's case, partial signing is the same as full signing
-        // since it doesn't have native partial signature support
         self.full_sign(message)
     }
 

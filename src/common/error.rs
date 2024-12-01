@@ -22,6 +22,8 @@ pub enum KoraError {
     InsufficientFunds,
     #[error("Internal server error: {0}")]
     InternalServerError(String),
+    #[error("Signing error: {0}")]
+    SigningError(String),
 }
 
 impl From<KoraError> for RpcError {
@@ -42,6 +44,7 @@ impl From<KoraError> for RpcError {
             KoraError::UnsupportedFeeToken => invalid_request(KoraError::UnsupportedFeeToken),
             KoraError::TransactionFailed(msg) => invalid_request(KoraError::TransactionFailed(msg)),
             KoraError::InsufficientFunds => invalid_request(KoraError::InsufficientFunds),
+            KoraError::SigningError(msg) => invalid_request(KoraError::SigningError(msg)),
         }
     }
 }

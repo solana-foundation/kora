@@ -49,22 +49,34 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         "estimateTransactionFee",
         |rpc_params, rpc_context| async move {
             let rpc = rpc_context.as_ref();
-            let payload = rpc_params.parse()?;
-            rpc.estimate_transaction_fee(payload).await.map_err(Into::into)
+            let request = rpc_params.parse()?;
+            rpc.estimate_transaction_fee(request).await.map_err(Into::into)
         },
     );
 
     let _ =
-        module.register_async_method("getEnabledFeatures", |_params, _rpc_context| async move {
-            let rpc = _rpc_context.as_ref();
+        module.register_async_method("getEnabledFeatures", |_rpc_params, rpc_context| async move {
+            let rpc = rpc_context.as_ref();
             rpc.get_enabled_features().await.map_err(Into::into)
         });
 
     let _ =
-        module.register_async_method("getSupportedTokens", |_params, _rpc_context| async move {
-            let rpc = _rpc_context.as_ref();
+        module.register_async_method("getSupportedTokens", |_rpc_params, rpc_context| async move {
+            let rpc = rpc_context.as_ref();
             rpc.get_supported_tokens().await.map_err(Into::into)
         });
+
+    let _ = module.register_async_method("signTransaction", |rpc_params, rpc_context| async move {
+        let rpc = rpc_context.as_ref();
+        let params = rpc_params.parse()?;
+        rpc.sign_transaction(params).await.map_err(Into::into)
+    });
+
+    let _ = module.register_async_method("signAndSend", |rpc_params, rpc_context| async move {
+        let rpc = rpc_context.as_ref();
+        let params = rpc_params.parse()?;
+        rpc.sign_and_send(params).await.map_err(Into::into)
+    });
 
     Ok(module)
 }
