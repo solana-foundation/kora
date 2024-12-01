@@ -1,6 +1,7 @@
 use clap::{command, Parser};
 
 use crate::LoggingFormat;
+use crate::common::Feature;
 
 #[derive(Debug, Parser)]
 #[command(name = "kora")]
@@ -24,4 +25,8 @@ pub struct Args {
     /// Base58-encoded private key for signing
     #[arg(long, env = "KORA_PRIVATE_KEY")]
     pub private_key: String,
+
+    /// Enabled features
+    #[arg(long, value_delimiter = ',')]
+    pub features: Vec<Feature>,
 }
