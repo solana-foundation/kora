@@ -24,17 +24,24 @@ Options:
   -p, --port <PORT>
           Port number for the RPC server [default: 8080]
 
-  -r, --rpc-url <RPC_URL>
-          RPC URL to connect to [default: "http://127.0.0.1:8899"]
+      --rpc-url <RPC_URL>
+          RPC URL to connect to [env: RPC_URL=] [default: http://127.0.0.1:8899]
 
-  -l, --logging-format <FORMAT>
-          Logging format (standard or json) [default: "standard"]
+      --logging-format <FORMAT>
+          Logging format (standard or json) [default: standard]
 
       --metrics-endpoint <ENDPOINT>
           Optional metrics endpoint URL
 
       --private-key <PRIVATE_KEY>
-          Base58-encoded private key for signing
+          Base58-encoded private key for signing [env: KORA_PRIVATE_KEY=]
+          Required unless --no-load-signer is used
+
+      --config <FILE>
+          Path to kora.toml config file [default: kora.toml]
+
+      --no-load-signer
+          Skip loading the signer
 
   -h, --help
           Print help information

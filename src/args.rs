@@ -1,6 +1,6 @@
 use clap::{command, Parser};
 
-use crate::{common::Feature, LoggingFormat};
+use crate::LoggingFormat;
 
 #[derive(Debug, Parser)]
 #[command(name = "kora")]
@@ -22,14 +22,14 @@ pub struct Args {
     pub metrics_endpoint: Option<String>,
 
     /// Base58-encoded private key for signing
-    #[arg(long, env = "KORA_PRIVATE_KEY")]
-    pub private_key: String,
-
-    /// Enabled features
-    #[arg(long, value_delimiter = ',')]
-    pub features: Vec<Feature>,
+    #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present = "skip_signer")]
+    pub private_key: Option<String>,
 
     /// Path to kora.toml config file
     #[arg(long, default_value = "kora.toml")]
     pub config: String,
+
+    /// Skip loading the signer
+    #[arg(long = "no-load-signer")]
+    pub skip_signer: bool,
 }

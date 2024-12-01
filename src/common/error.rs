@@ -8,15 +8,13 @@ pub enum KoraError {
     AccountDoesNotExist(String),
     #[error("RPC error: {0}")]
     Rpc(String),
-    #[error("Config error: {0}")]
-    Config(String),
     #[error("Signer error: {0}")]
     Signer(String),
     #[error("Invalid transaction: {0}")]
     InvalidTransaction(String),
     #[error("Transaction failed: {0}")]
     TransactionFailed(String),
-    #[error("Fee estimation error")]
+    #[error("Failed to estimate fee")]
     FeeEstimation,
     #[error("Unsupported fee token")]
     UnsupportedFeeToken,
@@ -33,7 +31,6 @@ impl From<KoraError> for RpcError {
                 invalid_request(KoraError::AccountDoesNotExist(msg))
             }
             KoraError::Rpc(msg) => invalid_request(KoraError::Rpc(msg)),
-            KoraError::Config(msg) => invalid_request(KoraError::Config(msg)),
             KoraError::Signer(msg) => invalid_request(KoraError::Signer(msg)),
             KoraError::InternalServerError(msg) => {
                 internal_server_error(KoraError::InternalServerError(msg))

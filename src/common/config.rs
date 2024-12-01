@@ -21,9 +21,10 @@ pub struct Tokens {
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
-    let contents = fs::read_to_string(path)
-        .map_err(|e| KoraError::Config(format!("Failed to read config file: {}", e)))?;
+    let contents = fs::read_to_string(path).map_err(|e| {
+        KoraError::InternalServerError(format!("Failed to read config file: {}", e))
+    })?;
 
     toml::from_str(&contents)
-        .map_err(|e| KoraError::Config(format!("Failed to parse config file: {}", e)))
+        .map_err(|e| KoraError::InternalServerError(format!("Failed to parse config file: {}", e)))
 }

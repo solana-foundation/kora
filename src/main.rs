@@ -4,7 +4,11 @@ use std::env;
 
 use clap::{Parser, ValueEnum};
 use common::load_config;
-use kora::{common, rpc};
+use kora::{
+    common::{self, token::check_valid_tokens, KoraError, SolanaMemorySigner},
+    rpc,
+};
+use solana_client::nonblocking::rpc_client::RpcClient;
 
 #[tokio::main]
 async fn main() {
@@ -21,32 +25,33 @@ async fn main() {
     };
     log::info!("Config loaded");
 
-    // TODO: check if tokens are valid
-
-    // TODO : check if signer is already initialized and have a flag for signer option (e.g. tk)
-
-    // log::info!("Initializing signer");
-
-    // let signer = match SolanaMemorySigner::from_base58(&args.private_key) {
-    //     Ok(signer) => signer,
-    //     Err(e) => {
-    //         log::error!("Failed to initialize signer: {}", e);
-    //         std::process::exit(1);
-    //     }
-    // };
-
-    // log::info!("Signer initialized with public key: {}", signer.pubkey_base58());
-
-    // if let Err(e) = common::init_signer(signer) {
-    //     log::error!("Failed to initialize signer: {}", e);
-    //     std::process::exit(1);
-    // }
-
-    log::info!("Starting Kora server");
-    log::debug!("Command line arguments: {:?}", args);
-
     let rpc_client = common::rpc::get_rpc_client(&args.rpc_url);
     log::debug!("RPC client initialized with URL: {}", args.rpc_url);
+
+    if !args.skip_signer {
+        let private_key = match &args.private_key {
+            Some(key) => key,
+            None => {
+                log::error!("Private key is required when signer is enabled");
+                std::process::exit(1);
+            }
+        };
+
+        let signer = match SolanaMemorySigner::from_base58(private_key) {
+            Ok(signer) => signer,
+            Err(e) => {
+                log::error!("Failed to initialize signer: {}", e);
+                std::process::exit(1);
+            }
+        };
+
+        log::info!("Signer initialized with public key: {}", signer.pubkey_base58());
+
+        if let Err(e) = common::init_signer(signer) {
+            log::error!("Failed to initialize signer: {}", e);
+            std::process::exit(1);
+        }
+    }
 
     let rpc_server = rpc::lib::KoraRpc::new(rpc_client, config);
     log::debug!("RPC server instance created");
@@ -99,4 +104,17 @@ pub fn setup_logging(logging_format: LoggingFormat) {
         LoggingFormat::Standard => subscriber.init(),
         LoggingFormat::Json => subscriber.json().init(),
     }
+}
+
+pub async fn validate_config(
+    config: &common::config::Config,
+    rpc_client: RpcClient,
+) -> Result<(), KoraError> {
+    if config.tokens.enabled.is_empty() {
+        log::error!("No tokens enabled");
+        return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
+    }
+
+    check_valid_tokens(&rpc_client, &config.tokens.enabled).await?;
+    Ok(())
 }
