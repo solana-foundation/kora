@@ -1,19 +1,23 @@
-.PHONY: check fmt lint test build run clean all
+.PHONY: check fmt lint test build run clean all regen-tk
 
 # Default target
 all: check test build
 
-# Check formatting
-fmt:
+# Check code formatting
+check:
 	cargo fmt --all -- --check
 
-# Run clippy lints
+# Format code
+fmt:
+	cargo fmt --all
+
+# Run clippy
 lint:
-	cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy -- -D warnings
 
 # Run tests
 test:
-	cargo test --all-features
+	cargo test --workspace
 
 # Build release binary
 build:
@@ -23,27 +27,6 @@ build:
 run:
 	cargo run
 
-# Check everything without building
-check: fmt lint
-	cargo check --all-targets --all-features
-
 # Clean build artifacts
 clean:
 	cargo clean
-
-# Watch tests
-watch-test:
-	cargo watch -x test
-
-# Watch build
-watch:
-	cargo watch -x build
-
-# Format code
-format:
-	cargo fmt --all
-
-# Development setup
-setup:
-	rustup component add clippy rustfmt
-	cargo install cargo-watch

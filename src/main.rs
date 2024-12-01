@@ -1,9 +1,11 @@
 mod args;
 use core::fmt;
 use log;
+use solana_sdk::signature::Keypair;
 use std::env;
 
 use clap::{Parser, ValueEnum};
+use common::solana_signer::SolanaMemorySigner;
 use kora::{common, rpc};
 
 #[tokio::main]
@@ -11,6 +13,17 @@ async fn main() {
     let args = args::Args::parse();
     setup_metrics(args.metrics_endpoint.clone());
     setup_logging(args.logging_format.clone());
+
+    // TODO : check if signer is already initialized and have a flag for signer option (e.g. tk)
+
+    log::info!("Initializing signer");
+
+    let signer = SolanaMemorySigner::new(Keypair::from_base58_string(&args.private_key));
+
+    if let Err(e) = common::init_signer(signer) {
+        log::error!("Failed to initialize signer: {}", e);
+        std::process::exit(1);
+    }
 
     log::info!("Starting Kora server");
     log::debug!("Command line arguments: {:?}", args);

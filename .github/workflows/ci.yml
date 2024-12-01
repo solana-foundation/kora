@@ -20,10 +20,8 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: make check
       - name: Run tests
-        run: cargo test --verbose
+        run: make test
       - name: Build
-        run: cargo build --verbose
+        run: make build
