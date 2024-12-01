@@ -3,18 +3,44 @@ use jsonrpsee::{
     RpcModule,
 };
 use std::net::SocketAddr;
+use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+use tower_http::LatencyUnit;
+use hyper::body::Bytes;
+use std::time::Duration;
+use tower_http::cors::CorsLayer;
+use http::{Method, header};
+use tower::ServiceExt;
+use tracing::Instrument;
 
 use super::lib::KoraRpc;
 
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log::info!("RPC server started on {}, port {}", addr, port);
-    let middleware =
-        tower::ServiceBuilder::new().layer(ProxyGetRequestLayer::new("/liveness", "liveness")?);
+    
+    // Build middleware stack with tracing and CORS
+    let cors = CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods([Method::POST, Method::GET])
+        .allow_headers([header::CONTENT_TYPE])
+        .max_age(Duration::from_secs(3600));
 
-    let server = ServerBuilder::default().set_middleware(middleware).build(addr).await?;
+    let middleware = tower::ServiceBuilder::new()
+        .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
+        .layer(cors);
+
+    // Configure and build the server with HTTP support
+    let server = ServerBuilder::default()
+        .set_middleware(middleware)
+        .http_only() // Explicitly enable HTTP
+        .build(addr)
+        .await?;
+
     let rpc_module = build_rpc_module(rpc)?;
-    server.start(rpc_module).map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))
+    
+    // Start the server and return the handle
+    server.start(rpc_module)
+        .map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))
 }
 
 fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {

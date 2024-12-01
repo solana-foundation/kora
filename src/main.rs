@@ -15,22 +15,22 @@ async fn main() {
 
     // TODO : check if signer is already initialized and have a flag for signer option (e.g. tk)
 
-    log::info!("Initializing signer");
+    // log::info!("Initializing signer");
 
-    let signer = match SolanaMemorySigner::from_base58(&args.private_key) {
-        Ok(signer) => signer,
-        Err(e) => {
-            log::error!("Failed to initialize signer: {}", e);
-            std::process::exit(1);
-        }
-    };
+    // let signer = match SolanaMemorySigner::from_base58(&args.private_key) {
+    //     Ok(signer) => signer,
+    //     Err(e) => {
+    //         log::error!("Failed to initialize signer: {}", e);
+    //         std::process::exit(1);
+    //     }
+    // };
 
-    log::info!("Signer initialized with public key: {}", signer.pubkey_base58());
+    // log::info!("Signer initialized with public key: {}", signer.pubkey_base58());
 
-    if let Err(e) = common::init_signer(signer) {
-        log::error!("Failed to initialize signer: {}", e);
-        std::process::exit(1);
-    }
+    // if let Err(e) = common::init_signer(signer) {
+    //     log::error!("Failed to initialize signer: {}", e);
+    //     std::process::exit(1);
+    // }
 
     log::info!("Starting Kora server");
     log::debug!("Command line arguments: {:?}", args);
