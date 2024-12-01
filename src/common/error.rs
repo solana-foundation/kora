@@ -41,7 +41,7 @@ impl From<KoraError> for RpcError {
             KoraError::FeeEstimation => invalid_request(KoraError::FeeEstimation),
             KoraError::UnsupportedFeeToken => invalid_request(KoraError::UnsupportedFeeToken),
             KoraError::TransactionFailed(msg) => invalid_request(KoraError::TransactionFailed(msg)),
-            KoraError::InsufficientFunds => invalid_request(KoraError::InsufficientFunds)
+            KoraError::InsufficientFunds => invalid_request(KoraError::InsufficientFunds),
         }
     }
 }
