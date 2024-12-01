@@ -7,7 +7,9 @@ pub struct GetEnabledFeaturesResponse {
     pub features: Vec<String>,
 }
 
-pub async fn get_enabled_features(features: &[Feature]) -> Result<GetEnabledFeaturesResponse, KoraError> {
+pub async fn get_enabled_features(
+    features: &[Feature],
+) -> Result<GetEnabledFeaturesResponse, KoraError> {
     let response = GetEnabledFeaturesResponse {
         features: features
             .iter()

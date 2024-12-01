@@ -54,13 +54,17 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         },
     );
 
-    let _ = module.register_async_method(
-        "getEnabledFeatures",
-        |_params, _rpc_context| async move {
+    let _ =
+        module.register_async_method("getEnabledFeatures", |_params, _rpc_context| async move {
             let rpc = _rpc_context.as_ref();
             rpc.get_enabled_features().await.map_err(Into::into)
-        },
-    );
+        });
+
+    let _ =
+        module.register_async_method("getSupportedTokens", |_params, _rpc_context| async move {
+            let rpc = _rpc_context.as_ref();
+            rpc.get_supported_tokens().await.map_err(Into::into)
+        });
 
     Ok(module)
 }

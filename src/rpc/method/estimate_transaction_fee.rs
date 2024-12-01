@@ -59,7 +59,7 @@ pub async fn estimate_transaction_fee(
         Err(e) => {
             log::error!("Failed to get recent prioritization fees: {}", e);
             return Err(KoraError::Rpc(e.to_string()));
-        },
+        }
     };
 
     let fees = prio_fee.iter().map(|fee| fee.prioritization_fee).sum::<u64>();
@@ -77,9 +77,7 @@ pub async fn estimate_transaction_fee(
 
     // The total fee in the fee_token (e.g., USDC) needed to:
     // 1. Get enough SOL to pay for the transaction fee (quote.in_amount)
-    let estimate = EstimateTransactionFeeResponse { 
-        fee_in_lamports: quote.in_amount 
-    };
+    let estimate = EstimateTransactionFeeResponse { fee_in_lamports: quote.in_amount };
 
     Ok(estimate)
 }

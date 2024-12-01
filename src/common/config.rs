@@ -1,0 +1,29 @@
+use serde::Deserialize;
+use std::{fs, path::Path};
+use toml;
+
+use crate::common::{Feature, KoraError};
+
+#[derive(Debug, Deserialize)]
+pub struct Config {
+    pub features: Features,
+    pub tokens: Tokens,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Features {
+    pub enabled: Vec<Feature>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Tokens {
+    pub enabled: Vec<String>,
+}
+
+pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
+    let contents = fs::read_to_string(path)
+        .map_err(|e| KoraError::Config(format!("Failed to read config file: {}", e)))?;
+
+    toml::from_str(&contents)
+        .map_err(|e| KoraError::Config(format!("Failed to parse config file: {}", e)))
+}

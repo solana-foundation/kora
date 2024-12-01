@@ -1,7 +1,6 @@
 use clap::{command, Parser};
 
-use crate::LoggingFormat;
-use crate::common::Feature;
+use crate::{common::Feature, LoggingFormat};
 
 #[derive(Debug, Parser)]
 #[command(name = "kora")]
@@ -29,4 +28,8 @@ pub struct Args {
     /// Enabled features
     #[arg(long, value_delimiter = ',')]
     pub features: Vec<Feature>,
+
+    /// Path to kora.toml config file
+    #[arg(long, default_value = "kora.toml")]
+    pub config: String,
 }

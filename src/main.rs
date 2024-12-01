@@ -3,6 +3,7 @@ use core::fmt;
 use std::env;
 
 use clap::{Parser, ValueEnum};
+use common::load_config;
 use kora::{common, rpc};
 
 #[tokio::main]
@@ -10,6 +11,17 @@ async fn main() {
     let args = args::Args::parse();
     setup_metrics(args.metrics_endpoint.clone());
     setup_logging(args.logging_format.clone());
+
+    let config = match load_config(args.config.clone()) {
+        Ok(config) => config,
+        Err(e) => {
+            log::error!("Failed to load config: {}", e);
+            return;
+        }
+    };
+    log::info!("Config loaded");
+
+    // TODO: check if tokens are valid
 
     // TODO : check if signer is already initialized and have a flag for signer option (e.g. tk)
 
@@ -36,7 +48,7 @@ async fn main() {
     let rpc_client = common::rpc::get_rpc_client(&args.rpc_url);
     log::debug!("RPC client initialized with URL: {}", args.rpc_url);
 
-    let rpc_server = rpc::lib::KoraRpc::new(rpc_client, args.features);
+    let rpc_server = rpc::lib::KoraRpc::new(rpc_client, config);
     log::debug!("RPC server instance created");
 
     log::info!("Attempting to start RPC server on port {}", args.port);
