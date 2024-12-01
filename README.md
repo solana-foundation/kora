@@ -74,7 +74,7 @@ allowed = [
 
 ### estimateTransactionFee
 
-Estimates the transaction fee for a given Solana transaction.
+Estimates the transaction fee for a given Solana transaction in terms of a specified token.
 
 Request:
 ```json
@@ -83,7 +83,10 @@ Request:
     "id": 1,
     "method": "estimateTransactionFee",
     "params": [
-        "<base58-encoded-transaction>"
+        {
+            "transaction": "<base58-encoded-transaction>",
+            "fee_token": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        }
     ]
 }
 ```
@@ -94,7 +97,122 @@ Response:
     "jsonrpc": "2.0",
     "id": 1,
     "result": {
-        "fee": "<estimated-fee-in-lamports>"
+        "fee_in_lamports": "1000000"
+    }
+}
+```
+
+### getEnabledFeatures
+
+Returns a list of enabled features for the paymaster node.
+
+Request:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "getEnabledFeatures",
+    "params": []
+}
+```
+
+Response:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "features": ["gasless"]
+    }
+}
+```
+
+### getSupportedTokens
+
+Returns a list of supported token addresses.
+
+Request:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "getSupportedTokens",
+    "params": []
+}
+```
+
+Response:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "tokens": [
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+            "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+            "So11111111111111111111111111111111111111112"
+        ]
+    }
+}
+```
+
+### signTransaction
+
+Signs a transaction using the paymaster's private key.
+
+Request:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "signTransaction",
+    "params": [
+        {
+            "transaction": "<base58-encoded-transaction>"
+        }
+    ]
+}
+```
+
+Response:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "signature": "<base58-encoded-signature>",
+        "signed_transaction": "<base58-encoded-signed-transaction>"
+    }
+}
+```
+
+### signAndSend
+
+Signs a transaction using the paymaster's private key and sends it to the network.
+
+Request:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "signAndSend",
+    "params": [
+        {
+            "transaction": "<base58-encoded-transaction>"
+        }
+    ]
+}
+```
+
+Response:
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "signature": "<base58-encoded-signature>",
+        "signed_transaction": "<base58-encoded-signed-transaction>"
     }
 }
 ```
