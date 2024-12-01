@@ -53,6 +53,23 @@ Options:
 - `RPC_URL`: Alternative way to specify the RPC URL
 - `KORA_PRIVATE_KEY`: Alternative way to specify the signing private key
 
+### Kora.toml config
+
+The `kora.toml` config file is used to configure the paymaster node.
+
+```toml
+[features]
+enabled = ["gasless"]
+
+[tokens]
+allowed = [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+    "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK,
+    "So11111111111111111111111111111111111111112",  # SOL
+]
+```
+
 ## RPC Methods
 
 ### estimateTransactionFee
@@ -103,7 +120,7 @@ cargo test
 make lint
 
 # Run clippy with auto-fix
-make lint-fix
+make lint-fix-all
 ```
 
 ### Running the Server

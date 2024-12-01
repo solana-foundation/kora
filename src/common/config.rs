@@ -17,7 +17,7 @@ pub struct Features {
 
 #[derive(Debug, Deserialize)]
 pub struct Tokens {
-    pub enabled: Vec<String>,
+    pub allowed: Vec<String>,
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {

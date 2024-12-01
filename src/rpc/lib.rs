@@ -21,7 +21,7 @@ pub struct KoraRpc {
 
 impl KoraRpc {
     pub fn new(rpc_client: Arc<RpcClient>, config: Config) -> Self {
-        Self { rpc_client, features: config.features.enabled, tokens: config.tokens.enabled }
+        Self { rpc_client, features: config.features.enabled, tokens: config.tokens.allowed }
     }
 
     pub async fn liveness(&self) -> Result<(), KoraError> {
