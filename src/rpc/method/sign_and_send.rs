@@ -7,7 +7,6 @@ use crate::common::KoraError;
 
 use super::sign_transaction::{sign_transaction, SignTransactionRequest};
 
-
 #[derive(Debug, Deserialize)]
 pub struct SignAndSendTransactionRequest {
     pub transaction: String, // Base64 encoded transaction
@@ -19,15 +18,15 @@ pub struct SignAndSendTransactionResult {
     pub signed_transaction: String, // Base64 encoded signed transaction
 }
 
-pub async fn sign_and_send(rpc_client: &Arc<RpcClient>, request: SignAndSendTransactionRequest) -> Result<SignAndSendTransactionResult, KoraError> {
-    let sign_result = match sign_transaction(
-        SignTransactionRequest {
-            transaction: request.transaction,
-        }
-    ).await {
-        Ok(result) => result,
-        Err(e) => return Err(e),
-    };
+pub async fn sign_and_send(
+    rpc_client: &Arc<RpcClient>,
+    request: SignAndSendTransactionRequest,
+) -> Result<SignAndSendTransactionResult, KoraError> {
+    let sign_result =
+        match sign_transaction(SignTransactionRequest { transaction: request.transaction }).await {
+            Ok(result) => result,
+            Err(e) => return Err(e),
+        };
 
     // Decode the signed transaction from base58
     let signed_transaction_bytes = bs58::decode(&sign_result.signed_transaction)
@@ -35,11 +34,13 @@ pub async fn sign_and_send(rpc_client: &Arc<RpcClient>, request: SignAndSendTran
         .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
 
     // Deserialize into a Transaction object
-    let signed_transaction: solana_sdk::transaction::Transaction = bincode::deserialize(&signed_transaction_bytes)
-        .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+    let signed_transaction: solana_sdk::transaction::Transaction =
+        bincode::deserialize(&signed_transaction_bytes)
+            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
 
     // Send and confirm transaction
-    let signature = rpc_client.send_and_confirm_transaction(&signed_transaction)
+    let signature = rpc_client
+        .send_and_confirm_transaction(&signed_transaction)
         .await
         .map_err(|e| KoraError::Rpc(e.to_string()))?;
 

@@ -1,4 +1,4 @@
-.PHONY: check fmt lint test build run clean all regen-tk
+.PHONY: check fmt lint test build run clean all regen-tk fix-all
 
 # Default target
 all: check test build
@@ -14,10 +14,6 @@ fmt:
 # Run clippy
 lint:
 	cargo clippy -- -D warnings
-
-# Run clippy fix
-lint-fix:
-	cargo clippy -- -D warnings --fix
 
 # Run tests
 test:
@@ -38,3 +34,10 @@ run:
 # Clean build artifacts
 clean:
 	cargo clean
+
+# Run all fixes and checks
+fix-all:
+	cargo fmt --all
+	cargo clippy --fix -- -D warnings
+	cargo fmt --all -- --check
+	cargo clippy -- -D warnings

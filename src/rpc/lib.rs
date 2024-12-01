@@ -1,10 +1,14 @@
-use std::sync::Arc;
 use log::info;
+use std::sync::Arc;
 
 use super::method::{
     estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest, EstimateTransactionFeeResponse,
-    }, get_enabled_features::{get_enabled_features, GetEnabledFeaturesResponse}, get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse}, sign_and_send::{sign_and_send, SignAndSendTransactionRequest, SignAndSendTransactionResult}, sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult}
+    },
+    get_enabled_features::{get_enabled_features, GetEnabledFeaturesResponse},
+    get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
+    sign_and_send::{sign_and_send, SignAndSendTransactionRequest, SignAndSendTransactionResult},
+    sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult},
 };
 use crate::common::{error::KoraError, Config, Feature};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -56,7 +60,8 @@ impl KoraRpc {
         request: SignTransactionRequest,
     ) -> Result<SignTransactionResult, KoraError> {
         info!("Sign transaction request: {:?}", request);
-        let result = sign_transaction(request).await.map_err(|e| KoraError::SigningError(e.to_string()));
+        let result =
+            sign_transaction(request).await.map_err(|e| KoraError::SigningError(e.to_string()));
         info!("Sign transaction response: {:?}", result);
         result
     }
