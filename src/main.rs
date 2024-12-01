@@ -1,7 +1,6 @@
 mod args;
 use core::fmt;
 use log;
-use solana_sdk::signature::Keypair;
 use std::env;
 
 use clap::{Parser, ValueEnum};
@@ -18,7 +17,15 @@ async fn main() {
 
     log::info!("Initializing signer");
 
-    let signer = SolanaMemorySigner::new(Keypair::from_base58_string(&args.private_key));
+    let signer = match SolanaMemorySigner::from_base58(&args.private_key) {
+        Ok(signer) => signer,
+        Err(e) => {
+            log::error!("Failed to initialize signer: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    log::info!("Signer initialized with public key: {}", signer.pubkey_base58());
 
     if let Err(e) = common::init_signer(signer) {
         log::error!("Failed to initialize signer: {}", e);
