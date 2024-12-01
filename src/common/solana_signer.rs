@@ -21,7 +21,7 @@ impl SolanaMemorySigner {
     /// Creates a new signer from a private key byte array
     pub fn from_bytes(private_key: &[u8]) -> Result<Self, KoraError> {
         let keypair = Keypair::from_bytes(private_key)
-            .map_err(|e| KoraError::SignerError(format!("Invalid private key bytes: {}", e)))?;
+            .map_err(|e| KoraError::Signer(format!("Invalid private key bytes: {}", e)))?;
         Ok(Self { keypair })
     }
 
@@ -29,7 +29,7 @@ impl SolanaMemorySigner {
     pub fn from_base58(private_key: &str) -> Result<Self, KoraError> {
         let bytes = bs58::decode(private_key)
             .into_vec()
-            .map_err(|e| KoraError::SignerError(format!("Invalid base58 private key: {}", e)))?;
+            .map_err(|e| KoraError::Signer(format!("Invalid base58 private key: {}", e)))?;
         Self::from_bytes(&bytes)
     }
 

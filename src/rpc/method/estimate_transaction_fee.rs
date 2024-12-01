@@ -58,7 +58,7 @@ pub async fn estimate_transaction_fee(
 
     let prio_fee = match rpc_client.get_recent_prioritization_fees(&addresses).await {
         Ok(fees) => fees,
-        Err(e) => return Err(KoraError::RpcError(e.to_string())),
+        Err(e) => return Err(KoraError::Rpc(e.to_string())),
     };
 
     let fees = prio_fee.iter().map(|fee| fee.prioritization_fee).sum::<u64>();

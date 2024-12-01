@@ -5,13 +5,21 @@ use thiserror::Error;
 #[derive(Error, Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub enum KoraError {
     #[error("Account {0} does not exist")]
-    AccountDoesNotExistError(String),
+    AccountDoesNotExist(String),
     #[error("RPC error: {0}")]
-    RpcError(String),
+    Rpc(String),
     #[error("Signer error: {0}")]
-    SignerError(String),
+    Signer(String),
     #[error("Invalid transaction: {0}")]
     InvalidTransaction(String),
+    #[error("Transaction failed: {0}")]
+    TransactionFailed(String),
+    #[error("Failed to estimate fee")]
+    FeeEstimation,
+    #[error("Unsupported fee token")]
+    UnsupportedFeeToken,
+    #[error("Insufficient funds")]
+    InsufficientFunds,
     #[error("Internal server error: {0}")]
     InternalServerError(String),
 }
@@ -19,17 +27,21 @@ pub enum KoraError {
 impl From<KoraError> for RpcError {
     fn from(err: KoraError) -> Self {
         match err {
-            KoraError::AccountDoesNotExistError(msg) => {
-                invalid_request(KoraError::AccountDoesNotExistError(msg))
+            KoraError::AccountDoesNotExist(msg) => {
+                invalid_request(KoraError::AccountDoesNotExist(msg))
             }
-            KoraError::RpcError(msg) => invalid_request(KoraError::RpcError(msg)),
-            KoraError::SignerError(msg) => invalid_request(KoraError::SignerError(msg)),
+            KoraError::Rpc(msg) => invalid_request(KoraError::Rpc(msg)),
+            KoraError::Signer(msg) => invalid_request(KoraError::Signer(msg)),
             KoraError::InternalServerError(msg) => {
                 internal_server_error(KoraError::InternalServerError(msg))
             }
             KoraError::InvalidTransaction(msg) => {
                 invalid_request(KoraError::InvalidTransaction(msg))
             }
+            KoraError::FeeEstimation => invalid_request(KoraError::FeeEstimation),
+            KoraError::UnsupportedFeeToken => invalid_request(KoraError::UnsupportedFeeToken),
+            KoraError::TransactionFailed(msg) => invalid_request(KoraError::TransactionFailed(msg)),
+            KoraError::InsufficientFunds => invalid_request(KoraError::InsufficientFunds)
         }
     }
 }
