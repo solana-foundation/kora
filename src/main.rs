@@ -1,10 +1,8 @@
 mod args;
 use core::fmt;
-use log;
 use std::env;
 
 use clap::{Parser, ValueEnum};
-use common::solana_signer::SolanaMemorySigner;
 use kora::{common, rpc};
 
 #[tokio::main]

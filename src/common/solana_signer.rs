@@ -3,7 +3,7 @@ use super::{
     signer::{Signature, Signer},
 };
 use solana_sdk::{
-    signature::{Keypair, Signature as SolanaSignature},
+    signature::Keypair,
     signer::Signer as SolanaSigner,
 };
 

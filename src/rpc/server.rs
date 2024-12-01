@@ -1,17 +1,10 @@
 use http::{header, Method};
-use hyper::body::Bytes;
 use jsonrpsee::{
     server::{middleware::proxy_get_request::ProxyGetRequestLayer, ServerBuilder, ServerHandle},
     RpcModule,
 };
 use std::{net::SocketAddr, time::Duration};
-use tower::ServiceExt;
-use tower_http::{
-    cors::CorsLayer,
-    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
-    LatencyUnit,
-};
-use tracing::Instrument;
+use tower_http::cors::CorsLayer;
 
 use super::lib::KoraRpc;
 

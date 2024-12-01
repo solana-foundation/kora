@@ -15,6 +15,10 @@ fmt:
 lint:
 	cargo clippy -- -D warnings
 
+# Run clippy fix
+lint-fix:
+	cargo clippy -- -D warnings --fix
+
 # Run tests
 test:
 	cargo test --workspace
