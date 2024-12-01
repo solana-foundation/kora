@@ -58,9 +58,9 @@ Request:
     "jsonrpc": "2.0",
     "id": 1,
     "method": "estimateTransactionFee",
-    "params": {
-        "transaction_data": "<base58-encoded-transaction>"
-    }
+    "params": [
+        "<base58-encoded-transaction>"
+    ]
 }
 ```
 

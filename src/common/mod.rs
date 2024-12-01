@@ -4,6 +4,7 @@ pub mod signer;
 pub mod solana_signer;
 pub mod state;
 pub mod types;
+pub mod jup;
 
 pub use error::KoraError;
 pub use signer::{Signature, Signer};
