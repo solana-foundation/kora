@@ -1,15 +1,16 @@
+use http::{header, Method};
+use hyper::body::Bytes;
 use jsonrpsee::{
     server::{middleware::proxy_get_request::ProxyGetRequestLayer, ServerBuilder, ServerHandle},
     RpcModule,
 };
-use std::net::SocketAddr;
-use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
-use tower_http::LatencyUnit;
-use hyper::body::Bytes;
-use std::time::Duration;
-use tower_http::cors::CorsLayer;
-use http::{Method, header};
+use std::{net::SocketAddr, time::Duration};
 use tower::ServiceExt;
+use tower_http::{
+    cors::CorsLayer,
+    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+    LatencyUnit,
+};
 use tracing::Instrument;
 
 use super::lib::KoraRpc;
@@ -17,7 +18,7 @@ use super::lib::KoraRpc;
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log::info!("RPC server started on {}, port {}", addr, port);
-    
+
     // Build middleware stack with tracing and CORS
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
@@ -37,10 +38,9 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
         .await?;
 
     let rpc_module = build_rpc_module(rpc)?;
-    
+
     // Start the server and return the handle
-    server.start(rpc_module)
-        .map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))
+    server.start(rpc_module).map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))
 }
 
 fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {

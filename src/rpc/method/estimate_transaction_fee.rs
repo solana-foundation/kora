@@ -23,12 +23,15 @@ pub async fn estimate_transaction_fee(
     request: EstimateTransactionFeeRequest,
 ) -> Result<EstimateTransactionFeeResponse, KoraError> {
     // Deserialize the transaction from base58
-    log::info!("Called estimate_transaction_fee with transaction data: {}", request.transaction_data);
+    log::info!(
+        "Called estimate_transaction_fee with transaction data: {}",
+        request.transaction_data
+    );
     let decoded_bytes = match bs58::decode(&request.transaction_data).into_vec() {
         Ok(bytes) => {
             log::debug!("Successfully decoded base58 data, length: {} bytes", bytes.len());
             bytes
-        },
+        }
         Err(e) => {
             log::error!("Failed to decode base58 data: {}", e);
             return Err(KoraError::InvalidTransaction(format!("Invalid base58: {}", e)));
@@ -39,11 +42,11 @@ pub async fn estimate_transaction_fee(
         Ok(tx) => {
             log::debug!("Successfully deserialized transaction");
             tx
-        },
+        }
         Err(e) => {
             log::error!(
-                "Failed to deserialize transaction: {}; Decoded bytes length: {}", 
-                e, 
+                "Failed to deserialize transaction: {}; Decoded bytes length: {}",
+                e,
                 decoded_bytes.len()
             );
             return Err(KoraError::InvalidTransaction(format!("Invalid transaction: {}", e)));
