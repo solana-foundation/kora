@@ -1,7 +1,14 @@
-use serde::{Deserialize, Serialize};
-use solana_sdk::signature::Signature;
-
 use crate::common::{get_signer, transaction::decode_b58_transaction, KoraError, Signer as _};
+use serde::{Deserialize, Serialize};
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{
+    instruction::{AccountMeta, CompiledInstruction, Instruction},
+    message::Message,
+    pubkey::Pubkey,
+    signature::Signature,
+    transaction::Transaction,
+};
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
 pub struct SignTransactionRequest {
@@ -14,34 +21,68 @@ pub struct SignTransactionResult {
     pub signed_transaction: String,
 }
 
+fn compile_instructions(
+    instructions: &[CompiledInstruction],
+    account_keys: &[Pubkey],
+) -> Vec<Instruction> {
+    instructions
+        .iter()
+        .map(|ix| {
+            let program_id = account_keys[ix.program_id_index as usize];
+            let accounts = ix
+                .accounts
+                .iter()
+                .map(|idx| AccountMeta {
+                    pubkey: account_keys[*idx as usize],
+                    is_signer: false, // We'll set this based on original transaction
+                    is_writable: true, // We'll set this based on original transaction
+                })
+                .collect();
+
+            Instruction { program_id, accounts, data: ix.data.clone() }
+        })
+        .collect()
+}
+
 pub async fn sign_transaction(
+    rpc_client: &Arc<RpcClient>,
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResult, KoraError> {
-    // TODO: Validate tx
-
     let signer = get_signer()
         .map_err(|e| KoraError::SigningError(format!("Failed to get signer: {}", e)))?;
 
     log::info!("Signing transaction: {}", request.transaction);
 
-    // Decode the transaction from base64
-    let mut transaction = decode_b58_transaction(&request.transaction)?;
+    let original_transaction = decode_b58_transaction(&request.transaction)?;
 
-    // Sign the transaction as fee payer
-    let message = transaction.message.clone();
+    let blockhash =
+        rpc_client.get_latest_blockhash().await.map_err(|e| KoraError::Rpc(e.to_string()))?;
+
+    let compiled_instructions = compile_instructions(
+        &original_transaction.message.instructions,
+        &original_transaction.message.account_keys,
+    );
+
+    let message = Message::new_with_blockhash(
+        &compiled_instructions,
+        Some(&signer.solana_pubkey()),
+        &blockhash,
+    );
+
+    let mut transaction = Transaction::new_unsigned(message);
+
     let signature = signer
-        .partial_sign(message.serialize().as_slice())
+        .partial_sign(&transaction.message_data())
         .map_err(|e| KoraError::SigningError(format!("Failed to sign transaction: {}", e)))?;
 
-    // Replace the first signature (fee payer) with our signature
     let sig_bytes: [u8; 64] = signature
         .bytes
         .try_into()
         .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
-    let sig = Signature::from(sig_bytes);
-    transaction.signatures[0] = sig;
 
-    // Serialize the signed transaction back to bytes and encode as base64
+    let sig = Signature::from(sig_bytes);
+    transaction.signatures = vec![sig];
+
     let signed_transaction = bincode::serialize(&transaction).map_err(|e| {
         KoraError::InternalServerError(format!("Failed to serialize transaction: {}", e))
     })?;

@@ -60,8 +60,9 @@ impl KoraRpc {
         request: SignTransactionRequest,
     ) -> Result<SignTransactionResult, KoraError> {
         info!("Sign transaction request: {:?}", request);
-        let result =
-            sign_transaction(request).await.map_err(|e| KoraError::SigningError(e.to_string()));
+        let result = sign_transaction(&self.rpc_client, request)
+            .await
+            .map_err(|e| KoraError::SigningError(e.to_string()));
         info!("Sign transaction response: {:?}", result);
         result
     }

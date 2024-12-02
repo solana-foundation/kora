@@ -33,6 +33,11 @@ impl SolanaMemorySigner {
         self.keypair.pubkey().to_bytes()
     }
 
+    /// Get solana pubkey
+    pub fn solana_pubkey(&self) -> solana_sdk::pubkey::Pubkey {
+        self.keypair.pubkey()
+    }
+
     /// Get the base58-encoded public key
     pub fn pubkey_base58(&self) -> String {
         bs58::encode(self.pubkey()).into_string()
