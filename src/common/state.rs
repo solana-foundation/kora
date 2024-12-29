@@ -14,7 +14,6 @@ pub fn init_signer(signer: SolanaMemorySigner) -> Result<(), KoraError> {
         return Err(KoraError::InternalServerError("Signer already initialized".to_string()));
     }
 
-    log::info!("Initialized signer with public key: {}", signer.pubkey_base58());
     *signer_guard = Some(signer);
     Ok(())
 }

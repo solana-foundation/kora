@@ -17,6 +17,10 @@ path = "src/main.rs"
 name = "presigned"
 path = "scripts/presigned.rs"
 
+[[bin]]
+name = "token"
+path = "scripts/token.rs"
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -58,3 +62,8 @@ jup-ag = "0.8.0"
 toml = "0.8.19"
 spl-token = "7.0.0"
 spl-associated-token-account = "6.0.0"
+
+[dev-dependencies]
+tokio = { version = "1.41.1", features = ["full"] }
+jsonrpsee = { version = "0.16.2", features = ["client"] }
+serde_json = "1.0"
