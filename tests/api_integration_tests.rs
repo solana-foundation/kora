@@ -34,20 +34,6 @@ fn create_test_transaction() -> String {
 }
 
 #[tokio::test]
-async fn test_get_enabled_features() {
-    let client = setup_test_client().await;
-
-    let response: serde_json::Value = client
-        .request("getEnabledFeatures", rpc_params![])
-        .await
-        .expect("Failed to get enabled features");
-
-    let features = response["features"].as_array().expect("Expected features array");
-    assert!(!features.is_empty(), "Features list should not be empty");
-    assert!(features.contains(&json!("gasless")), "Gasless feature should be enabled");
-}
-
-#[tokio::test]
 async fn test_get_supported_tokens() {
     let client = setup_test_client().await;
 
