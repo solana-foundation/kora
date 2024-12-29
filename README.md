@@ -1,83 +1,85 @@
 # Kora
 
-A paymaster node that provides a JSON-RPC interface.
+Kora is a Solana paymaster node that provides a JSON-RPC interface for handling gasless transactions and fee abstractions. It enables developers to build applications where users can pay transaction fees in tokens other than SOL.
 
 ## Features
 
-- JSON-RPC server with middleware support
-- Transaction fee estimation
-- Health check endpoint (`/liveness`)
-- Configurable logging (JSON or standard format)
-- CORS support
-- Customizable RPC endpoint
+- 🚀 JSON-RPC server with middleware support
+- 💰 Transaction fee estimation in any supported token
+- 🔄 Gasless transaction support
+- ✅ Health check endpoint (`/liveness`)
+- 📝 Configurable logging (JSON or standard format)
+- 🌐 CORS support
+- ⚙️ Customizable RPC endpoint
 
-## Usage
+## Getting Started
 
+### Installation
+
+```bash
+git clone https://github.com/yourusername/kora.git
+cd kora
+cargo build --release
+```
+
+### Running the Server
+
+Basic usage:
 ```bash
 cargo run -- [OPTIONS]
 ```
 
-### Command Line Arguments
+### Configuration
 
-```
-Options:
-  -p, --port <PORT>
-          Port number for the RPC server [default: 8080]
+#### Command Line Arguments
 
-      --rpc-url <RPC_URL>
-          RPC URL to connect to [env: RPC_URL=] [default: http://127.0.0.1:8899]
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-p, --port <PORT>` | Port number for the RPC server | 8080 |
+| `--rpc-url <RPC_URL>` | RPC URL to connect to | http://127.0.0.1:8899 |
+| `--logging-format <FORMAT>` | Logging format (standard or json) | standard |
+| `--metrics-endpoint <ENDPOINT>` | Optional metrics endpoint URL | - |
+| `--private-key <PRIVATE_KEY>` | Base58-encoded private key for signing | - |
+| `--config <FILE>` | Path to kora.toml config file | kora.toml |
+| `--no-load-signer` | Skip loading the signer | false |
 
-      --logging-format <FORMAT>
-          Logging format (standard or json) [default: standard]
+#### Environment Variables
 
-      --metrics-endpoint <ENDPOINT>
-          Optional metrics endpoint URL
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `RUST_LOG` | Controls log level and filtering | "info,sqlx=error" |
+| `RPC_URL` | Alternative way to specify the RPC URL | - |
+| `KORA_PRIVATE_KEY` | Alternative way to specify the signing private key | - |
 
-      --private-key <PRIVATE_KEY>
-          Base58-encoded private key for signing [env: KORA_PRIVATE_KEY=]
-          Required unless --no-load-signer is used
+#### Configuration File (kora.toml)
 
-      --config <FILE>
-          Path to kora.toml config file [default: kora.toml]
-
-      --no-load-signer
-          Skip loading the signer
-
-  -h, --help
-          Print help information
-```
-
-### Environment Variables
-
-- `RUST_LOG`: Controls log level and filtering (e.g., "info,sqlx=error,sea_orm_migration=error,jsonrpsee_server=warn")
-- `RPC_URL`: Alternative way to specify the RPC URL
-- `KORA_PRIVATE_KEY`: Alternative way to specify the signing private key
-
-### Kora.toml config
-
-The `kora.toml` config file is used to configure the paymaster node.
+The `kora.toml` file configures the paymaster node's features and supported tokens:
 
 ```toml
-[features]
-enabled = ["gasless"]
-
-[tokens]
-allowed = [
+[validation]
+max_allowed_lamports = 1000000
+max_signatures = 10
+allowed_programs = [
+    "11111111111111111111111111111111",  # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
+]
+allowed_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
     "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
-    "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK,
     "So11111111111111111111111111111111111111112",  # SOL
 ]
 ```
 
-## RPC Methods
+## API Reference
 
-### estimateTransactionFee
+### RPC Methods
 
-Estimates the transaction fee for a given Solana transaction in terms of a specified token.
+#### `estimateTransactionFee`
 
-Request:
+Estimates the transaction fee in terms of a specified token.
+
 ```json
+// Request
 {
     "jsonrpc": "2.0",
     "id": 1,
@@ -89,10 +91,8 @@ Request:
         }
     ]
 }
-```
 
-Response:
-```json
+// Response
 {
     "jsonrpc": "2.0",
     "id": 1,
@@ -102,47 +102,21 @@ Response:
 }
 ```
 
-### getEnabledFeatures
 
-Returns a list of enabled features for the paymaster node.
+#### `getSupportedTokens`
 
-Request:
+Returns supported token addresses.
+
 ```json
-{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "getEnabledFeatures",
-    "params": []
-}
-```
-
-Response:
-```json
-{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "result": {
-        "features": ["gasless"]
-    }
-}
-```
-
-### getSupportedTokens
-
-Returns a list of supported token addresses.
-
-Request:
-```json
+// Request
 {
     "jsonrpc": "2.0",
     "id": 1,
     "method": "getSupportedTokens",
     "params": []
 }
-```
 
-Response:
-```json
+// Response
 {
     "jsonrpc": "2.0",
     "id": 1,
@@ -157,12 +131,12 @@ Response:
 }
 ```
 
-### signTransaction
+#### `signTransaction`
 
-Signs a transaction using the paymaster's private key.
+Signs a transaction with the paymaster's key.
 
-Request:
 ```json
+// Request
 {
     "jsonrpc": "2.0",
     "id": 1,
@@ -173,10 +147,8 @@ Request:
         }
     ]
 }
-```
 
-Response:
-```json
+// Response
 {
     "jsonrpc": "2.0",
     "id": 1,
@@ -187,12 +159,12 @@ Response:
 }
 ```
 
-### signAndSend
+#### `signAndSend`
 
-Signs a transaction using the paymaster's private key and sends it to the network.
+Signs and submits a transaction to the network.
 
-Request:
 ```json
+// Request
 {
     "jsonrpc": "2.0",
     "id": 1,
@@ -203,10 +175,8 @@ Request:
         }
     ]
 }
-```
 
-Response:
-```json
+// Response
 {
     "jsonrpc": "2.0",
     "id": 1,
@@ -217,21 +187,68 @@ Response:
 }
 ```
 
+#### `transactionTransfer`
+
+Create a transfer request and sign as the paymaster (SPL and SOL)
+
+```json
+// Request
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "transactionTransfer",
+    "params": [
+        1000000, // lamports value
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // mint address
+        "5KKsLVU6TcbVDK4BS6K1DGDxnh4Q9xjYJ8XaDCG5t8ht", // source
+        "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM" // recipient
+    ]
+}
+
+// Response
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "transaction": "<base58-encoded-transaction>"
+    }
+}
+```
+
 ## Development
+
+### Prerequisites
+
+- Rust 1.70 or later
+- Solana CLI tools (for testing)
+- A Solana RPC endpoint (local or remote)
 
 ### Building
 
 ```bash
-cargo build
+# Build
+make build
 ```
 
-### Running Tests
+### Testing
 
 ```bash
-cargo test
+# Run all tests
+make test
+
+# Run specific test suite
+make test-integrations
 ```
 
-### Linting
+### Running
+
+```bash
+cargo run -- \
+    --rpc-url <RPC_URL> \
+    --port <PORT> \
+```
+
+### Code Quality
 
 ```bash
 # Run clippy with warnings as errors
@@ -239,21 +256,23 @@ make lint
 
 # Run clippy with auto-fix
 make lint-fix-all
+
+# Format code
+cargo fmt
 ```
 
-### Running the Server
+### Local Development
 
-1. Start the server with default settings:
+1. Start a local Solana validator:
    ```bash
-   cargo run
+   solana-test-validator
    ```
 
-2. Start with custom port and RPC URL:
+2. Run the server with development settings:
    ```bash
-   cargo run -- --port 9000 --rpc-url http://localhost:8899
+   RUST_LOG=debug cargo run -- --port 9000 --rpc-url http://localhost:8899
    ```
 
-3. Enable JSON logging:
-   ```bash
-   cargo run -- --logging-format json
-   ```
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
