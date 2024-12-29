@@ -14,6 +14,7 @@ use super::method::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
     },
     get_blockhash::{get_blockhash, GetBlockhashResponse},
+    get_config::{get_config, GetConfigResponse},
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 
@@ -87,6 +88,13 @@ impl KoraRpc {
         info!("Get blockhash request received");
         let result = get_blockhash(&self.rpc_client).await;
         info!("Get blockhash response: {:?}", result);
+        result
+    }
+
+    pub async fn get_config(&self) -> Result<GetConfigResponse, KoraError> {
+        info!("Get config request received");
+        let result = get_config(&self.validation).await;
+        info!("Get config response: {:?}", result);
         result
     }
 }

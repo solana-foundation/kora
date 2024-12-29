@@ -172,3 +172,12 @@ async fn test_get_blockhash() {
     let response: serde_json::Value = client.request("getBlockhash", rpc_params![]).await.expect("Failed to get blockhash");
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
 }
+
+#[tokio::test]
+async fn test_get_config() {
+    let client = setup_test_client().await;
+
+    let response: serde_json::Value = client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
+    assert!(response["fee_payer"].as_str().is_some(), "Expected fee_payer in response");
+    assert!(response["validation_config"].as_str().is_some(), "Expected validation_config in response");
+}
