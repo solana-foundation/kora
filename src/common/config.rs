@@ -1,18 +1,20 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 use toml;
 
-use crate::common::{Feature, KoraError};
+use crate::common::KoraError;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub features: Features,
-    pub tokens: Tokens,
+    pub validation: ValidationConfig,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Features {
-    pub enabled: Vec<Feature>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationConfig {
+    pub max_allowed_lamports: u64,
+    pub max_signatures: usize,
+    pub allowed_programs: Vec<String>,
+    pub allowed_tokens: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

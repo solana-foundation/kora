@@ -17,7 +17,11 @@ lint:
 
 # Run tests
 test:
-	cargo test --workspace
+	cargo test --lib
+
+# Run integration tests
+test-integration:
+	cargo test --test '*'
 
 # Build release binary
 build:

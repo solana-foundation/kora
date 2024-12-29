@@ -10,7 +10,7 @@ use spl_associated_token_account::{
 use spl_token::instruction::initialize_account;
 use std::sync::Arc;
 
-pub async fn create_token_account(
+pub async fn get_or_create_token_account(
     rpc_client: &Arc<RpcClient>,
     user_pubkey: &Pubkey,
     mint: &Pubkey,
@@ -22,15 +22,22 @@ pub async fn create_token_account(
 
     match rpc_client.get_account(&ata).await {
         Ok(_) => Ok((ata, None)),
-        Err(_) => {
+        Err(original_err) => {
+            // TODO: work with t22
             let create_ata_ix =
-                initialize_account(&signer.solana_pubkey(), user_pubkey, mint, user_pubkey)
-                    .map_err(|e| anyhow::anyhow!("Failed to initialize account: {}", e))?;
+                initialize_account(&spl_token::id(), user_pubkey, mint, user_pubkey).map_err(
+                    |e| {
+                        anyhow::anyhow!(
+                            "Failed to initialize account: {}. Original error: {}",
+                            e,
+                            original_err
+                        )
+                    },
+                )?;
 
-            let blockhash = rpc_client
-                .get_latest_blockhash()
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to get blockhash: {}", e))?;
+            let blockhash = rpc_client.get_latest_blockhash().await.map_err(|e| {
+                anyhow::anyhow!("Failed to get blockhash: {}. Original error: {}", e, original_err)
+            })?;
 
             let message = Message::new_with_blockhash(
                 &[create_ata_ix],
@@ -56,7 +63,7 @@ pub async fn create_token_account(
     }
 }
 
-pub async fn create_multiple_token_accounts(
+pub async fn get_or_create_multiple_token_accounts(
     rpc_client: &Arc<RpcClient>,
     user_pubkey: &Pubkey,
     mints: &[Pubkey],
@@ -99,10 +106,8 @@ pub async fn create_multiple_token_accounts(
         .partial_sign(&tx.message_data())
         .map_err(|e| anyhow::anyhow!("Failed to sign transaction: {}", e))?;
 
-    let sig_bytes: [u8; 64] = signature
-        .bytes
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("Invalid signature length"))?;
+    let sig_bytes: [u8; 64] =
+        signature.bytes.try_into().map_err(|_| anyhow::anyhow!("Invalid signature length"))?;
 
     let sig = Signature::from(sig_bytes);
     tx.signatures = vec![sig];

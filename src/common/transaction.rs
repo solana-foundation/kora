@@ -1,4 +1,8 @@
-use solana_sdk::transaction::Transaction;
+use solana_sdk::{
+    instruction::{AccountMeta, CompiledInstruction, Instruction},
+    pubkey::Pubkey,
+    transaction::Transaction,
+};
 
 use crate::common::KoraError;
 
@@ -30,4 +34,27 @@ pub fn decode_b58_transaction(tx: &str) -> Result<Transaction, KoraError> {
     };
 
     Ok(transaction)
+}
+
+pub fn uncompile_instructions(
+    instructions: &[CompiledInstruction],
+    account_keys: &[Pubkey],
+) -> Vec<Instruction> {
+    instructions
+        .iter()
+        .map(|ix| {
+            let program_id = account_keys[ix.program_id_index as usize];
+            let accounts = ix
+                .accounts
+                .iter()
+                .map(|idx| AccountMeta {
+                    pubkey: account_keys[*idx as usize],
+                    is_signer: false,
+                    is_writable: true,
+                })
+                .collect();
+
+            Instruction { program_id, accounts, data: ix.data.clone() }
+        })
+        .collect()
 }

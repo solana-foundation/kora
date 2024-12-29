@@ -5,23 +5,24 @@ use super::method::{
     estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest, EstimateTransactionFeeResponse,
     },
-    get_enabled_features::{get_enabled_features, GetEnabledFeaturesResponse},
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
     sign_and_send::{sign_and_send, SignAndSendTransactionRequest, SignAndSendTransactionResult},
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult},
+    transfer_transaction::{
+        transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
+    },
 };
-use crate::common::{error::KoraError, Config, Feature};
+use crate::common::{config::ValidationConfig, error::KoraError, Config};
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 pub struct KoraRpc {
     rpc_client: Arc<RpcClient>,
-    features: Vec<Feature>,
-    tokens: Vec<String>,
+    validation: ValidationConfig,
 }
 
 impl KoraRpc {
     pub fn new(rpc_client: Arc<RpcClient>, config: Config) -> Self {
-        Self { rpc_client, features: config.features.enabled, tokens: config.tokens.allowed }
+        Self { rpc_client, validation: config.validation }
     }
 
     pub async fn liveness(&self) -> Result<(), KoraError> {
@@ -41,16 +42,9 @@ impl KoraRpc {
         result
     }
 
-    pub async fn get_enabled_features(&self) -> Result<GetEnabledFeaturesResponse, KoraError> {
-        info!("Get enabled features request received");
-        let result = get_enabled_features(&self.features).await;
-        info!("Get enabled features response: {:?}", result);
-        result
-    }
-
     pub async fn get_supported_tokens(&self) -> Result<GetSupportedTokensResponse, KoraError> {
         info!("Get supported tokens request received");
-        let result = get_supported_tokens(&self.tokens).await;
+        let result = get_supported_tokens(&self.validation.allowed_tokens).await;
         info!("Get supported tokens response: {:?}", result);
         result
     }
@@ -60,7 +54,7 @@ impl KoraRpc {
         request: SignTransactionRequest,
     ) -> Result<SignTransactionResult, KoraError> {
         info!("Sign transaction request: {:?}", request);
-        let result = sign_transaction(&self.rpc_client, request)
+        let result = sign_transaction(&self.rpc_client, &self.validation, request)
             .await
             .map_err(|e| KoraError::SigningError(e.to_string()));
         info!("Sign transaction response: {:?}", result);
@@ -72,8 +66,18 @@ impl KoraRpc {
         request: SignAndSendTransactionRequest,
     ) -> Result<SignAndSendTransactionResult, KoraError> {
         info!("Sign and send request: {:?}", request);
-        let result = sign_and_send(&self.rpc_client, request).await;
+        let result = sign_and_send(&self.rpc_client, &self.validation, request).await;
         info!("Sign and send response: {:?}", result);
+        result
+    }
+
+    pub async fn transfer_transaction(
+        &self,
+        request: TransferTransactionRequest,
+    ) -> Result<TransferTransactionResponse, KoraError> {
+        info!("Transfer transaction request: {:?}", request);
+        let result = transfer_transaction(&self.rpc_client, &self.validation, request).await;
+        info!("Transfer transaction response: {:?}", result);
         result
     }
 }

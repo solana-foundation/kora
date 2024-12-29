@@ -1,13 +1,13 @@
-use crate::common::{get_signer, transaction::decode_b58_transaction, KoraError, Signer as _};
+use crate::common::{
+    config::ValidationConfig,
+    get_signer,
+    transaction::{decode_b58_transaction, uncompile_instructions},
+    validation::{TransactionValidator, ValidationMode},
+    KoraError, Signer as _,
+};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    instruction::{AccountMeta, CompiledInstruction, Instruction},
-    message::Message,
-    pubkey::Pubkey,
-    signature::Signature,
-    transaction::Transaction,
-};
+use solana_sdk::{message::Message, signature::Signature, transaction::Transaction};
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
@@ -21,31 +21,9 @@ pub struct SignTransactionResult {
     pub signed_transaction: String,
 }
 
-fn compile_instructions(
-    instructions: &[CompiledInstruction],
-    account_keys: &[Pubkey],
-) -> Vec<Instruction> {
-    instructions
-        .iter()
-        .map(|ix| {
-            let program_id = account_keys[ix.program_id_index as usize];
-            let accounts = ix
-                .accounts
-                .iter()
-                .map(|idx| AccountMeta {
-                    pubkey: account_keys[*idx as usize],
-                    is_signer: false, // We'll set this based on original transaction
-                    is_writable: true, // We'll set this based on original transaction
-                })
-                .collect();
-
-            Instruction { program_id, accounts, data: ix.data.clone() }
-        })
-        .collect()
-}
-
 pub async fn sign_transaction(
     rpc_client: &Arc<RpcClient>,
+    validation: &ValidationConfig,
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResult, KoraError> {
     let signer = get_signer()
@@ -55,10 +33,16 @@ pub async fn sign_transaction(
 
     let original_transaction = decode_b58_transaction(&request.transaction)?;
 
+    // Create validator with config settings
+    let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
+
+    // Validate transaction with Sign mode
+    validator.validate_transaction(&original_transaction, ValidationMode::Sign)?;
+
     let blockhash =
         rpc_client.get_latest_blockhash().await.map_err(|e| KoraError::Rpc(e.to_string()))?;
 
-    let compiled_instructions = compile_instructions(
+    let compiled_instructions = uncompile_instructions(
         &original_transaction.message.instructions,
         &original_transaction.message.account_keys,
     );
