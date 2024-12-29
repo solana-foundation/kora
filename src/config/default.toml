@@ -1,6 +1,0 @@
-[server]
-host = "127.0.0.1"
-port = 3030
-workers = 3
-
-log_level = "info"
