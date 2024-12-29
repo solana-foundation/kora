@@ -1,11 +1,13 @@
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, program_pack::Pack, pubkey::Pubkey, signature::{Keypair, Signer}, system_instruction, transaction::Transaction
+    commitment_config::CommitmentConfig,
+    program_pack::Pack,
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+    system_instruction,
+    transaction::Transaction,
 };
-use spl_token::{
-    instruction as token_instruction,
-    state::Account as TokenAccount
-};
+use spl_token::{instruction as token_instruction, state::Account as TokenAccount};
 use std::str::FromStr;
 
 fn main() {
@@ -18,14 +20,12 @@ fn main() {
 
     // Your wallet keypair (load this from a file in production)
     let payer = Keypair::new();
-    
+
     // Generate a new token account
     let token_account = Keypair::new();
 
     // Calculate minimum rent for token account
-    let rent = client
-        .get_minimum_balance_for_rent_exemption(TokenAccount::LEN)
-        .unwrap();
+    let rent = client.get_minimum_balance_for_rent_exemption(TokenAccount::LEN).unwrap();
 
     // Create token account
     let create_account_ix = system_instruction::create_account(

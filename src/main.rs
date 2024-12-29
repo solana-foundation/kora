@@ -110,11 +110,11 @@ pub async fn validate_config(
     config: &common::config::Config,
     rpc_client: RpcClient,
 ) -> Result<(), KoraError> {
-    if config.tokens.allowed.is_empty() {
+    if config.validation.allowed_tokens.is_empty() {
         log::error!("No tokens enabled");
         return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
     }
 
-    check_valid_tokens(&rpc_client, &config.tokens.allowed).await?;
+    check_valid_tokens(&rpc_client, &config.validation.allowed_tokens).await?;
     Ok(())
 }

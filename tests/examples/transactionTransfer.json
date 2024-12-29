@@ -1,0 +1,11 @@
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "transferTransaction",
+    "params": [
+        1000000,
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "5KKsLVU6TcbVDK4BS6K1DGDxnh4Q9xjYJ8XaDCG5t8ht",
+        "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM"
+    ]
+}

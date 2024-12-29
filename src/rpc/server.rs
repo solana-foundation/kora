@@ -55,12 +55,6 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
     );
 
     let _ =
-        module.register_async_method("getEnabledFeatures", |_rpc_params, rpc_context| async move {
-            let rpc = rpc_context.as_ref();
-            rpc.get_enabled_features().await.map_err(Into::into)
-        });
-
-    let _ =
         module.register_async_method("getSupportedTokens", |_rpc_params, rpc_context| async move {
             let rpc = rpc_context.as_ref();
             rpc.get_supported_tokens().await.map_err(Into::into)
@@ -77,6 +71,13 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         let params = rpc_params.parse()?;
         rpc.sign_and_send(params).await.map_err(Into::into)
     });
+
+    let _ =
+        module.register_async_method("transferTransaction", |rpc_params, rpc_context| async move {
+            let rpc = rpc_context.as_ref();
+            let params = rpc_params.parse()?;
+            rpc.transfer_transaction(params).await.map_err(Into::into)
+        });
 
     Ok(module)
 }
