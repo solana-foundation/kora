@@ -238,6 +238,35 @@ Returns the latest blockhash.
 }
 ```
 
+#### `getConfig`
+
+Returns the paymaster configuration.
+
+```json
+// Request
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "getConfig",
+    "params": []
+}
+
+// Response
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "fee_payer": "<payer-pubkey>",
+        "validation_config": {
+            "max_allowed_lamports": 1000000,
+            "max_signatures": 10,
+            "allowed_programs": ["11111111111111111111111111111111", "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"],
+            "allowed_tokens": ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "So11111111111111111111111111111111111111112"]
+        }
+    }
+}
+```
+
 ## Development
 
 ### Prerequisites
