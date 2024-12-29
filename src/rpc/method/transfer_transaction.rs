@@ -84,7 +84,7 @@ pub async fn transfer_transaction(
             &source_ata,
             &dest_ata,
             &source,
-            &[&signer.solana_pubkey()],
+            &[],
             request.amount,
         )
         .map_err(|e| {
@@ -100,7 +100,7 @@ pub async fn transfer_transaction(
 
     // Create transaction with fee payer
     let message =
-        Message::new_with_blockhash(&instructions, Some(&signer.solana_pubkey()), &blockhash);
+        Message::new_with_blockhash(&instructions, None, &blockhash);
     let mut transaction = Transaction::new_unsigned(message);
 
     // Add fee payer signature
