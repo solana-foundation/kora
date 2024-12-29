@@ -51,7 +51,7 @@ impl TransactionValidator {
         if !self.allowed_tokens.contains(mint) {
             return Err(KoraError::InvalidTransaction(format!(
                 "Mint {} is not a valid token mint",
-                mint.to_string()
+                mint
             )));
         }
         Ok(())
@@ -64,7 +64,7 @@ impl TransactionValidator {
     ) -> Result<(), KoraError> {
         self.validate_programs(&transaction.message)?;
         self.validate_transfer_amounts(&transaction.message)?;
-        self.validate_signatures(&transaction)?;
+        self.validate_signatures(transaction)?;
 
         if transaction.message.instructions.is_empty() {
             return Err(KoraError::InvalidTransaction(
@@ -147,12 +147,9 @@ impl TransactionValidator {
             if let Ok(system_ix) =
                 bincode::deserialize::<system_instruction::SystemInstruction>(&ix.data)
             {
-                match system_ix {
-                    system_instruction::SystemInstruction::Transfer { lamports: _ } => {
-                        // For transfer instruction, first account is source
-                        return account_keys[ix.accounts[0] as usize] == self.fee_payer_pubkey;
-                    }
-                    _ => {}
+                if let system_instruction::SystemInstruction::Transfer { lamports: _ } = system_ix {
+                    // For transfer instruction, first account is source
+                    return account_keys[ix.accounts[0] as usize] == self.fee_payer_pubkey;
                 }
             }
         }
@@ -184,16 +181,13 @@ impl TransactionValidator {
                 if let Ok(system_ix) =
                     bincode::deserialize::<system_instruction::SystemInstruction>(&instruction.data)
                 {
-                    match system_ix {
-                        system_instruction::SystemInstruction::Transfer { lamports } => {
-                            // Only count if source is fee payer
-                            if message.account_keys[instruction.accounts[0] as usize]
-                                == self.fee_payer_pubkey
-                            {
-                                total = total.saturating_add(lamports);
-                            }
+                    if let system_instruction::SystemInstruction::Transfer { lamports } = system_ix {
+                        // Only count if source is fee payer
+                        if message.account_keys[instruction.accounts[0] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_add(lamports);
                         }
-                        _ => {}
                     }
                 }
             }

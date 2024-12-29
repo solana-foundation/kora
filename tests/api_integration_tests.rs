@@ -8,7 +8,6 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use std::str::FromStr;
-use tokio;
 
 const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
 

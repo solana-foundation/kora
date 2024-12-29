@@ -34,7 +34,7 @@ pub async fn sign_transaction(
     let original_transaction = decode_b58_transaction(&request.transaction)?;
 
     // Create validator with config settings
-    let validator = TransactionValidator::new(signer.solana_pubkey(), &validation)?;
+    let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
 
     // Validate transaction with Sign mode
     validator.validate_transaction(&original_transaction, ValidationMode::Sign)?;

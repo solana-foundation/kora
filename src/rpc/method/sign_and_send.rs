@@ -35,7 +35,7 @@ pub async fn sign_and_send(
     let original_transaction = decode_b58_transaction(&request.transaction)?;
 
     // Create validator
-    let validator = TransactionValidator::new(signer.solana_pubkey(), &validation)?;
+    let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
 
     // Validate transaction with SignAndSend mode
     validator.validate_transaction(&original_transaction, ValidationMode::SignAndSend)?;
