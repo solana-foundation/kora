@@ -215,6 +215,29 @@ Create a transfer request and sign as the paymaster (SPL and SOL)
 }
 ```
 
+#### `getBlockhash`
+
+Returns the latest blockhash.
+
+```json
+// Request
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "getBlockhash",
+    "params": []
+}
+
+// Response
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "blockhash": "<base58-encoded-blockhash>"
+    }
+}
+```
+
 ## Development
 
 ### Prerequisites
