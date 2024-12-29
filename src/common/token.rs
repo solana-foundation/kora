@@ -5,7 +5,6 @@ use std::str::FromStr;
 
 use crate::common::KoraError;
 
-
 pub async fn check_valid_token(rpc_client: &RpcClient, token: &str) -> Result<(), KoraError> {
     let pubkey = Pubkey::from_str(token)
         .map_err(|e| KoraError::InternalServerError(format!("Invalid token address: {}", e)))?;

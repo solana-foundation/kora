@@ -181,7 +181,8 @@ impl TransactionValidator {
                 if let Ok(system_ix) =
                     bincode::deserialize::<system_instruction::SystemInstruction>(&instruction.data)
                 {
-                    if let system_instruction::SystemInstruction::Transfer { lamports } = system_ix {
+                    if let system_instruction::SystemInstruction::Transfer { lamports } = system_ix
+                    {
                         // Only count if source is fee payer
                         if message.account_keys[instruction.accounts[0] as usize]
                             == self.fee_payer_pubkey
