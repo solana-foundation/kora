@@ -164,3 +164,11 @@ async fn test_transfer_transaction_with_ata() {
     // Verify the response contains the expected fields
     assert!(response["transaction"].as_str().is_some(), "Expected signature in response");
 }
+
+#[tokio::test]
+async fn test_get_blockhash() {
+    let client = setup_test_client().await;
+
+    let response: serde_json::Value = client.request("getBlockhash", rpc_params![]).await.expect("Failed to get blockhash");
+    assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
+}

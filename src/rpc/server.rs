@@ -79,5 +79,10 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
             rpc.transfer_transaction(params).await.map_err(Into::into)
         });
 
+    let _ = module.register_async_method("getBlockhash", |_rpc_params, rpc_context| async move {
+        let rpc = rpc_context.as_ref();
+        rpc.get_blockhash().await.map_err(Into::into)
+    });
+
     Ok(module)
 }

@@ -1,6 +1,8 @@
 use log::info;
 use std::sync::Arc;
 
+use crate::common::{config::ValidationConfig, Config, KoraError};
+
 use super::method::{
     estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest, EstimateTransactionFeeResponse,
@@ -11,8 +13,8 @@ use super::method::{
     transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
     },
+    get_blockhash::{get_blockhash, GetBlockhashResponse},
 };
-use crate::common::{config::ValidationConfig, error::KoraError, Config};
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 pub struct KoraRpc {
@@ -78,6 +80,13 @@ impl KoraRpc {
         info!("Transfer transaction request: {:?}", request);
         let result = transfer_transaction(&self.rpc_client, &self.validation, request).await;
         info!("Transfer transaction response: {:?}", result);
+        result
+    }
+
+    pub async fn get_blockhash(&self) -> Result<GetBlockhashResponse, KoraError> {
+        info!("Get blockhash request received");
+        let result = get_blockhash(&self.rpc_client).await;
+        info!("Get blockhash response: {:?}", result);
         result
     }
 }
