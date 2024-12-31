@@ -2,16 +2,27 @@ use log::info;
 use std::sync::Arc;
 
 use crate::{
-    common::{config::{KoraConfig, ValidationConfig}, Config, KoraError},
+    common::{
+        config::{KoraConfig, ValidationConfig},
+        KoraError,
+    },
     rpc::method::{sign_transaction_if_paid::sign_transaction_if_paid, swap_to_sol::swap_to_sol},
 };
 
 use super::method::{
     estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest, EstimateTransactionFeeResponse,
-    }, get_blockhash::{get_blockhash, GetBlockhashResponse}, get_config::{get_config, GetConfigResponse}, get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse}, sign_and_send::{sign_and_send, SignAndSendTransactionRequest, SignAndSendTransactionResult}, sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult}, sign_transaction_if_paid::{SignTransactionIfPaidRequest, SignTransactionIfPaidResponse}, swap_to_sol::{SwapToSolRequest, SwapToSolResponse}, transfer_transaction::{
+    },
+    get_blockhash::{get_blockhash, GetBlockhashResponse},
+    get_config::{get_config, GetConfigResponse},
+    get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
+    sign_and_send::{sign_and_send, SignAndSendTransactionRequest, SignAndSendTransactionResult},
+    sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult},
+    sign_transaction_if_paid::{SignTransactionIfPaidRequest, SignTransactionIfPaidResponse},
+    swap_to_sol::{SwapToSolRequest, SwapToSolResponse},
+    transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
-    }
+    },
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 
@@ -22,7 +33,11 @@ pub struct KoraRpc {
 }
 
 impl KoraRpc {
-    pub fn new(rpc_client: Arc<RpcClient>, validation: ValidationConfig, config: KoraConfig) -> Self {
+    pub fn new(
+        rpc_client: Arc<RpcClient>,
+        validation: ValidationConfig,
+        config: KoraConfig,
+    ) -> Self {
         Self { rpc_client, validation, config }
     }
 

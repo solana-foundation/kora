@@ -3,8 +3,8 @@ use jsonrpsee::{
     server::{middleware::proxy_get_request::ProxyGetRequestLayer, ServerBuilder, ServerHandle},
     RpcModule,
 };
-use tower::limit::RateLimitLayer;
 use std::{net::SocketAddr, time::Duration};
+use tower::limit::RateLimitLayer;
 use tower_http::cors::CorsLayer;
 
 use super::lib::KoraRpc;
@@ -22,10 +22,7 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
 
     let middleware = tower::ServiceBuilder::new()
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
-        .layer(RateLimitLayer::new(
-            rpc.config.rate_limit, 
-            Duration::from_secs(1)
-        ))
+        .layer(RateLimitLayer::new(rpc.config.rate_limit, Duration::from_secs(1)))
         .layer(cors);
 
     // Configure and build the server with HTTP support

@@ -102,22 +102,17 @@ pub async fn swap_to_sol(
     let mut transaction = Transaction::new_unsigned(message);
 
     let signature = signer
-        .partial_sign(&transaction.message_data())
+        .partial_sign_solana(&transaction.message_data())
         .map_err(|e| KoraError::SwapError(format!("Failed to sign transaction: {}", e)))?;
 
-    let sig_bytes: [u8; 64] = signature
-        .bytes
-        .try_into()
-        .map_err(|_| KoraError::SwapError("Invalid signature length".to_string()))?;
 
-    let sig = solana_sdk::signature::Signature::from(sig_bytes);
-    transaction.signatures = vec![sig];
+    transaction.signatures = vec![signature];
 
     let serialized = bincode::serialize(&transaction)
         .map_err(|e| KoraError::SwapError(format!("Failed to serialize transaction: {}", e)))?;
 
     Ok(SwapToSolResponse {
-        signature: sig.to_string(),
+        signature: signature.to_string(),
         transaction: bs58::encode(serialized).into_string(),
     })
 }
