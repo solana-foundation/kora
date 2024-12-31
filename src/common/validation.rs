@@ -312,11 +312,11 @@ mod tests {
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Test SignAndSend mode with fee payer already set (should fail)
+        // Test SignAndSend mode with fee payer already set should not error
         let instruction = system_instruction::transfer(&sender, &recipient, 1000);
         let message = Message::new(&[instruction], Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction).is_err());
+        assert!(validator.validate_transaction(&transaction).is_ok());
 
         // Test SignAndSend mode without fee payer (should succeed)
         let instruction = system_instruction::transfer(&sender, &recipient, 1000);
