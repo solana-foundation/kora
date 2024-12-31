@@ -2,9 +2,13 @@ use super::{
     error::KoraError,
     signer::{Signature, Signer},
 };
-use solana_sdk::{signature::Keypair, signer::Signer as SolanaSigner};
+use solana_sdk::{
+    signature::{Keypair, Signature as SolanaSignature},
+    signer::Signer as SolanaSigner,
+};
 
 /// A Solana-based signer that uses an in-memory keypair
+#[derive(Debug)]
 pub struct SolanaMemorySigner {
     keypair: Keypair,
 }
@@ -55,6 +59,17 @@ impl Signer for SolanaMemorySigner {
 
     fn partial_sign(&self, message: &[u8]) -> Result<Signature, Self::Error> {
         self.full_sign(message)
+    }
+
+    fn partial_sign_solana(&self, message: &[u8]) -> Result<SolanaSignature, Self::Error> {
+        let solana_sig = self.keypair.sign_message(message);
+
+        let sig_bytes: [u8; 64] = solana_sig
+            .as_ref()
+            .try_into()
+            .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
+
+        Ok(SolanaSignature::from(sig_bytes))
     }
 
     fn full_sign(&self, message: &[u8]) -> Result<Signature, Self::Error> {

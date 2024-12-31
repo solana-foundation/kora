@@ -27,7 +27,7 @@ path = "scripts/token.rs"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-anyhow = "1.0"
+anyhow = "1.0.95"
 thiserror = "1.0"
 progenitor = "0.8.0"
 futures = "0.3"
@@ -65,6 +65,8 @@ jup-ag = "0.8.0"
 toml = "0.8.19"
 spl-token = "7.0.0"
 spl-associated-token-account = "6.0.0"
+jupiter-swap-api-client = { git = "https://github.com/pkxro/jupiter-swap-api-client.git", package = "jupiter-swap-api-client"}
+jupiter = "3.1.4"
 
 [dev-dependencies]
 tokio = { version = "1.41.1", features = ["full"] }

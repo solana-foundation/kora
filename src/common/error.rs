@@ -24,6 +24,8 @@ pub enum KoraError {
     InternalServerError(String),
     #[error("Signing error: {0}")]
     SigningError(String),
+    #[error("Swap error: {0}")]
+    SwapError(String),
 }
 
 impl From<KoraError> for RpcError {
@@ -45,6 +47,7 @@ impl From<KoraError> for RpcError {
             KoraError::TransactionFailed(msg) => invalid_request(KoraError::TransactionFailed(msg)),
             KoraError::InsufficientFunds => invalid_request(KoraError::InsufficientFunds),
             KoraError::SigningError(msg) => invalid_request(KoraError::SigningError(msg)),
+            KoraError::SwapError(msg) => invalid_request(KoraError::SwapError(msg)),
         }
     }
 }

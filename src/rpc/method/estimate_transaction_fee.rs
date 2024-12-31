@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::common::{error::KoraError, jup::get_quote, transaction::decode_b58_transaction};
+use crate::common::{error::KoraError, transaction::decode_b58_transaction, LAMPORTS_PER_SIGNATURE};
 
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -20,38 +20,22 @@ pub async fn estimate_transaction_fee(
     rpc_client: &Arc<RpcClient>,
     request: EstimateTransactionFeeRequest,
 ) -> Result<EstimateTransactionFeeResponse, KoraError> {
-    // Deserialize the transaction from base58
-    log::info!("Called estimate_transaction_fee with transaction: {}", request.transaction);
-
     let transaction = decode_b58_transaction(&request.transaction)?;
+    
+    // Get base fee (computation + rent for any account creations)
+    let simulation = rpc_client.simulate_transaction(&transaction).await.map_err(|e| KoraError::Rpc(e.to_string()))?;
 
-    // Get prio fee from tx accounts
-    let addresses = transaction.message.account_keys;
+    // multiple by lamports per signature use sdk constant
+    let base_fee = simulation.value.units_consumed.unwrap_or(0) * LAMPORTS_PER_SIGNATURE;
 
-    let prio_fee = match rpc_client.get_recent_prioritization_fees(&addresses).await {
-        Ok(fees) => fees,
-        Err(e) => {
-            log::error!("Failed to get recent prioritization fees: {}", e);
-            return Err(KoraError::Rpc(e.to_string()));
-        }
-    };
+    // Get priority fee from recent blocks
+    let priority_stats = rpc_client.get_recent_prioritization_fees(&[]).await.map_err(|e| KoraError::Rpc(e.to_string()))?;
+    let priority_fee = priority_stats.iter()
+        .map(|fee| fee.prioritization_fee)
+        .max()
+        .unwrap_or(0);
 
-    let fees = prio_fee.iter().map(|fee| fee.prioritization_fee).sum::<u64>();
-
-    let avg_fee = fees / prio_fee.len() as u64;
-
-    // Get quote for how much of fee_token we need to swap to get avg_fee amount of SOL
-    let quote = match get_quote(request.fee_token, avg_fee).await {
-        Ok(quote) => quote,
-        Err(e) => {
-            log::error!("Failed to get quote: {}", e);
-            return Err(KoraError::FeeEstimation);
-        }
-    };
-
-    // The total fee in the fee_token (e.g., USDC) needed to:
-    // 1. Get enough SOL to pay for the transaction fee (quote.in_amount)
-    let estimate = EstimateTransactionFeeResponse { fee_in_lamports: quote.in_amount };
-
-    Ok(estimate)
+    Ok(EstimateTransactionFeeResponse { 
+        fee_in_lamports: base_fee + priority_fee 
+    })
 }

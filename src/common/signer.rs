@@ -1,5 +1,7 @@
 use std::error::Error;
 
+use solana_sdk::signature::Signature as SolanaSignature;
+
 /// Represents a signature for a message
 #[derive(Debug, Clone)]
 pub struct Signature {
@@ -21,4 +23,7 @@ pub trait Signer {
     /// Fully signs a message, producing a complete signature
     /// This is used when a single signature is sufficient
     fn full_sign(&self, message: &[u8]) -> Result<Signature, Self::Error>;
+
+    /// Partially signs a message, producing a Solana signature
+    fn partial_sign_solana(&self, message: &[u8]) -> Result<SolanaSignature, Self::Error>;
 }

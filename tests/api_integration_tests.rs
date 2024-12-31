@@ -1,29 +1,40 @@
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
+use serde::Deserialize;
 use serde_json::json;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
+    hash::Hash,
     message::Message,
     pubkey::Pubkey,
-    signature::{Keypair, Signer},
+    signature::{Keypair, Signature, Signer},
     system_instruction,
     transaction::Transaction,
 };
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
+
+fn get_rpc_url() -> String {
+    std::env::var("RPC_URL").unwrap_or_else(|_| "http://127.0.0.1:8899".to_string())
+}
 
 async fn setup_test_client() -> jsonrpsee::http_client::HttpClient {
     HttpClientBuilder::default().build(TEST_SERVER_URL).expect("Failed to create HTTP client")
 }
 
+async fn setup_rpc_client() -> Arc<RpcClient> {
+    Arc::new(RpcClient::new(get_rpc_url()))
+}
+
 fn create_test_transaction() -> String {
     let sender = Keypair::new();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
-    let amount = 10000;
+    let amount = 10;
 
     let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
     let message = Message::new_with_blockhash(
         &[instruction],
-        Some(&sender.pubkey()),
+        None,
         &solana_sdk::hash::Hash::default(),
     );
 
@@ -76,6 +87,7 @@ async fn test_estimate_transaction_fee() {
 async fn test_sign_transaction() {
     let client = setup_test_client().await;
     let test_tx = create_test_transaction();
+    let rpc_client = setup_rpc_client().await;
 
     let response: serde_json::Value = client
         .request("signTransaction", rpc_params![test_tx])
@@ -87,6 +99,26 @@ async fn test_sign_transaction() {
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
     );
+
+    // Decode the base58 transaction string
+    let transaction_string = response["signed_transaction"].as_str().unwrap();
+    let decoded_tx = bs58::decode(transaction_string)
+        .into_vec()
+        .expect("Failed to decode transaction from base58");
+
+    // Deserialize the transaction
+    let transaction: Transaction =
+        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+
+    // Simulate the transaction
+    let simulated_tx = rpc_client
+        .simulate_transaction(&transaction)
+        .await
+        .expect("Failed to simulate transaction");
+
+    // Optional: Add assertions to verify simulation results
+    println!("Simulated transaction: {:?}", simulated_tx);
+    assert!(!simulated_tx.value.err.is_some(), "Transaction simulation failed");
 }
 
 #[tokio::test]
@@ -125,13 +157,14 @@ async fn test_invalid_transaction() {
 #[tokio::test]
 async fn test_transfer_transaction() {
     let client = setup_test_client().await;
+    let rpc_client = setup_rpc_client().await;
 
     let response: serde_json::Value = client
         .request(
             "transferTransaction",
             rpc_params![
-                1000000,
-                "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                1,
+                "11111111111111111111111111111111",
                 "6kntKawNmZNKZqUHvRVGKMwp8LQU5upyhht7w1PL7dde",
                 "BrfrZdQNEitACxyYLNmFRWHtRzZFNFpYH5GAtoA1XXU6"
             ],
@@ -141,20 +174,44 @@ async fn test_transfer_transaction() {
 
     // Verify the response contains the expected fields
     assert!(response["transaction"].as_str().is_some(), "Expected signature in response");
+    assert!(response["message"].as_str().is_some(), "Expected message in response");
+    assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
+
+    // Decode the base58 transaction string
+    let transaction_string = response["transaction"].as_str().unwrap();
+    let decoded_tx = bs58::decode(transaction_string)
+        .into_vec()
+        .expect("Failed to decode transaction from base58");
+
+    // Deserialize the transaction
+    let transaction: Transaction =
+        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+
+    // Simulate the transaction
+    let simulated_tx = rpc_client
+        .simulate_transaction(&transaction)
+        .await
+        .expect("Failed to simulate transaction");
+
+    // Optional: Add assertions to verify simulation results
+    println!("Simulated transaction: {:?}", simulated_tx);
+    assert!(!simulated_tx.value.err.is_some(), "Transaction simulation failed");
 }
 
 #[tokio::test]
 async fn test_transfer_transaction_with_ata() {
     let client = setup_test_client().await;
-    let random_pubkey = Keypair::new().pubkey();
+    let rpc_client = setup_rpc_client().await;
+    let random_keypair = Keypair::new();
+    let random_pubkey = random_keypair.pubkey();
 
     let response: serde_json::Value = client
         .request(
             "transferTransaction",
             rpc_params![
-                1000000,
-                "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-                "6kntKawNmZNKZqUHvRVGKMwp8LQU5upyhht7w1PL7dde",
+                10,
+                "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+                "J1NiBQHq1Q98HwB4xZCpekg66oXniqzW9vXJorZNuF9R",
                 random_pubkey.to_string()
             ],
         )
@@ -163,13 +220,36 @@ async fn test_transfer_transaction_with_ata() {
 
     // Verify the response contains the expected fields
     assert!(response["transaction"].as_str().is_some(), "Expected signature in response");
+    assert!(response["message"].as_str().is_some(), "Expected message in response");
+    assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
+
+    // Decode the base58 transaction string
+    let transaction_string = response["transaction"].as_str().unwrap();
+    let decoded_tx = bs58::decode(transaction_string)
+        .into_vec()
+        .expect("Failed to decode transaction from base58");
+
+    // Deserialize the transaction
+    let transaction: Transaction =
+        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+
+    // Simulate the transaction
+    let simulated_tx = rpc_client
+        .simulate_transaction(&transaction)
+        .await
+        .expect("Failed to simulate transaction");
+
+    // Will fail unless you sign tx before seding
+    println!("Simulated transaction: {:?}", simulated_tx);
+    assert!(!simulated_tx.value.err.is_some(), "Transaction simulation failed");
 }
 
 #[tokio::test]
 async fn test_get_blockhash() {
     let client = setup_test_client().await;
 
-    let response: serde_json::Value = client.request("getBlockhash", rpc_params![]).await.expect("Failed to get blockhash");
+    let response: serde_json::Value =
+        client.request("getBlockhash", rpc_params![]).await.expect("Failed to get blockhash");
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
 }
 
@@ -177,7 +257,53 @@ async fn test_get_blockhash() {
 async fn test_get_config() {
     let client = setup_test_client().await;
 
-    let response: serde_json::Value = client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
+    let response: serde_json::Value =
+        client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
     assert!(response["fee_payer"].as_str().is_some(), "Expected fee_payer in response");
-    assert!(response["validation_config"].as_str().is_some(), "Expected validation_config in response");
+    assert!(
+        response["validation_config"].as_object().is_some(),
+        "Expected validation_config in response"
+    );
+}
+
+// #[tokio::test]
+async fn test_swap_to_sol() {
+    // This will fail unless you set JUPITER_API_URL to a custom devnet url
+
+    let client = setup_test_client().await;
+    let rpc_client = setup_rpc_client().await;
+
+    let response: serde_json::Value = client
+        .request(
+            "swapToSol",
+            rpc_params![
+                "6kntKawNmZNKZqUHvRVGKMwp8LQU5upyhht7w1PL7dde",
+                100,
+                "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+            ],
+        )
+        .await
+        .expect("Failed to create swap to sol tx");
+
+    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+    assert!(response["transaction"].as_str().is_some(), "Expected transaction in response");
+
+    // Decode the base58 transaction string
+    let transaction_string = response["transaction"].as_str().unwrap();
+    let decoded_tx = bs58::decode(transaction_string)
+        .into_vec()
+        .expect("Failed to decode transaction from base58");
+
+    // Deserialize the transaction
+    let transaction: Transaction =
+        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+
+    // Simulate the transaction
+    let simulated_tx = rpc_client
+        .simulate_transaction(&transaction)
+        .await
+        .expect("Failed to simulate transaction");
+
+    println!("Simulated transaction: {:?}", simulated_tx);
+    assert!(!simulated_tx.value.err.is_some(), "Transaction simulation failed");
 }

@@ -1,20 +1,19 @@
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    instruction::Instruction, message::Message, pubkey::Pubkey, system_instruction,
-    transaction::Transaction,
+    commitment_config::CommitmentConfig, message::Message, program_pack::Pack, pubkey::Pubkey,
+    signature::Keypair, signer::Signer, system_instruction, transaction::Transaction,
 };
-use spl_associated_token_account::get_associated_token_address;
-use spl_token::instruction as token_instruction;
+use spl_associated_token_account::{
+    get_associated_token_address,
+    instruction::{create_associated_token_account, create_associated_token_account_idempotent},
+};
+use spl_token::{instruction as token_instruction, state::Mint};
 use std::{str::FromStr, sync::Arc};
 
 use crate::common::{
-    account::get_or_create_token_account,
-    config::ValidationConfig,
-    get_signer,
-    transaction::uncompile_instructions,
-    validation::{TransactionValidator, ValidationMode},
-    KoraError, Signer as _, SOL_MINT,
+    config::ValidationConfig, get_signer, validation::TransactionValidator, KoraError, Signer as _,
+    NATIVE_SOL,
 };
 
 #[derive(Debug, Deserialize)]
@@ -28,6 +27,8 @@ pub struct TransferTransactionRequest {
 #[derive(Debug, Serialize)]
 pub struct TransferTransactionResponse {
     pub transaction: String,
+    pub message: String,
+    pub blockhash: String,
 }
 
 pub async fn transfer_transaction(
@@ -37,10 +38,10 @@ pub async fn transfer_transaction(
 ) -> Result<TransferTransactionResponse, KoraError> {
     let signer = get_signer()
         .map_err(|e| KoraError::SigningError(format!("Failed to get signer: {}", e)))?;
+    let fee_payer = signer.solana_pubkey();
 
-    let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
+    let validator = TransactionValidator::new(fee_payer, validation)?;
 
-    // Parse addresses
     let source = Pubkey::from_str(&request.source)
         .map_err(|e| KoraError::InvalidTransaction(format!("Invalid source address: {}", e)))?;
     let destination = Pubkey::from_str(&request.destination).map_err(|e| {
@@ -49,79 +50,88 @@ pub async fn transfer_transaction(
     let token_mint = Pubkey::from_str(&request.token)
         .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token address: {}", e)))?;
 
-    validator.validate_token_mint(&token_mint)?;
+    let mut instructions = vec![];
 
-    let mut instructions: Vec<Instruction> = Vec::new();
-
-    // Check if token is SOL or SPL token
-    if request.token == SOL_MINT {
-        // Handle SOL transfer
-        let transfer_ix = system_instruction::transfer(&source, &destination, request.amount);
-        instructions.push(transfer_ix);
+    // Handle native SOL transfers
+    if request.token == NATIVE_SOL {
+        instructions.push(system_instruction::transfer(&source, &destination, request.amount));
     } else {
-        // Handle SPL token transfer
-        // Get or create destination token account
-        let (dest_ata, tx) = get_or_create_token_account(rpc_client, &destination, &token_mint)
-            .await
-            .map_err(|e| {
-                KoraError::InvalidTransaction(format!(
-                    "Failed to get or create token account: {}",
-                    e
-                ))
-            })?;
+        // Handle wrapped SOL and other SPL tokens
+        validator.validate_token_mint(&token_mint)?;
 
-        if let Some(tx) = tx {
-            instructions
-                .extend(uncompile_instructions(&tx.message.instructions, &tx.message.account_keys));
-        }
-
-        // Get ATA for source
-        let source_ata = get_associated_token_address(&source, &token_mint);
-
-        // Add transfer instruction
-        let transfer_ix = token_instruction::transfer(
-            &spl_token::id(),
-            &source_ata,
-            &dest_ata,
-            &source,
-            &[],
-            request.amount,
-        )
-        .map_err(|e| {
-            KoraError::InvalidTransaction(format!("Failed to create transfer instruction: {}", e))
+        let mint_account = rpc_client.get_account(&token_mint).await.map_err(|_| {
+            KoraError::InvalidTransaction("Failed to fetch mint account".to_string())
         })?;
 
-        instructions.push(transfer_ix);
+        let mint = Mint::unpack(&mint_account.data)
+            .map_err(|_| KoraError::InvalidTransaction("Invalid mint account data".to_string()))?;
+
+        let decimals = mint.decimals;
+        let source_ata = get_associated_token_address(&source, &token_mint);
+        let dest_ata = get_associated_token_address(&destination, &token_mint);
+
+        let source_ata_account = rpc_client.get_account(&source_ata).await;
+        if source_ata_account.is_err() {
+            return Err(KoraError::InvalidTransaction("Source ATA account not found".to_string()));
+        }
+
+        match rpc_client.get_account(&dest_ata).await {
+            Ok(_) => {}
+            Err(_) => {
+                instructions.push(create_associated_token_account(
+                    &fee_payer,
+                    &destination,
+                    &token_mint,
+                    &spl_token::id(),
+                ));
+            }
+        }
+
+        println!("source_ata: {}", dest_ata);
+
+        instructions.push(
+            token_instruction::transfer_checked(
+                &spl_token::id(),
+                &source_ata,
+                &token_mint,
+                &dest_ata,
+                &source,
+                &[],
+                request.amount,
+                decimals,
+            )
+            .map_err(|e| {
+                KoraError::InvalidTransaction(format!(
+                    "Failed to create transfer instruction: {}",
+                    e
+                ))
+            })?,
+        );
     }
 
-    // Get recent blockhash
-    let blockhash =
-        rpc_client.get_latest_blockhash().await.map_err(|e| KoraError::Rpc(e.to_string()))?;
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+        .await
+        .map_err(|e| KoraError::Rpc(e.to_string()))?;
 
-    // Create transaction with fee payer
-    let message =
-        Message::new_with_blockhash(&instructions, None, &blockhash);
+    let message = Message::new_with_blockhash(&instructions, Some(&fee_payer), &blockhash.0);
+
     let mut transaction = Transaction::new_unsigned(message);
 
-    // Add fee payer signature
     let signature = signer
-        .partial_sign(&transaction.message_data())
+        .partial_sign_solana(&transaction.message_data())
         .map_err(|e| KoraError::SigningError(format!("Failed to sign transaction: {}", e)))?;
-    let sig_bytes: [u8; 64] = signature
-        .bytes
-        .try_into()
-        .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
-    transaction.signatures = vec![solana_sdk::signature::Signature::from(sig_bytes)];
 
-    // Validate transaction
-    validator.validate_transaction(&transaction, ValidationMode::SignAndSend)?;
+    transaction.signatures[0] = signature;
 
-    // Serialize and encode transaction
     let serialized = bincode::serialize(&transaction).map_err(|e| {
         KoraError::InvalidTransaction(format!("Failed to serialize transaction: {}", e))
     })?;
-
     let encoded = bs58::encode(serialized).into_string();
 
-    Ok(TransferTransactionResponse { transaction: encoded })
+    Ok(TransferTransactionResponse {
+        transaction: encoded,
+        message: bs58::encode(transaction.message.serialize()).into_string(),
+        blockhash: blockhash.0.to_string(),
+    })
 }

@@ -2,12 +2,15 @@ use crate::common::{
     config::ValidationConfig,
     get_signer,
     transaction::{decode_b58_transaction, uncompile_instructions},
-    validation::{TransactionValidator, ValidationMode},
+    validation::TransactionValidator,
     KoraError, Signer as _,
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{message::Message, signature::Signature, transaction::Transaction};
+use solana_sdk::{
+    commitment_config::CommitmentConfig, message::Message,
+    transaction::Transaction,
+};
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
@@ -29,50 +32,28 @@ pub async fn sign_transaction(
     let signer = get_signer()
         .map_err(|e| KoraError::SigningError(format!("Failed to get signer: {}", e)))?;
 
-    log::info!("Signing transaction: {}", request.transaction);
-
     let original_transaction = decode_b58_transaction(&request.transaction)?;
-
-    // Create validator with config settings
     let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
+    validator.validate_transaction(&original_transaction)?;
 
-    // Validate transaction with Sign mode
-    validator.validate_transaction(&original_transaction, ValidationMode::Sign)?;
+    let mut transaction = original_transaction;
 
-    let blockhash =
-        rpc_client.get_latest_blockhash().await.map_err(|e| KoraError::Rpc(e.to_string()))?;
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+        .await
+        .map_err(|e| KoraError::Rpc(e.to_string()))?;
 
-    let compiled_instructions = uncompile_instructions(
-        &original_transaction.message.instructions,
-        &original_transaction.message.account_keys,
-    );
+    transaction.message.recent_blockhash = blockhash.0;
 
-    let message = Message::new_with_blockhash(
-        &compiled_instructions,
-        Some(&signer.solana_pubkey()),
-        &blockhash,
-    );
+    let signature = signer.partial_sign_solana(&transaction.message_data())?;
 
-    let mut transaction = Transaction::new_unsigned(message);
+    transaction.signatures[0] = signature;
 
-    let signature = signer
-        .partial_sign(&transaction.message_data())
-        .map_err(|e| KoraError::SigningError(format!("Failed to sign transaction: {}", e)))?;
-
-    let sig_bytes: [u8; 64] = signature
-        .bytes
-        .try_into()
-        .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
-
-    let sig = Signature::from(sig_bytes);
-    transaction.signatures = vec![sig];
-
-    let signed_transaction = bincode::serialize(&transaction).map_err(|e| {
-        KoraError::InternalServerError(format!("Failed to serialize transaction: {}", e))
-    })?;
-
-    Ok(SignTransactionResult {
-        signature: sig.to_string(),
-        signed_transaction: bs58::encode(signed_transaction).into_string(),
+    let serialized = bincode::serialize(&transaction).map_err(|e| KoraError::InvalidTransaction(format!("Failed to serialize transaction: {}", e)))?;
+    let encoded = bs58::encode(serialized).into_string();
+    
+    Ok(SignTransactionResult { 
+        signature: signature.to_string(), 
+        signed_transaction: encoded 
     })
 }

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::commitment_config::CommitmentConfig;
 
 use crate::common::{
     config::ValidationConfig,
@@ -9,6 +10,7 @@ use crate::common::{
     transaction::decode_b58_transaction,
     validation::{TransactionValidator, ValidationMode},
     KoraError,
+    Signer as _,
 };
 
 use super::sign_transaction::{sign_transaction, SignTransactionRequest};
@@ -34,41 +36,32 @@ pub async fn sign_and_send(
 
     let original_transaction = decode_b58_transaction(&request.transaction)?;
 
-    // Create validator
     let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
 
-    // Validate transaction with SignAndSend mode
-    validator.validate_transaction(&original_transaction, ValidationMode::SignAndSend)?;
+    validator.validate_transaction(&original_transaction)?;
 
-    let sign_result = match sign_transaction(
-        rpc_client,
-        validation,
-        SignTransactionRequest { transaction: request.transaction },
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(e) => return Err(e),
-    };
+    let mut transaction = original_transaction;
 
-    // Decode the signed transaction from base58
-    let signed_transaction_bytes = bs58::decode(&sign_result.signed_transaction)
-        .into_vec()
-        .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+        .await
+        .map_err(|e| KoraError::Rpc(e.to_string()))?;
 
-    // Deserialize into a Transaction object
-    let signed_transaction: solana_sdk::transaction::Transaction =
-        bincode::deserialize(&signed_transaction_bytes)
-            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+    transaction.message.recent_blockhash = blockhash.0;
 
-    // Send and confirm transaction
+    let signature = signer.partial_sign_solana(&transaction.message_data())?;
+    transaction.signatures[0] = signature;
+
+    let serialized = bincode::serialize(&transaction).map_err(|e| KoraError::InvalidTransaction(format!("Failed to serialize transaction: {}", e)))?;
+    let encoded = bs58::encode(serialized).into_string();
+
     let signature = rpc_client
-        .send_and_confirm_transaction(&signed_transaction)
+        .send_and_confirm_transaction(&transaction)
         .await
         .map_err(|e| KoraError::Rpc(e.to_string()))?;
 
     Ok(SignAndSendTransactionResult {
         signature: signature.to_string(),
-        signed_transaction: sign_result.signed_transaction,
+        signed_transaction: encoded,
     })
 }

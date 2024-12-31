@@ -57,11 +57,7 @@ impl TransactionValidator {
         Ok(())
     }
 
-    pub fn validate_transaction(
-        &self,
-        transaction: &Transaction,
-        mode: ValidationMode,
-    ) -> Result<(), KoraError> {
+    pub fn validate_transaction(&self, transaction: &Transaction) -> Result<(), KoraError> {
         self.validate_programs(&transaction.message)?;
         self.validate_transfer_amounts(&transaction.message)?;
         self.validate_signatures(transaction)?;
@@ -76,18 +72,6 @@ impl TransactionValidator {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no account keys".to_string(),
             ));
-        }
-
-        match mode {
-            ValidationMode::SignAndSend => {
-                // For sign and send, we expect the fee payer to NOT exist yet
-                if transaction.message.account_keys.first() == Some(&self.fee_payer_pubkey) {
-                    return Err(KoraError::InvalidTransaction(
-                        "Fee payer already set for sign and send transaction".to_string(),
-                    ));
-                }
-            }
-            ValidationMode::Sign => {}
         }
 
         Ok(())
@@ -219,14 +203,14 @@ mod tests {
         let instruction = system_instruction::transfer(&fee_payer, &recipient, 5_000_000);
         let message = Message::new(&[instruction], Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction, ValidationMode::Sign).is_err());
+        assert!(validator.validate_transaction(&transaction).is_err());
 
         // Test case 2: Valid transaction within limits
         let sender = Pubkey::new_unique();
         let instruction = system_instruction::transfer(&sender, &recipient, 100_000);
         let message = Message::new(&[instruction], Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction, ValidationMode::Sign).is_ok());
+        assert!(validator.validate_transaction(&transaction).is_ok());
     }
 
     #[test]
@@ -246,7 +230,7 @@ mod tests {
         let instruction = system_instruction::transfer(&sender, &recipient, 2_000_000);
         let message = Message::new(&[instruction], Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction, ValidationMode::Sign).is_ok()); // Should pass because sender is not fee payer
+        assert!(validator.validate_transaction(&transaction).is_ok()); // Should pass because sender is not fee payer
 
         // Test multiple transfers
         let instructions = vec![
@@ -255,7 +239,7 @@ mod tests {
         ];
         let message = Message::new(&instructions, Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction, ValidationMode::Sign).is_ok());
+        assert!(validator.validate_transaction(&transaction).is_ok());
     }
 
     #[test]
@@ -275,7 +259,7 @@ mod tests {
         let instruction = system_instruction::transfer(&sender, &recipient, 1000);
         let message = Message::new(&[instruction], Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction, ValidationMode::Sign).is_ok());
+        assert!(validator.validate_transaction(&transaction).is_ok());
 
         // Test disallowed program
         let fake_program = Pubkey::new_unique();
@@ -287,7 +271,7 @@ mod tests {
         );
         let message = Message::new(&[instruction], Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction, ValidationMode::Sign).is_err());
+        assert!(validator.validate_transaction(&transaction).is_err());
     }
 
     #[test]
@@ -312,7 +296,7 @@ mod tests {
         let message = Message::new(&instructions, Some(&fee_payer));
         let mut transaction = Transaction::new_unsigned(message);
         transaction.signatures = vec![Default::default(); 3]; // Add 3 dummy signatures
-        assert!(validator.validate_transaction(&transaction, ValidationMode::Sign).is_err());
+        assert!(validator.validate_transaction(&transaction).is_err());
     }
 
     #[test]
@@ -332,13 +316,13 @@ mod tests {
         let instruction = system_instruction::transfer(&sender, &recipient, 1000);
         let message = Message::new(&[instruction], Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction, ValidationMode::SignAndSend).is_err());
+        assert!(validator.validate_transaction(&transaction).is_err());
 
         // Test SignAndSend mode without fee payer (should succeed)
         let instruction = system_instruction::transfer(&sender, &recipient, 1000);
         let message = Message::new(&[instruction], None); // No fee payer specified
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction, ValidationMode::SignAndSend).is_ok());
+        assert!(validator.validate_transaction(&transaction).is_ok());
     }
 
     #[test]
@@ -355,6 +339,6 @@ mod tests {
         // Create an empty message using Message::new with empty instructions
         let message = Message::new(&[], Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction, ValidationMode::Sign).is_err());
+        assert!(validator.validate_transaction(&transaction).is_err());
     }
 }
