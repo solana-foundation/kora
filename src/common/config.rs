@@ -7,6 +7,7 @@ use crate::common::KoraError;
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub validation: ValidationConfig,
+    pub kora: KoraConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +16,11 @@ pub struct ValidationConfig {
     pub max_signatures: usize,
     pub allowed_programs: Vec<String>,
     pub allowed_tokens: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KoraConfig {
+    pub rate_limit: u32,
 }
 
 #[derive(Debug, Deserialize)]

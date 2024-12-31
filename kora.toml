@@ -1,3 +1,6 @@
+[kora]
+rate_limit = 100
+
 [validation]
 max_allowed_lamports = 1000000
 max_signatures = 10
