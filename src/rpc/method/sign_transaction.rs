@@ -1,16 +1,10 @@
 use crate::common::{
-    config::ValidationConfig,
-    get_signer,
-    transaction::{decode_b58_transaction, uncompile_instructions},
-    validation::TransactionValidator,
-    KoraError, Signer as _,
+    config::ValidationConfig, get_signer, transaction::decode_b58_transaction,
+    validation::TransactionValidator, KoraError, Signer as _,
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    commitment_config::CommitmentConfig, message::Message,
-    transaction::Transaction,
-};
+use solana_sdk::commitment_config::CommitmentConfig;
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
@@ -49,11 +43,10 @@ pub async fn sign_transaction(
 
     transaction.signatures[0] = signature;
 
-    let serialized = bincode::serialize(&transaction).map_err(|e| KoraError::InvalidTransaction(format!("Failed to serialize transaction: {}", e)))?;
+    let serialized = bincode::serialize(&transaction).map_err(|e| {
+        KoraError::InvalidTransaction(format!("Failed to serialize transaction: {}", e))
+    })?;
     let encoded = bs58::encode(serialized).into_string();
-    
-    Ok(SignTransactionResult { 
-        signature: signature.to_string(), 
-        signed_transaction: encoded 
-    })
+
+    Ok(SignTransactionResult { signature: signature.to_string(), signed_transaction: encoded })
 }

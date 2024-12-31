@@ -2,11 +2,10 @@ use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig, message::Message, program_pack::Pack, pubkey::Pubkey,
-    signature::Keypair, signer::Signer, system_instruction, transaction::Transaction,
+    system_instruction, transaction::Transaction,
 };
 use spl_associated_token_account::{
-    get_associated_token_address,
-    instruction::{create_associated_token_account, create_associated_token_account_idempotent},
+    get_associated_token_address, instruction::create_associated_token_account,
 };
 use spl_token::{instruction as token_instruction, state::Mint};
 use std::{str::FromStr, sync::Arc};

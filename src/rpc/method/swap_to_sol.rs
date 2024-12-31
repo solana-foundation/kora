@@ -35,7 +35,7 @@ pub async fn swap_to_sol(
     let signer = get_signer()
         .map_err(|e| KoraError::SigningError(format!("Failed to get signer: {}", e)))?;
 
-    let validator = TransactionValidator::new(signer.solana_pubkey(), &validation)?;
+    let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
 
     let mint_pubkey = Pubkey::from_str(&request.token)
         .map_err(|_| KoraError::InvalidTransaction("Invalid token mint address".to_string()))?;

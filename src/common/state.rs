@@ -1,6 +1,5 @@
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use solana_sdk::signature::Keypair;
 use std::sync::Arc;
 
 use super::{error::KoraError, solana_signer::SolanaMemorySigner};

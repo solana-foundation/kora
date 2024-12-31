@@ -41,7 +41,6 @@ clean:
 
 # Run all fixes and checks
 lint-fix-all:
-	cargo fmt --all
 	cargo clippy --fix -- -D warnings
+	cargo fmt --all
 	cargo fmt --all -- --check
-	cargo clippy -- -D warnings

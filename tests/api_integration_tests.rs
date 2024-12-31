@@ -1,12 +1,10 @@
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
-use serde::Deserialize;
 use serde_json::json;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    hash::Hash,
     message::Message,
     pubkey::Pubkey,
-    signature::{Keypair, Signature, Signer},
+    signature::{Keypair, Signer},
     system_instruction,
     transaction::Transaction,
 };
@@ -32,11 +30,8 @@ fn create_test_transaction() -> String {
     let amount = 10;
 
     let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
-    let message = Message::new_with_blockhash(
-        &[instruction],
-        None,
-        &solana_sdk::hash::Hash::default(),
-    );
+    let message =
+        Message::new_with_blockhash(&[instruction], None, &solana_sdk::hash::Hash::default());
 
     let transaction = Transaction { signatures: vec![Default::default()], message };
 
@@ -118,7 +113,7 @@ async fn test_sign_transaction() {
 
     // Optional: Add assertions to verify simulation results
     println!("Simulated transaction: {:?}", simulated_tx);
-    assert!(!simulated_tx.value.err.is_some(), "Transaction simulation failed");
+    assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
 
 #[tokio::test]
@@ -195,7 +190,7 @@ async fn test_transfer_transaction() {
 
     // Optional: Add assertions to verify simulation results
     println!("Simulated transaction: {:?}", simulated_tx);
-    assert!(!simulated_tx.value.err.is_some(), "Transaction simulation failed");
+    assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
 
 #[tokio::test]
@@ -241,7 +236,7 @@ async fn test_transfer_transaction_with_ata() {
 
     // Will fail unless you sign tx before seding
     println!("Simulated transaction: {:?}", simulated_tx);
-    assert!(!simulated_tx.value.err.is_some(), "Transaction simulation failed");
+    assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
 
 #[tokio::test]
@@ -305,5 +300,5 @@ async fn test_swap_to_sol() {
         .expect("Failed to simulate transaction");
 
     println!("Simulated transaction: {:?}", simulated_tx);
-    assert!(!simulated_tx.value.err.is_some(), "Transaction simulation failed");
+    assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }

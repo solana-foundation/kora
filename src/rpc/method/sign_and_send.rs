@@ -5,15 +5,9 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 
 use crate::common::{
-    config::ValidationConfig,
-    get_signer,
-    transaction::decode_b58_transaction,
-    validation::{TransactionValidator, ValidationMode},
-    KoraError,
-    Signer as _,
+    config::ValidationConfig, get_signer, transaction::decode_b58_transaction,
+    validation::TransactionValidator, KoraError, Signer as _,
 };
-
-use super::sign_transaction::{sign_transaction, SignTransactionRequest};
 
 #[derive(Debug, Deserialize)]
 pub struct SignAndSendTransactionRequest {
@@ -52,7 +46,9 @@ pub async fn sign_and_send(
     let signature = signer.partial_sign_solana(&transaction.message_data())?;
     transaction.signatures[0] = signature;
 
-    let serialized = bincode::serialize(&transaction).map_err(|e| KoraError::InvalidTransaction(format!("Failed to serialize transaction: {}", e)))?;
+    let serialized = bincode::serialize(&transaction).map_err(|e| {
+        KoraError::InvalidTransaction(format!("Failed to serialize transaction: {}", e))
+    })?;
     let encoded = bs58::encode(serialized).into_string();
 
     let signature = rpc_client
