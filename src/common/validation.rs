@@ -195,6 +195,7 @@ mod tests {
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
@@ -221,6 +222,7 @@ mod tests {
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -250,6 +252,7 @@ mod tests {
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()], // System program
             allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -282,6 +285,7 @@ mod tests {
             max_signatures: 2,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -307,6 +311,7 @@ mod tests {
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -333,6 +338,7 @@ mod tests {
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 

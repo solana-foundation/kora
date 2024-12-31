@@ -6,3 +6,4 @@ pub mod sign_and_send;
 pub mod sign_transaction;
 pub mod swap_to_sol;
 pub mod transfer_transaction;
+pub mod sign_transaction_if_paid;

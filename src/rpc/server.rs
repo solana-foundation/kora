@@ -3,12 +3,13 @@ use jsonrpsee::{
     server::{middleware::proxy_get_request::ProxyGetRequestLayer, ServerBuilder, ServerHandle},
     RpcModule,
 };
+use tower::limit::RateLimitLayer;
 use std::{net::SocketAddr, time::Duration};
 use tower_http::cors::CorsLayer;
 
 use super::lib::KoraRpc;
 
-pub async fn run_rpc_server(rpc: KoraRpc, port: u16, rate_limit: u32) -> Result<ServerHandle, anyhow::Error> {
+pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log::info!("RPC server started on {}, port {}", addr, port);
 
@@ -22,7 +23,7 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16, rate_limit: u32) -> Result<
     let middleware = tower::ServiceBuilder::new()
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
         .layer(RateLimitLayer::new(
-            NonZeroU32::new(rate_limit).unwrap(), 
+            rpc.config.rate_limit, 
             Duration::from_secs(1)
         ))
         .layer(cors);

@@ -53,11 +53,11 @@ async fn main() {
         }
     }
 
-    let rpc_server = rpc::lib::KoraRpc::new(rpc_client, config);
+    let rpc_server = rpc::lib::KoraRpc::new(rpc_client, config.validation, config.kora);
     log::debug!("RPC server instance created");
 
     log::info!("Attempting to start RPC server on port {}", args.port);
-    let server_handle = match rpc::server::run_rpc_server(rpc_server, args.port, &config.kora.rate_limit).await {
+    let server_handle = match rpc::server::run_rpc_server(rpc_server, args.port).await {
         Ok(handle) => {
             log::info!("Server started successfully");
             handle

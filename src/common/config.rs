@@ -16,16 +16,12 @@ pub struct ValidationConfig {
     pub max_signatures: usize,
     pub allowed_programs: Vec<String>,
     pub allowed_tokens: Vec<String>,
+    pub allowed_spl_paid_tokens: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KoraConfig {
-    pub rate_limit: u32,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Tokens {
-    pub allowed: Vec<String>,
+    pub rate_limit: u64,
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
