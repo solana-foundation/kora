@@ -297,6 +297,36 @@ Creates a swap request to SOL and returns a signed transaction.
 }
 ```
 
+#### `signTransactionIfPaid`
+
+Signs a transaction if the user has paid the required amount of tokens.
+
+```json
+// Request
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "signTransactionIfPaid",
+    "params": [
+        {
+            "transaction": "<base58-encoded-transaction>",
+            "cost_in_lamports": 1000000,
+            "margin": 0.0
+        }
+    ]
+}
+
+// Response
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "signature": "<base58-encoded-signature>",
+        "signed_transaction": "<base58-encoded-signed-transaction>"
+    }
+}
+```
+
 ## Development
 
 ### Prerequisites
