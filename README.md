@@ -210,7 +210,9 @@ Create a transfer request and sign as the paymaster (SPL and SOL)
     "jsonrpc": "2.0",
     "id": 1,
     "result": {
-        "transaction": "<base58-encoded-transaction>"
+        "transaction": "<base58-encoded-transaction>",
+        "message": "<message>",
+        "blockhash": "<base58-encoded-blockhash>"
     }
 }
 ```
@@ -263,6 +265,34 @@ Returns the paymaster configuration.
             "allowed_programs": ["11111111111111111111111111111111", "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"],
             "allowed_tokens": ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "So11111111111111111111111111111111111111112"]
         }
+    }
+}
+```
+
+#### `swapToSol`
+
+Creates a swap request to SOL and returns a signed transaction.
+
+```json
+// Request
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "swapToSol",
+    "params": [
+        "<account-pubkey>",
+        100,
+        "<token-mint-address>"
+    ]
+}
+
+// Response
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "signature": "<base58-encoded-signature>",
+        "transaction": "<base58-encoded-transaction>"
     }
 }
 ```
