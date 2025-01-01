@@ -5,7 +5,7 @@ use std::env;
 use clap::{Parser, ValueEnum};
 use common::load_config;
 use kora::{
-    common::{self, token::check_valid_tokens, KoraError, SolanaMemorySigner},
+    common::{self, signer::KoraSigner, tk::TurnkeySigner, token::check_valid_tokens, KoraError, SolanaMemorySigner},
     rpc,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -29,23 +29,48 @@ async fn main() {
     log::debug!("RPC client initialized with URL: {}", args.rpc_url);
 
     if !args.skip_signer {
-        let private_key = match &args.private_key {
-            Some(key) => key,
-            None => {
-                log::error!("Private key is required when signer is enabled");
-                std::process::exit(1);
+        let signer = if args.turnkey_signer {
+            // Initialize Turnkey signer
+            match (env::var("TURNKEY_API_PUBLIC_KEY"), env::var("TURNKEY_API_PRIVATE_KEY"), 
+                  env::var("TURNKEY_ORGANIZATION_ID"), env::var("TURNKEY_EXAMPLE_PRIVATE_KEY_ID")) {
+                (Ok(api_pub), Ok(api_priv), Ok(org_id), Ok(key_id)) => {
+                    match TurnkeySigner::new(api_pub, api_priv, org_id, key_id) {
+                        Ok(signer) => {
+                            log::info!("Turnkey signer initialized");
+                            KoraSigner::Turnkey(signer)
+                        }
+                        Err(e) => {
+                            log::error!("Failed to initialize Turnkey signer: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                _ => {
+                    log::error!("Missing required Turnkey environment variables");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            // Initialize memory signer
+            let private_key = match &args.private_key {
+                Some(key) => key,
+                None => {
+                    log::error!("Private key is required when memory signer is enabled");
+                    std::process::exit(1);
+                }
+            };
+
+            match SolanaMemorySigner::from_base58(private_key) {
+                Ok(signer) => {
+                    log::info!("Memory signer initialized with public key: {}", signer.pubkey_base58());
+                    KoraSigner::Memory(signer)
+                }
+                Err(e) => {
+                    log::error!("Failed to initialize memory signer: {}", e);
+                    std::process::exit(1);
+                }
             }
         };
-
-        let signer = match SolanaMemorySigner::from_base58(private_key) {
-            Ok(signer) => signer,
-            Err(e) => {
-                log::error!("Failed to initialize signer: {}", e);
-                std::process::exit(1);
-            }
-        };
-
-        log::info!("Signer initialized with public key: {}", signer.pubkey_base58());
 
         if let Err(e) = common::init_signer(signer) {
             log::error!("Failed to initialize signer: {}", e);

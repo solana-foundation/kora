@@ -32,4 +32,8 @@ pub struct Args {
     /// Skip loading the signer
     #[arg(long = "no-load-signer")]
     pub skip_signer: bool,
+
+    /// Turnkey signer
+    #[arg(long = "with-turnkey-signer", env = "TURNKEY_API_PUBLIC_KEY", env = "TURNKEY_API_PRIVATE_KEY", env = "TURNKEY_ORGANIZATION_ID", env = "TURNKEY_EXAMPLE_PRIVATE_KEY_ID")]
+    pub turnkey_signer: bool,
 }

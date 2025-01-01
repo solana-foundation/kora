@@ -67,6 +67,9 @@ spl-token = "7.0.0"
 spl-associated-token-account = "6.0.0"
 jupiter-swap-api-client = { git = "https://github.com/pkxro/jupiter-swap-api-client.git", package = "jupiter-swap-api-client"}
 jupiter = "3.1.4"
+chrono = "0.4.39"
+hex = "0.4.3"
+p256 = "0.13.2"
 
 [dev-dependencies]
 tokio = { version = "1.41.1", features = ["full"] }

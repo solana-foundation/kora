@@ -105,7 +105,6 @@ pub async fn swap_to_sol(
         .partial_sign_solana(&transaction.message_data())
         .map_err(|e| KoraError::SwapError(format!("Failed to sign transaction: {}", e)))?;
 
-
     transaction.signatures = vec![signature];
 
     let serialized = bincode::serialize(&transaction)
