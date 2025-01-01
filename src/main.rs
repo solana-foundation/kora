@@ -5,7 +5,10 @@ use std::env;
 use clap::{Parser, ValueEnum};
 use common::load_config;
 use kora::{
-    common::{self, signer::KoraSigner, tk::TurnkeySigner, token::check_valid_tokens, KoraError, SolanaMemorySigner},
+    common::{
+        self, signer::KoraSigner, tk::TurnkeySigner, token::check_valid_tokens, KoraError,
+        SolanaMemorySigner,
+    },
     rpc,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -31,8 +34,12 @@ async fn main() {
     if !args.skip_signer {
         let signer = if args.turnkey_signer {
             // Initialize Turnkey signer
-            match (env::var("TURNKEY_API_PUBLIC_KEY"), env::var("TURNKEY_API_PRIVATE_KEY"), 
-                  env::var("TURNKEY_ORGANIZATION_ID"), env::var("TURNKEY_EXAMPLE_PRIVATE_KEY_ID")) {
+            match (
+                env::var("TURNKEY_API_PUBLIC_KEY"),
+                env::var("TURNKEY_API_PRIVATE_KEY"),
+                env::var("TURNKEY_ORGANIZATION_ID"),
+                env::var("TURNKEY_EXAMPLE_PRIVATE_KEY_ID"),
+            ) {
                 (Ok(api_pub), Ok(api_priv), Ok(org_id), Ok(key_id)) => {
                     match TurnkeySigner::new(api_pub, api_priv, org_id, key_id) {
                         Ok(signer) => {
@@ -62,7 +69,10 @@ async fn main() {
 
             match SolanaMemorySigner::from_base58(private_key) {
                 Ok(signer) => {
-                    log::info!("Memory signer initialized with public key: {}", signer.pubkey_base58());
+                    log::info!(
+                        "Memory signer initialized with public key: {}",
+                        signer.pubkey_base58()
+                    );
                     KoraSigner::Memory(signer)
                 }
                 Err(e) => {

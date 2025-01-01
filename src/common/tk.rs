@@ -1,7 +1,8 @@
-use {
-    p256::ecdsa::signature::Signer, reqwest::Client, serde::{Deserialize, Serialize}, std::str::FromStr
-};
 use super::error::KoraError;
+use p256::ecdsa::signature::Signer;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 #[derive(Clone)]
 pub struct TurnkeySigner {
@@ -75,7 +76,7 @@ impl TurnkeySigner {
 
     pub async fn partial_sign(&self, message: &[u8]) -> Result<Vec<u8>, KoraError> {
         let hex_message = hex::encode(message);
-        
+
         let request = SignRequest {
             activity_type: "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2".to_string(),
             timestamp_ms: chrono::Utc::now().timestamp_millis().to_string(),
@@ -88,10 +89,12 @@ impl TurnkeySigner {
             },
         };
 
-        let body = serde_json::to_string(&request).map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+        let body = serde_json::to_string(&request)
+            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
         let stamp = self.create_stamp(&body)?;
 
-        let response = self.client
+        let response = self
+            .client
             .post("https://api.turnkey.com/public/v1/submit/sign_raw_payload")
             .header("Content-Type", "application/json")
             .header("X-Stamp", stamp)
@@ -106,7 +109,8 @@ impl TurnkeySigner {
         if let Some(result) = response.activity.result {
             if let Some(sign_result) = result.sign_raw_payload_result {
                 let signature = format!("{}{}", sign_result.r, sign_result.s);
-                return Ok(hex::decode(signature).map_err(|e| KoraError::InvalidTransaction(e.to_string()))?);
+                return hex::decode(signature)
+                    .map_err(|e| KoraError::InvalidTransaction(e.to_string()));
             }
         }
 
@@ -114,10 +118,11 @@ impl TurnkeySigner {
     }
 
     fn create_stamp(&self, message: &str) -> Result<String, KoraError> {
-        let private_key_bytes = hex::decode(&self.api_private_key).map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+        let private_key_bytes = hex::decode(&self.api_private_key)
+            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
         let signing_key = p256::ecdsa::SigningKey::from_slice(&private_key_bytes)
             .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
-        
+
         let signature: p256::ecdsa::Signature = signing_key.sign(message.as_bytes());
         let signature_der = signature.to_der().to_bytes();
         let signature_hex = hex::encode(signature_der);
@@ -128,7 +133,8 @@ impl TurnkeySigner {
             "scheme": "SIGNATURE_SCHEME_TK_API_P256"
         });
 
-        let json_stamp = serde_json::to_string(&stamp).map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+        let json_stamp = serde_json::to_string(&stamp)
+            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
         Ok(base64::encode(&json_stamp))
     }
 

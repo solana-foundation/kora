@@ -8,11 +8,11 @@ pub mod signer;
 pub mod solana;
 pub mod solana_signer;
 pub mod state;
+pub mod tk;
 pub mod token;
 pub mod transaction;
 pub mod types;
 pub mod validation;
-pub mod tk;
 
 pub use config::{load_config, Config};
 pub use error::KoraError;
