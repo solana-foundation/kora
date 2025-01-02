@@ -16,6 +16,7 @@ pub struct TransactionValidator {
     allowed_programs: Vec<Pubkey>,
     max_signatures: usize,
     allowed_tokens: Vec<Pubkey>,
+    disallowed_accounts: Vec<Pubkey>,
 }
 
 impl TransactionValidator {
@@ -44,6 +45,11 @@ impl TransactionValidator {
                 .iter()
                 .map(|addr| Pubkey::from_str(addr).unwrap())
                 .collect(),
+            disallowed_accounts: config
+                .disallowed_accounts
+                .iter()
+                .map(|addr| Pubkey::from_str(addr).unwrap())
+                .collect(),
         })
     }
 
@@ -61,6 +67,7 @@ impl TransactionValidator {
         self.validate_programs(&transaction.message)?;
         self.validate_transfer_amounts(&transaction.message)?;
         self.validate_signatures(transaction)?;
+        self.validate_disallowed_accounts(&transaction.message)?;
 
         if transaction.message.instructions.is_empty() {
             return Err(KoraError::InvalidTransaction(
@@ -164,6 +171,26 @@ impl TransactionValidator {
         Ok(())
     }
 
+    pub fn validate_disallowed_accounts(&self, message: &Message) -> Result<(), KoraError> {
+        for instruction in &message.instructions {
+            // iterate over all accounts in the instruction
+            for account in instruction.accounts.iter() {
+                let account = message.account_keys[*account as usize];
+                if self.disallowed_accounts.contains(&account) {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Account {} is disallowed",
+                        account
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn is_disallowed_account(&self, account: &Pubkey) -> bool {
+        self.disallowed_accounts.contains(account)
+    }
+
     fn calculate_total_outflow(&self, message: &Message) -> u64 {
         let mut total = 0u64;
 
@@ -206,6 +233,7 @@ mod tests {
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
@@ -233,6 +261,7 @@ mod tests {
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -263,6 +292,7 @@ mod tests {
             allowed_programs: vec!["11111111111111111111111111111111".to_string()], // System program
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -296,6 +326,7 @@ mod tests {
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -322,6 +353,7 @@ mod tests {
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -349,11 +381,35 @@ mod tests {
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         // Create an empty message using Message::new with empty instructions
         let message = Message::new(&[], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_err());
+    }
+
+    #[test]
+    fn test_disallowed_accounts() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec!["hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek".to_string()],
+        };
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let instruction = system_instruction::transfer(
+            &Pubkey::from_str("hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek").unwrap(),
+            &fee_payer,
+            1000,
+        );
+        let message = Message::new(&[instruction], Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
         assert!(validator.validate_transaction(&transaction).is_err());
     }

@@ -85,6 +85,7 @@ allowed_spl_paid_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
     "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
 ]
+disallowed_accounts = []
 ```
 
 ## API Reference

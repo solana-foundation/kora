@@ -45,6 +45,7 @@ pub async fn sign_transaction_if_paid(
 
     let original_transaction = decode_b58_transaction(&request.transaction)?;
     let validator = TransactionValidator::new(signer_pubkey, validation)?;
+    validator.validate_disallowed_accounts(&original_transaction.message)?;
 
     // Get the simulation result for fee calculation
     let sim_result = rpc_client

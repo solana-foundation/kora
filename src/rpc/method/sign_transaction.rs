@@ -28,6 +28,7 @@ pub async fn sign_transaction(
     let original_transaction = decode_b58_transaction(&request.transaction)?;
     let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
     validator.validate_transaction(&original_transaction)?;
+    validator.validate_disallowed_accounts(&original_transaction.message)?;
 
     let mut transaction = original_transaction;
 

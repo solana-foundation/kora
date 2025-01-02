@@ -18,6 +18,7 @@ pub struct ValidationConfig {
     pub allowed_programs: Vec<String>,
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: Vec<String>,
+    pub disallowed_accounts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

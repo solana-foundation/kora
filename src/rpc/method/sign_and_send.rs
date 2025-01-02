@@ -32,6 +32,7 @@ pub async fn sign_and_send(
 
     let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
 
+    validator.validate_disallowed_accounts(&original_transaction.message)?;
     validator.validate_transaction(&original_transaction)?;
 
     let mut transaction = original_transaction;

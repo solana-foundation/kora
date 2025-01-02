@@ -40,12 +40,28 @@ pub async fn transfer_transaction(
 
     let validator = TransactionValidator::new(fee_payer, validation)?;
 
+
     let source = Pubkey::from_str(&request.source)
         .map_err(|e| KoraError::ValidationError(format!("Invalid source address: {}", e)))?;
     let destination = Pubkey::from_str(&request.destination)
         .map_err(|e| KoraError::ValidationError(format!("Invalid destination address: {}", e)))?;
     let token_mint = Pubkey::from_str(&request.token)
         .map_err(|e| KoraError::ValidationError(format!("Invalid token address: {}", e)))?;
+
+        // manually check disallowed account because we're creating the message
+if validator.is_disallowed_account(&source) {
+        return Err(KoraError::InvalidTransaction(format!(
+            "Source account {} is disallowed",
+            source
+        )));
+    }
+
+    if validator.is_disallowed_account(&destination) {
+        return Err(KoraError::InvalidTransaction(format!(
+            "Destination account {} is disallowed",
+            destination
+        )));
+    }
 
     let mut instructions = vec![];
 
