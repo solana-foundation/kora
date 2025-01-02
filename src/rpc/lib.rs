@@ -26,6 +26,7 @@ use super::method::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 
+#[derive(Clone)]
 pub struct KoraRpc {
     rpc_client: Arc<RpcClient>,
     validation: ValidationConfig,
@@ -70,9 +71,7 @@ impl KoraRpc {
         request: SignTransactionRequest,
     ) -> Result<SignTransactionResult, KoraError> {
         info!("Sign transaction request: {:?}", request);
-        let result = sign_transaction(&self.rpc_client, &self.validation, request)
-            .await
-            .map_err(|e| KoraError::SigningError(e.to_string()));
+        let result = sign_transaction(&self.rpc_client, &self.validation, request).await;
         info!("Sign transaction response: {:?}", result);
         result
     }

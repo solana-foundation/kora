@@ -28,7 +28,7 @@ pub async fn estimate_transaction_fee(
     let simulation = rpc_client
         .simulate_transaction(&transaction)
         .await
-        .map_err(|e| KoraError::Rpc(e.to_string()))?;
+        .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
     // multiple by lamports per signature use sdk constant
     let base_fee = simulation.value.units_consumed.unwrap_or(0) * LAMPORTS_PER_SIGNATURE;
@@ -37,7 +37,7 @@ pub async fn estimate_transaction_fee(
     let priority_stats = rpc_client
         .get_recent_prioritization_fees(&[])
         .await
-        .map_err(|e| KoraError::Rpc(e.to_string()))?;
+        .map_err(|e| KoraError::RpcError(e.to_string()))?;
     let priority_fee = priority_stats.iter().map(|fee| fee.prioritization_fee).max().unwrap_or(0);
 
     Ok(EstimateTransactionFeeResponse { fee_in_lamports: base_fee + priority_fee })

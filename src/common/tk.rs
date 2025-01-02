@@ -93,7 +93,7 @@ impl TurnkeySigner {
         };
 
         let body = serde_json::to_string(&request)
-            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+            .map_err(|e| KoraError::SerializationError(e.to_string()))?;
 
         let stamp = self.create_stamp(&body)?;
 
@@ -105,26 +105,22 @@ impl TurnkeySigner {
             .body(body)
             .send()
             .await
-            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+            .map_err(|e| KoraError::SigningError(e.to_string()))?;
 
         let response = serde_json::from_str::<ActivityResponse>(&response.text().await.unwrap())
-            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+            .map_err(|e| KoraError::SigningError(e.to_string()))?;
 
         if let Some(result) = response.activity.result {
             if let Some(sign_result) = result.sign_raw_payload_result {
                 // Decode r and s components
-                let r_bytes = hex::decode(&sign_result.r).map_err(|e| {
-                    KoraError::InvalidTransaction(format!("Invalid r component: {}", e))
-                })?;
-                let s_bytes = hex::decode(&sign_result.s).map_err(|e| {
-                    KoraError::InvalidTransaction(format!("Invalid s component: {}", e))
-                })?;
+                let r_bytes = hex::decode(&sign_result.r)
+                    .map_err(|e| KoraError::SigningError(format!("Invalid r component: {}", e)))?;
+                let s_bytes = hex::decode(&sign_result.s)
+                    .map_err(|e| KoraError::SigningError(format!("Invalid s component: {}", e)))?;
 
                 // Ensure each component is exactly 32 bytes
                 if r_bytes.len() > 32 || s_bytes.len() > 32 {
-                    return Err(KoraError::InvalidTransaction(
-                        "Signature component too long".to_string(),
-                    ));
+                    return Err(KoraError::SigningError("Signature component too long".to_string()));
                 }
 
                 // Create properly padded 32-byte arrays
@@ -144,7 +140,7 @@ impl TurnkeySigner {
             }
         }
 
-        Err(KoraError::InvalidTransaction("Failed to get signature from response".to_string()))
+        Err(KoraError::SigningError("Failed to get signature from response".to_string()))
     }
 
     pub async fn sign_solana(
@@ -158,12 +154,12 @@ impl TurnkeySigner {
 
     fn create_stamp(&self, message: &str) -> Result<String, KoraError> {
         let private_key_bytes = hex_to_bytes(&self.api_private_key)
-            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+            .map_err(|e| KoraError::SigningError(e.to_string()))?;
         let private_key_array: [u8; 32] = private_key_bytes
             .try_into()
-            .map_err(|_| KoraError::InvalidTransaction("Invalid private key length".to_string()))?;
+            .map_err(|_| KoraError::SigningError("Invalid private key length".to_string()))?;
         let signing_key = p256::ecdsa::SigningKey::from_slice(&private_key_array)
-            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+            .map_err(|e| KoraError::SigningError(e.to_string()))?;
 
         let signature: p256::ecdsa::Signature = signing_key.sign(message.as_bytes());
         let signature_der = signature.to_der().to_bytes();
@@ -176,7 +172,7 @@ impl TurnkeySigner {
         });
 
         let json_stamp = serde_json::to_string(&stamp)
-            .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
+            .map_err(|e| KoraError::SerializationError(e.to_string()))?;
 
         Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json_stamp.as_bytes()))
     }
@@ -186,14 +182,14 @@ impl TurnkeySigner {
     }
 }
 
-pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, KoraError> {
     (0..hex.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&hex[i..i + 2], 16))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.into())
+        .map_err(|e| KoraError::SigningError(e.to_string()))
 }
 
-pub fn bytes_to_hex(bytes: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
+pub fn bytes_to_hex(bytes: &[u8]) -> Result<String, KoraError> {
     Ok(bytes.iter().map(|byte| format!("{:02x}", byte)).collect())
 }

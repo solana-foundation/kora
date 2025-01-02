@@ -37,9 +37,9 @@ pub async fn sign_and_send(
     let mut transaction = original_transaction;
 
     let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
         .await
-        .map_err(|e| KoraError::Rpc(e.to_string()))?;
+        .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
     transaction.message.recent_blockhash = blockhash.0;
 
@@ -54,7 +54,7 @@ pub async fn sign_and_send(
     let signature = rpc_client
         .send_and_confirm_transaction(&transaction)
         .await
-        .map_err(|e| KoraError::Rpc(e.to_string()))?;
+        .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
     Ok(SignAndSendTransactionResult {
         signature: signature.to_string(),

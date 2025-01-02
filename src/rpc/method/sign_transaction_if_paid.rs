@@ -69,9 +69,9 @@ pub async fn sign_transaction_if_paid(
     .await?;
 
     let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
         .await
-        .map_err(|e| KoraError::Rpc(e.to_string()))?;
+        .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
     let mut transaction = original_transaction.clone();
     transaction.message.recent_blockhash = blockhash.0;
@@ -127,7 +127,7 @@ async fn validate_token_payment(
             let source_account = rpc_client
                 .get_account(&transaction.message.account_keys[ix.accounts[0] as usize])
                 .await
-                .map_err(|e| KoraError::Rpc(e.to_string()))?;
+                .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
             let token_data = TokenAccount::unpack(&source_account.data).map_err(|e| {
                 KoraError::InvalidTransaction(format!("Invalid token account: {}", e))
@@ -166,7 +166,7 @@ async fn calculate_token_value_in_lamports(
     price_info: &TokenPriceInfo,
 ) -> Result<u64, KoraError> {
     let mint_data = Mint::unpack(
-        &rpc_client.get_account(mint).await.map_err(|e| KoraError::Rpc(e.to_string()))?.data,
+        &rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?.data,
     )
     .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
 

@@ -2,17 +2,14 @@ use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_param
 use serde_json::json;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    message::Message,
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-    system_instruction,
-    transaction::Transaction,
+    message::Message, pubkey::Pubkey, signature::{Keypair, Signer}, signer::SeedDerivable, system_instruction, transaction::Transaction
 };
 use std::{str::FromStr, sync::Arc};
 
 const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
 
 fn get_rpc_url() -> String {
+    dotenv::dotenv().ok();
     std::env::var("RPC_URL").unwrap_or_else(|_| "http://127.0.0.1:8899".to_string())
 }
 
@@ -24,8 +21,9 @@ async fn setup_rpc_client() -> Arc<RpcClient> {
     Arc::new(RpcClient::new(get_rpc_url()))
 }
 
-fn create_test_transaction() -> String {
-    let sender = Keypair::new();
+async fn create_test_transaction() -> String {
+    dotenv::dotenv().ok();
+    let sender = Keypair::from_seed_phrase_and_passphrase(&std::env::var("TEST_SENDER_MNEMONIC").unwrap(), "").unwrap();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
     let amount = 10;
 
@@ -62,7 +60,7 @@ async fn test_get_supported_tokens() {
 #[tokio::test]
 async fn test_estimate_transaction_fee() {
     let client = setup_test_client().await;
-    let test_tx = create_test_transaction();
+    let test_tx = create_test_transaction().await;
 
     let response: serde_json::Value = client
         .request(
@@ -78,7 +76,7 @@ async fn test_estimate_transaction_fee() {
 #[tokio::test]
 async fn test_sign_transaction() {
     let client = setup_test_client().await;
-    let test_tx = create_test_transaction();
+    let test_tx = create_test_transaction().await;
     let rpc_client = setup_rpc_client().await;
 
     let response: serde_json::Value = client
@@ -116,7 +114,7 @@ async fn test_sign_transaction() {
 #[tokio::test]
 async fn test_sign_and_send() {
     let client = setup_test_client().await;
-    let test_tx = create_test_transaction();
+    let test_tx = create_test_transaction().await;
 
     let result = client.request::<serde_json::Value, _>("signAndSend", rpc_params![test_tx]).await;
 

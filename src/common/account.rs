@@ -1,5 +1,4 @@
-use super::{get_signer, Signer};
-use anyhow::Result;
+use super::{get_signer, Signer, KoraError};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     message::Message, pubkey::Pubkey, signature::Signature, transaction::Transaction,
@@ -14,8 +13,8 @@ pub async fn get_or_create_token_account(
     rpc_client: &Arc<RpcClient>,
     user_pubkey: &Pubkey,
     mint: &Pubkey,
-) -> Result<(Pubkey, Option<Transaction>)> {
-    let signer = get_signer().map_err(|e| anyhow::anyhow!("Failed to get signer: {}", e))?;
+) -> Result<(Pubkey, Option<Transaction>), KoraError> {
+    let signer = get_signer()?;
 
     // Get ATA using spl-associated-token-account
     let ata = get_associated_token_address(user_pubkey, mint);
@@ -25,19 +24,17 @@ pub async fn get_or_create_token_account(
         Err(original_err) => {
             // TODO: work with t22
             let create_ata_ix =
-                initialize_account(&spl_token::id(), user_pubkey, mint, user_pubkey).map_err(
-                    |e| {
-                        anyhow::anyhow!(
-                            "Failed to initialize account: {}. Original error: {}",
-                            e,
-                            original_err
-                        )
-                    },
-                )?;
+                initialize_account(&spl_token::id(), user_pubkey, mint, user_pubkey)
+                    .map_err(|e| KoraError::InternalServerError(format!(
+                        "Failed to initialize account: {}. Original error: {}",
+                        e, original_err
+                    )))?;
 
-            let blockhash = rpc_client.get_latest_blockhash().await.map_err(|e| {
-                anyhow::anyhow!("Failed to get blockhash: {}. Original error: {}", e, original_err)
-            })?;
+            let blockhash = rpc_client.get_latest_blockhash().await
+                .map_err(|e| KoraError::RpcError(format!(
+                    "Failed to get blockhash: {}. Original error: {}",
+                    e, original_err
+                )))?;
 
             let message = Message::new_with_blockhash(
                 &[create_ata_ix],
@@ -48,10 +45,8 @@ pub async fn get_or_create_token_account(
             let mut tx = Transaction::new_unsigned(message);
             let signature = signer.sign(&tx.message_data()).await?;
 
-            let sig_bytes: [u8; 64] = signature
-                .bytes
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("Invalid signature length"))?;
+            let sig_bytes: [u8; 64] = signature.bytes.try_into()
+                .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
 
             let sig = Signature::from(sig_bytes);
             tx.signatures = vec![sig];
@@ -65,8 +60,8 @@ pub async fn get_or_create_multiple_token_accounts(
     rpc_client: &Arc<RpcClient>,
     user_pubkey: &Pubkey,
     mints: &[Pubkey],
-) -> Result<(Vec<Pubkey>, Option<Transaction>)> {
-    let signer = get_signer().map_err(|e| anyhow::anyhow!("Failed to get signer: {}", e))?;
+) -> Result<(Vec<Pubkey>, Option<Transaction>), KoraError> {
+    let signer = get_signer()?;
 
     let mut atas = Vec::with_capacity(mints.len());
     let mut instructions = Vec::with_capacity(mints.len());
@@ -91,19 +86,20 @@ pub async fn get_or_create_multiple_token_accounts(
         return Ok((atas, None));
     }
 
-    let blockhash = rpc_client
-        .get_latest_blockhash()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to get blockhash: {}", e))?;
+    let blockhash = rpc_client.get_latest_blockhash().await
+        .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {}", e)))?;
 
-    let message =
-        Message::new_with_blockhash(&instructions, Some(&signer.solana_pubkey()), &blockhash);
+    let message = Message::new_with_blockhash(
+        &instructions,
+        Some(&signer.solana_pubkey()),
+        &blockhash,
+    );
 
     let mut tx = Transaction::new_unsigned(message);
     let signature = signer.sign(&tx.message_data()).await?;
 
-    let sig_bytes: [u8; 64] =
-        signature.bytes.try_into().map_err(|_| anyhow::anyhow!("Invalid signature length"))?;
+    let sig_bytes: [u8; 64] = signature.bytes.try_into()
+        .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
 
     let sig = Signature::from(sig_bytes);
     tx.signatures = vec![sig];
