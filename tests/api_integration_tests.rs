@@ -47,8 +47,7 @@ async fn create_test_transaction() -> String {
         .await
         .unwrap();
 
-    let message =
-        Message::new_with_blockhash(&[instruction], None, &blockhash.0);
+    let message = Message::new_with_blockhash(&[instruction], None, &blockhash.0);
 
     let transaction = Transaction { signatures: vec![Default::default()], message };
 
