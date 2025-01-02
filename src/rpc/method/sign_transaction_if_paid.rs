@@ -1,7 +1,6 @@
 use crate::common::{
     config::ValidationConfig, get_signer, transaction::decode_b58_transaction,
-    validation::TransactionValidator, KoraError, Signer, LAMPORTS_PER_SIGNATURE,
-    MIN_BALANCE_FOR_RENT_EXEMPTION,
+    validation::TransactionValidator, KoraError, Signer,
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -9,14 +8,13 @@ use solana_sdk::{
     commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL, program_pack::Pack,
     pubkey::Pubkey,
 };
-use spl_associated_token_account::ID as ASSOCIATED_TOKEN_PROGRAM_ID;
+use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
 pub struct SignTransactionIfPaidRequest {
     pub transaction: String,
-    pub cost_in_lamports: Option<u64>,
     pub margin: Option<f64>,
     pub token_price_info: Option<TokenPriceInfo>,
 }
@@ -34,8 +32,7 @@ pub struct TokenPriceInfo {
 
 #[derive(Debug)]
 struct PricingParams {
-    cost_in_lamports: u64,
-    margin: f64,
+    margin: u64,
 }
 
 pub async fn sign_transaction_if_paid(
@@ -48,21 +45,27 @@ pub async fn sign_transaction_if_paid(
 
     let original_transaction = decode_b58_transaction(&request.transaction)?;
     let validator = TransactionValidator::new(signer_pubkey, validation)?;
-    validator.validate_transaction(&original_transaction)?;
 
-    let total_required_lamports = calculate_required_lamports(&original_transaction);
+    // Get the simulation result for fee calculation
+    let sim_result = rpc_client
+        .get_fee_for_message(&original_transaction.message)
+        .await
+        .map_err(|e| KoraError::RpcError(e.to_string()))?;
+
+    let cost_in_lamports = sim_result;
     let pricing_params = PricingParams {
-        cost_in_lamports: request.cost_in_lamports.unwrap_or(LAMPORTS_PER_SIGNATURE),
-        margin: request.margin.unwrap_or(0.0),
+        margin: request.margin.unwrap_or(0.0) as u64,
     };
     let token_price_info = request.token_price_info.unwrap_or(TokenPriceInfo { price: 0.0 });
+    // Calculate required lamports including the margin
+    let required_lamports = (cost_in_lamports as f64 * (1.0 + pricing_params.margin as f64)) as u64;
 
     validate_token_payment(
         rpc_client,
         &original_transaction,
-        signer_pubkey,
         validation,
-        total_required_lamports,
+        required_lamports,
+        signer_pubkey,
         &pricing_params,
         &token_price_info,
     )
@@ -85,53 +88,63 @@ pub async fn sign_transaction_if_paid(
     )
     .into_string();
 
+    validator.validate_transaction(&transaction)?;
+
     Ok(SignTransactionIfPaidResponse {
         signature: signature.to_string(),
         signed_transaction: encoded,
     })
 }
 
-fn calculate_required_lamports(transaction: &solana_sdk::transaction::Transaction) -> u64 {
-    let signature_cost = LAMPORTS_PER_SIGNATURE * (transaction.signatures.len() as u64);
-    let ata_count = transaction
-        .message
-        .instructions
-        .iter()
-        .filter(|ix| {
-            transaction.message.account_keys[ix.program_id_index as usize]
-                == ASSOCIATED_TOKEN_PROGRAM_ID
-        })
-        .count();
-
-    signature_cost + (ata_count as u64) * MIN_BALANCE_FOR_RENT_EXEMPTION
-}
-
 async fn validate_token_payment(
     rpc_client: &Arc<RpcClient>,
     transaction: &solana_sdk::transaction::Transaction,
-    signer_pubkey: Pubkey,
     validation: &ValidationConfig,
     required_lamports: u64,
+    signer_pubkey: Pubkey,
     pricing_params: &PricingParams,
     price_info: &TokenPriceInfo,
 ) -> Result<(), KoraError> {
+    let mut total_lamport_value = 0;
+    
     for ix in transaction.message.instructions.iter() {
+        if *ix.program_id(&transaction.message.account_keys) != spl_token::id() {
+            continue;
+        }
+
         if let Ok(spl_token::instruction::TokenInstruction::Transfer { amount }) =
             spl_token::instruction::TokenInstruction::unpack(&ix.data)
         {
+            
             let dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
-            if dest_pubkey != signer_pubkey {
+
+            let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
+            let source_account = rpc_client
+                .get_account(&source_key)
+                .await
+                .map_err(|e| KoraError::RpcError(e.to_string()))?;
+
+            let token_account = spl_token::state::Account::unpack(&source_account.data);
+
+            let mint_pubkey = token_account.unwrap().mint;    
+
+            let dest_mint_account = get_associated_token_address(&signer_pubkey, &mint_pubkey);
+
+            if dest_pubkey != dest_mint_account {
                 continue;
             }
 
-            let source_account = rpc_client
-                .get_account(&transaction.message.account_keys[ix.accounts[0] as usize])
-                .await
-                .map_err(|e| KoraError::RpcError(e.to_string()))?;
+                        if source_account.owner != spl_token::id() {
+                continue;
+            }
 
             let token_data = TokenAccount::unpack(&source_account.data).map_err(|e| {
                 KoraError::InvalidTransaction(format!("Invalid token account: {}", e))
             })?;
+
+            if token_data.amount < amount {
+                continue;
+            }
 
             if !validation.allowed_spl_paid_tokens.contains(&token_data.mint.to_string()) {
                 continue;
@@ -141,20 +154,22 @@ async fn validate_token_payment(
                 amount,
                 &token_data.mint,
                 rpc_client,
-                pricing_params,
                 price_info,
             )
             .await?;
 
-            if lamport_value >= required_lamports {
+            println!("Lamport value: {}", lamport_value);
+            total_lamport_value += lamport_value;
+            if total_lamport_value >= required_lamports {
                 return Ok(());
             }
         }
     }
 
-    Err(KoraError::InvalidTransaction(format!(
-        "Insufficient payment. Required {} lamports",
-        required_lamports
+    // If we get here, not enough value was transferred
+    Err(KoraError::InsufficientFunds(format!(
+        "Required {} lamports but only found {} in token transfers",
+        required_lamports, total_lamport_value
     )))
 }
 
@@ -162,22 +177,17 @@ async fn calculate_token_value_in_lamports(
     amount: u64,
     mint: &Pubkey,
     rpc_client: &Arc<RpcClient>,
-    pricing_params: &PricingParams,
     price_info: &TokenPriceInfo,
 ) -> Result<u64, KoraError> {
     let mint_data = Mint::unpack(
         &rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?.data,
     )
     .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
-
-    let token_price_per_sig =
-        price_info.price * pricing_params.cost_in_lamports as f64 / LAMPORTS_PER_SOL as f64;
-    let token_price_with_margin = token_price_per_sig * (1.0 / (1.0 - pricing_params.margin));
-    let token_price_in_decimal =
-        (token_price_with_margin * (10f64.powi(mint_data.decimals as i32))).floor() as u64 + 1;
-
-    amount
-        .checked_mul(LAMPORTS_PER_SOL)
-        .and_then(|v| v.checked_div(token_price_in_decimal))
-        .ok_or_else(|| KoraError::InvalidTransaction("Token amount calculation error".into()))
+    
+    let sol_per_token = price_info.price * LAMPORTS_PER_SOL as f64 
+        / (10f64.powi(mint_data.decimals as i32));
+    
+    let lamport_value = (amount as f64 * sol_per_token).floor() as u64;
+    
+    Ok(lamport_value)
 }

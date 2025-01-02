@@ -286,7 +286,7 @@ Returns the paymaster configuration.
 }
 ```
 
-#### `swapToSol`
+<!-- #### `swapToSol`
 
 Creates a swap request to SOL and returns a signed transaction.
 
@@ -312,7 +312,7 @@ Creates a swap request to SOL and returns a signed transaction.
         "transaction": "<base58-encoded-transaction>"
     }
 }
-```
+``` -->
 
 #### `signTransactionIfPaid`
 

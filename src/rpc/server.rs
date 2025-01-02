@@ -91,10 +91,10 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         rpc.get_config().await.map_err(Into::into)
     });
 
-    let _ = module.register_async_method("swapToSol", |rpc_params, rpc_context| async move {
+    let _ = module.register_async_method("signTransactionIfPaid", |rpc_params, rpc_context| async move {
         let rpc = rpc_context.as_ref();
         let params = rpc_params.parse()?;
-        rpc.swap_to_sol(params).await.map_err(Into::into)
+        rpc.sign_transaction_if_paid(params).await.map_err(Into::into)
     });
 
     Ok(module)

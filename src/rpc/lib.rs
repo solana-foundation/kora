@@ -1,13 +1,10 @@
 use log::info;
 use std::sync::Arc;
 
-use crate::{
-    common::{
+use crate::common::{
         config::{KoraConfig, ValidationConfig},
         KoraError,
-    },
-    rpc::method::{sign_transaction_if_paid::sign_transaction_if_paid, swap_to_sol::swap_to_sol},
-};
+    };
 
 use super::method::{
     estimate_transaction_fee::{
@@ -18,8 +15,7 @@ use super::method::{
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
     sign_and_send::{sign_and_send, SignAndSendTransactionRequest, SignAndSendTransactionResult},
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult},
-    sign_transaction_if_paid::{SignTransactionIfPaidRequest, SignTransactionIfPaidResponse},
-    swap_to_sol::{SwapToSolRequest, SwapToSolResponse},
+    sign_transaction_if_paid::{sign_transaction_if_paid, SignTransactionIfPaidRequest, SignTransactionIfPaidResponse},
     transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
     },
@@ -107,16 +103,6 @@ impl KoraRpc {
         info!("Get config request received");
         let result = get_config(&self.validation).await;
         info!("Get config response: {:?}", result);
-        result
-    }
-
-    pub async fn swap_to_sol(
-        &self,
-        request: SwapToSolRequest,
-    ) -> Result<SwapToSolResponse, KoraError> {
-        info!("Swap to sol request: {:?}", request);
-        let result = swap_to_sol(&self.rpc_client, &self.validation, request).await;
-        info!("Swap to sol response: {:?}", result);
         result
     }
 
