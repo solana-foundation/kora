@@ -3,6 +3,10 @@
 # Default target
 all: check test build
 
+# install
+install:
+	cargo install --path .
+
 # Check code formatting
 check:
 	cargo fmt --all -- --check

@@ -1,8 +1,8 @@
+use super::KoraError;
 use deadpool_redis::{Config, Pool, Runtime};
 use redis::AsyncCommands;
 use solana_sdk::pubkey::Pubkey;
-
-use super::KoraError;
+use std::str::FromStr;
 
 const TOKEN_ACCOUNT_CACHE_TTL: u64 = 3600 * 24; // 1 day in seconds
 
@@ -81,5 +81,3 @@ impl TokenAccountCache {
         Ok(())
     }
 }
-
-use std::str::FromStr;

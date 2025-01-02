@@ -7,10 +7,10 @@ Kora is a Solana paymaster node that provides a JSON-RPC interface for handling 
 - 🚀 JSON-RPC server with middleware support
 - 💰 Transaction fee estimation in any supported token
 - 🔄 Gasless transaction support
-- ✅ Health check endpoint (`/liveness`)
-- 📝 Configurable logging (JSON or standard format)
-- 🌐 CORS support
-- ⚙️ Customizable RPC endpoint
+- 💸 Transfer transactions with any supported token
+- 🔍 Remote signer support
+
+> Note: only `signAndSend` submits a transaction to an RPC, all other methods only return a signed transaction
 
 ## Getting Started
 
@@ -19,14 +19,14 @@ Kora is a Solana paymaster node that provides a JSON-RPC interface for handling 
 ```bash
 git clone https://github.com/yourusername/kora.git
 cd kora
-cargo build --release
+make install
 ```
 
 ### Running the Server
 
 Basic usage:
 ```bash
-cargo run -- [OPTIONS]
+kora -- [OPTIONS]
 ```
 
 ### Configuration
@@ -365,16 +365,40 @@ make build
 # Run all tests
 make test
 
-# Run specific test suite
+# Run integration tests
 make test-integrations
 ```
 
 ### Running
 
 ```bash
-cargo run -- \
+# Basic
+kora -- \
+    --rpc-url <RPC_URL> \
+    --port <PORT> 
+
+# With Turnkey (or use environment variables)
+kora -- \
     --rpc-url <RPC_URL> \
     --port <PORT> \
+    --with-turnkey-signer \
+    --turnkey-api-public-key <TURNKEY_API_PUBLIC_KEY> \
+    --turnkey-api-private-key <TURNKEY_API_PRIVATE_KEY> \
+    --turnkey-organization-id <TURNKEY_ORGANIZATION_ID> \
+    --turnkey-private-key-id <TURNKEY_PRIVATE_KEY_ID> \
+    --turnkey-public-key <TURNKEY_PUBLIC_KEY>
+
+# No signer
+kora -- \
+    --rpc-url <RPC_URL> \
+    --port <PORT> \
+    --no-load-signer
+
+# Load private key at runtime without .env
+kora -- \
+    --rpc-url <RPC_URL> \
+    --port <PORT> \
+    --private-key <PRIVATE_KEY>
 ```
 
 ### Code Quality
@@ -387,7 +411,7 @@ make lint
 make lint-fix-all
 
 # Format code
-cargo fmt
+make fmt
 ```
 
 ### Local Development

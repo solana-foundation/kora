@@ -1,12 +1,5 @@
-[features]
-enabled = ["gasless"]
-
-[tokens]
-allowed = [
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
-    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
-    "So11111111111111111111111111111111111111112",  # SOL
-]
+[kora]
+rate_limit = 100
 
 [validation]
 max_allowed_lamports = 1000000
@@ -14,4 +7,11 @@ max_signatures = 10
 allowed_programs = [
     "11111111111111111111111111111111",  # System Program
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+]
+allowed_tokens = [
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
+]
+allowed_spl_paid_tokens = [
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
 ] 
