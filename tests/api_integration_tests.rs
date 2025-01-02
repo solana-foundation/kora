@@ -52,9 +52,7 @@ async fn test_get_supported_tokens() {
     assert!(!tokens.is_empty(), "Tokens list should not be empty");
 
     // Check for specific known tokens
-    let expected_tokens = [
-        "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-    ];
+    let expected_tokens = ["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"];
 
     for token in expected_tokens.iter() {
         assert!(tokens.contains(&json!(token)), "Expected token {} not found", token);

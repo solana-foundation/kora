@@ -16,10 +16,10 @@ pub trait Signer {
     /// The error type returned by signing operations
     type Error: Error + Send + Sync + 'static;
 
-    async fn sign(&self, message: &[u8]) -> Result<Signature, Self::Error>;
+    fn sign(&self, message: &[u8]) -> impl std::future::Future<Output = Result<Signature, Self::Error>> + Send;
 
     /// Partially signs a message, producing a Solana signature
-    async fn sign_solana(&self, message: &[u8]) -> Result<SolanaSignature, Self::Error>;
+    fn sign_solana(&self, message: &[u8]) -> impl std::future::Future<Output = Result<SolanaSignature, Self::Error>> + Send;
 }
 
 #[derive(Clone)]
@@ -45,10 +45,7 @@ impl super::Signer for KoraSigner {
             KoraSigner::Memory(signer) => signer.sign(message).await,
             KoraSigner::Turnkey(signer) => {
                 let sig = signer.sign(message).await?;
-                Ok(super::Signature {
-                    bytes: sig,
-                    is_partial: false,
-                })
+                Ok(super::Signature { bytes: sig, is_partial: false })
             }
         }
     }

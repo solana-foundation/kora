@@ -40,10 +40,10 @@ pub struct Args {
     /// Turnkey API credentials
     #[arg(long, env = "TURNKEY_API_PUBLIC_KEY")]
     pub turnkey_api_public_key: Option<String>,
-    
+
     #[arg(long, env = "TURNKEY_API_PRIVATE_KEY")]
     pub turnkey_api_private_key: Option<String>,
-    
+
     #[arg(long, env = "TURNKEY_ORGANIZATION_ID")]
     pub turnkey_organization_id: Option<String>,
 

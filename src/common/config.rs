@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 use toml;
 
-use crate::common::{KoraError, token::check_valid_tokens};
+use crate::common::{token::check_valid_tokens, KoraError};
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 #[derive(Debug, Deserialize)]
