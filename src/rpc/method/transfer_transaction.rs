@@ -11,7 +11,8 @@ use spl_token::{instruction as token_instruction, state::Mint};
 use std::{str::FromStr, sync::Arc};
 
 use crate::common::{
-    config::ValidationConfig, get_signer, validation::TransactionValidator, KoraError, Signer as _, NATIVE_SOL
+    config::ValidationConfig, get_signer, validation::TransactionValidator, KoraError, Signer as _,
+    NATIVE_SOL,
 };
 
 #[derive(Debug, Deserialize)]

@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use crate::common::{
-    error::KoraError, transaction::decode_b58_transaction,
-};
+use crate::common::{error::KoraError, transaction::decode_b58_transaction};
 
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;

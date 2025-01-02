@@ -1,4 +1,5 @@
 pub mod account;
+pub mod cache;
 pub mod config;
 pub mod error;
 pub mod feature;
@@ -13,7 +14,6 @@ pub mod token;
 pub mod transaction;
 pub mod types;
 pub mod validation;
-pub mod cache;
 
 pub use config::{load_config, Config};
 pub use error::KoraError;

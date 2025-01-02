@@ -2,7 +2,8 @@ use log::info;
 use std::sync::Arc;
 
 use crate::common::{
-    cache::TokenAccountCache, config::{KoraConfig, ValidationConfig}, KoraError
+    config::{KoraConfig, ValidationConfig},
+    KoraError,
 };
 
 use super::method::{
@@ -36,12 +37,7 @@ impl KoraRpc {
         validation: ValidationConfig,
         config: KoraConfig,
     ) -> Self {
-
-        Self {
-            rpc_client,
-            validation,
-            config,
-        }
+        Self { rpc_client, validation, config }
     }
 
     pub async fn liveness(&self) -> Result<(), KoraError> {
