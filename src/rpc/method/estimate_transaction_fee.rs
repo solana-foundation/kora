@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::common::{
-    error::KoraError, transaction::decode_b58_transaction, LAMPORTS_PER_SIGNATURE,
+    error::KoraError, transaction::decode_b58_transaction,
 };
 
 use serde::{Deserialize, Serialize};
@@ -24,14 +24,10 @@ pub async fn estimate_transaction_fee(
 ) -> Result<EstimateTransactionFeeResponse, KoraError> {
     let transaction = decode_b58_transaction(&request.transaction)?;
 
-    // Get base fee (computation + rent for any account creations)
-    let simulation = rpc_client
-        .simulate_transaction(&transaction)
+    let fee = rpc_client
+        .get_fee_for_message(&transaction.message)
         .await
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-    // multiple by lamports per signature use sdk constant
-    let base_fee = simulation.value.units_consumed.unwrap_or(0) * LAMPORTS_PER_SIGNATURE;
 
     // Get priority fee from recent blocks
     let priority_stats = rpc_client
@@ -40,5 +36,5 @@ pub async fn estimate_transaction_fee(
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
     let priority_fee = priority_stats.iter().map(|fee| fee.prioritization_fee).max().unwrap_or(0);
 
-    Ok(EstimateTransactionFeeResponse { fee_in_lamports: base_fee + priority_fee })
+    Ok(EstimateTransactionFeeResponse { fee_in_lamports: fee + priority_fee })
 }

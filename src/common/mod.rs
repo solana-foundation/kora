@@ -13,6 +13,7 @@ pub mod token;
 pub mod transaction;
 pub mod types;
 pub mod validation;
+pub mod cache;
 
 pub use config::{load_config, Config};
 pub use error::KoraError;

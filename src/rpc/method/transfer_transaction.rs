@@ -11,8 +11,7 @@ use spl_token::{instruction as token_instruction, state::Mint};
 use std::{str::FromStr, sync::Arc};
 
 use crate::common::{
-    config::ValidationConfig, get_signer, validation::TransactionValidator, KoraError, Signer as _,
-    NATIVE_SOL,
+    config::ValidationConfig, get_signer, validation::TransactionValidator, KoraError, Signer as _, NATIVE_SOL
 };
 
 #[derive(Debug, Deserialize)]
@@ -73,7 +72,6 @@ pub async fn transfer_transaction(
             .await
             .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
 
-        // Create destination ATA if it doesn't exist
         if rpc_client.get_account(&dest_ata).await.is_err() {
             instructions.push(create_associated_token_account(
                 &fee_payer,

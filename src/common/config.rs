@@ -23,6 +23,7 @@ pub struct ValidationConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KoraConfig {
     pub rate_limit: u64,
+    pub redis_url: String,
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
