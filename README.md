@@ -61,6 +61,8 @@ cargo run -- [OPTIONS]
 | `TURNKEY_ORGANIZATION_ID` | Turnkey organization ID | - |
 | `TURNKEY_PRIVATE_KEY_ID` | Turnkey private key ID | - |
 | `TURNKEY_PUBLIC_KEY` | Turnkey public key | - |
+| `TEST_SENDER_PUBKEY` | Test sender pubkey | - |
+| `TEST_SENDER_MNEMONIC` | Test sender mnemonic | - |
 
 #### Configuration File (kora.toml)
 
