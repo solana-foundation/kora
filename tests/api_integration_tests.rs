@@ -103,23 +103,19 @@ async fn test_sign_transaction() {
         "Expected signed_transaction in response"
     );
 
-    // Decode the base58 transaction string
     let transaction_string = response["signed_transaction"].as_str().unwrap();
     let decoded_tx = bs58::decode(transaction_string)
         .into_vec()
         .expect("Failed to decode transaction from base58");
 
-    // Deserialize the transaction
     let transaction: Transaction =
         bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
 
-    // Simulate the transaction
     let simulated_tx = rpc_client
         .simulate_transaction(&transaction)
         .await
         .expect("Failed to simulate transaction");
 
-    // Optional: Add assertions to verify simulation results
     println!("Simulated transaction: {:?}", simulated_tx);
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
@@ -175,28 +171,23 @@ async fn test_transfer_transaction() {
         .await
         .expect("Failed to submit transfer transaction");
 
-    // Verify the response contains the expected fields
     assert!(response["transaction"].as_str().is_some(), "Expected signature in response");
     assert!(response["message"].as_str().is_some(), "Expected message in response");
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
 
-    // Decode the base58 transaction string
     let transaction_string = response["transaction"].as_str().unwrap();
     let decoded_tx = bs58::decode(transaction_string)
         .into_vec()
         .expect("Failed to decode transaction from base58");
 
-    // Deserialize the transaction
     let transaction: Transaction =
         bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
 
-    // Simulate the transaction
     let simulated_tx = rpc_client
         .simulate_transaction(&transaction)
         .await
         .expect("Failed to simulate transaction");
 
-    // Optional: Add assertions to verify simulation results
     println!("Simulated transaction: {:?}", simulated_tx);
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
@@ -221,28 +212,23 @@ async fn test_transfer_transaction_with_ata() {
         .await
         .expect("Failed to submit transfer transaction");
 
-    // Verify the response contains the expected fields
     assert!(response["transaction"].as_str().is_some(), "Expected signature in response");
     assert!(response["message"].as_str().is_some(), "Expected message in response");
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
 
-    // Decode the base58 transaction string
     let transaction_string = response["transaction"].as_str().unwrap();
     let decoded_tx = bs58::decode(transaction_string)
         .into_vec()
         .expect("Failed to decode transaction from base58");
 
-    // Deserialize the transaction
     let transaction: Transaction =
         bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
 
-    // Simulate the transaction
     let simulated_tx = rpc_client
         .simulate_transaction(&transaction)
         .await
         .expect("Failed to simulate transaction");
 
-    // Will fail unless you sign tx before seding
     println!("Simulated transaction: {:?}", simulated_tx);
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }

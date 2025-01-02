@@ -52,6 +52,8 @@ pub async fn sign_transaction_if_paid(
         .await
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
+    validator.validate_lamport_fee(sim_result)?;
+
     let cost_in_lamports = sim_result;
     let pricing_params = PricingParams { margin: request.margin.unwrap_or(0.0) as u64 };
     let token_price_info = request.token_price_info.unwrap_or(TokenPriceInfo { price: 0.0 });
@@ -64,7 +66,6 @@ pub async fn sign_transaction_if_paid(
         validation,
         required_lamports,
         signer_pubkey,
-        &pricing_params,
         &token_price_info,
     )
     .await?;
@@ -100,7 +101,6 @@ async fn validate_token_payment(
     validation: &ValidationConfig,
     required_lamports: u64,
     signer_pubkey: Pubkey,
-    pricing_params: &PricingParams,
     price_info: &TokenPriceInfo,
 ) -> Result<(), KoraError> {
     let mut total_lamport_value = 0;
@@ -151,7 +151,6 @@ async fn validate_token_payment(
                 calculate_token_value_in_lamports(amount, &token_data.mint, rpc_client, price_info)
                     .await?;
 
-            println!("Lamport value: {}", lamport_value);
             total_lamport_value += lamport_value;
             if total_lamport_value >= required_lamports {
                 return Ok(());
@@ -159,7 +158,6 @@ async fn validate_token_payment(
         }
     }
 
-    // If we get here, not enough value was transferred
     Err(KoraError::InsufficientFunds(format!(
         "Required {} lamports but only found {} in token transfers",
         required_lamports, total_lamport_value

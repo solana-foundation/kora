@@ -77,6 +77,16 @@ impl TransactionValidator {
         Ok(())
     }
 
+    pub fn validate_lamport_fee(&self, fee: u64) -> Result<(), KoraError> {
+        if fee > self.max_allowed_lamports {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Fee {} exceeds maximum allowed {}",
+                fee, self.max_allowed_lamports
+            )));
+        }
+        Ok(())
+    }
+
     fn validate_signatures(&self, message: &Transaction) -> Result<(), KoraError> {
         if message.signatures.len() > self.max_signatures {
             return Err(KoraError::InvalidTransaction(format!(
