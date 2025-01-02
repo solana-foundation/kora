@@ -76,7 +76,7 @@ pub async fn sign_transaction_if_paid(
     let mut transaction = original_transaction.clone();
     transaction.message.recent_blockhash = blockhash.0;
 
-    let signature = signer.partial_sign_solana(&transaction.message_data())?;
+    let signature = signer.sign_solana(&transaction.message_data()).await?;
     transaction.signatures[0] = signature;
 
     let encoded = bs58::encode(

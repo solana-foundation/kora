@@ -43,7 +43,7 @@ pub async fn sign_and_send(
 
     transaction.message.recent_blockhash = blockhash.0;
 
-    let signature = signer.partial_sign_solana(&transaction.message_data())?;
+    let signature = signer.sign_solana(&transaction.message_data()).await?;
     transaction.signatures[0] = signature;
 
     let serialized = bincode::serialize(&transaction).map_err(|e| {

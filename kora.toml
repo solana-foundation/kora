@@ -10,12 +10,8 @@ allowed_programs = [
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
 ]
 allowed_tokens = [
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
-    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
-    "So11111111111111111111111111111111111111112",  # SOL wrapped
 ]
 allowed_spl_paid_tokens = [
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
 ] 

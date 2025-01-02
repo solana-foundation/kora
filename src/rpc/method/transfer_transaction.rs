@@ -117,9 +117,7 @@ pub async fn transfer_transaction(
 
     let mut transaction = Transaction::new_unsigned(message);
 
-    let signature = signer
-        .partial_sign_solana(&transaction.message_data())
-        .map_err(|e| KoraError::SigningError(format!("Failed to sign transaction: {}", e)))?;
+    let signature = signer.sign_solana(&transaction.message_data()).await?;
 
     transaction.signatures[0] = signature;
 

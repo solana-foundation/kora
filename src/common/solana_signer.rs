@@ -57,11 +57,7 @@ impl Clone for SolanaMemorySigner {
 impl Signer for SolanaMemorySigner {
     type Error = KoraError;
 
-    fn partial_sign(&self, message: &[u8]) -> Result<Signature, Self::Error> {
-        self.full_sign(message)
-    }
-
-    fn partial_sign_solana(&self, message: &[u8]) -> Result<SolanaSignature, Self::Error> {
+    async fn sign_solana(&self, message: &[u8]) -> Result<SolanaSignature, Self::Error> {
         let solana_sig = self.keypair.sign_message(message);
 
         let sig_bytes: [u8; 64] = solana_sig
@@ -72,7 +68,7 @@ impl Signer for SolanaMemorySigner {
         Ok(SolanaSignature::from(sig_bytes))
     }
 
-    fn full_sign(&self, message: &[u8]) -> Result<Signature, Self::Error> {
+    async fn sign(&self, message: &[u8]) -> Result<Signature, Self::Error> {
         let solana_sig = self.keypair.sign_message(message);
         Ok(Signature { bytes: solana_sig.as_ref().to_vec(), is_partial: false })
     }

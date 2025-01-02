@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 use toml;
 
-use crate::common::KoraError;
+use crate::common::{KoraError, token::check_valid_tokens};
+use solana_client::nonblocking::rpc_client::RpcClient;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -31,4 +32,16 @@ pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
 
     toml::from_str(&contents)
         .map_err(|e| KoraError::InternalServerError(format!("Failed to parse config file: {}", e)))
+}
+
+impl Config {
+    pub async fn validate(&self, rpc_client: &RpcClient) -> Result<(), KoraError> {
+        if self.validation.allowed_tokens.is_empty() {
+            log::error!("No tokens enabled");
+            return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
+        }
+
+        check_valid_tokens(rpc_client, &self.validation.allowed_tokens).await?;
+        Ok(())
+    }
 }

@@ -46,9 +46,7 @@ pub async fn get_or_create_token_account(
             );
 
             let mut tx = Transaction::new_unsigned(message);
-            let signature = signer
-                .partial_sign(&tx.message_data())
-                .map_err(|e| anyhow::anyhow!("Failed to sign transaction: {}", e))?;
+            let signature = signer.sign(&tx.message_data()).await?;
 
             let sig_bytes: [u8; 64] = signature
                 .bytes
@@ -102,9 +100,7 @@ pub async fn get_or_create_multiple_token_accounts(
         Message::new_with_blockhash(&instructions, Some(&signer.solana_pubkey()), &blockhash);
 
     let mut tx = Transaction::new_unsigned(message);
-    let signature = signer
-        .partial_sign(&tx.message_data())
-        .map_err(|e| anyhow::anyhow!("Failed to sign transaction: {}", e))?;
+    let signature = signer.sign(&tx.message_data()).await?;
 
     let sig_bytes: [u8; 64] =
         signature.bytes.try_into().map_err(|_| anyhow::anyhow!("Invalid signature length"))?;

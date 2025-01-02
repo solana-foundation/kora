@@ -1,119 +1,111 @@
 mod args;
-use core::fmt;
-use std::env;
-
+use args::Args;
 use clap::{Parser, ValueEnum};
-use common::load_config;
-use kora::{
-    common::{
-        self, signer::KoraSigner, tk::TurnkeySigner, token::check_valid_tokens, KoraError,
-        SolanaMemorySigner,
-    },
-    rpc,
-};
-use solana_client::nonblocking::rpc_client::RpcClient;
+use common::{load_config, signer::KoraSigner};
+use kora::{common::{self, tk::TurnkeySigner, SolanaMemorySigner}, rpc};
+use dotenv::dotenv;
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
     let args = args::Args::parse();
-    setup_metrics(args.metrics_endpoint.clone());
-    setup_logging(args.logging_format.clone());
-
-    let config = match load_config(args.config.clone()) {
-        Ok(config) => config,
-        Err(e) => {
-            log::error!("Failed to load config: {}", e);
-            return;
-        }
-    };
-    log::info!("Config loaded");
+    setup_logging(&args.logging_format);
+    
+    let config = load_config(&args.config).unwrap_or_else(|e| {
+        log::error!("Config load failed: {}", e);
+        std::process::exit(1);
+    });
 
     let rpc_client = common::rpc::get_rpc_client(&args.rpc_url);
-    log::debug!("RPC client initialized with URL: {}", args.rpc_url);
+    
+    if let Err(e) = config.validate(rpc_client.as_ref()).await {
+        log::error!("Config validation failed: {}", e);
+        std::process::exit(1);
+    }
 
-    if !args.skip_signer {
-        let signer = if args.turnkey_signer {
-            // Initialize Turnkey signer
-            match (
-                env::var("TURNKEY_API_PUBLIC_KEY"),
-                env::var("TURNKEY_API_PRIVATE_KEY"),
-                env::var("TURNKEY_ORGANIZATION_ID"),
-                env::var("TURNKEY_EXAMPLE_PRIVATE_KEY_ID"),
-            ) {
-                (Ok(api_pub), Ok(api_priv), Ok(org_id), Ok(key_id)) => {
-                    match TurnkeySigner::new(api_pub, api_priv, org_id, key_id) {
-                        Ok(signer) => {
-                            log::info!("Turnkey signer initialized");
-                            KoraSigner::Turnkey(signer)
-                        }
-                        Err(e) => {
-                            log::error!("Failed to initialize Turnkey signer: {}", e);
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                _ => {
-                    log::error!("Missing required Turnkey environment variables");
-                    std::process::exit(1);
-                }
-            }
-        } else {
-            // Initialize memory signer
-            let private_key = match &args.private_key {
-                Some(key) => key,
-                None => {
-                    log::error!("Private key is required when memory signer is enabled");
-                    std::process::exit(1);
-                }
-            };
+    let signer = if !args.skip_signer {
+        Some(init_signer(&args))
+    } else {
+        None
+    };
 
-            match SolanaMemorySigner::from_base58(private_key) {
-                Ok(signer) => {
-                    log::info!(
-                        "Memory signer initialized with public key: {}",
-                        signer.pubkey_base58()
-                    );
-                    KoraSigner::Memory(signer)
-                }
-                Err(e) => {
-                    log::error!("Failed to initialize memory signer: {}", e);
-                    std::process::exit(1);
-                }
-            }
-        };
-
-        if let Err(e) = common::init_signer(signer) {
-            log::error!("Failed to initialize signer: {}", e);
+    if let Some(signer) = signer {
+        common::init_signer(signer).unwrap_or_else(|e| {
+            log::error!("Signer init failed: {}", e);
             std::process::exit(1);
-        }
+        });
     }
 
     let rpc_server = rpc::lib::KoraRpc::new(rpc_client, config.validation, config.kora);
-    log::debug!("RPC server instance created");
+    
+    let server_handle = rpc::server::run_rpc_server(rpc_server, args.port)
+        .await
+        .unwrap_or_else(|e| {
+            log::error!("Server start failed: {}", e);
+            std::process::exit(1);
+        });
 
-    log::info!("Attempting to start RPC server on port {}", args.port);
-    let server_handle = match rpc::server::run_rpc_server(rpc_server, args.port).await {
-        Ok(handle) => {
-            log::info!("Server started successfully");
-            handle
-        }
-        Err(e) => {
-            log::error!("Failed to start server: {}", e);
-            return;
-        }
-    };
-
-    log::info!("Server running. Press Ctrl+C to stop");
     tokio::signal::ctrl_c().await.unwrap();
-    log::info!("Shutting down server");
     server_handle.stop().unwrap();
-    log::info!("Server stopped");
 }
 
-fn setup_metrics(endpoint: Option<String>) {
-    if let Some(endpoint) = endpoint {
-        log::info!("Metrics endpoint: {}", endpoint);
+fn init_signer(args: &Args) -> KoraSigner {
+    if args.turnkey_signer {
+        init_turnkey_signer(args)
+    } else {
+        init_memory_signer(args.private_key.as_ref())
     }
+}
+
+fn init_turnkey_signer(args: &Args) -> KoraSigner {
+    let api_pub = args.turnkey_api_public_key.as_ref().ok_or_else(|| {
+        log::error!("Turnkey API public key required");
+        std::process::exit(1);
+    }).unwrap();
+    let api_priv = args.turnkey_api_private_key.as_ref().ok_or_else(|| {
+        log::error!("Turnkey API private key required");
+        std::process::exit(1);
+    }).unwrap();
+    let api_priv_key_id = args.turnkey_private_key_id.as_ref().ok_or_else(|| {
+        log::error!("Turnkey private key ID required");
+        std::process::exit(1);
+    }).unwrap();
+    let org_id = args.turnkey_organization_id.as_ref().ok_or_else(|| {
+        log::error!("Turnkey organization ID required");
+        std::process::exit(1);
+    }).unwrap();
+
+    let public_key_id = args.turnkey_public_key.as_ref().ok_or_else(|| {
+        log::error!("Turnkey public key required");
+        std::process::exit(1);
+    }).unwrap();
+
+    KoraSigner::Turnkey(
+        TurnkeySigner::new(
+            api_pub.to_string(),
+            api_priv.to_string(),
+            org_id.to_string(),
+            api_priv_key_id.to_string(),
+            public_key_id.to_string()
+        ).unwrap_or_else(|e| {
+            log::error!("Turnkey signer init failed: {}", e);
+            std::process::exit(1);
+        }),
+    )
+}
+
+fn init_memory_signer(private_key: Option<&String>) -> KoraSigner {
+    let key = private_key.unwrap_or_else(|| {
+        log::error!("Private key required for memory signer");
+        std::process::exit(1);
+    });
+
+    KoraSigner::Memory(
+        SolanaMemorySigner::from_base58(key).unwrap_or_else(|e| {
+            log::error!("Memory signer init failed: {}", e);
+            std::process::exit(1);
+        }),
+    )
 }
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
@@ -122,34 +114,13 @@ pub enum LoggingFormat {
     Json,
 }
 
-impl fmt::Display for LoggingFormat {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LoggingFormat::Standard => write!(f, "standard"),
-            LoggingFormat::Json => write!(f, "json"),
-        }
-    }
-}
-
-pub fn setup_logging(logging_format: LoggingFormat) {
-    let env_filter = env::var("RUST_LOG")
-        .unwrap_or("info,sqlx=error,sea_orm_migration=error,jsonrpsee_server=warn".to_string());
+fn setup_logging(format: &LoggingFormat) {
+    let env_filter = std::env::var("RUST_LOG")
+        .unwrap_or_else(|_| "info,sqlx=error,sea_orm_migration=error,jsonrpsee_server=warn".into());
+    
     let subscriber = tracing_subscriber::fmt().with_env_filter(env_filter);
-    match logging_format {
+    match format {
         LoggingFormat::Standard => subscriber.init(),
         LoggingFormat::Json => subscriber.json().init(),
     }
-}
-
-pub async fn validate_config(
-    config: &common::config::Config,
-    rpc_client: RpcClient,
-) -> Result<(), KoraError> {
-    if config.validation.allowed_tokens.is_empty() {
-        log::error!("No tokens enabled");
-        return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
-    }
-
-    check_valid_tokens(&rpc_client, &config.validation.allowed_tokens).await?;
-    Ok(())
 }

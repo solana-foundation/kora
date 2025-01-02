@@ -1,13 +1,8 @@
-use once_cell::sync::Lazy;
 use solana_sdk::signature::Signature as SolanaSignature;
 use std::error::Error;
 
 use super::{error::KoraError, solana_signer::SolanaMemorySigner, tk::TurnkeySigner};
 
-static RUNTIME: Lazy<tokio::runtime::Runtime> =
-    Lazy::new(|| tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime"));
-
-/// Represents a signature for a message
 #[derive(Debug, Clone)]
 pub struct Signature {
     /// The raw bytes of the signature
@@ -21,16 +16,10 @@ pub trait Signer {
     /// The error type returned by signing operations
     type Error: Error + Send + Sync + 'static;
 
-    /// Partially signs a message, typically used in multi-signature scenarios
-    /// Returns a partial signature that can be combined with other signatures
-    fn partial_sign(&self, message: &[u8]) -> Result<Signature, Self::Error>;
-
-    /// Fully signs a message, producing a complete signature
-    /// This is used when a single signature is sufficient
-    fn full_sign(&self, message: &[u8]) -> Result<Signature, Self::Error>;
+    async fn sign(&self, message: &[u8]) -> Result<Signature, Self::Error>;
 
     /// Partially signs a message, producing a Solana signature
-    fn partial_sign_solana(&self, message: &[u8]) -> Result<SolanaSignature, Self::Error>;
+    async fn sign_solana(&self, message: &[u8]) -> Result<SolanaSignature, Self::Error>;
 }
 
 #[derive(Clone)]
@@ -51,39 +40,26 @@ impl KoraSigner {
 impl super::Signer for KoraSigner {
     type Error = KoraError;
 
-    fn partial_sign(&self, message: &[u8]) -> Result<super::Signature, Self::Error> {
+    async fn sign(&self, message: &[u8]) -> Result<super::Signature, Self::Error> {
         match self {
-            KoraSigner::Memory(signer) => signer.partial_sign(message),
+            KoraSigner::Memory(signer) => signer.sign(message).await,
             KoraSigner::Turnkey(signer) => {
-                let bytes = RUNTIME.block_on(signer.partial_sign(message))?;
-                Ok(super::Signature { bytes, is_partial: false })
+                let sig = signer.sign(message).await?;
+                Ok(super::Signature {
+                    bytes: sig,
+                    is_partial: false,
+                })
             }
         }
     }
 
-    fn full_sign(&self, message: &[u8]) -> Result<super::Signature, Self::Error> {
-        match self {
-            KoraSigner::Memory(signer) => signer.full_sign(message),
-            KoraSigner::Turnkey(signer) => {
-                let bytes = RUNTIME.block_on(signer.full_sign(message))?;
-                Ok(super::Signature { bytes, is_partial: false })
-            }
-        }
-    }
-
-    fn partial_sign_solana(
+    async fn sign_solana(
         &self,
         message: &[u8],
     ) -> Result<solana_sdk::signature::Signature, Self::Error> {
         match self {
-            KoraSigner::Memory(signer) => signer.partial_sign_solana(message),
-            KoraSigner::Turnkey(signer) => {
-                let bytes = RUNTIME.block_on(signer.partial_sign_solana(message))?;
-                let sig_bytes: [u8; 64] = bytes
-                    .try_into()
-                    .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
-                Ok(solana_sdk::signature::Signature::from(sig_bytes))
-            }
+            KoraSigner::Memory(signer) => signer.sign_solana(message).await,
+            KoraSigner::Turnkey(signer) => signer.sign_solana(message).await,
         }
     }
 }

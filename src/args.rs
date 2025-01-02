@@ -22,7 +22,7 @@ pub struct Args {
     pub metrics_endpoint: Option<String>,
 
     /// Base58-encoded private key for signing
-    #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present = "skip_signer")]
+    #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present_any = ["skip_signer", "turnkey_signer"])]
     pub private_key: Option<String>,
 
     /// Path to kora.toml config file
@@ -34,12 +34,22 @@ pub struct Args {
     pub skip_signer: bool,
 
     /// Turnkey signer
-    #[arg(
-        long = "with-turnkey-signer",
-        env = "TURNKEY_API_PUBLIC_KEY",
-        env = "TURNKEY_API_PRIVATE_KEY",
-        env = "TURNKEY_ORGANIZATION_ID",
-        env = "TURNKEY_EXAMPLE_PRIVATE_KEY_ID"
-    )]
+    #[arg(long = "with-turnkey-signer")]
     pub turnkey_signer: bool,
+
+    /// Turnkey API credentials
+    #[arg(long, env = "TURNKEY_API_PUBLIC_KEY")]
+    pub turnkey_api_public_key: Option<String>,
+    
+    #[arg(long, env = "TURNKEY_API_PRIVATE_KEY")]
+    pub turnkey_api_private_key: Option<String>,
+    
+    #[arg(long, env = "TURNKEY_ORGANIZATION_ID")]
+    pub turnkey_organization_id: Option<String>,
+
+    #[arg(long, env = "TURNKEY_PRIVATE_KEY_ID")]
+    pub turnkey_private_key_id: Option<String>,
+
+    #[arg(long, env = "TURNKEY_PUBLIC_KEY")]
+    pub turnkey_public_key: Option<String>,
 }
