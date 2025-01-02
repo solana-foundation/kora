@@ -39,10 +39,16 @@ async fn create_test_transaction() -> String {
     let sender = get_test_sender_keypair();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
     let amount = 10;
-
+    let rpc_client = setup_rpc_client().await;
     let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
+
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .await
+        .unwrap();
+
     let message =
-        Message::new_with_blockhash(&[instruction], None, &solana_sdk::hash::Hash::default());
+        Message::new_with_blockhash(&[instruction], None, &blockhash.0);
 
     let transaction = Transaction { signatures: vec![Default::default()], message };
 

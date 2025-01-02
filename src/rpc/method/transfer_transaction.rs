@@ -122,6 +122,10 @@ pub async fn transfer_transaction(
 
     let message = Message::new_with_blockhash(&instructions, Some(&fee_payer), &blockhash.0);
     let mut transaction = Transaction::new_unsigned(message);
+
+    // validate transaction before signing
+    validator.validate_transaction(&transaction)?;
+
     let signature = signer.sign_solana(&transaction.message_data()).await?;
     transaction.signatures[0] = signature;
 
