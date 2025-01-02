@@ -2,9 +2,9 @@ use log::info;
 use std::sync::Arc;
 
 use crate::common::{
-        config::{KoraConfig, ValidationConfig},
-        KoraError,
-    };
+    config::{KoraConfig, ValidationConfig},
+    KoraError,
+};
 
 use super::method::{
     estimate_transaction_fee::{
@@ -15,7 +15,9 @@ use super::method::{
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
     sign_and_send::{sign_and_send, SignAndSendTransactionRequest, SignAndSendTransactionResult},
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult},
-    sign_transaction_if_paid::{sign_transaction_if_paid, SignTransactionIfPaidRequest, SignTransactionIfPaidResponse},
+    sign_transaction_if_paid::{
+        sign_transaction_if_paid, SignTransactionIfPaidRequest, SignTransactionIfPaidResponse,
+    },
     transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
     },

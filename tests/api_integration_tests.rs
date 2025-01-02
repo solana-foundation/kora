@@ -2,11 +2,17 @@ use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_param
 use serde_json::json;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, message::Message, pubkey::Pubkey, signature::{Keypair, Signer}, signer::SeedDerivable, system_instruction, transaction::Transaction
+    commitment_config::CommitmentConfig,
+    message::Message,
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+    signer::SeedDerivable,
+    system_instruction,
+    transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
-use std::{str::FromStr, sync::Arc};
 use spl_token::instruction as spl_token_instruction;
+use std::{str::FromStr, sync::Arc};
 
 const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
 
@@ -17,11 +23,8 @@ fn get_rpc_url() -> String {
 
 fn get_test_sender_keypair() -> Keypair {
     dotenv::dotenv().ok();
-    Keypair::from_seed_phrase_and_passphrase(
-        &std::env::var("TEST_SENDER_MNEMONIC").unwrap(),
-        "",
-    )
-    .unwrap()
+    Keypair::from_seed_phrase_and_passphrase(&std::env::var("TEST_SENDER_MNEMONIC").unwrap(), "")
+        .unwrap()
 }
 
 async fn setup_test_client() -> jsonrpsee::http_client::HttpClient {
@@ -270,14 +273,15 @@ async fn test_get_config() {
 async fn test_sign_transaction_if_paid() {
     let client = setup_test_client().await;
     let rpc_client = setup_rpc_client().await;
-    
+
     // get fee payer from config
-    let response: serde_json::Value = client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
+    let response: serde_json::Value =
+        client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
     let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap()).unwrap();
-    
+
     let sender = get_test_sender_keypair();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
-    
+
     // Setup token accounts
     let token_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
@@ -296,8 +300,9 @@ async fn test_sign_transaction_if_paid() {
         &sender.pubkey(),
         &[],
         scaled_amount,
-    ).unwrap();
-    
+    )
+    .unwrap();
+
     let recipient_instruction = spl_token_instruction::transfer(
         &spl_token::id(),
         &sender_token_account,
@@ -305,20 +310,24 @@ async fn test_sign_transaction_if_paid() {
         &sender.pubkey(),
         &[],
         1,
-    ).unwrap();
+    )
+    .unwrap();
 
-    let blockhash = rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await.unwrap();
-    
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .await
+        .unwrap();
+
     // Create message and transaction
     let message = Message::new_with_blockhash(
-        &[fee_payer_instruction, recipient_instruction], 
+        &[fee_payer_instruction, recipient_instruction],
         Some(&sender.pubkey()), // Set the fee payer
-        &blockhash.0
+        &blockhash.0,
     );
-    
+
     // Initialize transaction with correct number of signatures
     let mut transaction = Transaction::new_unsigned(message);
-    
+
     // Sign with sender's keypair
     transaction.sign(&[&sender], blockhash.0);
 
@@ -327,15 +336,21 @@ async fn test_sign_transaction_if_paid() {
 
     let serialized = bincode::serialize(&transaction).unwrap();
     let base58_transaction = bs58::encode(serialized).into_string();
-    
+
     // Rest of the test remains the same...
-    let response: serde_json::Value = client.request("signTransactionIfPaid", rpc_params![
-        base58_transaction,
-        0,
-        json!({
-            "price": 0.00484,
-        })
-    ]).await.expect("Failed to sign transaction");
+    let response: serde_json::Value = client
+        .request(
+            "signTransactionIfPaid",
+            rpc_params![
+                base58_transaction,
+                0,
+                json!({
+                    "price": 0.00484,
+                })
+            ],
+        )
+        .await
+        .expect("Failed to sign transaction");
 
     println!("Response: {:?}", response);
 
@@ -352,7 +367,8 @@ async fn test_sign_transaction_if_paid() {
         .expect("Failed to decode transaction from base58");
 
     // Deserialize the transaction
-    let transaction: Transaction = bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+    let transaction: Transaction =
+        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
 
     // print hex of message data
     let message_data = transaction.message_data();
