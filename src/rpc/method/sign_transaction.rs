@@ -31,9 +31,8 @@ pub async fn sign_transaction(
 
     let mut transaction = original_transaction;
 
-    let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-        .await?;
+    let blockhash =
+        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
 
     transaction.message.recent_blockhash = blockhash.0;
 
@@ -43,8 +42,5 @@ pub async fn sign_transaction(
     let serialized = bincode::serialize(&transaction)?;
     let encoded = bs58::encode(serialized).into_string();
 
-    Ok(SignTransactionResult {
-        signature: signature.to_string(),
-        signed_transaction: encoded,
-    })
+    Ok(SignTransactionResult { signature: signature.to_string(), signed_transaction: encoded })
 }

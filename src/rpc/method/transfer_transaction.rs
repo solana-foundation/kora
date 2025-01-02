@@ -94,13 +94,17 @@ pub async fn transfer_transaction(
                 request.amount,
                 decimals,
             )
-            .map_err(|e| KoraError::InvalidTransaction(format!("Failed to create transfer instruction: {}", e)))?,
+            .map_err(|e| {
+                KoraError::InvalidTransaction(format!(
+                    "Failed to create transfer instruction: {}",
+                    e
+                ))
+            })?,
         );
     }
 
-    let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-        .await?;
+    let blockhash =
+        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
 
     let message = Message::new_with_blockhash(&instructions, Some(&fee_payer), &blockhash.0);
     let mut transaction = Transaction::new_unsigned(message);

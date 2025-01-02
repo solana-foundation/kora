@@ -120,7 +120,9 @@ impl TurnkeySigner {
 
                 // Ensure each component is exactly 32 bytes
                 if r_bytes.len() > 32 || s_bytes.len() > 32 {
-                    return Err(KoraError::SigningError("Signature component too long".to_string()));
+                    return Err(KoraError::SigningError(
+                        "Signature component too long".to_string(),
+                    ));
                 }
 
                 // Create properly padded 32-byte arrays

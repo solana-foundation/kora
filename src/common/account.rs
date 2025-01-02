@@ -1,4 +1,4 @@
-use super::{get_signer, Signer, KoraError};
+use super::{get_signer, KoraError, Signer};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     message::Message, pubkey::Pubkey, signature::Signature, transaction::Transaction,
@@ -24,17 +24,21 @@ pub async fn get_or_create_token_account(
         Err(original_err) => {
             // TODO: work with t22
             let create_ata_ix =
-                initialize_account(&spl_token::id(), user_pubkey, mint, user_pubkey)
-                    .map_err(|e| KoraError::InternalServerError(format!(
-                        "Failed to initialize account: {}. Original error: {}",
-                        e, original_err
-                    )))?;
+                initialize_account(&spl_token::id(), user_pubkey, mint, user_pubkey).map_err(
+                    |e| {
+                        KoraError::InternalServerError(format!(
+                            "Failed to initialize account: {}. Original error: {}",
+                            e, original_err
+                        ))
+                    },
+                )?;
 
-            let blockhash = rpc_client.get_latest_blockhash().await
-                .map_err(|e| KoraError::RpcError(format!(
+            let blockhash = rpc_client.get_latest_blockhash().await.map_err(|e| {
+                KoraError::RpcError(format!(
                     "Failed to get blockhash: {}. Original error: {}",
                     e, original_err
-                )))?;
+                ))
+            })?;
 
             let message = Message::new_with_blockhash(
                 &[create_ata_ix],
@@ -45,7 +49,9 @@ pub async fn get_or_create_token_account(
             let mut tx = Transaction::new_unsigned(message);
             let signature = signer.sign(&tx.message_data()).await?;
 
-            let sig_bytes: [u8; 64] = signature.bytes.try_into()
+            let sig_bytes: [u8; 64] = signature
+                .bytes
+                .try_into()
                 .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
 
             let sig = Signature::from(sig_bytes);
@@ -86,19 +92,20 @@ pub async fn get_or_create_multiple_token_accounts(
         return Ok((atas, None));
     }
 
-    let blockhash = rpc_client.get_latest_blockhash().await
+    let blockhash = rpc_client
+        .get_latest_blockhash()
+        .await
         .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {}", e)))?;
 
-    let message = Message::new_with_blockhash(
-        &instructions,
-        Some(&signer.solana_pubkey()),
-        &blockhash,
-    );
+    let message =
+        Message::new_with_blockhash(&instructions, Some(&signer.solana_pubkey()), &blockhash);
 
     let mut tx = Transaction::new_unsigned(message);
     let signature = signer.sign(&tx.message_data()).await?;
 
-    let sig_bytes: [u8; 64] = signature.bytes.try_into()
+    let sig_bytes: [u8; 64] = signature
+        .bytes
+        .try_into()
         .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
 
     let sig = Signature::from(sig_bytes);

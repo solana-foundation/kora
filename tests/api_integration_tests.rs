@@ -2,7 +2,12 @@ use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_param
 use serde_json::json;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    message::Message, pubkey::Pubkey, signature::{Keypair, Signer}, signer::SeedDerivable, system_instruction, transaction::Transaction
+    message::Message,
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+    signer::SeedDerivable,
+    system_instruction,
+    transaction::Transaction,
 };
 use std::{str::FromStr, sync::Arc};
 
@@ -23,7 +28,11 @@ async fn setup_rpc_client() -> Arc<RpcClient> {
 
 async fn create_test_transaction() -> String {
     dotenv::dotenv().ok();
-    let sender = Keypair::from_seed_phrase_and_passphrase(&std::env::var("TEST_SENDER_MNEMONIC").unwrap(), "").unwrap();
+    let sender = Keypair::from_seed_phrase_and_passphrase(
+        &std::env::var("TEST_SENDER_MNEMONIC").unwrap(),
+        "",
+    )
+    .unwrap();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
     let amount = 10;
 

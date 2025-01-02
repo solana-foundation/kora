@@ -1,44 +1,44 @@
 use jsonrpsee::{core::Error as RpcError, types::error::CallError};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use solana_client::client_error::ClientError;
 use solana_sdk::signature::SignerError;
+use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub enum KoraError {
     #[error("Account {0} not found")]
     AccountNotFound(String),
-    
+
     #[error("RPC error: {0}")]
     RpcError(String),
-    
+
     #[error("Signing error: {0}")]
     SigningError(String),
-    
+
     #[error("Invalid transaction: {0}")]
     InvalidTransaction(String),
-    
+
     #[error("Transaction execution failed: {0}")]
     TransactionExecutionFailed(String),
-    
+
     #[error("Fee estimation failed: {0}")]
     FeeEstimationFailed(String),
-    
+
     #[error("Token {0} is not supported for fee payment")]
     UnsupportedFeeToken(String),
-    
+
     #[error("Insufficient funds: {0}")]
     InsufficientFunds(String),
-    
+
     #[error("Internal error: {0}")]
     InternalServerError(String),
-    
+
     #[error("Validation error: {0}")]
     ValidationError(String),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(String),
-    
+
     #[error("Swap error: {0}")]
     SwapError(String),
 }
@@ -88,16 +88,17 @@ impl From<Box<dyn std::error::Error>> for KoraError {
 impl From<KoraError> for RpcError {
     fn from(err: KoraError) -> Self {
         match err {
-            KoraError::AccountNotFound(_) |
-            KoraError::InvalidTransaction(_) |
-            KoraError::ValidationError(_) |
-            KoraError::UnsupportedFeeToken(_) |
-            KoraError::InsufficientFunds(_) => invalid_request(err),
+            KoraError::AccountNotFound(_)
+            | KoraError::InvalidTransaction(_)
+            | KoraError::ValidationError(_)
+            | KoraError::UnsupportedFeeToken(_)
+            | KoraError::InsufficientFunds(_) => invalid_request(err),
 
-            KoraError::InternalServerError(_) |
-            KoraError::SerializationError(_) => internal_server_error(err),
-            
-            _ => invalid_request(err)
+            KoraError::InternalServerError(_) | KoraError::SerializationError(_) => {
+                internal_server_error(err)
+            }
+
+            _ => invalid_request(err),
         }
     }
 }
@@ -118,17 +119,11 @@ pub struct KoraResponse<T> {
 
 impl<T> KoraResponse<T> {
     pub fn ok(data: T) -> Self {
-        Self {
-            data: Some(data),
-            error: None,
-        }
+        Self { data: Some(data), error: None }
     }
 
     pub fn err(error: KoraError) -> Self {
-        Self {
-            data: None,
-            error: Some(error),
-        }
+        Self { data: None, error: Some(error) }
     }
 
     pub fn from_result(result: Result<T, KoraError>) -> Self {
