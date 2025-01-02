@@ -21,7 +21,6 @@ pub trait Signer {
         message: &[u8],
     ) -> impl std::future::Future<Output = Result<Signature, Self::Error>> + Send;
 
-    /// Partially signs a message, producing a Solana signature
     fn sign_solana(
         &self,
         message: &[u8],
