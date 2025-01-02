@@ -29,7 +29,7 @@ pub async fn sign_transaction(
     let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
     validator.validate_transaction(&original_transaction)?;
 
-        let mut transaction = original_transaction;
+    let mut transaction = original_transaction;
 
     let blockhash =
         rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
