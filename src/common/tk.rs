@@ -95,7 +95,6 @@ impl TurnkeySigner {
         let body = serde_json::to_string(&request)
             .map_err(|e| KoraError::InvalidTransaction(e.to_string()))?;
 
-        println!("{:?}", body);
         let stamp = self.create_stamp(&body)?;
 
         let response = self

@@ -42,6 +42,12 @@ cargo run -- [OPTIONS]
 | `--private-key <PRIVATE_KEY>` | Base58-encoded private key for signing | - |
 | `--config <FILE>` | Path to kora.toml config file | kora.toml |
 | `--no-load-signer` | Skip loading the signer | false |
+| `--with-turnkey-signer` | Use Turnkey signer | false |
+| `--turnkey-api-public-key <TURNKEY_API_PUBLIC_KEY>` | Turnkey API public key | - |
+| `--turnkey-api-private-key <TURNKEY_API_PRIVATE_KEY>` | Turnkey API private key | - |
+| `--turnkey-organization-id <TURNKEY_ORGANIZATION_ID>` | Turnkey organization ID | - |
+| `--turnkey-private-key-id <TURNKEY_PRIVATE_KEY_ID>` | Turnkey private key ID | - |
+| `--turnkey-public-key <TURNKEY_PUBLIC_KEY>` | Turnkey public key | - |
 
 #### Environment Variables
 
@@ -50,6 +56,11 @@ cargo run -- [OPTIONS]
 | `RUST_LOG` | Controls log level and filtering | "info,sqlx=error" |
 | `RPC_URL` | Alternative way to specify the RPC URL | - |
 | `KORA_PRIVATE_KEY` | Alternative way to specify the signing private key | - |
+| `TURNKEY_API_PUBLIC_KEY` | Turnkey API public key | - |
+| `TURNKEY_API_PRIVATE_KEY` | Turnkey API private key | - |
+| `TURNKEY_ORGANIZATION_ID` | Turnkey organization ID | - |
+| `TURNKEY_PRIVATE_KEY_ID` | Turnkey private key ID | - |
+| `TURNKEY_PUBLIC_KEY` | Turnkey public key | - |
 
 #### Configuration File (kora.toml)
 
@@ -67,6 +78,10 @@ allowed_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
     "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
     "So11111111111111111111111111111111111111112",  # SOL
+]
+allowed_spl_paid_tokens = [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
 ]
 ```
 
