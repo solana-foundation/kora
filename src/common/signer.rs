@@ -16,10 +16,16 @@ pub trait Signer {
     /// The error type returned by signing operations
     type Error: Error + Send + Sync + 'static;
 
-    fn sign(&self, message: &[u8]) -> impl std::future::Future<Output = Result<Signature, Self::Error>> + Send;
+    fn sign(
+        &self,
+        message: &[u8],
+    ) -> impl std::future::Future<Output = Result<Signature, Self::Error>> + Send;
 
     /// Partially signs a message, producing a Solana signature
-    fn sign_solana(&self, message: &[u8]) -> impl std::future::Future<Output = Result<SolanaSignature, Self::Error>> + Send;
+    fn sign_solana(
+        &self,
+        message: &[u8],
+    ) -> impl std::future::Future<Output = Result<SolanaSignature, Self::Error>> + Send;
 }
 
 #[derive(Clone)]
