@@ -4,11 +4,12 @@ Kora is a Solana paymaster node that provides a JSON-RPC interface for handling 
 
 ## Features
 
-- 🚀 JSON-RPC server with middleware support
-- 💰 Transaction fee estimation in any supported token
-- 🔄 Gasless transaction support
-- 💸 Transfer transactions with any supported token
-- 🔍 Remote signer support
+- JSON-RPC server with middleware support
+- Transaction fee estimation in any supported token
+- Gasless transaction support
+- Transfer transactions with any supported token
+- Remote signer support
+- Disallowed account, allowed spl tokens, programs config
 
 > Note: only `signAndSend` submits a transaction to an RPC, all other methods only return a signed transaction
 
