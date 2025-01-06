@@ -1,9 +1,12 @@
-use std::sync::Arc;
-use vaultrs::{client::{VaultClient, VaultClientSettingsBuilder}, transit};
-use solana_sdk::{signature::Signature, pubkey::Pubkey};
 use bs58;
+use solana_sdk::{pubkey::Pubkey, signature::Signature};
+use std::sync::Arc;
+use vaultrs::{
+    client::{VaultClient, VaultClientSettingsBuilder},
+    transit,
+};
 
-use crate::common::{error::KoraError, Signer, Signature as KoraSignature};
+use crate::common::{error::KoraError, Signature as KoraSignature};
 
 #[derive(Clone)]
 pub struct VaultSigner {
@@ -24,15 +27,23 @@ impl VaultSigner {
                 .address(vault_addr)
                 .token(token)
                 .build()
-                .map_err(|e| KoraError::SigningError(format!("Failed to create Vault client: {}", e)))?
+                .map_err(|e| {
+                    KoraError::SigningError(format!("Failed to create Vault client: {}", e))
+                })?,
         );
 
-        let pubkey = Pubkey::try_from(bs58::decode(pubkey).into_vec()
-            .map_err(|e| KoraError::SigningError(format!("Invalid public key: {}", e)))?.as_slice())
-            .map_err(|e| KoraError::SigningError(format!("Invalid public key: {}", e)))?;
+        let pubkey = Pubkey::try_from(
+            bs58::decode(pubkey)
+                .into_vec()
+                .map_err(|e| KoraError::SigningError(format!("Invalid public key: {}", e)))?
+                .as_slice(),
+        )
+        .map_err(|e| KoraError::SigningError(format!("Invalid public key: {}", e)))?;
 
         Ok(Self {
-            client: Arc::new(client.map_err(|e| KoraError::SigningError(format!("Failed to create Vault client: {}", e)))?),
+            client: Arc::new(client.map_err(|e| {
+                KoraError::SigningError(format!("Failed to create Vault client: {}", e))
+            })?),
             key_name,
             pubkey,
         })
@@ -45,7 +56,7 @@ impl VaultSigner {
 
 impl super::Signer for VaultSigner {
     type Error = KoraError;
-    
+
     async fn sign(&self, message: &[u8]) -> Result<KoraSignature, Self::Error> {
         let signature = transit::data::sign(
             self.client.as_ref(),
@@ -60,10 +71,7 @@ impl super::Signer for VaultSigner {
         let sig_bytes = base64::decode(signature.signature)
             .map_err(|e| KoraError::SigningError(format!("Failed to decode signature: {}", e)))?;
 
-        Ok(KoraSignature {
-            bytes: sig_bytes,
-            is_partial: false,
-        })
+        Ok(KoraSignature { bytes: sig_bytes, is_partial: false })
     }
 
     async fn sign_solana(&self, message: &[u8]) -> Result<Signature, Self::Error> {

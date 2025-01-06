@@ -1,7 +1,10 @@
 use solana_sdk::signature::Signature as SolanaSignature;
 use std::error::Error;
 
-use super::{error::KoraError, solana_signer::SolanaMemorySigner, tk::TurnkeySigner, vault_signer::VaultSigner};
+use super::{
+    error::KoraError, solana_signer::SolanaMemorySigner, tk::TurnkeySigner,
+    vault_signer::VaultSigner,
+};
 
 #[derive(Debug, Clone)]
 pub struct Signature {
@@ -53,7 +56,7 @@ impl super::Signer for KoraSigner {
             KoraSigner::Turnkey(signer) => {
                 let sig = signer.sign(message).await?;
                 Ok(super::Signature { bytes: sig, is_partial: false })
-            },
+            }
             KoraSigner::Vault(signer) => signer.sign(message).await,
         }
     }

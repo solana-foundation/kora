@@ -1,5 +1,4 @@
 use clap::{command, Parser};
-use std::path::PathBuf;
 
 use crate::LoggingFormat;
 

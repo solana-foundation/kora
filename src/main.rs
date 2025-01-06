@@ -4,7 +4,7 @@ use clap::{Parser, ValueEnum};
 use common::{load_config, signer::KoraSigner};
 use dotenv::dotenv;
 use kora::{
-    common::{self, tk::TurnkeySigner, SolanaMemorySigner, vault_signer::VaultSigner},
+    common::{self, tk::TurnkeySigner, vault_signer::VaultSigner, SolanaMemorySigner},
     rpc,
 };
 
