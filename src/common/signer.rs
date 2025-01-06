@@ -1,7 +1,7 @@
 use solana_sdk::signature::Signature as SolanaSignature;
 use std::error::Error;
 
-use super::{error::KoraError, solana_signer::SolanaMemorySigner, tk::TurnkeySigner};
+use super::{error::KoraError, solana_signer::SolanaMemorySigner, tk::TurnkeySigner, vault_signer::VaultSigner};
 
 #[derive(Debug, Clone)]
 pub struct Signature {
@@ -31,6 +31,7 @@ pub trait Signer {
 pub enum KoraSigner {
     Memory(SolanaMemorySigner),
     Turnkey(TurnkeySigner),
+    Vault(VaultSigner),
 }
 
 impl KoraSigner {
@@ -38,6 +39,7 @@ impl KoraSigner {
         match self {
             KoraSigner::Memory(signer) => signer.solana_pubkey(),
             KoraSigner::Turnkey(signer) => signer.solana_pubkey(),
+            KoraSigner::Vault(signer) => signer.solana_pubkey(),
         }
     }
 }
@@ -51,7 +53,8 @@ impl super::Signer for KoraSigner {
             KoraSigner::Turnkey(signer) => {
                 let sig = signer.sign(message).await?;
                 Ok(super::Signature { bytes: sig, is_partial: false })
-            }
+            },
+            KoraSigner::Vault(signer) => signer.sign(message).await,
         }
     }
 
@@ -62,6 +65,7 @@ impl super::Signer for KoraSigner {
         match self {
             KoraSigner::Memory(signer) => signer.sign_solana(message).await,
             KoraSigner::Turnkey(signer) => signer.sign_solana(message).await,
+            KoraSigner::Vault(signer) => signer.sign_solana(message).await,
         }
     }
 }

@@ -72,6 +72,7 @@ hex = "0.4.3"
 p256 = "0.13.2"
 redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
 deadpool-redis = "0.14.0"
+vaultrs = "0.7.3"
 
 [dev-dependencies]
 tokio = { version = "1.41.1", features = ["full"] }

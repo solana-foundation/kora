@@ -64,7 +64,7 @@ impl TokenAccountCache {
         Ok(())
     }
 
-    pub async fn invalidate_token_account(
+    pub async fn _invalidate_token_account(
         &self,
         user: &Pubkey,
         mint: &Pubkey,
