@@ -4,9 +4,10 @@ use clap::{Parser, ValueEnum};
 use common::{load_config, signer::KoraSigner};
 use dotenv::dotenv;
 use kora::{
-    common::{self, tk::TurnkeySigner, vault_signer::VaultSigner, SolanaMemorySigner},
+    common::{self, vault_signer::VaultSigner, SolanaMemorySigner},
     rpc,
 };
+use tk_rs::TurnkeySigner;
 
 #[tokio::main]
 async fn main() {
