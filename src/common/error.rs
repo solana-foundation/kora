@@ -147,3 +147,9 @@ impl<T, E: Into<KoraError>> IntoKoraResponse<T> for Result<T, E> {
         }
     }
 }
+
+impl From<anyhow::Error> for KoraError {
+    fn from(err: anyhow::Error) -> Self {
+        KoraError::SigningError(err.to_string())
+    }
+}
