@@ -29,6 +29,7 @@ pub trait Signer {
 }
 
 #[derive(Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum KoraSigner {
     Memory(SolanaMemorySigner),
     Turnkey(TurnkeySigner),
@@ -62,7 +63,9 @@ impl super::Signer for KoraSigner {
     ) -> Result<solana_sdk::signature::Signature, Self::Error> {
         match self {
             KoraSigner::Memory(signer) => signer.sign_solana(message).await,
-            KoraSigner::Turnkey(signer) => signer.sign_solana(message).await.map_err(KoraError::from),
+            KoraSigner::Turnkey(signer) => {
+                signer.sign_solana(message).await.map_err(KoraError::from)
+            }
         }
     }
 }
