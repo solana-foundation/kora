@@ -52,4 +52,19 @@ pub struct Args {
 
     #[arg(long, env = "TURNKEY_PUBLIC_KEY")]
     pub turnkey_public_key: Option<String>,
+
+    #[arg(long)]
+    pub vault_signer: bool,
+
+    #[arg(long, env = "VAULT_ADDR")]
+    pub vault_addr: Option<String>,
+
+    #[arg(long, env = "VAULT_TOKEN")]
+    pub vault_token: Option<String>,
+
+    #[arg(long, env = "VAULT_KEY_NAME")]
+    pub vault_key_name: Option<String>,
+
+    #[arg(long, env = "VAULT_PUBKEY")]
+    pub vault_pubkey: Option<String>,
 }

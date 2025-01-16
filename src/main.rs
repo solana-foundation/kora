@@ -4,7 +4,7 @@ use clap::{Parser, ValueEnum};
 use common::{load_config, signer::KoraSigner};
 use dotenv::dotenv;
 use kora::{
-    common::{self, SolanaMemorySigner},
+    common::{self, vault_signer::VaultSigner, SolanaMemorySigner},
     rpc,
 };
 use tk_rs::TurnkeySigner;
@@ -51,9 +51,62 @@ async fn main() {
 fn init_signer(args: &Args) -> KoraSigner {
     if args.turnkey_signer {
         init_turnkey_signer(args)
+    } else if args.vault_signer {
+        init_vault_signer(args)
     } else {
         init_memory_signer(args.private_key.as_ref())
     }
+}
+
+fn init_vault_signer(args: &Args) -> KoraSigner {
+    let vault_addr = args
+        .vault_addr
+        .as_ref()
+        .ok_or_else(|| {
+            log::error!("Vault address required");
+            std::process::exit(1);
+        })
+        .unwrap();
+
+    let vault_token = args
+        .vault_token
+        .as_ref()
+        .ok_or_else(|| {
+            log::error!("Vault token required");
+            std::process::exit(1);
+        })
+        .unwrap();
+
+    let key_name = args
+        .vault_key_name
+        .as_ref()
+        .ok_or_else(|| {
+            log::error!("Vault key name required");
+            std::process::exit(1);
+        })
+        .unwrap();
+
+    let pubkey = args
+        .vault_pubkey
+        .as_ref()
+        .ok_or_else(|| {
+            log::error!("Vault public key required");
+            std::process::exit(1);
+        })
+        .unwrap();
+
+    KoraSigner::Vault(
+        VaultSigner::new(
+            vault_addr.to_string(),
+            vault_token.to_string(),
+            key_name.to_string(),
+            pubkey.to_string(),
+        )
+        .unwrap_or_else(|e| {
+            log::error!("Vault signer init failed: {}", e);
+            std::process::exit(1);
+        }),
+    )
 }
 
 fn init_turnkey_signer(args: &Args) -> KoraSigner {
