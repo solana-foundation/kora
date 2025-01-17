@@ -22,15 +22,16 @@ pub struct EstimateTransactionFeeResponse {
     pub fee_in_lamports: u64,
 }
 
-async fn get_account_creation_fees(
+async fn get_associated_token_account_creation_fees(
     rpc_client: &RpcClient,
     transaction: &Transaction,
 ) -> Result<u64, KoraError> {
-    const ATA_ACCOUNT_SIZE: usize = 165; // Token-2022 support can be added by making this configurable
+    // TODO: Add support for Token-2022
+    const ATA_ACCOUNT_SIZE: usize = 165;
 
     let mut ata_count = 0u64;
 
-    // Check each instruction in the transaction
+    // Check each instruction in the transaction for ATA creation
     for instruction in &transaction.message.instructions {
         let program_id = transaction.message.account_keys[instruction.program_id_index as usize];
 
@@ -60,7 +61,7 @@ async fn get_account_creation_fees(
         return Ok(0);
     }
 
-    // Get rent exemption once for all ATAs
+    // Get rent cost in lamports for ATA creation
     let rent = rpc_client
         .get_minimum_balance_for_rent_exemption(ATA_ACCOUNT_SIZE)
         .await
@@ -81,7 +82,7 @@ pub async fn estimate_transaction_fee(
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
     // Get account creation fees
-    let account_creation_fee = get_account_creation_fees(rpc_client, &transaction)
+    let account_creation_fee = get_associated_token_account_creation_fees(rpc_client, &transaction)
         .await
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
