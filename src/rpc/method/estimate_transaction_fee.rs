@@ -3,9 +3,12 @@ use std::sync::Arc;
 use crate::common::{error::KoraError, transaction::decode_b58_transaction};
 
 use serde::{Deserialize, Serialize};
+use borsh::BorshDeserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    message::Message, pubkey::Pubkey, system_instruction, transaction::Transaction,
+use solana_sdk::transaction::Transaction;
+use spl_associated_token_account::{
+    id as associated_token_program_id,
+    instruction::AssociatedTokenAccountInstruction,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,34 +27,44 @@ async fn get_account_creation_fees(
     transaction: &Transaction,
 ) -> Result<u64, KoraError> {
     let mut total_creation_fee = 0u64;
+    let mut ata_count = 0u64;
 
-    // Get rent exemption amount for a new token account
-    let rent = rpc_client
-        .get_minimum_balance_for_rent_exemption(165)
-        .await
-        .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-    // Check each account in the transaction
+    // Check each instruction in the transaction
     for instruction in &transaction.message.instructions {
         let program_id = transaction.message.account_keys[instruction.program_id_index as usize];
 
-        // Check if instruction is creating an associated token account
-        if program_id == spl_associated_token_account::ID {
-            // Associated token account creation instruction has 4 accounts:
-            // 0. Funding account (payer)
-            // 1. Associated token account address
-            // 2. Wallet address
-            // 3. Token mint address
-            if instruction.accounts.len() == 4 {
-                // Check if the token account doesn't exist yet
-                let token_account =
-                    transaction.message.account_keys[instruction.accounts[1] as usize];
-                if let Ok(_) = rpc_client.get_account(&token_account).await {
-                    continue;
+        // Check if this instruction is targeting the Associated Token Account program
+        if program_id == associated_token_program_id() {
+            // Try to parse the instruction data
+            if let Ok(ata_instruction) = AssociatedTokenAccountInstruction::try_from_slice(&instruction.data) {
+                match ata_instruction {
+                    AssociatedTokenAccountInstruction::Create |
+                    AssociatedTokenAccountInstruction::CreateIdempotent => {
+                        // Check if account already exists
+                        let account_pubkey = transaction.message.account_keys[instruction.accounts[1] as usize];
+                        if let Ok(account) = rpc_client.get_account(&account_pubkey).await {
+                            if account.owner == associated_token_program_id() {
+                                continue;
+                            }
+                        }
+                        ata_count += 1;
+                    }
+                    _ => {}
                 }
-                total_creation_fee += rent;
             }
         }
+    }
+
+    if ata_count > 0 {
+        // TODO: Add support for Token-2022
+        let account_size = 165;
+
+        // Get rent exemption once for all ATAs
+        let rent = rpc_client
+            .get_minimum_balance_for_rent_exemption(account_size)
+            .await
+            .map_err(|e| KoraError::RpcError(e.to_string()))?;
+        total_creation_fee = rent * ata_count;
     }
 
     Ok(total_creation_fee)
@@ -90,16 +103,23 @@ mod tests {
     use crate::rpc::method::estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest,
     };
-    use solana_client::nonblocking::rpc_client::RpcClient;
+    use serde_json::json;
+    use solana_client::{nonblocking::rpc_client::RpcClient, rpc_request::RpcRequest};
     use solana_sdk::{
         message::Message, pubkey::Pubkey, system_instruction, transaction::Transaction,
     };
-    use std::sync::Arc;
+    use std::{collections::HashMap, sync::Arc};
 
     fn setup_test_rpc_client() -> Arc<RpcClient> {
         // Create a mock RPC client that returns predefined responses
         let rpc_url = "http://localhost:8899".to_string();
-        Arc::new(RpcClient::new_mock(rpc_url))
+        let mut mocks = HashMap::new();
+        // Add mock response for GetMinimumBalanceForRentExemption
+        mocks.insert(
+            RpcRequest::GetMinimumBalanceForRentExemption,
+            json!(2_039_280)
+        );
+        Arc::new(RpcClient::new_mock_with_mocks(rpc_url, mocks))
     }
 
     #[tokio::test]
@@ -174,6 +194,68 @@ mod tests {
         // Fee should include base fee + priority fee + rent for token account
         // Fee should be at least the minimum rent-exempt amount for a token account (~0.00204 SOL)
         let min_expected_lamports = 2_039_280;
+        assert!(
+            fee_response.fee_in_lamports >= min_expected_lamports,
+            "Fee {} lamports is less than minimum expected {} lamports",
+            fee_response.fee_in_lamports,
+            min_expected_lamports
+        );
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_with_multiple_ata_creation() {
+        let rpc_client = setup_test_rpc_client();
+
+        // Create a transaction that creates multiple token accounts
+        let payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint1 = Pubkey::new_unique();
+        let mint2 = Pubkey::new_unique();
+        let mint3 = Pubkey::new_unique();
+
+        // Get ATAs for each mint
+        let ata1 = spl_associated_token_account::get_associated_token_address(&owner, &mint1);
+        let ata2 = spl_associated_token_account::get_associated_token_address(&owner, &mint2); 
+        let ata3 = spl_associated_token_account::get_associated_token_address(&owner, &mint3);
+
+        // Create instructions for each ATA
+        let create_ata1_ix = spl_associated_token_account::instruction::create_associated_token_account(
+            &payer,
+            &ata1,
+            &mint1,
+            &spl_token::id(),
+        );
+        let create_ata2_ix = spl_associated_token_account::instruction::create_associated_token_account(
+            &payer,
+            &ata2, 
+            &mint2,
+            &spl_token::id(),
+        );
+        let create_ata3_ix = spl_associated_token_account::instruction::create_associated_token_account(
+            &payer,
+            &ata3,
+            &mint3, 
+            &spl_token::id(),
+        );
+
+        let message = Message::new(&[create_ata1_ix, create_ata2_ix, create_ata3_ix], Some(&payer));
+        let transaction = Transaction { message, signatures: vec![Default::default()] };
+
+        let serialized = bincode::serialize(&transaction).unwrap();
+        let encoded = bs58::encode(serialized).into_string();
+
+        let request = EstimateTransactionFeeRequest {
+            transaction: encoded,
+            fee_token: "SOL".to_string(),
+        };
+
+        let result = estimate_transaction_fee(&rpc_client, request).await;
+        assert!(result.is_ok());
+
+        let fee_response = result.unwrap();
+        // Fee should include base fee + priority fee + rent for 3 token accounts
+        // Minimum rent-exempt amount for 3 token accounts (~0.00612 SOL)
+        let min_expected_lamports = 3 * 2_039_280;
         assert!(
             fee_response.fee_in_lamports >= min_expected_lamports,
             "Fee {} lamports is less than minimum expected {} lamports",
