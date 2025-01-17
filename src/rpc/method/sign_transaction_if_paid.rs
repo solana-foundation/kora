@@ -11,6 +11,7 @@ use solana_sdk::{
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
 use std::sync::Arc;
+use super::estimate_transaction_fee::{estimate_transaction_fee, EstimateTransactionFeeRequest};
 
 #[derive(Debug, Deserialize)]
 pub struct SignTransactionIfPaidRequest {
@@ -48,14 +49,20 @@ pub async fn sign_transaction_if_paid(
     validator.validate_disallowed_accounts(&original_transaction.message)?;
 
     // Get the simulation result for fee calculation
-    let sim_result = rpc_client
-        .get_fee_for_message(&original_transaction.message)
-        .await
-        .map_err(|e| KoraError::RpcError(e.to_string()))?;
+    let min_transaction_fee = estimate_transaction_fee(
+        rpc_client,
+        EstimateTransactionFeeRequest {
+            transaction: request.transaction.clone(),
+            fee_token: "SOL".to_string(), // or appropriate token
+        },
+    )
+    .await
+    .map_err(|e| KoraError::RpcError(e.to_string()))?
+    .fee_in_lamports;
 
-    validator.validate_lamport_fee(sim_result)?;
+    validator.validate_lamport_fee(min_transaction_fee)?;
 
-    let cost_in_lamports = sim_result;
+    let cost_in_lamports = min_transaction_fee;
     let pricing_params = PricingParams { margin: request.margin.unwrap_or(0.0) as u64 };
     let token_price_info = request.token_price_info.unwrap_or(TokenPriceInfo { price: 0.0 });
     // Calculate required lamports including the margin
