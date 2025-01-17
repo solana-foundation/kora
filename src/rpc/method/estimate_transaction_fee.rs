@@ -26,48 +26,47 @@ async fn get_account_creation_fees(
     rpc_client: &RpcClient,
     transaction: &Transaction,
 ) -> Result<u64, KoraError> {
-    let mut total_creation_fee = 0u64;
+    const ATA_ACCOUNT_SIZE: usize = 165; // Token-2022 support can be added by making this configurable
+
     let mut ata_count = 0u64;
 
     // Check each instruction in the transaction
     for instruction in &transaction.message.instructions {
         let program_id = transaction.message.account_keys[instruction.program_id_index as usize];
 
-        // Check if this instruction is targeting the Associated Token Account program
-        if program_id == associated_token_program_id() {
-            // Try to parse the instruction data
-            if let Ok(ata_instruction) = AssociatedTokenAccountInstruction::try_from_slice(&instruction.data) {
-                match ata_instruction {
-                    AssociatedTokenAccountInstruction::Create |
-                    AssociatedTokenAccountInstruction::CreateIdempotent => {
-                        // Check if account already exists
-                        let account_pubkey = transaction.message.account_keys[instruction.accounts[1] as usize];
-                        if let Ok(account) = rpc_client.get_account(&account_pubkey).await {
-                            if account.owner == associated_token_program_id() {
-                                continue;
-                            }
-                        }
-                        ata_count += 1;
+        // Skip if not an ATA program instruction
+        if program_id != associated_token_program_id() {
+            continue;
+        }
+
+        // Try to parse the instruction data
+        if let Ok(ata_instruction) = AssociatedTokenAccountInstruction::try_from_slice(&instruction.data) {
+            match ata_instruction {
+                AssociatedTokenAccountInstruction::Create |
+                AssociatedTokenAccountInstruction::CreateIdempotent => {
+                    // Check if account already exists
+                    let account_pubkey = transaction.message.account_keys[instruction.accounts[1] as usize];
+                    match rpc_client.get_account(&account_pubkey).await {
+                        Ok(account) if account.owner == associated_token_program_id() => continue,
+                        _ => ata_count += 1,
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         }
     }
 
-    if ata_count > 0 {
-        // TODO: Add support for Token-2022
-        let account_size = 165;
-
-        // Get rent exemption once for all ATAs
-        let rent = rpc_client
-            .get_minimum_balance_for_rent_exemption(account_size)
-            .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))?;
-        total_creation_fee = rent * ata_count;
+    if ata_count == 0 {
+        return Ok(0);
     }
 
-    Ok(total_creation_fee)
+    // Get rent exemption once for all ATAs
+    let rent = rpc_client
+        .get_minimum_balance_for_rent_exemption(ATA_ACCOUNT_SIZE)
+        .await
+        .map_err(|e| KoraError::RpcError(e.to_string()))?;
+
+    Ok(rent * ata_count)
 }
 
 pub async fn estimate_transaction_fee(
