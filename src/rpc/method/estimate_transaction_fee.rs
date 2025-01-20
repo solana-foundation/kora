@@ -3,13 +3,10 @@ use std::sync::Arc;
 use crate::common::{error::KoraError, transaction::decode_b58_transaction};
 
 use serde::{Deserialize, Serialize};
-use borsh::BorshDeserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::transaction::Transaction;
-use spl_associated_token_account::{
-    id as associated_token_program_id,
-    instruction::AssociatedTokenAccountInstruction,
-};
+use solana_sdk::{program_pack::Pack, transaction::Transaction, rent::Rent};
+use spl_token::state::Account;
+use spl_associated_token_account::id as associated_token_program_id;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EstimateTransactionFeeRequest {
@@ -27,9 +24,9 @@ async fn get_associated_token_account_creation_fees(
     transaction: &Transaction,
 ) -> Result<u64, KoraError> {
     // TODO: Add support for Token-2022
-    const ATA_ACCOUNT_SIZE: usize = 165;
-
     let mut ata_count = 0u64;
+
+    let rent_min = Rent::default().minimum_balance(Account::LEN);
 
     // Check each instruction in the transaction for ATA creation
     for instruction in &transaction.message.instructions {
@@ -40,34 +37,18 @@ async fn get_associated_token_account_creation_fees(
             continue;
         }
 
-        // Try to parse the instruction data
-        if let Ok(ata_instruction) = AssociatedTokenAccountInstruction::try_from_slice(&instruction.data) {
-            match ata_instruction {
-                AssociatedTokenAccountInstruction::Create |
-                AssociatedTokenAccountInstruction::CreateIdempotent => {
-                    // Check if account already exists
-                    let account_pubkey = transaction.message.account_keys[instruction.accounts[1] as usize];
-                    match rpc_client.get_account(&account_pubkey).await {
-                        Ok(account) if account.owner == associated_token_program_id() => continue,
-                        _ => ata_count += 1,
-                    }
-                }
-                _ => {}
-            }
+        let ata = transaction.message.account_keys[instruction.accounts[1] as usize];
+        let owner = transaction.message.account_keys[instruction.accounts[2] as usize];
+        let mint = transaction.message.account_keys[instruction.accounts[3] as usize];
+
+        let expected_ata = spl_associated_token_account::get_associated_token_address(&owner, &mint);
+        
+        if ata == expected_ata && rpc_client.get_account(&ata).await.is_err() {
+            ata_count += 1;
         }
     }
 
-    if ata_count == 0 {
-        return Ok(0);
-    }
-
-    // Get rent cost in lamports for ATA creation
-    let rent = rpc_client
-        .get_minimum_balance_for_rent_exemption(ATA_ACCOUNT_SIZE)
-        .await
-        .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-    Ok(rent * ata_count)
+    Ok(rent_min * ata_count)
 }
 
 pub async fn estimate_transaction_fee(
