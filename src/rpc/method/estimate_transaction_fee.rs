@@ -3,13 +3,10 @@ use std::sync::Arc;
 use crate::common::{error::KoraError, transaction::decode_b58_transaction};
 
 use serde::{Deserialize, Serialize};
-use borsh::BorshDeserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::transaction::Transaction;
-use spl_associated_token_account::{
-    id as associated_token_program_id,
-    instruction::AssociatedTokenAccountInstruction,
-};
+use solana_sdk::{program_pack::Pack, transaction::Transaction};
+use spl_token::state::Account;
+use spl_associated_token_account::id as associated_token_program_id;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EstimateTransactionFeeRequest {
@@ -27,8 +24,7 @@ async fn get_associated_token_account_creation_fees(
     transaction: &Transaction,
 ) -> Result<u64, KoraError> {
     // TODO: Add support for Token-2022
-    const ATA_ACCOUNT_SIZE: usize = 165;
-
+    const ATA_ACCOUNT_SIZE: usize = Account::LEN;
     let mut ata_count = 0u64;
 
     // Check each instruction in the transaction for ATA creation
@@ -40,34 +36,24 @@ async fn get_associated_token_account_creation_fees(
             continue;
         }
 
-        // Try to parse the instruction data
-        if let Ok(ata_instruction) = AssociatedTokenAccountInstruction::try_from_slice(&instruction.data) {
-            match ata_instruction {
-                AssociatedTokenAccountInstruction::Create |
-                AssociatedTokenAccountInstruction::CreateIdempotent => {
-                    // Check if account already exists
-                    let account_pubkey = transaction.message.account_keys[instruction.accounts[1] as usize];
-                    match rpc_client.get_account(&account_pubkey).await {
-                        Ok(account) if account.owner == associated_token_program_id() => continue,
-                        _ => ata_count += 1,
-                    }
-                }
-                _ => {}
-            }
+        let ata = transaction.message.account_keys[instruction.accounts[1] as usize];
+        let owner = transaction.message.account_keys[instruction.accounts[2] as usize];
+        let mint = transaction.message.account_keys[instruction.accounts[3] as usize];
+
+        let expected_ata =
+            spl_associated_token_account::get_associated_token_address(&owner, &mint);
+
+        if ata == expected_ata && rpc_client.get_account(&ata).await.is_err() {
+            ata_count += 1;
         }
     }
 
-    if ata_count == 0 {
-        return Ok(0);
-    }
-
     // Get rent cost in lamports for ATA creation
-    let rent = rpc_client
-        .get_minimum_balance_for_rent_exemption(ATA_ACCOUNT_SIZE)
-        .await
-        .map_err(|e| KoraError::RpcError(e.to_string()))?;
+    use solana_sdk::rent::Rent;
+    let rent = Rent::default();
+    let exempt_min = rent.minimum_balance(ATA_ACCOUNT_SIZE);
 
-    Ok(rent * ata_count)
+    Ok(exempt_min * ata_count)
 }
 
 pub async fn estimate_transaction_fee(
@@ -115,10 +101,7 @@ mod tests {
         let rpc_url = "http://localhost:8899".to_string();
         let mut mocks = HashMap::new();
         // Add mock response for GetMinimumBalanceForRentExemption
-        mocks.insert(
-            RpcRequest::GetMinimumBalanceForRentExemption,
-            json!(2_039_280)
-        );
+        mocks.insert(RpcRequest::GetMinimumBalanceForRentExemption, json!(2_039_280));
         Arc::new(RpcClient::new_mock_with_mocks(rpc_url, mocks))
     }
 
@@ -145,6 +128,8 @@ mod tests {
         let fee_response = result.unwrap();
         // Base fee + priority fee
         assert!(fee_response.fee_in_lamports > 0);
+        // Fee should be less than the minimum rent-exempt amount for a token account (~0.00204 SOL)
+        assert!(fee_response.fee_in_lamports < 2_039_280);
     }
 
     #[tokio::test]
@@ -215,28 +200,31 @@ mod tests {
 
         // Get ATAs for each mint
         let ata1 = spl_associated_token_account::get_associated_token_address(&owner, &mint1);
-        let ata2 = spl_associated_token_account::get_associated_token_address(&owner, &mint2); 
+        let ata2 = spl_associated_token_account::get_associated_token_address(&owner, &mint2);
         let ata3 = spl_associated_token_account::get_associated_token_address(&owner, &mint3);
 
         // Create instructions for each ATA
-        let create_ata1_ix = spl_associated_token_account::instruction::create_associated_token_account(
-            &payer,
-            &ata1,
-            &mint1,
-            &spl_token::id(),
-        );
-        let create_ata2_ix = spl_associated_token_account::instruction::create_associated_token_account(
-            &payer,
-            &ata2, 
-            &mint2,
-            &spl_token::id(),
-        );
-        let create_ata3_ix = spl_associated_token_account::instruction::create_associated_token_account(
-            &payer,
-            &ata3,
-            &mint3, 
-            &spl_token::id(),
-        );
+        let create_ata1_ix =
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &payer,
+                &ata1,
+                &mint1,
+                &spl_token::id(),
+            );
+        let create_ata2_ix =
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &payer,
+                &ata2,
+                &mint2,
+                &spl_token::id(),
+            );
+        let create_ata3_ix =
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &payer,
+                &ata3,
+                &mint3,
+                &spl_token::id(),
+            );
 
         let message = Message::new(&[create_ata1_ix, create_ata2_ix, create_ata3_ix], Some(&payer));
         let transaction = Transaction { message, signatures: vec![Default::default()] };
@@ -244,10 +232,8 @@ mod tests {
         let serialized = bincode::serialize(&transaction).unwrap();
         let encoded = bs58::encode(serialized).into_string();
 
-        let request = EstimateTransactionFeeRequest {
-            transaction: encoded,
-            fee_token: "SOL".to_string(),
-        };
+        let request =
+            EstimateTransactionFeeRequest { transaction: encoded, fee_token: "SOL".to_string() };
 
         let result = estimate_transaction_fee(&rpc_client, request).await;
         assert!(result.is_ok());
