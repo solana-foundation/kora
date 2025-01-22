@@ -4,6 +4,9 @@ use crate::common::{error::KoraError, transaction::decode_b58_transaction};
 
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{program_pack::Pack, transaction::Transaction};
+use spl_associated_token_account::id as associated_token_program_id;
+use spl_token::state::Account;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EstimateTransactionFeeRequest {
@@ -14,6 +17,43 @@ pub struct EstimateTransactionFeeRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EstimateTransactionFeeResponse {
     pub fee_in_lamports: u64,
+}
+
+async fn get_associated_token_account_creation_fees(
+    rpc_client: &RpcClient,
+    transaction: &Transaction,
+) -> Result<u64, KoraError> {
+    // TODO: Add support for Token-2022
+    const ATA_ACCOUNT_SIZE: usize = Account::LEN;
+    let mut ata_count = 0u64;
+
+    // Check each instruction in the transaction for ATA creation
+    for instruction in &transaction.message.instructions {
+        let program_id = transaction.message.account_keys[instruction.program_id_index as usize];
+
+        // Skip if not an ATA program instruction
+        if program_id != associated_token_program_id() {
+            continue;
+        }
+
+        let ata = transaction.message.account_keys[instruction.accounts[1] as usize];
+        let owner = transaction.message.account_keys[instruction.accounts[2] as usize];
+        let mint = transaction.message.account_keys[instruction.accounts[3] as usize];
+
+        let expected_ata =
+            spl_associated_token_account::get_associated_token_address(&owner, &mint);
+
+        if ata == expected_ata && rpc_client.get_account(&ata).await.is_err() {
+            ata_count += 1;
+        }
+    }
+
+    // Get rent cost in lamports for ATA creation
+    use solana_sdk::rent::Rent;
+    let rent = Rent::default();
+    let exempt_min = rent.minimum_balance(ATA_ACCOUNT_SIZE);
+
+    Ok(exempt_min * ata_count)
 }
 
 pub async fn estimate_transaction_fee(
@@ -27,6 +67,11 @@ pub async fn estimate_transaction_fee(
         .await
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
+    // Get account creation fees
+    let account_creation_fee = get_associated_token_account_creation_fees(rpc_client, &transaction)
+        .await
+        .map_err(|e| KoraError::RpcError(e.to_string()))?;
+
     // Get priority fee from recent blocks
     let priority_stats = rpc_client
         .get_recent_prioritization_fees(&[])
@@ -34,5 +79,174 @@ pub async fn estimate_transaction_fee(
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
     let priority_fee = priority_stats.iter().map(|fee| fee.prioritization_fee).max().unwrap_or(0);
 
-    Ok(EstimateTransactionFeeResponse { fee_in_lamports: fee + priority_fee })
+    Ok(EstimateTransactionFeeResponse {
+        fee_in_lamports: fee + priority_fee + account_creation_fee,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::rpc::method::estimate_transaction_fee::{
+        estimate_transaction_fee, EstimateTransactionFeeRequest,
+    };
+    use serde_json::json;
+    use solana_client::{nonblocking::rpc_client::RpcClient, rpc_request::RpcRequest};
+    use solana_sdk::{
+        message::Message, pubkey::Pubkey, system_instruction, transaction::Transaction,
+    };
+    use std::{collections::HashMap, sync::Arc};
+
+    fn setup_test_rpc_client() -> Arc<RpcClient> {
+        // Create a mock RPC client that returns predefined responses
+        let rpc_url = "http://localhost:8899".to_string();
+        let mut mocks = HashMap::new();
+        // Add mock response for GetMinimumBalanceForRentExemption
+        mocks.insert(RpcRequest::GetMinimumBalanceForRentExemption, json!(2_039_280));
+        Arc::new(RpcClient::new_mock_with_mocks(rpc_url, mocks))
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_basic() {
+        let rpc_client = setup_test_rpc_client();
+
+        // Create a simple transfer transaction
+        let from = Pubkey::new_unique();
+        let to = Pubkey::new_unique();
+        let instruction = system_instruction::transfer(&from, &to, 1000);
+        let message = Message::new(&[instruction], Some(&from));
+        let transaction = Transaction { message, signatures: vec![Default::default()] };
+
+        let serialized = bincode::serialize(&transaction).unwrap();
+        let encoded = bs58::encode(serialized).into_string();
+
+        let request =
+            EstimateTransactionFeeRequest { transaction: encoded, fee_token: "SOL".to_string() };
+
+        let result = estimate_transaction_fee(&rpc_client, request).await;
+        assert!(result.is_ok());
+
+        let fee_response = result.unwrap();
+        // Base fee + priority fee
+        assert!(fee_response.fee_in_lamports > 0);
+        // Fee should be less than the minimum rent-exempt amount for a token account (~0.00204 SOL)
+        assert!(fee_response.fee_in_lamports < 2_039_280);
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_invalid_transaction() {
+        let rpc_client = setup_test_rpc_client();
+
+        let request = EstimateTransactionFeeRequest {
+            transaction: "invalid_transaction".to_string(),
+            fee_token: "SOL".to_string(),
+        };
+
+        let result = estimate_transaction_fee(&rpc_client, request).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_with_token_creation() {
+        let rpc_client = setup_test_rpc_client();
+
+        // Create a transaction that includes token account creation
+        let payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+
+        let ata = spl_associated_token_account::get_associated_token_address(&owner, &mint);
+        let create_ata_ix =
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &payer,
+                &ata,
+                &mint,
+                &spl_token::id(),
+            );
+
+        let message = Message::new(&[create_ata_ix], Some(&payer));
+        let transaction = Transaction { message, signatures: vec![Default::default()] };
+
+        let serialized = bincode::serialize(&transaction).unwrap();
+        let encoded = bs58::encode(serialized).into_string();
+
+        let request =
+            EstimateTransactionFeeRequest { transaction: encoded, fee_token: "SOL".to_string() };
+
+        let result = estimate_transaction_fee(&rpc_client, request).await;
+        assert!(result.is_ok());
+
+        let fee_response = result.unwrap();
+        // Fee should include base fee + priority fee + rent for token account
+        // Fee should be at least the minimum rent-exempt amount for a token account (~0.00204 SOL)
+        let min_expected_lamports = 2_039_280;
+        assert!(
+            fee_response.fee_in_lamports >= min_expected_lamports,
+            "Fee {} lamports is less than minimum expected {} lamports",
+            fee_response.fee_in_lamports,
+            min_expected_lamports
+        );
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_with_multiple_ata_creation() {
+        let rpc_client = setup_test_rpc_client();
+
+        // Create a transaction that creates multiple token accounts
+        let payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint1 = Pubkey::new_unique();
+        let mint2 = Pubkey::new_unique();
+        let mint3 = Pubkey::new_unique();
+
+        // Get ATAs for each mint
+        let ata1 = spl_associated_token_account::get_associated_token_address(&owner, &mint1);
+        let ata2 = spl_associated_token_account::get_associated_token_address(&owner, &mint2);
+        let ata3 = spl_associated_token_account::get_associated_token_address(&owner, &mint3);
+
+        // Create instructions for each ATA
+        let create_ata1_ix =
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &payer,
+                &ata1,
+                &mint1,
+                &spl_token::id(),
+            );
+        let create_ata2_ix =
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &payer,
+                &ata2,
+                &mint2,
+                &spl_token::id(),
+            );
+        let create_ata3_ix =
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &payer,
+                &ata3,
+                &mint3,
+                &spl_token::id(),
+            );
+
+        let message = Message::new(&[create_ata1_ix, create_ata2_ix, create_ata3_ix], Some(&payer));
+        let transaction = Transaction { message, signatures: vec![Default::default()] };
+
+        let serialized = bincode::serialize(&transaction).unwrap();
+        let encoded = bs58::encode(serialized).into_string();
+
+        let request =
+            EstimateTransactionFeeRequest { transaction: encoded, fee_token: "SOL".to_string() };
+
+        let result = estimate_transaction_fee(&rpc_client, request).await;
+        assert!(result.is_ok());
+
+        let fee_response = result.unwrap();
+        // Fee should include base fee + priority fee + rent for 3 token accounts
+        // Minimum rent-exempt amount for 3 token accounts (~0.00612 SOL)
+        let min_expected_lamports = 3 * 2_039_280;
+        assert!(
+            fee_response.fee_in_lamports >= min_expected_lamports,
+            "Fee {} lamports is less than minimum expected {} lamports",
+            fee_response.fee_in_lamports,
+            min_expected_lamports
+        );
+    }
 }
