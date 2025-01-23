@@ -126,11 +126,13 @@ async fn test_sign_transaction() {
 }
 
 #[tokio::test]
-async fn test_sign_and_send() {
+async fn test_sign_and_send_transaction() {
     let client = setup_test_client().await;
     let test_tx = create_test_transaction().await;
 
-    let result = client.request::<serde_json::Value, _>("signAndSend", rpc_params![test_tx]).await;
+    let result = client
+        .request::<serde_json::Value, _>("signAndSendTransaction", rpc_params![test_tx])
+        .await;
 
     // This might fail if we're not on devnet/testnet with funded accounts
     match result {
@@ -142,7 +144,10 @@ async fn test_sign_and_send() {
             );
         }
         Err(e) => {
-            println!("Note: signAndSend failed as expected without funded accounts: {}", e);
+            println!(
+                "Note: signAndSendTransaction failed as expected without funded accounts: {}",
+                e
+            );
         }
     }
 }

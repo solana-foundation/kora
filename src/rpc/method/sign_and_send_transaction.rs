@@ -20,7 +20,7 @@ pub struct SignAndSendTransactionResult {
     pub signed_transaction: String,
 }
 
-pub async fn sign_and_send(
+pub async fn sign_and_send_transaction(
     rpc_client: &Arc<RpcClient>,
     validation: &ValidationConfig,
     request: SignAndSendTransactionRequest,

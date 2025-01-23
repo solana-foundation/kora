@@ -68,11 +68,14 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         rpc.sign_transaction(params).await.map_err(Into::into)
     });
 
-    let _ = module.register_async_method("signAndSend", |rpc_params, rpc_context| async move {
-        let rpc = rpc_context.as_ref();
-        let params = rpc_params.parse()?;
-        rpc.sign_and_send(params).await.map_err(Into::into)
-    });
+    let _ = module.register_async_method(
+        "signAndSendTransaction",
+        |rpc_params, rpc_context| async move {
+            let rpc = rpc_context.as_ref();
+            let params = rpc_params.parse()?;
+            rpc.sign_and_send_transaction(params).await.map_err(Into::into)
+        },
+    );
 
     let _ =
         module.register_async_method("transferTransaction", |rpc_params, rpc_context| async move {
