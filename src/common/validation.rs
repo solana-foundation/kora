@@ -345,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_and_send_mode() {
+    fn test_sign_and_send_transaction_mode() {
         let fee_payer = Pubkey::new_unique();
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,

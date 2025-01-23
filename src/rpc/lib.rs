@@ -13,7 +13,9 @@ use super::method::{
     get_blockhash::{get_blockhash, GetBlockhashResponse},
     get_config::{get_config, GetConfigResponse},
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
-    sign_and_send::{sign_and_send, SignAndSendTransactionRequest, SignAndSendTransactionResult},
+    sign_and_send_transaction::{
+        sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResult,
+    },
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult},
     sign_transaction_if_paid::{
         sign_transaction_if_paid, SignTransactionIfPaidRequest, SignTransactionIfPaidResponse,
@@ -74,13 +76,13 @@ impl KoraRpc {
         result
     }
 
-    pub async fn sign_and_send(
+    pub async fn sign_and_send_transaction(
         &self,
         request: SignAndSendTransactionRequest,
     ) -> Result<SignAndSendTransactionResult, KoraError> {
-        info!("Sign and send request: {:?}", request);
-        let result = sign_and_send(&self.rpc_client, &self.validation, request).await;
-        info!("Sign and send response: {:?}", result);
+        info!("Sign and send transaction request: {:?}", request);
+        let result = sign_and_send_transaction(&self.rpc_client, &self.validation, request).await;
+        info!("Sign and send transaction response: {:?}", result);
         result
     }
 
