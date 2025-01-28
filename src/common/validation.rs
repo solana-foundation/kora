@@ -1,4 +1,4 @@
-use crate::common::{config::ValidationConfig, KoraError};
+use crate::common::{config::ValidationConfig, KoraError, instructions::ProgramInstructionConfigWithDiscriminators};
 use solana_sdk::{
     instruction::CompiledInstruction, message::Message, pubkey::Pubkey, system_instruction,
     system_program, transaction::Transaction,
@@ -14,6 +14,7 @@ pub struct TransactionValidator {
     fee_payer_pubkey: Pubkey,
     max_allowed_lamports: u64,
     allowed_programs: Vec<Pubkey>,
+    allowed_program_instructions: Vec<ProgramInstructionConfigWithDiscriminators>,
     max_signatures: usize,
     allowed_tokens: Vec<Pubkey>,
     disallowed_accounts: Vec<Pubkey>,
@@ -45,6 +46,7 @@ impl TransactionValidator {
                 .iter()
                 .map(|addr| Pubkey::from_str(addr).unwrap())
                 .collect(),
+            allowed_program_instructions: config.allowed_program_instructions.clone(),
             disallowed_accounts: config
                 .disallowed_accounts
                 .iter()
@@ -65,6 +67,7 @@ impl TransactionValidator {
 
     pub fn validate_transaction(&self, transaction: &Transaction) -> Result<(), KoraError> {
         self.validate_programs(&transaction.message)?;
+        self.validate_program_instructions(&transaction.message)?;
         self.validate_transfer_amounts(&transaction.message)?;
         self.validate_signatures(transaction)?;
         self.validate_disallowed_accounts(&transaction.message)?;
@@ -118,6 +121,40 @@ impl TransactionValidator {
                     "Program {} is not in the allowed list",
                     program_id
                 )));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_program_instructions(&self, message: &Message) -> Result<(), KoraError> {
+        for instruction in &message.instructions {
+            let program_id = message.account_keys[instruction.program_id_index as usize];
+            
+            // Find program config in allowed instructions
+            let program_config = self.allowed_program_instructions
+                .iter()
+                .find(|config| Pubkey::from_str(&config.program_id).unwrap() == program_id)
+                .ok_or_else(|| KoraError::InvalidTransaction(
+                    format!("Program {} not found in allowed instructions", program_id)
+                ))?;
+
+            // If wildcard "*" is present, allow all instructions for this program
+            if program_config.instructions.contains(&"*".to_string()) {
+                continue;
+            }
+
+            // Check if instruction data matches any allowed discriminator
+            let instruction_data = &instruction.data[..8];  // First 8 bytes are the discriminator
+            let instruction_data_vec = instruction_data.to_vec();
+
+            let is_allowed = program_config.discriminators.iter().any(|(disc, _)| {
+                disc == &instruction_data_vec
+            });
+
+            if !is_allowed {
+                return Err(KoraError::InvalidTransaction(
+                    format!("Instruction {:?} not allowed for program {}", instruction_data, program_id)
+                ));
             }
         }
         Ok(())
@@ -231,6 +268,7 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_program_instructions: vec![],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
@@ -259,6 +297,7 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_program_instructions: vec![],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
@@ -290,6 +329,7 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()], // System program
+            allowed_program_instructions: vec![],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
@@ -324,6 +364,7 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 2,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_program_instructions: vec![],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
@@ -351,6 +392,7 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_program_instructions: vec![],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
@@ -379,6 +421,7 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_program_instructions: vec![],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
@@ -398,6 +441,7 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_program_instructions: vec![],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec!["hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek".to_string()],

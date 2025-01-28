@@ -3,6 +3,7 @@ pub mod cache;
 pub mod config;
 pub mod error;
 pub mod feature;
+pub mod instructions;
 pub mod jup;
 pub mod rpc;
 pub mod signer;

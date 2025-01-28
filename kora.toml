@@ -7,12 +7,40 @@ max_signatures = 10
 allowed_programs = [
     "11111111111111111111111111111111",  # System Program
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
-    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Ata Program
 ]
 allowed_tokens = [
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
 ]
 allowed_spl_paid_tokens = [
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
-] 
+]
 disallowed_accounts = []
+# if there is an "allowed_programs" listed above and not in the allowed_instructions, then we will allow all instructions for that program
+allowed_instructions = [
+    { program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", instructions = ["[3,...]"] }, # when there's no IDL available
+    { program = "11111111111111111111111111111111", instructions = ["transfer"] }, # when there's an IDL available
+    { program = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", instructions = ["*"] }, # Ata Program
+]
+# 1. how do I convert from string to u8 discriminators?
+#     a. Anchor
+#         - Most large programs have published IDLs
+#         - steps on startup:
+#             - is it an anchor program? Noah will provide a script to check this
+#             - fetch IDL from on-chain
+#             - parse IDL to get instruction discriminators and match string
+#         - Script from Noah: https://github.com/coral-xyz/anchor/blob/5d0fe35a455bc98d83e03cecdd257dfb91e8f820/lang/syn/src/codegen/program/idl.rs#L17-L26
+#             - get address, fetch IDL, parse IDL, get discriminators
+#             - https://github.com/coral-xyz/anchor/blob/5d0fe35a455bc98d83e03cecdd257dfb91e8f820/cli/src/lib.rs#L2345
+#             - fuzzy match on camel case (now?) vs snake case and fail with good instructions
+#     b. rust programs
+#         - SoL in general
+#     c. "native" programs
+#         - codama IDLs stored off-chain
+#         - SNS, token22, tokenkeg etc (anything under solana-program)
+#             token22: https://github.com/solana-program/token-2022/blob/3ba4e55cc0e061ea98481e66c04bfe941038a75d/program/idl.json#L4
+#             token: https://github.com/solana-program/token/blob/main/program/idl.json
+#             memo: https://github.com/solana-program/memo/blob/main/program/idl.json
+#             ata: might need to submit a PR to add IDL? or get Loris to do this.
+#         - have to hard code links per program
+#             - can enumerate all instructions in the program in the docs to cover 90% of tokens
