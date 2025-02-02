@@ -1,18 +1,20 @@
 mod args;
+mod method;
 mod rpc;
 mod server;
-mod method;
+use args::Args;
 use clap::Parser;
 use dotenv::dotenv;
-use kora_lib::{config::load_config, signer::KoraSigner};
-use kora_lib::signer::{SolanaMemorySigner, VaultSigner};
-use kora_lib::state::init_signer;
-use kora_lib::rpc::get_rpc_client;
-use tk_rs::TurnkeySigner;
-use kora_lib::log::LoggingFormat;
-use args::Args;
+use kora_lib::{
+    config::load_config,
+    log::LoggingFormat,
+    rpc::get_rpc_client,
+    signer::{KoraSigner, SolanaMemorySigner, VaultSigner},
+    state::init_signer,
+};
 use rpc::KoraRpc;
 use server::run_rpc_server;
+use tk_rs::TurnkeySigner;
 
 #[tokio::main]
 async fn main() {
@@ -42,11 +44,10 @@ async fn main() {
     }
 
     let rpc_server = KoraRpc::new(rpc_client, config.validation, config.kora);
-    let server_handle =
-        run_rpc_server(rpc_server, args.port).await.unwrap_or_else(|e| {
-            log::error!("Server start failed: {}", e);
-            std::process::exit(1);
-        });
+    let server_handle = run_rpc_server(rpc_server, args.port).await.unwrap_or_else(|e| {
+        log::error!("Server start failed: {}", e);
+        std::process::exit(1);
+    });
 
     tokio::signal::ctrl_c().await.unwrap();
     server_handle.stop().unwrap();

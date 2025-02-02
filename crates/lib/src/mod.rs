@@ -4,6 +4,7 @@ pub mod config;
 pub mod error;
 pub mod feature;
 pub mod jup;
+pub mod log;
 pub mod rpc;
 pub mod signer;
 pub mod state;
@@ -11,7 +12,6 @@ pub mod token;
 pub mod transaction;
 pub mod types;
 pub mod validation;
-pub mod log;
 
 pub use config::{load_config, Config};
 pub use error::KoraError;

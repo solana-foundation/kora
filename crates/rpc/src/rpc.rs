@@ -9,28 +9,20 @@ use kora_lib::{
 
 use crate::method::{
     estimate_transaction_fee::{
-        estimate_transaction_fee,
-        EstimateTransactionFeeRequest,
-        EstimateTransactionFeeResponse,
+        estimate_transaction_fee, EstimateTransactionFeeRequest, EstimateTransactionFeeResponse,
     },
     get_blockhash::{get_blockhash, GetBlockhashResponse},
     get_config::{get_config, GetConfigResponse},
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
     sign_and_send_transaction::{
-        sign_and_send_transaction,
-        SignAndSendTransactionRequest,
-        SignAndSendTransactionResult,
+        sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResult,
     },
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult},
     sign_transaction_if_paid::{
-        sign_transaction_if_paid,
-        SignTransactionIfPaidRequest,
-        SignTransactionIfPaidResponse,
+        sign_transaction_if_paid, SignTransactionIfPaidRequest, SignTransactionIfPaidResponse,
     },
     transfer_transaction::{
-        transfer_transaction,
-        TransferTransactionRequest,
-        TransferTransactionResponse,
+        transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
     },
 };
 
