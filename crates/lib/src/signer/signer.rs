@@ -1,4 +1,5 @@
-use super::{error::KoraError, solana_signer::SolanaMemorySigner, vault_signer::VaultSigner};
+use super::{solana_signer::SolanaMemorySigner, vault_signer::VaultSigner};
+use crate::error::KoraError;
 use solana_sdk::signature::Signature as SolanaSignature;
 use std::error::Error;
 use tk_rs::TurnkeySigner;

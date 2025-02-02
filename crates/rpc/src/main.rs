@@ -1,18 +1,23 @@
 mod args;
-use args::Args;
-use clap::{Parser, ValueEnum};
-use common::{load_config, signer::KoraSigner};
+mod rpc;
+mod server;
+mod method;
+use clap::Parser;
 use dotenv::dotenv;
-use kora::{
-    common::{self, vault_signer::VaultSigner, SolanaMemorySigner},
-    rpc,
-};
+use kora_lib::{config::load_config, signer::KoraSigner};
+use kora_lib::signer::{SolanaMemorySigner, VaultSigner};
+use kora_lib::state::init_signer;
+use kora_lib::rpc::get_rpc_client;
 use tk_rs::TurnkeySigner;
+use kora_lib::log::LoggingFormat;
+use args::Args;
+use rpc::KoraRpc;
+use server::run_rpc_server;
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    let args = args::Args::parse();
+    let args = Args::parse();
     setup_logging(&args.logging_format);
 
     let config = load_config(&args.config).unwrap_or_else(|e| {
@@ -20,26 +25,25 @@ async fn main() {
         std::process::exit(1);
     });
 
-    let rpc_client = common::rpc::get_rpc_client(&args.rpc_url);
+    let rpc_client = get_rpc_client(&args.rpc_url);
 
     if let Err(e) = config.validate(rpc_client.as_ref()).await {
         log::error!("Config validation failed: {}", e);
         std::process::exit(1);
     }
 
-    let signer = if !args.skip_signer { Some(init_signer(&args)) } else { None };
+    let signer = if !args.skip_signer { Some(init_global_signer(&args)) } else { None };
 
     if let Some(signer) = signer {
-        common::init_signer(signer).unwrap_or_else(|e| {
+        init_signer(signer).unwrap_or_else(|e| {
             log::error!("Signer init failed: {}", e);
             std::process::exit(1);
         });
     }
 
-    let rpc_server = rpc::lib::KoraRpc::new(rpc_client, config.validation, config.kora);
-
+    let rpc_server = KoraRpc::new(rpc_client, config.validation, config.kora);
     let server_handle =
-        rpc::server::run_rpc_server(rpc_server, args.port).await.unwrap_or_else(|e| {
+        run_rpc_server(rpc_server, args.port).await.unwrap_or_else(|e| {
             log::error!("Server start failed: {}", e);
             std::process::exit(1);
         });
@@ -48,7 +52,7 @@ async fn main() {
     server_handle.stop().unwrap();
 }
 
-fn init_signer(args: &Args) -> KoraSigner {
+fn init_global_signer(args: &Args) -> KoraSigner {
     if args.turnkey_signer {
         init_turnkey_signer(args)
     } else if args.vault_signer {
@@ -177,12 +181,6 @@ fn init_memory_signer(private_key: Option<&String>) -> KoraSigner {
         log::error!("Memory signer init failed: {}", e);
         std::process::exit(1);
     }))
-}
-
-#[derive(Parser, Debug, Clone, ValueEnum)]
-pub enum LoggingFormat {
-    Standard,
-    Json,
 }
 
 fn setup_logging(format: &LoggingFormat) {

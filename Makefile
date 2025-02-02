@@ -27,9 +27,21 @@ test:
 test-integration:
 	cargo test --test '*'
 
-# Build release binary
+# Build all binaries
 build:
-	cargo build --release
+	cargo build --workspace
+
+# Build specific binary
+build-bin:
+	cargo build --bin $(bin)
+
+# Build lib
+build-lib:
+	cargo build -p kora-lib
+
+# Build rpc
+build-rpc:
+	cargo build -p kora-rpc
 
 # Run presigned release binary
 run-presigned:
@@ -37,7 +49,7 @@ run-presigned:
 
 # Run with default configuration
 run:
-	cargo run
+	cargo run -p kora-rpc
 
 # Clean build artifacts
 clean:

@@ -4,7 +4,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 
-use crate::common::KoraError;
+use crate::error::KoraError;
 
 pub fn decode_b58_transaction(tx: &str) -> Result<Transaction, KoraError> {
     let decoded_bytes = match bs58::decode(tx).into_vec() {

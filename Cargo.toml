@@ -1,30 +1,16 @@
-[package]
-default-run = "kora"
-description = "Gasless relayer"
+[workspace]
+members = [
+    "crates/lib",
+    "crates/rpc",
+]
+
+[workspace.package]
+version = "0.1.0"
 edition = "2021"
 license = "MIT"
-name = "kora"
-version = "0.1.0"
-publish = true
-readme = "README.md"
 repository = "https://github.com/pkxro/kora"
 
-[features]
-integration-tests = []
-
-[[bin]]
-name = "kora"
-path = "src/main.rs"
-
-[[bin]]
-name = "presigned"
-path = "scripts/presigned.rs"
-
-[[bin]]
-name = "token"
-path = "scripts/token.rs"
-
-[dependencies]
+[workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0.95"
@@ -53,7 +39,7 @@ reqwest = { version = "0.12.9", features = ["json", "blocking", "native-tls"] }
 tower = { version = "0.4.13", features = ["full"] }
 tower-http = { version = "0.3.5", features = ["full", "cors"] }
 clap = { version = "4.4", features = ["derive", "env"] }
-tokio = "1.41.1"
+tokio = { version = "1.41.1", features = ["full"] }
 prettyplease = "0.2.25"
 syn = "2.0.89"
 parking_lot = "0.12"
@@ -74,8 +60,3 @@ redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
 deadpool-redis = "0.14.0"
 vaultrs = "0.7.3"
 tk-rs = { git = "https://github.com/pkxro/tk-rs.git" }
-
-[dev-dependencies]
-tokio = { version = "1.41.1", features = ["full"] }
-jsonrpsee = { version = "0.16.2", features = ["client"] }
-serde_json = "1.0"

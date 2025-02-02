@@ -1,4 +1,4 @@
-use crate::common::{config::ValidationConfig, KoraError};
+use crate::{config::ValidationConfig, error::KoraError};
 use solana_sdk::{
     instruction::CompiledInstruction, message::Message, pubkey::Pubkey, system_instruction,
     system_program, transaction::Transaction,

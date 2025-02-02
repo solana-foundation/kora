@@ -2,7 +2,8 @@ use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-use super::{error::KoraError, signer::KoraSigner};
+use crate::error::KoraError;
+use crate::signer::KoraSigner;
 
 static GLOBAL_SIGNER: Lazy<Arc<RwLock<Option<KoraSigner>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));

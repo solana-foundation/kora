@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::common::{error::KoraError, transaction::decode_b58_transaction};
+use kora_lib::{error::KoraError, transaction::decode_b58_transaction};
 
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -86,7 +86,7 @@ pub async fn estimate_transaction_fee(
 
 #[cfg(test)]
 mod tests {
-    use crate::rpc::method::estimate_transaction_fee::{
+    use crate::method::estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest,
     };
     use serde_json::json;

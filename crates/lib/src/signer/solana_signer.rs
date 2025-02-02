@@ -1,11 +1,10 @@
-use super::{
-    error::KoraError,
-    signer::{Signature, Signer},
-};
+use crate::error::KoraError;
 use solana_sdk::{
     signature::{Keypair, Signature as SolanaSignature},
     signer::Signer as SolanaSigner,
 };
+
+use super::{Signature, Signer};
 
 /// A Solana-based signer that uses an in-memory keypair
 #[derive(Debug)]
