@@ -24,7 +24,8 @@ pub async fn sign_transaction(
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResult, KoraError> {
     let transaction = decode_b58_transaction(&request.transaction)?;
-    let (transaction, signed_transaction) = lib_sign_transaction(rpc_client, validation, transaction).await?;
+    let (transaction, signed_transaction) =
+        lib_sign_transaction(rpc_client, validation, transaction).await?;
 
     Ok(SignTransactionResult {
         signature: transaction.signatures[0].to_string(),

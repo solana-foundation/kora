@@ -1,16 +1,10 @@
-use std::sync::Arc;
 use solana_sdk::{
-    hash::Hash,
-    message::Message,
-    pubkey::Pubkey,
-    signature::Keypair,
-    signer::Signer as _,
-    system_instruction,
-    transaction::Transaction,
+    hash::Hash, message::Message, pubkey::Pubkey, signature::Keypair, signer::Signer as _,
+    system_instruction, transaction::Transaction,
 };
 
-use crate::rpc::test_utils::setup_test_rpc_client;
 use super::{decode_b58_transaction, estimate_transaction_fee};
+use crate::rpc::test_utils::setup_test_rpc_client;
 
 #[test]
 fn test_decode_b58_transaction() {
@@ -62,10 +56,7 @@ async fn test_estimate_transaction_fee_invalid_transaction() {
     let rpc_client = setup_test_rpc_client();
 
     // Create an invalid transaction (empty message)
-    let transaction = Transaction {
-        message: Message::default(),
-        signatures: vec![],
-    };
+    let transaction = Transaction { message: Message::default(), signatures: vec![] };
 
     let result = estimate_transaction_fee(&rpc_client, &transaction).await;
     assert!(result.is_ok()); // Fee estimation should still work for invalid transactions
@@ -102,4 +93,4 @@ async fn test_estimate_transaction_fee_with_token_creation() {
         fee,
         min_expected_lamports
     );
-} 
+}

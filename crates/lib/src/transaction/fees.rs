@@ -1,17 +1,12 @@
+use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    native_token::LAMPORTS_PER_SOL,
-    program_pack::Pack,
-    pubkey::Pubkey,
-    transaction::Transaction,
+    native_token::LAMPORTS_PER_SOL, program_pack::Pack, pubkey::Pubkey, transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
-use serde::{Deserialize, Serialize};
 
-use crate::{
-    error::KoraError,
-};
+use crate::error::KoraError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenPriceInfo {
@@ -85,11 +80,7 @@ pub async fn calculate_token_value_in_lamports(
     price_info: &TokenPriceInfo,
 ) -> Result<u64, KoraError> {
     let mint_data = Mint::unpack(
-        &rpc_client
-            .get_account(mint)
-            .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))?
-            .data,
+        &rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?.data,
     )
     .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
 
@@ -99,4 +90,4 @@ pub async fn calculate_token_value_in_lamports(
     let lamport_value = (amount as f64 * sol_per_token).floor() as u64;
 
     Ok(lamport_value)
-} 
+}

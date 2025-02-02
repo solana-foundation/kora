@@ -1,7 +1,11 @@
-use crate::{config::ValidationConfig, error::KoraError, transaction::fees::calculate_token_value_in_lamports};
+use crate::{
+    config::ValidationConfig, error::KoraError,
+    transaction::fees::calculate_token_value_in_lamports,
+};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    instruction::CompiledInstruction, message::Message, program_pack::Pack, pubkey::Pubkey, system_instruction, system_program, transaction::Transaction
+    instruction::CompiledInstruction, message::Message, program_pack::Pack, pubkey::Pubkey,
+    system_instruction, system_program, transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::Account as TokenAccount;
@@ -243,16 +247,18 @@ pub async fn validate_token_payment(
         {
             let dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
             let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
-            
+
             let source_account = rpc_client
                 .get_account(&source_key)
                 .await
                 .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-            let token_account = TokenAccount::unpack(&source_account.data)
-                .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {}", e)))?;
+            let token_account = TokenAccount::unpack(&source_account.data).map_err(|e| {
+                KoraError::InvalidTransaction(format!("Invalid token account: {}", e))
+            })?;
 
-            let dest_mint_account = get_associated_token_address(&signer_pubkey, &token_account.mint);
+            let dest_mint_account =
+                get_associated_token_address(&signer_pubkey, &token_account.mint);
 
             if dest_pubkey != dest_mint_account {
                 continue;
@@ -290,8 +296,6 @@ pub async fn validate_token_payment(
         required_lamports, total_lamport_value
     )))
 }
-
-
 
 #[cfg(test)]
 mod tests {

@@ -1,17 +1,14 @@
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
+    commitment_config::CommitmentConfig,
     instruction::{AccountMeta, CompiledInstruction, Instruction},
     pubkey::Pubkey,
     transaction::Transaction,
-    commitment_config::CommitmentConfig,
 };
-use solana_client::nonblocking::rpc_client::RpcClient;
 
 use crate::{
-    error::KoraError,
-    config::ValidationConfig,
-    transaction::validator::TransactionValidator,
-    get_signer,
-    Signer as _,
+    config::ValidationConfig, error::KoraError, get_signer,
+    transaction::validator::TransactionValidator, Signer as _,
 };
 
 pub fn decode_b58_transaction(tx: &str) -> Result<Transaction, KoraError> {
@@ -81,9 +78,8 @@ pub async fn sign_transaction(
 
     // Get latest blockhash and update transaction
     let mut transaction = transaction;
-    let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-        .await?;
+    let blockhash =
+        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
     transaction.message.recent_blockhash = blockhash.0;
 
     // Validate transaction fee
@@ -122,7 +118,6 @@ pub fn encode_transaction(transaction: &Transaction) -> Result<String, KoraError
         .map_err(|e| KoraError::InvalidTransaction(format!("Serialization failed: {}", e)))?;
     Ok(bs58::encode(serialized).into_string())
 }
-
 
 #[cfg(test)]
 mod tests {

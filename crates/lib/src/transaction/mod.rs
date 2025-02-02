@@ -1,8 +1,8 @@
-mod transaction;
 mod fees;
 mod paid_transaction;
 #[cfg(test)]
 mod tests;
+mod transaction;
 
 pub use fees::*;
 pub use paid_transaction::*;

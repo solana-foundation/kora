@@ -5,8 +5,7 @@ use crate::{
     config::ValidationConfig,
     error::KoraError,
     get_signer,
-    transaction::{estimate_transaction_fee, TokenPriceInfo},
-    transaction::validator::validate_token_payment,
+    transaction::{estimate_transaction_fee, validator::validate_token_payment, TokenPriceInfo},
 };
 
 use super::transaction::sign_transaction;
@@ -40,4 +39,4 @@ pub async fn sign_transaction_if_paid(
 
     // Sign the transaction
     sign_transaction(rpc_client, validation, transaction).await
-} 
+}

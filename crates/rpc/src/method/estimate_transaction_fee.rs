@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use kora_lib::{
     error::KoraError,
-    transaction::{decode_b58_transaction, estimate_transaction_fee as lib_estimate_transaction_fee},
+    transaction::{
+        decode_b58_transaction, estimate_transaction_fee as lib_estimate_transaction_fee,
+    },
 };
 
 use serde::{Deserialize, Serialize};
@@ -26,7 +28,5 @@ pub async fn estimate_transaction_fee(
     let transaction = decode_b58_transaction(&request.transaction)?;
     let fee = lib_estimate_transaction_fee(rpc_client, &transaction).await?;
 
-    Ok(EstimateTransactionFeeResponse {
-        fee_in_lamports: fee,
-    })
+    Ok(EstimateTransactionFeeResponse { fee_in_lamports: fee })
 }

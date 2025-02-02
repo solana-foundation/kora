@@ -1,8 +1,15 @@
 use clap::{Parser, Subcommand};
 use kora_lib::{
-    args::Args, config::load_config, error::KoraError, log::LoggingFormat, rpc::{create_rpc_client, get_rpc_client}, signer::init::init_signer_type, state::init_signer, transaction::{
-        decode_b58_transaction, estimate_transaction_fee,
-        sign_and_send_transaction, sign_transaction, sign_transaction_if_paid, TokenPriceInfo,
+    args::Args,
+    config::load_config,
+    error::KoraError,
+    log::LoggingFormat,
+    rpc::{create_rpc_client, get_rpc_client},
+    signer::init::init_signer_type,
+    state::init_signer,
+    transaction::{
+        decode_b58_transaction, estimate_transaction_fee, sign_and_send_transaction,
+        sign_transaction, sign_transaction_if_paid, TokenPriceInfo,
     },
 };
 use std::io::{self, Read};
@@ -79,7 +86,8 @@ async fn main() -> Result<(), KoraError> {
             io::stdin().read_to_string(&mut input)?;
             let transaction = decode_b58_transaction(input.trim())?;
 
-            let (transaction, signed_tx) = sign_transaction(&rpc_client, &validation, transaction).await?;
+            let (transaction, signed_tx) =
+                sign_transaction(&rpc_client, &validation, transaction).await?;
             println!("Signature: {}", transaction.signatures[0]);
             println!("Signed Transaction: {}", signed_tx);
         }
@@ -92,7 +100,8 @@ async fn main() -> Result<(), KoraError> {
             io::stdin().read_to_string(&mut input)?;
             let transaction = decode_b58_transaction(input.trim())?;
 
-            let (signature, signed_tx) = sign_and_send_transaction(&rpc_client, &validation, transaction).await?;
+            let (signature, signed_tx) =
+                sign_and_send_transaction(&rpc_client, &validation, transaction).await?;
             println!("Signature: {}", signature);
             println!("Signed Transaction: {}", signed_tx);
         }
