@@ -201,7 +201,8 @@ mod tests {
 
     #[test]
     fn test_error_conversions() {
-        let client_error = ClientError::from(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        let client_error =
+            ClientError::from(std::io::Error::new(std::io::ErrorKind::Other, "test"));
         let kora_error: KoraError = client_error.into();
         assert!(matches!(kora_error, KoraError::RpcError(_)));
 

@@ -74,10 +74,10 @@ mod tests {
         );
         let message = Message::new(&[instruction], Some(&keypair.pubkey()));
         let tx = Transaction::new(&[&keypair], message, Hash::default());
-        
+
         let encoded = bs58::encode(bincode::serialize(&tx).unwrap()).into_string();
         let decoded = decode_b58_transaction(&encoded).unwrap();
-        
+
         assert_eq!(tx, decoded);
     }
 
@@ -86,7 +86,7 @@ mod tests {
         let result = decode_b58_transaction("not-base58!");
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
 
-        let result = decode_b58_transaction("3xQP");  // base58 of [1,2,3]
+        let result = decode_b58_transaction("3xQP"); // base58 of [1,2,3]
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
     }
 
@@ -95,16 +95,16 @@ mod tests {
         let program_id = Pubkey::new_unique();
         let account1 = Pubkey::new_unique();
         let account2 = Pubkey::new_unique();
-        
+
         let account_keys = vec![program_id, account1, account2];
         let compiled_ix = CompiledInstruction {
             program_id_index: 0,
-            accounts: vec![1, 2],  // indices into account_keys
+            accounts: vec![1, 2], // indices into account_keys
             data: vec![1, 2, 3],
         };
 
         let instructions = uncompile_instructions(&[compiled_ix], &account_keys);
-        
+
         assert_eq!(instructions.len(), 1);
         let uncompiled = &instructions[0];
         assert_eq!(uncompiled.program_id, program_id);

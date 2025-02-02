@@ -73,7 +73,7 @@ mod tests {
         fs::write(&temp_file, config_content).unwrap();
 
         let config = load_config(temp_file.path()).unwrap();
-        
+
         assert_eq!(config.validation.max_allowed_lamports, 1000000000);
         assert_eq!(config.validation.max_signatures, 10);
         assert_eq!(config.validation.allowed_programs, vec!["program1", "program2"]);

@@ -56,16 +56,16 @@ mod tests {
     #[test]
     fn test_pubkey_conversions() {
         let original_program_pubkey = ProgramPubkey::new_unique();
-        
+
         let sdk_pubkey = SolanaTypeConverter::sdk_pubkey(&original_program_pubkey);
         let converted_program_pubkey = SolanaTypeConverter::program_pubkey(&sdk_pubkey);
-        
+
         assert_eq!(original_program_pubkey, converted_program_pubkey);
-        
+
         let original_sdk_pubkey = SdkPubkey::new_unique();
         let program_pubkey = SolanaTypeConverter::program_pubkey(&original_sdk_pubkey);
         let converted_sdk_pubkey = SolanaTypeConverter::sdk_pubkey(&program_pubkey);
-        
+
         assert_eq!(original_sdk_pubkey, converted_sdk_pubkey);
     }
 
@@ -79,16 +79,8 @@ mod tests {
         let original_program_ix = ProgramInstruction {
             program_id,
             accounts: vec![
-                AccountMeta {
-                    pubkey: account1,
-                    is_signer: true,
-                    is_writable: true,
-                },
-                AccountMeta {
-                    pubkey: account2,
-                    is_signer: false,
-                    is_writable: true,
-                },
+                AccountMeta { pubkey: account1, is_signer: true, is_writable: true },
+                AccountMeta { pubkey: account2, is_signer: false, is_writable: true },
             ],
             data: data.clone(),
         };
@@ -99,8 +91,10 @@ mod tests {
         assert_eq!(original_program_ix.program_id, converted_program_ix.program_id);
         assert_eq!(original_program_ix.data, converted_program_ix.data);
         assert_eq!(original_program_ix.accounts.len(), converted_program_ix.accounts.len());
-        
-        for (original, converted) in original_program_ix.accounts.iter().zip(converted_program_ix.accounts.iter()) {
+
+        for (original, converted) in
+            original_program_ix.accounts.iter().zip(converted_program_ix.accounts.iter())
+        {
             assert_eq!(original.pubkey, converted.pubkey);
             assert_eq!(original.is_signer, converted.is_signer);
             assert_eq!(original.is_writable, converted.is_writable);
