@@ -1,3 +1,4 @@
+pub mod init;
 pub mod signer;
 pub mod solana_signer;
 pub mod vault_signer;

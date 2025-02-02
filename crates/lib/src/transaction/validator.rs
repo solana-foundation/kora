@@ -1,9 +1,17 @@
-use crate::{config::ValidationConfig, error::KoraError};
-use solana_sdk::{
-    instruction::CompiledInstruction, message::Message, pubkey::Pubkey, system_instruction,
-    system_program, transaction::Transaction,
+use crate::{
+    config::ValidationConfig, error::KoraError,
+    transaction::fees::calculate_token_value_in_lamports,
 };
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{
+    instruction::CompiledInstruction, message::Message, program_pack::Pack, pubkey::Pubkey,
+    system_instruction, system_program, transaction::Transaction,
+};
+use spl_associated_token_account::get_associated_token_address;
+use spl_token::state::Account as TokenAccount;
 use std::str::FromStr;
+
+use super::TokenPriceInfo;
 
 pub enum ValidationMode {
     Sign,
@@ -217,6 +225,76 @@ impl TransactionValidator {
 
         total
     }
+}
+
+pub async fn validate_token_payment(
+    rpc_client: &RpcClient,
+    transaction: &Transaction,
+    validation: &ValidationConfig,
+    required_lamports: u64,
+    signer_pubkey: Pubkey,
+    price_info: &TokenPriceInfo,
+) -> Result<(), KoraError> {
+    let mut total_lamport_value = 0;
+
+    for ix in transaction.message.instructions.iter() {
+        if *ix.program_id(&transaction.message.account_keys) != spl_token::id() {
+            continue;
+        }
+
+        if let Ok(spl_token::instruction::TokenInstruction::Transfer { amount }) =
+            spl_token::instruction::TokenInstruction::unpack(&ix.data)
+        {
+            let dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
+            let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
+
+            let source_account = rpc_client
+                .get_account(&source_key)
+                .await
+                .map_err(|e| KoraError::RpcError(e.to_string()))?;
+
+            let token_account = TokenAccount::unpack(&source_account.data).map_err(|e| {
+                KoraError::InvalidTransaction(format!("Invalid token account: {}", e))
+            })?;
+
+            let dest_mint_account =
+                get_associated_token_address(&signer_pubkey, &token_account.mint);
+
+            if dest_pubkey != dest_mint_account {
+                continue;
+            }
+
+            if source_account.owner != spl_token::id() {
+                continue;
+            }
+
+            if token_account.amount < amount {
+                continue;
+            }
+
+            if !validation.allowed_spl_paid_tokens.contains(&token_account.mint.to_string()) {
+                continue;
+            }
+
+            let lamport_value = calculate_token_value_in_lamports(
+                amount,
+                &token_account.mint,
+                rpc_client,
+                price_info,
+            )
+            .await?;
+
+            total_lamport_value += lamport_value;
+            if total_lamport_value >= required_lamports {
+                return Ok(());
+            }
+        }
+    }
+
+    Err(KoraError::InsufficientFunds(format!(
+        "Required {} lamports but only found {} in token transfers",
+        required_lamports, total_lamport_value
+    )))
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 [kora]
-rate_limit = 100
+rate_limit = 0
 
 [validation]
 max_allowed_lamports = 1000000

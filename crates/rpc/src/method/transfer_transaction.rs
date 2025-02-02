@@ -11,8 +11,8 @@ use spl_token::{instruction as token_instruction, state::Mint};
 use std::{str::FromStr, sync::Arc};
 
 use kora_lib::{
-    config::ValidationConfig, constant::NATIVE_SOL, get_signer, validation::TransactionValidator,
-    KoraError, Signer as _,
+    config::ValidationConfig, constant::NATIVE_SOL, get_signer,
+    transaction::validator::TransactionValidator, KoraError, Signer as _,
 };
 
 #[derive(Debug, Deserialize)]

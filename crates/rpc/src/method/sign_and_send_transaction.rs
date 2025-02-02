@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::commitment_config::CommitmentConfig;
 
 use kora_lib::{
-    config::ValidationConfig, get_signer, transaction::decode_b58_transaction,
-    validation::TransactionValidator, KoraError, Signer as _,
+    config::ValidationConfig,
+    transaction::{
+        decode_b58_transaction, sign_and_send_transaction as lib_sign_and_send_transaction,
+    },
+    KoraError,
 };
 
 #[derive(Debug, Deserialize)]
@@ -25,40 +27,9 @@ pub async fn sign_and_send_transaction(
     validation: &ValidationConfig,
     request: SignAndSendTransactionRequest,
 ) -> Result<SignAndSendTransactionResult, KoraError> {
-    let signer = get_signer()
-        .map_err(|e| KoraError::SigningError(format!("Failed to get signer: {}", e)))?;
+    let transaction = decode_b58_transaction(&request.transaction)?;
+    let (signature, signed_transaction) =
+        lib_sign_and_send_transaction(rpc_client, validation, transaction).await?;
 
-    let original_transaction = decode_b58_transaction(&request.transaction)?;
-
-    let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
-
-    validator.validate_disallowed_accounts(&original_transaction.message)?;
-    validator.validate_transaction(&original_transaction)?;
-
-    let mut transaction = original_transaction;
-
-    let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-        .await
-        .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-    transaction.message.recent_blockhash = blockhash.0;
-
-    let signature = signer.sign_solana(&transaction.message_data()).await?;
-    transaction.signatures[0] = signature;
-
-    let serialized = bincode::serialize(&transaction).map_err(|e| {
-        KoraError::InvalidTransaction(format!("Failed to serialize transaction: {}", e))
-    })?;
-    let encoded = bs58::encode(serialized).into_string();
-
-    let signature = rpc_client
-        .send_and_confirm_transaction(&transaction)
-        .await
-        .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-    Ok(SignAndSendTransactionResult {
-        signature: signature.to_string(),
-        signed_transaction: encoded,
-    })
+    Ok(SignAndSendTransactionResult { signature, signed_transaction })
 }
