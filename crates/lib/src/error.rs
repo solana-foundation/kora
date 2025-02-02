@@ -153,3 +153,65 @@ impl From<anyhow::Error> for KoraError {
         KoraError::SigningError(err.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kora_response_ok() {
+        let response = KoraResponse::ok(42);
+        assert_eq!(response.data, Some(42));
+        assert_eq!(response.error, None);
+    }
+
+    #[test]
+    fn test_kora_response_err() {
+        let error = KoraError::AccountNotFound("test_account".to_string());
+        let response: KoraResponse<()> = KoraResponse::err(error.clone());
+        assert_eq!(response.data, None);
+        assert_eq!(response.error, Some(error));
+    }
+
+    #[test]
+    fn test_kora_response_from_result() {
+        let ok_response = KoraResponse::from_result(Ok(42));
+        assert_eq!(ok_response.data, Some(42));
+        assert_eq!(ok_response.error, None);
+
+        let error = KoraError::ValidationError("test error".to_string());
+        let err_response: KoraResponse<i32> = KoraResponse::from_result(Err(error.clone()));
+        assert_eq!(err_response.data, None);
+        assert_eq!(err_response.error, Some(error));
+    }
+
+    #[test]
+    fn test_into_kora_response() {
+        let result: Result<i32, KoraError> = Ok(42);
+        let response = result.into_response();
+        assert_eq!(response.data, Some(42));
+        assert_eq!(response.error, None);
+
+        let error = KoraError::SwapError("swap failed".to_string());
+        let result: Result<i32, KoraError> = Err(error.clone());
+        let response = result.into_response();
+        assert_eq!(response.data, None);
+        assert_eq!(response.error, Some(error));
+    }
+
+    #[test]
+    fn test_error_conversions() {
+        let client_error =
+            ClientError::from(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        let kora_error: KoraError = client_error.into();
+        assert!(matches!(kora_error, KoraError::RpcError(_)));
+
+        let signer_error = SignerError::Custom("test".to_string());
+        let kora_error: KoraError = signer_error.into();
+        assert!(matches!(kora_error, KoraError::SigningError(_)));
+
+        let io_error = std::io::Error::new(std::io::ErrorKind::Other, "test");
+        let kora_error: KoraError = io_error.into();
+        assert!(matches!(kora_error, KoraError::InternalServerError(_)));
+    }
+}
