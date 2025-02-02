@@ -1,3 +1,4 @@
+use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     message::Message,
     pubkey::Pubkey,
@@ -6,7 +7,6 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use std::str::FromStr;
-use solana_client::rpc_client::RpcClient;
 
 fn main() {
     let sender = Keypair::new();

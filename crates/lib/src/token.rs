@@ -21,10 +21,9 @@ pub async fn check_valid_token(rpc_client: &RpcClient, token: &str) -> Result<()
                 )))
             }
         }
-        Err(e) => Err(KoraError::InternalServerError(format!(
-            "Token {} does not exist: {}",
-            token, e
-        ))),
+        Err(e) => {
+            Err(KoraError::InternalServerError(format!("Token {} does not exist: {}", token, e)))
+        }
     }
 }
 

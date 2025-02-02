@@ -81,7 +81,6 @@ async fn main() -> Result<(), KoraError> {
 
     match cli.command {
         Some(Commands::Sign { transaction }) => {
-            
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
