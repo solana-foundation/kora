@@ -13,6 +13,11 @@ Kora is a Solana paymaster node that provides a JSON-RPC interface for handling 
 
 > Note: only `signAndSend` submits a transaction to an RPC, all other methods only return a signed transaction
 
+## Crates
+
+- `kora-lib`: Shared library for kora
+- `kora-rpc`: JSON-RPC server
+
 ## Getting Started
 
 ### Installation
