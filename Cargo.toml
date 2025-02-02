@@ -3,6 +3,7 @@ members = [
     "crates/lib",
     "crates/rpc",
     "crates/cli",
+    "scripts",
 ]
 
 [workspace.package]

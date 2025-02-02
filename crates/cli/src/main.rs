@@ -11,29 +11,32 @@ use kora_lib::{
         sign_transaction, sign_transaction_if_paid, TokenPriceInfo,
     },
 };
-use std::io::{self, Read};
 
 #[derive(Subcommand)]
 enum Commands {
     /// Sign a transaction
     Sign {
-        #[arg(long)]
-        rpc_url: String,
+        /// Base58 encoded transaction to sign
+        #[arg(long, short = 't')]
+        transaction: String,
     },
     /// Sign and send a transaction
     SignAndSend {
-        #[arg(long)]
-        rpc_url: String,
+        /// Base58 encoded transaction to sign and send
+        #[arg(long, short = 't')]
+        transaction: String,
     },
     /// Estimate transaction fee
     EstimateFee {
-        #[arg(long)]
-        rpc_url: String,
+        /// Base58 encoded transaction to estimate fee for
+        #[arg(long, short = 't')]
+        transaction: String,
     },
     /// Sign transaction if paid
     SignIfPaid {
-        #[arg(long)]
-        rpc_url: String,
+        /// Base58 encoded transaction to sign if paid
+        #[arg(long, short = 't')]
+        transaction: String,
         #[arg(long)]
         margin: Option<f64>,
         #[arg(long)]
@@ -56,69 +59,79 @@ async fn main() -> Result<(), KoraError> {
     let cli = Cli::parse();
 
     let config = load_config(&cli.args.common.config).unwrap_or_else(|e| {
+        print_error(&format!("Failed to load config: {}", e));
         std::process::exit(1);
     });
 
     let rpc_client = get_rpc_client(&cli.args.common.rpc_url);
 
     if let Err(e) = config.validate(rpc_client.as_ref()).await {
+        print_error(&format!("Config validation failed: {}", e));
         std::process::exit(1);
     }
 
     // Initialize the signer
-    let signer = init_signer_type(&cli.args.common).unwrap();
-    init_signer(signer).unwrap_or_else(|e| {
-        std::process::exit(1);
-    });
+    if !cli.args.common.skip_signer {
+        let signer = init_signer_type(&cli.args.common).unwrap();
+        init_signer(signer).unwrap_or_else(|e| {
+            print_error(&format!("Failed to initialize signer: {}", e));
+            std::process::exit(1);
+        });
+    }
 
     match cli.command {
-        Some(Commands::Sign { rpc_url }) => {
-            let rpc_client = create_rpc_client(&rpc_url).await?;
+        Some(Commands::Sign { transaction }) => {
+            
+            let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
-            // Read transaction from stdin
-            let mut input = String::new();
-            io::stdin().read_to_string(&mut input)?;
-            let transaction = decode_b58_transaction(input.trim())?;
+            let transaction = decode_b58_transaction(&transaction).map_err(|e| {
+                print_error(&format!("Failed to decode transaction: {}", e));
+                e
+            })?;
 
             let (transaction, signed_tx) =
                 sign_transaction(&rpc_client, &validation, transaction).await?;
             println!("Signature: {}", transaction.signatures[0]);
             println!("Signed Transaction: {}", signed_tx);
         }
-        Some(Commands::SignAndSend { rpc_url }) => {
-            let rpc_client = create_rpc_client(&rpc_url).await?;
+        Some(Commands::SignAndSend { transaction }) => {
+            if transaction.is_empty() {
+                print_error("No transaction provided. Please provide a base58-encoded transaction using the --transaction flag.");
+                std::process::exit(1);
+            }
+            let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
-            // Read transaction from stdin
-            let mut input = String::new();
-            io::stdin().read_to_string(&mut input)?;
-            let transaction = decode_b58_transaction(input.trim())?;
+            let transaction = decode_b58_transaction(&transaction).map_err(|e| {
+                print_error(&format!("Failed to decode transaction: {}", e));
+                e
+            })?;
 
             let (signature, signed_tx) =
                 sign_and_send_transaction(&rpc_client, &validation, transaction).await?;
             println!("Signature: {}", signature);
             println!("Signed Transaction: {}", signed_tx);
         }
-        Some(Commands::EstimateFee { rpc_url }) => {
-            let rpc_client = create_rpc_client(&rpc_url).await?;
+        Some(Commands::EstimateFee { transaction }) => {
+            let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
 
-            // Read transaction from stdin
-            let mut input = String::new();
-            io::stdin().read_to_string(&mut input)?;
-            let transaction = decode_b58_transaction(input.trim())?;
+            let transaction = decode_b58_transaction(&transaction).map_err(|e| {
+                print_error(&format!("Failed to decode transaction: {}", e));
+                e
+            })?;
 
             let fee = estimate_transaction_fee(&rpc_client, &transaction).await?;
             println!("Estimated fee: {} lamports", fee);
         }
-        Some(Commands::SignIfPaid { rpc_url, margin, token_price }) => {
-            let rpc_client = create_rpc_client(&rpc_url).await?;
+        Some(Commands::SignIfPaid { transaction, margin, token_price }) => {
+            let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
-            // Read transaction from stdin
-            let mut input = String::new();
-            io::stdin().read_to_string(&mut input)?;
-            let transaction = decode_b58_transaction(input.trim())?;
+            let transaction = decode_b58_transaction(&transaction).map_err(|e| {
+                print_error(&format!("Failed to decode transaction: {}", e));
+                e
+            })?;
 
             let token_price_info = token_price.map(|price| TokenPriceInfo { price });
 
@@ -140,4 +153,9 @@ async fn main() -> Result<(), KoraError> {
     }
 
     Ok(())
+}
+
+fn print_error(message: &str) {
+    eprintln!("Error: {}", message);
+    std::process::exit(1);
 }

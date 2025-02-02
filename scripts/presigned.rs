@@ -1,5 +1,4 @@
 use solana_sdk::{
-    hash::Hash,
     message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
@@ -7,15 +6,20 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use std::str::FromStr;
+use solana_client::rpc_client::RpcClient;
 
 fn main() {
     let sender = Keypair::new();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
     let amount = 100;
 
+    // Create RPC client for devnet
+    let rpc_client = RpcClient::new("https://api.devnet.solana.com".to_string());
+
     let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
 
-    let recent_blockhash = Hash::default();
+    // Get recent blockhash from devnet
+    let recent_blockhash = rpc_client.get_latest_blockhash().unwrap();
 
     let message =
         Message::new_with_blockhash(&[instruction], Some(&sender.pubkey()), &recent_blockhash);

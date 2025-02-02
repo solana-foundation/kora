@@ -12,8 +12,15 @@ use crate::{
 };
 
 pub fn decode_b58_transaction(tx: &str) -> Result<Transaction, KoraError> {
+    if tx.is_empty() {
+        return Err(KoraError::InvalidTransaction("Empty transaction string".to_string()));
+    }
+
     let decoded_bytes = match bs58::decode(tx).into_vec() {
         Ok(bytes) => {
+            if bytes.is_empty() {
+                return Err(KoraError::InvalidTransaction("Decoded bytes are empty".to_string()));
+            }
             log::debug!("Successfully decoded base58 data, length: {} bytes", bytes.len());
             bytes
         }
@@ -34,7 +41,10 @@ pub fn decode_b58_transaction(tx: &str) -> Result<Transaction, KoraError> {
                 e,
                 decoded_bytes.len()
             );
-            return Err(KoraError::InvalidTransaction(format!("Invalid transaction: {}", e)));
+            return Err(KoraError::InvalidTransaction(format!(
+                "Failed to deserialize transaction: {}",
+                e
+            )));
         }
     };
 
