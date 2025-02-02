@@ -12,7 +12,7 @@ use std::{str::FromStr, sync::Arc};
 
 use kora_lib::{
     config::ValidationConfig, get_signer, validation::TransactionValidator, KoraError, Signer as _,
-    NATIVE_SOL,
+    constant::NATIVE_SOL,
 };
 
 #[derive(Debug, Deserialize)]
