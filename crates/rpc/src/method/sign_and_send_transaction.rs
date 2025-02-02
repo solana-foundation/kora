@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 
-use crate::common::{
+use kora_lib::{
     config::ValidationConfig, get_signer, transaction::decode_b58_transaction,
     validation::TransactionValidator, KoraError, Signer as _,
 };

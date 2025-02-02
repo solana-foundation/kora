@@ -6,7 +6,7 @@ use vaultrs::{
     transit,
 };
 
-use crate::common::{error::KoraError, Signature as KoraSignature};
+use crate::{error::KoraError, Signature as KoraSignature};
 
 #[derive(Clone)]
 pub struct VaultSigner {

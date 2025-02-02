@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::common::{config::ValidationConfig, get_signer, KoraError};
+use kora_lib::{config::ValidationConfig, get_signer, KoraError};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GetConfigResponse {

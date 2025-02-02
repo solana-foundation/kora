@@ -3,7 +3,7 @@ use serde::Serialize;
 use solana_client::nonblocking;
 use solana_sdk::commitment_config::CommitmentConfig;
 
-use crate::common::KoraError;
+use kora_lib::error::KoraError;
 
 #[derive(Debug, Serialize)]
 pub struct GetBlockhashResponse {

@@ -1,12 +1,13 @@
 use log::info;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 
-use crate::common::{
+use kora_lib::{
     config::{KoraConfig, ValidationConfig},
-    KoraError,
+    error::KoraError,
 };
 
-use super::method::{
+use crate::method::{
     estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest, EstimateTransactionFeeResponse,
     },
@@ -24,7 +25,6 @@ use super::method::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
     },
 };
-use solana_client::nonblocking::rpc_client::RpcClient;
 
 #[derive(Clone)]
 pub struct KoraRpc {

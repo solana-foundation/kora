@@ -3,7 +3,7 @@ use solana_sdk::pubkey::Pubkey;
 use spl_token::id;
 use std::str::FromStr;
 
-use crate::common::KoraError;
+use crate::error::KoraError;
 
 pub async fn check_valid_token(rpc_client: &RpcClient, token: &str) -> Result<(), KoraError> {
     let pubkey = Pubkey::from_str(token)

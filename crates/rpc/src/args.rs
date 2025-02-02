@@ -1,6 +1,5 @@
 use clap::{command, Parser};
-
-use crate::LoggingFormat;
+use kora_lib::log::LoggingFormat;
 
 #[derive(Debug, Parser)]
 #[command(name = "kora")]

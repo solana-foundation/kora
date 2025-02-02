@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::common::KoraError;
+use kora_lib::error::KoraError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetSupportedTokensResponse {

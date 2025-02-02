@@ -10,7 +10,7 @@ use spl_associated_token_account::{
 use spl_token::{instruction as token_instruction, state::Mint};
 use std::{str::FromStr, sync::Arc};
 
-use crate::common::{
+use kora_lib::{
     config::ValidationConfig, get_signer, validation::TransactionValidator, KoraError, Signer as _,
     NATIVE_SOL,
 };
