@@ -1,12 +1,12 @@
 use clap::{command, Parser};
-use kora_lib::log::LoggingFormat;
+use crate::log::LoggingFormat;
 
 #[derive(Debug, Parser)]
 #[command(name = "kora")]
 pub struct Args {
     /// Port
     #[arg(short = 'p', long, default_value = "8080")]
-    pub port: u16,
+    pub port: Option<u16>,
 
     /// RPC URL
     #[arg(long, env = "RPC_URL", default_value = "http://127.0.0.1:8899")]

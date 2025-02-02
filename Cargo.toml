@@ -2,6 +2,7 @@
 members = [
     "crates/lib",
     "crates/rpc",
+    "crates/cli",
 ]
 
 [workspace.package]

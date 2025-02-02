@@ -2,9 +2,17 @@ use solana_sdk::{
     instruction::{AccountMeta, CompiledInstruction, Instruction},
     pubkey::Pubkey,
     transaction::Transaction,
+    commitment_config::CommitmentConfig,
 };
+use solana_client::nonblocking::rpc_client::RpcClient;
 
-use crate::error::KoraError;
+use crate::{
+    error::KoraError,
+    config::ValidationConfig,
+    transaction::validator::TransactionValidator,
+    get_signer,
+    Signer as _,
+};
 
 pub fn decode_b58_transaction(tx: &str) -> Result<Transaction, KoraError> {
     let decoded_bytes = match bs58::decode(tx).into_vec() {
@@ -58,6 +66,63 @@ pub fn uncompile_instructions(
         })
         .collect()
 }
+
+pub async fn sign_transaction(
+    rpc_client: &RpcClient,
+    validation: &ValidationConfig,
+    transaction: Transaction,
+) -> Result<(Transaction, String), KoraError> {
+    let signer = get_signer()?;
+    let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
+
+    // Validate transaction and accounts
+    validator.validate_transaction(&transaction)?;
+    validator.validate_disallowed_accounts(&transaction.message)?;
+
+    // Get latest blockhash and update transaction
+    let mut transaction = transaction;
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .await?;
+    transaction.message.recent_blockhash = blockhash.0;
+
+    // Validate transaction fee
+    let estimated_fee = rpc_client.get_fee_for_message(&transaction.message).await?;
+    validator.validate_lamport_fee(estimated_fee)?;
+
+    // Sign transaction
+    let signature = signer.sign_solana(&transaction.message_data()).await?;
+    transaction.signatures[0] = signature;
+
+    // Serialize signed transaction
+    let serialized = bincode::serialize(&transaction)?;
+    let encoded = bs58::encode(serialized).into_string();
+
+    Ok((transaction, encoded))
+}
+
+pub async fn sign_and_send_transaction(
+    rpc_client: &RpcClient,
+    validation: &ValidationConfig,
+    transaction: Transaction,
+) -> Result<(String, String), KoraError> {
+    let (transaction, encoded) = sign_transaction(rpc_client, validation, transaction).await?;
+
+    // Send and confirm transaction
+    let signature = rpc_client
+        .send_and_confirm_transaction(&transaction)
+        .await
+        .map_err(|e| KoraError::RpcError(e.to_string()))?;
+
+    Ok((signature.to_string(), encoded))
+}
+
+pub fn encode_transaction(transaction: &Transaction) -> Result<String, KoraError> {
+    let serialized = bincode::serialize(transaction)
+        .map_err(|e| KoraError::InvalidTransaction(format!("Serialization failed: {}", e)))?;
+    Ok(bs58::encode(serialized).into_string())
+}
+
 
 #[cfg(test)]
 mod tests {

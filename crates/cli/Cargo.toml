@@ -1,0 +1,20 @@
+[package]
+name = "kora-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI for Kora gasless relayer"
+
+[[bin]]
+name = "kora-cli"
+path = "src/main.rs"
+
+[dependencies]
+kora-lib = { path = "../lib" }
+clap = { workspace = true }
+tokio = { workspace = true }
+env_logger = { workspace = true }
+solana-client = { workspace = true }
+solana-sdk = { workspace = true }
+dotenv = { workspace = true }
