@@ -1,9 +1,8 @@
 use clap::{Parser, Subcommand};
 use kora_lib::{
-    args::Args,
+    args::CliArgs,
     config::load_config,
     error::KoraError,
-    log::LoggingFormat,
     rpc::{create_rpc_client, get_rpc_client},
     signer::init::init_signer_type,
     state::init_signer,
@@ -48,30 +47,26 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Logging format (standard or json)
-    #[arg(long)]
-    logging_format: Option<LoggingFormat>,
-
     #[command(flatten)]
-    pub args: Args,
+    pub args: CliArgs,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), KoraError> {
     let cli = Cli::parse();
 
-    let config = load_config(&cli.args.config).unwrap_or_else(|e| {
+    let config = load_config(&cli.args.common.config).unwrap_or_else(|e| {
         std::process::exit(1);
     });
 
-    let rpc_client = get_rpc_client(&cli.args.rpc_url);
+    let rpc_client = get_rpc_client(&cli.args.common.rpc_url);
 
     if let Err(e) = config.validate(rpc_client.as_ref()).await {
         std::process::exit(1);
     }
 
     // Initialize the signer
-    let signer = init_signer_type(&cli.args).unwrap();
+    let signer = init_signer_type(&cli.args.common).unwrap();
     init_signer(signer).unwrap_or_else(|e| {
         std::process::exit(1);
     });

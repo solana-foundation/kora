@@ -1,11 +1,11 @@
 use crate::{
-    args::Args,
+    args::CommonArgs,
     error::KoraError,
     signer::{KoraSigner, SolanaMemorySigner, VaultSigner},
 };
 use tk_rs::TurnkeySigner;
 
-pub fn init_signer_type(args: &Args) -> Result<KoraSigner, KoraError> {
+pub fn init_signer_type(args: &CommonArgs) -> Result<KoraSigner, KoraError> {
     if args.turnkey_signer {
         init_turnkey_signer(args)
     } else if args.vault_signer {
@@ -15,7 +15,7 @@ pub fn init_signer_type(args: &Args) -> Result<KoraSigner, KoraError> {
     }
 }
 
-fn init_vault_signer(config: &Args) -> Result<KoraSigner, KoraError> {
+fn init_vault_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
     let vault_addr = config
         .vault_addr
         .as_ref()
@@ -46,7 +46,7 @@ fn init_vault_signer(config: &Args) -> Result<KoraSigner, KoraError> {
     Ok(KoraSigner::Vault(signer))
 }
 
-fn init_turnkey_signer(config: &Args) -> Result<KoraSigner, KoraError> {
+fn init_turnkey_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
     let api_pub = config
         .turnkey_api_public_key
         .as_ref()

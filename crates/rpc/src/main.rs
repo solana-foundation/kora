@@ -4,8 +4,7 @@ mod server;
 use clap::Parser;
 use dotenv::dotenv;
 use kora_lib::{
-    args::Args, config::load_config, log::LoggingFormat, rpc::get_rpc_client,
-    signer::init::init_signer_type, state::init_signer,
+    args::RpcArgs, config::load_config, log::LoggingFormat, rpc::get_rpc_client, signer::init::init_signer_type, state::init_signer
 };
 use rpc::KoraRpc;
 use server::run_rpc_server;
@@ -13,22 +12,22 @@ use server::run_rpc_server;
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    let args = Args::parse();
+    let args = RpcArgs::parse();
     setup_logging(&args.logging_format);
 
-    let config = load_config(&args.config).unwrap_or_else(|e| {
+    let config = load_config(&args.common.config).unwrap_or_else(|e| {
         log::error!("Config load failed: {}", e);
         std::process::exit(1);
     });
 
-    let rpc_client = get_rpc_client(&args.rpc_url);
+    let rpc_client = get_rpc_client(&args.common.rpc_url);
 
     if let Err(e) = config.validate(rpc_client.as_ref()).await {
         log::error!("Config validation failed: {}", e);
         std::process::exit(1);
     }
 
-    let signer = if !args.skip_signer { Some(init_signer_type(&args).unwrap()) } else { None };
+    let signer = if !args.common.skip_signer { Some(init_signer_type(&args.common).unwrap()) } else { None };
 
     if let Some(signer) = signer {
         init_signer(signer).unwrap_or_else(|e| {
@@ -38,11 +37,10 @@ async fn main() {
     }
 
     let rpc_server = KoraRpc::new(rpc_client, config.validation, config.kora);
-    let server_handle =
-        run_rpc_server(rpc_server, args.port.unwrap_or(8080)).await.unwrap_or_else(|e| {
-            log::error!("Server start failed: {}", e);
-            std::process::exit(1);
-        });
+    let server_handle = run_rpc_server(rpc_server, args.port.unwrap_or(8080)).await.unwrap_or_else(|e| {
+        log::error!("Server start failed: {}", e);
+        std::process::exit(1);
+    });
 
     tokio::signal::ctrl_c().await.unwrap();
     server_handle.stop().unwrap();

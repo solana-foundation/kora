@@ -1,24 +1,13 @@
 use crate::log::LoggingFormat;
 use clap::{command, Parser};
 
+// Common arguments shared between CLI and RPC
 #[derive(Debug, Parser)]
 #[command(name = "kora")]
-pub struct Args {
-    /// Port
-    #[arg(short = 'p', long, default_value = "8080")]
-    pub port: Option<u16>,
-
+pub struct CommonArgs {
     /// RPC URL
     #[arg(long, env = "RPC_URL", default_value = "http://127.0.0.1:8899")]
     pub rpc_url: String,
-
-    /// Logging Format
-    #[arg(long, default_value = "standard")]
-    pub logging_format: LoggingFormat,
-
-    /// Metrics
-    #[arg(long, default_value = None)]
-    pub metrics_endpoint: Option<String>,
 
     /// Base58-encoded private key for signing
     #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present_any = ["skip_signer", "turnkey_signer"])]
@@ -66,4 +55,30 @@ pub struct Args {
 
     #[arg(long, env = "VAULT_PUBKEY")]
     pub vault_pubkey: Option<String>,
+}
+
+// RPC-specific arguments
+#[derive(Debug, Parser)]
+pub struct RpcArgs {
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    /// Port
+    #[arg(short = 'p', long, default_value = "8080")]
+    pub port: Option<u16>,
+
+    /// Logging Format
+    #[arg(long, default_value = "standard")]
+    pub logging_format: LoggingFormat,
+
+    /// Metrics
+    #[arg(long, default_value = None)]
+    pub metrics_endpoint: Option<String>,
+}
+
+// CLI-specific arguments
+#[derive(Debug, Parser)]
+pub struct CliArgs {
+    #[command(flatten)]
+    pub common: CommonArgs,
 }
