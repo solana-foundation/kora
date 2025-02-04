@@ -1,3 +1,5 @@
+include!("generated/config_generated.rs");
+// pub use self::validation_config;
 pub mod account;
 pub mod args;
 pub mod cache;

@@ -1,7 +1,7 @@
-[kora]
+[rpc_config]
 rate_limit = 0
 
-[validation]
+[validation_config]
 max_allowed_lamports = 1000000
 max_signatures = 10
 allowed_programs = [
@@ -18,7 +18,7 @@ allowed_spl_paid_tokens = [
 disallowed_accounts = []
 # if there is an "allowed_programs" listed above and not in the allowed_instructions, then we will allow all instructions for that program
 allowed_instructions = [
-    { program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", instructions = ["[3,...]"] }, # when there's no IDL available
+    { program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", instructions = ["[4]"] }, # when there's no IDL available
     { program = "11111111111111111111111111111111", instructions = ["transfer"] }, # when there's an IDL available
     { program = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", instructions = ["*"] }, # Ata Program
 ]

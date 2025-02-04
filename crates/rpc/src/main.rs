@@ -23,10 +23,11 @@ async fn main() {
 
     let rpc_client = get_rpc_client(&args.common.rpc_url);
 
-    if let Err(e) = config.validate(rpc_client.as_ref()).await {
+    let validated_config = config.validate(rpc_client.as_ref()).await.unwrap_or_else(|e| {
         log::error!("Config validation failed: {}", e);
         std::process::exit(1);
-    }
+    });
+
 
     let signer =
         if !args.common.skip_signer { Some(init_signer_type(&args.common).unwrap()) } else { None };
@@ -38,7 +39,7 @@ async fn main() {
         });
     }
 
-    let rpc_server = KoraRpc::new(rpc_client, config.validation, config.kora);
+    let rpc_server = KoraRpc::new(rpc_client, validated_config.validation, validated_config.kora);
     let server_handle =
         run_rpc_server(rpc_server, args.port.unwrap_or(8080)).await.unwrap_or_else(|e| {
             log::error!("Server start failed: {}", e);

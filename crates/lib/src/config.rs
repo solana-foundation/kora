@@ -5,19 +5,35 @@ use toml;
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 use crate::{error::KoraError, token::check_valid_tokens};
+use crate::transaction::instructions::{get_program_instruction_configs_with_discriminators, ProgramInstructionConfig, ProgramInstructionConfigWithDiscriminators};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub validation: ValidationConfig,
+    pub validation: RawValidationConfig,
     pub kora: KoraConfig,
 }
 
+// Raw validation config loaded directly from TOML
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawValidationConfig {
+    pub max_allowed_lamports: u64,
+    pub max_signatures: usize,
+    pub allowed_programs: Vec<String>,
+    pub allowed_tokens: Vec<String>,
+    #[serde(rename = "allowed_instructions")]
+    pub allowed_program_instructions: Vec<ProgramInstructionConfig>,
+    pub allowed_spl_paid_tokens: Vec<String>,
+    pub disallowed_accounts: Vec<String>,
+}
+
+// Runtime validation config with discriminators for instruction validation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidationConfig {
     pub max_allowed_lamports: u64,
     pub max_signatures: usize,
     pub allowed_programs: Vec<String>,
     pub allowed_tokens: Vec<String>,
+    pub allowed_program_instructions: Vec<ProgramInstructionConfigWithDiscriminators>,
     pub allowed_spl_paid_tokens: Vec<String>,
     pub disallowed_accounts: Vec<String>,
 }
@@ -26,6 +42,12 @@ pub struct ValidationConfig {
 pub struct KoraConfig {
     pub rate_limit: u64,
     // pub redis_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ValidatedConfig {
+    pub validation: ValidationConfig,
+    pub kora: KoraConfig,
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
@@ -38,13 +60,30 @@ pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
 }
 
 impl Config {
-    pub async fn validate(&self, rpc_client: &RpcClient) -> Result<(), KoraError> {
+    pub async fn validate(&self, rpc_client: &RpcClient) -> Result<ValidatedConfig, KoraError> {
         if self.validation.allowed_tokens.is_empty() {
             return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
         }
 
+        let program_instructions_with_discriminators = get_program_instruction_configs_with_discriminators(
+            rpc_client,
+            &self.validation.allowed_program_instructions
+        ).await?;
+
         check_valid_tokens(rpc_client, &self.validation.allowed_tokens).await?;
-        Ok(())
+
+        Ok(ValidatedConfig {
+            validation: ValidationConfig {
+                max_allowed_lamports: self.validation.max_allowed_lamports,
+                max_signatures: self.validation.max_signatures,
+                allowed_programs: self.validation.allowed_programs.clone(),
+                allowed_tokens: self.validation.allowed_tokens.clone(),
+                allowed_program_instructions: program_instructions_with_discriminators,
+                allowed_spl_paid_tokens: self.validation.allowed_spl_paid_tokens.clone(),
+                disallowed_accounts: self.validation.disallowed_accounts.clone(),
+            },
+            kora: self.kora.clone(),
+        })
     }
 }
 
@@ -102,11 +141,12 @@ mod tests {
     #[tokio::test]
     async fn test_validate_config() {
         let mut config = Config {
-            validation: ValidationConfig {
+            validation: RawValidationConfig {
                 max_allowed_lamports: 1000000000,
                 max_signatures: 10,
                 allowed_programs: vec!["program1".to_string()],
                 allowed_tokens: vec!["token1".to_string()],
+                allowed_program_instructions: vec![],
                 allowed_spl_paid_tokens: vec!["token3".to_string()],
                 disallowed_accounts: vec!["account1".to_string()],
             },
