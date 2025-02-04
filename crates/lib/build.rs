@@ -23,73 +23,87 @@ fn main() {
 fn generate_constants(config: &toml::Value) -> String {
     let mut output = String::new();
     
-    match config {
-        toml::Value::Table(table) => {
-            for (key, value) in table {
-                output.push_str(&generate_value(key, value));
+    if let Some(validation_config) = config.get("validation_config")
+        .and_then(|v| v.as_table()) {
+        // Generate struct for allowed instructions
+        output.push_str("#[derive(Debug)]\n");
+        output.push_str("pub struct AllowedInstruction {\n");
+        output.push_str("    pub program: &'static str,\n");
+        output.push_str("    pub instructions: &'static [&'static str],\n");
+        output.push_str("}\n\n");
+
+        // Generate all constants
+        for (key, value) in validation_config {
+            match (key.as_str(), value) {
+                ("max_allowed_lamports", toml::Value::Integer(n)) => {
+                    output.push_str(&format!("pub const MAX_ALLOWED_LAMPORTS: u64 = {};\n", n));
+                }
+                ("max_signatures", toml::Value::Integer(n)) => {
+                    output.push_str(&format!("pub const MAX_SIGNATURES: u32 = {};\n", n));
+                }
+                ("allowed_programs", toml::Value::Array(arr)) => {
+                    output.push_str(&format!("pub const ALLOWED_PROGRAMS: &[&str] = &[{}];\n",
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| format!("\"{}\"", s))
+                            .collect::<Vec<_>>()
+                            .join(", ")));
+                }
+                ("allowed_tokens", toml::Value::Array(arr)) => {
+                    output.push_str(&format!("pub const ALLOWED_TOKENS: &[&str] = &[{}];\n",
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| format!("\"{}\"", s))
+                            .collect::<Vec<_>>()
+                            .join(", ")));
+                }
+                ("allowed_spl_paid_tokens", toml::Value::Array(arr)) => {
+                    output.push_str(&format!("pub const ALLOWED_SPL_PAID_TOKENS: &[&str] = &[{}];\n",
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| format!("\"{}\"", s))
+                            .collect::<Vec<_>>()
+                            .join(", ")));
+                }
+                ("disallowed_accounts", toml::Value::Array(arr)) => {
+                    output.push_str(&format!("pub const DISALLOWED_ACCOUNTS: &[&str] = &[{}];\n",
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|s| format!("\"{}\"", s))
+                            .collect::<Vec<_>>()
+                            .join(", ")));
+                }
+                ("allowed_instructions", toml::Value::Array(arr)) => {
+                    output.push_str("pub const ALLOWED_INSTRUCTIONS: &[AllowedInstruction] = &[\n");
+                    for item in arr {
+                        if let toml::Value::Table(table) = item {
+                            let program = table.get("program")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default();
+                            
+                            let instructions = table.get("instructions")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter()
+                                    .filter_map(|v| v.as_str())
+                                    .collect::<Vec<_>>())
+                                .unwrap_or_default();
+                            
+                            output.push_str("    AllowedInstruction {\n");
+                            output.push_str(&format!("        program: \"{}\",\n", program));
+                            output.push_str(&format!("        instructions: &[{}],\n", 
+                                instructions.iter()
+                                    .map(|i| format!("\"{}\"", i))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")));
+                            output.push_str("    },\n");
+                        }
+                    }
+                    output.push_str("];\n");
+                }
+                _ => {}
             }
         }
-        _ => panic!("Root must be a TOML table"),
     }
     
     output
-}
-
-fn generate_value(key: &str, value: &toml::Value) -> String {
-    match value {
-        toml::Value::Array(arr) if key == "allowed_instructions" => {
-            let mut structs = String::new();
-            
-            // Generate the struct definition
-            structs.push_str("#[derive(Debug)]\n");
-            structs.push_str("pub struct AllowedInstruction {\n");
-            structs.push_str("    pub program: &'static str,\n");
-            structs.push_str("    pub instructions: &'static [&'static str],\n");
-            structs.push_str("}\n\n");
-
-            // Generate the constant array
-            structs.push_str("pub const ALLOWED_INSTRUCTIONS: &[AllowedInstruction] = &[\n");
-            
-            for item in arr {
-                if let toml::Value::Table(table) = item {
-                    let program = table.get("program")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default();
-                    
-                    let instructions = table.get("instructions")
-                        .and_then(|v| v.as_array())
-                        .map(|arr| arr.iter()
-                            .filter_map(|v| v.as_str())
-                            .collect::<Vec<_>>())
-                        .unwrap_or_default();
-                    
-                    structs.push_str("    AllowedInstruction {\n");
-                    structs.push_str(&format!("        program: \"{}\",\n", program));
-                    structs.push_str(&format!("        instructions: &[{}],\n", 
-                        instructions.iter()
-                            .map(|i| format!("\"{}\"", i))
-                            .collect::<Vec<_>>()
-                            .join(", ")));
-                    structs.push_str("    },\n");
-                }
-            }
-            
-            structs.push_str("];\n");
-            structs
-        }
-        toml::Value::String(s) => format!("pub const {}: &str = \"{}\";\n", key.to_uppercase(), s),
-        toml::Value::Integer(i) => format!("pub const {}: i64 = {};\n", key.to_uppercase(), i),
-        toml::Value::Float(f) => format!("pub const {}: f64 = {};\n", key.to_uppercase(), f),
-        toml::Value::Boolean(b) => format!("pub const {}: bool = {};\n", key.to_uppercase(), b),
-        toml::Value::Table(table) => {
-            let mut nested = String::new();
-            nested.push_str(&format!("pub mod {} {{\n", key.to_lowercase()));
-            for (k, v) in table {
-                nested.push_str(&generate_value(k, v));
-            }
-            nested.push_str("}\n");
-            nested
-        }
-        _ => String::new(),
-    }
 }
