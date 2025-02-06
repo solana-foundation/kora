@@ -20,7 +20,6 @@ pub struct RawValidationConfig {
     pub max_signatures: usize,
     pub allowed_programs: Vec<String>,
     pub allowed_tokens: Vec<String>,
-    #[serde(rename = "allowed_instructions")]
     pub allowed_program_instructions: Vec<ProgramInstructionConfig>,
     pub allowed_spl_paid_tokens: Vec<String>,
     pub disallowed_accounts: Vec<String>,
@@ -101,6 +100,7 @@ mod tests {
             max_signatures = 10
             allowed_programs = ["program1", "program2"]
             allowed_tokens = ["token1", "token2"]
+            allowed_program_instructions = [{ program = "11111111111111111111111111111111", instructions = ["transfer"] }]
             allowed_spl_paid_tokens = ["token3"]
             disallowed_accounts = ["account1"]
 
@@ -117,6 +117,7 @@ mod tests {
         assert_eq!(config.validation.max_signatures, 10);
         assert_eq!(config.validation.allowed_programs, vec!["program1", "program2"]);
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
+        assert_eq!(config.validation.allowed_program_instructions, vec![ProgramInstructionConfig { program_id: "11111111111111111111111111111111".to_string(), instructions: vec!["transfer".to_string()] }]);
         assert_eq!(config.validation.allowed_spl_paid_tokens, vec!["token3"]);
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
         assert_eq!(config.kora.rate_limit, 100);
