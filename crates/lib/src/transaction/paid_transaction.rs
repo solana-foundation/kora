@@ -14,7 +14,7 @@ pub async fn sign_transaction_if_paid(
     rpc_client: &RpcClient,
     validation: &ValidationConfig,
     transaction: Transaction,
-    margin: Option<f64>
+    margin: Option<f64>,
 ) -> Result<(Transaction, String), KoraError> {
     let signer = get_signer()?;
 
@@ -31,7 +31,7 @@ pub async fn sign_transaction_if_paid(
         &transaction,
         validation,
         required_lamports,
-        signer.solana_pubkey()
+        signer.solana_pubkey(),
     )
     .await?;
 

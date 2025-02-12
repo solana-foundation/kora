@@ -1,7 +1,7 @@
 use kora_lib::{
     config::ValidationConfig,
     transaction::{
-        decode_b58_transaction, sign_transaction_if_paid as lib_sign_transaction_if_paid
+        decode_b58_transaction, sign_transaction_if_paid as lib_sign_transaction_if_paid,
     },
     KoraError,
 };
@@ -27,13 +27,8 @@ pub async fn sign_transaction_if_paid(
     request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
     let transaction = decode_b58_transaction(&request.transaction)?;
-    let (transaction, signed_transaction) = lib_sign_transaction_if_paid(
-        rpc_client,
-        validation,
-        transaction,
-        request.margin,
-    )
-    .await?;
+    let (transaction, signed_transaction) =
+        lib_sign_transaction_if_paid(rpc_client, validation, transaction, request.margin).await?;
 
     Ok(SignTransactionIfPaidResponse {
         signature: transaction.signatures[0].to_string(),

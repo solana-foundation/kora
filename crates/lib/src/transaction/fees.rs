@@ -1,3 +1,4 @@
+use crate::oracle::get_token_price;
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -5,7 +6,6 @@ use solana_sdk::{
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
-use crate::oracle::get_token_price;
 
 use crate::error::KoraError;
 

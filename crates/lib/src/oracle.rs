@@ -16,9 +16,7 @@ pub struct JupiterPriceData {
     pub price: f64,
 }
 
-
 pub async fn get_token_price(mint_address: &str) -> Result<f64, KoraError> {
-  
     let client = reqwest::Client::new();
 
     let jupiter_url = format!("{}/price?ids={}", JUPITER_API_URL, mint_address);
@@ -35,24 +33,25 @@ pub async fn get_token_price(mint_address: &str) -> Result<f64, KoraError> {
                         ))
                     })?;
 
-                     //check price data not empty
-                     if jupiter_response.data.is_empty() {
-                        return Err(KoraError::InternalServerError(format!(
-                            "Jupiter API returned empty price data for mint: {}",
-                            mint_address
-                        )));
-                    }
+                //check price data not empty
+                if jupiter_response.data.is_empty() {
+                    return Err(KoraError::InternalServerError(format!(
+                        "Jupiter API returned empty price data for mint: {}",
+                        mint_address
+                    )));
+                }
 
-                  let price_data =  jupiter_response
-                  .data
-                  .first()
-                  .ok_or(KoraError::InternalServerError(format!("No price data returned from Jupiter API")))?;
+                let price_data =
+                    jupiter_response.data.first().ok_or(KoraError::InternalServerError(
+                        format!("No price data returned from Jupiter API"),
+                    ))?;
 
-                    price_data.price
+                price_data.price
             } else {
                 return Err(KoraError::InternalServerError(format!(
                     "Jupiter price API returned error {}: {}",
-                    response.status(), mint_address
+                    response.status(),
+                    mint_address
                 )));
             }
         }
