@@ -12,6 +12,7 @@ pub mod solana;
 pub mod state;
 pub mod token;
 pub mod transaction;
+pub mod oracle;
 
 pub use config::{load_config, Config};
 pub use error::KoraError;

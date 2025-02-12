@@ -5,7 +5,7 @@ use crate::{
     config::ValidationConfig,
     error::KoraError,
     get_signer,
-    transaction::{estimate_transaction_fee, validator::validate_token_payment, TokenPriceInfo},
+    transaction::{estimate_transaction_fee, validator::validate_token_payment},
 };
 
 use super::transaction::sign_transaction;
@@ -14,8 +14,7 @@ pub async fn sign_transaction_if_paid(
     rpc_client: &RpcClient,
     validation: &ValidationConfig,
     transaction: Transaction,
-    margin: Option<f64>,
-    token_price_info: Option<TokenPriceInfo>,
+    margin: Option<f64>
 ) -> Result<(Transaction, String), KoraError> {
     let signer = get_signer()?;
 
@@ -32,8 +31,7 @@ pub async fn sign_transaction_if_paid(
         &transaction,
         validation,
         required_lamports,
-        signer.solana_pubkey(),
-        &token_price_info.unwrap_or(TokenPriceInfo { price: 0.0 }),
+        signer.solana_pubkey()
     )
     .await?;
 

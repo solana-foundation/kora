@@ -138,8 +138,7 @@ async fn main() -> Result<(), KoraError> {
                 &rpc_client,
                 &validation,
                 transaction,
-                margin,
-                token_price_info,
+                margin
             )
             .await?;
 

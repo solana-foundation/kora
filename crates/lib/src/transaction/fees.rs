@@ -5,6 +5,7 @@ use solana_sdk::{
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
+use crate::oracle::get_token_price;
 
 use crate::error::KoraError;
 
@@ -77,15 +78,15 @@ pub async fn calculate_token_value_in_lamports(
     amount: u64,
     mint: &Pubkey,
     rpc_client: &RpcClient,
-    price_info: &TokenPriceInfo,
 ) -> Result<u64, KoraError> {
     let mint_data = Mint::unpack(
         &rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?.data,
     )
     .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
+    let token_price = get_token_price(&mint.to_string()).await?;
 
     let sol_per_token =
-        price_info.price * LAMPORTS_PER_SOL as f64 / (10f64.powi(mint_data.decimals as i32));
+        token_price * LAMPORTS_PER_SOL as f64 / (10f64.powi(mint_data.decimals as i32));
 
     let lamport_value = (amount as f64 * sol_per_token).floor() as u64;
 

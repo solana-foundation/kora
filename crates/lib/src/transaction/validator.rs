@@ -11,8 +11,6 @@ use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::Account as TokenAccount;
 use std::str::FromStr;
 
-use super::TokenPriceInfo;
-
 pub enum ValidationMode {
     Sign,
     SignAndSend,
@@ -233,7 +231,6 @@ pub async fn validate_token_payment(
     validation: &ValidationConfig,
     required_lamports: u64,
     signer_pubkey: Pubkey,
-    price_info: &TokenPriceInfo,
 ) -> Result<(), KoraError> {
     let mut total_lamport_value = 0;
 
@@ -280,7 +277,6 @@ pub async fn validate_token_payment(
                 amount,
                 &token_account.mint,
                 rpc_client,
-                price_info,
             )
             .await?;
 
