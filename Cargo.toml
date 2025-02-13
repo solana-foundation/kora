@@ -65,4 +65,3 @@ vaultrs = "0.7.3"
 tk-rs = { git = "https://github.com/pkxro/tk-rs.git" }
 pyth-sdk-solana = "0.10.3"
 lazy_static = "1.5.0"
-mockall = "0.13.1"

@@ -110,15 +110,7 @@ mod tests {
     use crate::constant::SOL_MINT;
 
     use super::*;
-    use mockall::{mock, predicate::*};
     use solana_sdk::commitment_config::CommitmentConfig;
-
-    // Create mock RpcClient for testing
-    mock! {
-        RpcClient {
-            fn get_account_data(&self, pubkey: &Pubkey) -> Result<Vec<u8>, solana_client::client_error::ClientError>;
-        }
-    }
 
     #[tokio::test]
     async fn test_get_price_success() {
