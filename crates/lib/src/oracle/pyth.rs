@@ -23,6 +23,16 @@ lazy_static! {
             "So11111111111111111111111111111111111111112",
             "H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG"
         );
+        // USDC/USD
+        m.insert(
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "Gnt27xtC473ZT2Mw5u8wZ68Z3gULkSTb5DuxJy7eJotD"
+        );
+        // USDT/USD
+        m.insert(
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+            "3vxLXJqLqF3JG5TCbYycbKWRBbCJQLxQmBGCkyqEEefL"
+        );
         m
     };
 }
@@ -149,7 +159,9 @@ mod tests {
 
         // Test all supported tokens
         let tokens = vec![
-            "So11111111111111111111111111111111111111112", // SOL
+            "So11111111111111111111111111111111111111112",  // SOL
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
         ];
 
         for token in tokens {
