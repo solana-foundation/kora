@@ -2,7 +2,6 @@ use kora_lib::{
     config::ValidationConfig,
     transaction::{
         decode_b58_transaction, sign_transaction_if_paid as lib_sign_transaction_if_paid,
-        TokenPriceInfo,
     },
     KoraError,
 };
@@ -14,7 +13,6 @@ use std::sync::Arc;
 pub struct SignTransactionIfPaidRequest {
     pub transaction: String,
     pub margin: Option<f64>,
-    pub token_price_info: Option<TokenPriceInfo>,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,14 +27,8 @@ pub async fn sign_transaction_if_paid(
     request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
     let transaction = decode_b58_transaction(&request.transaction)?;
-    let (transaction, signed_transaction) = lib_sign_transaction_if_paid(
-        rpc_client,
-        validation,
-        transaction,
-        request.margin,
-        request.token_price_info,
-    )
-    .await?;
+    let (transaction, signed_transaction) =
+        lib_sign_transaction_if_paid(rpc_client, validation, transaction, request.margin).await?;
 
     Ok(SignTransactionIfPaidResponse {
         signature: transaction.signatures[0].to_string(),

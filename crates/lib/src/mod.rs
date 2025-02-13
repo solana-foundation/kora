@@ -6,6 +6,7 @@ pub mod constant;
 pub mod error;
 pub mod jup;
 pub mod log;
+pub mod oracle;
 pub mod rpc;
 pub mod signer;
 pub mod solana;

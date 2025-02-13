@@ -8,7 +8,7 @@ use kora_lib::{
     state::init_signer,
     transaction::{
         decode_b58_transaction, estimate_transaction_fee, sign_and_send_transaction,
-        sign_transaction, sign_transaction_if_paid, TokenPriceInfo,
+        sign_transaction, sign_transaction_if_paid,
     },
 };
 
@@ -39,8 +39,6 @@ enum Commands {
         transaction: String,
         #[arg(long)]
         margin: Option<f64>,
-        #[arg(long)]
-        token_price: Option<f64>,
     },
 }
 
@@ -123,7 +121,7 @@ async fn main() -> Result<(), KoraError> {
             let fee = estimate_transaction_fee(&rpc_client, &transaction).await?;
             println!("Estimated fee: {} lamports", fee);
         }
-        Some(Commands::SignIfPaid { transaction, margin, token_price }) => {
+        Some(Commands::SignIfPaid { transaction, margin }) => {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
@@ -132,16 +130,8 @@ async fn main() -> Result<(), KoraError> {
                 e
             })?;
 
-            let token_price_info = token_price.map(|price| TokenPriceInfo { price });
-
-            let (transaction, signed_tx) = sign_transaction_if_paid(
-                &rpc_client,
-                &validation,
-                transaction,
-                margin,
-                token_price_info,
-            )
-            .await?;
+            let (transaction, signed_tx) =
+                sign_transaction_if_paid(&rpc_client, &validation, transaction, margin).await?;
 
             println!("Signature: {}", transaction.signatures[0]);
             println!("Signed Transaction: {}", signed_tx);
