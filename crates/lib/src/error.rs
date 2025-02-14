@@ -4,6 +4,8 @@ use solana_client::client_error::ClientError;
 use solana_sdk::signature::SignerError;
 use thiserror::Error;
 
+use crate::oracle::OracleError;
+
 #[derive(Error, Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub enum KoraError {
     #[error("Account {0} not found")]
@@ -82,6 +84,12 @@ impl From<std::io::Error> for KoraError {
 impl From<Box<dyn std::error::Error>> for KoraError {
     fn from(e: Box<dyn std::error::Error>) -> Self {
         KoraError::InternalServerError(e.to_string())
+    }
+}
+
+impl From<OracleError> for KoraError {
+    fn from(err: OracleError) -> Self {
+        KoraError::InternalServerError(format!("Oracle error: {}", err))
     }
 }
 

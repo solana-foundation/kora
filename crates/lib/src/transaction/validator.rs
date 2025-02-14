@@ -299,6 +299,8 @@ pub async fn validate_token_payment(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use solana_sdk::{message::Message, system_instruction};
 
@@ -312,6 +314,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            token_symbols: HashMap::new(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
@@ -340,6 +343,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            token_symbols: HashMap::new(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -371,6 +375,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            token_symbols: HashMap::new(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -405,6 +410,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            token_symbols: HashMap::new(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -432,6 +438,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            token_symbols: HashMap::new(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -460,6 +467,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            token_symbols: HashMap::new(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
@@ -479,6 +487,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec!["hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek".to_string()],
+            token_symbols: HashMap::new(),
         };
 
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();

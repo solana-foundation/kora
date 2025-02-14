@@ -27,7 +27,7 @@ pub async fn sign_transaction_if_paid(
     let margin = margin.unwrap_or(0.0);
     let required_lamports = (min_transaction_fee as f64 * (1.0 + margin)) as u64;
 
-    let oracle_client = OracleClient::new(rpc_client);
+    let oracle_client = OracleClient::new(rpc_client, validation).await?;
 
     let sol_mint = Pubkey::from_str_const(SOL_MINT);
 
@@ -35,7 +35,9 @@ pub async fn sign_transaction_if_paid(
         .get_token_price(&sol_mint)
         .await
         .map(|price| TokenPriceInfo { price })
-        .unwrap_or(TokenPriceInfo { price: 0.0 });
+        .map_err(|e| {
+            KoraError::FeeEstimationFailed(format!("Failed to get oracle price: {}", e))
+        })?;
 
     // Validate token payment
     validate_token_payment(
