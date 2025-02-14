@@ -24,7 +24,6 @@ use crate::method::{
     transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse as TransferTransactionResponseOld,
     },
-    transfer_transaction_v2::{transfer_transaction_v2, TransferTransactionV2Request, TransferTransactionResponse as TransferTransactionResponseV2},
 };
 
 #[derive(Clone)]
@@ -121,13 +120,4 @@ impl KoraRpc {
         result
     }
 
-    pub async fn transfer_transaction_v2(
-        &self,
-        request: TransferTransactionV2Request,
-    ) -> Result<TransferTransactionResponseV2, KoraError> {
-        info!("Transfer transaction V2 request: {:?}", request);
-        let result = transfer_transaction_v2(&self.rpc_client, &self.validation, request).await;
-        info!("Transfer transaction V2 response: {:?}", result);
-        result
-    }
 }

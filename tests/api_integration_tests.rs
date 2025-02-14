@@ -380,43 +380,18 @@ async fn test_sign_transaction_if_paid() {
 }
 
 #[tokio::test]
-async fn test_transfer_transaction_v2() {
+async fn test_transfer_transaction_action_get() {
     let client = setup_test_client().await;
 
-    // Prepare the request parameters
-    let request_params = json!({
-        "amount": 1000000,
-        "token": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-        "source": "5KKsLVU6TcbVDK4BS6K1DGDxnh4Q9xjYJ8XaDCG5t8ht",
-        "destination": "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM"
-    });
-
-    // Send the request to the transferTransactionV2 method
+    // Send a request to the transferTransactionActionGet method
     let response: serde_json::Value = client
-        .request("transferTransactionV2", rpc_params![request_params])
+        .request("transferTransactionActionGet", rpc_params![])
         .await
-        .expect("Failed to submit transfer transaction V2");
+        .expect("Failed to get transfer transaction action");
 
     // Assert that the response contains the expected fields
-    assert!(response["transaction"].as_str().is_some(), "Expected transaction in response");
-    assert!(response["message"].as_str().is_some(), "Expected message in response");
-    assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
-
-    // Decode the transaction and simulate it
-    let transaction_string = response["transaction"].as_str().unwrap();
-    let decoded_tx = bs58::decode(transaction_string)
-        .into_vec()
-        .expect("Failed to decode transaction from base58");
-
-    let transaction: Transaction =
-        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
-
-    let rpc_client = setup_rpc_client().await;
-    let simulated_tx = rpc_client
-        .simulate_transaction(&transaction)
-        .await
-        .expect("Failed to simulate transaction");
-
-    println!("Simulated transaction: {:?}", simulated_tx);
-    assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
+    assert_eq!(response["title"].as_str().unwrap(), "HackerHouse Events", "Title mismatch");
+    assert_eq!(response["description"].as_str().unwrap(), "Claim your Hackerhouse access token.", "Description mismatch");
+    assert_eq!(response["label"].as_str().unwrap(), "Claim Access Token", "Label mismatch");
+    assert!(response["icon"].as_str().is_some(), "Expected icon URL to be present");
 }

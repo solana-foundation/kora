@@ -3,11 +3,12 @@ use jsonrpsee::{
     server::{middleware::proxy_get_request::ProxyGetRequestLayer, ServerBuilder, ServerHandle},
     RpcModule,
 };
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, time::Duration, fs};
 use tower::limit::RateLimitLayer;
 use tower_http::cors::CorsLayer;
+use serde_json::Value;
 
-use crate::{method::transfer_transaction_v2::TransferTransactionV2Request, rpc::KoraRpc};
+use crate::rpc::KoraRpc;
 
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -84,13 +85,6 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
             rpc.transfer_transaction(params).await.map_err(Into::into)
         });
 
-    let _ =
-        module.register_async_method("transferTransactionV2", |rpc_params, rpc_context| async move {
-            let rpc = rpc_context.as_ref();
-            let request: TransferTransactionV2Request = rpc_params.parse()?;
-            rpc.transfer_transaction_v2(request).await.map_err(Into::into)
-        });
-
     let _ = module.register_async_method("getBlockhash", |_rpc_params, rpc_context| async move {
         let rpc = rpc_context.as_ref();
         rpc.get_blockhash().await.map_err(Into::into)
@@ -107,6 +101,21 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
             let rpc = rpc_context.as_ref();
             let params = rpc_params.parse()?;
             rpc.sign_transaction_if_paid(params).await.map_err(Into::into)
+        },
+    );
+    
+    let _ = module.register_async_method(
+        "transferTransactionActionGet",
+        |_params, _rpc_context| async move {            
+            // Read the JSON file from the ./actions/ directory
+            let data = fs::read_to_string("./actions/transfer_action_data.json")
+                .map_err(|e| anyhow::anyhow!("Failed to read JSON file: {}", e))?;
+            
+            // Parse the JSON data
+            let response: Value = serde_json::from_str(&data)
+                .map_err(|e| anyhow::anyhow!("Failed to parse JSON data: {}", e))?;
+            
+            Ok(response)
         },
     );
 
