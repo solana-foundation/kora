@@ -1,8 +1,6 @@
 use kora_lib::{
-    config::ValidationConfig,
-    transaction::{decode_b58_transaction, sign_transaction as lib_sign_transaction},
-    types::TransactionEncoding,
-    KoraError,
+    config::ValidationConfig, transaction::sign_transaction as lib_sign_transaction,
+    types::TransactionEncoding, KoraError,
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -30,7 +28,8 @@ pub async fn sign_transaction(
 ) -> Result<SignTransactionResponse, KoraError> {
     let encoding = request.encoding.unwrap_or_default();
     let transaction = encoding.decode_transaction(&request.transaction)?;
-    let (transaction, signed_transaction) = lib_sign_transaction(rpc_client, validation, transaction).await?;
+    let (transaction, signed_transaction) =
+        lib_sign_transaction(rpc_client, validation, transaction).await?;
 
     let encoded = encoding.encode_transaction(&transaction)?;
 

@@ -4,20 +4,19 @@ use utoipa::ToSchema;
 
 use crate::{
     error::KoraError,
-    transaction::{decode_b58_transaction, decode_b64_transaction, encode_transaction_b58, encode_transaction_b64},
+    transaction::{
+        decode_b58_transaction, decode_b64_transaction, encode_transaction_b58,
+        encode_transaction_b64,
+    },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum TransactionEncoding {
+    #[default]
     Base58,
     Base64,
-}
-
-impl Default for TransactionEncoding {
-    fn default() -> Self {
-        TransactionEncoding::Base58
-    }
 }
 
 impl TransactionEncoding {
@@ -34,4 +33,4 @@ impl TransactionEncoding {
             TransactionEncoding::Base64 => encode_transaction_b64(transaction),
         }
     }
-} 
+}
