@@ -7,8 +7,7 @@ use solana_sdk::{
 };
 
 use crate::{
-    config::ValidationConfig, error::KoraError, get_signer,
-    transaction::validator::TransactionValidator, Signer as _,
+    config::ValidationConfig, error::KoraError, get_signer, transaction::validator::TransactionValidator, types::TransactionEncoding, Signer as _
 };
 
 pub fn decode_b58_transaction(tx: &str) -> Result<Transaction, KoraError> {
@@ -123,10 +122,26 @@ pub async fn sign_and_send_transaction(
     Ok((signature.to_string(), encoded))
 }
 
-pub fn encode_transaction(transaction: &Transaction) -> Result<String, KoraError> {
+pub fn encode_transaction_b58(transaction: &Transaction) -> Result<String, KoraError> {
     let serialized = bincode::serialize(transaction)
-        .map_err(|e| KoraError::InvalidTransaction(format!("Serialization failed: {}", e)))?;
+        .map_err(|e| KoraError::SerializationError(format!("Base58 serialization failed: {}", e)))?;
     Ok(bs58::encode(serialized).into_string())
+}
+
+pub fn encode_transaction_b64(transaction: &Transaction) -> Result<String, KoraError> {
+    let serialized = bincode::serialize(transaction)
+        .map_err(|e| KoraError::SerializationError(format!("Base64 serialization failed: {}", e)))?;
+    Ok(base64::encode(serialized))
+}
+
+pub fn decode_b64_transaction(encoded: &str) -> Result<Transaction, KoraError> {
+    let decoded = base64::decode(encoded).map_err(|e| {
+        KoraError::InvalidTransaction(format!("Failed to decode base64 transaction: {}", e))
+    })?;
+    
+    bincode::deserialize(&decoded).map_err(|e| {
+        KoraError::InvalidTransaction(format!("Failed to deserialize transaction: {}", e))
+    })
 }
 
 #[cfg(test)]
