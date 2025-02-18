@@ -7,6 +7,7 @@ use jsonrpsee::{
 use std::{net::SocketAddr, time::Duration};
 use tower::limit::RateLimitLayer;
 use tower_http::cors::CorsLayer;
+use crate::actions::transfer::{get_transfer_metadata, handle_transfer_action, TransferActionRequest};
 
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -101,6 +102,17 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
             rpc.sign_transaction_if_paid(params).await.map_err(Into::into)
         },
     );
+
+    let _ = module.register_async_method("getTransferMetadata", |_params, rpc_context| async move {
+        let _rpc = rpc_context.as_ref();
+        get_transfer_metadata().await
+    });
+
+    let _ = module.register_async_method("transferAction", |rpc_params, rpc_context| async move {
+        let rpc = rpc_context.as_ref();
+        let request = rpc_params.parse()?;
+        handle_transfer_action(&rpc.rpc_client, &rpc.validation, request).await.map_err(Into::into)
+    });
 
     Ok(module)
 }
