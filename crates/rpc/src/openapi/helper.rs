@@ -1,13 +1,12 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
 
-use utoipa::openapi::path::OperationBuilder;
-use utoipa::openapi::{
-    Components, ContentBuilder, ObjectBuilder, PathItem, PathItemType,
-    RefOr, Required, Response, ResponseBuilder, ResponsesBuilder, Schema, SchemaType,
-    ServerBuilder, request_body::RequestBodyBuilder,
+use utoipa::{
+    openapi::{
+        Components, ContentBuilder, ObjectBuilder, RefOr, Response, ResponseBuilder, Schema,
+        SchemaType,
+    },
+    OpenApi,
 };
-use utoipa::OpenApi;
 
 use super::docs::ApiDoc;
 
@@ -53,23 +52,11 @@ pub(crate) fn build_error_response(description: &str) -> Response {
 pub(crate) fn request_schema(name: &str, params: Option<RefOr<Schema>>) -> RefOr<Schema> {
     let mut builder = ObjectBuilder::new();
 
-    builder = add_string_property(
-        builder,
-        "jsonrpc",
-        "2.0",
-        "The version of the JSON-RPC protocol.",
-    );
-    builder = add_string_property(
-        builder,
-        "id",
-        "test-account",
-        "An ID to identify the request.",
-    );
+    builder =
+        add_string_property(builder, "jsonrpc", "2.0", "The version of the JSON-RPC protocol.");
+    builder = add_string_property(builder, "id", "test-account", "An ID to identify the request.");
     builder = add_string_property(builder, "method", name, "The name of the method to invoke.");
-    builder = builder
-        .required("jsonrpc")
-        .required("id")
-        .required("method");
+    builder = builder.required("jsonrpc").required("id").required("method");
 
     if let Some(params) = params {
         builder = builder.property("params", params);
@@ -110,14 +97,8 @@ pub(crate) fn find_all_components(schema: RefOr<Schema>) -> HashSet<String> {
             _ => {}
         },
         RefOr::Ref(ref_location) => {
-            components.insert(
-                ref_location
-                    .ref_location
-                    .split('/')
-                    .last()
-                    .unwrap()
-                    .to_string(),
-            );
+            components
+                .insert(ref_location.ref_location.split('/').next_back().unwrap().to_string());
         }
     }
 
@@ -129,16 +110,14 @@ pub(crate) fn filter_unused_components(
     response: RefOr<Schema>,
     components: &mut Components,
 ) {
-    let mut used_components = request
-        .map(find_all_components)
-        .unwrap_or_default();
+    let mut used_components = request.map(find_all_components).unwrap_or_default();
     used_components.extend(find_all_components(response));
 
     let mut check_stack = used_components.clone();
     while !check_stack.is_empty() {
         let current = check_stack.iter().next().unwrap().clone();
         check_stack.remove(&current);
-        
+
         if let Some(schema) = components.schemas.get(&current) {
             let child_components = find_all_components(schema.clone());
             for child in child_components {
@@ -184,8 +163,11 @@ pub(crate) fn fix_examples_for_allOf_references(schema: RefOr<Schema>) -> RefOr<
                     // Merge the schemas
                     let mut merged = all_of.items[0].clone();
                     for item in all_of.items.iter().skip(1) {
-                        if let (RefOr::T(Schema::Object(ref mut merged_obj)), RefOr::T(Schema::Object(ref item_obj))) = 
-                            (merged.clone(), item.clone()) {
+                        if let (
+                            RefOr::T(Schema::Object(ref mut merged_obj)),
+                            RefOr::T(Schema::Object(ref item_obj)),
+                        ) = (merged.clone(), item.clone())
+                        {
                             // Merge properties
                             merged_obj.properties.extend(item_obj.properties.clone());
                             // Merge required fields
@@ -198,7 +180,7 @@ pub(crate) fn fix_examples_for_allOf_references(schema: RefOr<Schema>) -> RefOr<
                     // If only one item, just return it
                     all_of.items[0].clone()
                 }
-            },
+            }
             _ => RefOr::T(schema),
         },
         RefOr::Ref(_) => schema,
@@ -225,19 +207,17 @@ pub(crate) fn add_referenced_components(schema: RefOr<Schema>, components: &mut 
         }
         RefOr::Ref(reference) => {
             // Extract component name from reference
-            let component_name = reference.ref_location
-                .split('/')
-                .last()
-                .unwrap()
-                .to_string();
-            
+            let component_name = reference.ref_location.split('/').next_back().unwrap().to_string();
+
             // If we haven't already added this component
             if !components.schemas.contains_key(&component_name) {
                 // Get the component schema from ApiDoc
-                if let Some(schema) = ApiDoc::openapi().components.unwrap().schemas.get(&component_name) {
+                if let Some(schema) =
+                    ApiDoc::openapi().components.unwrap().schemas.get(&component_name)
+                {
                     // Add it to our components
                     components.schemas.insert(component_name.clone(), schema.clone());
-                    
+
                     // Recursively process any nested references in this component
                     add_referenced_components(schema.clone(), components);
                 }

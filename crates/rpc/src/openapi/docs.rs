@@ -1,26 +1,29 @@
+use kora_lib::{config::ValidationConfig, transaction::TokenPriceInfo};
 use std::path::PathBuf;
-use kora_lib::config::ValidationConfig;
-use kora_lib::transaction::TokenPriceInfo;
-use utoipa::openapi::{ResponseBuilder, ResponsesBuilder};
-use utoipa::OpenApi;
-use utoipa::openapi::{
-    ContentBuilder, PathItem, PathItemType,
-    Required, ServerBuilder, request_body::RequestBodyBuilder,
+use utoipa::{
+    openapi::{
+        path::OperationBuilder, request_body::RequestBodyBuilder, ContentBuilder, PathItem,
+        PathItemType, Required, ResponseBuilder, ResponsesBuilder, ServerBuilder,
+    },
+    OpenApi,
 };
-use utoipa::openapi::path::OperationBuilder;
 
-use crate::method::{
-    get_blockhash::GetBlockhashResponse,
-    get_config::GetConfigResponse,
-    get_supported_tokens::GetSupportedTokensResponse,
-    sign_and_send_transaction::{SignAndSendTransactionRequest, SignAndSendTransactionResponse},
-    sign_transaction::{SignTransactionRequest, SignTransactionResponse},
-    sign_transaction_if_paid::{SignTransactionIfPaidRequest, SignTransactionIfPaidResponse},
-    transfer_transaction::{TransferTransactionRequest, TransferTransactionResponse},
+use crate::{
+    method::{
+        get_blockhash::GetBlockhashResponse,
+        get_config::GetConfigResponse,
+        get_supported_tokens::GetSupportedTokensResponse,
+        sign_and_send_transaction::{
+            SignAndSendTransactionRequest, SignAndSendTransactionResponse,
+        },
+        sign_transaction::{SignTransactionRequest, SignTransactionResponse},
+        sign_transaction_if_paid::{SignTransactionIfPaidRequest, SignTransactionIfPaidResponse},
+        transfer_transaction::{TransferTransactionRequest, TransferTransactionResponse},
+    },
+    rpc::KoraRpc,
 };
-use crate::rpc::KoraRpc;
 
-use super::helper::{add_referenced_components, build_error_response, filter_unused_components, fix_examples_for_allOf_references, request_schema};
+use super::helper::{build_error_response, request_schema};
 
 const JSON_CONTENT_TYPE: &str = "application/json";
 
@@ -32,42 +35,38 @@ const JSON_CONTENT_TYPE: &str = "application/json";
         description = "RPC server for Kora gasless relayer",
         license(name = "MIT")
     ),
-    components(
-        schemas(
-            ValidationConfig,
-            TokenPriceInfo,
-            GetBlockhashResponse,
-            GetConfigResponse,
-            GetSupportedTokensResponse,
-            SignAndSendTransactionRequest,
-            SignAndSendTransactionResponse,
-            SignTransactionRequest,
-            SignTransactionResponse,
-            SignTransactionIfPaidRequest,
-            SignTransactionIfPaidResponse,
-            TransferTransactionRequest,
-            TransferTransactionResponse,
-        )
-    ),
+    components(schemas(
+        ValidationConfig,
+        TokenPriceInfo,
+        GetBlockhashResponse,
+        GetConfigResponse,
+        GetSupportedTokensResponse,
+        SignAndSendTransactionRequest,
+        SignAndSendTransactionResponse,
+        SignTransactionRequest,
+        SignTransactionResponse,
+        SignTransactionIfPaidRequest,
+        SignTransactionIfPaidResponse,
+        TransferTransactionRequest,
+        TransferTransactionResponse,
+    ))
 )]
 pub struct ApiDoc;
 
 pub fn update_docs() {
     let method_specs = KoraRpc::build_docs_spec();
     let mut combined_doc = ApiDoc::openapi();
-    
+
     // Get base components
-    let mut components = combined_doc.components.unwrap_or_default();
-    
-    combined_doc.servers = Some(vec![ServerBuilder::new()
-        .url("https://api.example.com/v1".to_string())
-        .build()]);
+    let components = combined_doc.components.unwrap_or_default();
+
+    combined_doc.servers =
+        Some(vec![ServerBuilder::new().url("https://api.example.com/v1".to_string()).build()]);
 
     for spec in method_specs {
-        let content = ContentBuilder::new()
-            .schema(request_schema(&spec.name, spec.request.clone()))
-            .build();
-            
+        let content =
+            ContentBuilder::new().schema(request_schema(&spec.name, spec.request.clone())).build();
+
         let request_body = RequestBodyBuilder::new()
             .content(JSON_CONTENT_TYPE, content)
             .required(Some(Required::True))
@@ -76,27 +75,21 @@ pub fn update_docs() {
         let responses = ResponsesBuilder::new()
             .response(
                 "200",
-                ResponseBuilder::new()
-                    .description("Successful response")
-                    .content(
-                        JSON_CONTENT_TYPE,
-                        ContentBuilder::new()
-                            .schema(spec.response.clone())
-                            .build(),
-                    ),
+                ResponseBuilder::new().description("Successful response").content(
+                    JSON_CONTENT_TYPE,
+                    ContentBuilder::new().schema(spec.response.clone()).build(),
+                ),
             )
             .response("429", build_error_response("Exceeded rate limit."))
             .response("500", build_error_response("Internal server error."))
             .build();
 
-        let operation = OperationBuilder::new()
-            .request_body(Some(request_body))
-            .responses(responses)
-            .build();
-            
+        let operation =
+            OperationBuilder::new().request_body(Some(request_body)).responses(responses).build();
+
         let mut path_item = PathItem::new(PathItemType::Post, operation);
         path_item.summary = Some(spec.name.clone());
-        
+
         combined_doc.paths.paths.insert(format!("/{}", spec.name), path_item);
     }
 
@@ -104,8 +97,7 @@ pub fn update_docs() {
     combined_doc.components = Some(components);
 
     let json = serde_json::to_string_pretty(&combined_doc).unwrap();
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("src/openapi/spec/combined_api.json");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/openapi/spec/combined_api.json");
 
     std::fs::write(&path, json).unwrap();
 

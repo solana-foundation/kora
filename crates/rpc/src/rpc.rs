@@ -1,8 +1,10 @@
 use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
-use utoipa::openapi::{ObjectBuilder, RefOr, Schema, SchemaType};
-use utoipa::ToSchema;
+use utoipa::{
+    openapi::{RefOr, Schema},
+    ToSchema,
+};
 
 use kora_lib::{
     config::{KoraConfig, ValidationConfig},
@@ -34,7 +36,6 @@ pub struct KoraRpc {
     validation: ValidationConfig,
     pub config: KoraConfig,
 }
-
 
 pub struct OpenApiSpec {
     pub name: String,

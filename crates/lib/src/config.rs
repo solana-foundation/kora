@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 use std::{fs, path::Path};
 use toml;
+use utoipa::ToSchema;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 
