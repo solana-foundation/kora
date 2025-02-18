@@ -1,5 +1,6 @@
 use crate::{
     config::ValidationConfig, error::KoraError,
+    token::{token_keg::TokenKeg, TokenInterface},
     transaction::fees::calculate_token_value_in_lamports,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -225,6 +226,18 @@ impl TransactionValidator {
 
         total
     }
+
+    fn validate_token_instruction(
+        &self,
+        instruction: &CompiledInstruction,
+        keys: &[Pubkey],
+    ) -> Result<(), KoraError> {
+        // Use TokenKeg::program_id() directly as that's the pattern used elsewhere
+        if *instruction.program_id(keys) != TokenKeg::program_id() {
+            return Ok(());
+        }
+        // ... rest of validation
+    }
 }
 
 pub async fn validate_token_payment(
@@ -238,7 +251,7 @@ pub async fn validate_token_payment(
     let mut total_lamport_value = 0;
 
     for ix in transaction.message.instructions.iter() {
-        if *ix.program_id(&transaction.message.account_keys) != spl_token::id() {
+        if *ix.program_id(&transaction.message.account_keys) != TokenKeg::program_id() {
             continue;
         }
 
@@ -248,23 +261,11 @@ pub async fn validate_token_payment(
             let dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
             let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
 
-            let source_account = rpc_client
-                .get_account(&source_key)
-                .await
-                .map_err(|e| KoraError::RpcError(e.to_string()))?;
+            let token_account = TokenKeg::get_token_account_data(rpc_client, &source_key).await?;
 
-            let token_account = TokenAccount::unpack(&source_account.data).map_err(|e| {
-                KoraError::InvalidTransaction(format!("Invalid token account: {}", e))
-            })?;
-
-            let dest_mint_account =
-                get_associated_token_address(&signer_pubkey, &token_account.mint);
+            let dest_mint_account = TokenKeg::get_associated_account_address(&signer_pubkey, &token_account.mint);
 
             if dest_pubkey != dest_mint_account {
-                continue;
-            }
-
-            if source_account.owner != spl_token::id() {
                 continue;
             }
 

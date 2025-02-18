@@ -16,6 +16,12 @@ use kora_lib::{
     transaction::validator::TransactionValidator, KoraError, Signer as _,
 };
 
+use crate::{
+    config::ValidationConfig,
+    error::KoraError,
+    token::{token_keg::TokenKeg, TokenInterface},
+};
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct TransferTransactionRequest {
     pub amount: u64,
@@ -72,49 +78,33 @@ pub async fn transfer_transaction(
         // Handle wrapped SOL and other SPL tokens
         validator.validate_token_mint(&token_mint)?;
 
-        let mint_account = rpc_client
-            .get_account(&token_mint)
+        let mint_data = TokenKeg::get_mint_data(rpc_client, &token_mint)
             .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))?;
+            .map_err(|e| KoraError::ValidationError(format!("Failed to get mint data: {}", e)))?;
+        let source_ata = TokenKeg::get_associated_account_address(&source, &token_mint);
+        let dest_ata = TokenKeg::get_associated_account_address(&destination, &token_mint);
 
-        let mint = Mint::unpack(&mint_account.data)
-            .map_err(|_| KoraError::ValidationError("Invalid mint account data".to_string()))?;
-
-        let decimals = mint.decimals;
-        let source_ata = get_associated_token_address(&source, &token_mint);
-        let dest_ata = get_associated_token_address(&destination, &token_mint);
-
-        let _ = rpc_client
-            .get_account(&source_ata)
+        let _ = TokenKeg::get_token_account_data(rpc_client, &source_ata)
             .await
-            .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
+            .map_err(|e| KoraError::ValidationError(format!("Invalid source token account: {}", e)))?;
 
         if rpc_client.get_account(&dest_ata).await.is_err() {
-            instructions.push(create_associated_token_account(
+            instructions.push(TokenKeg::create_associated_account_instruction(
                 &fee_payer,
                 &destination,
                 &token_mint,
-                &spl_token::id(),
-            ));
+            )?);
         }
 
         instructions.push(
-            token_instruction::transfer_checked(
-                &spl_token::id(),
+            TokenKeg::create_transfer_instruction(
                 &source_ata,
-                &token_mint,
                 &dest_ata,
                 &source,
-                &[],
                 request.amount,
-                decimals,
+                mint_data.decimals,
             )
-            .map_err(|e| {
-                KoraError::InvalidTransaction(format!(
-                    "Failed to create transfer instruction: {}",
-                    e
-                ))
-            })?,
+            .await?,
         );
     }
 
