@@ -1,4 +1,4 @@
-.PHONY: check fmt lint test build run clean all regen-tk fix-all
+.PHONY: check fmt lint test build run clean all regen-tk fix-all generate-ts-client
 
 # Default target
 all: check test build
@@ -55,8 +55,20 @@ run:
 clean:
 	cargo clean
 
+# Gen openapi docs
+openapi:
+	cargo run -p kora-rpc --bin kora-openapi
+
 # Run all fixes and checks
 lint-fix-all:
 	cargo clippy --fix -- -D warnings
 	cargo fmt --all
 	cargo fmt --all -- --check
+
+# Generate TypeScript client
+gen-ts-client:
+	docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate \
+		-i /local/crates/rpc/src/openapi/spec/combined_api.json \
+		-g typescript-fetch \
+		-o /local/generated/typescript-client \
+		--additional-properties=supportsES6=true,npmName=kora-client,npmVersion=0.1.0

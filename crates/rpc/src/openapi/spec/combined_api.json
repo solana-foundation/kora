@@ -1,0 +1,1120 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "kora-rpc",
+    "description": "RPC server for Kora gasless relayer",
+    "license": {
+      "name": "MIT"
+    },
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com/v1"
+    }
+  ],
+  "paths": {
+    "/estimateTransactionFee": {
+      "summary": "estimateTransactionFee",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "estimateTransactionFee"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "transaction",
+                      "fee_token"
+                    ],
+                    "properties": {
+                      "fee_token": {
+                        "type": "string"
+                      },
+                      "transaction": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "fee_in_lamports"
+                  ],
+                  "properties": {
+                    "fee_in_lamports": {
+                      "type": "integer",
+                      "format": "int64",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getBlockhash": {
+      "summary": "getBlockhash",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "getBlockhash"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "blockhash"
+                  ],
+                  "properties": {
+                    "blockhash": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getConfig": {
+      "summary": "getConfig",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "getConfig"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "fee_payer",
+                    "validation_config"
+                  ],
+                  "properties": {
+                    "fee_payer": {
+                      "type": "string"
+                    },
+                    "validation_config": {
+                      "$ref": "#/components/schemas/ValidationConfig"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getSupportedTokens": {
+      "summary": "getSupportedTokens",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "getSupportedTokens"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "tokens"
+                  ],
+                  "properties": {
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signAndSendTransaction": {
+      "summary": "signAndSendTransaction",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "signAndSendTransaction"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "transaction"
+                    ],
+                    "properties": {
+                      "transaction": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "signature",
+                    "signed_transaction"
+                  ],
+                  "properties": {
+                    "signature": {
+                      "type": "string"
+                    },
+                    "signed_transaction": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signTransaction": {
+      "summary": "signTransaction",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "signTransaction"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "transaction"
+                    ],
+                    "properties": {
+                      "transaction": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "signature",
+                    "signed_transaction"
+                  ],
+                  "properties": {
+                    "signature": {
+                      "type": "string"
+                    },
+                    "signed_transaction": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signTransactionIfPaid": {
+      "summary": "signTransactionIfPaid",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "signTransactionIfPaid"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "transaction"
+                    ],
+                    "properties": {
+                      "margin": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                      },
+                      "token_price_info": {
+                        "allOf": [
+                          {
+                            "$ref": "#/components/schemas/TokenPriceInfo"
+                          }
+                        ],
+                        "nullable": true
+                      },
+                      "transaction": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "signature",
+                    "signed_transaction"
+                  ],
+                  "properties": {
+                    "signature": {
+                      "type": "string"
+                    },
+                    "signed_transaction": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transferTransaction": {
+      "summary": "transferTransaction",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "transferTransaction"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "amount",
+                      "token",
+                      "source",
+                      "destination"
+                    ],
+                    "properties": {
+                      "amount": {
+                        "type": "integer",
+                        "format": "int64",
+                        "minimum": 0
+                      },
+                      "destination": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "token": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "transaction",
+                    "message",
+                    "blockhash"
+                  ],
+                  "properties": {
+                    "blockhash": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "transaction": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GetBlockhashResponse": {
+        "type": "object",
+        "required": [
+          "blockhash"
+        ],
+        "properties": {
+          "blockhash": {
+            "type": "string"
+          }
+        }
+      },
+      "GetConfigResponse": {
+        "type": "object",
+        "required": [
+          "fee_payer",
+          "validation_config"
+        ],
+        "properties": {
+          "fee_payer": {
+            "type": "string"
+          },
+          "validation_config": {
+            "$ref": "#/components/schemas/ValidationConfig"
+          }
+        }
+      },
+      "GetSupportedTokensResponse": {
+        "type": "object",
+        "required": [
+          "tokens"
+        ],
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SignAndSendTransactionRequest": {
+        "type": "object",
+        "required": [
+          "transaction"
+        ],
+        "properties": {
+          "transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "SignAndSendTransactionResponse": {
+        "type": "object",
+        "required": [
+          "signature",
+          "signed_transaction"
+        ],
+        "properties": {
+          "signature": {
+            "type": "string"
+          },
+          "signed_transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionIfPaidRequest": {
+        "type": "object",
+        "required": [
+          "transaction"
+        ],
+        "properties": {
+          "margin": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "token_price_info": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TokenPriceInfo"
+              }
+            ],
+            "nullable": true
+          },
+          "transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionIfPaidResponse": {
+        "type": "object",
+        "required": [
+          "signature",
+          "signed_transaction"
+        ],
+        "properties": {
+          "signature": {
+            "type": "string"
+          },
+          "signed_transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionRequest": {
+        "type": "object",
+        "required": [
+          "transaction"
+        ],
+        "properties": {
+          "transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionResponse": {
+        "type": "object",
+        "required": [
+          "signature",
+          "signed_transaction"
+        ],
+        "properties": {
+          "signature": {
+            "type": "string"
+          },
+          "signed_transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "TokenPriceInfo": {
+        "type": "object",
+        "required": [
+          "price"
+        ],
+        "properties": {
+          "price": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "TransferTransactionRequest": {
+        "type": "object",
+        "required": [
+          "amount",
+          "token",
+          "source",
+          "destination"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "destination": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "TransferTransactionResponse": {
+        "type": "object",
+        "required": [
+          "transaction",
+          "message",
+          "blockhash"
+        ],
+        "properties": {
+          "blockhash": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "ValidationConfig": {
+        "type": "object",
+        "required": [
+          "max_allowed_lamports",
+          "max_signatures",
+          "allowed_programs",
+          "allowed_tokens",
+          "allowed_spl_paid_tokens",
+          "disallowed_accounts"
+        ],
+        "properties": {
+          "allowed_programs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_spl_paid_tokens": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tokens": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disallowed_accounts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_allowed_lamports": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_signatures": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

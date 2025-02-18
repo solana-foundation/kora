@@ -1,6 +1,10 @@
 use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
+use utoipa::{
+    openapi::{RefOr, Schema},
+    ToSchema,
+};
 
 use kora_lib::{
     config::{KoraConfig, ValidationConfig},
@@ -15,9 +19,9 @@ use crate::method::{
     get_config::{get_config, GetConfigResponse},
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
     sign_and_send_transaction::{
-        sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResult,
+        sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResponse,
     },
-    sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult},
+    sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResponse},
     sign_transaction_if_paid::{
         sign_transaction_if_paid, SignTransactionIfPaidRequest, SignTransactionIfPaidResponse,
     },
@@ -31,6 +35,12 @@ pub struct KoraRpc {
     rpc_client: Arc<RpcClient>,
     validation: ValidationConfig,
     pub config: KoraConfig,
+}
+
+pub struct OpenApiSpec {
+    pub name: String,
+    pub request: Option<RefOr<Schema>>,
+    pub response: RefOr<Schema>,
 }
 
 impl KoraRpc {
@@ -69,7 +79,7 @@ impl KoraRpc {
     pub async fn sign_transaction(
         &self,
         request: SignTransactionRequest,
-    ) -> Result<SignTransactionResult, KoraError> {
+    ) -> Result<SignTransactionResponse, KoraError> {
         info!("Sign transaction request: {:?}", request);
         let result = sign_transaction(&self.rpc_client, &self.validation, request).await;
         info!("Sign transaction response: {:?}", result);
@@ -79,7 +89,7 @@ impl KoraRpc {
     pub async fn sign_and_send_transaction(
         &self,
         request: SignAndSendTransactionRequest,
-    ) -> Result<SignAndSendTransactionResult, KoraError> {
+    ) -> Result<SignAndSendTransactionResponse, KoraError> {
         info!("Sign and send transaction request: {:?}", request);
         let result = sign_and_send_transaction(&self.rpc_client, &self.validation, request).await;
         info!("Sign and send transaction response: {:?}", result);
@@ -118,5 +128,50 @@ impl KoraRpc {
         let result = sign_transaction_if_paid(&self.rpc_client, &self.validation, request).await;
         info!("Sign transaction if paid response: {:?}", result);
         result
+    }
+
+    pub fn build_docs_spec() -> Vec<OpenApiSpec> {
+        vec![
+            OpenApiSpec {
+                name: "estimateTransactionFee".to_string(),
+                request: Some(EstimateTransactionFeeRequest::schema().1),
+                response: EstimateTransactionFeeResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "getBlockhash".to_string(),
+                request: None,
+                response: GetBlockhashResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "getConfig".to_string(),
+                request: None,
+                response: GetConfigResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "getSupportedTokens".to_string(),
+                request: None,
+                response: GetSupportedTokensResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "signTransaction".to_string(),
+                request: Some(SignTransactionRequest::schema().1),
+                response: SignTransactionResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "signAndSendTransaction".to_string(),
+                request: Some(SignAndSendTransactionRequest::schema().1),
+                response: SignAndSendTransactionResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "transferTransaction".to_string(),
+                request: Some(TransferTransactionRequest::schema().1),
+                response: TransferTransactionResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "signTransactionIfPaid".to_string(),
+                request: Some(SignTransactionIfPaidRequest::schema().1),
+                response: SignTransactionIfPaidResponse::schema().1,
+            },
+        ]
     }
 }
