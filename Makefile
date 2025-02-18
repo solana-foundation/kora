@@ -55,6 +55,10 @@ run:
 clean:
 	cargo clean
 
+# Gen openapi docs
+docs:
+	cargo run -p kora-rpc --bin kora-openapi
+
 # Run all fixes and checks
 lint-fix-all:
 	cargo clippy --fix -- -D warnings

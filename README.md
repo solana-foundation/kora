@@ -421,6 +421,9 @@ make lint-fix-all
 
 # Format code
 make fmt
+
+# Docs
+make docs
 ```
 
 ### Local Development
