@@ -6,7 +6,6 @@ use jsonrpsee::{
 use std::{net::SocketAddr, time::Duration};
 use tower::limit::RateLimitLayer;
 use tower_http::cors::CorsLayer;
-
 use crate::rpc::KoraRpc;
 
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {

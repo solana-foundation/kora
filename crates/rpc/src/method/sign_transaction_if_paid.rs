@@ -9,15 +9,16 @@ use kora_lib::{
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
+use utoipa::ToSchema;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SignTransactionIfPaidRequest {
     pub transaction: String,
     pub margin: Option<f64>,
     pub token_price_info: Option<TokenPriceInfo>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SignTransactionIfPaidResponse {
     pub signature: String,
     pub signed_transaction: String,
