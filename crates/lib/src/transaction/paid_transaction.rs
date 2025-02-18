@@ -15,7 +15,6 @@ pub async fn sign_transaction_if_paid(
     validation: &ValidationConfig,
     transaction: Transaction,
     margin: Option<f64>,
-    token_price_info: Option<TokenPriceInfo>,
 ) -> Result<(Transaction, String), KoraError> {
     let signer = get_signer()?;
 
@@ -26,14 +25,13 @@ pub async fn sign_transaction_if_paid(
     let margin = margin.unwrap_or(0.0);
     let required_lamports = (min_transaction_fee as f64 * (1.0 + margin)) as u64;
 
-    // Validate token payment
+    // Validate token payment now uses oracle prices internally
     validate_token_payment(
         rpc_client,
         &transaction,
         validation,
         required_lamports,
         signer.solana_pubkey(),
-        &token_price_info.unwrap_or(TokenPriceInfo { price: 0.0 }),
     )
     .await?;
 
