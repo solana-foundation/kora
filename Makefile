@@ -56,7 +56,7 @@ clean:
 	cargo clean
 
 # Gen openapi docs
-docs:
+openapi:
 	cargo run -p kora-rpc --bin kora-openapi
 
 # Run all fixes and checks

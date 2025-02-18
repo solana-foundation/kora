@@ -423,8 +423,8 @@ make lint-fix-all
 # Format code
 make fmt
 
-# Docs
-make docs
+# Openapi
+make openapi
 ```
 
 ### Local Development
