@@ -359,6 +359,7 @@ Signs a transaction if the user has paid the required amount of tokens.
 - Rust 1.70 or later
 - Solana CLI tools (for testing)
 - A Solana RPC endpoint (local or remote)
+- swagger-cli (`npm install -g swagger-cli`) for API documentation
 
 ### Building
 
