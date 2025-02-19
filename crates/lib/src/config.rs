@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 use toml;
+use utoipa::ToSchema;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 
@@ -12,10 +13,10 @@ pub struct Config {
     pub kora: KoraConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ValidationConfig {
     pub max_allowed_lamports: u64,
-    pub max_signatures: usize,
+    pub max_signatures: u64,
     pub allowed_programs: Vec<String>,
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: Vec<String>,

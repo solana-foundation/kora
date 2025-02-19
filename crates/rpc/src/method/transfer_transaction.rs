@@ -9,13 +9,14 @@ use spl_associated_token_account::{
 };
 use spl_token::{instruction as token_instruction, state::Mint};
 use std::{str::FromStr, sync::Arc};
+use utoipa::ToSchema;
 
 use kora_lib::{
     config::ValidationConfig, constant::NATIVE_SOL, get_signer,
     transaction::validator::TransactionValidator, KoraError, Signer as _,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct TransferTransactionRequest {
     pub amount: u64,
     pub token: String,
@@ -23,7 +24,7 @@ pub struct TransferTransactionRequest {
     pub destination: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct TransferTransactionResponse {
     pub transaction: String,
     pub message: String,
