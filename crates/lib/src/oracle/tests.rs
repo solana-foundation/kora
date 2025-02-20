@@ -13,11 +13,6 @@ async fn test_price_oracle_consensus() {
             source: PriceSource::Jupiter,
         },
         TokenPrice {
-            price: 1.1,
-            confidence: 0.95,
-            source: PriceSource::Pyth,
-        },
-        TokenPrice {
             price: 0.9,
             confidence: 0.85,
             source: PriceSource::Jupiter,

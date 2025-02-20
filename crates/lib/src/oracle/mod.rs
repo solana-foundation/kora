@@ -6,7 +6,6 @@ use reqwest::Client;
 use crate::error::KoraError;
 
 pub mod jupiter;
-pub mod pyth;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenPrice {
@@ -18,9 +17,10 @@ pub struct TokenPrice {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PriceSource {
     Jupiter,
-    Pyth,
 }
 
+// TODO: Add Pyth oracle integration in future PR
+// This will provide an additional price source for better consensus
 pub struct PriceOracle {
     client: Client,
     max_retries: u32,
@@ -64,17 +64,8 @@ impl PriceOracle {
     async fn fetch_prices(&self, mint_address: &str) -> Result<Vec<TokenPrice>, KoraError> {
         let mut prices = Vec::new();
 
-        // Get prices from multiple sources concurrently
-        let (jupiter_result, pyth_result) = tokio::join!(
-            jupiter::get_price(&self.client, mint_address),
-            pyth::get_price(&self.client, mint_address)
-        );
-
-        if let Ok(price) = jupiter_result {
-            prices.push(price);
-        }
-
-        if let Ok(price) = pyth_result {
+        // Only fetch Jupiter prices for now
+        if let Ok(price) = jupiter::get_price(&self.client, mint_address).await {
             prices.push(price);
         }
 
