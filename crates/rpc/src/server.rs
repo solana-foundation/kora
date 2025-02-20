@@ -8,6 +8,8 @@ use std::{net::SocketAddr, time::Duration};
 use tower::limit::RateLimitLayer;
 use tower_http::cors::CorsLayer;
 use crate::actions::transfer::{get_transfer_metadata, handle_transfer_action, TransferActionRequest};
+use warp;
+use warp::Rejection;
 
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -16,8 +18,13 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
     // Build middleware stack with tracing and CORS
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
-        .allow_methods([Method::POST, Method::GET])
-        .allow_headers([header::CONTENT_TYPE])
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+            header::CONTENT_ENCODING,
+            header::ACCEPT_ENCODING
+        ])
         .max_age(Duration::from_secs(3600));
 
     let middleware = tower::ServiceBuilder::new()
@@ -25,17 +32,64 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
         .layer(RateLimitLayer::new(rpc.config.rate_limit, Duration::from_secs(1)))
         .layer(cors);
 
+    // Create transfer action routes
+    let transfer_route = warp::path!("api" / "v1" / "actions" / "transfer")
+        .and(warp::get())
+        .and_then(|| async {
+            let metadata = get_transfer_metadata().await;
+            Ok::<_, Rejection>(warp::reply::json(&metadata))
+        });
+
+    let transfer_action_route = warp::path!("api" / "v1" / "actions" / "transfer")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(with_rpc(rpc.clone()))
+        .and_then(|request: TransferActionRequest, rpc: KoraRpc| async move {
+            let response = handle_transfer_action(
+                &rpc.rpc_client,
+                &rpc.validation,
+                request
+            ).await?;
+            Ok::<_, Rejection>(warp::reply::json(&response))
+        });
+
+    let options_route = warp::path!("api" / "v1" / "actions" / "transfer")
+        .and(warp::options())
+        .map(|| {
+            warp::reply::with_header(
+                warp::reply::reply(),
+                "Access-Control-Allow-Origin",
+                "*"
+            )
+        });
+
+    // Combine all routes
+    let routes = transfer_route
+        .or(transfer_action_route)
+        .or(options_route)
+        .with(cors);
+
     // Configure and build the server with HTTP support
     let server = ServerBuilder::default()
         .set_middleware(middleware)
-        .http_only() // Explicitly enable HTTP
+        .http_only()
         .build(addr)
         .await?;
 
     let rpc_module = build_rpc_module(rpc)?;
 
-    // Start the server and return the handle
-    server.start(rpc_module).map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))
+    // Start both the RPC server and warp server
+    let rpc_handle = server.start(rpc_module)?;
+    
+    // Start warp server
+    tokio::spawn(warp::serve(routes).run(addr));
+
+    Ok(rpc_handle)
+}
+
+// Helper function to pass RPC context to handlers
+fn with_rpc(rpc: KoraRpc) -> impl Filter<Extract = (KoraRpc,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || rpc.clone())
 }
 
 fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {

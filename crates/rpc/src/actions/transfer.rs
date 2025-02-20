@@ -28,6 +28,19 @@ pub struct TransferActionMetadata {
     pub error_message: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct TransferActionResponse {
+    pub transaction: String,  // base64 encoded transaction
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub links: Option<ActionLinks>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ActionLinks {
+    pub next: Option<NextActionLink>,
+}
+
 pub async fn get_transfer_metadata() -> TransferActionMetadata {
     TransferActionMetadata {
         name: "Transfer".to_string(),
@@ -42,7 +55,7 @@ pub async fn handle_transfer_action(
     rpc_client: &Arc<RpcClient>,
     validation: &ValidationConfig,
     request: TransferActionRequest,
-) -> Result<TransferTransactionResponse, KoraError> {
+) -> Result<TransferActionResponse, KoraError> {
     let transfer_request = TransferTransactionRequest {
         amount: request.amount,
         token: request.token,
@@ -50,5 +63,11 @@ pub async fn handle_transfer_action(
         destination: request.destination,
     };
 
-    transfer_transaction(rpc_client, validation, transfer_request).await
+    let tx_response = transfer_transaction(rpc_client, validation, transfer_request).await?;
+    
+    Ok(TransferActionResponse {
+        transaction: tx_response.transaction,
+        message: format!("Transfer {} tokens to {}", request.amount, request.destination),
+        links: None
+    })
 } 

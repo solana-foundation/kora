@@ -3,33 +3,10 @@
   "version": "1.0.0",
   "description": "Gasless transaction relayer for Solana",
   "icon": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
-  "actions": [
+  "rules": [
     {
-      "name": "transfer",
-      "urlPattern": "/api/v1/actions/transfer",
-      "description": "Transfer tokens between accounts",
-      "parameters": {
-        "amount": {
-          "type": "number",
-          "description": "Amount to transfer (in smallest unit)",
-          "required": true
-        },
-        "token": {
-          "type": "string", 
-          "description": "Token mint address",
-          "required": true
-        },
-        "source": {
-          "type": "string",
-          "description": "Source wallet address",
-          "required": true
-        },
-        "destination": {
-          "type": "string",
-          "description": "Destination wallet address",
-          "required": true
-        }
-      }
+      "pathPattern": "/api/v1/actions/transfer",
+      "apiPath": "/api/v1/actions/transfer"
     }
   ]
 } 
