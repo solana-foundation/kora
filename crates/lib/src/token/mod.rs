@@ -50,6 +50,15 @@ pub trait TokenInterface {
         rpc_client: &RpcClient,
         mint: &Pubkey,
     ) -> Result<TokenMintData, KoraError>;
+
+    /// Unpack a transfer instruction to get the amount
+    fn unpack_transfer_instruction(data: &[u8]) -> Result<u64, KoraError>;
+
+    /// Unpack account data into TokenAccountData
+    fn unpack_account_data(data: &[u8]) -> Result<TokenAccountData, KoraError>;
+
+    /// Unpack mint data into TokenMintData
+    fn unpack_mint_data(data: &[u8]) -> Result<TokenMintData, KoraError>;
 }
 
 #[derive(Debug, Clone)]

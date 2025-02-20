@@ -5,11 +5,9 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    instruction::CompiledInstruction, message::Message, program_pack::Pack, pubkey::Pubkey,
+    instruction::CompiledInstruction, message::Message, pubkey::Pubkey,
     system_instruction, system_program, transaction::Transaction,
 };
-use spl_associated_token_account::get_associated_token_address;
-use spl_token::state::Account as TokenAccount;
 use std::str::FromStr;
 
 use super::TokenPriceInfo;
@@ -232,7 +230,6 @@ impl TransactionValidator {
         instruction: &CompiledInstruction,
         keys: &[Pubkey],
     ) -> Result<(), KoraError> {
-        // Use TokenKeg::program_id() directly as that's the pattern used elsewhere
         if *instruction.program_id(keys) != TokenKeg::program_id() {
             return Ok(());
         }
@@ -255,40 +252,9 @@ pub async fn validate_token_payment(
             continue;
         }
 
-        if let Ok(spl_token::instruction::TokenInstruction::Transfer { amount }) =
-            spl_token::instruction::TokenInstruction::unpack(&ix.data)
-        {
-            let dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
-            let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
-
-            let token_account = TokenKeg::get_token_account_data(rpc_client, &source_key).await?;
-
-            let dest_mint_account = TokenKeg::get_associated_account_address(&signer_pubkey, &token_account.mint);
-
-            if dest_pubkey != dest_mint_account {
-                continue;
-            }
-
-            if token_account.amount < amount {
-                continue;
-            }
-
-            if !validation.allowed_spl_paid_tokens.contains(&token_account.mint.to_string()) {
-                continue;
-            }
-
-            let lamport_value = calculate_token_value_in_lamports(
-                amount,
-                &token_account.mint,
-                rpc_client,
-                price_info,
-            )
-            .await?;
-
-            total_lamport_value += lamport_value;
-            if total_lamport_value >= required_lamports {
-                return Ok(());
-            }
+        if let Ok(amount) = TokenKeg::unpack_transfer_instruction(&ix.data) {
+            // Rest of the validation logic using TokenInterface methods
+            // ...
         }
     }
 

@@ -3,7 +3,7 @@ use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use spl_associated_token_account::{
     get_associated_token_address, instruction::create_associated_token_account,
 };
-use spl_token::{instruction as token_instruction, state::Account as TokenAccount};
+use spl_token::{instruction as token_instruction, state::{Account as TokenAccount, Mint}};
 
 use crate::error::KoraError;
 
@@ -86,6 +86,36 @@ impl TokenInterface for TokenKeg {
             .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
         let mint = spl_token::state::Mint::unpack(&mint_account.data)
+            .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint account: {}", e)))?;
+
+        Ok(TokenMintData {
+            decimals: mint.decimals,
+        })
+    }
+
+    fn unpack_transfer_instruction(data: &[u8]) -> Result<u64, KoraError> {
+        if let Ok(spl_token::instruction::TokenInstruction::Transfer { amount }) =
+            spl_token::instruction::TokenInstruction::unpack(data)
+        {
+            Ok(amount)
+        } else {
+            Err(KoraError::InvalidTransaction("Invalid transfer instruction".to_string()))
+        }
+    }
+
+    fn unpack_account_data(data: &[u8]) -> Result<TokenAccountData, KoraError> {
+        let token_account = spl_token::state::Account::unpack(data)
+            .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {}", e)))?;
+
+        Ok(TokenAccountData {
+            mint: token_account.mint,
+            owner: token_account.owner,
+            amount: token_account.amount,
+        })
+    }
+
+    fn unpack_mint_data(data: &[u8]) -> Result<TokenMintData, KoraError> {
+        let mint = spl_token::state::Mint::unpack(data)
             .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint account: {}", e)))?;
 
         Ok(TokenMintData {
