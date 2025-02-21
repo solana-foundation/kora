@@ -253,8 +253,35 @@ pub async fn validate_token_payment(
         }
 
         if let Ok(amount) = TokenKeg::unpack_transfer_instruction(&ix.data) {
-            // Rest of the validation logic using TokenInterface methods
-            // ...
+            let dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
+            let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
+
+            let source_data = TokenKeg::get_token_account_data(rpc_client, &source_key)
+                .await
+                .map_err(|e| KoraError::ValidationError(format!("Invalid source token account: {}", e)))?;
+
+            let dest_ata = TokenKeg::get_associated_account_address(&signer_pubkey, &source_data.mint);
+
+            if dest_pubkey != dest_ata {
+                continue;
+            }
+
+            if source_data.amount < amount {
+                continue;
+            }
+
+            let lamport_value = calculate_token_value_in_lamports(
+                amount,
+                &source_data.mint,
+                rpc_client,
+                price_info,
+            )
+            .await?;
+
+            total_lamport_value += lamport_value;
+            if total_lamport_value >= required_lamports {
+                return Ok(());
+            }
         }
     }
 
