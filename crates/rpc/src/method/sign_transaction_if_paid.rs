@@ -15,7 +15,6 @@ pub struct SignTransactionIfPaidRequest {
     #[serde(default)]
     pub encoding: Option<TransactionEncoding>,
     pub margin: Option<f64>,
-    pub token_price_info: Option<TokenPriceInfo>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

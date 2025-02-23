@@ -233,7 +233,6 @@ pub async fn validate_token_payment(
     validation: &ValidationConfig,
     required_lamports: u64,
     signer_pubkey: Pubkey,
-    price_info: &TokenPriceInfo,
 ) -> Result<(), KoraError> {
     let mut total_lamport_value = 0;
 
@@ -280,7 +279,6 @@ pub async fn validate_token_payment(
                 amount,
                 &token_account.mint,
                 rpc_client,
-                price_info,
             )
             .await?;
 

@@ -6,8 +6,10 @@ use solana_sdk::{
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
 use utoipa::ToSchema;
+use std::time::Duration;
 
 use crate::error::KoraError;
+use crate::oracle::PriceOracle;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TokenPriceInfo {
@@ -78,15 +80,22 @@ pub async fn calculate_token_value_in_lamports(
     amount: u64,
     mint: &Pubkey,
     rpc_client: &RpcClient,
-    price_info: &TokenPriceInfo,
 ) -> Result<u64, KoraError> {
     let mint_data = Mint::unpack(
-        &rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?.data,
+        &rpc_client
+            .get_account(mint)
+            .await
+            .map_err(|e| KoraError::RpcError(e.to_string()))?
+            .data,
     )
     .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
 
+    // Create price oracle with 3 retries and 1s base delay
+    let oracle = PriceOracle::new(3, Duration::from_secs(1));
+    let token_price = oracle.get_token_price(&mint.to_string()).await?;
+
     let sol_per_token =
-        price_info.price * LAMPORTS_PER_SOL as f64 / (10f64.powi(mint_data.decimals as i32));
+        token_price.price * LAMPORTS_PER_SOL as f64 / (10f64.powi(mint_data.decimals as i32));
 
     let lamport_value = (amount as f64 * sol_per_token).floor() as u64;
 

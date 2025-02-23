@@ -15,7 +15,6 @@ pub async fn sign_transaction_if_paid(
     validation: &ValidationConfig,
     transaction: Transaction,
     margin: Option<f64>,
-    token_price_info: Option<TokenPriceInfo>,
 ) -> Result<(Transaction, String), KoraError> {
     let signer = get_signer()?;
 
@@ -33,7 +32,6 @@ pub async fn sign_transaction_if_paid(
         validation,
         required_lamports,
         signer.solana_pubkey(),
-        &token_price_info.unwrap_or(TokenPriceInfo { price: 0.0 }),
     )
     .await?;
 
