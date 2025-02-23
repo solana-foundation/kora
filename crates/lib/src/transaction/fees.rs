@@ -81,11 +81,7 @@ pub async fn calculate_token_value_in_lamports(
     rpc_client: &RpcClient,
 ) -> Result<u64, KoraError> {
     let mint_data = Mint::unpack(
-        &rpc_client
-            .get_account(mint)
-            .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))?
-            .data,
+        &rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?.data,
     )
     .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
 

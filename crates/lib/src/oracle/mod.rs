@@ -27,11 +27,7 @@ pub struct PriceOracle {
 
 impl PriceOracle {
     pub fn new(max_retries: u32, base_delay: Duration) -> Self {
-        Self {
-            client: Client::new(),
-            max_retries,
-            base_delay,
-        }
+        Self { client: Client::new(), max_retries, base_delay }
     }
 
     pub async fn get_token_price(&self, mint_address: &str) -> Result<TokenPrice, KoraError> {

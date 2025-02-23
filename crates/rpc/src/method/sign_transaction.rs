@@ -28,7 +28,7 @@ pub async fn sign_transaction(
 ) -> Result<SignTransactionResponse, KoraError> {
     let encoding = request.encoding.unwrap_or_default();
     let transaction = encoding.decode_transaction(&request.transaction)?;
-    let (transaction, signed_transaction) =
+    let (transaction, _signed_transaction) =
         lib_sign_transaction(rpc_client, validation, transaction).await?;
 
     let encoded = encoding.encode_transaction(&transaction)?;

@@ -12,7 +12,7 @@ struct JupiterResponse {
 
 #[derive(Debug, Deserialize)]
 struct JupiterPriceData {
-    id: String,
+    _id: String,
     price: f64,
 }
 
@@ -26,10 +26,7 @@ pub async fn get_price(client: &Client, mint_address: &str) -> Result<TokenPrice
         .map_err(|e| KoraError::RpcError(format!("Jupiter API request failed: {}", e)))?;
 
     if !response.status().is_success() {
-        return Err(KoraError::RpcError(format!(
-            "Jupiter API error: {}",
-            response.status()
-        )));
+        return Err(KoraError::RpcError(format!("Jupiter API error: {}", response.status())));
     }
 
     let jupiter_response: JupiterResponse = response

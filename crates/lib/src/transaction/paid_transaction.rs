@@ -5,7 +5,7 @@ use crate::{
     config::ValidationConfig,
     error::KoraError,
     get_signer,
-    transaction::{estimate_transaction_fee, validator::validate_token_payment, TokenPriceInfo},
+    transaction::{estimate_transaction_fee, validator::validate_token_payment},
 };
 
 use super::transaction::sign_transaction;
