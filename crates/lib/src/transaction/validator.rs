@@ -273,7 +273,8 @@ pub async fn validate_token_payment(
                 continue;
             }
 
-            let lamport_value = calculate_token_value_in_lamports(amount, &token_account.mint, rpc_client).await?;
+            let lamport_value =
+                calculate_token_value_in_lamports(amount, &token_account.mint, rpc_client).await?;
 
             total_lamport_value += lamport_value;
             if total_lamport_value >= required_lamports {

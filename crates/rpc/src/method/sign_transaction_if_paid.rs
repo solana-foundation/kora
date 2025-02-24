@@ -1,6 +1,8 @@
 use kora_lib::{
     config::ValidationConfig,
-    transaction::{sign_transaction_if_paid as lib_sign_transaction_if_paid},
+    transaction::{
+        encode_transaction_b58, sign_transaction_if_paid as lib_sign_transaction_if_paid,
+    },
     types::TransactionEncoding,
     KoraError,
 };
@@ -8,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::transaction::Transaction;
 use utoipa::ToSchema;
-use kora_lib::transaction::encode_transaction_b58;
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SignTransactionIfPaidRequest {
@@ -29,13 +30,9 @@ pub async fn sign_transaction_if_paid(
     rpc_client: &RpcClient,
     validation: &ValidationConfig,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
-    let (transaction, signed_transaction) = lib_sign_transaction_if_paid(
-        rpc_client,
-        validation,
-        request.transaction,
-        request.margin,
-    )
-    .await?;
+    let (transaction, signed_transaction) =
+        lib_sign_transaction_if_paid(rpc_client, validation, request.transaction, request.margin)
+            .await?;
 
     Ok(SignTransactionIfPaidResponse {
         transaction: encode_transaction_b58(&transaction)?,

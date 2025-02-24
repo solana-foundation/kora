@@ -39,9 +39,5 @@ pub async fn get_price(client: &Client, mint_address: &str) -> Result<TokenPrice
         .first()
         .ok_or_else(|| KoraError::RpcError("No price data from Jupiter".to_string()))?;
 
-    Ok(TokenPrice {
-        price: price_data.price,
-        confidence: 0.95,
-        source: PriceSource::Jupiter,
-    })
-} 
+    Ok(TokenPrice { price: price_data.price, confidence: 0.95, source: PriceSource::Jupiter })
+}

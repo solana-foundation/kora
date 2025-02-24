@@ -5,8 +5,8 @@ use solana_sdk::{
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
-use utoipa::ToSchema;
 use std::time::Duration;
+use utoipa::ToSchema;
 
 use crate::{error::KoraError, oracle::PriceOracle};
 
