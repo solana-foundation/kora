@@ -16,3 +16,6 @@ allowed_spl_paid_tokens = [
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
 ] 
 disallowed_accounts = []
+git clone https://github.com/Sweetboy08/kora.git
+cd kora
+git checkout gib-bounty-kor456428
