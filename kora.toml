@@ -1,4 +1,4 @@
-[kora.toml]
+[kora]
 rate_limit = 0
 
 [validation]
@@ -15,4 +15,4 @@ allowed_tokens = [
 allowed_spl_paid_tokens = [
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
 ] 
-disallowed_accounts = [ "Updated kora.toml for bounty task"
+disallowed_accounts = [
