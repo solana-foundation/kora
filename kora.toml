@@ -1,4 +1,4 @@
-[kora]
+[kora.toml]
 rate_limit = 0
 
 [validation]
