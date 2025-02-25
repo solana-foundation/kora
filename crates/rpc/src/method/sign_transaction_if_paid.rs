@@ -26,9 +26,9 @@ pub struct SignTransactionIfPaidResponse {
 }
 
 pub async fn sign_transaction_if_paid(
-    request: SignTransactionIfPaidRequest,
     rpc_client: &RpcClient,
     validation: &ValidationConfig,
+    request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
     let (transaction, signed_transaction) =
         lib_sign_transaction_if_paid(rpc_client, validation, request.transaction, request.margin)

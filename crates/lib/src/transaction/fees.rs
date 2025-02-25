@@ -91,13 +91,19 @@ pub async fn calculate_token_value_in_lamports(
     let oracle = PriceOracle::new(3, Duration::from_secs(1));
 
     // Fetch token price in USD
-    let token_price = oracle.get_token_price(&mint.to_string()).await?;
+    let token_price = oracle
+        .get_token_price(&mint.to_string())
+        .await
+        .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {}", e)))?;
 
     // Fetch SOL price in USD (required for conversion)
-    let sol_price = oracle.get_token_price("SOL").await?;
+    let sol_price = oracle
+        .get_token_price("SOL")
+        .await
+        .map_err(|e| KoraError::RpcError(format!("Failed to fetch SOL price: {}", e)))?;
 
-    // SOL has a fixed decimal representation (1 SOL = 10^9 lamports)
-    const SOL_DECIMALS: u8 = 9;
+    // Use the constant from Solana SDK
+    use solana_sdk::native_token::LAMPORTS_PER_SOL;
 
     // Convert token amount to its real value based on decimals
     let token_amount = amount as f64 / 10f64.powi(mint_data.decimals as i32);
@@ -109,7 +115,7 @@ pub async fn calculate_token_value_in_lamports(
     let sol_amount = usd_value / sol_price.price;
 
     // Convert SOL to lamports and round down
-    let lamports = (sol_amount * 10f64.powi(SOL_DECIMALS as i32)).floor() as u64;
+    let lamports = (sol_amount * LAMPORTS_PER_SOL as f64).floor() as u64;
 
     Ok(lamports)
 }

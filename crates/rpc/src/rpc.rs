@@ -125,7 +125,7 @@ impl KoraRpc {
         request: SignTransactionIfPaidRequest,
     ) -> Result<SignTransactionIfPaidResponse, KoraError> {
         info!("Sign transaction if paid request: {:?}", request);
-        let result = sign_transaction_if_paid(request, &self.rpc_client, &self.validation).await;
+        let result = sign_transaction_if_paid(&self.rpc_client, &self.validation, request).await;
         info!("Sign transaction if paid response: {:?}", result);
         result
     }

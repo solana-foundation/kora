@@ -3,7 +3,7 @@ use crate::error::KoraError;
 use reqwest::Client;
 use serde::Deserialize;
 
-const JUPITER_API_URL: &str = "https://price.jup.ag/v4";
+const JUPITER_API_URL: &str = "https://api.jup.ag/price/v2";
 
 #[derive(Debug, Deserialize)]
 struct JupiterResponse {
