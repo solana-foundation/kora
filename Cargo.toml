@@ -63,4 +63,5 @@ redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
 deadpool-redis = "0.14.0"
 vaultrs = "0.7.3"
 tk-rs = { git = "https://github.com/pkxro/tk-rs.git" }
+utoipa = { version = "4.2.0", features = ["yaml", "chrono"] }
 pyth-sdk-solana = "0.10.3"

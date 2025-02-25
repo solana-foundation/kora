@@ -10,6 +10,10 @@ description = "RPC server for Kora gasless relayer"
 name = "kora-rpc"
 path = "src/main.rs"
 
+[[bin]]
+name = "kora-openapi"
+path = "src/openapi/main.rs"
+
 [dependencies]
 kora-lib = { path = "../lib" }
 serde = { workspace = true }
@@ -43,6 +47,8 @@ spl-token = { workspace = true }
 spl-associated-token-account = { workspace = true }
 bincode = { workspace = true }
 bs58 = { workspace = true }
+utoipa.workspace = true
+dirs = "6.0.0"
 
 [dev-dependencies]
 tokio = { workspace = true }

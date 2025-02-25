@@ -22,7 +22,7 @@ pub struct TransactionValidator {
     fee_payer_pubkey: Pubkey,
     max_allowed_lamports: u64,
     allowed_programs: Vec<Pubkey>,
-    max_signatures: usize,
+    max_signatures: u64,
     allowed_tokens: Vec<Pubkey>,
     disallowed_accounts: Vec<Pubkey>,
 }
@@ -103,7 +103,7 @@ impl TransactionValidator {
     }
 
     fn validate_signatures(&self, message: &Transaction) -> Result<(), KoraError> {
-        if message.signatures.len() > self.max_signatures {
+        if message.signatures.len() > self.max_signatures as usize {
             return Err(KoraError::InvalidTransaction(format!(
                 "Too many signatures: {} > {}",
                 message.signatures.len(),

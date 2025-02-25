@@ -24,7 +24,7 @@ Kora is a Solana paymaster node that provides a JSON-RPC interface for handling 
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/kora.git
+git clone https://github.com/solana-foundation/kora.git
 cd kora
 make install
 ```
@@ -359,6 +359,8 @@ Signs a transaction if the user has paid the required amount of tokens.
 - Rust 1.70 or later
 - Solana CLI tools (for testing)
 - A Solana RPC endpoint (local or remote)
+- Docker
+- swagger-cli (`npm install -g swagger-cli`) for API documentation
 
 ### Building
 
@@ -420,6 +422,9 @@ make lint-fix-all
 
 # Format code
 make fmt
+
+# Openapi
+make openapi
 ```
 
 ### Local Development

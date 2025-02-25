@@ -1,11 +1,11 @@
+use kora_lib::error::KoraError;
 use nonblocking::rpc_client::RpcClient;
 use serde::Serialize;
 use solana_client::nonblocking;
 use solana_sdk::commitment_config::CommitmentConfig;
+use utoipa::ToSchema;
 
-use kora_lib::error::KoraError;
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct GetBlockhashResponse {
     pub blockhash: String,
 }

@@ -123,10 +123,28 @@ pub async fn sign_and_send_transaction(
     Ok((signature.to_string(), encoded))
 }
 
-pub fn encode_transaction(transaction: &Transaction) -> Result<String, KoraError> {
-    let serialized = bincode::serialize(transaction)
-        .map_err(|e| KoraError::InvalidTransaction(format!("Serialization failed: {}", e)))?;
+pub fn encode_transaction_b58(transaction: &Transaction) -> Result<String, KoraError> {
+    let serialized = bincode::serialize(transaction).map_err(|e| {
+        KoraError::SerializationError(format!("Base58 serialization failed: {}", e))
+    })?;
     Ok(bs58::encode(serialized).into_string())
+}
+
+pub fn encode_transaction_b64(transaction: &Transaction) -> Result<String, KoraError> {
+    let serialized = bincode::serialize(transaction).map_err(|e| {
+        KoraError::SerializationError(format!("Base64 serialization failed: {}", e))
+    })?;
+    Ok(base64::encode(serialized))
+}
+
+pub fn decode_b64_transaction(encoded: &str) -> Result<Transaction, KoraError> {
+    let decoded = base64::decode(encoded).map_err(|e| {
+        KoraError::InvalidTransaction(format!("Failed to decode base64 transaction: {}", e))
+    })?;
+
+    bincode::deserialize(&decoded).map_err(|e| {
+        KoraError::InvalidTransaction(format!("Failed to deserialize transaction: {}", e))
+    })
 }
 
 #[cfg(test)]
