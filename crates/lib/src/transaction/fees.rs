@@ -80,19 +80,36 @@ pub async fn calculate_token_value_in_lamports(
     mint: &Pubkey,
     rpc_client: &RpcClient,
 ) -> Result<u64, KoraError> {
-    let mint_data = Mint::unpack(
-        &rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?.data,
-    )
-    .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
+    // Fetch mint account data to determine token decimals
+    let mint_account =
+        rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-    // Create price oracle with 3 retries and 1s base delay
+    let mint_data = Mint::unpack(&mint_account.data)
+        .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
+
+    // Initialize price oracle with retries for reliability
     let oracle = PriceOracle::new(3, Duration::from_secs(1));
+
+    // Fetch token price in USD
     let token_price = oracle.get_token_price(&mint.to_string()).await?;
 
-    let sol_per_token =
-        token_price.price * LAMPORTS_PER_SOL as f64 / (10f64.powi(mint_data.decimals as i32));
+    // Fetch SOL price in USD (required for conversion)
+    let sol_price = oracle.get_token_price("SOL").await?;
 
-    let lamport_value = (amount as f64 * sol_per_token).floor() as u64;
+    // SOL has a fixed decimal representation (1 SOL = 10^9 lamports)
+    const SOL_DECIMALS: u8 = 9;
 
-    Ok(lamport_value)
+    // Convert token amount to its real value based on decimals
+    let token_amount = amount as f64 / 10f64.powi(mint_data.decimals as i32);
+
+    // Compute token value in USD
+    let usd_value = token_amount * token_price.price;
+
+    // Convert USD value to equivalent SOL amount
+    let sol_amount = usd_value / sol_price.price;
+
+    // Convert SOL to lamports and round down
+    let lamports = (sol_amount * 10f64.powi(SOL_DECIMALS as i32)).floor() as u64;
+
+    Ok(lamports)
 }
