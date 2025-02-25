@@ -15,4 +15,6 @@ allowed_tokens = [
 allowed_spl_paid_tokens = [
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
 ] 
-disallowed_accounts = []
+disallowed_accounts = [git add kora.toml
+git commit -m "Updated kora.toml for bounty task"
+git push origin gib-bounty-kor456428]
