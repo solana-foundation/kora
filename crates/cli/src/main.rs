@@ -132,8 +132,6 @@ async fn main() -> Result<(), KoraError> {
                 e
             })?;
 
-            let _token_price_info = token_price.map(|price| TokenPriceInfo { price });
-
             let (transaction, signed_tx) =
                 sign_transaction_if_paid(&rpc_client, &validation, transaction, margin).await?;
 
