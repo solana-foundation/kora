@@ -324,6 +324,8 @@ Creates a swap request to SOL and returns a signed transaction.
 
 #### `signTransactionIfPaid`
 
+#### `signTransactionIfPaid`
+
 Signs a transaction if the user has paid the required amount of tokens.
 
 ```json
@@ -350,7 +352,7 @@ Signs a transaction if the user has paid the required amount of tokens.
         "signed_transaction": "<base58-encoded-signed-transaction>"
     }
 }
-```
+...
 
 ## Development
 
