@@ -5,10 +5,19 @@ use tokio;
 #[tokio::test]
 async fn test_jupiter_price_fetch() {
     let mock_response = r#"{
-        "data": [{
-            "id": "So11111111111111111111111111111111111111112",
-            "price": 1.5
-        }]
+        "data": {
+            "So11111111111111111111111111111111111111112": {
+                "id": "So11111111111111111111111111111111111111112",
+                "type": "derivedPrice",
+                "price": "1"
+            },
+            "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": {
+                "id": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+                "type": "derivedPrice",
+                "price": "0.005321503266927636"
+            }
+        },
+        "timeTaken": 0.003297425
     }"#;
 
     let _m = mock("GET", "/price")
@@ -23,7 +32,7 @@ async fn test_jupiter_price_fetch() {
 
     assert!(result.is_ok());
     let price = result.unwrap();
-    assert_eq!(price.price, 1.5);
+    assert_eq!(price.price, 1.0);
     assert_eq!(price.source, PriceSource::Jupiter);
 }
 
@@ -38,9 +47,18 @@ async fn test_price_oracle_retries() {
 
     let _m2 = mock("GET", "/price")
         .with_status(200)
-        .with_body(r#"{"data":[{"id":"test","price":1.0}]}"#)
+        .with_body(r#"{
+            "data": {
+                "test": {
+                    "id": "test",
+                    "type": "derivedPrice",
+                    "price": "1.0"
+                }
+            },
+            "timeTaken": 0.001
+        }"#)
         .create();
 
     let result = oracle.get_token_price("test").await;
     assert!(result.is_ok());
-} 
+}
