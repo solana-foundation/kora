@@ -1,5 +1,7 @@
 use crate::{
-    config::ValidationConfig, error::KoraError,
+    config::ValidationConfig,
+    error::KoraError,
+    token::{TokenKeg, TokenTrait},
     transaction::fees::calculate_token_value_in_lamports,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -237,8 +239,9 @@ pub async fn validate_token_payment(
 ) -> Result<(), KoraError> {
     let mut total_lamport_value = 0;
 
+    let token = TokenKeg;
     for ix in transaction.message.instructions.iter() {
-        if *ix.program_id(&transaction.message.account_keys) != spl_token::id() {
+        if *ix.program_id(&transaction.message.account_keys) != token.id() {
             continue;
         }
 
@@ -264,7 +267,7 @@ pub async fn validate_token_payment(
                 continue;
             }
 
-            if source_account.owner != spl_token::id() {
+            if source_account.owner != token.id() {
                 continue;
             }
 

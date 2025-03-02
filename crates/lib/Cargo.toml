@@ -27,11 +27,12 @@ async-trait = { workspace = true }
 reqwest = { workspace = true }
 jup-ag = { workspace = true }
 spl-token = { workspace = true }
+spl-token-2022 = { workspace = true }
 spl-associated-token-account = { workspace = true }
 jupiter-swap-api-client = { workspace = true }
 jupiter = { workspace = true }
 vaultrs = { workspace = true }
-tk-rs = { workspace = true } 
+tk-rs = { workspace = true }
 deadpool-redis = { workspace = true }
 jsonrpsee = { workspace = true }
 once_cell = { workspace = true }

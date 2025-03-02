@@ -1,10 +1,6 @@
 [workspace]
-members = [
-    "crates/lib",
-    "crates/rpc",
-    "crates/cli",
-    "scripts",
-]
+members = ["crates/lib", "crates/rpc", "crates/cli", "scripts"]
+resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
@@ -23,7 +19,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 config = "0.13"
 dotenv = "0.15"
-jsonrpsee = { version = "0.16.2", features = ["server", "macros", "http-client", "client"] }
+jsonrpsee = { version = "0.16.2", features = [
+  "server",
+  "macros",
+  "http-client",
+  "client",
+] }
 solana-sdk = "2.1.9"
 solana-program = "2.1.9"
 solana-client = "2.1.9"
@@ -52,8 +53,9 @@ http = "0.2"
 jup-ag = "0.8.0"
 toml = "0.8.19"
 spl-token = "7.0.0"
+spl-token-2022 = "7.0.0"
 spl-associated-token-account = "6.0.0"
-jupiter-swap-api-client = { git = "https://github.com/pkxro/jupiter-swap-api-client.git", package = "jupiter-swap-api-client"}
+jupiter-swap-api-client = { git = "https://github.com/pkxro/jupiter-swap-api-client.git", package = "jupiter-swap-api-client" }
 jupiter = "3.1.4"
 chrono = "0.4.39"
 hex = "0.4.3"

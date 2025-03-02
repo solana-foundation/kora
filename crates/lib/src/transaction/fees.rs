@@ -7,7 +7,7 @@ use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
 use utoipa::ToSchema;
 
-use crate::error::KoraError;
+use crate::{error::KoraError, token::{TokenKeg, TokenTrait}};
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TokenPriceInfo {
