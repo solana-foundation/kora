@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use utoipa::ToSchema;
 
 use kora_lib::{
     error::KoraError,
@@ -10,13 +11,13 @@ use kora_lib::{
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EstimateTransactionFeeRequest {
     pub transaction: String, // Base58 encoded serialized transaction
     pub fee_token: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EstimateTransactionFeeResponse {
     pub fee_in_lamports: u64,
 }

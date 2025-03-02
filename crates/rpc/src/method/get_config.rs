@@ -1,8 +1,8 @@
-use serde::Serialize;
-
 use kora_lib::{config::ValidationConfig, get_signer, KoraError};
+use serde::Serialize;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct GetConfigResponse {
     pub fee_payer: String,
     pub validation_config: ValidationConfig,

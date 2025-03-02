@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-
 use kora_lib::error::KoraError;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GetSupportedTokensResponse {
     pub tokens: Vec<String>,
 }

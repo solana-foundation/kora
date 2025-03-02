@@ -5,12 +5,13 @@ use solana_sdk::{
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
+use utoipa::ToSchema;
 
 use crate::{error::KoraError, token::{TokenKeg, TokenTrait}};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TokenPriceInfo {
-    pub price: f64, // Price in SOL
+    pub price: f64,
 }
 
 pub async fn estimate_transaction_fee(
