@@ -1,10 +1,13 @@
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{pubkey::Pubkey, transaction::Transaction};
-use async_trait::async_trait;
 use crate::error::KoraError;
-use std::sync::Arc;
-use solana_sdk::signer::{keypair::Keypair, Signer};
+use async_trait::async_trait;
 use mockall::automock;
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{
+    pubkey::Pubkey,
+    signer::{keypair::Keypair, Signer},
+    transaction::Transaction,
+};
+use std::sync::Arc;
 
 /// Trait defining the interface for token operations
 #[automock]
@@ -14,7 +17,11 @@ pub trait TokenInterface {
     async fn validate_token(&self, rpc_client: &RpcClient, token: &str) -> Result<(), KoraError>;
 
     /// Validates multiple token addresses
-    async fn validate_tokens(&self, rpc_client: &RpcClient, tokens: &[String]) -> Result<(), KoraError>;
+    async fn validate_tokens(
+        &self,
+        rpc_client: &RpcClient,
+        tokens: &[String],
+    ) -> Result<(), KoraError>;
 
     /// Gets or creates a token account for a user
     async fn get_or_create_token_account(
@@ -50,7 +57,11 @@ impl TokenInterface for TokenKeg {
         crate::token::check_valid_token(rpc_client, token).await
     }
 
-    async fn validate_tokens(&self, rpc_client: &RpcClient, tokens: &[String]) -> Result<(), KoraError> {
+    async fn validate_tokens(
+        &self,
+        rpc_client: &RpcClient,
+        tokens: &[String],
+    ) -> Result<(), KoraError> {
         crate::token::check_valid_tokens(rpc_client, tokens).await
     }
 
@@ -61,16 +72,11 @@ impl TokenInterface for TokenKeg {
         mint: &Pubkey,
     ) -> Result<(Pubkey, Option<Transaction>), KoraError> {
         use crate::cache::TokenAccountCache;
-        
+
         // Create a temporary cache for this operation
         let cache = TokenAccountCache::new("redis://localhost")?;
         let rpc_arc = Arc::new(RpcClient::new(rpc_client.url().to_string()));
-        crate::account::get_or_create_token_account(
-            &rpc_arc,
-            &cache,
-            user_pubkey,
-            mint,
-        ).await
+        crate::account::get_or_create_token_account(&rpc_arc, &cache, user_pubkey, mint).await
     }
 
     async fn get_or_create_multiple_token_accounts(
@@ -80,16 +86,12 @@ impl TokenInterface for TokenKeg {
         mints: &[Pubkey],
     ) -> Result<(Vec<Pubkey>, Option<Transaction>), KoraError> {
         use crate::cache::TokenAccountCache;
-        
+
         // Create a temporary cache for this operation
         let cache = TokenAccountCache::new("redis://localhost")?;
         let rpc_arc = Arc::new(RpcClient::new(rpc_client.url().to_string()));
-        crate::account::get_or_create_multiple_token_accounts(
-            &rpc_arc,
-            &cache,
-            user_pubkey,
-            mints,
-        ).await
+        crate::account::get_or_create_multiple_token_accounts(&rpc_arc, &cache, user_pubkey, mints)
+            .await
     }
 
     async fn calculate_token_value_in_lamports(
@@ -152,7 +154,7 @@ mod tests {
         let result = mock_token_interface
             .get_or_create_token_account(&rpc_client, &user.pubkey(), &mint.pubkey())
             .await;
-        
+
         assert!(result.is_ok());
         let (account, tx) = result.unwrap();
         assert_eq!(account, token_account);
@@ -175,7 +177,7 @@ mod tests {
         let result = mock_token_interface
             .get_or_create_multiple_token_accounts(&rpc_client, &user.pubkey(), &mints)
             .await;
-        
+
         assert!(result.is_ok());
         let (accounts, tx) = result.unwrap();
         assert_eq!(accounts.len(), 2);
@@ -197,8 +199,8 @@ mod tests {
         let result = mock_token_interface
             .calculate_token_value_in_lamports(100, &mint.pubkey(), &rpc_client)
             .await;
-        
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected_lamports);
     }
-} 
+}

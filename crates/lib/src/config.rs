@@ -5,7 +5,10 @@ use utoipa::ToSchema;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 
-use crate::{error::KoraError, token_interface::{TokenInterface, TokenKeg}};
+use crate::{
+    error::KoraError,
+    token_interface::{TokenInterface, TokenKeg},
+};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
