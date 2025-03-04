@@ -5,6 +5,33 @@ use std::str::FromStr;
 
 use crate::error::KoraError;
 
+mod base;
+mod state;
+mod program;
+
+pub use base::TokenBase;
+pub use program::{TokenProgram, TokenKeg};
+pub use state::TokenState;
+
+/// Represents supported token types in the system
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TokenType {
+    /// Standard SPL Token
+    Spl,
+    /// Token-2022 Program
+    Token2022,
+}
+
+impl TokenType {
+    /// Returns the program ID for this token type
+    pub fn program_id(&self) -> Pubkey {
+        match self {
+            TokenType::Spl => spl_token::id(),
+            TokenType::Token2022 => spl_token_2022::id(),
+        }
+    }
+}
+
 pub async fn check_valid_token(rpc_client: &RpcClient, token: &str) -> Result<(), KoraError> {
     let pubkey = Pubkey::from_str(token)
         .map_err(|e| KoraError::InternalServerError(format!("Invalid token address: {}", e)))?;

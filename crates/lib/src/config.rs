@@ -5,7 +5,10 @@ use utoipa::ToSchema;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 
-use crate::{error::KoraError, token::check_valid_tokens};
+use crate::{
+    error::KoraError,
+    token::{TokenBase, TokenKeg},
+};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -44,7 +47,8 @@ impl Config {
             return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
         }
 
-        check_valid_tokens(rpc_client, &self.validation.allowed_tokens).await?;
+        let token_interface = TokenKeg;
+        crate::token::check_valid_tokens(rpc_client, &self.validation.allowed_tokens).await?;
         Ok(())
     }
 }
