@@ -7,7 +7,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 
 use crate::{
     error::KoraError,
-    token_interface::{TokenInterface, TokenKeg},
+    token::{TokenBase, TokenKeg},
 };
 
 #[derive(Debug, Deserialize)]
@@ -48,7 +48,7 @@ impl Config {
         }
 
         let token_interface = TokenKeg;
-        token_interface.validate_tokens(rpc_client, &self.validation.allowed_tokens).await?;
+        crate::token::check_valid_tokens(rpc_client, &self.validation.allowed_tokens).await?;
         Ok(())
     }
 }

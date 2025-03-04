@@ -12,7 +12,6 @@ pub mod signer;
 pub mod solana;
 pub mod state;
 pub mod token;
-pub mod token_interface;
 pub mod transaction;
 pub mod types;
 
