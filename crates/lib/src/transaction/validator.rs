@@ -1,16 +1,15 @@
 use crate::{
     config::ValidationConfig,
     error::KoraError,
-    token::{TokenBase, TokenKeg},
+    token::{TokenBase, TokenKeg, TokenState},
     transaction::fees::calculate_token_value_in_lamports,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    instruction::CompiledInstruction, message::Message, program_pack::Pack, pubkey::Pubkey,
+    instruction::CompiledInstruction, message::Message, pubkey::Pubkey,
     system_instruction, system_program, transaction::Transaction,
 };
-use spl_associated_token_account::get_associated_token_address;
-use spl_token::state::Account as TokenAccount;
+use spl_associated_token_account::get_associated_token_address_with_program_id;
 use std::str::FromStr;
 
 pub enum ValidationMode {
@@ -234,7 +233,7 @@ pub async fn validate_token_payment(
     required_lamports: u64,
     signer_pubkey: Pubkey,
 ) -> Result<(), KoraError> {
-    let mut total_lamport_value = 0;
+    let mut total_lamport_value: u64 = 0;
     let token_program = TokenKeg;
 
     for ix in transaction.message.instructions.iter() {
@@ -242,54 +241,63 @@ pub async fn validate_token_payment(
             continue;
         }
 
-        if let Ok(spl_token::instruction::TokenInstruction::Transfer { amount }) =
-            spl_token::instruction::TokenInstruction::unpack(&ix.data)
-        {
-            let dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
-            let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
+        // Get source account data
+        let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
+        let source_account = rpc_client
+            .get_account(&source_key)
+            .await
+            .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-            let source_account = rpc_client
-                .get_account(&source_key)
-                .await
-                .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-            let token_account = TokenAccount::unpack(&source_account.data).map_err(|e| {
-                KoraError::InvalidTransaction(format!("Invalid token account: {}", e))
-            })?;
-
-            let dest_mint_account =
-                get_associated_token_address(&signer_pubkey, &token_account.mint);
-
-            if dest_pubkey != dest_mint_account {
-                continue;
-            }
-
-            if source_account.owner != spl_token::id() {
-                continue;
-            }
-
-            if token_account.amount < amount {
-                continue;
-            }
-
-            if !validation.allowed_spl_paid_tokens.contains(&token_account.mint.to_string()) {
-                continue;
-            }
-
-            let lamport_value = calculate_token_value_in_lamports(amount, &token_account.mint, rpc_client)
-                .await?;
-
-            total_lamport_value += lamport_value;
-            if total_lamport_value >= required_lamports {
-                return Ok(());
-            }
+        // Verify it's a token account
+        if source_account.owner != token_program.program_id() {
+            continue;
         }
+
+        let token_state = TokenState::try_from_slice(&source_account.data)
+            .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {}", e)))?;
+
+        let mint = token_state.mint();
+        let owner = token_state.owner();
+
+        // Verify the token account belongs to the signer
+        if owner != signer_pubkey {
+            continue;
+        }
+
+        // Get destination account
+        let dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
+        let fee_collector = Pubkey::from_str(&validation.fee_collector)
+            .map_err(|e| KoraError::InvalidTransaction(format!("Invalid fee collector address: {}", e)))?;
+        let expected_ata = get_associated_token_address_with_program_id(
+            &fee_collector,
+            &mint,
+            &token_program.program_id(),
+        );
+
+        // Verify destination is the fee collector's ATA
+        if dest_pubkey != expected_ata {
+            continue;
+        }
+
+        // Extract transfer amount from instruction data
+        let amount = match token_program.decode_transfer_instruction(&ix.data) {
+            Ok(amount) => amount,
+            Err(_) => continue,
+        };
+
+        // Calculate lamport value of token transfer
+        let lamport_value = calculate_token_value_in_lamports(amount, &mint, rpc_client).await?;
+        total_lamport_value = total_lamport_value.saturating_add(lamport_value);
     }
 
-    Err(KoraError::InsufficientFunds(format!(
-        "Required {} lamports but only found {} in token transfers",
-        required_lamports, total_lamport_value
-    )))
+    if total_lamport_value < required_lamports {
+        return Err(KoraError::InvalidTransaction(format!(
+            "Insufficient token payment. Required: {} lamports, got: {} lamports",
+            required_lamports, total_lamport_value
+        )));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -307,6 +315,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_collector: Pubkey::new_unique().to_string(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
@@ -335,6 +344,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_collector: Pubkey::new_unique().to_string(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -366,6 +376,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_collector: Pubkey::new_unique().to_string(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -400,6 +411,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_collector: Pubkey::new_unique().to_string(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -427,6 +439,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_collector: Pubkey::new_unique().to_string(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -455,6 +468,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_collector: Pubkey::new_unique().to_string(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
@@ -474,6 +488,7 @@ mod tests {
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec!["hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek".to_string()],
+            fee_collector: Pubkey::new_unique().to_string(),
         };
 
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();

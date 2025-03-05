@@ -39,4 +39,7 @@ pub trait TokenBase: Send + Sync {
         amount: u64,
         decimals: u8,
     ) -> Result<Instruction, ProgramError>;
+
+    /// Decodes a transfer instruction to extract the amount
+    fn decode_transfer_instruction(&self, data: &[u8]) -> Result<u64, ProgramError>;
 } 

@@ -10,9 +10,10 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
-use spl_associated_token_account::get_associated_token_address;
-use spl_token::instruction as spl_token_instruction;
+use spl_associated_token_account::get_associated_token_address_with_program_id;
+use kora_lib::token::{TokenBase, TokenType};
 use std::{str::FromStr, sync::Arc};
+use kora_lib::token::TokenKeg;
 
 const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
 
@@ -208,6 +209,20 @@ async fn test_transfer_transaction_with_ata() {
     let rpc_client = setup_rpc_client().await;
     let random_keypair = Keypair::new();
     let random_pubkey = random_keypair.pubkey();
+    let token_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
+    let sender = Pubkey::from_str("J1NiBQHq1Q98HwB4xZCpekg66oXniqzW9vXJorZNuF9R").unwrap();
+    let token_type = TokenType::Spl;
+    
+    let sender_token_account = get_associated_token_address_with_program_id(
+        &sender,
+        &token_mint,
+        &token_type.program_id()
+    );
+    let recipient_token_account = get_associated_token_address_with_program_id(
+        &random_pubkey,
+        &token_mint,
+        &token_type.program_id()
+    );
 
     let response: serde_json::Value = client
         .request(
@@ -269,45 +284,53 @@ async fn test_get_config() {
 async fn test_sign_transaction_if_paid() {
     let client = setup_test_client().await;
     let rpc_client = setup_rpc_client().await;
-
-    // get fee payer from config
-    let response: serde_json::Value =
-        client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
-    let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap()).unwrap();
-
     let sender = get_test_sender_keypair();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
+    let fee_payer = Pubkey::from_str("BrfrZdQNEitACxyYLNmFRWHtRzZFNFpYH5GAtoA1XXU6").unwrap();
 
     // Setup token accounts
     let token_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
-    let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
-    let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
-    let fee_payer_token_account = get_associated_token_address(&fee_payer, &token_mint);
+    let token_type = TokenType::Spl;
+    
+    let sender_token_account = get_associated_token_address_with_program_id(
+        &sender.pubkey(),
+        &token_mint,
+        &token_type.program_id()
+    );
+    let recipient_token_account = get_associated_token_address_with_program_id(
+        &recipient,
+        &token_mint,
+        &token_type.program_id()
+    );
+    let fee_payer_token_account = get_associated_token_address_with_program_id(
+        &fee_payer,
+        &token_mint,
+        &token_type.program_id()
+    );
 
     let decimals = 6;
     let amount = 0.0015;
     let scaled_amount = (amount * 10_f64.powi(decimals)) as u64;
 
+    // Create token interface
+    let token_interface = TokenKeg;
+
     // Create instructions
-    let fee_payer_instruction = spl_token_instruction::transfer(
-        &spl_token::id(),
+    let fee_payer_instruction = token_interface.transfer(
         &sender_token_account,
         &fee_payer_token_account,
         &sender.pubkey(),
         &[],
         scaled_amount,
-    )
-    .unwrap();
+    ).unwrap();
 
-    let recipient_instruction = spl_token_instruction::transfer(
-        &spl_token::id(),
+    let recipient_instruction = token_interface.transfer(
         &sender_token_account,
         &recipient_token_account,
         &sender.pubkey(),
         &[],
         1,
-    )
-    .unwrap();
+    ).unwrap();
 
     let blockhash = rpc_client
         .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())

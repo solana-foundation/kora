@@ -1,19 +1,19 @@
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, message::Message, program_pack::Pack, pubkey::Pubkey,
+    commitment_config::CommitmentConfig, message::Message, pubkey::Pubkey,
     system_instruction, transaction::Transaction,
 };
 use spl_associated_token_account::{
-    get_associated_token_address, instruction::create_associated_token_account,
+    get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
-use spl_token::{instruction as token_instruction, state::Mint};
 use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;
 
 use kora_lib::{
     config::ValidationConfig, constant::NATIVE_SOL, get_signer,
     transaction::validator::TransactionValidator, KoraError, Signer as _,
+    token::{TokenBase, TokenKeg, TokenState},
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -72,17 +72,20 @@ pub async fn transfer_transaction(
         // Handle wrapped SOL and other SPL tokens
         validator.validate_token_mint(&token_mint)?;
 
+        let token_program = TokenKeg;
+        let token_program_id = token_program.program_id();
+
         let mint_account = rpc_client
             .get_account(&token_mint)
             .await
             .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-        let mint = Mint::unpack(&mint_account.data)
+        let token_state = TokenState::try_from_slice(&mint_account.data)
             .map_err(|_| KoraError::ValidationError("Invalid mint account data".to_string()))?;
 
-        let decimals = mint.decimals;
-        let source_ata = get_associated_token_address(&source, &token_mint);
-        let dest_ata = get_associated_token_address(&destination, &token_mint);
+        let decimals = token_state.decimals();
+        let source_ata = get_associated_token_address_with_program_id(&source, &token_mint, &token_program_id);
+        let dest_ata = get_associated_token_address_with_program_id(&destination, &token_mint, &token_program_id);
 
         let _ = rpc_client
             .get_account(&source_ata)
@@ -94,13 +97,12 @@ pub async fn transfer_transaction(
                 &fee_payer,
                 &destination,
                 &token_mint,
-                &spl_token::id(),
+                &token_program_id,
             ));
         }
 
         instructions.push(
-            token_instruction::transfer_checked(
-                &spl_token::id(),
+            token_program.transfer_checked(
                 &source_ata,
                 &token_mint,
                 &dest_ata,

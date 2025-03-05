@@ -2,6 +2,8 @@ use solana_sdk::{
     hash::Hash, message::Message, pubkey::Pubkey, signature::Keypair, signer::Signer as _,
     system_instruction, transaction::Transaction,
 };
+use spl_associated_token_account::get_associated_token_address_with_program_id;
+use crate::token::{TokenBase, TokenType};
 
 use super::{decode_b58_transaction, estimate_transaction_fee};
 use crate::rpc::test_utils::setup_test_rpc_client;
@@ -70,13 +72,18 @@ async fn test_estimate_transaction_fee_with_token_creation() {
     let payer = Pubkey::new_unique();
     let mint = Pubkey::new_unique();
     let owner = Pubkey::new_unique();
+    let token_type = TokenType::Spl;
 
-    let ata = spl_associated_token_account::get_associated_token_address(&owner, &mint);
+    let ata = get_associated_token_address_with_program_id(
+        &owner,
+        &mint,
+        &token_type.program_id()
+    );
     let create_ata_ix = spl_associated_token_account::instruction::create_associated_token_account(
         &payer,
         &ata,
         &mint,
-        &spl_token::id(),
+        &token_type.program_id(),
     );
 
     let message = Message::new(&[create_ata_ix], Some(&payer));

@@ -4,6 +4,7 @@ members = [
     "crates/rpc",
     "crates/cli",
     "scripts",
+    "tests",
 ]
 resolver = "2"
 

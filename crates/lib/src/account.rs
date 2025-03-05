@@ -1,10 +1,10 @@
-use super::{cache::TokenAccountCache, get_signer, KoraError, Signer};
+use super::{cache::TokenAccountCache, get_signer, KoraError, Signer, token::TokenType};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     message::Message, pubkey::Pubkey, signature::Signature, transaction::Transaction,
 };
 use spl_associated_token_account::{
-    get_associated_token_address, instruction::create_associated_token_account,
+    get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
 use std::sync::Arc;
 
@@ -15,9 +15,10 @@ pub async fn get_or_create_token_account(
     mint: &Pubkey,
 ) -> Result<(Pubkey, Option<Transaction>), KoraError> {
     let signer = get_signer()?;
+    let token_program_id = TokenType::Spl.program_id();
 
-    // Get ATA using spl-associated-token-account
-    let ata = get_associated_token_address(user_pubkey, mint);
+    // Get ATA using spl-associated-token-account with program ID
+    let ata = get_associated_token_address_with_program_id(user_pubkey, mint, &token_program_id);
 
     // Check cache first
     if let Some(cached_ata) = cache.get_token_account(user_pubkey, mint).await? {
@@ -37,7 +38,7 @@ pub async fn get_or_create_token_account(
                 &signer.solana_pubkey(),
                 user_pubkey,
                 mint,
-                &spl_token::id(),
+                &token_program_id,
             );
 
             let blockhash = rpc_client.get_latest_blockhash().await.map_err(|e| {
@@ -76,13 +77,14 @@ pub async fn get_or_create_multiple_token_accounts(
     mints: &[Pubkey],
 ) -> Result<(Vec<Pubkey>, Option<Transaction>), KoraError> {
     let signer = get_signer()?;
+    let token_program_id = TokenType::Spl.program_id();
 
     let mut atas = Vec::with_capacity(mints.len());
     let mut instructions = Vec::with_capacity(mints.len());
     let mut needs_creation = false;
 
     for mint in mints {
-        let ata = get_associated_token_address(user_pubkey, mint);
+        let ata = get_associated_token_address_with_program_id(user_pubkey, mint, &token_program_id);
         atas.push(ata);
 
         // Check cache first
@@ -97,7 +99,7 @@ pub async fn get_or_create_multiple_token_accounts(
                 &signer.solana_pubkey(),
                 user_pubkey,
                 mint,
-                &spl_token::id(),
+                &token_program_id,
             ));
         } else {
             // Account exists, cache it
