@@ -28,6 +28,7 @@ use crate::method::{
     transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
     },
+    transfer_action::{get_transfer_action, post_transfer_action, ActionGetResponse, ActionPostRequest},
 };
 
 #[derive(Clone)]
@@ -128,6 +129,28 @@ impl KoraRpc {
         let result = sign_transaction_if_paid(&self.rpc_client, &self.validation, request).await;
         info!("Sign transaction if paid response: {:?}", result);
         result
+    }
+
+    pub async fn get_transfer_action(&self) -> Result<ActionGetResponse, KoraError> {
+        Ok(get_transfer_action().await)
+    }
+
+    pub async fn post_transfer_action(
+        &self,
+        request: ActionPostRequest,
+        amount: u64,
+        token: String,
+        destination: String,
+    ) -> Result<TransferTransactionResponse, KoraError> {
+        post_transfer_action(
+            &self.rpc_client,
+            &self.validation,
+            request,
+            amount,
+            token,
+            destination,
+        )
+        .await
     }
 
     pub fn build_docs_spec() -> Vec<OpenApiSpec> {

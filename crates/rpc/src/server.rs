@@ -102,5 +102,18 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         },
     );
 
+    let _ = module.register_async_method("getTransferAction", |_rpc_params, rpc_context| async move {
+        let rpc = rpc_context.as_ref();
+        rpc.get_transfer_action().await.map_err(Into::into)
+    });
+
+    let _ = module.register_async_method("postTransferAction", |rpc_params, rpc_context| async move {
+        let rpc = rpc_context.as_ref();
+        let (request, amount, token, destination) = rpc_params.parse()?;
+        rpc.post_transfer_action(request, amount, token, destination)
+            .await
+            .map_err(Into::into)
+    });
+
     Ok(module)
 }
