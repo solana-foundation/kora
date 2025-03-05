@@ -1,32 +1,23 @@
 [package]
-name = "scripts"
-version.workspace = true
-edition.workspace = true
+name = "tests"
+version = { workspace = true }
+edition = { workspace = true }
 
-[[bin]]
-name = "presigned"
-path = "presigned.rs"
-
-[[bin]]
-name = "token"
-path = "token.rs"
-
-[[bin]]
-name = "test_rpc"
-path = "test_rpc.rs"
+[[test]]
+name = "api_integration"
+path = "api_integration_tests.rs"
 
 [dependencies]
 kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
-solana-program = { workspace = true }
 spl-token = { workspace = true }
 spl-token-2022 = { workspace = true }
 spl-associated-token-account = { workspace = true }
 bincode = { workspace = true }
 bs58 = { workspace = true }
 dotenv = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+jsonrpsee = { workspace = true }
 serde_json = { workspace = true }
-reqwest = { version = "0.11", features = ["json"] }
-base64 = { workspace = true }
+tokio = { workspace = true }
+hex = { workspace = true } 

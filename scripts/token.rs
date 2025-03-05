@@ -7,7 +7,7 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
-use spl_token::{instruction as token_instruction, state::Account as TokenAccount};
+use kora_lib::token::{TokenBase, TokenType, TokenState, TokenKeg};
 use std::str::FromStr;
 
 fn main() {
@@ -25,41 +25,31 @@ fn main() {
     let token_account = Keypair::new();
 
     // Calculate minimum rent for token account
-    let rent = client.get_minimum_balance_for_rent_exemption(TokenAccount::LEN).unwrap();
+    let rent = client.get_minimum_balance_for_rent_exemption(165).unwrap(); // 165 is the size of a token account
+
+    let token_type = TokenType::Spl;
+    let token_program = TokenKeg::default();
 
     // Create token account
     let create_account_ix = system_instruction::create_account(
         &payer.pubkey(),
         &token_account.pubkey(),
         rent,
-        TokenAccount::LEN as u64,
-        &spl_token::id(),
+        165,
+        &token_type.program_id(),
     );
 
     // Initialize token account
-    let init_account_ix = token_instruction::initialize_account(
-        &spl_token::id(),
+    let init_account_ix = token_program.initialize_account(
         &token_account.pubkey(),
         &usdc_mint,
         &payer.pubkey(),
-    )
-    .unwrap();
-
-    // Set close authority instruction
-    let set_authority_ix = token_instruction::set_authority(
-        &spl_token::id(),
-        &token_account.pubkey(),
-        Some(&payer.pubkey()),
-        spl_token::instruction::AuthorityType::CloseAccount,
-        &payer.pubkey(),
-        &[],
-    )
-    .unwrap();
+    ).unwrap();
 
     // Create transaction
     let recent_blockhash = client.get_latest_blockhash().unwrap();
     let transaction = Transaction::new_signed_with_payer(
-        &[create_account_ix, init_account_ix, set_authority_ix],
+        &[create_account_ix, init_account_ix],
         Some(&payer.pubkey()),
         &[&payer, &token_account],
         recent_blockhash,

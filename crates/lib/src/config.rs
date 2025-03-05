@@ -5,7 +5,10 @@ use utoipa::ToSchema;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 
-use crate::{error::KoraError, token::check_valid_tokens};
+use crate::{
+    error::KoraError,
+    token::TokenKeg,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -21,6 +24,7 @@ pub struct ValidationConfig {
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: Vec<String>,
     pub disallowed_accounts: Vec<String>,
+    pub fee_collector: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,7 +48,8 @@ impl Config {
             return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
         }
 
-        check_valid_tokens(rpc_client, &self.validation.allowed_tokens).await?;
+        let token_interface = TokenKeg;
+        crate::token::check_valid_tokens(rpc_client, &self.validation.allowed_tokens).await?;
         Ok(())
     }
 }
@@ -65,6 +70,7 @@ mod tests {
             allowed_tokens = ["token1", "token2"]
             allowed_spl_paid_tokens = ["token3"]
             disallowed_accounts = ["account1"]
+            fee_collector = "collector1"
 
             [kora]
             rate_limit = 100
@@ -81,6 +87,7 @@ mod tests {
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
         assert_eq!(config.validation.allowed_spl_paid_tokens, vec!["token3"]);
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
+        assert_eq!(config.validation.fee_collector, "collector1");
         assert_eq!(config.kora.rate_limit, 100);
     }
 
@@ -110,6 +117,7 @@ mod tests {
                 allowed_tokens: vec!["token1".to_string()],
                 allowed_spl_paid_tokens: vec!["token3".to_string()],
                 disallowed_accounts: vec!["account1".to_string()],
+                fee_collector: "collector1".to_string(),
             },
             kora: KoraConfig { rate_limit: 100 },
         };
