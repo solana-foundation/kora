@@ -2,8 +2,10 @@
 
 use anyhow::Result;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_program::example_mocks::solana_sdk::system_instruction;
 use solana_sdk::{
-    instruction::Instruction, program_error::ProgramError, program_pack::Pack, pubkey::Pubkey,
+    instruction::Instruction, lamports, program_error::ProgramError, program_pack::Pack,
+    pubkey::Pubkey,
 };
 use spl_token::state::Mint as TokenMint;
 use spl_token_2022::state::Mint as Token22Mint;
@@ -88,28 +90,6 @@ where
     pub fn is_native(&self) -> bool {
         self.token_program.id() == spl_token::id()
     }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn transfer_checked(
-        &self,
-        source_pubkey: &Pubkey,
-        mint_pubkey: &Pubkey,
-        destination_pubkey: &Pubkey,
-        authority_pubkey: &Pubkey,
-        signer_pubkeys: &[&Pubkey],
-        amount: u64,
-        decimals: u8,
-    ) -> Result<Instruction, ProgramError> {
-        self.token_program.transfer_checked(
-            source_pubkey,
-            mint_pubkey,
-            destination_pubkey,
-            authority_pubkey,
-            signer_pubkeys,
-            amount,
-            decimals,
-        )
-    }
 }
 
 impl TokenType {
@@ -151,6 +131,18 @@ impl TokenType {
             TokenType::TokenKeg(token) => &token.token_program,
             TokenType::Token22(token) => &token.token_program,
         }
+    }
+
+    pub fn native_transfer(&self, from: &Pubkey, to: &Pubkey, lamports: u64) -> Instruction {
+        system_instruction::transfer(from, to, lamports)
+    }
+}
+
+impl<T: TokenTrait> Deref for Token<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.token_program
     }
 }
 

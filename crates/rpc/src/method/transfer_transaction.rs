@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, message::Message, pubkey::Pubkey, system_instruction,
-    transaction::Transaction,
+    commitment_config::CommitmentConfig, message::Message, pubkey::Pubkey, transaction::Transaction,
 };
 use spl_associated_token_account::{
     get_associated_token_address, instruction::create_associated_token_account,
@@ -11,8 +10,11 @@ use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;
 
 use kora_lib::{
-    config::ValidationConfig, get_signer, token::TokenType,
-    transaction::validator::TransactionValidator, KoraError, Signer as _,
+    config::ValidationConfig,
+    get_signer,
+    token::{TokenTrait, TokenType},
+    transaction::validator::TransactionValidator,
+    KoraError, Signer as _,
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -67,9 +69,9 @@ pub async fn transfer_transaction(
     let mut instructions = vec![];
 
     // Handle native SOL transfers
-    match token {
+    match &token {
         TokenType::TokenKeg(_) => {
-            instructions.push(system_instruction::transfer(&source, &destination, request.amount));
+            instructions.push(token.native_transfer(&source, &destination, request.amount));
         }
         TokenType::Token22(token22) => {
             // Handle wrapped SOL and other SPL tokens
@@ -94,24 +96,24 @@ pub async fn transfer_transaction(
                 ));
             }
 
-            instructions.push(
-                token22
-                    .transfer_checked(
-                        &source_ata,
-                        &token_mint,
-                        &dest_ata,
-                        &source,
-                        &[],
-                        request.amount,
-                        decimals,
-                    )
-                    .map_err(|e| {
-                        KoraError::InvalidTransaction(format!(
-                            "Failed to create transfer instruction: {}",
-                            e
-                        ))
-                    })?,
-            );
+            let ix = token22
+                .transfer_checked(
+                    &source_ata,
+                    &token_mint,
+                    &dest_ata,
+                    &source,
+                    &[],
+                    request.amount,
+                    decimals,
+                )
+                .map_err(|e| {
+                    KoraError::InvalidTransaction(format!(
+                        "Failed to create transfer instruction: {}",
+                        e
+                    ))
+                })?;
+
+            instructions.push(ix);
         }
     }
 

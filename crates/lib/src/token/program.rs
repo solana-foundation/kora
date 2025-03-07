@@ -1,7 +1,7 @@
 //! Implements token program interfaces for SPL Token and Token-2022
 
-use solana_sdk::{instruction::Instruction, program_error::ProgramError, pubkey::Pubkey};
 use crate::token::interface::TokenTrait;
+use solana_sdk::{instruction::Instruction, program_error::ProgramError, pubkey::Pubkey};
 
 /// SPL Token program implementation
 #[derive(Debug, Default)]
@@ -10,7 +10,6 @@ pub struct TokenKeg;
 /// Token-2022 program implementation
 #[derive(Debug, Default)]
 pub struct Token22;
-
 
 impl TokenKeg {
     fn set_authority(
@@ -31,7 +30,6 @@ impl TokenKeg {
         )
     }
 }
-
 
 impl Token22 {
     fn set_authority(
@@ -164,4 +162,4 @@ impl TokenTrait for Token22 {
             decimals,
         )
     }
-} 
+}

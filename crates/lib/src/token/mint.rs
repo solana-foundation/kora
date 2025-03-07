@@ -68,4 +68,3 @@ impl MintStateInterface for Token22Mint {
         self.is_initialized
     }
 }
-

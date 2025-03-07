@@ -36,4 +36,4 @@ pub trait TokenTrait: Send + Sync {
         amount: u64,
         decimals: u8,
     ) -> Result<Instruction, ProgramError>;
-} 
+}
