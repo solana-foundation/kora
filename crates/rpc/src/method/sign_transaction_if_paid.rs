@@ -1,51 +1,41 @@
 use kora_lib::{
     config::ValidationConfig,
-    transaction::{sign_transaction_if_paid as lib_sign_transaction_if_paid, TokenPriceInfo},
+    transaction::{
+        encode_transaction_b58, sign_transaction_if_paid as lib_sign_transaction_if_paid,
+    },
     types::TransactionEncoding,
     KoraError,
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use std::sync::Arc;
+use solana_sdk::transaction::Transaction;
 use utoipa::ToSchema;
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SignTransactionIfPaidRequest {
-    pub transaction: String,
+    pub transaction: Transaction,
     #[serde(default)]
     pub encoding: Option<TransactionEncoding>,
     pub margin: Option<f64>,
-    pub token_price_info: Option<TokenPriceInfo>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SignTransactionIfPaidResponse {
-    pub signature: String,
+    pub transaction: String,
     pub signed_transaction: String,
-    pub encoding: TransactionEncoding,
 }
 
 pub async fn sign_transaction_if_paid(
-    rpc_client: &Arc<RpcClient>,
+    rpc_client: &RpcClient,
     validation: &ValidationConfig,
     request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
-    let encoding = request.encoding.unwrap_or_default();
-    let transaction = encoding.decode_transaction(&request.transaction)?;
-    let (transaction, signed_transaction) = lib_sign_transaction_if_paid(
-        rpc_client,
-        validation,
-        transaction,
-        request.margin,
-        request.token_price_info,
-    )
-    .await?;
-
-    let encoded = encoding.encode_transaction(&transaction)?;
+    let (transaction, signed_transaction) =
+        lib_sign_transaction_if_paid(rpc_client, validation, request.transaction, request.margin)
+            .await?;
 
     Ok(SignTransactionIfPaidResponse {
-        signature: transaction.signatures[0].to_string(),
-        signed_transaction: encoded,
-        encoding,
+        transaction: encode_transaction_b58(&transaction)?,
+        signed_transaction,
     })
 }
