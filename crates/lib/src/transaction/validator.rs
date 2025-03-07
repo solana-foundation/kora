@@ -1,6 +1,5 @@
 use crate::{
-    config::ValidationConfig, error::KoraError,
-    transaction::fees::calculate_token_value_in_lamports,
+    config::ValidationConfig, error::KoraError, oracle::PriceSource, transaction::fees::calculate_token_value_in_lamports
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -23,6 +22,7 @@ pub struct TransactionValidator {
     max_signatures: u64,
     allowed_tokens: Vec<Pubkey>,
     disallowed_accounts: Vec<Pubkey>,
+    price_source: PriceSource,
 }
 
 impl TransactionValidator {
@@ -46,6 +46,7 @@ impl TransactionValidator {
             max_allowed_lamports: config.max_allowed_lamports,
             allowed_programs,
             max_signatures: config.max_signatures,
+            price_source: config.price_source.clone(),
             allowed_tokens: config
                 .allowed_tokens
                 .iter()
@@ -274,7 +275,7 @@ pub async fn validate_token_payment(
             }
 
             let lamport_value =
-                calculate_token_value_in_lamports(amount, &token_account.mint, rpc_client).await?;
+                calculate_token_value_in_lamports(amount, &token_account.mint, validation.price_source.clone(), rpc_client).await?;
 
             total_lamport_value += lamport_value;
             if total_lamport_value >= required_lamports {
@@ -300,6 +301,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
+            price_source: PriceSource::Fake,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -328,6 +330,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
+            price_source: PriceSource::Fake,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -359,6 +362,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
+            price_source: PriceSource::Fake,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()], // System program
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -393,6 +397,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 2,
+            price_source: PriceSource::Fake,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -420,6 +425,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
+            price_source: PriceSource::Fake,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -448,6 +454,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
+            price_source: PriceSource::Fake,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -467,6 +474,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
+            price_source: PriceSource::Fake,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
