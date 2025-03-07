@@ -5,8 +5,8 @@ use tokio::time::sleep;
 
 use crate::error::KoraError;
 
-pub mod jupiter;
 pub mod fake;
+pub mod jupiter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenPrice {
@@ -30,12 +30,7 @@ pub struct PriceOracle {
 
 impl PriceOracle {
     pub fn new(max_retries: u32, base_delay: Duration, price_source: PriceSource) -> Self {
-        Self { 
-            client: Client::new(), 
-            max_retries, 
-            base_delay,
-            price_source,
-        }
+        Self { client: Client::new(), max_retries, base_delay, price_source }
     }
 
     pub async fn get_token_price(&self, mint_address: &str) -> Result<TokenPrice, KoraError> {

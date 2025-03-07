@@ -1,5 +1,6 @@
 use crate::{
-    config::ValidationConfig, error::KoraError, oracle::PriceSource, transaction::fees::calculate_token_value_in_lamports
+    config::ValidationConfig, error::KoraError, oracle::PriceSource,
+    transaction::fees::calculate_token_value_in_lamports,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -274,8 +275,13 @@ pub async fn validate_token_payment(
                 continue;
             }
 
-            let lamport_value =
-                calculate_token_value_in_lamports(amount, &token_account.mint, validation.price_source.clone(), rpc_client).await?;
+            let lamport_value = calculate_token_value_in_lamports(
+                amount,
+                &token_account.mint,
+                validation.price_source.clone(),
+                rpc_client,
+            )
+            .await?;
 
             total_lamport_value += lamport_value;
             if total_lamport_value >= required_lamports {

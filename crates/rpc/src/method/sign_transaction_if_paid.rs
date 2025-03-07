@@ -30,7 +30,8 @@ pub async fn sign_transaction_if_paid(
     validation: &ValidationConfig,
     request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
-    let transaction_requested: Transaction = bincode::deserialize(&bs58::decode(request.transaction).into_vec().unwrap())?;
+    let transaction_requested: Transaction =
+        bincode::deserialize(&bs58::decode(request.transaction).into_vec().unwrap())?;
 
     let (transaction, signed_transaction) =
         lib_sign_transaction_if_paid(rpc_client, validation, transaction_requested, request.margin)

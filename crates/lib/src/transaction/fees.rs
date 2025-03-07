@@ -8,7 +8,10 @@ use spl_token::state::{Account as TokenAccount, Mint};
 use std::time::Duration;
 use utoipa::ToSchema;
 
-use crate::{error::KoraError, oracle::{PriceOracle, PriceSource}};
+use crate::{
+    error::KoraError,
+    oracle::{PriceOracle, PriceSource},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TokenPriceInfo {

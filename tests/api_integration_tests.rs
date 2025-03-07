@@ -64,12 +64,12 @@ async fn create_test_spl_transaction() -> String {
     let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap()).unwrap();
     let sender = get_test_sender_keypair();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
-    
+
     // Setup token accounts
     let token_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
     let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
-    
+
     // Create token transfer instruction
     let amount = 1000; // Transfer 1000 token units
     let instruction = spl_token_instruction::transfer(
@@ -81,13 +81,13 @@ async fn create_test_spl_transaction() -> String {
         amount,
     )
     .unwrap();
-    
+
     // Get recent blockhash
     let blockhash = rpc_client
         .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
         .await
         .unwrap();
-    
+
     // Create message and transaction
     let message = Message::new_with_blockhash(&[instruction], Some(&fee_payer), &blockhash.0);
     let transaction = Transaction::new_unsigned(message);
@@ -95,7 +95,6 @@ async fn create_test_spl_transaction() -> String {
     let serialized = bincode::serialize(&transaction).unwrap();
     bs58::encode(serialized).into_string()
 }
-
 
 #[tokio::test]
 async fn test_get_supported_tokens() {
@@ -426,11 +425,7 @@ async fn test_sign_transaction_if_paid() {
     let response: serde_json::Value = client
         .request(
             "signTransactionIfPaid",
-            rpc_params![
-                base58_transaction,
-                TransactionEncoding::Base58,
-                0
-            ],
+            rpc_params![base58_transaction, TransactionEncoding::Base58, 0],
         )
         .await
         .expect("Failed to sign transaction");
