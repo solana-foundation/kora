@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 
-use crate::{error::KoraError, token::check_valid_tokens};
+use crate::{error::KoraError, oracle::PriceSource, token::check_valid_tokens};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -21,6 +21,7 @@ pub struct ValidationConfig {
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: Vec<String>,
     pub disallowed_accounts: Vec<String>,
+    pub price_source: PriceSource,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,6 +52,8 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use crate::oracle::PriceSource;
+
     use super::*;
     use std::fs;
     use tempfile::NamedTempFile;
@@ -65,7 +68,7 @@ mod tests {
             allowed_tokens = ["token1", "token2"]
             allowed_spl_paid_tokens = ["token3"]
             disallowed_accounts = ["account1"]
-
+            price_source = "Jupiter"
             [kora]
             rate_limit = 100
         "#;
@@ -81,6 +84,7 @@ mod tests {
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
         assert_eq!(config.validation.allowed_spl_paid_tokens, vec!["token3"]);
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
+        assert_eq!(config.validation.price_source, PriceSource::Jupiter);
         assert_eq!(config.kora.rate_limit, 100);
     }
 
@@ -110,6 +114,7 @@ mod tests {
                 allowed_tokens: vec!["token1".to_string()],
                 allowed_spl_paid_tokens: vec!["token3".to_string()],
                 disallowed_accounts: vec!["account1".to_string()],
+                price_source: PriceSource::Fake,
             },
             kora: KoraConfig { rate_limit: 100 },
         };
