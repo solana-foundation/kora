@@ -17,7 +17,6 @@ use crate::{
         mint::TokenMintState,
         program::{Token22, TokenKeg},
     },
-    transaction::TokenPriceInfo,
     KoraError,
 };
 
@@ -26,7 +25,6 @@ use crate::{
 pub struct Token<T> {
     pub(crate) mint: TokenMintState,
     pub(crate) mint_address: Pubkey,
-    pub(crate) price_info: TokenPriceInfo,
     pub(crate) token_program: T,
 }
 
@@ -63,12 +61,7 @@ where
             anyhow::bail!("Invalid mint owner for this token type");
         }
 
-        Ok(Token {
-            mint: mint_data,
-            mint_address: *mint,
-            price_info: TokenPriceInfo { price: 0.0 }, // need to implement this
-            token_program,
-        })
+        Ok(Token { mint: mint_data, mint_address: *mint, token_program })
     }
 
     pub fn mint(&self) -> &TokenMintState {
@@ -77,10 +70,6 @@ where
 
     pub fn mint_address(&self) -> Pubkey {
         self.mint_address
-    }
-
-    pub fn price_info(&self) -> &TokenPriceInfo {
-        &self.price_info
     }
 
     pub fn id(&self) -> Pubkey {
@@ -116,13 +105,6 @@ impl TokenType {
         match self {
             TokenType::TokenKeg(token) => token.mint(),
             TokenType::Token22(token) => token.mint(),
-        }
-    }
-
-    pub fn price_info(&self) -> &TokenPriceInfo {
-        match self {
-            TokenType::TokenKeg(token) => token.price_info(),
-            TokenType::Token22(token) => token.price_info(),
         }
     }
 
