@@ -1,7 +1,8 @@
 //! Implements token program interfaces for SPL Token and Token-2022
 
-use crate::token::interface::TokenTrait;
 use solana_sdk::{instruction::Instruction, program_error::ProgramError, pubkey::Pubkey};
+
+use super::TokenTrait;
 
 /// SPL Token program implementation
 #[derive(Debug, Default)]
@@ -12,6 +13,13 @@ pub struct TokenKeg;
 pub struct Token22;
 
 impl TokenKeg {
+    pub fn unpack<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> Result<spl_token::instruction::TokenInstruction<'a>, ProgramError> {
+        spl_token::instruction::TokenInstruction::unpack(data)
+    }
+
     fn set_authority(
         &self,
         owned_pubkey: &Pubkey,
@@ -32,6 +40,12 @@ impl TokenKeg {
 }
 
 impl Token22 {
+    pub fn unpack<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> Result<spl_token_2022::instruction::TokenInstruction<'a>, ProgramError> {
+        spl_token_2022::instruction::TokenInstruction::unpack(data)
+    }
     fn set_authority(
         &self,
         owned_pubkey: &Pubkey,

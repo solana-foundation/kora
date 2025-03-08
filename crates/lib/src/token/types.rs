@@ -3,22 +3,20 @@
 use anyhow::Result;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::example_mocks::solana_sdk::system_instruction;
-use solana_sdk::{
-    instruction::Instruction, lamports, program_error::ProgramError, program_pack::Pack,
-    pubkey::Pubkey,
-};
+use solana_sdk::{instruction::Instruction, program_pack::Pack, pubkey::Pubkey};
 use spl_token::state::Mint as TokenMint;
 use spl_token_2022::state::Mint as Token22Mint;
 use std::{ops::Deref, sync::Arc};
 
 use crate::{
     token::{
-        interface::TokenTrait,
         mint::TokenMintState,
         program::{Token22, TokenKeg},
     },
     KoraError,
 };
+
+use super::TokenTrait;
 
 /// Represents a token with its associated program implementation
 #[derive(Debug)]
@@ -39,7 +37,7 @@ impl<T> Token<T>
 where
     T: TokenTrait,
 {
-    pub async fn try_from_mint(rpc: &RpcClient, mint: &Pubkey) -> Result<Self>
+    pub async fn try_from_mint(rpc: &Arc<RpcClient>, mint: &Pubkey) -> Result<Self>
     where
         T: Default,
     {
@@ -117,6 +115,29 @@ impl TokenType {
 
     pub fn native_transfer(&self, from: &Pubkey, to: &Pubkey, lamports: u64) -> Instruction {
         system_instruction::transfer(from, to, lamports)
+    }
+
+    pub fn get_associated_token_address(
+        &self,
+        wallet_address: &Pubkey,
+        token_mint_address: &Pubkey,
+    ) -> Pubkey {
+        self.token_program().get_associated_token_address(wallet_address, token_mint_address)
+    }
+
+    pub fn create_associated_token_account(
+        &self,
+        funding_address: &Pubkey,
+        wallet_address: &Pubkey,
+        token_mint_address: &Pubkey,
+        token_program_id: &Pubkey,
+    ) -> Instruction {
+        self.token_program().create_associated_token_account(
+            funding_address,
+            wallet_address,
+            token_mint_address,
+            token_program_id,
+        )
     }
 }
 
