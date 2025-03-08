@@ -1,11 +1,45 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{fs, path::{Path, PathBuf}};
 use toml;
 use utoipa::ToSchema;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 use crate::{error::KoraError, oracle::PriceSource, token::check_valid_tokens};
+
+/// Find the configuration file by checking multiple standard locations
+pub fn find_config_file(explicit_path: Option<&str>) -> Option<PathBuf> {
+    // 1. Check explicit path if provided
+    if let Some(path) = explicit_path {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    // 2. Check current directory
+    let current_dir = PathBuf::from("kora.toml");
+    if current_dir.exists() {
+        return Some(current_dir);
+    }
+
+    // 3. Check XDG config directory
+    if let Some(mut config_dir) = dirs::config_dir() {
+        config_dir.push("kora");
+        config_dir.push("kora.toml");
+        if config_dir.exists() {
+            return Some(config_dir);
+        }
+    }
+
+    // 4. Check /etc/kora/kora.toml
+    let etc_config = PathBuf::from("/etc/kora/kora.toml");
+    if etc_config.exists() {
+        return Some(etc_config);
+    }
+
+    None
+}
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
