@@ -1,19 +1,17 @@
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, message::Message, program_pack::Pack, pubkey::Pubkey,
-    system_instruction, transaction::Transaction,
+    commitment_config::CommitmentConfig, message::Message, pubkey::Pubkey, transaction::Transaction,
 };
-use spl_associated_token_account::{
-    get_associated_token_address, instruction::create_associated_token_account,
-};
-use spl_token::{instruction as token_instruction, state::Mint};
 use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;
 
 use kora_lib::{
-    config::ValidationConfig, constant::NATIVE_SOL, get_signer,
-    transaction::validator::TransactionValidator, KoraError, Signer as _,
+    config::ValidationConfig,
+    get_signer,
+    token::{TokenTrait, TokenType},
+    transaction::validator::TransactionValidator,
+    KoraError, Signer as _,
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -48,6 +46,8 @@ pub async fn transfer_transaction(
     let token_mint = Pubkey::from_str(&request.token)
         .map_err(|e| KoraError::ValidationError(format!("Invalid token address: {}", e)))?;
 
+    let token = TokenType::try_from_mint(rpc_client, &token_mint).await?;
+
     // manually check disallowed account because we're creating the message
     if validator.is_disallowed_account(&source) {
         return Err(KoraError::InvalidTransaction(format!(
@@ -66,56 +66,53 @@ pub async fn transfer_transaction(
     let mut instructions = vec![];
 
     // Handle native SOL transfers
-    if request.token == NATIVE_SOL {
-        instructions.push(system_instruction::transfer(&source, &destination, request.amount));
-    } else {
-        // Handle wrapped SOL and other SPL tokens
-        validator.validate_token_mint(&token_mint)?;
-
-        let mint_account = rpc_client
-            .get_account(&token_mint)
-            .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-        let mint = Mint::unpack(&mint_account.data)
-            .map_err(|_| KoraError::ValidationError("Invalid mint account data".to_string()))?;
-
-        let decimals = mint.decimals;
-        let source_ata = get_associated_token_address(&source, &token_mint);
-        let dest_ata = get_associated_token_address(&destination, &token_mint);
-
-        let _ = rpc_client
-            .get_account(&source_ata)
-            .await
-            .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
-
-        if rpc_client.get_account(&dest_ata).await.is_err() {
-            instructions.push(create_associated_token_account(
-                &fee_payer,
-                &destination,
-                &token_mint,
-                &spl_token::id(),
-            ));
+    match &token {
+        TokenType::TokenKeg(_) => {
+            instructions.push(token.native_transfer(&source, &destination, request.amount));
         }
+        TokenType::Token22(token22) => {
+            // Handle wrapped SOL and other SPL tokens
+            validator.validate_token_mint(&token22.mint_address())?;
+            let mint = token22.mint();
 
-        instructions.push(
-            token_instruction::transfer_checked(
-                &spl_token::id(),
-                &source_ata,
-                &token_mint,
-                &dest_ata,
-                &source,
-                &[],
-                request.amount,
-                decimals,
-            )
-            .map_err(|e| {
-                KoraError::InvalidTransaction(format!(
-                    "Failed to create transfer instruction: {}",
-                    e
-                ))
-            })?,
-        );
+            let decimals = mint.decimals();
+            let source_ata = token.get_associated_token_address(&source, &token22.mint_address());
+            let dest_ata =
+                token.get_associated_token_address(&destination, &token22.mint_address());
+
+            let _ = rpc_client
+                .get_account(&source_ata)
+                .await
+                .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
+
+            if rpc_client.get_account(&dest_ata).await.is_err() {
+                instructions.push(token.create_associated_token_account(
+                    &fee_payer,
+                    &destination,
+                    &token_mint,
+                    &token22.id(),
+                ));
+            }
+
+            let ix = token22
+                .transfer_checked(
+                    &source_ata,
+                    &token_mint,
+                    &dest_ata,
+                    &source,
+                    &[],
+                    request.amount,
+                    decimals,
+                )
+                .map_err(|e| {
+                    KoraError::InvalidTransaction(format!(
+                        "Failed to create transfer instruction: {}",
+                        e
+                    ))
+                })?;
+
+            instructions.push(ix);
+        }
     }
 
     let blockhash =
