@@ -1,10 +1,9 @@
+use crate::token::TokenType;
+
 use super::{cache::TokenAccountCache, get_signer, KoraError, Signer};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     message::Message, pubkey::Pubkey, signature::Signature, transaction::Transaction,
-};
-use spl_associated_token_account::{
-    get_associated_token_address, instruction::create_associated_token_account,
 };
 use std::sync::Arc;
 
@@ -16,11 +15,14 @@ pub async fn get_or_create_token_account(
 ) -> Result<(Pubkey, Option<Transaction>), KoraError> {
     let signer = get_signer()?;
 
+    // Get token instance
+    let token = TokenType::try_from_mint(rpc_client, mint).await?;
+
     // Get ATA using spl-associated-token-account
-    let ata = get_associated_token_address(user_pubkey, mint);
+    let ata = token.get_associated_token_address(user_pubkey, mint);
 
     // Check cache first
-    if let Some(cached_ata) = cache.get_token_account(user_pubkey, mint).await? {
+    if let Some(cached_ata) = cache.get_token_account(user_pubkey, &token.id()).await? {
         return Ok((cached_ata, None));
     }
 
@@ -33,11 +35,11 @@ pub async fn get_or_create_token_account(
         }
         Err(original_err) => {
             // Account doesn't exist, create it
-            let create_ata_ix = create_associated_token_account(
+            let create_ata_ix = token.create_associated_token_account(
                 &signer.solana_pubkey(),
                 user_pubkey,
+                &token.token_program().id(),
                 mint,
-                &spl_token::id(),
             );
 
             let blockhash = rpc_client.get_latest_blockhash().await.map_err(|e| {
@@ -82,7 +84,8 @@ pub async fn get_or_create_multiple_token_accounts(
     let mut needs_creation = false;
 
     for mint in mints {
-        let ata = get_associated_token_address(user_pubkey, mint);
+        let token = TokenType::try_from_mint(rpc_client, mint).await?;
+        let ata = token.get_associated_token_address(user_pubkey, mint);
         atas.push(ata);
 
         // Check cache first
@@ -93,11 +96,11 @@ pub async fn get_or_create_multiple_token_accounts(
         // If not in cache, check on-chain
         if rpc_client.get_account(&ata).await.is_err() {
             needs_creation = true;
-            instructions.push(create_associated_token_account(
+            instructions.push(token.create_associated_token_account(
                 &signer.solana_pubkey(),
                 user_pubkey,
+                &token.token_program().id(),
                 mint,
-                &spl_token::id(),
             ));
         } else {
             // Account exists, cache it

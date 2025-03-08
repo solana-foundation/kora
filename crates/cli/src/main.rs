@@ -65,7 +65,7 @@ async fn main() -> Result<(), KoraError> {
 
     let rpc_client = get_rpc_client(&cli.args.common.rpc_url);
 
-    if let Err(e) = config.validate(rpc_client.as_ref()).await {
+    if let Err(e) = config.validate(&rpc_client).await {
         print_error(&format!("Config validation failed: {}", e));
         std::process::exit(1);
     }

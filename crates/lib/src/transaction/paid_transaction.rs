@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::transaction::Transaction;
 
@@ -11,7 +13,7 @@ use crate::{
 use super::transaction::sign_transaction;
 
 pub async fn sign_transaction_if_paid(
-    rpc_client: &RpcClient,
+    rpc_client: &Arc<RpcClient>,
     validation: &ValidationConfig,
     transaction: Transaction,
     margin: Option<f64>,

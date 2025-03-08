@@ -23,7 +23,7 @@ async fn main() {
 
     let rpc_client = get_rpc_client(&args.common.rpc_url);
 
-    if let Err(e) = config.validate(rpc_client.as_ref()).await {
+    if let Err(e) = config.validate(&rpc_client).await {
         log::error!("Config validation failed: {}", e);
         std::process::exit(1);
     }

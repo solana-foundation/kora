@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{fs, path::Path, sync::Arc};
 use toml;
 use utoipa::ToSchema;
 
@@ -39,7 +39,7 @@ pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
 }
 
 impl Config {
-    pub async fn validate(&self, rpc_client: &RpcClient) -> Result<(), KoraError> {
+    pub async fn validate(&self, rpc_client: &Arc<RpcClient>) -> Result<(), KoraError> {
         if self.validation.allowed_tokens.is_empty() {
             return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
         }
@@ -116,7 +116,7 @@ mod tests {
 
         // Test empty tokens list
         config.validation.allowed_tokens.clear();
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = Arc::new(RpcClient::new("http://localhost:8899".to_string()));
         let result = config.validate(&rpc_client).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), KoraError::InternalServerError(_)));

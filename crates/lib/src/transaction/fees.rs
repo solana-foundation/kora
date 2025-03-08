@@ -5,13 +5,13 @@ use solana_sdk::{
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use utoipa::ToSchema;
 
 use crate::{
     error::KoraError,
     oracle::PriceOracle,
-    token::{TokenKeg, TokenTrait},
+    token::{TokenKeg, TokenTrait, TokenType},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -20,7 +20,7 @@ pub struct TokenPriceInfo {
 }
 
 pub async fn estimate_transaction_fee(
-    rpc_client: &RpcClient,
+    rpc_client: &Arc<RpcClient>,
     transaction: &Transaction,
 ) -> Result<u64, KoraError> {
     // Get base transaction fee
@@ -45,7 +45,7 @@ pub async fn estimate_transaction_fee(
 }
 
 async fn get_associated_token_account_creation_fees(
-    rpc_client: &RpcClient,
+    rpc_client: &Arc<RpcClient>,
     transaction: &Transaction,
 ) -> Result<u64, KoraError> {
     const ATA_ACCOUNT_SIZE: usize = TokenAccount::LEN;
@@ -82,14 +82,10 @@ async fn get_associated_token_account_creation_fees(
 pub async fn calculate_token_value_in_lamports(
     amount: u64,
     mint: &Pubkey,
-    rpc_client: &RpcClient,
+    rpc_client: &Arc<RpcClient>,
 ) -> Result<u64, KoraError> {
     // Fetch mint account data to determine token decimals
-    let mint_account =
-        rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-    let mint_data = Mint::unpack(&mint_account.data)
-        .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
+    let token = TokenType::try_from_mint(rpc_client, mint).await?;
 
     // Initialize price oracle with retries for reliability
     let oracle = PriceOracle::new(3, Duration::from_secs(1));
@@ -101,7 +97,7 @@ pub async fn calculate_token_value_in_lamports(
         .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {}", e)))?;
 
     // Convert token amount to its real value based on decimals and multiply by SOL price
-    let token_amount = amount as f64 / 10f64.powi(mint_data.decimals as i32);
+    let token_amount = amount as f64 / 10f64.powi(token.mint().decimals() as i32);
     let sol_amount = token_amount * token_price.price;
 
     // Convert SOL to lamports and round down

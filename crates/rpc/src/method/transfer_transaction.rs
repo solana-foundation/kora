@@ -3,9 +3,6 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig, message::Message, pubkey::Pubkey, transaction::Transaction,
 };
-use spl_associated_token_account::{
-    get_associated_token_address, instruction::create_associated_token_account,
-};
 use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;
 
@@ -79,8 +76,9 @@ pub async fn transfer_transaction(
             let mint = token22.mint();
 
             let decimals = mint.decimals();
-            let source_ata = get_associated_token_address(&source, &token22.mint_address());
-            let dest_ata = get_associated_token_address(&destination, &token22.mint_address());
+            let source_ata = token.get_associated_token_address(&source, &token22.mint_address());
+            let dest_ata =
+                token.get_associated_token_address(&destination, &token22.mint_address());
 
             let _ = rpc_client
                 .get_account(&source_ata)
@@ -88,7 +86,7 @@ pub async fn transfer_transaction(
                 .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
 
             if rpc_client.get_account(&dest_ata).await.is_err() {
-                instructions.push(create_associated_token_account(
+                instructions.push(token.create_associated_token_account(
                     &fee_payer,
                     &destination,
                     &token_mint,

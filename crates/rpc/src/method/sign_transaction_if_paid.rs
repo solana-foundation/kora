@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use kora_lib::{
     config::ValidationConfig,
     transaction::{
@@ -26,7 +28,7 @@ pub struct SignTransactionIfPaidResponse {
 }
 
 pub async fn sign_transaction_if_paid(
-    rpc_client: &RpcClient,
+    rpc_client: &Arc<RpcClient>,
     validation: &ValidationConfig,
     request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
