@@ -26,11 +26,16 @@ pub struct JupiterPriceOracle;
 
 #[async_trait::async_trait]
 impl PriceOracle for JupiterPriceOracle {
-    async fn get_price(&self, client: &Client, mint_address: &str) -> Result<TokenPrice, KoraError> {
+    async fn get_price(
+        &self,
+        client: &Client,
+        mint_address: &str,
+    ) -> Result<TokenPrice, KoraError> {
         // Get price in SOL using vsToken parameter
         let url = format!(
             "{}/price?ids={}&vsToken=So11111111111111111111111111111111111111112",
-            std::env::var("JUPITER_API_URL").unwrap_or(JUPITER_API_URL.to_string()), mint_address
+            std::env::var("JUPITER_API_URL").unwrap_or(JUPITER_API_URL.to_string()),
+            mint_address
         );
 
         let response = client
@@ -86,7 +91,8 @@ mod tests {
             "timeTaken": 0.003297425
         }"#;
         let mut server = Server::new_async().await;
-        let _m = server.mock("GET", "/price")
+        let _m = server
+            .mock("GET", "/price")
             .match_query(Matcher::Any)
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -94,7 +100,7 @@ mod tests {
             .create();
         let url = server.url();
         std::env::set_var("JUPITER_API_URL", &url);
-    
+
         let client = Client::new();
         let oracle = JupiterPriceOracle;
         let result = oracle.get_price(&client, "So11111111111111111111111111111111111111112").await;

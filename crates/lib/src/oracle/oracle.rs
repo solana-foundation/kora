@@ -1,10 +1,9 @@
-use std::sync::Arc;
+use crate::error::KoraError;
+use mockall::automock;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
-use mockall::automock;
-use crate::error::KoraError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenPrice {
@@ -16,13 +15,14 @@ pub struct TokenPrice {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PriceSource {
     Jupiter,
-    Mock
+    Mock,
 }
 
 #[automock]
 #[async_trait::async_trait]
 pub trait PriceOracle {
-    async fn get_price(&self, client: &Client, mint_address: &str) -> Result<TokenPrice, KoraError>;
+    async fn get_price(&self, client: &Client, mint_address: &str)
+        -> Result<TokenPrice, KoraError>;
 }
 
 pub struct RetryingPriceOracle {
@@ -40,13 +40,12 @@ pub fn get_price_oracle(source: PriceSource) -> Arc<dyn PriceOracle + Send + Syn
 }
 
 impl RetryingPriceOracle {
-    pub fn new(max_retries: u32, base_delay: Duration, oracle: Arc<dyn PriceOracle + Send + Sync>) -> Self {
-        Self {
-            client: Client::new(),
-            max_retries,
-            base_delay,
-            oracle,
-        }
+    pub fn new(
+        max_retries: u32,
+        base_delay: Duration,
+        oracle: Arc<dyn PriceOracle + Send + Sync>,
+    ) -> Self {
+        Self { client: Client::new(), max_retries, base_delay, oracle }
     }
 
     pub async fn get_token_price(&self, mint_address: &str) -> Result<TokenPrice, KoraError> {
@@ -82,14 +81,9 @@ mod tests {
     #[tokio::test]
     async fn test_price_oracle_retries() {
         let mut mock_oracle = MockPriceOracle::new();
-        mock_oracle
-            .expect_get_price()
-            .times(1)
-            .returning(|_, _| Ok(TokenPrice {
-                price: 1.0,
-                confidence: 0.95,
-                source: PriceSource::Jupiter,
-            }));
+        mock_oracle.expect_get_price().times(1).returning(|_, _| {
+            Ok(TokenPrice { price: 1.0, confidence: 0.95, source: PriceSource::Jupiter })
+        });
 
         let oracle = RetryingPriceOracle::new(3, Duration::from_millis(100), Arc::new(mock_oracle));
         let result = oracle.get_token_price("test").await;
