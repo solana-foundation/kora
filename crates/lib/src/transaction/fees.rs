@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -10,7 +11,7 @@ use utoipa::ToSchema;
 
 use crate::{
     error::KoraError,
-    oracle::{PriceOracle, PriceSource},
+    oracle::{PriceSource, RetryingPriceOracle, get_price_oracle},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -90,9 +91,8 @@ pub async fn calculate_token_value_in_lamports(
 
     let mint_data = Mint::unpack(&mint_account.data)
         .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
-
     // Initialize price oracle with retries for reliability
-    let oracle = PriceOracle::new(3, Duration::from_secs(1), price_source);
+    let oracle = RetryingPriceOracle::new(3, Duration::from_secs(1), get_price_oracle(price_source));
 
     // Get token price in SOL directly
     let token_price = oracle
