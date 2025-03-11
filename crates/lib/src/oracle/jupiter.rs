@@ -98,7 +98,6 @@ mod tests {
         let client = Client::new();
         let oracle = JupiterPriceOracle;
         let result = oracle.get_price(&client, "So11111111111111111111111111111111111111112").await;
-        println!("result: {:?}", result);
 
         assert!(result.is_ok());
         let price = result.unwrap();
