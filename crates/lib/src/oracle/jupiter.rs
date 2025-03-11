@@ -30,7 +30,7 @@ impl PriceOracle for JupiterPriceOracle {
         // Get price in SOL using vsToken parameter
         let url = format!(
             "{}/price?ids={}&vsToken=So11111111111111111111111111111111111111112",
-            JUPITER_API_URL, mint_address
+            std::env::var("JUPITER_API_URL").unwrap_or(JUPITER_API_URL.to_string()), mint_address
         );
 
         let response = client
@@ -92,10 +92,13 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(mock_response)
             .create();
-
+        let url = server.url();
+        std::env::set_var("JUPITER_API_URL", &url);
+    
         let client = Client::new();
         let oracle = JupiterPriceOracle;
         let result = oracle.get_price(&client, "So11111111111111111111111111111111111111112").await;
+        println!("result: {:?}", result);
 
         assert!(result.is_ok());
         let price = result.unwrap();
