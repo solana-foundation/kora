@@ -46,7 +46,6 @@ impl TokenInterface for MockTokenProgram {
         &self,
         _data: &[u8],
     ) -> Result<Box<dyn TokenState + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
-        // Create a mock TokenState implementation
         struct MockTokenState {
             mint_key: Pubkey,
             owner_key: Pubkey,
