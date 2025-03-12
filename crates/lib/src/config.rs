@@ -39,12 +39,12 @@ pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
 }
 
 impl Config {
-    pub async fn validate(&self, rpc_client: &RpcClient) -> Result<(), KoraError> {
+    pub async fn validate(&self, _rpc_client: &RpcClient) -> Result<(), KoraError> {
         if self.validation.allowed_tokens.is_empty() {
             return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
         }
 
-        check_valid_tokens(rpc_client, &self.validation.allowed_tokens).await?;
+        check_valid_tokens(&self.validation.allowed_tokens)?;
         Ok(())
     }
 }

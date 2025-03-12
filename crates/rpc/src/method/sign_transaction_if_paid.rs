@@ -9,6 +9,7 @@ use kora_lib::{
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::transaction::Transaction;
+use std::sync::Arc;
 use utoipa::ToSchema;
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -26,13 +27,14 @@ pub struct SignTransactionIfPaidResponse {
 }
 
 pub async fn sign_transaction_if_paid(
-    rpc_client: &RpcClient,
+    rpc_client: &Arc<RpcClient>,
     validation: &ValidationConfig,
     request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
     let (transaction, signed_transaction) =
         lib_sign_transaction_if_paid(rpc_client, validation, request.transaction, request.margin)
-            .await?;
+            .await
+            .map_err(|e| KoraError::TokenOperationError(e.to_string()))?;
 
     Ok(SignTransactionIfPaidResponse {
         transaction: encode_transaction_b58(&transaction)?,

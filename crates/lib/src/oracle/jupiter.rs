@@ -7,6 +7,7 @@ use std::collections::HashMap;
 const JUPITER_API_URL: &str = "https://api.jup.ag/price/v2";
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct JupiterResponse {
     data: HashMap<String, JupiterPriceData>,
     #[serde(rename = "timeTaken")]
@@ -14,6 +15,7 @@ struct JupiterResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct JupiterPriceData {
     id: String,
     #[serde(rename = "type")]
