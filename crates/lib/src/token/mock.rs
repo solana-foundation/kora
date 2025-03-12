@@ -42,5 +42,49 @@ impl TokenInterface for MockTokenProgram {
         Ok(Instruction::new_with_bytes(Pubkey::new_unique(), &[], vec![]))
     }
 
-    // ... implement other methods ...
+    fn unpack_token_account(
+        &self,
+        _data: &[u8],
+    ) -> Result<Box<dyn TokenState + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
+        // Create a mock TokenState implementation
+        struct MockTokenState {
+            mint_key: Pubkey,
+            owner_key: Pubkey,
+        }
+
+        impl TokenState for MockTokenState {
+            fn mint(&self) -> Pubkey { self.mint_key }
+            fn owner(&self) -> Pubkey { self.owner_key }
+            fn amount(&self) -> u64 { 1000000 }
+            fn decimals(&self) -> u8 { 9 }
+        }
+
+        Ok(Box::new(MockTokenState {
+            mint_key: Pubkey::new_unique(),
+            owner_key: Pubkey::new_unique(),
+        }))
+    }
+
+    fn create_transfer_instruction(
+        &self,
+        _source: &Pubkey,
+        _destination: &Pubkey,
+        _authority: &Pubkey,
+        _amount: u64,
+    ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(Instruction::new_with_bytes(Pubkey::new_unique(), &[], vec![]))
+    }
+
+    fn get_associated_token_address(&self, _wallet: &Pubkey, _mint: &Pubkey) -> Pubkey {
+        Pubkey::new_unique()
+    }
+
+    fn create_associated_token_account_instruction(
+        &self,
+        _funding_account: &Pubkey,
+        _wallet: &Pubkey,
+        _mint: &Pubkey,
+    ) -> Instruction {
+        Instruction::new_with_bytes(Pubkey::new_unique(), &[], vec![])
+    }
 } 
