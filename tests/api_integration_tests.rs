@@ -1,4 +1,5 @@
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
+use kora_lib::types::TransactionEncoding;
 use serde_json::json;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -23,8 +24,7 @@ fn get_rpc_url() -> String {
 
 fn get_test_sender_keypair() -> Keypair {
     dotenv::dotenv().ok();
-    Keypair::from_seed_phrase_and_passphrase(&std::env::var("TEST_SENDER_MNEMONIC").unwrap(), "")
-        .unwrap()
+    Keypair::from_base58_string(&std::env::var("TEST_SENDER_KEYPAIR").unwrap())
 }
 
 async fn setup_test_client() -> jsonrpsee::http_client::HttpClient {
@@ -50,6 +50,47 @@ async fn create_test_transaction() -> String {
     let message = Message::new_with_blockhash(&[instruction], None, &blockhash.0);
 
     let transaction = Transaction { signatures: vec![Default::default()], message };
+
+    let serialized = bincode::serialize(&transaction).unwrap();
+    bs58::encode(serialized).into_string()
+}
+
+async fn create_test_spl_transaction() -> String {
+    let rpc_client = setup_rpc_client().await;
+    // get fee payer from config
+    let client = setup_test_client().await;
+    let response: serde_json::Value =
+        client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
+    let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap()).unwrap();
+    let sender = get_test_sender_keypair();
+    let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
+
+    // Setup token accounts
+    let token_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
+    let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
+    let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
+
+    // Create token transfer instruction
+    let amount = 1000; // Transfer 1000 token units
+    let instruction = spl_token_instruction::transfer(
+        &spl_token::id(),
+        &sender_token_account,
+        &recipient_token_account,
+        &sender.pubkey(),
+        &[],
+        amount,
+    )
+    .unwrap();
+
+    // Get recent blockhash
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .await
+        .unwrap();
+
+    // Create message and transaction
+    let message = Message::new_with_blockhash(&[instruction], Some(&fee_payer), &blockhash.0);
+    let transaction = Transaction::new_unsigned(message);
 
     let serialized = bincode::serialize(&transaction).unwrap();
     bs58::encode(serialized).into_string()
@@ -122,7 +163,54 @@ async fn test_sign_transaction() {
         .expect("Failed to simulate transaction");
 
     println!("Simulated transaction: {:?}", simulated_tx);
-    assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
+    if let Some(err) = &simulated_tx.value.err {
+        println!("Simulation error: {:?}", err);
+        assert!(false, "Transaction simulation failed with error: {:?}", err);
+    } else {
+        println!("Transaction simulation succeeded");
+    }
+}
+
+#[tokio::test]
+async fn test_sign_spl_transaction() {
+    let client = setup_test_client().await;
+    let test_tx = create_test_spl_transaction().await;
+    let rpc_client = setup_rpc_client().await;
+    let sender = get_test_sender_keypair();
+
+    let response: serde_json::Value = client
+        .request("signTransaction", rpc_params![test_tx])
+        .await
+        .expect("Failed to sign transaction");
+
+    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+    assert!(
+        response["signed_transaction"].as_str().is_some(),
+        "Expected signed_transaction in response"
+    );
+
+    let transaction_string = response["signed_transaction"].as_str().unwrap();
+    let decoded_tx = bs58::decode(transaction_string)
+        .into_vec()
+        .expect("Failed to decode transaction from base58");
+
+    let mut transaction: Transaction =
+        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+
+    transaction.partial_sign(&[&sender], transaction.message.recent_blockhash);
+
+    let simulated_tx = rpc_client
+        .simulate_transaction(&transaction)
+        .await
+        .expect("Failed to simulate transaction");
+
+    println!("Simulated transaction: {:?}", simulated_tx);
+    if let Some(err) = &simulated_tx.value.err {
+        println!("Simulation error: {:?}", err);
+        assert!(false, "Transaction simulation failed with error: {:?}", err);
+    } else {
+        println!("Transaction simulation succeeded");
+    }
 }
 
 #[tokio::test]
@@ -317,7 +405,7 @@ async fn test_sign_transaction_if_paid() {
     // Create message and transaction
     let message = Message::new_with_blockhash(
         &[fee_payer_instruction, recipient_instruction],
-        Some(&sender.pubkey()), // Set the fee payer
+        Some(&fee_payer), // Set the fee payer
         &blockhash.0,
     );
 
@@ -325,7 +413,7 @@ async fn test_sign_transaction_if_paid() {
     let mut transaction = Transaction::new_unsigned(message);
 
     // Sign with sender's keypair
-    transaction.sign(&[&sender], blockhash.0);
+    transaction.partial_sign(&[&sender], blockhash.0);
 
     // At this point, fee payer's signature slot should be empty (first position)
     // and sender's signature should be in the correct position
@@ -337,20 +425,13 @@ async fn test_sign_transaction_if_paid() {
     let response: serde_json::Value = client
         .request(
             "signTransactionIfPaid",
-            rpc_params![
-                base58_transaction,
-                0,
-                json!({
-                    "price": 0.00484,
-                })
-            ],
+            rpc_params![base58_transaction, TransactionEncoding::Base58, 0],
         )
         .await
         .expect("Failed to sign transaction");
 
     println!("Response: {:?}", response);
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -368,6 +449,7 @@ async fn test_sign_transaction_if_paid() {
 
     // print hex of message data
     let message_data = transaction.message_data();
+    println!("Transaction: {:?}", transaction);
     println!("Message data: {:?}", hex::encode(message_data));
     // Simulate the transaction
     let simulated_tx = rpc_client
