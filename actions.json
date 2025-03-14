@@ -1,0 +1,12 @@
+{
+  "name": "Kora Relayer",
+  "version": "1.0.0",
+  "description": "Gasless transaction relayer for Solana",
+  "icon": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
+  "rules": [
+    {
+      "pathPattern": "/api/v1/actions/transfer",
+      "apiPath": "/api/v1/actions/transfer"
+    }
+  ]
+} 
