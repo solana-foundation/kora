@@ -19,7 +19,6 @@ impl TokenProgram {
     }
 }
 
-// Implement the interface version for spl_token::state::Account
 impl TokenState for spl_token::state::Account {
     fn mint(&self) -> Pubkey {
         self.mint
