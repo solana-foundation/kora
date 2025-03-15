@@ -3,12 +3,14 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     native_token::LAMPORTS_PER_SOL, pubkey::Pubkey, rent::Rent, transaction::Transaction,
 };
-use std::time::Duration;
+use spl_associated_token_account::get_associated_token_address;
+use spl_token::state::{Account as TokenAccount, Mint};
+use std::{sync::Arc, time::Duration};
 use utoipa::ToSchema;
 
 use crate::{
     error::KoraError,
-    oracle::PriceOracle,
+    oracle::{get_price_oracle, PriceSource, RetryingPriceOracle},
     token::{TokenInterface, TokenProgram, TokenType},
 };
 
@@ -80,6 +82,7 @@ async fn get_associated_token_account_creation_fees(
 pub async fn calculate_token_value_in_lamports(
     amount: u64,
     mint: &Pubkey,
+    price_source: PriceSource,
     rpc_client: &RpcClient,
 ) -> Result<u64, KoraError> {
     let token_program = TokenProgram::new(TokenType::Spl);
@@ -88,12 +91,14 @@ pub async fn calculate_token_value_in_lamports(
     let mint_account =
         rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-    let decimals = token_program
-        .get_mint_decimals(&mint_account.data)
-        .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint account: {}", e)))?;
+    let mint_data = Mint::unpack(&mint_account.data)
+        .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
+
+    let decimals = mint_data.decimals;
 
     // Initialize price oracle with retries for reliability
-    let oracle = PriceOracle::new(3, Duration::from_secs(1));
+    let oracle =
+        RetryingPriceOracle::new(3, Duration::from_secs(1), get_price_oracle(price_source));
 
     // Get token price in SOL directly
     let token_price = oracle
