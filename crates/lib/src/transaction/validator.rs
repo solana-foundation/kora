@@ -4,8 +4,12 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    instruction::CompiledInstruction, message::Message, program_pack::Pack, pubkey::Pubkey,
-    system_instruction, system_program, transaction::Transaction,
+    instruction::CompiledInstruction,
+    message::{Message, VersionedMessage},
+    program_pack::Pack,
+    pubkey::Pubkey,
+    system_instruction, system_program,
+    transaction::{Transaction, VersionedTransaction},
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::Account as TokenAccount;
@@ -92,6 +96,30 @@ impl TransactionValidator {
         Ok(())
     }
 
+    pub fn validate_transaction_with_versioned(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<(), KoraError> {
+        self.validate_signatures_with_versioned(transaction)?;
+        self.validate_programs_with_versioned(transaction.message.clone().clone())?;
+        self.validate_transfer_amounts_with_versioned(transaction.message.clone())?;
+        self.validate_disallowed_accounts_with_versioned(transaction.message.clone())?;
+
+        if transaction.message.instructions().is_empty() {
+            return Err(KoraError::InvalidTransaction(
+                "Transaction contains no instructions".to_string(),
+            ));
+        }
+
+        if transaction.message.static_account_keys().is_empty() {
+            return Err(KoraError::InvalidTransaction(
+                "Transaction contains no account keys".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn validate_lamport_fee(&self, fee: u64) -> Result<(), KoraError> {
         if fee > self.max_allowed_lamports {
             return Err(KoraError::InvalidTransaction(format!(
@@ -118,9 +146,41 @@ impl TransactionValidator {
         Ok(())
     }
 
+    fn validate_signatures_with_versioned(
+        &self,
+        message: &VersionedTransaction,
+    ) -> Result<(), KoraError> {
+        if message.signatures.len() > self.max_signatures as usize {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Too many signatures: {} > {}",
+                message.signatures.len(),
+                self.max_signatures
+            )));
+        }
+
+        if message.signatures.is_empty() {
+            return Err(KoraError::InvalidTransaction("No signatures found".to_string()));
+        }
+
+        Ok(())
+    }
+
     fn validate_programs(&self, message: &Message) -> Result<(), KoraError> {
         for instruction in &message.instructions {
             let program_id = message.account_keys[instruction.program_id_index as usize];
+            if !self.allowed_programs.contains(&program_id) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Program {} is not in the allowed list",
+                    program_id
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_programs_with_versioned(&self, message: VersionedMessage) -> Result<(), KoraError> {
+        for instruction in message.instructions() {
+            let program_id = message.static_account_keys()[instruction.program_id_index as usize];
             if !self.allowed_programs.contains(&program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Program {} is not in the allowed list",
@@ -179,6 +239,22 @@ impl TransactionValidator {
         Ok(())
     }
 
+    fn validate_transfer_amounts_with_versioned(
+        &self,
+        message: VersionedMessage,
+    ) -> Result<(), KoraError> {
+        let total_outflow = self.calculate_total_outflow_with_versioned(message);
+
+        if total_outflow > self.max_allowed_lamports {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Total transfer amount {} exceeds maximum allowed {}",
+                total_outflow, self.max_allowed_lamports
+            )));
+        }
+
+        Ok(())
+    }
+
     pub fn validate_disallowed_accounts(&self, message: &Message) -> Result<(), KoraError> {
         for instruction in &message.instructions {
             // iterate over all accounts in the instruction
@@ -190,6 +266,21 @@ impl TransactionValidator {
                         account
                     )));
                 }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn validate_disallowed_accounts_with_versioned(
+        &self,
+        message: VersionedMessage,
+    ) -> Result<(), KoraError> {
+        for account in message.static_account_keys() {
+            if self.disallowed_accounts.contains(&account) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Account {} is disallowed",
+                    account
+                )));
             }
         }
         Ok(())
@@ -223,6 +314,32 @@ impl TransactionValidator {
             }
         }
 
+        total
+    }
+
+    fn calculate_total_outflow_with_versioned(&self, message: VersionedMessage) -> u64 {
+        let mut total = 0u64;
+
+        for instruction in message.instructions() {
+            let program_id = message.static_account_keys()[instruction.program_id_index as usize];
+
+            // Handle System Program transfers
+            if program_id == system_program::ID {
+                if let Ok(system_ix) =
+                    bincode::deserialize::<system_instruction::SystemInstruction>(&instruction.data)
+                {
+                    if let system_instruction::SystemInstruction::Transfer { lamports } = system_ix
+                    {
+                        // Only count if source is fee payer
+                        if message.static_account_keys()[instruction.accounts[0] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_add(lamports);
+                        }
+                    }
+                }
+            }
+        }
         total
     }
 }

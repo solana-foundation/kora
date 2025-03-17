@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
-use solana_sdk::transaction::Transaction;
+use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use utoipa::ToSchema;
 
 use crate::{
     error::KoraError,
     transaction::{
-        decode_b58_transaction, decode_b64_transaction, encode_transaction_b58,
-        encode_transaction_b64,
+        decode_b58_transaction, decode_b58_transaction_with_version, decode_b64_transaction,
+        decode_b64_transaction_with_version, encode_transaction_b58,
+        encode_transaction_b58_with_version, encode_transaction_b64,
+        encode_transaction_b64_with_version,
     },
 };
 
@@ -31,6 +33,26 @@ impl TransactionEncoding {
         match self {
             TransactionEncoding::Base58 => encode_transaction_b58(transaction),
             TransactionEncoding::Base64 => encode_transaction_b64(transaction),
+        }
+    }
+
+    pub fn encode_transaction_with_versioned(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<String, KoraError> {
+        match self {
+            TransactionEncoding::Base58 => encode_transaction_b58_with_version(transaction),
+            TransactionEncoding::Base64 => encode_transaction_b64_with_version(transaction),
+        }
+    }
+
+    pub fn decode_transaction_with_versioned(
+        &self,
+        encoded: &str,
+    ) -> Result<VersionedTransaction, KoraError> {
+        match self {
+            TransactionEncoding::Base58 => decode_b58_transaction_with_version(encoded),
+            TransactionEncoding::Base64 => decode_b64_transaction_with_version(encoded),
         }
     }
 }

@@ -19,9 +19,13 @@ use crate::method::{
     get_config::{get_config, GetConfigResponse},
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
     sign_and_send_transaction::{
-        sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResponse,
+        sign_and_send_transaction, sign_and_send_versioned_transaction,
+        SignAndSendTransactionRequest, SignAndSendTransactionResponse,
     },
-    sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResponse},
+    sign_transaction::{
+        sign_transaction, sign_versioned_transaction, SignTransactionRequest,
+        SignTransactionResponse,
+    },
     sign_transaction_if_paid::{
         sign_transaction_if_paid, SignTransactionIfPaidRequest, SignTransactionIfPaidResponse,
     },
@@ -93,6 +97,27 @@ impl KoraRpc {
         info!("Sign and send transaction request: {:?}", request);
         let result = sign_and_send_transaction(&self.rpc_client, &self.validation, request).await;
         info!("Sign and send transaction response: {:?}", result);
+        result
+    }
+
+    pub async fn sign_versioned_transaction(
+        &self,
+        request: SignTransactionRequest,
+    ) -> Result<SignTransactionResponse, KoraError> {
+        info!("Sign versioned transaction request: {:?}", request);
+        let result = sign_versioned_transaction(&self.rpc_client, &self.validation, request).await;
+        info!("Sign versioned transaction response: {:?}", result);
+        result
+    }
+
+    pub async fn sign_and_send_versioned_transaction(
+        &self,
+        request: SignAndSendTransactionRequest,
+    ) -> Result<SignAndSendTransactionResponse, KoraError> {
+        info!("Sign and send versioned transaction request: {:?}", request);
+        let result =
+            sign_and_send_versioned_transaction(&self.rpc_client, &self.validation, request).await;
+        info!("Sign and send versioned transaction response: {:?}", result);
         result
     }
 
@@ -171,6 +196,16 @@ impl KoraRpc {
                 name: "signTransactionIfPaid".to_string(),
                 request: Some(SignTransactionIfPaidRequest::schema().1),
                 response: SignTransactionIfPaidResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "signAndSendTransaction".to_string(),
+                request: Some(SignAndSendTransactionRequest::schema().1),
+                response: SignAndSendTransactionResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "signAndSendVersionedTransaction".to_string(),
+                request: Some(SignAndSendTransactionRequest::schema().1),
+                response: SignAndSendTransactionResponse::schema().1,
             },
         ]
     }

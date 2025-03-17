@@ -2,18 +2,22 @@
 rate_limit = 100
 
 [validation]
-max_allowed_lamports = 1000000
+max_allowed_lamports = 5000
 max_signatures = 10
 price_source = "Jupiter"
 allowed_programs = [
     "11111111111111111111111111111111",  # System Program
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+    "3jq9oBWGCUWmBynC8TTBL9KWJdGegsChJ1c8ksybGhum", # Smart-wallet program
+    "Secp256r1SigVerify1111111111111111111111111", # Raydium AMM program
 ]
 allowed_tokens = [
-    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
+    "EjdyeRaqrF827NcMsXDtG8grxjCPzKZjb6Y6ZtGWNhAZ",  # USDC devnet
+    "42SHwmJcLZvAMc5xNmLJd2QisULASEBTrNokM1hB6mZF"
 ]
 allowed_spl_paid_tokens = [
-    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
-] 
+    "EjdyeRaqrF827NcMsXDtG8grxjCPzKZjb6Y6ZtGWNhAZ",  # USDC devnet
+    "42SHwmJcLZvAMc5xNmLJd2QisULASEBTrNokM1hB6mZF"
+]
 disallowed_accounts = []

@@ -629,6 +629,224 @@
         }
       }
     },
+    "/signVersionedTransaction": {
+      "summary": "signVersionedTransaction",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "signVersionedTransaction"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "transaction"
+                    ],
+                    "properties": {
+                      "transaction": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "signature",
+                    "signed_transaction"
+                  ],
+                  "properties": {
+                    "signature": {
+                      "type": "string"
+                    },
+                    "signed_transaction": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signAndSendVersionedTransaction": {
+      "summary": "signAndSendVersionedTransaction",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "signAndSendVersionedTransaction"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "transaction"
+                    ],
+                    "properties": {
+                      "transaction": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "signature",
+                    "signed_transaction"
+                  ],
+                  "properties": {
+                    "signature": {
+                      "type": "string"
+                    },
+                    "signed_transaction": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/signTransactionIfPaid": {
       "summary": "signTransactionIfPaid",
       "post": {
