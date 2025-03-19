@@ -5,12 +5,12 @@ use solana_sdk::{
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::{Account as TokenAccount, Mint};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use utoipa::ToSchema;
 
 use crate::{
     error::KoraError,
-    oracle::{PriceOracle, PriceSource},
+    oracle::{get_price_oracle, PriceSource, RetryingPriceOracle},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -90,9 +90,9 @@ pub async fn calculate_token_value_in_lamports(
 
     let mint_data = Mint::unpack(&mint_account.data)
         .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
-
     // Initialize price oracle with retries for reliability
-    let oracle = PriceOracle::new(3, Duration::from_secs(1), price_source);
+    let oracle =
+        RetryingPriceOracle::new(3, Duration::from_secs(1), get_price_oracle(price_source));
 
     // Get token price in SOL directly
     let token_price = oracle

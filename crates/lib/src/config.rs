@@ -148,7 +148,7 @@ mod tests {
                 allowed_tokens: vec!["token1".to_string()],
                 allowed_spl_paid_tokens: vec!["token3".to_string()],
                 disallowed_accounts: vec!["account1".to_string()],
-                price_source: PriceSource::Fake,
+                price_source: PriceSource::Jupiter,
             },
             kora: KoraConfig { rate_limit: 100 },
         };

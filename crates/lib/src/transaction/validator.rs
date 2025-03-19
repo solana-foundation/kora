@@ -307,7 +307,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
-            price_source: PriceSource::Fake,
+            price_source: PriceSource::Mock,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -336,7 +336,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
-            price_source: PriceSource::Fake,
+            price_source: PriceSource::Mock,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -368,7 +368,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
-            price_source: PriceSource::Fake,
+            price_source: PriceSource::Mock,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()], // System program
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -403,7 +403,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 2,
-            price_source: PriceSource::Fake,
+            price_source: PriceSource::Mock,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -431,7 +431,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
-            price_source: PriceSource::Fake,
+            price_source: PriceSource::Mock,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -460,7 +460,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
-            price_source: PriceSource::Fake,
+            price_source: PriceSource::Mock,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
@@ -480,7 +480,7 @@ mod tests {
         let config = ValidationConfig {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
-            price_source: PriceSource::Fake,
+            price_source: PriceSource::Mock,
             allowed_programs: vec!["11111111111111111111111111111111".to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
