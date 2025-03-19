@@ -4,8 +4,12 @@ mod server;
 use clap::Parser;
 use dotenv::dotenv;
 use kora_lib::{
-    args::RpcArgs, config::{load_config, find_config_file}, log::LoggingFormat, rpc::get_rpc_client,
-    signer::init::init_signer_type, state::init_signer,
+    args::RpcArgs,
+    config::{find_config_file, load_config},
+    log::LoggingFormat,
+    rpc::get_rpc_client,
+    signer::init::init_signer_type,
+    state::init_signer,
 };
 use rpc::KoraRpc;
 use server::run_rpc_server;
@@ -23,7 +27,7 @@ async fn main() {
     });
 
     log::info!("Using config file: {}", config_path.display());
-    
+
     let config = load_config(&config_path).unwrap_or_else(|e| {
         log::error!("Config load failed: {}", e);
         std::process::exit(1);

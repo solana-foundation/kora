@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use toml;
 use utoipa::ToSchema;
 
