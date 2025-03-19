@@ -13,11 +13,9 @@ allowed_programs = [
     "Secp256r1SigVerify1111111111111111111111111", # Raydium AMM program
 ]
 allowed_tokens = [
-    "EjdyeRaqrF827NcMsXDtG8grxjCPzKZjb6Y6ZtGWNhAZ",  # USDC devnet
-    "42SHwmJcLZvAMc5xNmLJd2QisULASEBTrNokM1hB6mZF"
+    "AxuH66zrimRg9NVbvdL8kptHRNWqGx2cb5Dk23SwbaHz",  # USDC devnet
 ]
 allowed_spl_paid_tokens = [
-    "EjdyeRaqrF827NcMsXDtG8grxjCPzKZjb6Y6ZtGWNhAZ",  # USDC devnet
-    "42SHwmJcLZvAMc5xNmLJd2QisULASEBTrNokM1hB6mZF"
+    "AxuH66zrimRg9NVbvdL8kptHRNWqGx2cb5Dk23SwbaHz",  # USDC devnet
 ]
 disallowed_accounts = []
