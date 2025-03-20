@@ -1,3 +1,4 @@
+use crate::token::{TokenInterface, TokenProgram, TokenType};
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
 use kora_lib::types::TransactionEncoding;
 use serde_json::json;
@@ -42,7 +43,10 @@ async fn create_test_transaction() -> String {
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
     let amount = 10;
     let rpc_client = setup_rpc_client().await;
-    let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
+
+    let instruction = token_interface
+        .create_transfer_instruction(&sender.pubkey(), &recipient, &sender.pubkey(), amount)
+        .unwrap();
 
     let blockhash = rpc_client
         .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())

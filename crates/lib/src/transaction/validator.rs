@@ -62,7 +62,17 @@ impl TransactionValidator {
         })
     }
 
-    pub fn validate_token_mint(&self, mint: &Pubkey) -> Result<(), KoraError> {
+    pub async fn validate_token_mint(
+        &self,
+        mint: &Pubkey,
+        rpc_client: &RpcClient,
+    ) -> Result<(), KoraError> {
+        let token_program = TokenProgram::new(TokenType::Spl);
+
+        // Use the trait method instead of direct spl_token call
+        let mint_account = rpc_client.get_account(mint).await?;
+        let decimals = token_program.get_mint_decimals(&mint_account.data)?;
+
         if !self.allowed_tokens.contains(mint) {
             return Err(KoraError::InvalidTransaction(format!(
                 "Mint {} is not a valid token mint",

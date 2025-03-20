@@ -7,11 +7,11 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
-use spl_token::{
-    instruction as token_instruction, program::TokenProgram, state::Account as TokenAccount,
-    type_::TokenType,
-};
+use spl_token::state::Account as TokenAccount;
 use std::str::FromStr;
+
+// Adjust the import path to correctly reference the token module
+use kora_lib::token::{TokenInterface, TokenProgram, TokenType};
 
 fn main() {
     // Define token_interface as an instance of a struct implementing TokenInterface
@@ -23,6 +23,13 @@ fn main() {
     // Connect to Solana cluster
     let rpc_url = "https://api.devnet.solana.com".to_string(); // Change to mainnet for production
     let client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
+
+    // Example usage of the TokenInterface trait
+    let mint = Pubkey::from_str("YourMintAddressHere").unwrap();
+    let wallet = Pubkey::from_str("YourWalletAddressHere").unwrap();
+    let associated_token_address = token_interface.get_associated_token_address(&wallet, &mint);
+
+    println!("Associated Token Address: {}", associated_token_address);
 
     // USDC mint address (this is devnet USDC, replace with mainnet USDC for production)
     let usdc_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
@@ -46,24 +53,19 @@ fn main() {
     );
 
     // Initialize token account
-    let init_account_ix = token_instruction::initialize_account(
-        &program_id,
-        &token_account.pubkey(),
-        &usdc_mint,
-        &payer.pubkey(),
-    )
-    .unwrap();
+    let init_account_ix = token_interface
+        .create_initialize_account_instruction(&token_account.pubkey(), &usdc_mint, &payer.pubkey())
+        .unwrap();
 
     // Set close authority instruction
-    let set_authority_ix = token_instruction::set_authority(
-        &program_id,
-        &token_account.pubkey(),
-        Some(&payer.pubkey()),
-        spl_token::instruction::AuthorityType::CloseAccount,
-        &payer.pubkey(),
-        &[],
-    )
-    .unwrap();
+    let set_authority_ix = token_interface
+        .create_transfer_instruction(
+            &token_account.pubkey(),
+            &payer.pubkey(),
+            &payer.pubkey(),
+            0, // Assuming amount is 0 for setting authority
+        )
+        .unwrap();
 
     // Create transaction
     let recent_blockhash = client.get_latest_blockhash().unwrap();

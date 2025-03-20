@@ -70,7 +70,7 @@ pub async fn transfer_transaction(
         instructions.push(system_instruction::transfer(&source, &destination, request.amount));
     } else {
         // Handle wrapped SOL and other SPL tokens
-        validator.validate_token_mint(&token_mint)?;
+        validator.validate_token_mint(&token_mint, rpc_client).await?;
 
         let mint_account = rpc_client
             .get_account(&token_mint)

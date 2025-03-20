@@ -12,6 +12,7 @@ use utoipa::ToSchema;
 use crate::{
     error::KoraError,
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle},
+    token::{TokenInterface, TokenProgram, TokenType},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -88,10 +89,9 @@ pub async fn calculate_token_value_in_lamports(
     let mint_account =
         rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-    let mint_data = Mint::unpack(&mint_account.data)
-        .map_err(|e| KoraError::InvalidTransaction(format!("Invalid mint: {}", e)))?;
-
-    let decimals = mint_data.decimals;
+    // Use the trait method instead of direct spl_token call
+    let token_program = TokenProgram::new(TokenType::Spl);
+    let decimals = token_program.get_mint_decimals(&mint_account.data)?;
 
     // Initialize price oracle with retries for reliability
     let oracle =
