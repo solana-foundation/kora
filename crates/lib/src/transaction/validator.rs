@@ -69,7 +69,6 @@ impl TransactionValidator {
     ) -> Result<(), KoraError> {
         let token_program = TokenProgram::new(TokenType::Spl);
 
-        // Use the trait method instead of direct spl_token call
         let mint_account = rpc_client.get_account(mint).await?;
         let decimals = token_program.get_mint_decimals(&mint_account.data)?;
 

@@ -5,7 +5,6 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
-use spl_token::state::Mint;
 use std::time::Duration;
 use utoipa::ToSchema;
 
@@ -89,7 +88,6 @@ pub async fn calculate_token_value_in_lamports(
     let mint_account =
         rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-    // Use the trait method instead of direct spl_token call
     let token_program = TokenProgram::new(TokenType::Spl);
     let decimals = token_program.get_mint_decimals(&mint_account.data)?;
 

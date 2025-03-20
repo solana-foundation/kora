@@ -1,6 +1,8 @@
-use crate::token::{TokenInterface, TokenProgram, TokenType};
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
-use kora_lib::types::TransactionEncoding;
+use kora_lib::{
+    token::{TokenInterface, TokenProgram, TokenType},
+    types::TransactionEncoding,
+};
 use serde_json::json;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -13,7 +15,6 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
-use spl_token::{instruction as spl_token_instruction, program::TokenProgram, state::TokenType};
 use std::{str::FromStr, sync::Arc};
 
 const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
@@ -76,18 +77,20 @@ async fn create_test_spl_transaction() -> String {
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
     let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
 
+    // Create an instance of TokenProgram
+    let token_interface = TokenProgram::new(TokenType::Spl);
+
     // Create token transfer instruction
     let amount = 1000; // Transfer 1000 token units
-    let program_id = token_interface.program_id(); // Assuming token_interface is an instance of a struct implementing TokenInterface
-    let instruction = spl_token_instruction::transfer(
-        &program_id,
-        &sender_token_account,
-        &recipient_token_account,
-        &sender.pubkey(),
-        &[],
-        amount,
-    )
-    .unwrap();
+    let program_id = token_interface.program_id();
+    let instruction = token_interface
+        .create_transfer_instruction(
+            &sender_token_account,
+            &recipient_token_account,
+            &sender.pubkey(),
+            amount,
+        )
+        .unwrap();
 
     // Get recent blockhash
     let blockhash = rpc_client
@@ -384,25 +387,24 @@ async fn test_sign_transaction_if_paid() {
     let scaled_amount = (amount * 10_f64.powi(decimals)) as u64;
 
     // Create instructions
-    let fee_payer_instruction = spl_token_instruction::transfer(
-        &token_interface.program_id(),
-        &sender_token_account,
-        &fee_payer_token_account,
-        &sender.pubkey(),
-        &[],
-        scaled_amount,
-    )
-    .unwrap();
+    let token_interface = TokenProgram::new(TokenType::Spl);
+    let fee_payer_instruction = token_interface
+        .create_transfer_instruction(
+            &sender_token_account,
+            &fee_payer_token_account,
+            &sender.pubkey(),
+            scaled_amount,
+        )
+        .unwrap();
 
-    let recipient_instruction = spl_token_instruction::transfer(
-        &token_interface.program_id(),
-        &sender_token_account,
-        &recipient_token_account,
-        &sender.pubkey(),
-        &[],
-        1,
-    )
-    .unwrap();
+    let recipient_instruction = token_interface
+        .create_transfer_instruction(
+            &sender_token_account,
+            &recipient_token_account,
+            &sender.pubkey(),
+            1,
+        )
+        .unwrap();
 
     let blockhash = rpc_client
         .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())

@@ -7,11 +7,21 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
-use spl_token::state::Account as TokenAccount;
 use std::str::FromStr;
 
 // Adjust the import path to correctly reference the token module
 use kora_lib::token::{TokenInterface, TokenProgram, TokenType};
+
+// Define TokenAccount struct
+pub struct TokenAccount {
+    pub mint: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64,
+}
+
+impl TokenAccount {
+    pub const LEN: usize = 165; // Example length, adjust as needed
+}
 
 fn main() {
     // Define token_interface as an instance of a struct implementing TokenInterface

@@ -4,7 +4,10 @@ use solana_sdk::{
 };
 
 use super::{decode_b58_transaction, estimate_transaction_fee};
-use crate::rpc::test_utils::setup_test_rpc_client;
+use crate::{
+    rpc::test_utils::setup_test_rpc_client,
+    token::{TokenInterface, TokenProgram, TokenType},
+};
 
 #[test]
 fn test_decode_b58_transaction() {
@@ -71,13 +74,10 @@ async fn test_estimate_transaction_fee_with_token_creation() {
     let mint = Pubkey::new_unique();
     let owner = Pubkey::new_unique();
 
-    let ata = spl_associated_token_account::get_associated_token_address(&owner, &mint);
-    let create_ata_ix = spl_associated_token_account::instruction::create_associated_token_account(
-        &payer,
-        &ata,
-        &mint,
-        &spl_token::id(),
-    );
+    let token_program = TokenProgram::new(TokenType::Spl);
+    let ata = token_program.get_associated_token_address(&owner, &mint);
+    let create_ata_ix =
+        token_program.create_associated_token_account_instruction(&payer, &owner, &mint);
 
     let message = Message::new(&[create_ata_ix], Some(&payer));
     let transaction = Transaction { message, signatures: vec![Default::default()] };
@@ -85,7 +85,6 @@ async fn test_estimate_transaction_fee_with_token_creation() {
     let fee = estimate_transaction_fee(&rpc_client, &transaction).await.unwrap();
 
     // Fee should include base fee + priority fee + rent for token account
-    // Fee should be at least the minimum rent-exempt amount for a token account (~0.00204 SOL)
     let min_expected_lamports = 2_039_280;
     assert!(
         fee >= min_expected_lamports,
@@ -93,4 +92,16 @@ async fn test_estimate_transaction_fee_with_token_creation() {
         fee,
         min_expected_lamports
     );
+}
+
+#[test]
+fn test_token_functionality() {
+    let token_program = TokenProgram::new(TokenType::Spl);
+    let mint = Pubkey::new_unique();
+    let owner = Pubkey::new_unique();
+
+    // Use TokenInterface methods
+    let ata = token_program.get_associated_token_address(&owner, &mint);
+    assert_ne!(ata, owner);
+    assert_ne!(ata, mint);
 }
