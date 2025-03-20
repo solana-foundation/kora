@@ -9,10 +9,8 @@ use solana_sdk::{
 };
 use std::str::FromStr;
 
-// Adjust the import path to correctly reference the token module
 use kora_lib::token::{TokenInterface, TokenProgram, TokenType};
 
-// Define TokenAccount struct
 pub struct TokenAccount {
     pub mint: Pubkey,
     pub owner: Pubkey,
@@ -20,21 +18,18 @@ pub struct TokenAccount {
 }
 
 impl TokenAccount {
-    pub const LEN: usize = 165; // Example length, adjust as needed
+    pub const LEN: usize = 165; 
 }
 
 fn main() {
-    // Define token_interface as an instance of a struct implementing TokenInterface
     let token_interface = TokenProgram::new(TokenType::Spl);
 
-    // Use token_interface to get the program ID
     let program_id = token_interface.program_id();
 
     // Connect to Solana cluster
     let rpc_url = "https://api.devnet.solana.com".to_string(); // Change to mainnet for production
     let client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
 
-    // Example usage of the TokenInterface trait
     let mint = Pubkey::from_str("YourMintAddressHere").unwrap();
     let wallet = Pubkey::from_str("YourWalletAddressHere").unwrap();
     let associated_token_address = token_interface.get_associated_token_address(&wallet, &mint);

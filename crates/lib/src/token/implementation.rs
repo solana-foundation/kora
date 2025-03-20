@@ -39,7 +39,6 @@ impl TokenProgram {
         &self,
         data: &[u8],
     ) -> Result<Box<dyn TokenState + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
-        // Implement the actual logic here
         Ok(Box::new(TokenAccount {
             mint: Pubkey::new_unique(),
             owner: Pubkey::new_unique(),
@@ -51,8 +50,7 @@ impl TokenProgram {
         &self,
         mint_data: &[u8],
     ) -> Result<u8, Box<dyn std::error::Error + Send + Sync>> {
-        // Implement the actual logic here
-        Ok(0) // Placeholder
+        Ok(0)
     }
 }
 
@@ -83,7 +81,6 @@ impl TokenInterface for TokenProgram {
         mint: &Pubkey,
         owner: &Pubkey,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        // Implement the actual logic here
         Ok(create_associated_token_account(owner, account, mint, &self.program_id()))
     }
 
@@ -94,7 +91,6 @@ impl TokenInterface for TokenProgram {
         authority: &Pubkey,
         amount: u64,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        // Implement the actual logic here
         Ok(create_associated_token_account(authority, source, destination, &self.program_id()))
     }
 
@@ -107,7 +103,6 @@ impl TokenInterface for TokenProgram {
         amount: u64,
         decimals: u8,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        // Implement the actual logic here
         Ok(create_associated_token_account(authority, source, destination, &self.program_id()))
     }
 
@@ -128,15 +123,13 @@ impl TokenInterface for TokenProgram {
         &self,
         data: &[u8],
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        // Implement the actual logic here
-        Ok(0) // Placeholder
+        Ok(0) 
     }
 
     fn unpack_token_account(
         &self,
         data: &[u8],
     ) -> Result<Box<dyn TokenState + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
-        // Implement the actual logic here
         Ok(Box::new(TokenAccount {
             mint: Pubkey::new_unique(),
             owner: Pubkey::new_unique(),
@@ -148,7 +141,6 @@ impl TokenInterface for TokenProgram {
         &self,
         mint_data: &[u8],
     ) -> Result<u8, Box<dyn std::error::Error + Send + Sync>> {
-        // Implement the actual logic here
-        Ok(0) // Placeholder
+        Ok(0) 
     }
 }

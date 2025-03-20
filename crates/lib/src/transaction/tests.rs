@@ -100,7 +100,6 @@ fn test_token_functionality() {
     let mint = Pubkey::new_unique();
     let owner = Pubkey::new_unique();
 
-    // Use TokenInterface methods
     let ata = token_program.get_associated_token_address(&owner, &mint);
     assert_ne!(ata, owner);
     assert_ne!(ata, mint);
