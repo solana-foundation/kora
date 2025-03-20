@@ -123,7 +123,7 @@ impl TokenInterface for TokenProgram {
         &self,
         data: &[u8],
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(0) 
+        Ok(0)
     }
 
     fn unpack_token_account(
@@ -141,6 +141,6 @@ impl TokenInterface for TokenProgram {
         &self,
         mint_data: &[u8],
     ) -> Result<u8, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(0) 
+        Ok(0)
     }
 }

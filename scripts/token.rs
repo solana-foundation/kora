@@ -18,7 +18,7 @@ pub struct TokenAccount {
 }
 
 impl TokenAccount {
-    pub const LEN: usize = 165; 
+    pub const LEN: usize = 165;
 }
 
 fn main() {
