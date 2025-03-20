@@ -37,7 +37,7 @@ impl TokenState for spl_token::state::Account {
 #[async_trait]
 impl TokenInterface for TokenProgram {
     fn program_id(&self) -> Pubkey {
-        self.token_type.program_id()
+        self.token_type.program_id(self)
     }
 
     fn create_initialize_account_instruction(

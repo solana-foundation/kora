@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use mockall::automock;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 
 pub trait TokenState {
@@ -9,6 +10,7 @@ pub trait TokenState {
 }
 
 #[async_trait]
+#[automock]
 pub trait TokenInterface: Send + Sync {
     fn program_id(&self) -> Pubkey;
 

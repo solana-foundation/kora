@@ -15,10 +15,10 @@ pub enum TokenType {
 }
 
 impl TokenType {
-    pub fn program_id(&self) -> Pubkey {
+    pub fn program_id(&self, token_interface: &impl TokenInterface) -> Pubkey {
         match self {
-            TokenType::Spl => spl_token::id(),
-            TokenType::Token2022 => spl_token::id(),
+            TokenType::Spl => token_interface.program_id(),
+            TokenType::Token2022 => token_interface.program_id(),
         }
     }
 }

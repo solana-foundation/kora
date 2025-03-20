@@ -6,7 +6,7 @@ mod tests {
     #[test]
     fn test_token_program_spl() {
         let program = TokenProgram::new(TokenType::Spl);
-        assert_eq!(program.program_id(), spl_token::id());
+        assert_eq!(program.program_id(), token_interface.program_id());
     }
 
     #[test]

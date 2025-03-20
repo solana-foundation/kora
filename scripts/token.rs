@@ -7,10 +7,19 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
-use spl_token::{instruction as token_instruction, state::Account as TokenAccount};
+use spl_token::{
+    instruction as token_instruction, program::TokenProgram, state::Account as TokenAccount,
+    type_::TokenType,
+};
 use std::str::FromStr;
 
 fn main() {
+    // Define token_interface as an instance of a struct implementing TokenInterface
+    let token_interface = TokenProgram::new(TokenType::Spl);
+
+    // Use token_interface to get the program ID
+    let program_id = token_interface.program_id();
+
     // Connect to Solana cluster
     let rpc_url = "https://api.devnet.solana.com".to_string(); // Change to mainnet for production
     let client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
@@ -33,12 +42,12 @@ fn main() {
         &token_account.pubkey(),
         rent,
         TokenAccount::LEN as u64,
-        &spl_token::id(),
+        &program_id,
     );
 
     // Initialize token account
     let init_account_ix = token_instruction::initialize_account(
-        &spl_token::id(),
+        &program_id,
         &token_account.pubkey(),
         &usdc_mint,
         &payer.pubkey(),
@@ -47,7 +56,7 @@ fn main() {
 
     // Set close authority instruction
     let set_authority_ix = token_instruction::set_authority(
-        &spl_token::id(),
+        &program_id,
         &token_account.pubkey(),
         Some(&payer.pubkey()),
         spl_token::instruction::AuthorityType::CloseAccount,

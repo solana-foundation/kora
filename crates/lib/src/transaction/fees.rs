@@ -5,14 +5,13 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
-use spl_token::state::{Account as TokenAccount, Mint};
-use std::{sync::Arc, time::Duration};
+use spl_token::state::Mint;
+use std::time::Duration;
 use utoipa::ToSchema;
 
 use crate::{
     error::KoraError,
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle},
-    token::{TokenInterface, TokenProgram, TokenType},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -51,7 +50,6 @@ async fn get_associated_token_account_creation_fees(
 ) -> Result<u64, KoraError> {
     const ATA_ACCOUNT_SIZE: usize = 165; // Standard ATA size
     let mut ata_count = 0u64;
-    let token_program = TokenProgram::new(TokenType::Spl);
 
     // Check each instruction in the transaction for ATA creation
     for instruction in &transaction.message.instructions {
@@ -66,7 +64,7 @@ async fn get_associated_token_account_creation_fees(
         let owner = transaction.message.account_keys[instruction.accounts[2] as usize];
         let mint = transaction.message.account_keys[instruction.accounts[3] as usize];
 
-        let expected_ata = token_program.get_associated_token_address(&owner, &mint);
+        let expected_ata = get_associated_token_address(&owner, &mint);
 
         if ata == expected_ata && rpc_client.get_account(&ata).await.is_err() {
             ata_count += 1;
@@ -86,8 +84,6 @@ pub async fn calculate_token_value_in_lamports(
     price_source: PriceSource,
     rpc_client: &RpcClient,
 ) -> Result<u64, KoraError> {
-    let token_program = TokenProgram::new(TokenType::Spl);
-
     // Fetch mint account data to determine token decimals
     let mint_account =
         rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?;

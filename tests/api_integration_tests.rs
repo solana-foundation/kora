@@ -12,7 +12,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
-use spl_token::instruction as spl_token_instruction;
+use spl_token::{instruction as spl_token_instruction, program::TokenProgram, state::TokenType};
 use std::{str::FromStr, sync::Arc};
 
 const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
@@ -36,6 +36,8 @@ async fn setup_rpc_client() -> Arc<RpcClient> {
 }
 
 async fn create_test_transaction() -> String {
+    let token_interface = TokenProgram::new(TokenType::Spl);
+    let program_id = token_interface.program_id();
     let sender = get_test_sender_keypair();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
     let amount = 10;
@@ -72,8 +74,9 @@ async fn create_test_spl_transaction() -> String {
 
     // Create token transfer instruction
     let amount = 1000; // Transfer 1000 token units
+    let program_id = token_interface.program_id(); // Assuming token_interface is an instance of a struct implementing TokenInterface
     let instruction = spl_token_instruction::transfer(
-        &spl_token::id(),
+        &program_id,
         &sender_token_account,
         &recipient_token_account,
         &sender.pubkey(),
@@ -378,7 +381,7 @@ async fn test_sign_transaction_if_paid() {
 
     // Create instructions
     let fee_payer_instruction = spl_token_instruction::transfer(
-        &spl_token::id(),
+        &token_interface.program_id(),
         &sender_token_account,
         &fee_payer_token_account,
         &sender.pubkey(),
@@ -388,7 +391,7 @@ async fn test_sign_transaction_if_paid() {
     .unwrap();
 
     let recipient_instruction = spl_token_instruction::transfer(
-        &spl_token::id(),
+        &token_interface.program_id(),
         &sender_token_account,
         &recipient_token_account,
         &sender.pubkey(),
