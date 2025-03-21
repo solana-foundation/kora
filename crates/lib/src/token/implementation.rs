@@ -3,12 +3,17 @@ use super::{
     TokenType,
 };
 use async_trait::async_trait;
-use solana_program::pubkey::Pubkey as ProgramPubkey;
+use solana_program::{program_pack::Pack, pubkey::Pubkey as ProgramPubkey};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
-use spl_token;
+use spl_token::{
+    self,
+    state::{Account as TokenAccountState, Mint as MintState},
+};
+
+use spl_token::instruction::initialize_account;
 
 // Define TokenAccount struct
 pub struct TokenAccount {
@@ -39,10 +44,11 @@ impl TokenProgram {
         &self,
         data: &[u8],
     ) -> Result<Box<dyn TokenState + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
+        let account = TokenAccountState::unpack(data)?;
         Ok(Box::new(TokenAccount {
-            mint: Pubkey::new_unique(),
-            owner: Pubkey::new_unique(),
-            amount: 0,
+            mint: account.mint,
+            owner: account.owner,
+            amount: account.amount,
         }))
     }
 
@@ -50,7 +56,8 @@ impl TokenProgram {
         &self,
         mint_data: &[u8],
     ) -> Result<u8, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(0)
+        let mint = MintState::unpack(mint_data)?;
+        Ok(mint.decimals)
     }
 }
 
@@ -81,7 +88,7 @@ impl TokenInterface for TokenProgram {
         mint: &Pubkey,
         owner: &Pubkey,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(create_associated_token_account(owner, account, mint, &self.program_id()))
+        Ok(spl_token::instruction::initialize_account(&self.program_id(), account, mint, owner)?)
     }
 
     fn create_transfer_instruction(
@@ -91,7 +98,14 @@ impl TokenInterface for TokenProgram {
         authority: &Pubkey,
         amount: u64,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(create_associated_token_account(authority, source, destination, &self.program_id()))
+        Ok(spl_token::instruction::transfer(
+            &self.program_id(),
+            source,
+            destination,
+            authority,
+            &[],
+            amount,
+        )?)
     }
 
     fn create_transfer_checked_instruction(
@@ -103,7 +117,16 @@ impl TokenInterface for TokenProgram {
         amount: u64,
         decimals: u8,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(create_associated_token_account(authority, source, destination, &self.program_id()))
+        Ok(spl_token::instruction::transfer_checked(
+            &self.program_id(),
+            source,
+            mint,
+            destination,
+            authority,
+            &[],
+            amount,
+            decimals,
+        )?)
     }
 
     fn get_associated_token_address(&self, wallet: &Pubkey, mint: &Pubkey) -> Pubkey {
@@ -123,17 +146,25 @@ impl TokenInterface for TokenProgram {
         &self,
         data: &[u8],
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(0)
+        use spl_token::instruction::TokenInstruction;
+        let instruction = TokenInstruction::unpack(data)?;
+
+        if let TokenInstruction::Transfer { amount } = instruction {
+            Ok(amount)
+        } else {
+            Err("Invalid instruction type".into())
+        }
     }
 
     fn unpack_token_account(
         &self,
         data: &[u8],
     ) -> Result<Box<dyn TokenState + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
+        let account = TokenAccountState::unpack(data)?;
         Ok(Box::new(TokenAccount {
-            mint: Pubkey::new_unique(),
-            owner: Pubkey::new_unique(),
-            amount: 0,
+            mint: account.mint,
+            owner: account.owner,
+            amount: account.amount,
         }))
     }
 
@@ -141,6 +172,7 @@ impl TokenInterface for TokenProgram {
         &self,
         mint_data: &[u8],
     ) -> Result<u8, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(0)
+        let mint = MintState::unpack(mint_data)?;
+        Ok(mint.decimals)
     }
 }

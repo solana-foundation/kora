@@ -18,3 +18,4 @@ solana-program = { workspace = true }
 bincode = "1.3.3"
 bs58 = "0.5.1"
 kora-lib = { path = "../crates/lib" }
+spl-token = { workspace = true }

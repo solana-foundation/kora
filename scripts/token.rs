@@ -63,14 +63,15 @@ fn main() {
         .unwrap();
 
     // Set close authority instruction
-    let set_authority_ix = token_interface
-        .create_transfer_instruction(
-            &token_account.pubkey(),
-            &payer.pubkey(),
-            &payer.pubkey(),
-            0, // Assuming amount is 0 for setting authority
-        )
-        .unwrap();
+    let set_authority_ix = spl_token::instruction::set_authority(
+        &spl_token::id(),
+        &token_account.pubkey(),
+        Some(&payer.pubkey()),
+        spl_token::instruction::AuthorityType::CloseAccount,
+        &payer.pubkey(),
+        &[],
+    )
+    .unwrap();
 
     // Create transaction
     let recent_blockhash = client.get_latest_blockhash().unwrap();
