@@ -45,9 +45,7 @@ async fn create_test_transaction() -> String {
     let amount = 10;
     let rpc_client = setup_rpc_client().await;
 
-    let instruction = token_interface
-        .create_transfer_instruction(&sender.pubkey(), &recipient, &sender.pubkey(), amount)
-        .unwrap();
+    let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
 
     let blockhash = rpc_client
         .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
