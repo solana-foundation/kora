@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use bs58;
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use std::sync::Arc;
@@ -62,13 +63,14 @@ impl super::Signer for VaultSigner {
             self.client.as_ref(),
             "transit",
             &self.key_name,
-            &base64::encode(message),
+            &STANDARD.encode(message),
             None,
         )
         .await
         .map_err(|e| KoraError::SigningError(format!("Failed to sign with Vault: {}", e)))?;
 
-        let sig_bytes = base64::decode(signature.signature)
+        let sig_bytes = STANDARD
+            .decode(signature.signature)
             .map_err(|e| KoraError::SigningError(format!("Failed to decode signature: {}", e)))?;
 
         Ok(KoraSignature { bytes: sig_bytes, is_partial: false })
@@ -79,13 +81,14 @@ impl super::Signer for VaultSigner {
             self.client.as_ref(),
             "transit",
             &self.key_name,
-            &base64::encode(message),
+            &STANDARD.encode(message),
             None,
         )
         .await
         .map_err(|e| KoraError::SigningError(format!("Failed to sign with Vault: {}", e)))?;
 
-        let sig_bytes = base64::decode(signature.signature)
+        let sig_bytes = STANDARD
+            .decode(signature.signature)
             .map_err(|e| KoraError::SigningError(format!("Failed to decode signature: {}", e)))?;
 
         Signature::try_from(sig_bytes.as_slice())
