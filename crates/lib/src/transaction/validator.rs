@@ -1,14 +1,15 @@
 use crate::{
-    config::ValidationConfig, error::KoraError, oracle::PriceSource,
+    config::ValidationConfig,
+    error::KoraError,
+    oracle::PriceSource,
+    token::{TokenInterface, TokenProgram, TokenType},
     transaction::fees::calculate_token_value_in_lamports,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    instruction::CompiledInstruction, message::Message, program_pack::Pack, pubkey::Pubkey,
-    system_instruction, system_program, transaction::Transaction,
+    instruction::CompiledInstruction, message::Message, pubkey::Pubkey, system_instruction,
+    system_program, transaction::Transaction,
 };
-use spl_associated_token_account::get_associated_token_address;
-use spl_token::state::Account as TokenAccount;
 use std::str::FromStr;
 
 pub enum ValidationMode {
@@ -61,7 +62,16 @@ impl TransactionValidator {
         })
     }
 
-    pub fn validate_token_mint(&self, mint: &Pubkey) -> Result<(), KoraError> {
+    pub async fn validate_token_mint(
+        &self,
+        mint: &Pubkey,
+        rpc_client: &RpcClient,
+    ) -> Result<(), KoraError> {
+        let token_program = TokenProgram::new(TokenType::Spl);
+
+        let mint_account = rpc_client.get_account(mint).await?;
+        let decimals = token_program.get_mint_decimals(&mint_account.data)?;
+
         if !self.allowed_tokens.contains(mint) {
             return Err(KoraError::InvalidTransaction(format!(
                 "Mint {} is not a valid token mint",
@@ -150,6 +160,7 @@ impl TransactionValidator {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn is_fee_payer_source(&self, ix: &CompiledInstruction, account_keys: &[Pubkey]) -> bool {
         // For system program transfers, check if fee payer is the source
         if account_keys[ix.program_id_index as usize] == system_program::ID {
@@ -232,19 +243,18 @@ pub async fn validate_token_payment(
     transaction: &Transaction,
     validation: &ValidationConfig,
     required_lamports: u64,
-    signer_pubkey: Pubkey,
+    _signer_pubkey: Pubkey,
 ) -> Result<(), KoraError> {
     let mut total_lamport_value = 0;
+    let token_program = TokenProgram::new(TokenType::Spl);
 
     for ix in transaction.message.instructions.iter() {
-        if *ix.program_id(&transaction.message.account_keys) != spl_token::id() {
+        if *ix.program_id(&transaction.message.account_keys) != token_program.program_id() {
             continue;
         }
 
-        if let Ok(spl_token::instruction::TokenInstruction::Transfer { amount }) =
-            spl_token::instruction::TokenInstruction::unpack(&ix.data)
-        {
-            let dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
+        if let Ok(amount) = token_program.decode_transfer_instruction(&ix.data) {
+            let _dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
             let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
 
             let source_account = rpc_client
@@ -252,32 +262,26 @@ pub async fn validate_token_payment(
                 .await
                 .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-            let token_account = TokenAccount::unpack(&source_account.data).map_err(|e| {
-                KoraError::InvalidTransaction(format!("Invalid token account: {}", e))
-            })?;
+            let token_state =
+                token_program.unpack_token_account(&source_account.data).map_err(|e| {
+                    KoraError::InvalidTransaction(format!("Invalid token account: {}", e))
+                })?;
 
-            let dest_mint_account =
-                get_associated_token_address(&signer_pubkey, &token_account.mint);
-
-            if dest_pubkey != dest_mint_account {
+            if source_account.owner != token_program.program_id() {
                 continue;
             }
 
-            if source_account.owner != spl_token::id() {
+            if token_state.amount() < amount {
                 continue;
             }
 
-            if token_account.amount < amount {
-                continue;
-            }
-
-            if !validation.allowed_spl_paid_tokens.contains(&token_account.mint.to_string()) {
+            if !validation.allowed_spl_paid_tokens.contains(&token_state.mint().to_string()) {
                 continue;
             }
 
             let lamport_value = calculate_token_value_in_lamports(
                 amount,
-                &token_account.mint,
+                &token_state.mint(),
                 validation.price_source.clone(),
                 rpc_client,
             )
