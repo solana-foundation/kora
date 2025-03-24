@@ -1,4 +1,5 @@
 use super::{cache::TokenAccountCache, get_signer, KoraError, Signer};
+use crate::token::TokenInterface;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     message::Message, pubkey::Pubkey, signature::Signature, transaction::Transaction,
@@ -13,6 +14,7 @@ pub async fn get_or_create_token_account(
     cache: &TokenAccountCache,
     user_pubkey: &Pubkey,
     mint: &Pubkey,
+    token_interface: &impl TokenInterface,
 ) -> Result<(Pubkey, Option<Transaction>), KoraError> {
     let signer = get_signer()?;
 
@@ -33,11 +35,12 @@ pub async fn get_or_create_token_account(
         }
         Err(original_err) => {
             // Account doesn't exist, create it
+            let program_id = token_interface.program_id();
             let create_ata_ix = create_associated_token_account(
                 &signer.solana_pubkey(),
                 user_pubkey,
                 mint,
-                &spl_token::id(),
+                &program_id,
             );
 
             let blockhash = rpc_client.get_latest_blockhash().await.map_err(|e| {
@@ -74,6 +77,7 @@ pub async fn get_or_create_multiple_token_accounts(
     cache: &TokenAccountCache,
     user_pubkey: &Pubkey,
     mints: &[Pubkey],
+    token_interface: &impl TokenInterface,
 ) -> Result<(Vec<Pubkey>, Option<Transaction>), KoraError> {
     let signer = get_signer()?;
 
@@ -93,11 +97,12 @@ pub async fn get_or_create_multiple_token_accounts(
         // If not in cache, check on-chain
         if rpc_client.get_account(&ata).await.is_err() {
             needs_creation = true;
+            let program_id = token_interface.program_id();
             instructions.push(create_associated_token_account(
                 &signer.solana_pubkey(),
                 user_pubkey,
                 mint,
-                &spl_token::id(),
+                &program_id,
             ));
         } else {
             // Account exists, cache it
@@ -114,6 +119,7 @@ pub async fn get_or_create_multiple_token_accounts(
         .await
         .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {}", e)))?;
 
+    let program_id = token_interface.program_id();
     let message =
         Message::new_with_blockhash(&instructions, Some(&signer.solana_pubkey()), &blockhash);
 

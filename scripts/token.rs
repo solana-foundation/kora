@@ -7,13 +7,34 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
-use spl_token::{instruction as token_instruction, state::Account as TokenAccount};
 use std::str::FromStr;
 
+use kora_lib::token::{TokenInterface, TokenProgram, TokenType};
+
+pub struct TokenAccount {
+    pub mint: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64,
+}
+
+impl TokenAccount {
+    pub const LEN: usize = 165;
+}
+
 fn main() {
+    let token_interface = TokenProgram::new(TokenType::Spl);
+
+    let program_id = token_interface.program_id();
+
     // Connect to Solana cluster
     let rpc_url = "https://api.devnet.solana.com".to_string(); // Change to mainnet for production
     let client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
+
+    let mint = Pubkey::from_str("YourMintAddressHere").unwrap();
+    let wallet = Pubkey::from_str("YourWalletAddressHere").unwrap();
+    let associated_token_address = token_interface.get_associated_token_address(&wallet, &mint);
+
+    println!("Associated Token Address: {}", associated_token_address);
 
     // USDC mint address (this is devnet USDC, replace with mainnet USDC for production)
     let usdc_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
@@ -33,20 +54,16 @@ fn main() {
         &token_account.pubkey(),
         rent,
         TokenAccount::LEN as u64,
-        &spl_token::id(),
+        &program_id,
     );
 
     // Initialize token account
-    let init_account_ix = token_instruction::initialize_account(
-        &spl_token::id(),
-        &token_account.pubkey(),
-        &usdc_mint,
-        &payer.pubkey(),
-    )
-    .unwrap();
+    let init_account_ix = token_interface
+        .create_initialize_account_instruction(&token_account.pubkey(), &usdc_mint, &payer.pubkey())
+        .unwrap();
 
     // Set close authority instruction
-    let set_authority_ix = token_instruction::set_authority(
+    let set_authority_ix = spl_token::instruction::set_authority(
         &spl_token::id(),
         &token_account.pubkey(),
         Some(&payer.pubkey()),
