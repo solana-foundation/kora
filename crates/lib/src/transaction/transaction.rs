@@ -51,6 +51,8 @@ pub fn decode_b58_transaction_with_version(tx: &str) -> Result<VersionedTransact
     Ok(transaction)
 }
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+
 pub fn decode_b58_transaction(tx: &str) -> Result<Transaction, KoraError> {
     if tx.is_empty() {
         return Err(KoraError::InvalidTransaction("Empty transaction string".to_string()));
@@ -142,7 +144,7 @@ pub async fn sign_transaction(
 
     // Serialize signed transaction
     let serialized = bincode::serialize(&transaction)?;
-    let encoded = bs58::encode(serialized).into_string();
+    let encoded = STANDARD.encode(serialized);
 
     Ok((transaction, encoded))
 }
@@ -282,7 +284,7 @@ pub fn encode_transaction_b64(transaction: &Transaction) -> Result<String, KoraE
     let serialized = bincode::serialize(transaction).map_err(|e| {
         KoraError::SerializationError(format!("Base64 serialization failed: {}", e))
     })?;
-    Ok(base64::encode(serialized))
+    Ok(STANDARD.encode(serialized))
 }
 
 pub fn encode_transaction_b64_with_version(
@@ -295,7 +297,7 @@ pub fn encode_transaction_b64_with_version(
 }
 
 pub fn decode_b64_transaction(encoded: &str) -> Result<Transaction, KoraError> {
-    let decoded = base64::decode(encoded).map_err(|e| {
+    let decoded = STANDARD.decode(encoded).map_err(|e| {
         KoraError::InvalidTransaction(format!("Failed to decode base64 transaction: {}", e))
     })?;
 

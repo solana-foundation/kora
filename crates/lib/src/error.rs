@@ -41,6 +41,12 @@ pub enum KoraError {
 
     #[error("Swap error: {0}")]
     SwapError(String),
+
+    #[error("Token operation failed: {0}")]
+    TokenOperationError(String),
+
+    #[error("Thread safety error: {0}")]
+    ThreadSafetyError(String),
 }
 
 impl From<ClientError> for KoraError {
@@ -151,6 +157,12 @@ impl<T, E: Into<KoraError>> IntoKoraResponse<T> for Result<T, E> {
 impl From<anyhow::Error> for KoraError {
     fn from(err: anyhow::Error) -> Self {
         KoraError::SigningError(err.to_string())
+    }
+}
+
+impl From<Box<dyn std::error::Error + Send + Sync>> for KoraError {
+    fn from(error: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        KoraError::TokenOperationError(error.to_string())
     }
 }
 
