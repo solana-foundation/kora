@@ -182,10 +182,54 @@ pub async fn sign_versioned_transaction(
         rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
     transaction.message.set_recent_blockhash(blockhash.0);
 
+    // Validate transaction fee
+    // Validate transaction fee
     match &transaction.message {
-        VersionedMessage::V0(_) => {}
+        VersionedMessage::V0(v0_message) => {
+            // Simulate the transaction to get the compute units consumed
+            let simulation_result = rpc_client
+                .simulate_transaction_with_config(
+                    &transaction,
+                    solana_client::rpc_config::RpcSimulateTransactionConfig {
+                        sig_verify: false,
+                        replace_recent_blockhash: true,
+                        commitment: Some(CommitmentConfig::processed()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+
+            if let Some(units_consumed) = simulation_result.value.units_consumed {
+                // Fetch the fee rate (lamports per signature)
+                let blockhash_response = rpc_client
+                    .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+                    .await?;
+                let lamports_per_signature = blockhash_response.1;
+
+                // Calculate the estimated fee
+                let num_signatures = transaction.signatures.len() as u64;
+                let num_account_keys = v0_message.account_keys.len() as u64;
+                let num_lookups = v0_message.address_table_lookups.len() as u64;
+
+                // Base fee: lamports per signature
+                let base_fee = lamports_per_signature * num_signatures;
+
+                // Additional fee: based on the number of account keys and lookups
+                let additional_fee = units_consumed as u64
+                + (num_account_keys * 10) // Example weight for account keys
+                + (num_lookups * 20); // Example weight for lookups
+
+                let estimated_fee = base_fee + additional_fee;
+
+                validator.validate_lamport_fee(estimated_fee)?;
+            } else {
+                return Err(KoraError::InvalidTransaction(
+                    "Failed to simulate transaction for fee estimation".to_string(),
+                ));
+            }
+        }
         VersionedMessage::Legacy(legacy_message) => {
-            // Validate transaction fee
+            // The existing approach for Legacy messages
             let estimated_fee = rpc_client.get_fee_for_message(legacy_message).await?;
             validator.validate_lamport_fee(estimated_fee)?;
         }
