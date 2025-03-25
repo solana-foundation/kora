@@ -9,9 +9,8 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     instruction::CompiledInstruction,
     message::{Message, VersionedMessage},
-   
-    pubkey::Pubkey, system_instruction,
-    system_program,
+    pubkey::Pubkey,
+    system_instruction, system_program,
     transaction::{Transaction, VersionedTransaction},
 };
 use std::str::FromStr;
