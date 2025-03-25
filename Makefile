@@ -5,11 +5,7 @@ all: check test build
 
 # install
 install:
-	for dir in crates/*; do \
-		cd $$dir; \
-		cargo install --path .; \
-		cd -; \
-	done
+	cargo install --path .
 
 # Check code formatting
 check:

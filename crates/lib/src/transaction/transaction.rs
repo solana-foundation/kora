@@ -183,7 +183,6 @@ pub async fn sign_versioned_transaction(
     transaction.message.set_recent_blockhash(blockhash.0);
 
     // Validate transaction fee
-    // Validate transaction fee
     match &transaction.message {
         VersionedMessage::V0(v0_message) => {
             // Simulate the transaction to get the compute units consumed
