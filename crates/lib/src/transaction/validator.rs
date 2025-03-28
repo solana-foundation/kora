@@ -247,10 +247,10 @@ impl TransactionValidator {
 }
 
 pub async fn validate_token_payment(
-    rpc_client: &RpcClient,
     transaction: &Transaction,
-    validation: &ValidationConfig,
     required_lamports: u64,
+    validation: &ValidationConfig,
+    rpc_client: &RpcClient,
     _signer_pubkey: Pubkey,
 ) -> Result<(), KoraError> {
     let mut total_lamport_value = 0;
@@ -281,14 +281,37 @@ pub async fn validate_token_payment(
                     continue;
                 }
 
-                if token_state.amount() < amount {
-                    continue;
-                }
-
-                // For Token2022, check if there are any transfer fees
-                let actual_amount = if let Some(token2022_account) =
+                // Check Token2022 specific restrictions
+                if let Some(token2022_account) =
                     token_state.as_any().downcast_ref::<Token2022Account>()
                 {
+                    // Check if token is non-transferable
+                    if token2022_account.non_transferable.is_some() {
+                        return Err(KoraError::InvalidTransaction(
+                            "Cannot transfer non-transferable token".to_string(),
+                        ));
+                    }
+
+                    // Check CPI guard
+                    if let Some(cpi_guard) = &token2022_account.cpi_guard {
+                        if cpi_guard.lock_cpi.into() {
+                            return Err(KoraError::InvalidTransaction(
+                                "Token transfer blocked by CPI guard".to_string(),
+                            ));
+                        }
+                    }
+
+                    // Check confidential transfers
+                    if token2022_account.confidential_transfer.is_some() {
+                        return Err(KoraError::InvalidTransaction(
+                            "Confidential transfers not supported".to_string(),
+                        ));
+                    }
+
+                    // Calculate actual transfer amount considering all extensions
+                    let mut actual_amount = amount;
+
+                    // Apply transfer fee if present
                     if let Some(fee_config) = &token2022_account.transfer_fee {
                         let basis_points = u16::from_le_bytes(
                             fee_config.newer_transfer_fee.transfer_fee_basis_points.0,
@@ -297,29 +320,69 @@ pub async fn validate_token_payment(
                             (amount as u128 * basis_points as u128 / 10000) as u64,
                             u64::from(fee_config.newer_transfer_fee.maximum_fee),
                         );
-                        amount.saturating_sub(fee)
-                    } else {
-                        amount
+                        actual_amount = actual_amount.saturating_sub(fee);
+                    }
+
+                    // Apply interest if present
+                    if let Some(interest_config) = &token2022_account.interest_bearing {
+                        // Calculate accrued interest
+                        let current_ts = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
+                        let interest_rate = u16::from_le_bytes(interest_config.current_rate.0);
+                        let last_update: i64 = interest_config.last_update_timestamp.into();
+                        let time_delta = current_ts.saturating_sub(last_update as u64);
+                        let interest =
+                            (actual_amount as u128 * interest_rate as u128 * time_delta as u128)
+                                / (10000 * 365 * 24 * 60 * 60) as u128;
+                        actual_amount = actual_amount.saturating_add(interest as u64);
+                    }
+
+                    if token_state.amount() < actual_amount {
+                        continue;
+                    }
+
+                    if !validation.allowed_spl_paid_tokens.contains(&token_state.mint().to_string())
+                    {
+                        continue;
+                    }
+
+                    let lamport_value = calculate_token_value_in_lamports(
+                        actual_amount,
+                        &token_state.mint(),
+                        validation.price_source.clone(),
+                        rpc_client,
+                    )
+                    .await?;
+
+                    total_lamport_value += lamport_value;
+                    if total_lamport_value >= required_lamports {
+                        return Ok(());
                     }
                 } else {
-                    amount
-                };
+                    // Handle regular SPL token transfer
+                    if token_state.amount() < amount {
+                        continue;
+                    }
 
-                if !validation.allowed_spl_paid_tokens.contains(&token_state.mint().to_string()) {
-                    continue;
-                }
+                    if !validation.allowed_spl_paid_tokens.contains(&token_state.mint().to_string())
+                    {
+                        continue;
+                    }
 
-                let lamport_value = calculate_token_value_in_lamports(
-                    actual_amount,
-                    &token_state.mint(),
-                    validation.price_source.clone(),
-                    rpc_client,
-                )
-                .await?;
+                    let lamport_value = calculate_token_value_in_lamports(
+                        amount,
+                        &token_state.mint(),
+                        validation.price_source.clone(),
+                        rpc_client,
+                    )
+                    .await?;
 
-                total_lamport_value += lamport_value;
-                if total_lamport_value >= required_lamports {
-                    return Ok(());
+                    total_lamport_value += lamport_value;
+                    if total_lamport_value >= required_lamports {
+                        return Ok(());
+                    }
                 }
             }
         }

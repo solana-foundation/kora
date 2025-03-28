@@ -15,6 +15,8 @@ use spl_token::{
 use spl_token_2022::{
     self,
     extension::{
+        confidential_transfer::ConfidentialTransferAccount, cpi_guard::CpiGuard,
+        interest_bearing_mint::InterestBearingConfig, non_transferable::NonTransferable,
         transfer_fee::TransferFeeConfig, BaseStateWithExtensions, Extension, ExtensionType,
         StateWithExtensions,
     },
@@ -47,12 +49,16 @@ impl TokenProgram {
     }
 }
 
-// Add Token2022Account struct to handle Token 2022 specific features
+// Add Token2022Account struct with all possible extensions
 pub struct Token2022Account {
     pub mint: Pubkey,
     pub owner: Pubkey,
     pub amount: u64,
     pub transfer_fee: Option<TransferFeeConfig>,
+    pub interest_bearing: Option<InterestBearingConfig>,
+    pub non_transferable: Option<NonTransferable>,
+    pub cpi_guard: Option<CpiGuard>,
+    pub confidential_transfer: Option<ConfidentialTransferAccount>,
 }
 
 impl TokenState for Token2022Account {
@@ -66,7 +72,7 @@ impl TokenState for Token2022Account {
         self.amount
     }
     fn decimals(&self) -> u8 {
-        0 // This will be set from the mint account
+        0
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -114,19 +120,24 @@ impl TokenInterface for TokenProgram {
                 let account = StateWithExtensions::<Token2022AccountState>::unpack(data)?;
                 let base = account.base;
 
-                // Get transfer fee if it exists
-                let transfer_fee =
-                    if let Ok(extension) = account.get_extension::<TransferFeeConfig>() {
-                        Some(*extension)
-                    } else {
-                        None
-                    };
+                // Get all possible extensions
+                let transfer_fee = account.get_extension::<TransferFeeConfig>().ok().map(|e| *e);
+                let interest_bearing =
+                    account.get_extension::<InterestBearingConfig>().ok().map(|e| *e);
+                let non_transferable = account.get_extension::<NonTransferable>().ok().map(|e| *e);
+                let cpi_guard = account.get_extension::<CpiGuard>().ok().map(|e| *e);
+                let confidential_transfer =
+                    account.get_extension::<ConfidentialTransferAccount>().ok().map(|e| *e);
 
                 Ok(Box::new(Token2022Account {
                     mint: base.mint,
                     owner: base.owner,
                     amount: base.amount,
                     transfer_fee,
+                    interest_bearing,
+                    non_transferable,
+                    cpi_guard,
+                    confidential_transfer,
                 }))
             }
         }
@@ -138,7 +149,20 @@ impl TokenInterface for TokenProgram {
         mint: &Pubkey,
         owner: &Pubkey,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token::instruction::initialize_account(&self.program_id(), account, mint, owner)?)
+        match self.token_type {
+            TokenType::Spl => Ok(spl_token::instruction::initialize_account(
+                &self.program_id(),
+                account,
+                mint,
+                owner,
+            )?),
+            TokenType::Token2022 => Ok(spl_token_2022::instruction::initialize_account(
+                &self.program_id(),
+                account,
+                mint,
+                owner,
+            )?),
+        }
     }
 
     fn create_transfer_instruction(
