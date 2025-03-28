@@ -2,7 +2,7 @@ use crate::{
     config::ValidationConfig,
     error::KoraError,
     oracle::PriceSource,
-    token::{TokenInterface, TokenProgram, TokenType},
+    token::{Token2022Account, TokenInterface, TokenProgram, TokenState, TokenType},
     transaction::fees::calculate_token_value_in_lamports,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -67,17 +67,25 @@ impl TransactionValidator {
         mint: &Pubkey,
         rpc_client: &RpcClient,
     ) -> Result<(), KoraError> {
-        let token_program = TokenProgram::new(TokenType::Spl);
-
-        let mint_account = rpc_client.get_account(mint).await?;
-        let decimals = token_program.get_mint_decimals(&mint_account.data)?;
-
+        // First check if the mint is in allowed tokens
         if !self.allowed_tokens.contains(mint) {
             return Err(KoraError::InvalidTransaction(format!(
                 "Mint {} is not a valid token mint",
                 mint
             )));
         }
+
+        // Get the mint account to determine if it's SPL or Token2022
+        let mint_account = rpc_client.get_account(mint).await?;
+
+        // Check if it's a Token2022 mint
+        let is_token2022 = mint_account.owner == spl_token_2022::id();
+        let token_program =
+            TokenProgram::new(if is_token2022 { TokenType::Token2022 } else { TokenType::Spl });
+
+        // Validate mint account data
+        token_program.get_mint_decimals(&mint_account.data)?;
+
         Ok(())
     }
 
@@ -246,56 +254,79 @@ pub async fn validate_token_payment(
     _signer_pubkey: Pubkey,
 ) -> Result<(), KoraError> {
     let mut total_lamport_value = 0;
-    let token_program = TokenProgram::new(TokenType::Spl);
 
-    for ix in transaction.message.instructions.iter() {
-        if *ix.program_id(&transaction.message.account_keys) != token_program.program_id() {
-            continue;
-        }
+    // Check both SPL and Token2022 transfers
+    for token_type in [TokenType::Spl, TokenType::Token2022] {
+        let token_program = TokenProgram::new(token_type);
 
-        if let Ok(amount) = token_program.decode_transfer_instruction(&ix.data) {
-            let _dest_pubkey = transaction.message.account_keys[ix.accounts[1] as usize];
-            let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
-
-            let source_account = rpc_client
-                .get_account(&source_key)
-                .await
-                .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-            let token_state =
-                token_program.unpack_token_account(&source_account.data).map_err(|e| {
-                    KoraError::InvalidTransaction(format!("Invalid token account: {}", e))
-                })?;
-
-            if source_account.owner != token_program.program_id() {
+        for ix in transaction.message.instructions.iter() {
+            if *ix.program_id(&transaction.message.account_keys) != token_program.program_id() {
                 continue;
             }
 
-            if token_state.amount() < amount {
-                continue;
-            }
+            if let Ok(amount) = token_program.decode_transfer_instruction(&ix.data) {
+                let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
 
-            if !validation.allowed_spl_paid_tokens.contains(&token_state.mint().to_string()) {
-                continue;
-            }
+                let source_account = rpc_client
+                    .get_account(&source_key)
+                    .await
+                    .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-            let lamport_value = calculate_token_value_in_lamports(
-                amount,
-                &token_state.mint(),
-                validation.price_source.clone(),
-                rpc_client,
-            )
-            .await?;
+                let token_state =
+                    token_program.unpack_token_account(&source_account.data).map_err(|e| {
+                        KoraError::InvalidTransaction(format!("Invalid token account: {}", e))
+                    })?;
 
-            total_lamport_value += lamport_value;
-            if total_lamport_value >= required_lamports {
-                return Ok(());
+                if source_account.owner != token_program.program_id() {
+                    continue;
+                }
+
+                if token_state.amount() < amount {
+                    continue;
+                }
+
+                // For Token2022, check if there are any transfer fees
+                let actual_amount = if let Some(token2022_account) =
+                    token_state.as_any().downcast_ref::<Token2022Account>()
+                {
+                    if let Some(fee_config) = &token2022_account.transfer_fee {
+                        let basis_points = u16::from_le_bytes(
+                            fee_config.newer_transfer_fee.transfer_fee_basis_points.0,
+                        );
+                        let fee = std::cmp::min(
+                            (amount as u128 * basis_points as u128 / 10000) as u64,
+                            u64::from(fee_config.newer_transfer_fee.maximum_fee),
+                        );
+                        amount.saturating_sub(fee)
+                    } else {
+                        amount
+                    }
+                } else {
+                    amount
+                };
+
+                if !validation.allowed_spl_paid_tokens.contains(&token_state.mint().to_string()) {
+                    continue;
+                }
+
+                let lamport_value = calculate_token_value_in_lamports(
+                    actual_amount,
+                    &token_state.mint(),
+                    validation.price_source.clone(),
+                    rpc_client,
+                )
+                .await?;
+
+                total_lamport_value += lamport_value;
+                if total_lamport_value >= required_lamports {
+                    return Ok(());
+                }
             }
         }
     }
 
-    Err(KoraError::InsufficientFunds(format!(
-        "Required {} lamports but only found {} in token transfers",
+    Err(KoraError::InvalidTransaction(format!(
+        "Insufficient token payment. Required {} lamports, got {}",
         required_lamports, total_lamport_value
     )))
 }

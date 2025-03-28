@@ -5,7 +5,7 @@ use std::str::FromStr;
 mod implementation;
 mod interface;
 
-pub use implementation::TokenProgram;
+pub use implementation::{Token2022Account, TokenProgram};
 pub use interface::{TokenInterface, TokenState};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
