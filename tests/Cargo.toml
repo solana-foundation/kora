@@ -7,6 +7,10 @@ edition = { workspace = true }
 name = "api_integration"
 path = "api_integration_tests.rs"
 
+[[test]]
+name = "token_integration"
+path = "token_integration_tests.rs"
+
 [dependencies]
 kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }

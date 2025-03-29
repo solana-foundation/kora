@@ -2,11 +2,13 @@ use crate::error::KoraError;
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
 
-mod implementation;
 mod interface;
+mod token;
+mod token22;
 
-pub use implementation::{Token2022Account, TokenProgram};
 pub use interface::{TokenInterface, TokenState};
+pub use token::{TokenAccount, TokenProgram};
+pub use token22::{Token2022Account, Token2022Program};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType {
