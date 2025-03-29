@@ -1,12 +1,16 @@
 use async_trait::async_trait;
 use mockall::automock;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use std::any::Any;
 
-pub trait TokenState {
+pub trait TokenState: Any {
     fn mint(&self) -> Pubkey;
     fn owner(&self) -> Pubkey;
     fn amount(&self) -> u64;
     fn decimals(&self) -> u8;
+
+    // Add method to support downcasting for Token2022 specific features
+    fn as_any(&self) -> &dyn Any;
 }
 
 #[async_trait]
