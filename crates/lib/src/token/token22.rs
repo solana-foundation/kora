@@ -12,24 +12,14 @@ use spl_pod::bytemuck;
 use spl_token_2022::{
     extension::{
         confidential_transfer::ConfidentialTransferAccount,
-        confidential_transfer_fee::ConfidentialTransferFeeConfig,
-        cpi_guard::CpiGuard,
-        default_account_state::DefaultAccountState,
-        group_member_pointer::GroupMemberPointer,
-        group_pointer::GroupPointer,
-        immutable_owner::ImmutableOwner,
-        interest_bearing_mint::InterestBearingConfig,
-        memo_transfer::MemoTransfer,
-        metadata_pointer::MetadataPointer,
-        mint_close_authority::MintCloseAuthority,
-        non_transferable::NonTransferable,
-        pausable::PausableAccount,
-        permanent_delegate::PermanentDelegate,
-        transfer_fee::TransferFeeConfig,
-        transfer_hook::TransferHook,
-        BaseStateWithExtensions,
-        ExtensionType,
-        StateWithExtensions,
+        confidential_transfer_fee::ConfidentialTransferFeeConfig, cpi_guard::CpiGuard,
+        default_account_state::DefaultAccountState, group_member_pointer::GroupMemberPointer,
+        group_pointer::GroupPointer, immutable_owner::ImmutableOwner,
+        interest_bearing_mint::InterestBearingConfig, memo_transfer::MemoTransfer,
+        metadata_pointer::MetadataPointer, mint_close_authority::MintCloseAuthority,
+        non_transferable::NonTransferable, pausable::PausableAccount,
+        permanent_delegate::PermanentDelegate, transfer_fee::TransferFeeConfig,
+        transfer_hook::TransferHook, BaseStateWithExtensions, ExtensionType, StateWithExtensions,
     },
     instruction,
     state::{Account as Token2022AccountState, AccountState, Mint as Token2022MintState},
@@ -79,7 +69,7 @@ impl TokenState for Token2022Account {
         self.amount
     }
     fn decimals(&self) -> u8 {
-        0 
+        0
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
