@@ -26,16 +26,7 @@ pub fn find_config_file(explicit_path: Option<&str>) -> Option<PathBuf> {
         return Some(current_dir);
     }
 
-    // 3. Check XDG config directory
-    if let Some(mut config_dir) = dirs::config_dir() {
-        config_dir.push("kora");
-        config_dir.push("kora.toml");
-        if config_dir.exists() {
-            return Some(config_dir);
-        }
-    }
-
-    // 4. Check /etc/kora/kora.toml
+    // 3. Check /etc/kora/kora.toml
     let etc_config = PathBuf::from("/etc/kora/kora.toml");
     if etc_config.exists() {
         return Some(etc_config);
