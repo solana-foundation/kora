@@ -10,7 +10,7 @@ pub struct CommonArgs {
     pub rpc_url: String,
 
     /// Base58-encoded private key for signing
-    #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present_any = ["skip_signer", "turnkey_signer"])]
+    #[arg(long, env = "KORA_PRIVATE_KEY")]
     pub private_key: Option<String>,
 
     /// Path to kora.toml config file
