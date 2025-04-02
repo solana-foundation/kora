@@ -304,13 +304,6 @@ fn check_transfer_blocking_extensions(
         }
     }
 
-    // Check for confidential transfers
-    if account_data.get_extension::<ConfidentialTransferAccount>().is_ok() {
-        return Err(KoraError::InvalidTransaction(
-            "Confidential transfers not supported".to_string(),
-        ));
-    }
-
     Ok(())
 }
 
@@ -325,11 +318,6 @@ fn calculate_actual_transfer_amount(
     if let Ok(fee_config) = account_data.get_extension::<TransferFeeConfig>() {
         let fee = calculate_transfer_fee(amount, fee_config)?;
         actual_amount = actual_amount.saturating_sub(fee);
-    }
-
-    // Apply interest if present (note: for pricing, we use raw amount without interest)
-    if let Ok(interest_config) = account_data.get_extension::<InterestBearingConfig>() {
-        actual_amount = calculate_interest(actual_amount, interest_config)?;
     }
 
     Ok(actual_amount)

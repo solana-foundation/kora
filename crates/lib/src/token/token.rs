@@ -36,7 +36,7 @@ impl TokenState for TokenAccount {
         self.amount
     }
     fn decimals(&self) -> u8 {
-        0 
+        0
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
