@@ -16,7 +16,7 @@ use spl_token_2022;
 use std::str::FromStr;
 
 // PYUSD token mint on devnet
-const PYUSD_MINT: &str = "PYUSD6FiXyYotH6a4LJDP8mjQT7eJRJ4mkd5ZUj94UF";
+const PYUSD_MINT: &str = "CXk2AMBfi3TwaEL2468s6zP8xq9NxTXjp9gjMgzeUynM";
 
 #[tokio::test]
 #[ignore] // This test requires devnet connection
