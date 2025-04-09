@@ -6,6 +6,9 @@ mod interface;
 mod token;
 mod token22;
 
+#[cfg(test)]
+mod tests;
+
 pub use interface::{TokenInterface, TokenState};
 pub use token::{TokenAccount, TokenProgram};
 pub use token22::{Token2022Account, Token2022Program};
