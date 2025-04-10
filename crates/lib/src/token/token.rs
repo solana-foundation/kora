@@ -3,62 +3,26 @@ use super::{
     TokenType,
 };
 use async_trait::async_trait;
-use solana_program::{program_pack::Pack, pubkey::Pubkey as ProgramPubkey};
-use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use solana_program::{program_pack::Pack, pubkey::Pubkey};
+use solana_sdk::instruction::Instruction;
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
 use spl_token::{
     self,
-    state::{Account as TokenAccountState, Mint as MintState},
+    state::{Account as TokenAccountState, AccountState, Mint as MintState},
 };
 
-use spl_token::instruction::initialize_account;
-
-// Define TokenAccount struct
+#[derive(Debug)]
 pub struct TokenAccount {
     pub mint: Pubkey,
     pub owner: Pubkey,
     pub amount: u64,
-}
-
-pub struct TokenProgram {
-    token_type: TokenType,
-}
-
-impl TokenProgram {
-    pub fn new(token_type: TokenType) -> Self {
-        Self { token_type }
-    }
-
-    fn get_program_id(&self) -> Pubkey {
-        match self.token_type {
-            TokenType::Spl => Pubkey::new_from_array(spl_token::id().to_bytes()),
-            TokenType::Token2022 => {
-                todo!("Token2022 program ID logic")
-            }
-        }
-    }
-
-    fn unpack_token_account(
-        &self,
-        data: &[u8],
-    ) -> Result<Box<dyn TokenState + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
-        let account = TokenAccountState::unpack(data)?;
-        Ok(Box::new(TokenAccount {
-            mint: account.mint,
-            owner: account.owner,
-            amount: account.amount,
-        }))
-    }
-
-    fn get_mint_decimals(
-        &self,
-        mint_data: &[u8],
-    ) -> Result<u8, Box<dyn std::error::Error + Send + Sync>> {
-        let mint = MintState::unpack(mint_data)?;
-        Ok(mint.decimals)
-    }
+    pub delegate: Option<Pubkey>,
+    pub state: u8,
+    pub is_native: Option<u64>,
+    pub delegated_amount: u64,
+    pub close_authority: Option<Pubkey>,
 }
 
 impl TokenState for TokenAccount {
@@ -74,12 +38,54 @@ impl TokenState for TokenAccount {
     fn decimals(&self) -> u8 {
         0
     }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+pub struct TokenProgram {
+    token_type: TokenType,
+}
+
+impl TokenProgram {
+    pub fn new(token_type: TokenType) -> Self {
+        Self { token_type }
+    }
+
+    fn get_program_id(&self) -> Pubkey {
+        match self.token_type {
+            TokenType::Spl => spl_token::id(),
+            TokenType::Token2022 => spl_token_2022::id(),
+        }
+    }
 }
 
 #[async_trait]
 impl TokenInterface for TokenProgram {
     fn program_id(&self) -> Pubkey {
         self.get_program_id()
+    }
+
+    fn unpack_token_account(
+        &self,
+        data: &[u8],
+    ) -> Result<Box<dyn TokenState + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
+        let account = TokenAccountState::unpack(data)?;
+
+        Ok(Box::new(TokenAccount {
+            mint: account.mint,
+            owner: account.owner,
+            amount: account.amount,
+            delegate: account.delegate.into(),
+            state: match account.state {
+                AccountState::Uninitialized => 0,
+                AccountState::Initialized => 1,
+                AccountState::Frozen => 2,
+            },
+            is_native: account.is_native.into(),
+            delegated_amount: account.delegated_amount,
+            close_authority: account.close_authority.into(),
+        }))
     }
 
     fn create_initialize_account_instruction(
@@ -142,37 +148,22 @@ impl TokenInterface for TokenProgram {
         create_associated_token_account(funding_account, wallet, mint, &self.program_id())
     }
 
-    fn decode_transfer_instruction(
-        &self,
-        data: &[u8],
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        use spl_token::instruction::TokenInstruction;
-        let instruction = TokenInstruction::unpack(data)?;
-
-        if let TokenInstruction::Transfer { amount } = instruction {
-            Ok(amount)
-        } else {
-            Err("Invalid instruction type".into())
-        }
-    }
-
-    fn unpack_token_account(
-        &self,
-        data: &[u8],
-    ) -> Result<Box<dyn TokenState + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
-        let account = TokenAccountState::unpack(data)?;
-        Ok(Box::new(TokenAccount {
-            mint: account.mint,
-            owner: account.owner,
-            amount: account.amount,
-        }))
-    }
-
     fn get_mint_decimals(
         &self,
         mint_data: &[u8],
     ) -> Result<u8, Box<dyn std::error::Error + Send + Sync>> {
-        let mint = MintState::unpack(mint_data)?;
-        Ok(mint.decimals)
+        Ok(MintState::unpack(mint_data)?.decimals)
+    }
+
+    fn decode_transfer_instruction(
+        &self,
+        data: &[u8],
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+        let instruction = spl_token::instruction::TokenInstruction::unpack(data)?;
+        match instruction {
+            spl_token::instruction::TokenInstruction::Transfer { amount } => Ok(amount),
+            spl_token::instruction::TokenInstruction::TransferChecked { amount, .. } => Ok(amount),
+            _ => Err("Not a transfer instruction".into()),
+        }
     }
 }
