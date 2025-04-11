@@ -72,8 +72,12 @@ async fn test_pyusd_token_e2e_with_kora() {
     println!("Test wallet address: {}", wallet.pubkey());
 
     // Get associated token address for this wallet and PYUSD
-    let token_account_address =
-        token_program.get_associated_token_address(&wallet.pubkey(), &pyusd_mint);
+    // Use Token2022 program ID directly
+    let token_account_address = get_associated_token_address_with_program_id(
+        &wallet.pubkey(),
+        &pyusd_mint,
+        &spl_token_2022::id(),
+    );
     println!("Token account address: {}", token_account_address);
 
     // Create instructions to create the token account
@@ -110,8 +114,12 @@ async fn test_pyusd_token_e2e_with_kora() {
         &pyusd_mint,
     );
 
-    let destination =
-        token_program.get_associated_token_address(&destination_wallet.pubkey(), &pyusd_mint);
+    // Use Token2022 program ID directly
+    let destination = get_associated_token_address_with_program_id(
+        &destination_wallet.pubkey(),
+        &pyusd_mint,
+        &spl_token_2022::id(),
+    );
 
     // Create a transfer instruction using our helper function
     let transfer_ix = create_transfer_checked_instruction(
@@ -200,7 +208,12 @@ fn test_token2022_operations() {
     let mint = Pubkey::new_unique(); // Use a random mint for testing
 
     // Create instructions for token operations
-    let ata = token_program.get_associated_token_address(&wallet.pubkey(), &mint);
+    // Use Token2022 program ID directly
+    let ata = get_associated_token_address_with_program_id(
+        &wallet.pubkey(),
+        &mint,
+        &spl_token_2022::id(),
+    );
     let create_ata_ix = token_program.create_associated_token_account_instruction(
         &wallet.pubkey(),
         &wallet.pubkey(),
