@@ -1,6 +1,8 @@
 use kora_lib::{
     error::KoraError,
-    token::{Token2022Account, TokenInterface, TokenProgram, TokenState, TokenType},
+    token::{
+        Token2022Account, Token2022Program, TokenInterface, TokenProgram, TokenState, TokenType,
+    },
     transaction::validator::validate_token2022_account,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -12,44 +14,9 @@ use solana_sdk::{
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
-use spl_associated_token_account::get_associated_token_address_with_program_id;
 use spl_token;
 use spl_token_2022;
 use std::str::FromStr;
-
-// Helper function to create a transfer_checked instruction with the correct program ID
-fn create_transfer_checked_instruction(
-    token_type: TokenType,
-    source: &Pubkey,
-    mint: &Pubkey,
-    destination: &Pubkey,
-    authority: &Pubkey,
-    amount: u64,
-    decimals: u8,
-) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-    match token_type {
-        TokenType::Spl => Ok(spl_token::instruction::transfer_checked(
-            &spl_token::id(),
-            source,
-            mint,
-            destination,
-            authority,
-            &[],
-            amount,
-            decimals,
-        )?),
-        TokenType::Token2022 => Ok(spl_token_2022::instruction::transfer_checked(
-            &spl_token_2022::id(),
-            source,
-            mint,
-            destination,
-            authority,
-            &[],
-            amount,
-            decimals,
-        )?),
-    }
-}
 
 // PYUSD token mint on devnet
 const PYUSD_MINT: &str = "CXk2AMBfi3TwaEL2468s6zP8xq9NxTXjp9gjMgzeUynM";
@@ -62,7 +29,7 @@ async fn test_pyusd_token_e2e_with_kora() {
     let rpc_client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
 
     // Create a token program interface for Token2022
-    let token_program = TokenProgram::new(TokenType::Token2022);
+    let token_program = Token2022Program::new();
 
     // PYUSD mint on devnet
     let pyusd_mint = Pubkey::from_str(PYUSD_MINT).unwrap();
@@ -71,13 +38,9 @@ async fn test_pyusd_token_e2e_with_kora() {
     let wallet = Keypair::new();
     println!("Test wallet address: {}", wallet.pubkey());
 
-    // Get associated token address for this wallet and PYUSD
-    // Use Token2022 program ID directly
-    let token_account_address = get_associated_token_address_with_program_id(
-        &wallet.pubkey(),
-        &pyusd_mint,
-        &spl_token_2022::id(),
-    );
+    // Get associated token address for this wallet and PYUSD using the TokenInterface
+    let token_account_address =
+        token_program.get_associated_token_address(&wallet.pubkey(), &pyusd_mint);
     println!("Token account address: {}", token_account_address);
 
     // Create instructions to create the token account
@@ -114,24 +77,21 @@ async fn test_pyusd_token_e2e_with_kora() {
         &pyusd_mint,
     );
 
-    // Use Token2022 program ID directly
-    let destination = get_associated_token_address_with_program_id(
-        &destination_wallet.pubkey(),
-        &pyusd_mint,
-        &spl_token_2022::id(),
-    );
+    // Get destination token address using the TokenInterface
+    let destination =
+        token_program.get_associated_token_address(&destination_wallet.pubkey(), &pyusd_mint);
 
-    // Create a transfer instruction using our helper function
-    let transfer_ix = create_transfer_checked_instruction(
-        TokenType::Token2022,
-        &token_account_address,
-        &pyusd_mint,
-        &destination,
-        &wallet.pubkey(),
-        transfer_amount,
-        decimals,
-    )
-    .unwrap();
+    // Create a transfer instruction using the TokenInterface directly
+    let transfer_ix = token_program
+        .create_transfer_checked_instruction(
+            &token_account_address,
+            &pyusd_mint,
+            &destination,
+            &wallet.pubkey(),
+            transfer_amount,
+            decimals,
+        )
+        .unwrap();
 
     // Get a new recent blockhash
     let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
@@ -175,8 +135,8 @@ async fn test_pyusd_token_e2e_with_kora() {
     // For a real token account, we'd need to query the account data
     if let Ok(account) = rpc_client.get_account(&token_account_address).await {
         if !account.data.is_empty() {
-            // Unpack the token account data using the original TokenProgram
-            let original_token_program = TokenProgram::new(TokenType::Token2022);
+            // Unpack the token account data using the Token2022Program
+            let original_token_program = Token2022Program::new();
             let token_state = original_token_program.unpack_token_account(&account.data).unwrap();
 
             // Verify it's a Token2022Account
@@ -201,19 +161,14 @@ async fn test_pyusd_token_e2e_with_kora() {
 #[test]
 fn test_token2022_operations() {
     // Create a token program for testing
-    let token_program = TokenProgram::new(TokenType::Token2022);
+    let token_program = Token2022Program::new();
 
     // Test wallet creation
     let wallet = Keypair::new();
     let mint = Pubkey::new_unique(); // Use a random mint for testing
 
-    // Create instructions for token operations
-    // Use Token2022 program ID directly
-    let ata = get_associated_token_address_with_program_id(
-        &wallet.pubkey(),
-        &mint,
-        &spl_token_2022::id(),
-    );
+    // Create instructions for token operations using TokenInterface
+    let ata = token_program.get_associated_token_address(&wallet.pubkey(), &mint);
     let create_ata_ix = token_program.create_associated_token_account_instruction(
         &wallet.pubkey(),
         &wallet.pubkey(),
@@ -224,17 +179,10 @@ fn test_token2022_operations() {
     // our mint isn't a real mint on the blockchain
     let destination = Pubkey::new_unique();
 
-    // Use our helper function to create the instruction
-    let transfer_ix = create_transfer_checked_instruction(
-        TokenType::Token2022,
-        &ata,
-        &mint,
-        &destination,
-        &wallet.pubkey(),
-        100,
-        9,
-    )
-    .unwrap();
+    // Use TokenInterface directly to create the instruction
+    let transfer_ix = token_program
+        .create_transfer_checked_instruction(&ata, &mint, &destination, &wallet.pubkey(), 100, 9)
+        .unwrap();
 
     // Create a transaction with both instructions
     let transaction =
