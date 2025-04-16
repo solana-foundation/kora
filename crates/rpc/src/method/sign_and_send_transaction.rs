@@ -6,7 +6,9 @@ use utoipa::ToSchema;
 use kora_lib::{
     config::ValidationConfig,
     transaction::{
-        decode_b58_transaction, sign_and_send_transaction as lib_sign_and_send_transaction,
+        decode_b58_transaction, decode_b58_transaction_with_version,
+        sign_and_send_transaction as lib_sign_and_send_transaction,
+        sign_and_send_transaction_with_version as lib_sign_and_send_versioned_transaction,
     },
     KoraError,
 };
@@ -30,6 +32,18 @@ pub async fn sign_and_send_transaction(
     let transaction = decode_b58_transaction(&request.transaction)?;
     let (signature, signed_transaction) =
         lib_sign_and_send_transaction(rpc_client, validation, transaction).await?;
+
+    Ok(SignAndSendTransactionResponse { signature, signed_transaction })
+}
+
+pub async fn sign_and_send_versioned_transaction(
+    rpc_client: &Arc<RpcClient>,
+    validation: &ValidationConfig,
+    request: SignAndSendTransactionRequest,
+) -> Result<SignAndSendTransactionResponse, KoraError> {
+    let transaction = decode_b58_transaction_with_version(&request.transaction)?;
+    let (signature, signed_transaction) =
+        lib_sign_and_send_versioned_transaction(rpc_client, validation, transaction).await?;
 
     Ok(SignAndSendTransactionResponse { signature, signed_transaction })
 }
