@@ -54,6 +54,7 @@ http = "0.2"
 jup-ag = "0.8.0"
 toml = "0.8.19"
 spl-token = "7.0.0"
+spl-token-2022 = "2.0.0"
 spl-associated-token-account = "6.0.0"
 jupiter-swap-api-client = { git = "https://github.com/pkxro/jupiter-swap-api-client.git", package = "jupiter-swap-api-client"}
 jupiter = "3.1.4"
