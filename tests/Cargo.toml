@@ -16,6 +16,7 @@ kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
 spl-token = { workspace = true }
+spl-token-2022 = { workspace = true }
 spl-associated-token-account = { workspace = true }
 bincode = { workspace = true }
 bs58 = { workspace = true }
