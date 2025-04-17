@@ -6,6 +6,7 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
+use kora_lib::transaction::encode_b64_transaction;
 use std::str::FromStr;
 
 fn main() {
@@ -26,9 +27,8 @@ fn main() {
 
     let transaction = Transaction { signatures: vec![Default::default()], message };
 
-    let serialized = bincode::serialize(&transaction).unwrap();
-    let base58_tx = bs58::encode(serialized).into_string();
+    let base64_tx = encode_b64_transaction(&transaction).unwrap();
 
     println!("Sender pubkey: {}", sender.pubkey());
-    println!("Base58 encoded unsigned transaction: {}", base58_tx);
+    println!("Base64 encoded unsigned transaction: {}", base64_tx);
 }

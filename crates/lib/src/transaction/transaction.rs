@@ -2,6 +2,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     instruction::{AccountMeta, CompiledInstruction, Instruction},
+    message::Message,
     pubkey::Pubkey,
     transaction::Transaction,
 };
@@ -12,46 +13,6 @@ use crate::{
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-
-pub fn decode_b58_transaction(tx: &str) -> Result<Transaction, KoraError> {
-    if tx.is_empty() {
-        return Err(KoraError::InvalidTransaction("Empty transaction string".to_string()));
-    }
-
-    let decoded_bytes = match bs58::decode(tx).into_vec() {
-        Ok(bytes) => {
-            if bytes.is_empty() {
-                return Err(KoraError::InvalidTransaction("Decoded bytes are empty".to_string()));
-            }
-            log::debug!("Successfully decoded base58 data, length: {} bytes", bytes.len());
-            bytes
-        }
-        Err(e) => {
-            log::error!("Failed to decode base58 data: {}", e);
-            return Err(KoraError::InvalidTransaction(format!("Invalid base58: {}", e)));
-        }
-    };
-
-    let transaction = match bincode::deserialize::<Transaction>(&decoded_bytes) {
-        Ok(tx) => {
-            log::debug!("Successfully deserialized transaction");
-            tx
-        }
-        Err(e) => {
-            log::error!(
-                "Failed to deserialize transaction: {}; Decoded bytes length: {}",
-                e,
-                decoded_bytes.len()
-            );
-            return Err(KoraError::InvalidTransaction(format!(
-                "Failed to deserialize transaction: {}",
-                e
-            )));
-        }
-    };
-
-    Ok(transaction)
-}
 
 pub fn uncompile_instructions(
     instructions: &[CompiledInstruction],
@@ -125,15 +86,15 @@ pub async fn sign_and_send_transaction(
     Ok((signature.to_string(), encoded))
 }
 
-pub fn encode_transaction_b58(transaction: &Transaction) -> Result<String, KoraError> {
+pub fn encode_b64_transaction(transaction: &Transaction) -> Result<String, KoraError> {
     let serialized = bincode::serialize(transaction).map_err(|e| {
-        KoraError::SerializationError(format!("Base58 serialization failed: {}", e))
+        KoraError::SerializationError(format!("Base64 serialization failed: {}", e))
     })?;
-    Ok(bs58::encode(serialized).into_string())
+    Ok(STANDARD.encode(serialized))
 }
 
-pub fn encode_transaction_b64(transaction: &Transaction) -> Result<String, KoraError> {
-    let serialized = bincode::serialize(transaction).map_err(|e| {
+pub fn encode_b64_message(message: &Message) -> Result<String, KoraError> {
+    let serialized = bincode::serialize(message).map_err(|e| {
         KoraError::SerializationError(format!("Base64 serialization failed: {}", e))
     })?;
     Ok(STANDARD.encode(serialized))
@@ -155,7 +116,7 @@ mod tests {
     use solana_sdk::{hash::Hash, message::Message, signature::Keypair, signer::Signer as _};
 
     #[test]
-    fn test_decode_b58_transaction() {
+    fn test_encode_decode_b64_transaction() {
         let keypair = Keypair::new();
         let instruction = Instruction::new_with_bytes(
             Pubkey::new_unique(),
@@ -165,19 +126,35 @@ mod tests {
         let message = Message::new(&[instruction], Some(&keypair.pubkey()));
         let tx = Transaction::new(&[&keypair], message, Hash::default());
 
-        let encoded = bs58::encode(bincode::serialize(&tx).unwrap()).into_string();
-        let decoded = decode_b58_transaction(&encoded).unwrap();
+        let encoded = encode_b64_transaction(&tx).unwrap();
+        let decoded = decode_b64_transaction(&encoded).unwrap();
 
         assert_eq!(tx, decoded);
     }
 
     #[test]
-    fn test_decode_b58_transaction_invalid_input() {
-        let result = decode_b58_transaction("not-base58!");
+    fn test_decode_b64_transaction_invalid_input() {
+        let result = decode_b64_transaction("not-base64!");
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
 
-        let result = decode_b58_transaction("3xQP"); // base58 of [1,2,3]
+        let result = decode_b64_transaction("AQID"); // base64 of [1,2,3]
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
+    }
+
+    #[test]
+    fn test_encode_transaction_b64() {
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message = Message::new(&[instruction], Some(&keypair.pubkey()));
+        let tx = Transaction::new(&[&keypair], message, Hash::default());
+
+        let encoded = encode_b64_transaction(&tx).unwrap();
+        assert!(!encoded.is_empty());
+        assert!(encoded.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='));
     }
 
     #[test]

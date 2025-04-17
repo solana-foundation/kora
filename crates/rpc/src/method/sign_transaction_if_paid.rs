@@ -1,9 +1,8 @@
 use kora_lib::{
     config::ValidationConfig,
     transaction::{
-        encode_transaction_b58, sign_transaction_if_paid as lib_sign_transaction_if_paid,
+        encode_b64_transaction, decode_b64_transaction, sign_transaction_if_paid as lib_sign_transaction_if_paid,
     },
-    types::TransactionEncoding,
     KoraError,
 };
 use serde::{Deserialize, Serialize};
@@ -16,7 +15,6 @@ use utoipa::ToSchema;
 pub struct SignTransactionIfPaidRequest {
     pub transaction: String,
     #[serde(default)]
-    pub encoding: Option<TransactionEncoding>,
     pub margin: Option<f64>,
 }
 
@@ -31,8 +29,7 @@ pub async fn sign_transaction_if_paid(
     validation: &ValidationConfig,
     request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
-    let transaction_requested: Transaction =
-        bincode::deserialize(&bs58::decode(request.transaction).into_vec().unwrap())?;
+    let transaction_requested = decode_b64_transaction(&request.transaction)?;
 
     let (transaction, signed_transaction) =
         lib_sign_transaction_if_paid(rpc_client, validation, transaction_requested, request.margin)
@@ -40,7 +37,7 @@ pub async fn sign_transaction_if_paid(
             .map_err(|e| KoraError::TokenOperationError(e.to_string()))?;
 
     Ok(SignTransactionIfPaidResponse {
-        transaction: encode_transaction_b58(&transaction)?,
+        transaction: encode_b64_transaction(&transaction)?,
         signed_transaction,
     })
 }
