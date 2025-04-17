@@ -1,3 +1,4 @@
+use kora_lib::transaction::encode_b64_transaction;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     message::Message,
@@ -6,7 +7,6 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
-use kora_lib::transaction::encode_b64_transaction;
 use std::str::FromStr;
 
 fn main() {

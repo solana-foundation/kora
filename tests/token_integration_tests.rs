@@ -1,4 +1,4 @@
-use kora_lib::token::{TokenProgram, TokenType, TokenInterface};
+use kora_lib::token::{TokenInterface, TokenProgram, TokenType};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 
@@ -12,18 +12,13 @@ async fn test_token_operations() {
     let mint = Pubkey::new_unique();
     let owner = Pubkey::new_unique();
     let destination = Pubkey::new_unique();
-    
+
     // Test ATA derivation
     let ata = program.get_associated_token_address(&owner, &mint);
     assert_ne!(ata, owner);
     assert_ne!(ata, mint);
-    
+
     // Test transfer instruction creation
-    let transfer_ix = program.create_transfer_instruction(
-        &ata,
-        &destination,
-        &owner,
-        1000,
-    );
+    let transfer_ix = program.create_transfer_instruction(&ata, &destination, &owner, 1000);
     assert!(transfer_ix.is_ok());
-} 
+}

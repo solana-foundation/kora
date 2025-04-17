@@ -154,7 +154,9 @@ mod tests {
 
         let encoded = encode_b64_transaction(&tx).unwrap();
         assert!(!encoded.is_empty());
-        assert!(encoded.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='));
+        assert!(encoded
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='));
     }
 
     #[test]

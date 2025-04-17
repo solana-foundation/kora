@@ -1,7 +1,7 @@
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
 use kora_lib::{
     token::{TokenInterface, TokenProgram, TokenType},
-    transaction::{encode_b64_transaction, decode_b64_transaction},
+    transaction::{decode_b64_transaction, encode_b64_transaction},
 };
 use serde_json::json;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -402,10 +402,7 @@ async fn test_sign_transaction_if_paid() {
 
     // Rest of the test remains the same...
     let response: serde_json::Value = client
-        .request(
-            "signTransactionIfPaid",
-            rpc_params![base64_transaction, 0],
-        )
+        .request("signTransactionIfPaid", rpc_params![base64_transaction, 0])
         .await
         .expect("Failed to sign transaction");
 
