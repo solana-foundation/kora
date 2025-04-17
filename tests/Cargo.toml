@@ -4,14 +4,23 @@ version = { workspace = true }
 edition = { workspace = true }
 
 [[test]]
+name = "integration"
+path = "integration_tests.rs"
+
+[[test]]
 name = "api_integration"
 path = "api_integration_tests.rs"
+
+[[test]]
+name = "token_integration"
+path = "token_integration_tests.rs"
 
 [dependencies]
 kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
 spl-token = { workspace = true }
+spl-token-2022 = { workspace = true }
 spl-associated-token-account = { workspace = true }
 bincode = { workspace = true }
 bs58 = { workspace = true }

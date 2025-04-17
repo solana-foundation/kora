@@ -3,14 +3,14 @@ use solana_sdk::{
     system_instruction, transaction::Transaction,
 };
 
-use super::{decode_b58_transaction, estimate_transaction_fee};
+use super::{decode_b64_transaction, estimate_transaction_fee};
 use crate::{
     rpc::test_utils::setup_test_rpc_client,
     token::{TokenInterface, TokenProgram, TokenType},
 };
 
 #[test]
-fn test_decode_b58_transaction() {
+fn test_decode_b64_transaction() {
     let keypair = Keypair::new();
     let instruction = solana_sdk::instruction::Instruction::new_with_bytes(
         Pubkey::new_unique(),
@@ -20,18 +20,18 @@ fn test_decode_b58_transaction() {
     let message = Message::new(&[instruction], Some(&keypair.pubkey()));
     let tx = Transaction::new(&[&keypair], message, Hash::default());
 
-    let encoded = bs58::encode(bincode::serialize(&tx).unwrap()).into_string();
-    let decoded = decode_b58_transaction(&encoded).unwrap();
+    let encoded = base64::encode(bincode::serialize(&tx).unwrap());
+    let decoded = decode_b64_transaction(&encoded).unwrap();
 
     assert_eq!(tx, decoded);
 }
 
 #[test]
-fn test_decode_b58_transaction_invalid_input() {
-    let result = decode_b58_transaction("not-base58!");
+fn test_decode_b64_transaction_invalid_input() {
+    let result = decode_b64_transaction("not-base64!");
     assert!(matches!(result, Err(crate::error::KoraError::InvalidTransaction(_))));
 
-    let result = decode_b58_transaction("3xQP"); // base58 of [1,2,3]
+    let result = decode_b64_transaction("AQID"); // base64 of [1,2,3]
     assert!(matches!(result, Err(crate::error::KoraError::InvalidTransaction(_))));
 }
 
