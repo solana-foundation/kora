@@ -160,9 +160,7 @@ async fn test_sign_transaction() {
         .await
         .expect("Failed to simulate transaction");
 
-    println!("Simulated transaction: {:?}", simulated_tx);
     if let Some(err) = &simulated_tx.value.err {
-        println!("Simulation error: {:?}", err);
         assert!(false, "Transaction simulation failed with error: {:?}", err);
     } else {
         println!("Transaction simulation succeeded");
@@ -200,9 +198,7 @@ async fn test_sign_spl_transaction() {
         .await
         .expect("Failed to simulate transaction");
 
-    println!("Simulated transaction: {:?}", simulated_tx);
     if let Some(err) = &simulated_tx.value.err {
-        println!("Simulation error: {:?}", err);
         assert!(false, "Transaction simulation failed with error: {:?}", err);
     } else {
         println!("Transaction simulation succeeded");
@@ -269,10 +265,7 @@ async fn test_transfer_transaction() {
     assert!(response["message"].as_str().is_some(), "Expected message in response");
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
 
-    println!("Response: {:?}", response);
     let transaction_string = response["transaction"].as_str().unwrap();
-    println!("Transaction string length: {}", transaction_string.len());
-    println!("Transaction string: {}", transaction_string);
     let transaction = decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
@@ -281,7 +274,6 @@ async fn test_transfer_transaction() {
         .await
         .expect("Failed to simulate transaction");
 
-    println!("Simulated transaction: {:?}", simulated_tx);
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
 
@@ -310,8 +302,6 @@ async fn test_transfer_transaction_with_ata() {
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
 
     let transaction_string = response["transaction"].as_str().unwrap();
-    println!("Transaction string length: {}", transaction_string.len());
-    println!("Transaction string: {}", transaction_string);
     let transaction = decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
@@ -320,7 +310,6 @@ async fn test_transfer_transaction_with_ata() {
         .await
         .expect("Failed to simulate transaction");
 
-    println!("Simulated transaction: {:?}", simulated_tx);
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
 
@@ -420,8 +409,6 @@ async fn test_sign_transaction_if_paid() {
         .await
         .expect("Failed to sign transaction");
 
-    println!("Response: {:?}", response);
-
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -432,16 +419,11 @@ async fn test_sign_transaction_if_paid() {
     let transaction = decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
-    // print hex of message data
-    let message_data = transaction.message_data();
-    println!("Transaction: {:?}", transaction);
-    println!("Message data: {:?}", hex::encode(message_data));
     // Simulate the transaction
     let simulated_tx = rpc_client
         .simulate_transaction(&transaction)
         .await
         .expect("Failed to simulate transaction");
 
-    println!("Simulated transaction: {:?}", simulated_tx);
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
