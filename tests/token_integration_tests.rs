@@ -1,20 +1,14 @@
 use kora_lib::{
-    error::KoraError,
-    token::{
-        Token2022Account, Token2022Program, TokenInterface, TokenProgram, TokenState, TokenType,
-    },
+    token::{Token2022Account, Token2022Program, TokenInterface},
     transaction::validator::validate_token2022_account,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
-    hash::Hash as SolanaHash,
-    instruction::Instruction,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
-use spl_token;
 use spl_token_2022;
 use std::str::FromStr;
 
@@ -22,7 +16,6 @@ use std::str::FromStr;
 const PYUSD_MINT: &str = "CXk2AMBfi3TwaEL2468s6zP8xq9NxTXjp9gjMgzeUynM";
 
 #[tokio::test]
-#[ignore] // This test requires devnet connection
 async fn test_pyusd_token_e2e_with_kora() {
     // Get a connection to devnet
     let rpc_url = "https://api.devnet.solana.com".to_string();
@@ -42,27 +35,6 @@ async fn test_pyusd_token_e2e_with_kora() {
     let token_account_address =
         token_program.get_associated_token_address(&wallet.pubkey(), &pyusd_mint);
     println!("Token account address: {}", token_account_address);
-
-    // Create instructions to create the token account
-    let create_account_ix = token_program.create_associated_token_account_instruction(
-        &wallet.pubkey(),
-        &wallet.pubkey(),
-        &pyusd_mint,
-    );
-
-    // We need a recent blockhash for the transaction
-    let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
-
-    // Create a transaction to create the token account
-    let create_account_tx = Transaction::new_signed_with_payer(
-        &[create_account_ix],
-        Some(&wallet.pubkey()),
-        &[&wallet],
-        recent_blockhash,
-    );
-
-    // This would require SOL to be sent to the wallet first, so we'll skip actual submission
-    // and just validate the transaction structure
 
     // Create a simulated transfer instruction
     let transfer_amount = 1_000_000; // 1 PYUSD with 6 decimals

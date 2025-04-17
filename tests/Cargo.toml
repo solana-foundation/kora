@@ -4,6 +4,10 @@ version = { workspace = true }
 edition = { workspace = true }
 
 [[test]]
+name = "integration"
+path = "integration_tests.rs"
+
+[[test]]
 name = "api_integration"
 path = "api_integration_tests.rs"
 
