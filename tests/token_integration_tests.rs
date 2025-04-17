@@ -1,7 +1,5 @@
 use kora_lib::{
-    token::{
-        Token2022Account, Token2022Program, TokenInterface,
-    },
+    token::{Token2022Account, Token2022Program, TokenInterface},
     transaction::validator::validate_token2022_account,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
