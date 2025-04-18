@@ -51,9 +51,11 @@ pub async fn sign_transaction(
 
     // Get latest blockhash and update transaction
     let mut transaction = transaction;
-    let blockhash =
-        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
-    transaction.message.recent_blockhash = blockhash.0;
+    if transaction.signatures.is_empty() {
+        let blockhash =
+            rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
+        transaction.message.recent_blockhash = blockhash.0;
+    }
 
     // Validate transaction fee
     let estimated_fee = rpc_client.get_fee_for_message(&transaction.message).await?;
