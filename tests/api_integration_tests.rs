@@ -17,6 +17,7 @@ use spl_associated_token_account::get_associated_token_address;
 use std::{str::FromStr, sync::Arc};
 
 const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
+const USDC_DEVNET_MINT: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
 fn get_rpc_url() -> String {
     dotenv::dotenv().ok();
@@ -67,7 +68,7 @@ async fn create_test_spl_transaction() -> String {
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
 
     // Setup token accounts
-    let token_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
+    let token_mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
     let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
 
@@ -111,7 +112,7 @@ async fn test_get_supported_tokens() {
     assert!(!tokens.is_empty(), "Tokens list should not be empty");
 
     // Check for specific known tokens
-    let expected_tokens = ["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"];
+    let expected_tokens = [USDC_DEVNET_MINT];
 
     for token in expected_tokens.iter() {
         assert!(tokens.contains(&json!(token)), "Expected token {} not found", token);
@@ -289,7 +290,7 @@ async fn test_transfer_transaction_with_ata() {
             "transferTransaction",
             rpc_params![
                 10,
-                "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+                USDC_DEVNET_MINT,
                 "J1NiBQHq1Q98HwB4xZCpekg66oXniqzW9vXJorZNuF9R",
                 random_pubkey.to_string()
             ],
@@ -349,14 +350,12 @@ async fn test_sign_transaction_if_paid() {
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
 
     // Setup token accounts
-    let token_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
+    let token_mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
     let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
     let fee_payer_token_account = get_associated_token_address(&fee_payer, &token_mint);
 
-    let decimals = 6;
-    let amount = 0.0015;
-    let scaled_amount = (amount * 10_f64.powi(decimals)) as u64;
+    let fee_amount = 100000;
 
     // Create instructions
     let token_interface = TokenProgram::new(TokenType::Spl);
@@ -365,7 +364,7 @@ async fn test_sign_transaction_if_paid() {
             &sender_token_account,
             &fee_payer_token_account,
             &sender.pubkey(),
-            scaled_amount,
+            fee_amount,
         )
         .unwrap();
 
