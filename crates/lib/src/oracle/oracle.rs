@@ -35,7 +35,26 @@ pub struct RetryingPriceOracle {
 pub fn get_price_oracle(source: PriceSource) -> Arc<dyn PriceOracle + Send + Sync> {
     match source {
         PriceSource::Jupiter => Arc::new(crate::oracle::jupiter::JupiterPriceOracle),
-        PriceSource::Mock => Arc::new(MockPriceOracle::new()),
+        PriceSource::Mock => {
+            let mut mock = MockPriceOracle::new();
+            // Set up default mock behavior for devnet tokens
+            mock.expect_get_price()
+                .times(..) // Allow unlimited calls
+                .returning(|_, mint_address| {
+                    const USDC_DEVNET_MINT: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+                    let price = match mint_address {
+                        USDC_DEVNET_MINT => 0.0001, // USDC
+                        "So11111111111111111111111111111111111111112" => 1.0,    // SOL
+                        _ => 0.001, // Default price for unknown tokens
+                    };
+                    Ok(TokenPrice {
+                        price,
+                        confidence: 1.0,
+                        source: PriceSource::Mock,
+                    })
+                });
+            Arc::new(mock)
+        }
     }
 }
 
@@ -88,5 +107,29 @@ mod tests {
         let oracle = RetryingPriceOracle::new(3, Duration::from_millis(100), Arc::new(mock_oracle));
         let result = oracle.get_token_price("test").await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_mock_oracle_prices() {
+        let oracle = get_price_oracle(PriceSource::Mock);
+        let client = Client::new();
+
+        // Test USDC price
+        let usdc_price = oracle.get_price(&client, "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").await.unwrap();
+        assert_eq!(usdc_price.price, 0.0001);
+        assert_eq!(usdc_price.confidence, 1.0);
+        assert_eq!(usdc_price.source, PriceSource::Mock);
+
+        // Test SOL price
+        let sol_price = oracle.get_price(&client, "So11111111111111111111111111111111111111112").await.unwrap();
+        assert_eq!(sol_price.price, 1.0);
+        assert_eq!(sol_price.confidence, 1.0);
+        assert_eq!(sol_price.source, PriceSource::Mock);
+
+        // Test unknown token (should return default price)
+        let unknown_price = oracle.get_price(&client, "unknown_token").await.unwrap();
+        assert_eq!(unknown_price.price, 0.001);
+        assert_eq!(unknown_price.confidence, 1.0);
+        assert_eq!(unknown_price.source, PriceSource::Mock);
     }
 }
