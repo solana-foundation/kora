@@ -17,7 +17,6 @@ export interface SignAndSendTransactionRequest {
 export interface SignTransactionIfPaidRequest {
   transaction: string;
   margin?: number;
-  token_price_info?: TokenPriceInfo;
 }
 
 // Response Types

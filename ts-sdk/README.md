@@ -129,7 +129,7 @@ pnpm test
 Tests require a valid devnet wallet address. Update the `/ts-sdk/test/setup.ts` file with the correct env variables:
 
 ```env
-KORA_RPC_URL=localhost:8080
+KORA_RPC_URL=http://localhost:8080
 TEST_WALLET_PUBKEY=your_devnet_wallet_address
 USDC_MINT=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
 ```
