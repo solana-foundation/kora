@@ -41,7 +41,6 @@ pub async fn sign_transaction(
     rpc_client: &RpcClient,
     validation: &ValidationConfig,
     transaction: Transaction,
-    update_blockhash: bool,
 ) -> Result<(Transaction, String), KoraError> {
     let signer = get_signer()?;
     let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
@@ -52,7 +51,7 @@ pub async fn sign_transaction(
 
     // Get latest blockhash and update transaction
     let mut transaction = transaction;
-    if update_blockhash {
+    if transaction.signatures.is_empty() {
         let blockhash =
             rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
         transaction.message.recent_blockhash = blockhash.0;
@@ -78,8 +77,7 @@ pub async fn sign_and_send_transaction(
     validation: &ValidationConfig,
     transaction: Transaction,
 ) -> Result<(String, String), KoraError> {
-    let update_blockhash = false; // do not update blockhash for signAndSendTransaction
-    let (transaction, encoded) = sign_transaction(rpc_client, validation, transaction, update_blockhash).await?;
+    let (transaction, encoded) = sign_transaction(rpc_client, validation, transaction).await?;
 
     // Send and confirm transaction
     let signature = rpc_client

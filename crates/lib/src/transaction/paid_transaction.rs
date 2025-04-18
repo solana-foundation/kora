@@ -36,5 +36,5 @@ pub async fn sign_transaction_if_paid(
     .await?;
 
     // Sign the transaction
-    sign_transaction(rpc_client, validation, transaction, true).await
+    sign_transaction(rpc_client, validation, transaction).await
 }

@@ -28,7 +28,7 @@ pub async fn sign_transaction(
 ) -> Result<SignTransactionResponse, KoraError> {
     let transaction = decode_b64_transaction(&request.transaction)?;
     let _signed_transaction =
-        lib_sign_transaction(rpc_client, validation, transaction.clone(), true).await?;
+        lib_sign_transaction(rpc_client, validation, transaction.clone()).await?;
 
     let encoded = encode_b64_transaction(&transaction)?;
 

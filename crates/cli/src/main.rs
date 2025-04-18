@@ -88,7 +88,7 @@ async fn main() -> Result<(), KoraError> {
             })?;
 
             let (transaction, signed_tx) =
-                sign_transaction(&rpc_client, &validation, transaction, true).await?;
+                sign_transaction(&rpc_client, &validation, transaction).await?;
             println!("Signature: {}", transaction.signatures[0]);
             println!("Signed Transaction: {}", signed_tx);
         }
