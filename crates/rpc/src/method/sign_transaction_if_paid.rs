@@ -8,7 +8,6 @@ use kora_lib::{
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::transaction::Transaction;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
