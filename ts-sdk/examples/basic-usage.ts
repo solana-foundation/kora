@@ -1,8 +1,32 @@
-import { KoraClient } from '../src';
-// Note: you will have to install web3.js & bs58 to use this
-// the sdk does not require any dependencies so none have been added to package.json
-import { Keypair, VersionedTransaction } from '@solana/web3.js';
-import {default as bs58} from 'bs58';
+import { KoraClient } from "../src";
+import {
+  getBase64Encoder,
+  getBase58Encoder,
+  getTransactionDecoder,
+  createKeyPairSignerFromBytes,
+  KeyPairSigner,
+  Transaction,
+  signTransaction,
+  getBase64EncodedWireTransaction,
+} from "@solana/kit";
+
+function transactionFromBase64(base64: string): Transaction {
+  const encoder = getBase64Encoder();
+  const decoder = getTransactionDecoder();
+  const messageBytes = encoder.encode(base64);
+  return decoder.decode(messageBytes);
+}
+
+async function loadKeypairSignerFromEnvironmentBase58(
+  envVar: string
+): Promise<KeyPairSigner> {
+  const privateKey = process.env[envVar];
+  if (!privateKey) {
+    throw new Error(`Environment variable ${envVar} is not set`);
+  }
+  const privateKeyBytes = getBase58Encoder().encode(privateKey);
+  return createKeyPairSignerFromBytes(privateKeyBytes);
+}
 
 async function main() {
   // Initialize the client with your RPC endpoint
@@ -13,36 +37,43 @@ async function main() {
   try {
     // Get supported tokens
     const { tokens } = await client.getSupportedTokens();
-    console.log('Supported tokens:', tokens);
+    console.log("Supported tokens:", tokens);
 
     // Get current configuration
     const config = await client.getConfig();
-    console.log('Current configuration:', config);
+    console.log("Current configuration:", config);
 
-    // Load keypair from env var
-    const privateKeyBytes = bs58.decode(process.env.SDK_PRIVATE_KEY!);
-    const keypair = Keypair.fromSecretKey(privateKeyBytes);
+    // Load signer from env var
+    const signer =
+      await loadKeypairSignerFromEnvironmentBase58("PRIVATE_KEY");
 
     // Example transfer
-    const { transaction } = await client.transferTransaction({
-      amount: 1000000, // 1 USDC (6 decimals)
-      token: usdcMint, // USDC mint
-      source: keypair.publicKey.toString(),
-      destination: keypair.publicKey.toString() // Sending to self as example
-    });
+    const { transaction: transactionString } = await client.transferTransaction(
+      {
+        amount: 1000000, // 1 USDC (6 decimals)
+        token: usdcMint, // USDC mint
+        source: signer.address.toString(),
+        destination: signer.address.toString(), // Sending to self as example
+      }
+    );
 
     // Sign the transaction
-    const decodedTransaction = VersionedTransaction.deserialize(bs58.decode(transaction));
-    const signedTransaction = decodedTransaction;
-    signedTransaction.sign([keypair]);
+    const transaction = transactionFromBase64(transactionString);
 
     // Send signed transaction
-    const signature = await client.signAndSendTransaction({ transaction: bs58.encode(signedTransaction.serialize()) });
+    const signedTransaction = await signTransaction(
+      [signer.keyPair],
+      transaction
+    );
 
-    console.log('Transfer signature:', signature);
+    // Send signed transaction
+    const signature = await client.signAndSendTransaction({
+      transaction: getBase64EncodedWireTransaction(signedTransaction),
+    });
 
+    console.log("Transfer signature:", signature);
   } catch (error) {
-    console.error('Error:', error);
+    console.error("Error:", error);
   }
 }
 

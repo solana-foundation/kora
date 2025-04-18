@@ -37,7 +37,7 @@ export interface SignAndSendTransactionResponse {
 }
 
 export interface SignTransactionIfPaidResponse {
-  signature: string;
+  transaction: string;
   signed_transaction: string;
 }
 

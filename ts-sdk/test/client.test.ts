@@ -24,7 +24,6 @@ async function loadKeypairSignerFromEnvironmentBase58(
   if (!privateKey) {
     throw new Error(`Environment variable ${envVar} is not set`);
   }
-  console.log(privateKey);
   const privateKeyBytes = getBase58Encoder().encode(privateKey);
   return createKeyPairSignerFromBytes(privateKeyBytes);
 }
@@ -167,7 +166,7 @@ describe("KoraClient Integration Tests", () => {
       });
 
       expect(signResult).toBeDefined();
-      expect(signResult.signature).toBeDefined();
+      expect(signResult.transaction).toBeDefined();
       expect(signResult.signed_transaction).toBeDefined();
     });
   });
