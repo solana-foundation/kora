@@ -11,6 +11,9 @@ importers:
       '@solana/kit':
         specifier: ^2.1.0
         version: 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1)
+      gill:
+        specifier: ^0.8.2
+        version: 0.8.2(@solana/sysvars@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2))(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1)
     devDependencies:
       '@types/jest':
         specifier: ^29.5.12
@@ -353,6 +356,27 @@ packages:
 
   '@sinonjs/fake-timers@10.3.0':
     resolution: {integrity: sha512-V4BG07kuYSUkTCSBHG8G8TNhM+F19jXFWnQtzj+we8DrkpSBCee9Z3Ms8yiGer/dlmhe35/Xdgyo3/0rQKg7YA==}
+
+  '@solana-program/address-lookup-table@0.7.0':
+    resolution: {integrity: sha512-dzCeIO5LtiK3bIg0AwO+TPeGURjSG2BKt0c4FRx7105AgLy7uzTktpUzUj6NXAK9SzbirI8HyvHUvw1uvL8O9A==}
+    peerDependencies:
+      '@solana/kit': ^2.1.0
+
+  '@solana-program/compute-budget@0.7.0':
+    resolution: {integrity: sha512-/JJSE1fKO5zx7Z55Z2tLGWBDDi7tUE+xMlK8qqkHlY51KpqksMsIBzQMkG9Dqhoe2Cnn5/t3QK1nJKqW6eHzpg==}
+    peerDependencies:
+      '@solana/kit': ^2.1.0
+
+  '@solana-program/system@0.7.0':
+    resolution: {integrity: sha512-FKTBsKHpvHHNc1ATRm7SlC5nF/VdJtOSjldhcyfMN9R7xo712Mo2jHIzvBgn8zQO5Kg0DcWuKB7268Kv1ocicw==}
+    peerDependencies:
+      '@solana/kit': ^2.1.0
+
+  '@solana-program/token-2022@0.4.0':
+    resolution: {integrity: sha512-rLcYyjeRq/dW62ju9X+gFYqIIRGuD4vXq6EwM9oQBoURFbFzyo12VUi6v0hNh0dRcru+kUx321qVCAfsWWV/ug==}
+    peerDependencies:
+      '@solana/kit': ^2.1.0
+      '@solana/sysvars': ^2.1.0
 
   '@solana/accounts@2.1.0':
     resolution: {integrity: sha512-1JOBiLFeIeHmGx7k1b23UWF9vM1HAh9GBMCzr5rBPrGSBs+QUgxBJ3+yrRg+UPEOSELubqo7qoOVFUKYsb1nXw==}
@@ -1036,6 +1060,12 @@ packages:
   get-stream@6.0.1:
     resolution: {integrity: sha512-ts6Wi+2j3jQjqi70w5AlN8DFnkSwC+MqmxEzdEALB2qXZYV3X/b1CTfgPLGJNMeAWxdPfU8FO1ms3NUfaHCPYg==}
     engines: {node: '>=10'}
+
+  gill@0.8.2:
+    resolution: {integrity: sha512-256JYJ3tRi0PO+2/1+pn9qT3Ph8FpG5IRqyLsIfaxV75XDvo4WR5DzgV/wPfWhfXg55Xpw3ThO5kwwY6RcgNXQ==}
+    engines: {node: '>=20.18.0'}
+    peerDependencies:
+      typescript: '>=5'
 
   glob-parent@5.1.2:
     resolution: {integrity: sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==}
@@ -2225,6 +2255,23 @@ snapshots:
     dependencies:
       '@sinonjs/commons': 3.0.1
 
+  '@solana-program/address-lookup-table@0.7.0(@solana/kit@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1))':
+    dependencies:
+      '@solana/kit': 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1)
+
+  '@solana-program/compute-budget@0.7.0(@solana/kit@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1))':
+    dependencies:
+      '@solana/kit': 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1)
+
+  '@solana-program/system@0.7.0(@solana/kit@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1))':
+    dependencies:
+      '@solana/kit': 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1)
+
+  '@solana-program/token-2022@0.4.0(@solana/kit@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1))(@solana/sysvars@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2))':
+    dependencies:
+      '@solana/kit': 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1)
+      '@solana/sysvars': 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)
+
   '@solana/accounts@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)':
     dependencies:
       '@solana/addresses': 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)
@@ -3096,6 +3143,22 @@ snapshots:
   get-package-type@0.1.0: {}
 
   get-stream@6.0.1: {}
+
+  gill@0.8.2(@solana/sysvars@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2))(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1):
+    dependencies:
+      '@solana-program/address-lookup-table': 0.7.0(@solana/kit@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1))
+      '@solana-program/compute-budget': 0.7.0(@solana/kit@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1))
+      '@solana-program/system': 0.7.0(@solana/kit@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1))
+      '@solana-program/token-2022': 0.4.0(@solana/kit@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1))(@solana/sysvars@2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2))
+      '@solana/assertions': 2.1.0(typescript@5.8.2)
+      '@solana/codecs': 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)
+      '@solana/kit': 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1)
+      '@solana/transaction-confirmation': 2.1.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.2)(ws@8.18.1)
+      typescript: 5.8.2
+    transitivePeerDependencies:
+      - '@solana/sysvars'
+      - fastestsmallesttextencoderdecoder
+      - ws
 
   glob-parent@5.1.2:
     dependencies:

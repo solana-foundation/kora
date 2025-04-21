@@ -131,6 +131,7 @@ Tests require a valid devnet wallet address. Update the `/ts-sdk/test/setup.ts` 
 ```env
 KORA_RPC_URL=http://localhost:8080
 TEST_WALLET_PUBKEY=your_devnet_wallet_address
+TEST_WALLET_PRIVATE_KEY=your_local_wallet_private_key_for_tests
 USDC_MINT=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
 ```
 

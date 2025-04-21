@@ -1,4 +1,4 @@
-import { KoraClient } from "../src";
+import { KoraClient } from "../src/index.js";
 import {
   createKeyPairSignerFromBytes,
   getBase58Encoder,

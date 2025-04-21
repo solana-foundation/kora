@@ -11,7 +11,7 @@ import {
   TransferTransactionRequest,
   TransferTransactionResponse,
   RpcError,
-} from './types';
+} from './types/index.js';
 
 export class KoraClient {
   private rpcUrl: string;

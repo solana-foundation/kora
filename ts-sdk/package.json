@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "TypeScript SDK for Kora RPC",
   "main": "dist/index.js",
+  "type": "module",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
@@ -37,6 +38,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@solana/kit": "^2.1.0"
+    "@solana/kit": "^2.1.0",
+    "gill": "^0.8.2"
   }
 }
