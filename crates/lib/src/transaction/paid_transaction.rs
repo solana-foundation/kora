@@ -27,10 +27,10 @@ pub async fn sign_transaction_if_paid(
 
     // Validate token payment
     validate_token_payment(
-        rpc_client,
         &transaction,
-        validation,
         required_lamports,
+        validation,
+        rpc_client,
         signer.solana_pubkey(),
     )
     .await?;

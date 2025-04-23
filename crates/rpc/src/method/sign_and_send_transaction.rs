@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 use kora_lib::{
     config::ValidationConfig,
     transaction::{
-        decode_b58_transaction, decode_b58_transaction_with_version,
+        decode_b64_transaction, decode_b64_transaction_with_version,
         sign_and_send_transaction as lib_sign_and_send_transaction,
         sign_and_send_transaction_with_version as lib_sign_and_send_versioned_transaction,
     },
@@ -41,7 +41,7 @@ async fn try_sign_send_versioned(
     validation: &ValidationConfig,
     tx_data: &str,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
-    let versioned_tx = decode_b58_transaction_with_version(tx_data)?;
+    let versioned_tx = decode_b64_transaction_with_version(tx_data)?;
     let (signature, signed_transaction) =
         lib_sign_and_send_versioned_transaction(rpc_client, validation, versioned_tx).await?;
 
@@ -53,7 +53,7 @@ async fn try_sign_send_regular(
     validation: &ValidationConfig,
     tx_data: &str,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
-    let regular_tx = decode_b58_transaction(tx_data)?;
+    let regular_tx = decode_b64_transaction(tx_data)?;
     let (signature, signed_transaction) =
         lib_sign_and_send_transaction(rpc_client, validation, regular_tx).await?;
 

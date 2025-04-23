@@ -111,7 +111,7 @@ Estimates the transaction fee in terms of a specified token.
     "method": "estimateTransactionFee",
     "params": [
         {
-            "transaction": "<base58-encoded-transaction>",
+            "transaction": "<base64-encoded-transaction>",
             "fee_token": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
         }
     ]
@@ -168,7 +168,7 @@ Signs a transaction with the paymaster's key.
     "method": "signTransaction",
     "params": [
         {
-            "transaction": "<base58-encoded-transaction>"
+            "transaction": "<base64-encoded-transaction>"
         }
     ]
 }
@@ -179,7 +179,7 @@ Signs a transaction with the paymaster's key.
     "id": 1,
     "result": {
         "signature": "<base58-encoded-signature>",
-        "signed_transaction": "<base58-encoded-signed-transaction>"
+        "signed_transaction": "<base64-encoded-signed-transaction>"
     }
 }
 ```
@@ -196,7 +196,7 @@ Signs and submits a transaction to the network.
     "method": "signAndSend",
     "params": [
         {
-            "transaction": "<base58-encoded-transaction>"
+            "transaction": "<base64-encoded-transaction>"
         }
     ]
 }
@@ -207,7 +207,7 @@ Signs and submits a transaction to the network.
     "id": 1,
     "result": {
         "signature": "<base58-encoded-signature>",
-        "signed_transaction": "<base58-encoded-signed-transaction>"
+        "signed_transaction": "<bas64-encoded-signed-transaction>"
     }
 }
 ```
@@ -235,7 +235,7 @@ Create a transfer request and sign as the paymaster (SPL and SOL)
     "jsonrpc": "2.0",
     "id": 1,
     "result": {
-        "transaction": "<base58-encoded-transaction>",
+        "transaction": "<base64-encoded-transaction>",
         "message": "<message>",
         "blockhash": "<base58-encoded-blockhash>"
     }
@@ -317,7 +317,7 @@ Creates a swap request to SOL and returns a signed transaction.
     "id": 1,
     "result": {
         "signature": "<base58-encoded-signature>",
-        "transaction": "<base58-encoded-transaction>"
+        "transaction": "<base64-encoded-transaction>"
     }
 }
 ``` -->
@@ -334,7 +334,7 @@ Signs a transaction if the user has paid the required amount of tokens.
     "method": "signTransactionIfPaid",
     "params": [
         {
-            "transaction": "<base58-encoded-transaction>",
+            "transaction": "<base64-encoded-transaction>",
             "cost_in_lamports": 1000000,
             "margin": 0.0
         }
@@ -347,7 +347,7 @@ Signs a transaction if the user has paid the required amount of tokens.
     "id": 1,
     "result": {
         "signature": "<base58-encoded-signature>",
-        "signed_transaction": "<base58-encoded-signed-transaction>"
+        "signed_transaction": "<base64-encoded-signed-transaction>"
     }
 }
 ```

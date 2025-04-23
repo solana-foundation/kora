@@ -12,125 +12,70 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     instruction::{AccountMeta, CompiledInstruction, Instruction},
+    message::Message,
     pubkey::Pubkey,
     transaction::{Transaction, VersionedTransaction},
 };
 
-/// Decodes a base58-encoded string into bytes with comprehensive error handling.
-fn decode_base58(tx: &str) -> Result<Vec<u8>, KoraError> {
-    if tx.is_empty() {
-        return Err(KoraError::InvalidTransaction("Empty transaction string".to_string()));
-    }
-
-    bs58::decode(tx)
-        .into_vec()
+// Optimize & consolidate transaction encoding/decoding for base64
+/// Encodes any serializable data to base64 with standardized error handling
+pub fn encode_b64<T: serde::Serialize>(data: &T, type_name: &str) -> Result<String, KoraError> {
+    bincode::serialize(data)
         .map_err(|e| {
-            log::error!("Failed to decode base58 data: {}", e);
-            KoraError::InvalidTransaction(format!("Invalid base58: {}", e))
+            KoraError::SerializationError(format!("{} serialization failed: {}", type_name, e))
         })
-        .and_then(|bytes| {
-            if bytes.is_empty() {
-                Err(KoraError::InvalidTransaction("Decoded bytes are empty".to_string()))
-            } else {
-                log::debug!("Successfully decoded base58 data: {} bytes", bytes.len());
-                Ok(bytes)
-            }
-        })
+        .map(|bytes| STANDARD.encode(bytes))
 }
 
-/// Decodes a base64-encoded string into bytes with error handling.
-fn decode_base64(encoded: &str, type_name: &str) -> Result<Vec<u8>, KoraError> {
+/// Decodes base64-encoded data with standardized error handling
+fn decode_b64<T: for<'a> serde::Deserialize<'a>>(
+    encoded: &str,
+    type_name: &str,
+) -> Result<T, KoraError> {
     if encoded.is_empty() {
         return Err(KoraError::InvalidTransaction(format!("Empty {} string", type_name)));
     }
 
-    STANDARD.decode(encoded).map_err(|e| {
-        log::error!("Failed to decode base64 {}: {}", type_name, e);
-        KoraError::InvalidTransaction(format!("Failed to decode base64 {}: {}", type_name, e))
-    })
+    STANDARD
+        .decode(encoded)
+        .map_err(|e| {
+            KoraError::InvalidTransaction(format!("Failed to decode base64 {}: {}", type_name, e))
+        })
+        .and_then(|bytes| {
+            bincode::deserialize(&bytes).map_err(|e| {
+                log::error!(
+                    "Failed to deserialize {}: {}; Decoded bytes length: {}",
+                    type_name,
+                    e,
+                    bytes.len()
+                );
+                KoraError::InvalidTransaction(format!("Failed to deserialize {}: {}", type_name, e))
+            })
+        })
 }
 
-/// Generic function to deserialize transaction data with detailed error handling.
-fn deserialize_transaction<T: for<'a> serde::Deserialize<'a>>(
-    bytes: &[u8],
-    type_name: &str,
-) -> Result<T, KoraError> {
-    bincode::deserialize(bytes).map_err(|e| {
-        log::error!(
-            "Failed to deserialize {}: {}; Decoded bytes length: {}",
-            type_name,
-            e,
-            bytes.len()
-        );
-        KoraError::InvalidTransaction(format!("Failed to deserialize {}: {}", type_name, e))
-    })
+// Specific transaction encoding/decoding functions using the generic implementations
+pub fn encode_b64_transaction(tx: &Transaction) -> Result<String, KoraError> {
+    encode_b64(tx, "transaction")
 }
 
-/// Generic function for transaction encoding with unified error handling.
-fn encode_transaction<T: serde::Serialize>(
-    transaction: &T,
-    encoder: impl FnOnce(&[u8]) -> String,
-) -> Result<String, KoraError> {
-    bincode::serialize(transaction)
-        .map_err(|e| KoraError::SerializationError(format!("Serialization failed: {}", e)))
-        .map(|serialized| encoder(&serialized))
+pub fn encode_b64_transaction_with_version(tx: &VersionedTransaction) -> Result<String, KoraError> {
+    encode_b64(tx, "versioned transaction")
 }
 
-// Improved macro for creating encoding functions with consistent patterns
-macro_rules! define_encoding_functions {
-    ($(($name:ident, $type:ty, $encoder:expr)),*) => {
-        $(
-            pub fn $name(transaction: &$type) -> Result<String, KoraError> {
-                encode_transaction(transaction, $encoder)
-            }
-        )*
-    };
+pub fn encode_b64_message(message: &Message) -> Result<String, KoraError> {
+    encode_b64(message, "message")
 }
 
-// Improved macro for creating decoding functions with consistent patterns
-macro_rules! define_decoding_functions {
-    ($(($name:ident, $type:ty, $type_name:expr, $decode_fn:expr)),*) => {
-        $(
-            pub fn $name(encoded: &str) -> Result<$type, KoraError> {
-                let decoded = $decode_fn(encoded)?;
-                deserialize_transaction::<$type>(&decoded, $type_name)
-            }
-        )*
-    };
+pub fn decode_b64_transaction(encoded: &str) -> Result<Transaction, KoraError> {
+    decode_b64(encoded, "transaction")
 }
 
-// Define all encoding functions using the macro
-define_encoding_functions!(
-    (encode_transaction_b58, Transaction, |serialized| bs58::encode(serialized).into_string()),
-    (encode_transaction_b58_with_version, VersionedTransaction, |serialized| bs58::encode(
-        serialized
-    )
-    .into_string()),
-    (encode_transaction_b64, Transaction, |serialized| STANDARD.encode(serialized)),
-    (encode_transaction_b64_with_version, VersionedTransaction, |serialized| STANDARD
-        .encode(serialized))
-);
-
-// Define all decoding functions using the macro
-define_decoding_functions!(
-    (decode_b58_transaction, Transaction, "transaction", decode_base58),
-    (
-        decode_b58_transaction_with_version,
-        VersionedTransaction,
-        "versioned transaction",
-        decode_base58
-    ),
-    (decode_b64_transaction, Transaction, "transaction", |encoded| decode_base64(
-        encoded,
-        "transaction"
-    )),
-    (
-        decode_b64_transaction_with_version,
-        VersionedTransaction,
-        "versioned transaction",
-        |encoded| decode_base64(encoded, "versioned transaction")
-    )
-);
+pub fn decode_b64_transaction_with_version(
+    encoded: &str,
+) -> Result<VersionedTransaction, KoraError> {
+    decode_b64(encoded, "versioned transaction")
+}
 
 /// Converts CompiledInstructions back to regular Instructions by resolving account indexes
 pub fn uncompile_instructions(
@@ -164,14 +109,11 @@ async fn prepare_transaction_signing(
     let signer = get_signer()?;
     let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
 
-    // Get latest blockhash
+    // Get latest blockhash - optimized with simpler error handling
     let (blockhash, _) = rpc_client
         .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
         .await
-        .map_err(|e| {
-            log::error!("Failed to get latest blockhash: {}", e);
-            KoraError::RpcError(format!("Blockhash retrieval failed: {}", e))
-        })?;
+        .map_err(|e| KoraError::RpcError(format!("Blockhash retrieval failed: {}", e)))?;
 
     Ok((validator, blockhash))
 }
@@ -181,8 +123,28 @@ async fn validate_transaction_fee(
     validator: &TransactionValidator,
     fee_estimator: impl Future<Output = Result<u64, KoraError>>,
 ) -> Result<(), KoraError> {
-    let fee = fee_estimator.await?;
-    validator.validate_lamport_fee(fee)
+    validator.validate_lamport_fee(fee_estimator.await?)
+}
+
+/// Common transaction validation logic for both transaction types
+async fn validate_transaction_common<T, F>(
+    rpc_client: &RpcClient,
+    validation: &ValidationConfig,
+    transaction: &T,
+    validator: &TransactionValidator,
+    validate_fn: F,
+    fee_estimator: impl Future<Output = Result<u64, KoraError>>,
+) -> Result<(), KoraError>
+where
+    F: FnOnce(&TransactionValidator, &T) -> Result<(), KoraError>,
+{
+    // Validate transaction
+    validate_fn(validator, transaction)?;
+
+    // Validate fee
+    validate_transaction_fee(validator, fee_estimator).await?;
+
+    Ok(())
 }
 
 /// Signs a legacy Solana transaction with validation
@@ -194,24 +156,36 @@ pub async fn sign_transaction(
     let signer = get_signer()?;
     let (validator, blockhash) = prepare_transaction_signing(rpc_client, validation).await?;
 
-    // Validate transaction and accounts
-    validator.validate_transaction(&transaction)?;
-    validator.validate_disallowed_accounts(&transaction.message)?;
-
-    // Update blockhash
+    // Prepare transaction with blockhash
     let mut transaction = transaction;
-    transaction.message.recent_blockhash = blockhash;
 
-    // Validate transaction fee - with updated function call
-    validate_transaction_fee(&validator, estimate_transaction_fee(rpc_client, &transaction))
-        .await?;
+    // Update blockhash if needed
+    if transaction.signatures.is_empty()
+        || transaction.message.recent_blockhash == Default::default()
+    {
+        transaction.message.recent_blockhash = blockhash;
+    }
+
+    // Use validate_transaction_common for validation
+    validate_transaction_common(
+        rpc_client,
+        validation,
+        &transaction,
+        &validator,
+        |v, tx| {
+            v.validate_transaction(tx)?;
+            v.validate_disallowed_accounts(&tx.message)
+        },
+        estimate_transaction_fee(rpc_client, &transaction),
+    )
+    .await?;
 
     // Sign transaction
     let signature = signer.sign_solana(&transaction.message_data()).await?;
     transaction.signatures[0] = signature;
 
     // Encode transaction
-    let encoded = encode_transaction_b64(&transaction)?;
+    let encoded = encode_b64_transaction(&transaction)?;
 
     Ok((transaction, encoded))
 }
@@ -225,16 +199,19 @@ pub async fn sign_versioned_transaction(
     let signer = get_signer()?;
     let (validator, blockhash) = prepare_transaction_signing(rpc_client, validation).await?;
 
-    // Validate transaction and accounts
-    validator.validate_transaction_with_versioned(&transaction)?;
-    validator.validate_disallowed_accounts_with_versioned(transaction.message.clone())?;
-
     let mut transaction = transaction;
     transaction.message.set_recent_blockhash(blockhash);
 
-    // Validate transaction fee - with updated function call
-    validate_transaction_fee(
+    // Use validate_transaction_common for validation
+    validate_transaction_common(
+        rpc_client,
+        validation,
+        &transaction,
         &validator,
+        |v, tx| {
+            v.validate_transaction_with_versioned(tx)?;
+            v.validate_disallowed_accounts_with_versioned(&tx.message.clone())
+        },
         crate::transaction::fees::estimate_versioned_transaction_fee(rpc_client, &transaction),
     )
     .await?;
@@ -244,9 +221,26 @@ pub async fn sign_versioned_transaction(
     transaction.signatures[0] = signature;
 
     // Encode transaction
-    let encoded = encode_transaction_b58_with_version(&transaction)?;
+    let encoded = encode_b64_transaction_with_version(&transaction)?;
 
     Ok((transaction, encoded))
+}
+
+/// Standardized error handling for sending transactions
+async fn send_transaction_with_confirmation<T>(
+    rpc_client: &RpcClient,
+    transaction: &T,
+    tx_type: &str,
+) -> Result<String, KoraError>
+where
+    T: Sync + solana_client::rpc_client::SerializableTransaction,
+{
+    rpc_client.send_and_confirm_transaction(transaction).await.map(|sig| sig.to_string()).map_err(
+        |e| {
+            log::error!("{} sending failed: {}", tx_type, e);
+            KoraError::RpcError(format!("{} sending failed: {}", tx_type, e))
+        },
+    )
 }
 
 /// Signs and sends a legacy transaction
@@ -256,14 +250,9 @@ pub async fn sign_and_send_transaction(
     transaction: Transaction,
 ) -> Result<(String, String), KoraError> {
     let (transaction, encoded) = sign_transaction(rpc_client, validation, transaction).await?;
-
-    // Send and confirm transaction
-    let signature = rpc_client.send_and_confirm_transaction(&transaction).await.map_err(|e| {
-        log::error!("Transaction sending failed: {}", e);
-        KoraError::RpcError(format!("Transaction sending failed: {}", e))
-    })?;
-
-    Ok((signature.to_string(), encoded))
+    let signature =
+        send_transaction_with_confirmation(rpc_client, &transaction, "Transaction").await?;
+    Ok((signature, encoded))
 }
 
 /// Signs and sends a versioned transaction
@@ -274,14 +263,10 @@ pub async fn sign_and_send_transaction_with_version(
 ) -> Result<(String, String), KoraError> {
     let (transaction, encoded) =
         sign_versioned_transaction(rpc_client, validation, transaction).await?;
-
-    // Send and confirm transaction
-    let signature = rpc_client.send_and_confirm_transaction(&transaction).await.map_err(|e| {
-        log::error!("Versioned transaction sending failed: {}", e);
-        KoraError::RpcError(format!("Versioned transaction sending failed: {}", e))
-    })?;
-
-    Ok((signature.to_string(), encoded))
+    let signature =
+        send_transaction_with_confirmation(rpc_client, &transaction, "Versioned transaction")
+            .await?;
+    Ok((signature, encoded))
 }
 
 #[cfg(test)]
@@ -290,7 +275,7 @@ mod tests {
     use solana_sdk::{hash::Hash, message::Message, signature::Keypair, signer::Signer as _};
 
     #[test]
-    fn test_decode_b58_transaction() {
+    fn test_encode_decode_b64_transaction() {
         let keypair = Keypair::new();
         let instruction = Instruction::new_with_bytes(
             Pubkey::new_unique(),
@@ -300,19 +285,37 @@ mod tests {
         let message = Message::new(&[instruction], Some(&keypair.pubkey()));
         let tx = Transaction::new(&[&keypair], message, Hash::default());
 
-        let encoded = bs58::encode(bincode::serialize(&tx).unwrap()).into_string();
-        let decoded = decode_b58_transaction(&encoded).unwrap();
+        let encoded = encode_b64_transaction(&tx).unwrap();
+        let decoded = decode_b64_transaction(&encoded).unwrap();
 
         assert_eq!(tx, decoded);
     }
 
     #[test]
-    fn test_decode_b58_transaction_invalid_input() {
-        let result = decode_b58_transaction("not-base58!");
+    fn test_decode_b64_transaction_invalid_input() {
+        let result = decode_b64_transaction("not-base64!");
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
 
-        let result = decode_b58_transaction("3xQP"); // base58 of [1,2,3]
+        let result = decode_b64_transaction("AQID"); // base64 of [1,2,3]
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
+    }
+
+    #[test]
+    fn test_encode_b64_transaction() {
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message = Message::new(&[instruction], Some(&keypair.pubkey()));
+        let tx = Transaction::new(&[&keypair], message, Hash::default());
+
+        let encoded = encode_b64_transaction(&tx).unwrap();
+        assert!(!encoded.is_empty());
+        assert!(encoded
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='));
     }
 
     #[test]

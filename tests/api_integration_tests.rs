@@ -1,7 +1,7 @@
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
 use kora_lib::{
     token::{TokenInterface, TokenProgram, TokenType},
-    types::TransactionEncoding,
+    transaction::{decode_b64_transaction, encode_b64_transaction},
 };
 use serde_json::json;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -11,7 +11,6 @@ use solana_sdk::{
     msg,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    signer::SeedDerivable,
     system_instruction,
     transaction::Transaction,
 };
@@ -19,6 +18,7 @@ use spl_associated_token_account::get_associated_token_address;
 use std::{str::FromStr, sync::Arc};
 
 const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
+const USDC_DEVNET_MINT: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
 fn get_rpc_url() -> String {
     dotenv::dotenv().ok();
@@ -39,8 +39,6 @@ async fn setup_rpc_client() -> Arc<RpcClient> {
 }
 
 async fn create_test_transaction() -> String {
-    let token_interface = TokenProgram::new(TokenType::Spl);
-    let program_id = token_interface.program_id();
     let sender = get_test_sender_keypair();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
     let amount: u64 = 0;
@@ -57,8 +55,7 @@ async fn create_test_transaction() -> String {
 
     let transaction = Transaction { signatures: vec![Default::default()], message };
 
-    let serialized = bincode::serialize(&transaction).unwrap();
-    bs58::encode(serialized).into_string()
+    encode_b64_transaction(&transaction).unwrap()
 }
 
 async fn create_test_spl_transaction() -> String {
@@ -72,7 +69,7 @@ async fn create_test_spl_transaction() -> String {
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
 
     // Setup token accounts
-    let token_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
+    let token_mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
     let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
 
@@ -81,7 +78,6 @@ async fn create_test_spl_transaction() -> String {
 
     // Create token transfer instruction
     let amount = 1000; // Transfer 1000 token units
-    let program_id = token_interface.program_id();
     let instruction = token_interface
         .create_transfer_instruction(
             &sender_token_account,
@@ -101,8 +97,7 @@ async fn create_test_spl_transaction() -> String {
     let message = Message::new_with_blockhash(&[instruction], Some(&fee_payer), &blockhash.0);
     let transaction = Transaction::new_unsigned(message);
 
-    let serialized = bincode::serialize(&transaction).unwrap();
-    bs58::encode(serialized).into_string()
+    encode_b64_transaction(&transaction).unwrap()
 }
 
 #[tokio::test]
@@ -118,7 +113,7 @@ async fn test_get_supported_tokens() {
     assert!(!tokens.is_empty(), "Tokens list should not be empty");
 
     // Check for specific known tokens
-    let expected_tokens = ["6An66df6hW4Zr8sFJ9SyLFWtmYnJq3R8X6ZKZD7gdPf9"];
+    let expected_tokens = [USDC_DEVNET_MINT];
 
     for token in expected_tokens.iter() {
         assert!(tokens.contains(&json!(token)), "Expected token {} not found", token);
@@ -159,12 +154,10 @@ async fn test_sign_transaction() {
     );
 
     let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let decoded_tx = bs58::decode(transaction_string)
-        .into_vec()
-        .expect("Failed to decode transaction from base58");
+    let transaction = decode_b64_transaction(transaction_string)
+        .expect("Failed to decode transaction from base64");
 
-    let transaction: Transaction =
-        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+    msg!("Transaction: {:?}", transaction);
 
     msg!("Transaction: {:?}", transaction);
 
@@ -173,9 +166,7 @@ async fn test_sign_transaction() {
         .await
         .expect("Failed to simulate transaction");
 
-    println!("Simulated transaction: {:?}", simulated_tx);
     if let Some(err) = &simulated_tx.value.err {
-        println!("Simulation error: {:?}", err);
         assert!(false, "Transaction simulation failed with error: {:?}", err);
     } else {
         println!("Transaction simulation succeeded");
@@ -201,12 +192,10 @@ async fn test_sign_spl_transaction() {
     );
 
     let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let decoded_tx = bs58::decode(transaction_string)
-        .into_vec()
-        .expect("Failed to decode transaction from base58");
+    let transaction = decode_b64_transaction(transaction_string)
+        .expect("Failed to decode transaction from base64");
 
-    let mut transaction: Transaction =
-        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+    let mut transaction = transaction;
 
     transaction.partial_sign(&[&sender], transaction.message.recent_blockhash);
 
@@ -215,9 +204,7 @@ async fn test_sign_spl_transaction() {
         .await
         .expect("Failed to simulate transaction");
 
-    println!("Simulated transaction: {:?}", simulated_tx);
     if let Some(err) = &simulated_tx.value.err {
-        println!("Simulation error: {:?}", err);
         assert!(false, "Transaction simulation failed with error: {:?}", err);
     } else {
         println!("Transaction simulation succeeded");
@@ -254,7 +241,7 @@ async fn test_sign_and_send_transaction() {
 #[tokio::test]
 async fn test_invalid_transaction() {
     let client = setup_test_client().await;
-    let invalid_tx = "invalid_base58_transaction";
+    let invalid_tx = "invalid_base64_transaction";
 
     let result =
         client.request::<serde_json::Value, _>("signTransaction", rpc_params![invalid_tx]).await;
@@ -280,24 +267,19 @@ async fn test_transfer_transaction() {
         .await
         .expect("Failed to submit transfer transaction");
 
-    assert!(response["transaction"].as_str().is_some(), "Expected signature in response");
+    assert!(response["transaction"].as_str().is_some(), "Expected transaction in response");
     assert!(response["message"].as_str().is_some(), "Expected message in response");
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
 
     let transaction_string = response["transaction"].as_str().unwrap();
-    let decoded_tx = bs58::decode(transaction_string)
-        .into_vec()
-        .expect("Failed to decode transaction from base58");
-
-    let transaction: Transaction =
-        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+    let transaction = decode_b64_transaction(transaction_string)
+        .expect("Failed to decode transaction from base64");
 
     let simulated_tx = rpc_client
         .simulate_transaction(&transaction)
         .await
         .expect("Failed to simulate transaction");
 
-    println!("Simulated transaction: {:?}", simulated_tx);
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
 
@@ -313,7 +295,7 @@ async fn test_transfer_transaction_with_ata() {
             "transferTransaction",
             rpc_params![
                 10,
-                "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+                USDC_DEVNET_MINT,
                 "J1NiBQHq1Q98HwB4xZCpekg66oXniqzW9vXJorZNuF9R",
                 random_pubkey.to_string()
             ],
@@ -326,19 +308,14 @@ async fn test_transfer_transaction_with_ata() {
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
 
     let transaction_string = response["transaction"].as_str().unwrap();
-    let decoded_tx = bs58::decode(transaction_string)
-        .into_vec()
-        .expect("Failed to decode transaction from base58");
-
-    let transaction: Transaction =
-        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+    let transaction = decode_b64_transaction(transaction_string)
+        .expect("Failed to decode transaction from base64");
 
     let simulated_tx = rpc_client
         .simulate_transaction(&transaction)
         .await
         .expect("Failed to simulate transaction");
 
-    println!("Simulated transaction: {:?}", simulated_tx);
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
 
@@ -378,14 +355,12 @@ async fn test_sign_transaction_if_paid() {
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
 
     // Setup token accounts
-    let token_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
+    let token_mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
     let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
     let fee_payer_token_account = get_associated_token_address(&fee_payer, &token_mint);
 
-    let decimals = 6;
-    let amount = 0.0015;
-    let scaled_amount = (amount * 10_f64.powi(decimals)) as u64;
+    let fee_amount = 100000;
 
     // Create instructions
     let token_interface = TokenProgram::new(TokenType::Spl);
@@ -394,7 +369,7 @@ async fn test_sign_transaction_if_paid() {
             &sender_token_account,
             &fee_payer_token_account,
             &sender.pubkey(),
-            scaled_amount,
+            fee_amount,
         )
         .unwrap();
 
@@ -427,46 +402,29 @@ async fn test_sign_transaction_if_paid() {
 
     // At this point, fee payer's signature slot should be empty (first position)
     // and sender's signature should be in the correct position
-
-    let serialized = bincode::serialize(&transaction).unwrap();
-    let base58_transaction = bs58::encode(serialized).into_string();
+    let base64_transaction = encode_b64_transaction(&transaction).unwrap();
 
     // Rest of the test remains the same...
     let response: serde_json::Value = client
-        .request(
-            "signTransactionIfPaid",
-            rpc_params![base58_transaction, TransactionEncoding::Base58, 0],
-        )
+        .request("signTransactionIfPaid", rpc_params![base64_transaction, 0])
         .await
         .expect("Failed to sign transaction");
-
-    println!("Response: {:?}", response);
 
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
     );
 
-    // Decode the base58 transaction string
+    // Decode the base64 transaction string
     let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let decoded_tx = bs58::decode(transaction_string)
-        .into_vec()
-        .expect("Failed to decode transaction from base58");
+    let transaction = decode_b64_transaction(transaction_string)
+        .expect("Failed to decode transaction from base64");
 
-    // Deserialize the transaction
-    let transaction: Transaction =
-        bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
-
-    // print hex of message data
-    let message_data = transaction.message_data();
-    println!("Transaction: {:?}", transaction);
-    println!("Message data: {:?}", hex::encode(message_data));
     // Simulate the transaction
     let simulated_tx = rpc_client
         .simulate_transaction(&transaction)
         .await
         .expect("Failed to simulate transaction");
 
-    println!("Simulated transaction: {:?}", simulated_tx);
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }

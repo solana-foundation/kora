@@ -27,6 +27,7 @@ async-trait = { workspace = true }
 reqwest = { workspace = true }
 jup-ag = { workspace = true }
 spl-token = { workspace = true }
+spl-token-2022 = { workspace = true }
 spl-associated-token-account = { workspace = true }
 jupiter-swap-api-client = { workspace = true }
 jupiter = { workspace = true }
@@ -43,7 +44,7 @@ clap = { workspace = true }
 utoipa = { workspace = true }
 dirs = "6.0.0"
 mockall = "0.13.1"
-
+spl-pod = "0.5.0"
 [dev-dependencies]
 tempfile = "3.2"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }

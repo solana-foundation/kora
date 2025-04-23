@@ -29,7 +29,7 @@ test:
 
 # Run integration tests
 test-integration:
-	cargo test --test '*'
+	cargo test --test integration
 
 # Build all binaries
 build:

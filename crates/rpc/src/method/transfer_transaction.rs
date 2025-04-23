@@ -12,7 +12,7 @@ use kora_lib::{
     constant::NATIVE_SOL,
     get_signer,
     token::{TokenInterface, TokenProgram, TokenType},
-    transaction::validator::TransactionValidator,
+    transaction::{encode_b64_message, encode_b64_transaction, validator::TransactionValidator},
     KoraError, Signer as _,
 };
 
@@ -129,12 +129,12 @@ pub async fn transfer_transaction(
     let signature = signer.sign_solana(&transaction.message_data()).await?;
     transaction.signatures[0] = signature;
 
-    let serialized = bincode::serialize(&transaction)?;
-    let encoded = bs58::encode(serialized).into_string();
+    let encoded = encode_b64_transaction(&transaction)?;
+    let message_encoded = encode_b64_message(&transaction.message)?;
 
     Ok(TransferTransactionResponse {
         transaction: encoded,
-        message: bs58::encode(transaction.message.serialize()).into_string(),
+        message: message_encoded,
         blockhash: blockhash.0.to_string(),
     })
 }
