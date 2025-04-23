@@ -29,21 +29,33 @@ pub async fn sign_and_send_transaction(
     validation: &ValidationConfig,
     request: SignAndSendTransactionRequest,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
-    let transaction = decode_b58_transaction(&request.transaction)?;
+    // Use a unified approach for both transaction types
+    match try_sign_send_versioned(rpc_client, validation, &request.transaction).await {
+        Ok(response) => Ok(response),
+        Err(_) => try_sign_send_regular(rpc_client, validation, &request.transaction).await,
+    }
+}
+
+async fn try_sign_send_versioned(
+    rpc_client: &Arc<RpcClient>,
+    validation: &ValidationConfig,
+    tx_data: &str,
+) -> Result<SignAndSendTransactionResponse, KoraError> {
+    let versioned_tx = decode_b58_transaction_with_version(tx_data)?;
     let (signature, signed_transaction) =
-        lib_sign_and_send_transaction(rpc_client, validation, transaction).await?;
+        lib_sign_and_send_versioned_transaction(rpc_client, validation, versioned_tx).await?;
 
     Ok(SignAndSendTransactionResponse { signature, signed_transaction })
 }
 
-pub async fn sign_and_send_versioned_transaction(
+async fn try_sign_send_regular(
     rpc_client: &Arc<RpcClient>,
     validation: &ValidationConfig,
-    request: SignAndSendTransactionRequest,
+    tx_data: &str,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
-    let transaction = decode_b58_transaction_with_version(&request.transaction)?;
+    let regular_tx = decode_b58_transaction(tx_data)?;
     let (signature, signed_transaction) =
-        lib_sign_and_send_versioned_transaction(rpc_client, validation, transaction).await?;
+        lib_sign_and_send_transaction(rpc_client, validation, regular_tx).await?;
 
     Ok(SignAndSendTransactionResponse { signature, signed_transaction })
 }

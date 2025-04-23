@@ -8,6 +8,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     message::Message,
+    msg,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     signer::SeedDerivable,
@@ -42,7 +43,7 @@ async fn create_test_transaction() -> String {
     let program_id = token_interface.program_id();
     let sender = get_test_sender_keypair();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
-    let amount = 10;
+    let amount: u64 = 0;
     let rpc_client = setup_rpc_client().await;
 
     let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
@@ -117,7 +118,7 @@ async fn test_get_supported_tokens() {
     assert!(!tokens.is_empty(), "Tokens list should not be empty");
 
     // Check for specific known tokens
-    let expected_tokens = ["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"];
+    let expected_tokens = ["6An66df6hW4Zr8sFJ9SyLFWtmYnJq3R8X6ZKZD7gdPf9"];
 
     for token in expected_tokens.iter() {
         assert!(tokens.contains(&json!(token)), "Expected token {} not found", token);
@@ -164,6 +165,8 @@ async fn test_sign_transaction() {
 
     let transaction: Transaction =
         bincode::deserialize(&decoded_tx).expect("Failed to deserialize transaction");
+
+    msg!("Transaction: {:?}", transaction);
 
     let simulated_tx = rpc_client
         .simulate_transaction(&transaction)

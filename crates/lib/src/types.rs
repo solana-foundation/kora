@@ -24,35 +24,32 @@ pub enum TransactionEncoding {
 impl TransactionEncoding {
     pub fn decode_transaction(&self, encoded: &str) -> Result<Transaction, KoraError> {
         match self {
-            TransactionEncoding::Base58 => decode_b58_transaction(encoded),
-            TransactionEncoding::Base64 => decode_b64_transaction(encoded),
+            Self::Base58 => decode_b58_transaction(encoded),
+            Self::Base64 => decode_b64_transaction(encoded),
         }
     }
 
     pub fn encode_transaction(&self, transaction: &Transaction) -> Result<String, KoraError> {
         match self {
-            TransactionEncoding::Base58 => encode_transaction_b58(transaction),
-            TransactionEncoding::Base64 => encode_transaction_b64(transaction),
+            Self::Base58 => encode_transaction_b58(transaction),
+            Self::Base64 => encode_transaction_b64(transaction),
         }
     }
 
-    pub fn encode_transaction_with_versioned(
+    pub fn encode_versioned(
         &self,
         transaction: &VersionedTransaction,
     ) -> Result<String, KoraError> {
         match self {
-            TransactionEncoding::Base58 => encode_transaction_b58_with_version(transaction),
-            TransactionEncoding::Base64 => encode_transaction_b64_with_version(transaction),
+            Self::Base58 => encode_transaction_b58_with_version(transaction),
+            Self::Base64 => encode_transaction_b64_with_version(transaction),
         }
     }
 
-    pub fn decode_transaction_with_versioned(
-        &self,
-        encoded: &str,
-    ) -> Result<VersionedTransaction, KoraError> {
+    pub fn decode_versioned(&self, encoded: &str) -> Result<VersionedTransaction, KoraError> {
         match self {
-            TransactionEncoding::Base58 => decode_b58_transaction_with_version(encoded),
-            TransactionEncoding::Base64 => decode_b64_transaction_with_version(encoded),
+            Self::Base58 => decode_b58_transaction_with_version(encoded),
+            Self::Base64 => decode_b64_transaction_with_version(encoded),
         }
     }
 }
