@@ -57,9 +57,11 @@ impl TokenAccountCache {
             KoraError::InternalServerError(format!("Failed to get Redis connection: {}", e))
         })?;
 
-        conn.set_ex(&key, token_account.to_string(), TOKEN_ACCOUNT_CACHE_TTL).await.map_err(
-            |e| KoraError::InternalServerError(format!("Failed to set in Redis: {}", e)),
-        )?;
+        conn.set_ex::<_, _, ()>(&key, token_account.to_string(), TOKEN_ACCOUNT_CACHE_TTL)
+            .await
+            .map_err(|e| {
+                KoraError::InternalServerError(format!("Failed to set in Redis: {}", e))
+            })?;
 
         Ok(())
     }
@@ -74,7 +76,7 @@ impl TokenAccountCache {
             KoraError::InternalServerError(format!("Failed to get Redis connection: {}", e))
         })?;
 
-        conn.del(&key).await.map_err(|e| {
+        conn.del::<_, ()>(&key).await.map_err(|e| {
             KoraError::InternalServerError(format!("Failed to delete from Redis: {}", e))
         })?;
 

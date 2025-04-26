@@ -1,7 +1,9 @@
 use jsonrpsee::{core::Error as RpcError, types::error::CallError};
 use serde::{Deserialize, Serialize};
 use solana_client::client_error::ClientError;
+use solana_program::program_error::ProgramError;
 use solana_sdk::signature::SignerError;
+use std::error::Error as StdError;
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -41,6 +43,18 @@ pub enum KoraError {
 
     #[error("Swap error: {0}")]
     SwapError(String),
+
+    #[error("Token operation failed: {0}")]
+    TokenOperationError(String),
+
+    #[error("Thread safety error: {0}")]
+    ThreadSafetyError(String),
+
+    #[error("Invalid request: {0}")]
+    InvalidRequest(String),
+
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
 }
 
 impl From<ClientError> for KoraError {
@@ -79,9 +93,21 @@ impl From<std::io::Error> for KoraError {
     }
 }
 
-impl From<Box<dyn std::error::Error>> for KoraError {
-    fn from(e: Box<dyn std::error::Error>) -> Self {
+impl From<Box<dyn StdError>> for KoraError {
+    fn from(e: Box<dyn StdError>) -> Self {
         KoraError::InternalServerError(e.to_string())
+    }
+}
+
+impl From<Box<dyn StdError + Send + Sync>> for KoraError {
+    fn from(e: Box<dyn StdError + Send + Sync>) -> Self {
+        KoraError::InternalServerError(e.to_string())
+    }
+}
+
+impl From<ProgramError> for KoraError {
+    fn from(err: ProgramError) -> Self {
+        KoraError::InvalidTransaction(err.to_string())
     }
 }
 

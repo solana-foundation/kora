@@ -1,19 +1,19 @@
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, message::Message, program_pack::Pack, pubkey::Pubkey,
-    system_instruction, transaction::Transaction,
+    commitment_config::CommitmentConfig, message::Message, pubkey::Pubkey, system_instruction,
+    transaction::Transaction,
 };
-use spl_associated_token_account::{
-    get_associated_token_address, instruction::create_associated_token_account,
-};
-use spl_token::{instruction as token_instruction, state::Mint};
 use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;
 
 use kora_lib::{
-    config::ValidationConfig, constant::NATIVE_SOL, get_signer,
-    transaction::validator::TransactionValidator, KoraError, Signer as _,
+    config::ValidationConfig,
+    constant::NATIVE_SOL,
+    get_signer,
+    token::{TokenInterface, TokenProgram, TokenType},
+    transaction::{encode_b64_message, encode_b64_transaction, validator::TransactionValidator},
+    KoraError, Signer as _,
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -70,19 +70,20 @@ pub async fn transfer_transaction(
         instructions.push(system_instruction::transfer(&source, &destination, request.amount));
     } else {
         // Handle wrapped SOL and other SPL tokens
-        validator.validate_token_mint(&token_mint)?;
+        validator.validate_token_mint(&token_mint, rpc_client).await?;
 
         let mint_account = rpc_client
             .get_account(&token_mint)
             .await
             .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-        let mint = Mint::unpack(&mint_account.data)
+        let token_program = TokenProgram::new(TokenType::Spl);
+        let decimals = token_program
+            .get_mint_decimals(&mint_account.data)
             .map_err(|_| KoraError::ValidationError("Invalid mint account data".to_string()))?;
 
-        let decimals = mint.decimals;
-        let source_ata = get_associated_token_address(&source, &token_mint);
-        let dest_ata = get_associated_token_address(&destination, &token_mint);
+        let source_ata = token_program.get_associated_token_address(&source, &token_mint);
+        let dest_ata = token_program.get_associated_token_address(&destination, &token_mint);
 
         let _ = rpc_client
             .get_account(&source_ata)
@@ -90,31 +91,29 @@ pub async fn transfer_transaction(
             .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
 
         if rpc_client.get_account(&dest_ata).await.is_err() {
-            instructions.push(create_associated_token_account(
+            instructions.push(token_program.create_associated_token_account_instruction(
                 &fee_payer,
                 &destination,
                 &token_mint,
-                &spl_token::id(),
             ));
         }
 
         instructions.push(
-            token_instruction::transfer_checked(
-                &spl_token::id(),
-                &source_ata,
-                &token_mint,
-                &dest_ata,
-                &source,
-                &[],
-                request.amount,
-                decimals,
-            )
-            .map_err(|e| {
-                KoraError::InvalidTransaction(format!(
-                    "Failed to create transfer instruction: {}",
-                    e
-                ))
-            })?,
+            token_program
+                .create_transfer_checked_instruction(
+                    &source_ata,
+                    &token_mint,
+                    &dest_ata,
+                    &source,
+                    request.amount,
+                    decimals,
+                )
+                .map_err(|e| {
+                    KoraError::InvalidTransaction(format!(
+                        "Failed to create transfer instruction: {}",
+                        e
+                    ))
+                })?,
         );
     }
 
@@ -130,12 +129,12 @@ pub async fn transfer_transaction(
     let signature = signer.sign_solana(&transaction.message_data()).await?;
     transaction.signatures[0] = signature;
 
-    let serialized = bincode::serialize(&transaction)?;
-    let encoded = bs58::encode(serialized).into_string();
+    let encoded = encode_b64_transaction(&transaction)?;
+    let message_encoded = encode_b64_message(&transaction.message)?;
 
     Ok(TransferTransactionResponse {
         transaction: encoded,
-        message: bs58::encode(transaction.message.serialize()).into_string(),
+        message: message_encoded,
         blockhash: blockhash.0.to_string(),
     })
 }

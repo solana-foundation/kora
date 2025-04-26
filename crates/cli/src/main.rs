@@ -7,7 +7,7 @@ use kora_lib::{
     signer::init::init_signer_type,
     state::init_signer,
     transaction::{
-        decode_b58_transaction, estimate_transaction_fee, sign_and_send_transaction,
+        decode_b64_transaction, estimate_transaction_fee, sign_and_send_transaction,
         sign_transaction, sign_transaction_if_paid, TokenPriceInfo,
     },
 };
@@ -16,31 +16,29 @@ use kora_lib::{
 enum Commands {
     /// Sign a transaction
     Sign {
-        /// Base58 encoded transaction to sign
+        /// Base64 encoded transaction to sign
         #[arg(long, short = 't')]
         transaction: String,
     },
     /// Sign and send a transaction
     SignAndSend {
-        /// Base58 encoded transaction to sign and send
+        /// Base64 encoded transaction to sign and send
         #[arg(long, short = 't')]
         transaction: String,
     },
     /// Estimate transaction fee
     EstimateFee {
-        /// Base58 encoded transaction to estimate fee for
+        /// Base64 encoded transaction to estimate fee for
         #[arg(long, short = 't')]
         transaction: String,
     },
     /// Sign transaction if paid
     SignIfPaid {
-        /// Base58 encoded transaction to sign if paid
+        /// Base64 encoded transaction to sign if paid
         #[arg(long, short = 't')]
         transaction: String,
         #[arg(long)]
         margin: Option<f64>,
-        #[arg(long)]
-        token_price: Option<f64>,
     },
 }
 
@@ -84,7 +82,7 @@ async fn main() -> Result<(), KoraError> {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
-            let transaction = decode_b58_transaction(&transaction).map_err(|e| {
+            let transaction = decode_b64_transaction(&transaction).map_err(|e| {
                 print_error(&format!("Failed to decode transaction: {}", e));
                 e
             })?;
@@ -96,13 +94,13 @@ async fn main() -> Result<(), KoraError> {
         }
         Some(Commands::SignAndSend { transaction }) => {
             if transaction.is_empty() {
-                print_error("No transaction provided. Please provide a base58-encoded transaction using the --transaction flag.");
+                print_error("No transaction provided. Please provide a base64-encoded transaction using the --transaction flag.");
                 std::process::exit(1);
             }
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
-            let transaction = decode_b58_transaction(&transaction).map_err(|e| {
+            let transaction = decode_b64_transaction(&transaction).map_err(|e| {
                 print_error(&format!("Failed to decode transaction: {}", e));
                 e
             })?;
@@ -115,7 +113,7 @@ async fn main() -> Result<(), KoraError> {
         Some(Commands::EstimateFee { transaction }) => {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
 
-            let transaction = decode_b58_transaction(&transaction).map_err(|e| {
+            let transaction = decode_b64_transaction(&transaction).map_err(|e| {
                 print_error(&format!("Failed to decode transaction: {}", e));
                 e
             })?;
@@ -123,11 +121,11 @@ async fn main() -> Result<(), KoraError> {
             let fee = estimate_transaction_fee(&rpc_client, &transaction).await?;
             println!("Estimated fee: {} lamports", fee);
         }
-        Some(Commands::SignIfPaid { transaction, margin, token_price }) => {
+        Some(Commands::SignIfPaid { transaction, margin }) => {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
-            let transaction = decode_b58_transaction(&transaction).map_err(|e| {
+            let transaction = decode_b64_transaction(&transaction).map_err(|e| {
                 print_error(&format!("Failed to decode transaction: {}", e));
                 e
             })?;

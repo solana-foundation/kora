@@ -5,7 +5,11 @@ all: check test build
 
 # install
 install:
-	cargo install --path .
+	for dir in crates/*; do \
+		if [ -f $$dir/Cargo.toml ]; then \
+			cargo install --path $$dir; \
+		fi \
+	done
 
 # Check code formatting
 check:
@@ -25,7 +29,7 @@ test:
 
 # Run integration tests
 test-integration:
-	cargo test --test '*'
+	cargo test --test integration
 
 # Build all binaries
 build:

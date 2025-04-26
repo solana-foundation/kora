@@ -3,11 +3,14 @@ use solana_sdk::{
     system_instruction, transaction::Transaction,
 };
 
-use super::{decode_b58_transaction, estimate_transaction_fee};
-use crate::rpc::test_utils::setup_test_rpc_client;
+use super::{decode_b64_transaction, estimate_transaction_fee};
+use crate::{
+    rpc::test_utils::setup_test_rpc_client,
+    token::{TokenInterface, TokenProgram, TokenType},
+};
 
 #[test]
-fn test_decode_b58_transaction() {
+fn test_decode_b64_transaction() {
     let keypair = Keypair::new();
     let instruction = solana_sdk::instruction::Instruction::new_with_bytes(
         Pubkey::new_unique(),
@@ -17,18 +20,18 @@ fn test_decode_b58_transaction() {
     let message = Message::new(&[instruction], Some(&keypair.pubkey()));
     let tx = Transaction::new(&[&keypair], message, Hash::default());
 
-    let encoded = bs58::encode(bincode::serialize(&tx).unwrap()).into_string();
-    let decoded = decode_b58_transaction(&encoded).unwrap();
+    let encoded = base64::encode(bincode::serialize(&tx).unwrap());
+    let decoded = decode_b64_transaction(&encoded).unwrap();
 
     assert_eq!(tx, decoded);
 }
 
 #[test]
-fn test_decode_b58_transaction_invalid_input() {
-    let result = decode_b58_transaction("not-base58!");
+fn test_decode_b64_transaction_invalid_input() {
+    let result = decode_b64_transaction("not-base64!");
     assert!(matches!(result, Err(crate::error::KoraError::InvalidTransaction(_))));
 
-    let result = decode_b58_transaction("3xQP"); // base58 of [1,2,3]
+    let result = decode_b64_transaction("AQID"); // base64 of [1,2,3]
     assert!(matches!(result, Err(crate::error::KoraError::InvalidTransaction(_))));
 }
 
@@ -71,13 +74,10 @@ async fn test_estimate_transaction_fee_with_token_creation() {
     let mint = Pubkey::new_unique();
     let owner = Pubkey::new_unique();
 
-    let ata = spl_associated_token_account::get_associated_token_address(&owner, &mint);
-    let create_ata_ix = spl_associated_token_account::instruction::create_associated_token_account(
-        &payer,
-        &ata,
-        &mint,
-        &spl_token::id(),
-    );
+    let token_program = TokenProgram::new(TokenType::Spl);
+    let ata = token_program.get_associated_token_address(&owner, &mint);
+    let create_ata_ix =
+        token_program.create_associated_token_account_instruction(&payer, &owner, &mint);
 
     let message = Message::new(&[create_ata_ix], Some(&payer));
     let transaction = Transaction { message, signatures: vec![Default::default()] };
@@ -85,7 +85,6 @@ async fn test_estimate_transaction_fee_with_token_creation() {
     let fee = estimate_transaction_fee(&rpc_client, &transaction).await.unwrap();
 
     // Fee should include base fee + priority fee + rent for token account
-    // Fee should be at least the minimum rent-exempt amount for a token account (~0.00204 SOL)
     let min_expected_lamports = 2_039_280;
     assert!(
         fee >= min_expected_lamports,
@@ -93,4 +92,15 @@ async fn test_estimate_transaction_fee_with_token_creation() {
         fee,
         min_expected_lamports
     );
+}
+
+#[test]
+fn test_token_functionality() {
+    let token_program = TokenProgram::new(TokenType::Spl);
+    let mint = Pubkey::new_unique();
+    let owner = Pubkey::new_unique();
+
+    let ata = token_program.get_associated_token_address(&owner, &mint);
+    assert_ne!(ata, owner);
+    assert_ne!(ata, mint);
 }
