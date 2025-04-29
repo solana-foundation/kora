@@ -1,15 +1,13 @@
 # Kora
 
-Kora is a Solana paymaster node that provides a JSON-RPC interface for handling gasless transactions and fee abstractions. It enables developers to build applications where users can pay transaction fees in tokens other than SOL.
+Kora is a paymaster implementation on the Solana blockchain that acts as a middleware node offering a JSON-RPC API. It abstracts away transaction fee logic to support gasless transactions or fee payments in alternative tokens (not just SOL)..
 
 ## Features
 
-- JSON-RPC server with middleware support
-- Transaction fee estimation in any supported token
-- Gasless transaction support
-- Transfer transactions with any supported token
-- Remote signer support
-- Disallowed account, allowed spl tokens, programs config
+- Gasless Transactions: Users can interact with apps without holding SOL, enhancing onboarding and user experience.
+	•	Fee Abstraction: Developers can configure fees to be paid in other SPL tokens (like USDC, BONK, etc.).
+	•	JSON-RPC Interface: Standardized endpoint for dApps to interact programmatically.
+	•	Developer Flexibility: Ideal for consumer-facing applications, games, and DeFi apps that want to abstract away the complexities of SOL fee payments.
 
 > Note: only `signAndSend` submits a transaction to an RPC, all other methods only return a signed transaction
 
