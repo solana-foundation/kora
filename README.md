@@ -23,7 +23,7 @@ Kora is a Solana paymaster node that provides a JSON-RPC interface for handling 
 
 ### Installation
 
-```bash
+```
 git clone https://github.com/solana-foundation/kora.git
 cd kora
 make install
