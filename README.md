@@ -1,3 +1,7 @@
+we should also include a sample example nextjs folder to test out the action(to be included in /src/app/api/action/transferTx/route.ts , or we only include the route.ts file for the action and test it out in another nextjs folder and put that demo?
+
+Also where should the route.ts file be included in this repo?
+
 # Kora
 
 Kora is a Solana paymaster node that provides a JSON-RPC interface for handling gasless transactions and fee abstractions. It enables developers to build applications where users can pay transaction fees in tokens other than SOL.
