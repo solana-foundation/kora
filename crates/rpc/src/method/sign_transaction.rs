@@ -28,42 +28,29 @@ pub async fn sign_transaction(
     validation: &ValidationConfig,
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResponse, KoraError> {
-    // Use a unified approach for both transaction types
-    let result = match try_sign_versioned_tx(rpc_client, validation, &request.transaction).await {
-        Ok(response) => Ok(response),
-        Err(_) => try_sign_regular_tx(rpc_client, validation, &request.transaction).await,
-    };
-
-    result
+    try_sign_transaction(rpc_client, validation, &request.transaction).await
 }
 
-async fn try_sign_versioned_tx(
+async fn try_sign_transaction(
     rpc_client: &Arc<RpcClient>,
     validation: &ValidationConfig,
     tx_data: &str,
 ) -> Result<SignTransactionResponse, KoraError> {
-    // Decode and sign versioned transaction
-    let versioned_tx = decode_b64_transaction_with_version(tx_data)?;
-    let (signed_tx, _) =
-        lib_sign_versioned_transaction(rpc_client, validation, versioned_tx).await?;
+    // Attempt to decode and sign as a versioned transaction
+    if let Ok(versioned_tx) = decode_b64_transaction_with_version(tx_data) {
+        let (signed_tx, _) =
+            lib_sign_versioned_transaction(rpc_client, validation, versioned_tx).await?;
+        let encoded = encode_b64_transaction_with_version(&signed_tx)?;
 
-    let encoded = encode_b64_transaction_with_version(&signed_tx)?;
+        return Ok(SignTransactionResponse {
+            signature: signed_tx.signatures[0].to_string(),
+            signed_transaction: encoded,
+        });
+    }
 
-    Ok(SignTransactionResponse {
-        signature: signed_tx.signatures[0].to_string(),
-        signed_transaction: encoded,
-    })
-}
-
-async fn try_sign_regular_tx(
-    rpc_client: &Arc<RpcClient>,
-    validation: &ValidationConfig,
-    tx_data: &str,
-) -> Result<SignTransactionResponse, KoraError> {
-    // Decode and sign regular transaction
+    // Fallback to decoding and signing as a regular transaction
     let regular_tx = decode_b64_transaction(tx_data)?;
     let (signed_tx, _) = lib_sign_transaction(rpc_client, validation, regular_tx).await?;
-
     let encoded = encode_b64_transaction(&signed_tx)?;
 
     Ok(SignTransactionResponse {

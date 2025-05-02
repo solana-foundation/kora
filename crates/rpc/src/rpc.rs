@@ -173,16 +173,6 @@ impl KoraRpc {
                 request: Some(SignTransactionIfPaidRequest::schema().1),
                 response: SignTransactionIfPaidResponse::schema().1,
             },
-            OpenApiSpec {
-                name: "signAndSendTransaction".to_string(),
-                request: Some(SignAndSendTransactionRequest::schema().1),
-                response: SignAndSendTransactionResponse::schema().1,
-            },
-            OpenApiSpec {
-                name: "signAndSendVersionedTransaction".to_string(),
-                request: Some(SignAndSendTransactionRequest::schema().1),
-                response: SignAndSendTransactionResponse::schema().1,
-            },
         ]
     }
 }

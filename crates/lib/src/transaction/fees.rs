@@ -41,24 +41,14 @@ impl TransactionFeeEstimator for VersionedTransaction {
     async fn estimate_fee(&self, rpc_client: &RpcClient) -> Result<u64, KoraError> {
         match &self.message {
             VersionedMessage::Legacy(legacy_message) => {
-                // For legacy messages, use the same approach as regular transactions
                 let base_fee = rpc_client
                     .get_fee_for_message(legacy_message)
                     .await
                     .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-                // Get priority fee from recent blocks
-                let priority_stats = rpc_client
-                    .get_recent_prioritization_fees(&[])
-                    .await
-                    .map_err(|e| KoraError::RpcError(e.to_string()))?;
-                let priority_fee =
-                    priority_stats.iter().map(|fee| fee.prioritization_fee).max().unwrap_or(0);
-
+                let priority_fee = get_priority_fee(rpc_client).await?;
                 Ok(base_fee + priority_fee)
             }
             VersionedMessage::V0(v0_message) => {
-                // Simulate the transaction to get the compute units consumed
                 let simulation_result = rpc_client
                     .simulate_transaction_with_config(
                         self,
@@ -75,33 +65,15 @@ impl TransactionFeeEstimator for VersionedTransaction {
                     })?;
 
                 if let Some(units_consumed) = simulation_result.value.units_consumed {
-                    // Calculate fee components
-                    let blockhash_response = rpc_client
-                        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-                        .await
-                        .map_err(|e| {
-                            KoraError::RpcError(format!("Failed to get blockhash: {}", e))
-                        })?;
-
-                    let lamports_per_signature = blockhash_response.1;
-                    let num_signatures = self.signatures.len() as u64;
-                    let num_account_keys = v0_message.account_keys.len() as u64;
-                    let num_lookups = v0_message.address_table_lookups.len() as u64;
-
-                    // Calculate base fee (signatures) and additional fee (compute units + account keys + lookups)
-                    let base_fee = lamports_per_signature * num_signatures;
-                    let additional_fee =
-                        units_consumed as u64 + (num_account_keys * 10) + (num_lookups * 20);
-
-                    // Get priority fee from recent blocks
-                    let priority_stats = rpc_client
-                        .get_recent_prioritization_fees(&[])
-                        .await
-                        .map_err(|e| KoraError::RpcError(e.to_string()))?;
-                    let priority_fee =
-                        priority_stats.iter().map(|fee| fee.prioritization_fee).max().unwrap_or(0);
-
-                    Ok(base_fee + additional_fee + priority_fee)
+                    let fee_components = calculate_fee_components(
+                        rpc_client,
+                        units_consumed,
+                        v0_message.account_keys.len() as u64,
+                        v0_message.address_table_lookups.len() as u64,
+                        self.signatures.len() as u64,
+                    )
+                    .await?;
+                    Ok(fee_components)
                 } else {
                     Err(KoraError::InvalidTransaction(
                         "Failed to simulate transaction for fee estimation".to_string(),
@@ -110,6 +82,34 @@ impl TransactionFeeEstimator for VersionedTransaction {
             }
         }
     }
+}
+
+async fn get_priority_fee(rpc_client: &RpcClient) -> Result<u64, KoraError> {
+    let priority_stats = rpc_client
+        .get_recent_prioritization_fees(&[])
+        .await
+        .map_err(|e| KoraError::RpcError(e.to_string()))?;
+    Ok(priority_stats.iter().map(|fee| fee.prioritization_fee).max().unwrap_or(0))
+}
+
+async fn calculate_fee_components(
+    rpc_client: &RpcClient,
+    units_consumed: u64,
+    num_account_keys: u64,
+    num_lookups: u64,
+    num_signatures: u64,
+) -> Result<u64, KoraError> {
+    let blockhash_response = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .await
+        .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {}", e)))?;
+
+    let lamports_per_signature = blockhash_response.1;
+    let base_fee = lamports_per_signature * num_signatures;
+    let additional_fee = units_consumed + (num_account_keys * 10) + (num_lookups * 20);
+    let priority_fee = get_priority_fee(rpc_client).await?;
+
+    Ok(base_fee + additional_fee + priority_fee)
 }
 
 pub async fn estimate_transaction_fee(

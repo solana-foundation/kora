@@ -128,8 +128,6 @@ async fn validate_transaction_fee(
 
 /// Common transaction validation logic for both transaction types
 async fn validate_transaction_common<T, F>(
-    rpc_client: &RpcClient,
-    validation: &ValidationConfig,
     transaction: &T,
     validator: &TransactionValidator,
     validate_fn: F,
@@ -168,8 +166,6 @@ pub async fn sign_transaction(
 
     // Use validate_transaction_common for validation
     validate_transaction_common(
-        rpc_client,
-        validation,
         &transaction,
         &validator,
         |v, tx| {
@@ -204,8 +200,6 @@ pub async fn sign_versioned_transaction(
 
     // Use validate_transaction_common for validation
     validate_transaction_common(
-        rpc_client,
-        validation,
         &transaction,
         &validator,
         |v, tx| {
@@ -272,7 +266,13 @@ pub async fn sign_and_send_transaction_with_version(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solana_sdk::{hash::Hash, message::Message, signature::Keypair, signer::Signer as _};
+    use solana_sdk::{
+        hash::Hash,
+        message::{v0::Message as V0Message, Message, VersionedMessage},
+        signature::Keypair,
+        signer::Signer as _,
+        system_instruction,
+    };
 
     #[test]
     fn test_encode_decode_b64_transaction() {
@@ -340,5 +340,37 @@ mod tests {
         assert_eq!(uncompiled.accounts[0].pubkey, account1);
         assert_eq!(uncompiled.accounts[1].pubkey, account2);
         assert_eq!(uncompiled.data, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_encode_decode_b64_versioned_transaction() {
+        let keypair = Keypair::new();
+        let recipient = Pubkey::new_unique();
+        let amount: u64 = 1_000_000;
+
+        let instruction = system_instruction::transfer(&keypair.pubkey(), &recipient, amount);
+        let blockhash = Hash::new_unique();
+        let message = V0Message::try_compile(&keypair.pubkey(), &[instruction], &[], blockhash)
+            .expect("Failed to compile versioned message");
+
+        let versioned_message = VersionedMessage::V0(message);
+        let versioned_transaction = VersionedTransaction {
+            signatures: vec![Default::default()],
+            message: versioned_message,
+        };
+
+        let encoded = encode_b64_transaction_with_version(&versioned_transaction).unwrap();
+        let decoded = decode_b64_transaction_with_version(&encoded).unwrap();
+
+        assert_eq!(versioned_transaction, decoded);
+    }
+
+    #[test]
+    fn test_decode_b64_versioned_transaction_invalid_input() {
+        let result = decode_b64_transaction_with_version("not-base64!");
+        assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
+
+        let result = decode_b64_transaction_with_version("AQID"); // base64 of [1,2,3]
+        assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
     }
 }

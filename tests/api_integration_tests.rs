@@ -1,14 +1,16 @@
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
 use kora_lib::{
     token::{TokenInterface, TokenProgram, TokenType},
-    transaction::{decode_b64_transaction, encode_b64_transaction},
+    transaction::{
+        decode_b64_transaction, decode_b64_transaction_with_version, encode_b64_transaction,
+        encode_b64_transaction_with_version,
+    },
 };
 use serde_json::json;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     message::Message,
-    msg,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     system_instruction,
@@ -41,7 +43,7 @@ async fn setup_rpc_client() -> Arc<RpcClient> {
 async fn create_test_transaction() -> String {
     let sender = get_test_sender_keypair();
     let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
-    let amount: u64 = 0;
+    let amount: u64 = 1000000;
     let rpc_client = setup_rpc_client().await;
 
     let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
@@ -137,6 +139,50 @@ async fn test_estimate_transaction_fee() {
 }
 
 #[tokio::test]
+async fn test_estimate_versioned_transaction_fee() {
+    let client = setup_test_client().await;
+    let rpc_client = setup_rpc_client().await;
+
+    // Create a versioned transaction
+    let sender = get_test_sender_keypair();
+    let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
+    let amount: u64 = 1000000;
+
+    let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
+
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .await
+        .unwrap();
+
+    let message = solana_sdk::message::v0::Message::try_compile(
+        &sender.pubkey(),
+        &[instruction],
+        &[],
+        blockhash.0,
+    )
+    .expect("Failed to compile versioned message");
+
+    let versioned_message = solana_sdk::message::VersionedMessage::V0(message);
+    let versioned_transaction =
+        solana_sdk::transaction::VersionedTransaction::try_new(versioned_message, &[&sender])
+            .expect("Failed to create VersionedTransaction");
+
+    let test_tx = encode_b64_transaction_with_version(&versioned_transaction).unwrap();
+
+    // Call the estimateTransactionFee method
+    let response: serde_json::Value = client
+        .request(
+            "estimateTransactionFee",
+            rpc_params![test_tx, "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"],
+        )
+        .await
+        .expect("Failed to estimate transaction fee");
+
+    assert!(response["fee_in_lamports"].as_u64().is_some(), "Expected fee_in_lamports in response");
+}
+
+#[tokio::test]
 async fn test_sign_transaction() {
     let client = setup_test_client().await;
     let test_tx = create_test_transaction().await;
@@ -157,10 +203,6 @@ async fn test_sign_transaction() {
     let transaction = decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
-    msg!("Transaction: {:?}", transaction);
-
-    msg!("Transaction: {:?}", transaction);
-
     let simulated_tx = rpc_client
         .simulate_transaction(&transaction)
         .await
@@ -171,6 +213,62 @@ async fn test_sign_transaction() {
     } else {
         println!("Transaction simulation succeeded");
     }
+}
+
+#[tokio::test]
+async fn test_sign_versioned_transaction() {
+    let client = setup_test_client().await;
+    let rpc_client = setup_rpc_client().await;
+
+    // Create a versioned transaction
+    let sender = get_test_sender_keypair();
+    let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
+    let amount: u64 = 1000000;
+
+    let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
+
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .await
+        .unwrap();
+
+    let message = solana_sdk::message::v0::Message::try_compile(
+        &sender.pubkey(),
+        &[instruction],
+        &[],
+        blockhash.0,
+    )
+    .expect("Failed to compile versioned message");
+
+    let versioned_message = solana_sdk::message::VersionedMessage::V0(message);
+    let versioned_transaction =
+        solana_sdk::transaction::VersionedTransaction::try_new(versioned_message, &[&sender])
+            .expect("Failed to create VersionedTransaction");
+
+    let test_tx = encode_b64_transaction_with_version(&versioned_transaction).unwrap();
+
+    // Call the signTransaction method
+    let response: serde_json::Value = client
+        .request("signTransaction", rpc_params![test_tx])
+        .await
+        .expect("Failed to sign versioned transaction");
+
+    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+    assert!(
+        response["signed_transaction"].as_str().is_some(),
+        "Expected signed_transaction in response"
+    );
+
+    let transaction_string = response["signed_transaction"].as_str().unwrap();
+    let transaction = decode_b64_transaction_with_version(transaction_string)
+        .expect("Failed to decode versioned transaction from base64");
+
+    let simulated_tx = rpc_client
+        .simulate_transaction(&transaction)
+        .await
+        .expect("Failed to simulate versioned transaction");
+
+    assert!(simulated_tx.value.err.is_none(), "Versioned transaction simulation failed");
 }
 
 #[tokio::test]
@@ -216,6 +314,61 @@ async fn test_sign_and_send_transaction() {
     let client = setup_test_client().await;
     let test_tx = create_test_transaction().await;
 
+    let result = client
+        .request::<serde_json::Value, _>("signAndSendTransaction", rpc_params![test_tx])
+        .await;
+
+    // This might fail if we're not on devnet/testnet with funded accounts
+    match result {
+        Ok(response) => {
+            assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+            assert!(
+                response["signed_transaction"].as_str().is_some(),
+                "Expected signed_transaction in response"
+            );
+        }
+        Err(e) => {
+            println!(
+                "Note: signAndSendTransaction failed as expected without funded accounts: {}",
+                e
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_sign_and_send_versioned_transaction() {
+    let client = setup_test_client().await;
+    let rpc_client = setup_rpc_client().await;
+
+    // Create a versioned transaction
+    let sender = get_test_sender_keypair();
+    let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
+    let amount: u64 = 1000000;
+
+    let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
+
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .await
+        .unwrap();
+
+    let message = solana_sdk::message::v0::Message::try_compile(
+        &sender.pubkey(),
+        &[instruction],
+        &[],
+        blockhash.0,
+    )
+    .expect("Failed to compile versioned message");
+
+    let versioned_message = solana_sdk::message::VersionedMessage::V0(message);
+    let versioned_transaction =
+        solana_sdk::transaction::VersionedTransaction::try_new(versioned_message, &[&sender])
+            .expect("Failed to create VersionedTransaction");
+
+    let test_tx = encode_b64_transaction_with_version(&versioned_transaction).unwrap();
+
+    // Call the signAndSendTransaction method
     let result = client
         .request::<serde_json::Value, _>("signAndSendTransaction", rpc_params![test_tx])
         .await;

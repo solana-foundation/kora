@@ -22,40 +22,26 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method",
-                  "params"
-                ],
+                "required": ["jsonrpc", "id", "method", "params"],
                 "properties": {
                   "id": {
                     "type": "string",
                     "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
+                    "enum": ["test-account"]
                   },
                   "jsonrpc": {
                     "type": "string",
                     "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
+                    "enum": ["2.0"]
                   },
                   "method": {
                     "type": "string",
                     "description": "The name of the method to invoke.",
-                    "enum": [
-                      "estimateTransactionFee"
-                    ]
+                    "enum": ["estimateTransactionFee"]
                   },
                   "params": {
                     "type": "object",
-                    "required": [
-                      "transaction",
-                      "fee_token"
-                    ],
+                    "required": ["transaction", "fee_token"],
                     "properties": {
                       "fee_token": {
                         "type": "string"
@@ -78,9 +64,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "fee_in_lamports"
-                  ],
+                  "required": ["fee_in_lamports"],
                   "properties": {
                     "fee_in_lamports": {
                       "type": "integer",
@@ -133,32 +117,22 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method"
-                ],
+                "required": ["jsonrpc", "id", "method"],
                 "properties": {
                   "id": {
                     "type": "string",
                     "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
+                    "enum": ["test-account"]
                   },
                   "jsonrpc": {
                     "type": "string",
                     "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
+                    "enum": ["2.0"]
                   },
                   "method": {
                     "type": "string",
                     "description": "The name of the method to invoke.",
-                    "enum": [
-                      "getBlockhash"
-                    ]
+                    "enum": ["getBlockhash"]
                   }
                 }
               }
@@ -173,9 +147,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "blockhash"
-                  ],
+                  "required": ["blockhash"],
                   "properties": {
                     "blockhash": {
                       "type": "string"
@@ -226,32 +198,22 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method"
-                ],
+                "required": ["jsonrpc", "id", "method"],
                 "properties": {
                   "id": {
                     "type": "string",
                     "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
+                    "enum": ["test-account"]
                   },
                   "jsonrpc": {
                     "type": "string",
                     "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
+                    "enum": ["2.0"]
                   },
                   "method": {
                     "type": "string",
                     "description": "The name of the method to invoke.",
-                    "enum": [
-                      "getConfig"
-                    ]
+                    "enum": ["getConfig"]
                   }
                 }
               }
@@ -266,10 +228,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "fee_payer",
-                    "validation_config"
-                  ],
+                  "required": ["fee_payer", "validation_config"],
                   "properties": {
                     "fee_payer": {
                       "type": "string"
@@ -323,32 +282,22 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method"
-                ],
+                "required": ["jsonrpc", "id", "method"],
                 "properties": {
                   "id": {
                     "type": "string",
                     "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
+                    "enum": ["test-account"]
                   },
                   "jsonrpc": {
                     "type": "string",
                     "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
+                    "enum": ["2.0"]
                   },
                   "method": {
                     "type": "string",
                     "description": "The name of the method to invoke.",
-                    "enum": [
-                      "getSupportedTokens"
-                    ]
+                    "enum": ["getSupportedTokens"]
                   }
                 }
               }
@@ -363,9 +312,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "tokens"
-                  ],
+                  "required": ["tokens"],
                   "properties": {
                     "tokens": {
                       "type": "array",
@@ -419,39 +366,26 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method",
-                  "params"
-                ],
+                "required": ["jsonrpc", "id", "method", "params"],
                 "properties": {
                   "id": {
                     "type": "string",
                     "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
+                    "enum": ["test-account"]
                   },
                   "jsonrpc": {
                     "type": "string",
                     "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
+                    "enum": ["2.0"]
                   },
                   "method": {
                     "type": "string",
                     "description": "The name of the method to invoke.",
-                    "enum": [
-                      "signAndSendTransaction"
-                    ]
+                    "enum": ["signAndSendTransaction"]
                   },
                   "params": {
                     "type": "object",
-                    "required": [
-                      "transaction"
-                    ],
+                    "required": ["transaction"],
                     "properties": {
                       "transaction": {
                         "type": "string"
@@ -471,10 +405,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "signature",
-                    "signed_transaction"
-                  ],
+                  "required": ["signature", "signed_transaction"],
                   "properties": {
                     "signature": {
                       "type": "string"
@@ -528,39 +459,26 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method",
-                  "params"
-                ],
+                "required": ["jsonrpc", "id", "method", "params"],
                 "properties": {
                   "id": {
                     "type": "string",
                     "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
+                    "enum": ["test-account"]
                   },
                   "jsonrpc": {
                     "type": "string",
                     "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
+                    "enum": ["2.0"]
                   },
                   "method": {
                     "type": "string",
                     "description": "The name of the method to invoke.",
-                    "enum": [
-                      "signTransaction"
-                    ]
+                    "enum": ["signTransaction"]
                   },
                   "params": {
                     "type": "object",
-                    "required": [
-                      "transaction"
-                    ],
+                    "required": ["transaction"],
                     "properties": {
                       "transaction": {
                         "type": "string"
@@ -580,228 +498,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "signature",
-                    "signed_transaction"
-                  ],
-                  "properties": {
-                    "signature": {
-                      "type": "string"
-                    },
-                    "signed_transaction": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Exceeded rate limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/signVersionedTransaction": {
-      "summary": "signVersionedTransaction",
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method",
-                  "params"
-                ],
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
-                  },
-                  "jsonrpc": {
-                    "type": "string",
-                    "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
-                  },
-                  "method": {
-                    "type": "string",
-                    "description": "The name of the method to invoke.",
-                    "enum": [
-                      "signVersionedTransaction"
-                    ]
-                  },
-                  "params": {
-                    "type": "object",
-                    "required": [
-                      "transaction"
-                    ],
-                    "properties": {
-                      "transaction": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "signature",
-                    "signed_transaction"
-                  ],
-                  "properties": {
-                    "signature": {
-                      "type": "string"
-                    },
-                    "signed_transaction": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Exceeded rate limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/signAndSendVersionedTransaction": {
-      "summary": "signAndSendVersionedTransaction",
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method",
-                  "params"
-                ],
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
-                  },
-                  "jsonrpc": {
-                    "type": "string",
-                    "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
-                  },
-                  "method": {
-                    "type": "string",
-                    "description": "The name of the method to invoke.",
-                    "enum": [
-                      "signAndSendVersionedTransaction"
-                    ]
-                  },
-                  "params": {
-                    "type": "object",
-                    "required": [
-                      "transaction"
-                    ],
-                    "properties": {
-                      "transaction": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "signature",
-                    "signed_transaction"
-                  ],
+                  "required": ["signature", "signed_transaction"],
                   "properties": {
                     "signature": {
                       "type": "string"
@@ -855,39 +552,26 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method",
-                  "params"
-                ],
+                "required": ["jsonrpc", "id", "method", "params"],
                 "properties": {
                   "id": {
                     "type": "string",
                     "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
+                    "enum": ["test-account"]
                   },
                   "jsonrpc": {
                     "type": "string",
                     "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
+                    "enum": ["2.0"]
                   },
                   "method": {
                     "type": "string",
                     "description": "The name of the method to invoke.",
-                    "enum": [
-                      "signTransactionIfPaid"
-                    ]
+                    "enum": ["signTransactionIfPaid"]
                   },
                   "params": {
                     "type": "object",
-                    "required": [
-                      "transaction"
-                    ],
+                    "required": ["transaction"],
                     "properties": {
                       "margin": {
                         "type": "number",
@@ -920,10 +604,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "signature",
-                    "signed_transaction"
-                  ],
+                  "required": ["signature", "signed_transaction"],
                   "properties": {
                     "signature": {
                       "type": "string"
@@ -977,42 +658,26 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method",
-                  "params"
-                ],
+                "required": ["jsonrpc", "id", "method", "params"],
                 "properties": {
                   "id": {
                     "type": "string",
                     "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
+                    "enum": ["test-account"]
                   },
                   "jsonrpc": {
                     "type": "string",
                     "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
+                    "enum": ["2.0"]
                   },
                   "method": {
                     "type": "string",
                     "description": "The name of the method to invoke.",
-                    "enum": [
-                      "transferTransaction"
-                    ]
+                    "enum": ["transferTransaction"]
                   },
                   "params": {
                     "type": "object",
-                    "required": [
-                      "amount",
-                      "token",
-                      "source",
-                      "destination"
-                    ],
+                    "required": ["amount", "token", "source", "destination"],
                     "properties": {
                       "amount": {
                         "type": "integer",
@@ -1043,11 +708,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "transaction",
-                    "message",
-                    "blockhash"
-                  ],
+                  "required": ["transaction", "message", "blockhash"],
                   "properties": {
                     "blockhash": {
                       "type": "string"
@@ -1101,9 +762,7 @@
     "schemas": {
       "GetBlockhashResponse": {
         "type": "object",
-        "required": [
-          "blockhash"
-        ],
+        "required": ["blockhash"],
         "properties": {
           "blockhash": {
             "type": "string"
@@ -1112,10 +771,7 @@
       },
       "GetConfigResponse": {
         "type": "object",
-        "required": [
-          "fee_payer",
-          "validation_config"
-        ],
+        "required": ["fee_payer", "validation_config"],
         "properties": {
           "fee_payer": {
             "type": "string"
@@ -1127,9 +783,7 @@
       },
       "GetSupportedTokensResponse": {
         "type": "object",
-        "required": [
-          "tokens"
-        ],
+        "required": ["tokens"],
         "properties": {
           "tokens": {
             "type": "array",
@@ -1141,9 +795,7 @@
       },
       "SignAndSendTransactionRequest": {
         "type": "object",
-        "required": [
-          "transaction"
-        ],
+        "required": ["transaction"],
         "properties": {
           "transaction": {
             "type": "string"
@@ -1152,10 +804,7 @@
       },
       "SignAndSendTransactionResponse": {
         "type": "object",
-        "required": [
-          "signature",
-          "signed_transaction"
-        ],
+        "required": ["signature", "signed_transaction"],
         "properties": {
           "signature": {
             "type": "string"
@@ -1167,9 +816,7 @@
       },
       "SignTransactionIfPaidRequest": {
         "type": "object",
-        "required": [
-          "transaction"
-        ],
+        "required": ["transaction"],
         "properties": {
           "margin": {
             "type": "number",
@@ -1191,10 +838,7 @@
       },
       "SignTransactionIfPaidResponse": {
         "type": "object",
-        "required": [
-          "signature",
-          "signed_transaction"
-        ],
+        "required": ["signature", "signed_transaction"],
         "properties": {
           "signature": {
             "type": "string"
@@ -1206,9 +850,7 @@
       },
       "SignTransactionRequest": {
         "type": "object",
-        "required": [
-          "transaction"
-        ],
+        "required": ["transaction"],
         "properties": {
           "transaction": {
             "type": "string"
@@ -1217,10 +859,7 @@
       },
       "SignTransactionResponse": {
         "type": "object",
-        "required": [
-          "signature",
-          "signed_transaction"
-        ],
+        "required": ["signature", "signed_transaction"],
         "properties": {
           "signature": {
             "type": "string"
@@ -1232,9 +871,7 @@
       },
       "TokenPriceInfo": {
         "type": "object",
-        "required": [
-          "price"
-        ],
+        "required": ["price"],
         "properties": {
           "price": {
             "type": "number",
@@ -1244,12 +881,7 @@
       },
       "TransferTransactionRequest": {
         "type": "object",
-        "required": [
-          "amount",
-          "token",
-          "source",
-          "destination"
-        ],
+        "required": ["amount", "token", "source", "destination"],
         "properties": {
           "amount": {
             "type": "integer",
@@ -1269,11 +901,7 @@
       },
       "TransferTransactionResponse": {
         "type": "object",
-        "required": [
-          "transaction",
-          "message",
-          "blockhash"
-        ],
+        "required": ["transaction", "message", "blockhash"],
         "properties": {
           "blockhash": {
             "type": "string"
@@ -1334,10 +962,7 @@
           },
           "price_source": {
             "type": "string",
-            "enum": [
-              "jupiter",
-              "fake"
-            ]
+            "enum": ["jupiter", "fake"]
           }
         }
       }

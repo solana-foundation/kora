@@ -683,5 +683,402 @@ pub async fn validate_token_payment(
 
 #[cfg(test)]
 mod tests {
-    // ...existing code...
+    use super::*;
+    use solana_sdk::{message::Message, system_instruction};
+    use spl_token_2022::extension::{
+        confidential_transfer::ConfidentialTransferAccount,
+        cpi_guard::CpiGuard,
+        interest_bearing_mint::InterestBearingConfig,
+        non_transferable::NonTransferable,
+        transfer_fee::{TransferFee, TransferFeeAmount, TransferFeeConfig},
+    };
+
+    #[test]
+    fn test_validate_transaction() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        // Test case 1: Transaction using fee payer as source
+        let recipient = Pubkey::new_unique();
+        let instruction = system_instruction::transfer(&fee_payer, &recipient, 5_000_000);
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_err());
+
+        // Test case 2: Valid transaction within limits
+        let sender = Pubkey::new_unique();
+        let instruction = system_instruction::transfer(&sender, &recipient, 100_000);
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_ok());
+    }
+
+    #[test]
+    fn test_transfer_amount_limits() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        // Test transaction with amount over limit
+        let instruction = system_instruction::transfer(&sender, &recipient, 2_000_000);
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_ok()); // Should pass because sender is not fee payer
+
+        // Test multiple transfers
+        let instructions = vec![
+            system_instruction::transfer(&sender, &recipient, 500_000),
+            system_instruction::transfer(&sender, &recipient, 500_000),
+        ];
+        let message = Message::new(&instructions, Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_ok());
+    }
+
+    #[test]
+    fn test_validate_programs() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec!["11111111111111111111111111111111".to_string()], // System program
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        // Test allowed program (system program)
+        let instruction = system_instruction::transfer(&sender, &recipient, 1000);
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_ok());
+
+        // Test disallowed program
+        let fake_program = Pubkey::new_unique();
+        // Create a no-op instruction for the fake program
+        let instruction = solana_sdk::instruction::Instruction::new_with_bincode(
+            fake_program,
+            &[0u8],
+            vec![], // no accounts needed for this test
+        );
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_err());
+    }
+
+    #[test]
+    fn test_validate_signatures() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 2,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        // Test too many signatures
+        let instructions = vec![
+            system_instruction::transfer(&sender, &recipient, 1000),
+            system_instruction::transfer(&sender, &recipient, 1000),
+            system_instruction::transfer(&sender, &recipient, 1000),
+        ];
+        let message = Message::new(&instructions, Some(&fee_payer));
+        let mut transaction = Transaction::new_unsigned(message);
+        transaction.signatures = vec![Default::default(); 3]; // Add 3 dummy signatures
+        assert!(validator.validate_transaction(&transaction).is_err());
+    }
+
+    #[test]
+    fn test_sign_and_send_transaction_mode() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        // Test SignAndSend mode with fee payer already set should not error
+        let instruction = system_instruction::transfer(&sender, &recipient, 1000);
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_ok());
+
+        // Test SignAndSend mode without fee payer (should succeed)
+        let instruction = system_instruction::transfer(&sender, &recipient, 1000);
+        let message = Message::new(&[instruction], None); // No fee payer specified
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_ok());
+    }
+
+    #[test]
+    fn test_empty_transaction() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        // Create an empty message using Message::new with empty instructions
+        let message = Message::new(&[], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_err());
+    }
+
+    #[test]
+    fn test_disallowed_accounts() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec!["hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek".to_string()],
+        };
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let instruction = system_instruction::transfer(
+            &Pubkey::from_str("hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek").unwrap(),
+            &fee_payer,
+            1000,
+        );
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+        assert!(validator.validate_transaction(&transaction).is_err());
+    }
+
+    #[test]
+    fn test_validate_token2022_account() {
+        let mint = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let amount = 1000;
+
+        // Create a minimal Token2022Account for testing
+        let account = Token2022Account {
+            mint,
+            owner,
+            amount,
+            delegate: None,
+            state: 1,
+            is_native: None,
+            delegated_amount: 0,
+            close_authority: None,
+            extension_data: Vec::new(),
+        };
+
+        let result = validate_token2022_account(&account, amount);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap() >= amount);
+    }
+
+    #[test]
+    fn test_validate_token2022_account_with_fallback_calculation() {
+        let mint = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let amount = 10_000;
+
+        let buffer = vec![1; 1000]; // Non-empty buffer with invalid extension data
+
+        // Create a Token2022Account with the extension data
+        let token2022_account = Token2022Account {
+            mint,
+            owner,
+            amount,
+            delegate: None,
+            state: 1,
+            is_native: None,
+            delegated_amount: 0,
+            close_authority: None,
+            extension_data: buffer,
+        };
+
+        // Test the validation function
+        let result = validate_token2022_account(&token2022_account, amount);
+
+        // Validation should succeed
+        assert!(result.is_ok());
+
+        // The result should account for interest (using the fallback calculation)
+        let validated_amount = result.unwrap();
+
+        // Calculate expected interest (1% annual for 1 day)
+        // This matches the calculation in the fallback path of validate_token2022_account
+        let interest = std::cmp::max(
+            1,
+            (amount as u128 * 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60)) as u64,
+        );
+        let expected_amount = amount + interest;
+
+        // The validated amount should include interest
+        assert_eq!(
+            validated_amount, expected_amount,
+            "Amount should be adjusted for interest according to the fallback calculation"
+        );
+
+        // Verify that interest was added
+        assert!(validated_amount > amount, "Interest should be added to the amount");
+    }
+
+    #[test]
+    fn test_validate_token2022_account_with_transfer_fee_and_interest() {
+        use spl_pod::{
+            optional_keys::OptionalNonZeroPubkey,
+            primitives::{PodI16, PodI64, PodU16, PodU64},
+        };
+        // Test parameters
+        let amount = 10_000;
+
+        // 1. Test transfer fee calculation
+        let transfer_fee = TransferFee {
+            epoch: PodU64::from(1),
+            maximum_fee: PodU64::from(10_000),
+            transfer_fee_basis_points: PodU16::from(100), // 1% fee
+        };
+
+        let transfer_fee_config = TransferFeeConfig {
+            transfer_fee_config_authority: OptionalNonZeroPubkey::default(),
+            withdraw_withheld_authority: OptionalNonZeroPubkey::default(),
+            withheld_amount: PodU64::from(0),
+            older_transfer_fee: transfer_fee,
+            newer_transfer_fee: transfer_fee,
+        };
+
+        let fee_result = calculate_transfer_fee(amount, &transfer_fee_config);
+        assert!(fee_result.is_ok());
+
+        let fee = fee_result.unwrap();
+        let expected_fee = (amount as u128 * 100 / 10000) as u64;
+        assert_eq!(fee, expected_fee, "Transfer fee calculation should match expected value");
+
+        // 2. Test interest calculation
+        let interest_config = InterestBearingConfig {
+            rate_authority: OptionalNonZeroPubkey::default(),
+            initialization_timestamp: PodI64::from(0),
+            pre_update_average_rate: PodI16::from(0),
+            last_update_timestamp: PodI64::from(0),
+            current_rate: PodI16::from(100), // 1% annual interest rate
+        };
+
+        let interest_result = calculate_interest(amount, &interest_config);
+        assert!(interest_result.is_ok());
+
+        let amount_with_interest = interest_result.unwrap();
+
+        // Calculate expected interest (1% annual for 1 day)
+        let seconds_per_day = 24 * 60 * 60;
+        let seconds_per_year = 365 * seconds_per_day;
+        let expected_interest =
+            (amount as u128 * 100 * seconds_per_day / 10000 / seconds_per_year) as u64;
+        let expected_amount_with_interest = amount + expected_interest;
+
+        assert_eq!(
+            amount_with_interest, expected_amount_with_interest,
+            "Interest calculation should match expected value"
+        );
+
+        // In a real scenario with both extensions, the interest would be added and then the fee subtracted
+        let amount_after_interest = amount_with_interest;
+        let final_amount = amount_after_interest.saturating_sub(fee);
+
+        // The final amount should reflect both interest and fees
+        assert!(final_amount != amount, "Amount should be adjusted for both interest and fees");
+    }
+
+    #[test]
+    fn test_validate_versioned_transaction() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec!["11111111111111111111111111111111".to_string()], // System program
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let amount: u64 = 500_000;
+
+        // Create a versioned transaction
+        let instruction = system_instruction::transfer(&sender, &recipient, amount);
+        let blockhash = solana_sdk::hash::Hash::new_unique();
+        let message =
+            solana_sdk::message::v0::Message::try_compile(&sender, &[instruction], &[], blockhash)
+                .expect("Failed to compile versioned message");
+
+        let versioned_message = VersionedMessage::V0(message);
+        let versioned_transaction = VersionedTransaction {
+            signatures: vec![Default::default()],
+            message: versioned_message,
+        };
+
+        // Validate the versioned transaction
+        assert!(validator.validate_transaction_with_versioned(&versioned_transaction).is_ok());
+
+        // Test with disallowed program
+        let fake_program = Pubkey::new_unique();
+        let instruction = solana_sdk::instruction::Instruction::new_with_bincode(
+            fake_program,
+            &[0u8],
+            vec![], // No accounts needed for this test
+        );
+        let message =
+            solana_sdk::message::v0::Message::try_compile(&sender, &[instruction], &[], blockhash)
+                .expect("Failed to compile versioned message");
+
+        let versioned_message = VersionedMessage::V0(message);
+        let versioned_transaction = VersionedTransaction {
+            signatures: vec![Default::default()],
+            message: versioned_message,
+        };
+
+        assert!(validator.validate_transaction_with_versioned(&versioned_transaction).is_err());
+    }
 }
