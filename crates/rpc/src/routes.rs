@@ -20,3 +20,13 @@ pub async fn transfer_transaction_route(
         signed_tx: base64::encode(tx_bytes),
     }))
 }
+#[derive(Deserialize)]
+pub struct TransferRequest {
+    pub to: String,
+    pub lamports: u64,
+}
+
+#[derive(Serialize)]
+pub struct TransferResponse {
+    pub signed_tx: String,
+}
