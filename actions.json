@@ -1,0 +1,5 @@
+{
+  "name": "transferTransaction",
+  "description": "Create a signed transfer transaction",
+  "params": ["to", "lamports"]
+}
