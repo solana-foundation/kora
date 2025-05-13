@@ -423,3 +423,28 @@ async fn test_sign_transaction_if_paid() {
 
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
+
+#[tokio::test]
+async fn test_transfer_transaction_action() {
+    let client = setup_test_client().await;
+    let sender = get_test_sender_keypair();
+    let recipient = Pubkey::from_str("AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM").unwrap();
+    let amount = 10;
+    let token = USDC_DEVNET_MINT;
+
+    let params = json!({
+        "amount": amount,
+        "token": token,
+        "source": sender.pubkey().to_string(),
+        "destination": recipient.to_string()
+    });
+
+    let response: serde_json::Value = client
+        .request("transferTransactionAction", rpc_params![params])
+        .await
+        .expect("Failed to call transferTransactionAction");
+
+    assert!(response["transaction"].as_str().is_some(), "Expected transaction in response");
+    assert!(response["message"].as_str().is_some(), "Expected message in response");
+    assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
+}
