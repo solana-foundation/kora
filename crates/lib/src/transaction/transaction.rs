@@ -7,6 +7,18 @@ use solana_sdk::{
     transaction::Transaction,
 };
 
+use solana_sdk::{
+    instruction::Instruction,
+    message::Message,
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+    system_instruction,
+    transaction::Transaction,
+};
+use solana_client::rpc_client::RpcClient;
+use anyhow::Result;
+
+
 use crate::{
     config::ValidationConfig, error::KoraError, get_signer,
     transaction::validator::TransactionValidator, Signer as _,
@@ -184,4 +196,30 @@ mod tests {
         assert_eq!(uncompiled.accounts[1].pubkey, account2);
         assert_eq!(uncompiled.data, vec![1, 2, 3]);
     }
+}
+
+
+pub fn create_transfer_transaction(
+    rpc_client: &RpcClient,
+    from_keypair: &Keypair,
+    to_pubkey: &Pubkey,
+    lamports: u64,
+    recent_blockhash: Option<solana_sdk::hash::Hash>,
+) -> Result<Transaction> {
+    let blockhash = match recent_blockhash {
+        Some(hash) => hash,
+        None => rpc_client.get_latest_blockhash()?,
+    };
+
+    let instruction: Instruction = system_instruction::transfer(
+        &from_keypair.pubkey(),
+        to_pubkey,
+        lamports,
+    );
+
+    let message = Message::new(&[instruction], Some(&from_keypair.pubkey()));
+
+    let tx = Transaction::new(&[from_keypair], message, blockhash);
+
+    Ok(tx)
 }
