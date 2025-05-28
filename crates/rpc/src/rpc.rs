@@ -1,10 +1,6 @@
 use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
-use utoipa::{
-    openapi::{RefOr, Schema},
-    ToSchema,
-};
 
 use kora_lib::{
     config::{KoraConfig, ValidationConfig},
@@ -19,15 +15,16 @@ use crate::method::{
     get_config::{get_config, GetConfigResponse},
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
     sign_and_send_transaction::{
-        sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResponse,
+        sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResult,
     },
-    sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResponse},
+    sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResult},
     sign_transaction_if_paid::{
         sign_transaction_if_paid, SignTransactionIfPaidRequest, SignTransactionIfPaidResponse,
     },
     transfer_transaction::{
-        transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
+        transfer_transaction, TransferTransactionRequest, TransferTransactionResponse as TransferTransactionResponseOld,
     },
+    transfer_transaction_v2::{transfer_transaction_v2, TransferTransactionV2Request, TransferTransactionResponse as TransferTransactionResponseV2},
 };
 
 #[derive(Clone)]
@@ -35,12 +32,6 @@ pub struct KoraRpc {
     rpc_client: Arc<RpcClient>,
     validation: ValidationConfig,
     pub config: KoraConfig,
-}
-
-pub struct OpenApiSpec {
-    pub name: String,
-    pub request: Option<RefOr<Schema>>,
-    pub response: RefOr<Schema>,
 }
 
 impl KoraRpc {
@@ -79,7 +70,7 @@ impl KoraRpc {
     pub async fn sign_transaction(
         &self,
         request: SignTransactionRequest,
-    ) -> Result<SignTransactionResponse, KoraError> {
+    ) -> Result<SignTransactionResult, KoraError> {
         info!("Sign transaction request: {:?}", request);
         let result = sign_transaction(&self.rpc_client, &self.validation, request).await;
         info!("Sign transaction response: {:?}", result);
@@ -89,7 +80,7 @@ impl KoraRpc {
     pub async fn sign_and_send_transaction(
         &self,
         request: SignAndSendTransactionRequest,
-    ) -> Result<SignAndSendTransactionResponse, KoraError> {
+    ) -> Result<SignAndSendTransactionResult, KoraError> {
         info!("Sign and send transaction request: {:?}", request);
         let result = sign_and_send_transaction(&self.rpc_client, &self.validation, request).await;
         info!("Sign and send transaction response: {:?}", result);
@@ -99,7 +90,7 @@ impl KoraRpc {
     pub async fn transfer_transaction(
         &self,
         request: TransferTransactionRequest,
-    ) -> Result<TransferTransactionResponse, KoraError> {
+    ) -> Result<TransferTransactionResponseOld, KoraError> {
         info!("Transfer transaction request: {:?}", request);
         let result = transfer_transaction(&self.rpc_client, &self.validation, request).await;
         info!("Transfer transaction response: {:?}", result);
@@ -130,48 +121,13 @@ impl KoraRpc {
         result
     }
 
-    pub fn build_docs_spec() -> Vec<OpenApiSpec> {
-        vec![
-            OpenApiSpec {
-                name: "estimateTransactionFee".to_string(),
-                request: Some(EstimateTransactionFeeRequest::schema().1),
-                response: EstimateTransactionFeeResponse::schema().1,
-            },
-            OpenApiSpec {
-                name: "getBlockhash".to_string(),
-                request: None,
-                response: GetBlockhashResponse::schema().1,
-            },
-            OpenApiSpec {
-                name: "getConfig".to_string(),
-                request: None,
-                response: GetConfigResponse::schema().1,
-            },
-            OpenApiSpec {
-                name: "getSupportedTokens".to_string(),
-                request: None,
-                response: GetSupportedTokensResponse::schema().1,
-            },
-            OpenApiSpec {
-                name: "signTransaction".to_string(),
-                request: Some(SignTransactionRequest::schema().1),
-                response: SignTransactionResponse::schema().1,
-            },
-            OpenApiSpec {
-                name: "signAndSendTransaction".to_string(),
-                request: Some(SignAndSendTransactionRequest::schema().1),
-                response: SignAndSendTransactionResponse::schema().1,
-            },
-            OpenApiSpec {
-                name: "transferTransaction".to_string(),
-                request: Some(TransferTransactionRequest::schema().1),
-                response: TransferTransactionResponse::schema().1,
-            },
-            OpenApiSpec {
-                name: "signTransactionIfPaid".to_string(),
-                request: Some(SignTransactionIfPaidRequest::schema().1),
-                response: SignTransactionIfPaidResponse::schema().1,
-            },
-        ]
+    pub async fn transfer_transaction_v2(
+        &self,
+        request: TransferTransactionV2Request,
+    ) -> Result<TransferTransactionResponseV2, KoraError> {
+        info!("Transfer transaction V2 request: {:?}", request);
+        let result = transfer_transaction_v2(&self.rpc_client, &self.validation, request).await;
+        info!("Transfer transaction V2 response: {:?}", result);
+        result
     }
 }

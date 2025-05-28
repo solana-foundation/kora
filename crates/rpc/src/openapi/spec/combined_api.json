@@ -879,6 +879,133 @@
       }
     }
   },
+    "/transferTransactionAction": {
+      "summary": "transferTransactionAction",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "transferTransactionAction"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "amount",
+                      "token",
+                      "source",
+                      "destination"
+                    ],
+                    "properties": {
+                      "amount": {
+                        "type": "integer",
+                        "format": "int64",
+                        "minimum": 0
+                      },
+                      "destination": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "token": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "transaction",
+                    "message",
+                    "blockhash"
+                  ],
+                  "properties": {
+                    "blockhash": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "transaction": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
   "components": {
     "schemas": {
       "GetBlockhashResponse": {
