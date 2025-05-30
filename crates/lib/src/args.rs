@@ -10,7 +10,7 @@ pub struct CommonArgs {
     pub rpc_url: String,
 
     /// Base58-encoded private key for signing
-    #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present_any = ["skip_signer", "turnkey_signer"])]
+    #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present_any = ["skip_signer", "turnkey_signer", "privy_signer", "vault_signer"])]
     pub private_key: Option<String>,
 
     /// Path to kora.toml config file
@@ -55,6 +55,23 @@ pub struct CommonArgs {
 
     #[arg(long, env = "VAULT_PUBKEY")]
     pub vault_pubkey: Option<String>,
+
+    /// Privy signer
+    #[arg(long = "with-privy-signer")]
+    pub privy_signer: bool,
+
+    /// Privy API credentials
+    #[arg(long, env = "PRIVY_APP_ID")]
+    pub privy_app_id: Option<String>,
+
+    #[arg(long, env = "PRIVY_APP_SECRET")]
+    pub privy_app_secret: Option<String>,
+
+    #[arg(long, env = "PRIVY_WALLET_ID")]
+    pub privy_wallet_id: Option<String>,
+    
+    #[arg(long, env = "PRIVY_PUBLIC_KEY")]
+    pub privy_public_key: Option<String>,
 }
 
 // RPC-specific arguments

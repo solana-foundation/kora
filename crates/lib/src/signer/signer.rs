@@ -3,6 +3,7 @@ use crate::error::KoraError;
 use solana_sdk::signature::Signature as SolanaSignature;
 use std::error::Error;
 use tk_rs::TurnkeySigner;
+use privy_rust::types::PrivySigner;
 
 #[derive(Debug, Clone)]
 pub struct Signature {
@@ -33,6 +34,7 @@ pub trait Signer {
 pub enum KoraSigner {
     Memory(SolanaMemorySigner),
     Turnkey(TurnkeySigner),
+    Privy(PrivySigner),
     Vault(VaultSigner),
 }
 
@@ -41,6 +43,7 @@ impl KoraSigner {
         match self {
             KoraSigner::Memory(signer) => signer.solana_pubkey(),
             KoraSigner::Turnkey(signer) => signer.solana_pubkey(),
+            KoraSigner::Privy(signer) => signer.solana_pubkey(),
             KoraSigner::Vault(signer) => signer.solana_pubkey(),
         }
     }
@@ -56,6 +59,13 @@ impl super::Signer for KoraSigner {
                 let sig = signer.sign(message).await?;
                 Ok(super::Signature { bytes: sig, is_partial: false })
             }
+            KoraSigner::Privy(signer) => {
+                let sig = signer.sign_transaction(message).await?;
+                Ok(super::Signature { 
+                    bytes: sig.as_ref().to_vec(), 
+                    is_partial: false 
+                })
+            }
             KoraSigner::Vault(signer) => signer.sign(message).await,
         }
     }
@@ -69,6 +79,9 @@ impl super::Signer for KoraSigner {
             KoraSigner::Vault(signer) => signer.sign_solana(message).await,
             KoraSigner::Turnkey(signer) => {
                 signer.sign_solana(message).await.map_err(KoraError::from)
+            }
+            KoraSigner::Privy(signer) => {
+                Ok(signer.sign_transaction(message).await?)
             }
         }
     }
