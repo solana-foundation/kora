@@ -2,46 +2,48 @@ use crate::{
     config::ValidationConfig,
     error::KoraError,
     oracle::PriceSource,
-    token::{Token2022Account, TokenInterface, TokenProgram, TokenState, TokenType},
+    token::{Token2022Account, TokenInterface, TokenProgram, TokenType},
     transaction::fees::calculate_token_value_in_lamports,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_program::program_pack::Pack;
 use solana_sdk::{
-    instruction::CompiledInstruction, message::Message, pubkey::Pubkey, system_instruction,
-    system_program, transaction::Transaction,
+    instruction::CompiledInstruction,
+    message::{Message, VersionedMessage},
+    pubkey::Pubkey,
+    system_instruction, system_program,
+    transaction::{Transaction, VersionedTransaction},
 };
 use spl_token_2022::{
     extension::{
-        confidential_transfer::ConfidentialTransferAccount,
-        cpi_guard::CpiGuard,
-        interest_bearing_mint::InterestBearingConfig,
-        non_transferable::NonTransferable,
-        transfer_fee::{TransferFee, TransferFeeConfig},
+        cpi_guard::CpiGuard, interest_bearing_mint::InterestBearingConfig,
+        non_transferable::NonTransferable, transfer_fee::TransferFeeConfig,
         BaseStateWithExtensions, StateWithExtensions,
     },
     state::Account as Token2022AccountState,
 };
-use std::str::FromStr;
+use std::{collections::HashSet, str::FromStr};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValidationMode {
     Sign,
     SignAndSend,
 }
 
+/// Core transaction validator that enforces security and policy restrictions
 pub struct TransactionValidator {
     fee_payer_pubkey: Pubkey,
     max_allowed_lamports: u64,
-    allowed_programs: Vec<Pubkey>,
+    allowed_programs: HashSet<Pubkey>, // Changed from Vec to HashSet for better lookup performance
     max_signatures: u64,
-    allowed_tokens: Vec<Pubkey>,
-    disallowed_accounts: Vec<Pubkey>,
+    allowed_tokens: HashSet<Pubkey>, // Changed from Vec to HashSet
+    disallowed_accounts: HashSet<Pubkey>, // Changed from Vec to HashSet
     price_source: PriceSource,
 }
 
 impl TransactionValidator {
+    /// Creates a new validator with the specified configuration
     pub fn new(fee_payer_pubkey: Pubkey, config: &ValidationConfig) -> Result<Self, KoraError> {
-        // Convert string program IDs to Pubkeys
+        // Convert string program IDs to Pubkeys and store in HashSet for O(1) lookups
         let allowed_programs = config
             .allowed_programs
             .iter()
@@ -53,7 +55,17 @@ impl TransactionValidator {
                     ))
                 })
             })
-            .collect::<Result<Vec<Pubkey>, KoraError>>()?;
+            .collect::<Result<HashSet<_>, _>>()?;
+
+        // Convert allowed tokens and disallowed accounts to HashSets
+        let allowed_tokens =
+            config.allowed_tokens.iter().filter_map(|addr| Pubkey::from_str(addr).ok()).collect();
+
+        let disallowed_accounts = config
+            .disallowed_accounts
+            .iter()
+            .filter_map(|addr| Pubkey::from_str(addr).ok())
+            .collect();
 
         Ok(Self {
             fee_payer_pubkey,
@@ -61,25 +73,18 @@ impl TransactionValidator {
             allowed_programs,
             max_signatures: config.max_signatures,
             price_source: config.price_source.clone(),
-            allowed_tokens: config
-                .allowed_tokens
-                .iter()
-                .map(|addr| Pubkey::from_str(addr).unwrap())
-                .collect(),
-            disallowed_accounts: config
-                .disallowed_accounts
-                .iter()
-                .map(|addr| Pubkey::from_str(addr).unwrap())
-                .collect(),
+            allowed_tokens,
+            disallowed_accounts,
         })
     }
 
+    /// Validates a token mint with the RPC client
     pub async fn validate_token_mint(
         &self,
         mint: &Pubkey,
         rpc_client: &RpcClient,
     ) -> Result<(), KoraError> {
-        // First check if the mint is in allowed tokens
+        // Fast path: check if mint is in allowed tokens
         if !self.allowed_tokens.contains(mint) {
             return Err(KoraError::InvalidTransaction(format!(
                 "Mint {} is not a valid token mint",
@@ -90,7 +95,7 @@ impl TransactionValidator {
         // Get the mint account to determine if it's SPL or Token2022
         let mint_account = rpc_client.get_account(mint).await?;
 
-        // Check if it's a Token2022 mint
+        // Determine token program type and validate
         let is_token2022 = mint_account.owner == spl_token_2022::id();
         let token_program =
             TokenProgram::new(if is_token2022 { TokenType::Token2022 } else { TokenType::Spl });
@@ -101,12 +106,39 @@ impl TransactionValidator {
         Ok(())
     }
 
+    /// Main validation function for legacy transactions
     pub fn validate_transaction(&self, transaction: &Transaction) -> Result<(), KoraError> {
+        // Basic validation checks
+        self.validate_transaction_basics(transaction)?;
+
+        // Validate all message components
         self.validate_programs(&transaction.message)?;
         self.validate_transfer_amounts(&transaction.message)?;
-        self.validate_signatures(transaction)?;
         self.validate_disallowed_accounts(&transaction.message)?;
+        self.validate_signatures(transaction)?;
 
+        Ok(())
+    }
+
+    /// Main validation function for versioned transactions
+    pub fn validate_transaction_with_versioned(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<(), KoraError> {
+        // Basic validation checks
+        self.validate_transaction_basics_versioned(transaction)?;
+
+        // Validate all message components
+        self.validate_signatures_with_versioned(transaction)?;
+        self.validate_programs_with_versioned(&transaction.message)?;
+        self.validate_transfer_amounts_with_versioned(&transaction.message)?;
+        self.validate_disallowed_accounts_with_versioned(&transaction.message)?;
+
+        Ok(())
+    }
+
+    // Validate basic transaction properties (common functionality extracted)
+    fn validate_transaction_basics(&self, transaction: &Transaction) -> Result<(), KoraError> {
         if transaction.message.instructions.is_empty() {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no instructions".to_string(),
@@ -122,6 +154,27 @@ impl TransactionValidator {
         Ok(())
     }
 
+    // Validate basic versioned transaction properties
+    fn validate_transaction_basics_versioned(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<(), KoraError> {
+        if transaction.message.instructions().is_empty() {
+            return Err(KoraError::InvalidTransaction(
+                "Transaction contains no instructions".to_string(),
+            ));
+        }
+
+        if transaction.message.static_account_keys().is_empty() {
+            return Err(KoraError::InvalidTransaction(
+                "Transaction contains no account keys".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validates that transaction fee is within acceptable limits
     pub fn validate_lamport_fee(&self, fee: u64) -> Result<(), KoraError> {
         if fee > self.max_allowed_lamports {
             return Err(KoraError::InvalidTransaction(format!(
@@ -132,7 +185,14 @@ impl TransactionValidator {
         Ok(())
     }
 
+    /// Validates transaction signatures against limits
     fn validate_signatures(&self, message: &Transaction) -> Result<(), KoraError> {
+        // Check for empty signatures
+        if message.signatures.is_empty() {
+            return Err(KoraError::InvalidTransaction("No signatures found".to_string()));
+        }
+
+        // Check for too many signatures
         if message.signatures.len() > self.max_signatures as usize {
             return Err(KoraError::InvalidTransaction(format!(
                 "Too many signatures: {} > {}",
@@ -141,13 +201,32 @@ impl TransactionValidator {
             )));
         }
 
+        Ok(())
+    }
+
+    /// Validates versioned transaction signatures against limits
+    fn validate_signatures_with_versioned(
+        &self,
+        message: &VersionedTransaction,
+    ) -> Result<(), KoraError> {
+        // Check for empty signatures
         if message.signatures.is_empty() {
             return Err(KoraError::InvalidTransaction("No signatures found".to_string()));
+        }
+
+        // Check for too many signatures
+        if message.signatures.len() > self.max_signatures as usize {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Too many signatures: {} > {}",
+                message.signatures.len(),
+                self.max_signatures
+            )));
         }
 
         Ok(())
     }
 
+    /// Validates that all programs in the transaction are allowed
     fn validate_programs(&self, message: &Message) -> Result<(), KoraError> {
         for instruction in &message.instructions {
             let program_id = message.account_keys[instruction.program_id_index as usize];
@@ -161,6 +240,25 @@ impl TransactionValidator {
         Ok(())
     }
 
+    /// Validates that all programs in a versioned transaction are allowed
+    fn validate_programs_with_versioned(
+        &self,
+        message: &VersionedMessage,
+    ) -> Result<(), KoraError> {
+        for instruction in message.instructions() {
+            let program_id = message.static_account_keys()[instruction.program_id_index as usize];
+            if !self.allowed_programs.contains(&program_id) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Program {} is not in the allowed list",
+                    program_id
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Validates that the fee payer is properly configured
+    #[allow(dead_code)]
     fn validate_fee_payer_usage(&self, message: &Message) -> Result<(), KoraError> {
         // Check if fee payer is first account
         if message.account_keys.first() != Some(&self.fee_payer_pubkey) {
@@ -180,23 +278,32 @@ impl TransactionValidator {
         Ok(())
     }
 
+    /// Checks if the fee payer is being used as a source account
     #[allow(dead_code)]
     fn is_fee_payer_source(&self, ix: &CompiledInstruction, account_keys: &[Pubkey]) -> bool {
-        // For system program transfers, check if fee payer is the source
-        if account_keys[ix.program_id_index as usize] == system_program::ID {
-            if let Ok(system_ix) =
-                bincode::deserialize::<system_instruction::SystemInstruction>(&ix.data)
-            {
-                if let system_instruction::SystemInstruction::Transfer { lamports: _ } = system_ix {
-                    // For transfer instruction, first account is source
-                    return account_keys[ix.accounts[0] as usize] == self.fee_payer_pubkey;
-                }
+        // Only check for system program transfers
+        if account_keys[ix.program_id_index as usize] != system_program::ID {
+            return false;
+        }
+
+        // Try to deserialize the instruction data
+        if let Ok(system_ix) =
+            bincode::deserialize::<system_instruction::SystemInstruction>(&ix.data)
+        {
+            if let system_instruction::SystemInstruction::Transfer { .. } = system_ix {
+                // For transfer instruction, first account is source
+                return ix
+                    .accounts
+                    .first()
+                    .map(|idx| account_keys[*idx as usize] == self.fee_payer_pubkey)
+                    .unwrap_or(false);
             }
         }
 
         false
     }
 
+    /// Validates transfer amounts don't exceed allowed limits
     fn validate_transfer_amounts(&self, message: &Message) -> Result<(), KoraError> {
         let total_outflow = self.calculate_total_outflow(message);
 
@@ -210,11 +317,29 @@ impl TransactionValidator {
         Ok(())
     }
 
+    /// Validates transfer amounts in a versioned transaction
+    fn validate_transfer_amounts_with_versioned(
+        &self,
+        message: &VersionedMessage,
+    ) -> Result<(), KoraError> {
+        let total_outflow = self.calculate_total_outflow_with_versioned(message);
+
+        if total_outflow > self.max_allowed_lamports {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Total transfer amount {} exceeds maximum allowed {}",
+                total_outflow, self.max_allowed_lamports
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Validates that no disallowed accounts are used in the transaction
     pub fn validate_disallowed_accounts(&self, message: &Message) -> Result<(), KoraError> {
         for instruction in &message.instructions {
-            // iterate over all accounts in the instruction
-            for account in instruction.accounts.iter() {
-                let account = message.account_keys[*account as usize];
+            // Check all accounts in the instruction
+            for account_idx in &instruction.accounts {
+                let account = message.account_keys[*account_idx as usize];
                 if self.disallowed_accounts.contains(&account) {
                     return Err(KoraError::InvalidTransaction(format!(
                         "Account {} is disallowed",
@@ -226,26 +351,97 @@ impl TransactionValidator {
         Ok(())
     }
 
+    /// Validates that no disallowed accounts are used in a versioned transaction
+    pub fn validate_disallowed_accounts_with_versioned(
+        &self,
+        message: &VersionedMessage,
+    ) -> Result<(), KoraError> {
+        let static_keys = message.static_account_keys();
+
+        // Efficiently check all static account keys
+        for account in static_keys {
+            if self.disallowed_accounts.contains(account) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Account {} is disallowed",
+                    account
+                )));
+            }
+        }
+
+        // For address lookup tables in v0 transactions
+        if let Some(address_table_lookups) = message.address_table_lookups() {
+            // Note: This is partial validation as we don't have the lookup tables available
+            // Full validation would require lookups into the address tables
+            for lookup in address_table_lookups {
+                if self.disallowed_accounts.contains(&lookup.account_key) {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Address lookup table {} is disallowed",
+                        lookup.account_key
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Checks if an account is disallowed
     pub fn is_disallowed_account(&self, account: &Pubkey) -> bool {
         self.disallowed_accounts.contains(account)
     }
 
+    /// Calculates total outflow from fee payer in lamports
     fn calculate_total_outflow(&self, message: &Message) -> u64 {
         let mut total = 0u64;
 
         for instruction in &message.instructions {
             let program_id = message.account_keys[instruction.program_id_index as usize];
 
-            // Handle System Program transfers
+            // Only check System Program transfers
             if program_id == system_program::ID {
                 if let Ok(system_ix) =
                     bincode::deserialize::<system_instruction::SystemInstruction>(&instruction.data)
                 {
                     if let system_instruction::SystemInstruction::Transfer { lamports } = system_ix
                     {
-                        // Only count if source is fee payer
-                        if message.account_keys[instruction.accounts[0] as usize]
-                            == self.fee_payer_pubkey
+                        // Only count transfers from fee payer
+                        if instruction
+                            .accounts
+                            .first()
+                            .map(|idx| message.account_keys[*idx as usize] == self.fee_payer_pubkey)
+                            .unwrap_or(false)
+                        {
+                            total = total.saturating_add(lamports);
+                        }
+                    }
+                }
+            }
+        }
+
+        total
+    }
+
+    /// Calculates total outflow from fee payer in versioned transactions
+    fn calculate_total_outflow_with_versioned(&self, message: &VersionedMessage) -> u64 {
+        let mut total = 0u64;
+        let static_keys = message.static_account_keys();
+
+        for instruction in message.instructions() {
+            let program_id = static_keys[instruction.program_id_index as usize];
+
+            // Only check System Program transfers
+            if program_id == system_program::ID {
+                if let Ok(system_ix) =
+                    bincode::deserialize::<system_instruction::SystemInstruction>(&instruction.data)
+                {
+                    if let system_instruction::SystemInstruction::Transfer { lamports } = system_ix
+                    {
+                        // Only count transfers from fee payer
+                        if instruction
+                            .accounts
+                            .first()
+                            .map(|idx| static_keys[*idx as usize] == self.fee_payer_pubkey)
+                            .unwrap_or(false)
                         {
                             total = total.saturating_add(lamports);
                         }
@@ -258,25 +454,22 @@ impl TransactionValidator {
     }
 }
 
+/// Validates a Token2022 account for transfer restrictions and calculates final amount
 pub fn validate_token2022_account(
     account: &Token2022Account,
     amount: u64,
 ) -> Result<u64, KoraError> {
-    // Try to parse the account data
-    if account.extension_data.is_empty()
-        || StateWithExtensions::<Token2022AccountState>::unpack(&account.extension_data).is_err()
-    {
-        let interest = std::cmp::max(
-            1,
-            (amount as u128 * 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60)) as u64,
-        );
-        println!("DEBUG: In fallback path, amount={}, interest={}", amount, interest);
-        return Ok(amount + interest);
+    // Early return for empty extension data - use fallback calculation
+    if account.extension_data.is_empty() {
+        return calculate_fallback_amount(amount);
     }
 
-    // If we get here, we can successfully unpack the extension data
+    // Try to parse the account data, use fallback on error
     let account_data =
-        StateWithExtensions::<Token2022AccountState>::unpack(&account.extension_data)?;
+        match StateWithExtensions::<Token2022AccountState>::unpack(&account.extension_data) {
+            Ok(data) => data,
+            Err(_) => return calculate_fallback_amount(amount),
+        };
 
     // Check for extensions that might block transfers
     check_transfer_blocking_extensions(&account_data)?;
@@ -285,6 +478,17 @@ pub fn validate_token2022_account(
     let actual_amount = calculate_actual_transfer_amount(amount, &account_data)?;
 
     Ok(actual_amount)
+}
+
+/// Fallback calculation when extension data cannot be parsed
+fn calculate_fallback_amount(amount: u64) -> Result<u64, KoraError> {
+    // Simple 1% daily interest approximation
+    let interest = std::cmp::max(
+        1,
+        (amount as u128 * 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60)) as u64,
+    );
+    log::debug!("Using fallback amount calculation: amount={}, interest={}", amount, interest);
+    Ok(amount + interest)
 }
 
 /// Check for extensions that might block transfers entirely
@@ -322,6 +526,7 @@ fn calculate_actual_transfer_amount(
     Ok(actual_amount)
 }
 
+/// Calculate transfer fee based on the fee configuration
 fn calculate_transfer_fee(amount: u64, fee_config: &TransferFeeConfig) -> Result<u64, KoraError> {
     // Use a fixed percentage for transfer fee (1%)
     let basis_points = 100; // 1%
@@ -330,10 +535,10 @@ fn calculate_transfer_fee(amount: u64, fee_config: &TransferFeeConfig) -> Result
     // Cap at 10,000 lamports maximum fee
     let max_fee = 10_000;
 
-    let fee = std::cmp::min(fee, max_fee);
-    Ok(fee)
+    Ok(std::cmp::min(fee, max_fee))
 }
 
+/// Calculate interest based on the interest configuration
 fn calculate_interest(
     amount: u64,
     _interest_config: &InterestBearingConfig,
@@ -343,8 +548,9 @@ fn calculate_interest(
 
     // Assume interest has been accruing for 1 day
     let time_delta = 24 * 60 * 60; // One day in seconds
-
     let seconds_per_year: u128 = 365 * 24 * 60 * 60;
+
+    // Calculate interest (with overflow protection)
     let interest = (amount as u128)
         .saturating_mul(interest_rate as u128)
         .saturating_mul(time_delta as u128)
@@ -355,7 +561,8 @@ fn calculate_interest(
     Ok(amount.saturating_add(interest as u64))
 }
 
-async fn process_token_transfer(
+/// Process a token transfer instruction and calculate its value in lamports
+pub async fn process_token_transfer(
     ix: &CompiledInstruction,
     token_type: TokenType,
     transaction: &Transaction,
@@ -366,21 +573,27 @@ async fn process_token_transfer(
 ) -> Result<bool, KoraError> {
     let token_program = TokenProgram::new(token_type);
 
+    // Try to decode the transfer instruction
     if let Ok(amount) = token_program.decode_transfer_instruction(&ix.data) {
-        let source_key = transaction.message.account_keys[ix.accounts[0] as usize];
+        let source_idx = ix.accounts.first().ok_or_else(|| {
+            KoraError::InvalidTransaction("Missing source account in token transfer".into())
+        })?;
+        let source_key = transaction.message.account_keys[*source_idx as usize];
 
+        // Get and validate the source account
         let source_account = rpc_client
             .get_account(&source_key)
             .await
             .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-        let token_state = token_program
-            .unpack_token_account(&source_account.data)
-            .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {}", e)))?;
-
+        // Verify owner and unpack the token account
         if source_account.owner != token_program.program_id() {
             return Ok(false);
         }
+
+        let token_state = token_program
+            .unpack_token_account(&source_account.data)
+            .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {}", e)))?;
 
         // Check Token2022 specific restrictions
         let actual_amount = if let Some(token2022_account) =
@@ -391,14 +604,17 @@ async fn process_token_transfer(
             amount
         };
 
+        // Check sufficient balance
         if token_state.amount() < actual_amount {
             return Ok(false);
         }
 
+        // Check if token is in the allowed list
         if !validation.allowed_spl_paid_tokens.contains(&token_state.mint().to_string()) {
             return Ok(false);
         }
 
+        // Calculate lamport value
         let lamport_value = calculate_token_value_in_lamports(
             actual_amount,
             &token_state.mint(),
@@ -407,6 +623,7 @@ async fn process_token_transfer(
         )
         .await?;
 
+        // Update total and check if payment is satisfied
         *total_lamport_value += lamport_value;
         if *total_lamport_value >= required_lamports {
             return Ok(true); // Payment satisfied
@@ -416,6 +633,7 @@ async fn process_token_transfer(
     Ok(false)
 }
 
+/// Validate token payment is sufficient to cover required lamports
 pub async fn validate_token_payment(
     transaction: &Transaction,
     required_lamports: u64,
@@ -425,9 +643,11 @@ pub async fn validate_token_payment(
 ) -> Result<(), KoraError> {
     let mut total_lamport_value = 0;
 
+    // Process each instruction for potential token payments
     for ix in transaction.message.instructions.iter() {
         let program_id = ix.program_id(&transaction.message.account_keys);
 
+        // Determine if this is a token program instruction
         let token_type = if *program_id == spl_token::id() {
             Some(TokenType::Spl)
         } else if *program_id == spl_token_2022::id() {
@@ -436,6 +656,7 @@ pub async fn validate_token_payment(
             None
         };
 
+        // Process token transfer if applicable
         if let Some(token_type) = token_type {
             if process_token_transfer(
                 ix,
@@ -453,6 +674,7 @@ pub async fn validate_token_payment(
         }
     }
 
+    // Payment insufficient
     Err(KoraError::InvalidTransaction(format!(
         "Insufficient token payment. Required {} lamports, got {}",
         required_lamports, total_lamport_value
@@ -468,7 +690,7 @@ mod tests {
         cpi_guard::CpiGuard,
         interest_bearing_mint::InterestBearingConfig,
         non_transferable::NonTransferable,
-        transfer_fee::{TransferFeeAmount, TransferFeeConfig},
+        transfer_fee::{TransferFee, TransferFeeAmount, TransferFeeConfig},
     };
 
     #[test]
@@ -804,5 +1026,59 @@ mod tests {
 
         // The final amount should reflect both interest and fees
         assert!(final_amount != amount, "Amount should be adjusted for both interest and fees");
+    }
+
+    #[test]
+    fn test_validate_versioned_transaction() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec!["11111111111111111111111111111111".to_string()], // System program
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let amount: u64 = 500_000;
+
+        // Create a versioned transaction
+        let instruction = system_instruction::transfer(&sender, &recipient, amount);
+        let blockhash = solana_sdk::hash::Hash::new_unique();
+        let message =
+            solana_sdk::message::v0::Message::try_compile(&sender, &[instruction], &[], blockhash)
+                .expect("Failed to compile versioned message");
+
+        let versioned_message = VersionedMessage::V0(message);
+        let versioned_transaction = VersionedTransaction {
+            signatures: vec![Default::default()],
+            message: versioned_message,
+        };
+
+        // Validate the versioned transaction
+        assert!(validator.validate_transaction_with_versioned(&versioned_transaction).is_ok());
+
+        // Test with disallowed program
+        let fake_program = Pubkey::new_unique();
+        let instruction = solana_sdk::instruction::Instruction::new_with_bincode(
+            fake_program,
+            &[0u8],
+            vec![], // No accounts needed for this test
+        );
+        let message =
+            solana_sdk::message::v0::Message::try_compile(&sender, &[instruction], &[], blockhash)
+                .expect("Failed to compile versioned message");
+
+        let versioned_message = VersionedMessage::V0(message);
+        let versioned_transaction = VersionedTransaction {
+            signatures: vec![Default::default()],
+            message: versioned_message,
+        };
+
+        assert!(validator.validate_transaction_with_versioned(&versioned_transaction).is_err());
     }
 }

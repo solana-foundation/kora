@@ -1,7 +1,9 @@
 use kora_lib::{
     config::ValidationConfig,
     transaction::{
-        decode_b64_transaction, encode_b64_transaction, sign_transaction as lib_sign_transaction,
+        decode_b64_transaction, decode_b64_transaction_with_version, encode_b64_transaction,
+        encode_b64_transaction_with_version, sign_transaction as lib_sign_transaction,
+        sign_versioned_transaction as lib_sign_versioned_transaction,
     },
     KoraError,
 };
@@ -26,14 +28,33 @@ pub async fn sign_transaction(
     validation: &ValidationConfig,
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResponse, KoraError> {
-    let transaction = decode_b64_transaction(&request.transaction)?;
-    let _signed_transaction =
-        lib_sign_transaction(rpc_client, validation, transaction.clone()).await?;
+    try_sign_transaction(rpc_client, validation, &request.transaction).await
+}
 
-    let encoded = encode_b64_transaction(&transaction)?;
+async fn try_sign_transaction(
+    rpc_client: &Arc<RpcClient>,
+    validation: &ValidationConfig,
+    tx_data: &str,
+) -> Result<SignTransactionResponse, KoraError> {
+    // Attempt to decode and sign as a versioned transaction
+    if let Ok(versioned_tx) = decode_b64_transaction_with_version(tx_data) {
+        let (signed_tx, _) =
+            lib_sign_versioned_transaction(rpc_client, validation, versioned_tx).await?;
+        let encoded = encode_b64_transaction_with_version(&signed_tx)?;
+
+        return Ok(SignTransactionResponse {
+            signature: signed_tx.signatures[0].to_string(),
+            signed_transaction: encoded,
+        });
+    }
+
+    // Fallback to decoding and signing as a regular transaction
+    let regular_tx = decode_b64_transaction(tx_data)?;
+    let (signed_tx, _) = lib_sign_transaction(rpc_client, validation, regular_tx).await?;
+    let encoded = encode_b64_transaction(&signed_tx)?;
 
     Ok(SignTransactionResponse {
-        signature: transaction.signatures[0].to_string(),
+        signature: signed_tx.signatures[0].to_string(),
         signed_transaction: encoded,
     })
 }
