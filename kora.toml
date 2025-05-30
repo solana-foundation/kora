@@ -9,13 +9,13 @@ allowed_programs = [
     "11111111111111111111111111111111",  # System Program
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
-    "3jq9oBWGCUWmBynC8TTBL9KWJdGegsChJ1c8ksybGhum", # Smart-wallet program
+    "3CFG1eVGpUVAxMeuFnNw7CbBA1GQ746eQDdMWPoFTAD8", # Smart-wallet program
     "Secp256r1SigVerify1111111111111111111111111", # Raydium AMM program
 ]
 allowed_tokens = [
-    "6An66df6hW4Zr8sFJ9SyLFWtmYnJq3R8X6ZKZD7gdPf9",  # USDC devnet
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
 ]
 allowed_spl_paid_tokens = [
-    "6An66df6hW4Zr8sFJ9SyLFWtmYnJq3R8X6ZKZD7gdPf9",  # USDC devnet
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
 ]
 disallowed_accounts = []
