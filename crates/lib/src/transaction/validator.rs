@@ -11,10 +11,14 @@ use solana_sdk::{
     instruction::CompiledInstruction, message::Message, pubkey::Pubkey, system_instruction,
     system_program, transaction::Transaction,
 };
+
+#[allow(unused_imports)]
 use spl_token_2022::{
     extension::{
-        cpi_guard::CpiGuard, interest_bearing_mint::InterestBearingConfig,
-        non_transferable::NonTransferable, transfer_fee::{TransferFee, TransferFeeConfig},
+        cpi_guard::CpiGuard,
+        interest_bearing_mint::InterestBearingConfig,
+        non_transferable::NonTransferable,
+        transfer_fee::{TransferFee, TransferFeeConfig},
         BaseStateWithExtensions, StateWithExtensions,
     },
     state::Account as Token2022AccountState,
