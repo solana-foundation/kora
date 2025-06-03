@@ -9,7 +9,6 @@ use solana_sdk::{
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
-use spl_token_2022;
 use std::str::FromStr;
 
 // PYUSD token mint on devnet

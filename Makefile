@@ -65,7 +65,7 @@ openapi:
 
 # Run all fixes and checks
 lint-fix-all:
-	cargo clippy --fix -- -D warnings
+	cargo clippy --fix --allow-dirty -- -D warnings
 	cargo fmt --all
 	cargo fmt --all -- --check
 

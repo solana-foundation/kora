@@ -676,14 +676,6 @@
                         "format": "double",
                         "nullable": true
                       },
-                      "token_price_info": {
-                        "allOf": [
-                          {
-                            "$ref": "#/components/schemas/TokenPriceInfo"
-                          }
-                        ],
-                        "nullable": true
-                      },
                       "transaction": {
                         "type": "string"
                       }
@@ -703,14 +695,14 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "signature",
+                    "transaction",
                     "signed_transaction"
                   ],
                   "properties": {
-                    "signature": {
+                    "signed_transaction": {
                       "type": "string"
                     },
-                    "signed_transaction": {
+                    "transaction": {
                       "type": "string"
                     }
                   }
@@ -958,14 +950,6 @@
             "format": "double",
             "nullable": true
           },
-          "token_price_info": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TokenPriceInfo"
-              }
-            ],
-            "nullable": true
-          },
           "transaction": {
             "type": "string"
           }
@@ -974,14 +958,14 @@
       "SignTransactionIfPaidResponse": {
         "type": "object",
         "required": [
-          "signature",
+          "transaction",
           "signed_transaction"
         ],
         "properties": {
-          "signature": {
+          "signed_transaction": {
             "type": "string"
           },
-          "signed_transaction": {
+          "transaction": {
             "type": "string"
           }
         }
@@ -1073,11 +1057,11 @@
         "required": [
           "max_allowed_lamports",
           "max_signatures",
-          "price_source",
           "allowed_programs",
           "allowed_tokens",
           "allowed_spl_paid_tokens",
-          "disallowed_accounts"
+          "disallowed_accounts",
+          "price_source"
         ],
         "properties": {
           "allowed_programs": {
@@ -1115,11 +1099,7 @@
             "minimum": 0
           },
           "price_source": {
-            "type": "string",
-            "enum": [
-              "jupiter",
-              "fake"
-            ]
+            "$ref": "#/components/schemas/PriceSource"
           }
         }
       }

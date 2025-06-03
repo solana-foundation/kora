@@ -13,11 +13,8 @@ use solana_sdk::{
 };
 use spl_token_2022::{
     extension::{
-        confidential_transfer::ConfidentialTransferAccount,
-        cpi_guard::CpiGuard,
-        interest_bearing_mint::InterestBearingConfig,
-        non_transferable::NonTransferable,
-        transfer_fee::{TransferFee, TransferFeeConfig},
+        cpi_guard::CpiGuard, interest_bearing_mint::InterestBearingConfig,
+        non_transferable::NonTransferable, transfer_fee::{TransferFee, TransferFeeConfig},
         BaseStateWithExtensions, StateWithExtensions,
     },
     state::Account as Token2022AccountState,
@@ -464,11 +461,7 @@ mod tests {
     use super::*;
     use solana_sdk::{message::Message, system_instruction};
     use spl_token_2022::extension::{
-        confidential_transfer::ConfidentialTransferAccount,
-        cpi_guard::CpiGuard,
-        interest_bearing_mint::InterestBearingConfig,
-        non_transferable::NonTransferable,
-        transfer_fee::{TransferFeeAmount, TransferFeeConfig},
+        interest_bearing_mint::InterestBearingConfig, transfer_fee::TransferFeeConfig,
     };
 
     #[test]
