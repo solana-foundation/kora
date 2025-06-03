@@ -55,6 +55,10 @@ kora -- [OPTIONS]
 | `--turnkey-organization-id <TURNKEY_ORGANIZATION_ID>` | Turnkey organization ID | - |
 | `--turnkey-private-key-id <TURNKEY_PRIVATE_KEY_ID>` | Turnkey private key ID | - |
 | `--turnkey-public-key <TURNKEY_PUBLIC_KEY>` | Turnkey public key | - |
+| `--with-privy-signer` | Use Privy signer | false |
+| `--privy-app-id <PRIVY_APP_ID>` | Privy App ID | - |
+| `--privy-app-secret <PRIVY_APP_SECRET>` | Privy App Secret | - |
+| `--privy-wallet-id <PRIVY_WALLET_ID>` | Privy Wallet ID | - |
 
 #### Environment Variables
 
@@ -68,6 +72,9 @@ kora -- [OPTIONS]
 | `TURNKEY_ORGANIZATION_ID` | Turnkey organization ID | - |
 | `TURNKEY_PRIVATE_KEY_ID` | Turnkey private key ID | - |
 | `TURNKEY_PUBLIC_KEY` | Turnkey public key | - |
+| `PRIVY_APP_ID` | Privy App ID | - |
+| `PRIVY_APP_SECRET` | Privy App Secret | - |
+| `PRIVY_WALLET_ID` | Privy Wallet ID | - |
 | `TEST_SENDER_PUBKEY` | Test sender pubkey | - |
 | `TEST_SENDER_MNEMONIC` | Test sender mnemonic | - |
 
@@ -403,6 +410,15 @@ kora -- \
     --rpc-url <RPC_URL> \
     --port <PORT> \
     --no-load-signer
+
+# With Privy (or use environment variables)
+kora -- \
+    --rpc-url <RPC_URL> \
+    --port <PORT> \
+    --with-privy-signer \
+    --privy-app-id <PRIVY_APP_ID> \
+    --privy-app-secret <PRIVY_APP_SECRET> \
+    --privy-wallet-id <PRIVY_WALLET_ID>
 
 # Load private key at runtime without .env
 kora -- \

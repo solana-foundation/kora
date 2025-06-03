@@ -24,7 +24,7 @@ use spl_token_2022::{
     instruction,
     state::{Account as Token2022AccountState, AccountState, Mint as Token2022MintState},
 };
-use std::{any::Any, error::Error, fmt::Debug};
+use std::fmt::Debug;
 /// To access extension data, use the has_extension and get_* methods provided by this struct.
 /// Supported extensions:
 /// - TransferFee (fees applied on transfers)
