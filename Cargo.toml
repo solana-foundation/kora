@@ -3,7 +3,7 @@ members = [
     "crates/lib",
     "crates/rpc",
     "crates/cli",
-    "crates/tk_rs",
+    "crates/tk-rs",
     "scripts",
     "tests"
 ]
@@ -65,5 +65,5 @@ p256 = "0.13.3"
 redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
 deadpool-redis = "0.14.0"
 vaultrs = "0.7.3"
-tk_rs = { path = "crates/tk_rs" }
+tk-rs = { path = "crates/tk-rs" }
 utoipa = { version = "4.2.0", features = ["yaml", "chrono"] }

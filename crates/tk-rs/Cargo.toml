@@ -1,5 +1,5 @@
 [package]
-name = "tk_rs"
+name = "tk-rs"
 version = "1.0.0"
 edition = "2021"
 description = "A Rust library for Turnkey signing"
@@ -18,4 +18,5 @@ solana-sdk = { workspace = true }
 solana-program = { workspace = true }
 
 [lib]
+name = "tk_rs"
 path = "src/mod.rs"

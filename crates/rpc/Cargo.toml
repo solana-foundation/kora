@@ -42,7 +42,7 @@ deadpool-redis = { workspace = true }
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
 solana-program = { workspace = true }
-tk_rs = { workspace = true }
+tk-rs = { workspace = true }
 spl-token = { workspace = true }
 spl-associated-token-account = { workspace = true }
 bincode = { workspace = true }

@@ -32,7 +32,7 @@ spl-associated-token-account = { workspace = true }
 jupiter-swap-api-client = { workspace = true }
 jupiter = { workspace = true }
 vaultrs = { workspace = true }
-tk_rs = { workspace = true } 
+tk-rs = { workspace = true } 
 deadpool-redis = { workspace = true }
 jsonrpsee = { workspace = true }
 once_cell = { workspace = true }

@@ -18,7 +18,7 @@ Kora is a Solana paymaster node that provides a JSON-RPC interface for handling 
 - `kora-lib`: Shared library for kora
 - `kora-rpc`: JSON-RPC server
 - `kora-cli`: Command line interface for kora
-- `tk_rs`: Turnkey signer library
+- `tk-rs`: Turnkey signer library
 
 ## Getting Started
 
