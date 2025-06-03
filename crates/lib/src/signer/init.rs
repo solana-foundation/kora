@@ -3,15 +3,15 @@ use crate::{
     error::KoraError,
     signer::{KoraSigner, SolanaMemorySigner, VaultSigner},
 };
-use tk_rs::TurnkeySigner;
-use privy_rust::types::PrivyConfig;
+use privy_rust::PrivySigner;
 use std::str::FromStr;
+use tk_rs::TurnkeySigner;
 
 pub fn init_signer_type(args: &CommonArgs) -> Result<KoraSigner, KoraError> {
-    if args.turnkey_signer {
-        init_turnkey_signer(args)
-    } else if args.privy_signer {
+    if args.privy_signer {
         init_privy_signer(args)
+    } else if args.turnkey_signer {
+        init_turnkey_signer(args)
     } else if args.vault_signer {
         init_vault_signer(args)
     } else {
@@ -48,6 +48,45 @@ fn init_vault_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
     )?;
 
     Ok(KoraSigner::Vault(signer))
+}
+
+fn init_privy_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
+    let public_key = config
+        .privy_public_key
+        .as_ref()
+        .ok_or_else(|| KoraError::SigningError("Privy public key required".to_string()))?;
+
+    let app_id = config
+        .privy_app_id
+        .clone()
+        .or_else(|| std::env::var("PRIVY_APP_ID").ok())
+        .ok_or_else(|| KoraError::SigningError("Privy app ID required".to_string()))?;
+
+    let app_secret = config
+        .privy_app_secret
+        .clone()
+        .or_else(|| std::env::var("PRIVY_APP_SECRET").ok())
+        .ok_or_else(|| KoraError::SigningError("Privy app secret required".to_string()))?;
+
+    let wallet_id = config
+        .privy_wallet_id
+        .clone()
+        .or_else(|| std::env::var("PRIVY_WALLET_ID").ok())
+        .ok_or_else(|| KoraError::SigningError("Privy wallet ID required".to_string()))?;
+
+    // Validate the public key
+    solana_sdk::pubkey::Pubkey::from_str(public_key)
+        .map_err(|e| KoraError::SigningError(format!("Invalid public key: {}", e)))?;
+
+    let privy_signer = PrivySigner::new(
+        app_id,
+        app_secret,
+        wallet_id,
+        String::new(), // unused parameter
+        public_key.to_string(),
+    )?;
+
+    Ok(KoraSigner::Privy(privy_signer))
 }
 
 fn init_turnkey_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
@@ -90,31 +129,4 @@ fn init_memory_signer(private_key: Option<&String>) -> Result<KoraSigner, KoraEr
 
     let signer = SolanaMemorySigner::from_base58(key)?;
     Ok(KoraSigner::Memory(signer))
-}
-
-fn init_privy_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
-    let public_key = config
-        .privy_public_key
-        .as_ref()
-        .ok_or_else(|| KoraError::SigningError("Privy public key required".to_string()))?;
-
-    // Load config from env vars
-    let privy_config = PrivyConfig::from_env()
-        .merge_with_cli(
-            config.privy_app_id.clone(),
-            config.privy_app_secret.clone(),
-            config.privy_wallet_id.clone(),
-        );
-
-    // Build the Privy signer
-    let mut privy_signer = privy_config.build()
-        .map_err(|e| KoraError::SigningError(format!("Failed to build Privy signer: {}", e)))?;
-    
-    // Set the public key directly like tk-rs does
-    privy_signer.public_key = Some(
-        solana_sdk::pubkey::Pubkey::from_str(public_key)
-            .map_err(|e| KoraError::SigningError(format!("Invalid public key: {}", e)))?
-    );
-
-    Ok(KoraSigner::Privy(privy_signer))
 }
