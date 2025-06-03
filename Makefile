@@ -47,6 +47,10 @@ build-lib:
 build-rpc:
 	cargo build -p kora-rpc
 
+# Build tk-rs
+build-tk:
+	cargo build -p tk-rs
+
 # Run presigned release binary
 run-presigned:
 	cargo run --bin presigned
