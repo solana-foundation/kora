@@ -11,9 +11,10 @@ use solana_sdk::{
     instruction::CompiledInstruction, message::Message, pubkey::Pubkey, system_instruction,
     system_program, transaction::Transaction,
 };
+
+#[allow(unused_imports)]
 use spl_token_2022::{
     extension::{
-        confidential_transfer::ConfidentialTransferAccount,
         cpi_guard::CpiGuard,
         interest_bearing_mint::InterestBearingConfig,
         non_transferable::NonTransferable,
@@ -464,11 +465,7 @@ mod tests {
     use super::*;
     use solana_sdk::{message::Message, system_instruction};
     use spl_token_2022::extension::{
-        confidential_transfer::ConfidentialTransferAccount,
-        cpi_guard::CpiGuard,
-        interest_bearing_mint::InterestBearingConfig,
-        non_transferable::NonTransferable,
-        transfer_fee::{TransferFeeAmount, TransferFeeConfig},
+        interest_bearing_mint::InterestBearingConfig, transfer_fee::TransferFeeConfig,
     };
 
     #[test]

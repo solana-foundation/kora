@@ -1,0 +1,22 @@
+[package]
+name = "tk-rs"
+version = "1.0.0"
+edition = "2021"
+description = "A Rust library for Turnkey signing"
+license = "MIT"
+
+[dependencies]
+serde = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+base64 = "0.22"
+p256 = { version = "0.13", features = ["ecdsa"] }
+anyhow = { workspace = true }
+chrono = "0.4.39"
+hex = "0.4.3"
+serde_json = { workspace = true }
+solana-sdk = { workspace = true }
+solana-program = { workspace = true }
+
+[lib]
+name = "tk_rs"
+path = "src/mod.rs"

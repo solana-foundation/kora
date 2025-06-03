@@ -3,7 +3,7 @@ mod tests {
     use crate::token::{
         interface::{TokenInterface, TokenState},
         token22::Token2022Account as Token2022AccountImpl,
-        Token2022Program, TokenAccount, TokenProgram, TokenType,
+        Token2022Program, TokenProgram, TokenType,
     };
     use solana_client::nonblocking::rpc_client::RpcClient;
     use solana_program::program_pack::Pack;
@@ -21,7 +21,7 @@ mod tests {
     use spl_token_2022::{
         extension::{
             transfer_fee::{TransferFee, TransferFeeAmount, TransferFeeConfig},
-            BaseStateWithExtensions, ExtensionType, StateWithExtensions,
+            ExtensionType,
         },
         state::{Account as Token2022AccountState, Mint as Token2022MintState},
     };
