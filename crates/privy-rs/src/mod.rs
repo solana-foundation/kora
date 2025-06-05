@@ -131,12 +131,10 @@ impl PrivySigner {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let error_text = response.text().await.unwrap_or_default();
-            eprintln!("Privy API error {}: {}", status, error_text);
             return Err(PrivyError::ApiError(status));
         }
 
         let response_text = response.text().await?;
-        eprintln!("Raw response: {}", response_text);
 
         let sign_response: SignTransactionResponse = serde_json::from_str(&response_text)?;
 
