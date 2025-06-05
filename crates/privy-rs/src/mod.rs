@@ -104,12 +104,14 @@ impl PrivySigner {
     }
 
     /// Sign a transaction
+    ///
+    /// The transaction parameter should be a fully serialized Solana transaction
+    /// (including empty signature placeholders), not just the message bytes.
     pub async fn sign_transaction(&self, transaction: &[u8]) -> Result<Signature, PrivyError> {
         let url = format!("{}/wallets/{}/rpc", self.api_base_url, self.wallet_id);
 
         let request = SignTransactionRequest {
             method: "signTransaction",
-            caip2: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", // Solana mainnet
             params: SignTransactionParams {
                 transaction: STANDARD.encode(transaction),
                 encoding: "base64",
@@ -133,12 +135,25 @@ impl PrivySigner {
             return Err(PrivyError::ApiError(status));
         }
 
-        let sign_response: SignTransactionResponse = response.json().await?;
+        let response_text = response.text().await?;
+        eprintln!("Raw response: {}", response_text);
 
-        // Decode the signature from base64
-        let sig_bytes = STANDARD.decode(&sign_response.data.signature)?;
+        let sign_response: SignTransactionResponse = serde_json::from_str(&response_text)?;
 
-        Signature::try_from(sig_bytes.as_slice()).map_err(|_| PrivyError::InvalidSignature)
+        // Decode the signed transaction from base64
+        let signed_tx_bytes = STANDARD.decode(&sign_response.data.signed_transaction)?;
+
+        // Deserialize the transaction to extract the signature
+        use solana_sdk::transaction::Transaction;
+        let signed_tx: Transaction =
+            bincode::deserialize(&signed_tx_bytes).map_err(|_| PrivyError::InvalidResponse)?;
+
+        // Get the first signature (which should be the one we just created)
+        if let Some(signature) = signed_tx.signatures.first() {
+            Ok(*signature)
+        } else {
+            Err(PrivyError::InvalidSignature)
+        }
     }
 }
 
