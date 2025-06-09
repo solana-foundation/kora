@@ -1,0 +1,17 @@
+[
+  {
+    "name": "transferTransactionAction",
+    "description": "Transfer tokens and return a signed transaction for processing.",
+    "params": [
+      { "name": "amount", "type": "integer", "description": "Amount to transfer (in smallest units)" },
+      { "name": "token", "type": "string", "description": "Token mint address" },
+      { "name": "source", "type": "string", "description": "Source account public key" },
+      { "name": "destination", "type": "string", "description": "Destination account public key" }
+    ],
+    "returns": [
+      { "name": "transaction", "type": "string", "description": "Base64-encoded signed transaction" },
+      { "name": "message", "type": "string", "description": "Base64-encoded message" },
+      { "name": "blockhash", "type": "string", "description": "Blockhash used for the transaction" }
+    ]
+  }
+] 
