@@ -11,7 +11,8 @@ allowed_programs = [
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
     "3CFG1eVGpUVAxMeuFnNw7CbBA1GQ746eQDdMWPoFTAD8", # Smart-wallet program
     "Secp256r1SigVerify1111111111111111111111111", # Raydium AMM program,
-    "ComputeBudget111111111111111111111111111111"
+    "ComputeBudget111111111111111111111111111111",
+    "33tS3mSoyvdmKWxb6bgSL657AqH4Wxsu9R6GnvjtZdEd", # Kora program
 ]
 allowed_tokens = [
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
