@@ -1,0 +1,17 @@
+mod transfer_transaction;
+// ... other imports
+
+pub fn routes(context: Context) -> impl Filter<Extract = impl Reply> + Clone {
+    // ... existing routes
+    transfer_transaction_route(context.clone())
+        .or(/* other routes */)
+}
+
+fn transfer_transaction_route(
+    context: Context,
+) -> impl Filter<Extract = impl Reply> + Clone {
+    warp::path!("transferTransaction")
+        .and(warp::post())
+        .and(json_body!())
+        .and(context_filter(context))
+        .and_then(transfer_transaction::handler)
