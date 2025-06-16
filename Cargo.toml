@@ -4,6 +4,7 @@ members = [
     "crates/rpc",
     "crates/cli",
     "crates/tk-rs",
+    "crates/privy-rs",
     "scripts",
     "tests"
 ]
