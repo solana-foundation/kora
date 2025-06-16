@@ -15,10 +15,15 @@ tokio = { version = "1", features = ["full"] }
 thiserror = "1.0"
 async-trait = "0.1"
 anyhow = "1.0"
+bincode = "1.3"
 
 [dev-dependencies]
 clap = { version = "4.0", features = ["derive", "env"] }
 dotenv = "0.15"
+env_logger = "0.10"
+
+[[example]]
+name = "verify_api"
 
 [lib]
 name = "privy_rs"
