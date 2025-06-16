@@ -19,6 +19,7 @@ Kora is a Solana paymaster node that provides a JSON-RPC interface for handling 
 - `kora-rpc`: JSON-RPC server
 - `kora-cli`: Command line interface for kora
 - `tk-rs`: Turnkey signer library
+- `privy-rs`: Privy signer library
 
 ## Getting Started
 
@@ -33,6 +34,7 @@ make install
 ### Running the Server
 
 Basic usage:
+
 ```bash
 kora -- [OPTIONS]
 ```
@@ -41,36 +43,39 @@ kora -- [OPTIONS]
 
 #### Command Line Arguments
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-p, --port <PORT>` | Port number for the RPC server | 8080 |
-| `--rpc-url <RPC_URL>` | RPC URL to connect to | http://127.0.0.1:8899 |
-| `--logging-format <FORMAT>` | Logging format (standard or json) | standard |
-| `--metrics-endpoint <ENDPOINT>` | Optional metrics endpoint URL | - |
-| `--private-key <PRIVATE_KEY>` | Base58-encoded private key for signing | - |
-| `--config <FILE>` | Path to kora.toml config file | kora.toml |
-| `--no-load-signer` | Skip loading the signer | false |
-| `--with-turnkey-signer` | Use Turnkey signer | false |
-| `--turnkey-api-public-key <TURNKEY_API_PUBLIC_KEY>` | Turnkey API public key | - |
-| `--turnkey-api-private-key <TURNKEY_API_PRIVATE_KEY>` | Turnkey API private key | - |
-| `--turnkey-organization-id <TURNKEY_ORGANIZATION_ID>` | Turnkey organization ID | - |
-| `--turnkey-private-key-id <TURNKEY_PRIVATE_KEY_ID>` | Turnkey private key ID | - |
-| `--turnkey-public-key <TURNKEY_PUBLIC_KEY>` | Turnkey public key | - |
+| Option                                                | Description                            | Default               |
+| ----------------------------------------------------- | -------------------------------------- | --------------------- |
+| `-p, --port <PORT>`                                   | Port number for the RPC server         | 8080                  |
+| `--rpc-url <RPC_URL>`                                 | RPC URL to connect to                  | http://127.0.0.1:8899 |
+| `--logging-format <FORMAT>`                           | Logging format (standard or json)      | standard              |
+| `--metrics-endpoint <ENDPOINT>`                       | Optional metrics endpoint URL          | -                     |
+| `--private-key <PRIVATE_KEY>`                         | Base58-encoded private key for signing | -                     |
+| `--config <FILE>`                                     | Path to kora.toml config file          | kora.toml             |
+| `--no-load-signer`                                    | Skip loading the signer                | false                 |
+| `--with-turnkey-signer`                               | Use Turnkey signer                     | false                 |
+| `--turnkey-api-public-key <TURNKEY_API_PUBLIC_KEY>`   | Turnkey API public key                 | -                     |
+| `--turnkey-api-private-key <TURNKEY_API_PRIVATE_KEY>` | Turnkey API private key                | -                     |
+| `--turnkey-organization-id <TURNKEY_ORGANIZATION_ID>` | Turnkey organization ID                | -                     |
+| `--turnkey-private-key-id <TURNKEY_PRIVATE_KEY_ID>`   | Turnkey private key ID                 | -                     |
+| `--turnkey-public-key <TURNKEY_PUBLIC_KEY>`           | Turnkey public key                     | -                     |
 
 #### Environment Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `RUST_LOG` | Controls log level and filtering | "info,sqlx=error" |
-| `RPC_URL` | Alternative way to specify the RPC URL | - |
-| `KORA_PRIVATE_KEY` | Alternative way to specify the signing private key | - |
-| `TURNKEY_API_PUBLIC_KEY` | Turnkey API public key | - |
-| `TURNKEY_API_PRIVATE_KEY` | Turnkey API private key | - |
-| `TURNKEY_ORGANIZATION_ID` | Turnkey organization ID | - |
-| `TURNKEY_PRIVATE_KEY_ID` | Turnkey private key ID | - |
-| `TURNKEY_PUBLIC_KEY` | Turnkey public key | - |
-| `TEST_SENDER_PUBKEY` | Test sender pubkey | - |
-| `TEST_SENDER_MNEMONIC` | Test sender mnemonic | - |
+| Variable                  | Description                                        | Example           |
+| ------------------------- | -------------------------------------------------- | ----------------- |
+| `RUST_LOG`                | Controls log level and filtering                   | "info,sqlx=error" |
+| `RPC_URL`                 | Alternative way to specify the RPC URL             | -                 |
+| `KORA_PRIVATE_KEY`        | Alternative way to specify the signing private key | -                 |
+| `TURNKEY_API_PUBLIC_KEY`  | Turnkey API public key                             | -                 |
+| `TURNKEY_API_PRIVATE_KEY` | Turnkey API private key                            | -                 |
+| `TURNKEY_ORGANIZATION_ID` | Turnkey organization ID                            | -                 |
+| `TURNKEY_PRIVATE_KEY_ID`  | Turnkey private key ID                             | -                 |
+| `TURNKEY_PUBLIC_KEY`      | Turnkey public key                                 | -                 |
+| `PRIVY_APP_ID`            | Privy app ID                                       | -                 |
+| `PRIVY_API_KEY`           | Privy API key                                      | -                 |
+| `PRIVY_WALLET_ID  `       | Privy wallet ID                                    | -                 |
+| `TEST_SENDER_PUBKEY`      | Test sender pubkey                                 | -                 |
+| `TEST_SENDER_MNEMONIC`    | Test sender mnemonic                               | -                 |
 
 #### Configuration File (kora.toml)
 
@@ -127,7 +132,6 @@ Estimates the transaction fee in terms of a specified token.
     }
 }
 ```
-
 
 #### `getSupportedTokens`
 
@@ -386,7 +390,7 @@ make test-integrations
 # Basic
 kora -- \
     --rpc-url <RPC_URL> \
-    --port <PORT> 
+    --port <PORT>
 
 # With Turnkey (or use environment variables)
 kora -- \
@@ -431,6 +435,7 @@ make openapi
 ### Local Development
 
 1. Start a local Solana validator:
+
    ```bash
    solana-test-validator
    ```
