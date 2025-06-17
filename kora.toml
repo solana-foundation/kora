@@ -6,18 +6,17 @@ max_allowed_lamports = 10000000
 max_signatures = 10
 price_source = "Mock"
 allowed_programs = [
-    "11111111111111111111111111111111",  # System Program
+    "11111111111111111111111111111111",             # System Program
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
-    "3CFG1eVGpUVAxMeuFnNw7CbBA1GQ746eQDdMWPoFTAD8", # Smart-wallet program
-    "Secp256r1SigVerify1111111111111111111111111", # Raydium AMM program,
+    "Secp256r1SigVerify1111111111111111111111111",  # Raydium AMM program,
     "ComputeBudget111111111111111111111111111111",
-    "33tS3mSoyvdmKWxb6bgSL657AqH4Wxsu9R6GnvjtZdEd", # Kora program
+    "6Jh4kA4rkZquv9XofKqgbyrRcTDF19uM5HL4xyh6gaSo", # Kora program
 ]
 allowed_tokens = [
-    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", # USDC devnet
 ]
 allowed_spl_paid_tokens = [
-    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  # USDC devnet
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", # USDC devnet
 ]
 disallowed_accounts = []
