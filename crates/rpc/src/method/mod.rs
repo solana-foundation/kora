@@ -5,4 +5,5 @@ pub mod get_supported_tokens;
 pub mod sign_and_send_transaction;
 pub mod sign_transaction;
 pub mod sign_transaction_if_paid;
+pub mod transfer_action;
 pub mod transfer_transaction;
