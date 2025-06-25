@@ -107,7 +107,7 @@ impl PrivySigner {
     ///
     /// The transaction parameter should be a fully serialized Solana transaction
     /// (including empty signature placeholders), not just the message bytes.
-    pub async fn sign_transaction(&self, transaction: &[u8]) -> Result<Signature, PrivyError> {
+    pub async fn sign_solana(&self, transaction: &[u8]) -> Result<Signature, PrivyError> {
         let url = format!("{}/wallets/{}/rpc", self.api_base_url, self.wallet_id);
 
         let request = SignTransactionRequest {
@@ -152,6 +152,11 @@ impl PrivySigner {
         } else {
             Err(PrivyError::InvalidSignature)
         }
+    }
+
+    pub async fn sign(&self, message: &[u8]) -> Result<Vec<u8>, PrivyError> {
+        let signature = self.sign_solana(message).await?;
+        Ok(signature.as_ref().to_vec())
     }
 }
 
