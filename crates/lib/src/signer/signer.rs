@@ -1,9 +1,9 @@
 use super::{solana_signer::SolanaMemorySigner, vault_signer::VaultSigner};
 use crate::error::KoraError;
-use privy_rs::PrivySigner;
+use kora_privy::PrivySigner;
+use kora_turnkey::TurnkeySigner;
 use solana_sdk::signature::Signature as SolanaSignature;
 use std::error::Error;
-use tk_rs::TurnkeySigner;
 
 #[derive(Debug, Clone)]
 pub struct Signature {
