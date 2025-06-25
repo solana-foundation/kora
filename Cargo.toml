@@ -67,4 +67,5 @@ redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
 deadpool-redis = "0.14.0"
 vaultrs = "0.7.3"
 tk-rs = { path = "crates/tk-rs" }
+privy-rs = { path = "crates/privy-rs" }
 utoipa = { version = "4.2.0", features = ["yaml", "chrono"] }

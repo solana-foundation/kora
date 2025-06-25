@@ -57,7 +57,7 @@ run-presigned:
 
 # Run with default configuration
 run:
-	cargo run -p kora-rpc
+	cargo run -p kora-rpc --bin kora-rpc
 
 # Clean build artifacts
 clean:

@@ -180,6 +180,12 @@ impl From<anyhow::Error> for KoraError {
     }
 }
 
+impl From<privy_rs::PrivyError> for KoraError {
+    fn from(err: privy_rs::PrivyError) -> Self {
+        KoraError::SigningError(err.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

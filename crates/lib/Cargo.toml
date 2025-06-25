@@ -33,6 +33,7 @@ jupiter-swap-api-client = { workspace = true }
 jupiter = { workspace = true }
 vaultrs = { workspace = true }
 tk-rs = { workspace = true } 
+privy-rs = { workspace = true }
 deadpool-redis = { workspace = true }
 jsonrpsee = { workspace = true }
 once_cell = { workspace = true }

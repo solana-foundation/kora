@@ -74,30 +74,68 @@ pub struct WalletResponse {
     pub created_at: Option<i64>,
 }
 
-// Error types
-#[derive(thiserror::Error, Debug)]
+// Error types using anyhow
+#[derive(Debug)]
 pub enum PrivyError {
-    #[error("Missing config: {0}")]
     MissingConfig(&'static str),
-
-    #[error("API error: {0}")]
     ApiError(u16),
-
-    #[error("Invalid response")]
     InvalidResponse,
-
-    #[error("Invalid public key")]
     InvalidPublicKey,
-
-    #[error("Invalid signature")]
     InvalidSignature,
+    RequestError(reqwest::Error),
+    JsonError(serde_json::Error),
+    Base64Error(base64::DecodeError),
+    Other(anyhow::Error),
+}
 
-    #[error("Request error: {0}")]
-    RequestError(#[from] reqwest::Error),
+impl std::fmt::Display for PrivyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PrivyError::MissingConfig(field) => write!(f, "Missing config: {}", field),
+            PrivyError::ApiError(status) => write!(f, "API error: {}", status),
+            PrivyError::InvalidResponse => write!(f, "Invalid response"),
+            PrivyError::InvalidPublicKey => write!(f, "Invalid public key"),
+            PrivyError::InvalidSignature => write!(f, "Invalid signature"),
+            PrivyError::RequestError(e) => write!(f, "Request error: {}", e),
+            PrivyError::JsonError(e) => write!(f, "JSON error: {}", e),
+            PrivyError::Base64Error(e) => write!(f, "Base64 error: {}", e),
+            PrivyError::Other(e) => write!(f, "{}", e),
+        }
+    }
+}
 
-    #[error("JSON error: {0}")]
-    JsonError(#[from] serde_json::Error),
+impl std::error::Error for PrivyError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            PrivyError::RequestError(e) => Some(e),
+            PrivyError::JsonError(e) => Some(e),
+            PrivyError::Base64Error(e) => Some(e),
+            PrivyError::Other(e) => Some(e.as_ref()),
+            _ => None,
+        }
+    }
+}
 
-    #[error("Base64 error: {0}")]
-    Base64Error(#[from] base64::DecodeError),
+impl From<reqwest::Error> for PrivyError {
+    fn from(err: reqwest::Error) -> Self {
+        PrivyError::RequestError(err)
+    }
+}
+
+impl From<serde_json::Error> for PrivyError {
+    fn from(err: serde_json::Error) -> Self {
+        PrivyError::JsonError(err)
+    }
+}
+
+impl From<base64::DecodeError> for PrivyError {
+    fn from(err: base64::DecodeError) -> Self {
+        PrivyError::Base64Error(err)
+    }
+}
+
+impl From<anyhow::Error> for PrivyError {
+    fn from(err: anyhow::Error) -> Self {
+        PrivyError::Other(err)
+    }
 }
