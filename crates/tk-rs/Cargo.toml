@@ -1,5 +1,5 @@
 [package]
-name = "tk-rs"
+name = "kora-turnkey"
 version = "1.0.0"
 edition = "2021"
 description = "A Rust library for Turnkey signing"

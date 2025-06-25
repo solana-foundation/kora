@@ -1,5 +1,5 @@
 [package]
-name = "privy-rs"
+name = "kora-privy"
 version = "1.0.0"
 edition = "2021"
 description = "A Rust library for Privy signing"
