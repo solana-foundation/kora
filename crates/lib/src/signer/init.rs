@@ -3,8 +3,8 @@ use crate::{
     error::KoraError,
     signer::{KoraSigner, SolanaMemorySigner, VaultSigner},
 };
-use privy_rs::PrivySigner;
-use tk_rs::TurnkeySigner;
+use kora_privy::PrivySigner;
+use kora_turnkey::TurnkeySigner;
 
 pub fn init_signer_type(args: &CommonArgs) -> Result<KoraSigner, KoraError> {
     if args.turnkey_signer {

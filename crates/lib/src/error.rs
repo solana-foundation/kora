@@ -180,8 +180,8 @@ impl From<anyhow::Error> for KoraError {
     }
 }
 
-impl From<privy_rs::PrivyError> for KoraError {
-    fn from(err: privy_rs::PrivyError) -> Self {
+impl From<kora_privy::PrivyError> for KoraError {
+    fn from(err: kora_privy::PrivyError) -> Self {
         KoraError::SigningError(err.to_string())
     }
 }

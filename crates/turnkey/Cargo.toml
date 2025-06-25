@@ -18,5 +18,5 @@ solana-sdk = { workspace = true }
 solana-program = { workspace = true }
 
 [lib]
-name = "tk_rs"
+name = "kora_turnkey"
 path = "src/mod.rs"
