@@ -83,11 +83,6 @@ fn init_turnkey_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
 }
 
 fn init_privy_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
-    let public_key = config
-        .privy_public_key
-        .as_ref()
-        .ok_or_else(|| KoraError::SigningError("Privy public key required".to_string()))?;
-
     let app_id = config
         .privy_app_id
         .clone()

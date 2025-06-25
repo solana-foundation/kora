@@ -55,9 +55,6 @@ pub struct CommonArgs {
     #[arg(long, env = "PRIVY_WALLET_ID")]
     pub privy_wallet_id: Option<String>,
 
-    #[arg(long, env = "PRIVY_PUBLIC_KEY")]
-    pub privy_public_key: Option<String>,
-
     #[arg(long)]
     pub vault_signer: bool,
 

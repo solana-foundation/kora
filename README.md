@@ -54,19 +54,32 @@ kora -- [OPTIONS]
 
 #### Signer Configuration
 
+**General**
+
 | Option                                                | Description                            | Default               |
 | ----------------------------------------------------- | -------------------------------------- | --------------------- |
 | `--no-load-signer`                                    | Skip loading the signer                | false                 |
+
+**Turnkey**
+
+| Option                                                | Description                            | Default               |
+| ----------------------------------------------------- | -------------------------------------- | --------------------- |
 | `--with-turnkey-signer`                               | Use Turnkey signer                     | false                 |
 | `--turnkey-api-public-key <TURNKEY_API_PUBLIC_KEY>`   | Turnkey API public key                 | -                     |
 | `--turnkey-api-private-key <TURNKEY_API_PRIVATE_KEY>` | Turnkey API private key                | -                     |
 | `--turnkey-organization-id <TURNKEY_ORGANIZATION_ID>` | Turnkey organization ID                | -                     |
 | `--turnkey-private-key-id <TURNKEY_PRIVATE_KEY_ID>`   | Turnkey private key ID                 | -                     |
 | `--turnkey-public-key <TURNKEY_PUBLIC_KEY>`           | Turnkey public key                     | -                     |
-| `--with-privy-signer` | Use Privy signer | false |
-| `--privy-app-id <PRIVY_APP_ID>` | Privy App ID | - |
-| `--privy-app-secret <PRIVY_APP_SECRET>` | Privy App Secret | - |
-| `--privy-wallet-id <PRIVY_WALLET_ID>` | Privy Wallet ID | - |
+
+**Privy**
+
+| Option                                                | Description                            | Default               |
+| ----------------------------------------------------- | -------------------------------------- | --------------------- |
+| `--with-privy-signer`                                 | Use Privy signer                       | false                 |
+| `--privy-app-id <PRIVY_APP_ID>`                       | Privy App ID                           | -                     |
+| `--privy-app-secret <PRIVY_APP_SECRET>`               | Privy App Secret                       | -                     |
+| `--privy-wallet-id <PRIVY_WALLET_ID>`                 | Privy Wallet ID                       | -                     |
+
 
 #### Environment Variables
 
@@ -96,7 +109,7 @@ kora -- [OPTIONS]
 | Variable                  | Description                                        | Example           |
 | ------------------------- | -------------------------------------------------- | ----------------- |
 | `PRIVY_APP_ID`            | Privy app ID                                       | -                 |
-| `PRIVY_API_KEY`           | Privy API key                                      | -                 |
+| `PRIVY_APP_SECRET`           | Privy API key                                      | -                 |
 | `PRIVY_WALLET_ID  `       | Privy wallet ID                                    | -                 |
 
 
@@ -413,12 +426,10 @@ make test-integrations
 # Basic
 kora  \
     --rpc-url <RPC_URL> \
-    --port <PORT>
 
 # With Turnkey (or use environment variables)
 kora  \
     --rpc-url <RPC_URL> \
-    --port <PORT> \
     --with-turnkey-signer \
     --turnkey-api-public-key <TURNKEY_API_PUBLIC_KEY> \
     --turnkey-api-private-key <TURNKEY_API_PRIVATE_KEY> \
@@ -429,7 +440,6 @@ kora  \
 # With Privy (or use environment variables)
 kora \
     --rpc-url <RPC_URL> \
-    --port <PORT> \
     --with-privy-signer \
     --privy-app-id <PRIVY_APP_ID> \
     --privy-app-secret <PRIVY_APP_SECRET> \
