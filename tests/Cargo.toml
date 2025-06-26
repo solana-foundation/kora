@@ -29,3 +29,11 @@ jsonrpsee = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 hex = { workspace = true } 
+
+[[bin]]
+name = "token_integration_tests"
+path = "token_integration_tests.rs"
+
+[[bin]]
+name = "transfer_action_tests"
+path = "transfer_action_tests.rs"

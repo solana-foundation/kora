@@ -743,6 +743,80 @@
         }
       }
     },
+    "/actions.json": {
+      "summary": "Get actions configuration",
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Actions configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "pathPattern": {
+                            "type": "string"
+                          },
+                          "apiPath": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/actions/transfer": {
+      "summary": "Transfer action",
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Transfer action metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionGetResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Transfer action response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionPostResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/transferTransaction": {
       "summary": "transferTransaction",
       "post": {
@@ -1049,6 +1123,142 @@
           },
           "transaction": {
             "type": "string"
+          }
+        }
+      },
+      "ActionGetResponse": {
+        "type": "object",
+        "required": [
+          "icon",
+          "title",
+          "description",
+          "label",
+          "type",
+          "links"
+        ],
+        "properties": {
+          "icon": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "links": {
+            "$ref": "#/components/schemas/ActionLinks"
+          }
+        }
+      },
+      "ActionLinks": {
+        "type": "object",
+        "required": [
+          "actions"
+        ],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActionLink"
+            }
+          }
+        }
+      },
+      "ActionLink": {
+        "type": "object",
+        "required": [
+          "label",
+          "href",
+          "parameters"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActionParameter"
+            }
+          }
+        }
+      },
+      "ActionParameter": {
+        "type": "object",
+        "required": [
+          "name",
+          "label",
+          "type",
+          "required"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "pattern": {
+            "type": "string",
+            "nullable": true
+          },
+          "placeholder": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "TransferActionRequest": {
+        "type": "object",
+        "required": [
+          "account",
+          "amount",
+          "token",
+          "destination"
+        ],
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          }
+        }
+      },
+      "ActionPostResponse": {
+        "type": "object",
+        "required": [
+          "transaction"
+        ],
+        "properties": {
+          "transaction": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
