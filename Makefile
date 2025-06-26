@@ -47,13 +47,17 @@ build-lib:
 build-rpc:
 	cargo build -p kora-rpc
 
+# Build tk-rs
+build-tk:
+	cargo build -p tk-rs
+
 # Run presigned release binary
 run-presigned:
 	cargo run --bin presigned
 
 # Run with default configuration
 run:
-	cargo run -p kora-rpc
+	cargo run -p kora-rpc --bin kora-rpc
 
 # Clean build artifacts
 clean:
@@ -65,7 +69,7 @@ openapi:
 
 # Run all fixes and checks
 lint-fix-all:
-	cargo clippy --fix -- -D warnings
+	cargo clippy --fix --allow-dirty -- -D warnings
 	cargo fmt --all
 	cargo fmt --all -- --check
 

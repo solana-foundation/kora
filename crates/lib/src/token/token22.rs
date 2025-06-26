@@ -1,30 +1,20 @@
-use super::{
-    interface::{TokenInterface, TokenState},
-    TokenType,
-};
+use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
 use solana_program::{program_pack::Pack, pubkey::Pubkey};
 use solana_sdk::instruction::Instruction;
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
-use spl_pod::bytemuck;
 use spl_token_2022::{
     extension::{
-        confidential_transfer::ConfidentialTransferAccount,
-        confidential_transfer_fee::ConfidentialTransferFeeConfig, cpi_guard::CpiGuard,
-        default_account_state::DefaultAccountState, group_member_pointer::GroupMemberPointer,
-        group_pointer::GroupPointer, immutable_owner::ImmutableOwner,
-        interest_bearing_mint::InterestBearingConfig, memo_transfer::MemoTransfer,
-        metadata_pointer::MetadataPointer, mint_close_authority::MintCloseAuthority,
-        non_transferable::NonTransferable, pausable::PausableAccount,
-        permanent_delegate::PermanentDelegate, transfer_fee::TransferFeeConfig,
-        transfer_hook::TransferHook, BaseStateWithExtensions, ExtensionType, StateWithExtensions,
+        cpi_guard::CpiGuard, interest_bearing_mint::InterestBearingConfig,
+        transfer_fee::TransferFeeConfig, BaseStateWithExtensions, ExtensionType,
+        StateWithExtensions,
     },
     instruction,
     state::{Account as Token2022AccountState, AccountState, Mint as Token2022MintState},
 };
-use std::{any::Any, error::Error, fmt::Debug};
+use std::fmt::Debug;
 /// To access extension data, use the has_extension and get_* methods provided by this struct.
 /// Supported extensions:
 /// - TransferFee (fees applied on transfers)
@@ -137,6 +127,12 @@ impl Token2022Account {
 }
 
 pub struct Token2022Program;
+
+impl Default for Token2022Program {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Token2022Program {
     pub fn new() -> Self {

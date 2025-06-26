@@ -1,0 +1,32 @@
+name: Kora RPC Publish
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'crates/rpc/**'
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Build check
+        working-directory: crates/rpc
+        run: cargo build
+      
+      - name: Publish kora-rpc crate
+        working-directory: crates/rpc
+        run: cargo publish --locked --token ${{ secrets.KORA_RPC_REGISTRY_TOKEN }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_RPC_REGISTRY_TOKEN }} 

@@ -1,9 +1,8 @@
 [package]
 name = "kora-rpc"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "1.0.2"
+edition = "2021"
+license = "MIT"
 description = "RPC server for Kora gasless relayer"
 
 [[bin]]
@@ -15,7 +14,7 @@ name = "kora-openapi"
 path = "src/openapi/main.rs"
 
 [dependencies]
-kora-lib = { path = "../lib" }
+kora-lib = { path = "../lib", version = "1.0.2" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
@@ -42,7 +41,8 @@ deadpool-redis = { workspace = true }
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
 solana-program = { workspace = true }
-tk-rs = { workspace = true }
+kora-turnkey = { workspace = true }
+kora-privy = { workspace = true }
 spl-token = { workspace = true }
 spl-associated-token-account = { workspace = true }
 bincode = { workspace = true }

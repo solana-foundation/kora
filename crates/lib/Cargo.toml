@@ -1,9 +1,8 @@
 [package]
 name = "kora-lib"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "1.0.2"
+edition = "2021"
+license = "MIT"
 description = "Core library for Kora gasless relayer"
 
 [lib]
@@ -29,10 +28,10 @@ jup-ag = { workspace = true }
 spl-token = { workspace = true }
 spl-token-2022 = { workspace = true }
 spl-associated-token-account = { workspace = true }
-jupiter-swap-api-client = { workspace = true }
 jupiter = { workspace = true }
 vaultrs = { workspace = true }
-tk-rs = { workspace = true } 
+kora-turnkey = { workspace = true } 
+kora-privy = { workspace = true } 
 deadpool-redis = { workspace = true }
 jsonrpsee = { workspace = true }
 once_cell = { workspace = true }

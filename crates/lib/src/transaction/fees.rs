@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    native_token::LAMPORTS_PER_SOL, program_pack::Pack, pubkey::Pubkey, rent::Rent,
-    transaction::Transaction,
+    native_token::LAMPORTS_PER_SOL, pubkey::Pubkey, rent::Rent, transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
 use std::time::Duration;
