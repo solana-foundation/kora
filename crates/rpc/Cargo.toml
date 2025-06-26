@@ -1,10 +1,8 @@
 [package]
 name = "kora-rpc"
 version = "1.0.1"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
+edition = "2021"
+license = "MIT"
 description = "RPC server for Kora gasless relayer"
 
 [[bin]]
