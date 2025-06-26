@@ -1,6 +1,6 @@
 [package]
 name = "kora-turnkey"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 description = "A Rust library for Turnkey signing"
 license = "MIT"

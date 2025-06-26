@@ -1,6 +1,6 @@
 [package]
 name = "kora-cli"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 description = "CLI for Kora gasless relayer"
 license = "MIT"
@@ -10,7 +10,7 @@ name = "kora-cli"
 path = "src/main.rs"
 
 [dependencies]
-kora-lib = { path = "../lib" }
+kora-lib = { path = "../lib", version = "1.0.2" }
 clap = { workspace = true }
 tokio = { workspace = true }
 env_logger = { workspace = true }

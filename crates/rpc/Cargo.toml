@@ -1,6 +1,6 @@
 [package]
 name = "kora-rpc"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 license = "MIT"
 description = "RPC server for Kora gasless relayer"
@@ -14,7 +14,7 @@ name = "kora-openapi"
 path = "src/openapi/main.rs"
 
 [dependencies]
-kora-lib = { path = "../lib" }
+kora-lib = { path = "../lib", version = "1.0.2" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
