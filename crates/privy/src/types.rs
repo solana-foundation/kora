@@ -8,7 +8,7 @@ pub struct PrivySigner {
     pub wallet_id: String,
     pub api_base_url: String,
     pub client: Client,
-    pub public_key: Option<solana_sdk::pubkey::Pubkey>,
+    pub public_key: solana_sdk::pubkey::Pubkey,
 }
 
 #[derive(Default)]
@@ -85,6 +85,8 @@ pub enum PrivyError {
     RequestError(reqwest::Error),
     JsonError(serde_json::Error),
     Base64Error(base64::DecodeError),
+    InitializationError,
+    RuntimeError,
     Other(anyhow::Error),
 }
 
@@ -99,6 +101,8 @@ impl std::fmt::Display for PrivyError {
             PrivyError::RequestError(e) => write!(f, "Request error: {}", e),
             PrivyError::JsonError(e) => write!(f, "JSON error: {}", e),
             PrivyError::Base64Error(e) => write!(f, "Base64 error: {}", e),
+            PrivyError::InitializationError => write!(f, "Initialization error"),
+            PrivyError::RuntimeError => write!(f, "Runtime error"),
             PrivyError::Other(e) => write!(f, "{}", e),
         }
     }

@@ -45,7 +45,7 @@ impl PrivyConfig {
             wallet_id: self.wallet_id.ok_or(PrivyError::MissingConfig("wallet_id"))?,
             api_base_url: "https://api.privy.io/v1".to_string(),
             client: reqwest::Client::new(),
-            public_key: None, // Will be populated by init()
+            public_key: Pubkey::default(), // Will be populated by init()
         })
     }
 }
@@ -59,20 +59,20 @@ impl PrivySigner {
             wallet_id,
             api_base_url: "https://api.privy.io/v1".to_string(),
             client: reqwest::Client::new(),
-            public_key: None,
+            public_key: Pubkey::default(),
         }
     }
 
     /// Initialize the signer by fetching the public key
     pub async fn init(&mut self) -> Result<(), PrivyError> {
         let pubkey = self.get_public_key().await?;
-        self.public_key = Some(pubkey);
+        self.public_key = pubkey;
         Ok(())
     }
 
     /// Get the cached public key
     pub fn solana_pubkey(&self) -> Pubkey {
-        self.public_key.expect("PrivySigner not initialized. Call init() first.")
+        self.public_key
     }
 
     /// Get the Basic Auth header value
