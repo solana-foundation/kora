@@ -376,7 +376,6 @@ Signs a transaction if the user has paid the required amount of tokens.
     "params": [
         {
             "transaction": "<base64-encoded-transaction>",
-            "cost_in_lamports": 1000000,
             "margin": 0.0
         }
     ]
