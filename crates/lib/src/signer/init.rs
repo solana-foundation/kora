@@ -5,6 +5,7 @@ use crate::{
 };
 use kora_privy::PrivySigner;
 use kora_turnkey::TurnkeySigner;
+use std::sync::{Arc, Mutex};
 
 pub fn init_signer_type(args: &CommonArgs) -> Result<KoraSigner, KoraError> {
     if args.turnkey_signer {

@@ -8,8 +8,6 @@ Cargo.lock
 generated/
 
 # SDK
-ts-sdk/node_modules/
-ts-sdk/dist/
-ts-sdk/.env
-ts-sdk/.env.local
-ts-sdk/.env.*.local
+node_modules/
+dist/
+.env*

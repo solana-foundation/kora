@@ -5,7 +5,7 @@ use clap::Parser;
 use dotenv::dotenv;
 use kora_lib::{
     args::RpcArgs, config::load_config, log::LoggingFormat, rpc::get_rpc_client,
-    signer::init::init_signer_type, state::init_signer,
+    signer::{init::init_signer_type, KoraSigner}, state::init_signer,
 };
 use rpc::KoraRpc;
 use server::run_rpc_server;
@@ -28,8 +28,23 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let signer =
-        if !args.common.skip_signer { Some(init_signer_type(&args.common).unwrap()) } else { None };
+    let signer = if !args.common.skip_signer {
+        let signer = init_signer_type(&args.common).unwrap();
+
+       // Launch async if privy for init() to populate PublicKey
+        match signer {
+            KoraSigner::Privy(mut privy_signer) => {
+                privy_signer.init().await.unwrap_or_else(|e| {
+                    log::error!("Privy signer init failed: {}", e);
+                    std::process::exit(1);
+                });
+                Some(KoraSigner::Privy(privy_signer))
+            }
+            _ => Some(signer),
+        }
+    } else {
+        None
+    };
 
     if let Some(signer) = signer {
         init_signer(signer).unwrap_or_else(|e| {
