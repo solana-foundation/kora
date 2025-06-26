@@ -1,0 +1,1 @@
+{"version":3,"file":"rpc-integer-overflow-error.d.ts","sourceRoot":"","sources":["../../src/rpc-integer-overflow-error.ts"],"names":[],"mappings":"AAAA,OAAO,EAAyB,mCAAmC,EAAE,WAAW,EAAE,MAAM,gBAAgB,CAAC;AACzG,OAAO,KAAK,EAAE,OAAO,EAAE,MAAM,0BAA0B,CAAC;AAExD,wBAAgB,uCAAuC,CACnD,UAAU,EAAE,MAAM,EAClB,OAAO,EAAE,OAAO,EAChB,KAAK,EAAE,MAAM,GACd,WAAW,CAAC,OAAO,mCAAmC,CAAC,CAmCzD"}

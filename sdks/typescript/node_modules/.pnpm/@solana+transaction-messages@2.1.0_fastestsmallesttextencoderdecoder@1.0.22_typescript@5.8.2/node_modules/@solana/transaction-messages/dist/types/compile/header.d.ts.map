@@ -1,0 +1,1 @@
+{"version":3,"file":"header.d.ts","sourceRoot":"","sources":["../../../src/compile/header.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,eAAe,EAAE,MAAM,qBAAqB,CAAC;AAEtD,KAAK,aAAa,GAAG,QAAQ,CAAC;IAC1B,4BAA4B,EAAE,MAAM,CAAC;IACrC,yBAAyB,EAAE,MAAM,CAAC;IAClC,iBAAiB,EAAE,MAAM,CAAC;CAC7B,CAAC,CAAC;AAEH,wBAAgB,wBAAwB,CAAC,eAAe,EAAE,eAAe,GAAG,aAAa,CAuBxF"}

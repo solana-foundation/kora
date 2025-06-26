@@ -1,0 +1,1 @@
+{"version":3,"file":"deduplicate-signers.d.ts","sourceRoot":"","sources":["../../src/deduplicate-signers.ts"],"names":[],"mappings":"AAGA,OAAO,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AACjD,OAAO,EAAE,iBAAiB,EAAE,MAAM,sBAAsB,CAAC;AAEzD;;;;;;GAMG;AACH,wBAAgB,kBAAkB,CAAC,OAAO,SAAS,aAAa,GAAG,iBAAiB,EAChF,OAAO,EAAE,SAAS,OAAO,EAAE,GAC5B,SAAS,OAAO,EAAE,CAYpB"}

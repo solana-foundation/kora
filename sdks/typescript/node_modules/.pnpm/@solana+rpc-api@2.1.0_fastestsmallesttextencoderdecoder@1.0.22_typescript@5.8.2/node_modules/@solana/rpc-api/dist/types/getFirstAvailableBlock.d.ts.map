@@ -1,0 +1,1 @@
+{"version":3,"file":"getFirstAvailableBlock.d.ts","sourceRoot":"","sources":["../../src/getFirstAvailableBlock.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,IAAI,EAAE,MAAM,mBAAmB,CAAC;AAE9C,KAAK,iCAAiC,GAAG,IAAI,CAAC;AAE9C,MAAM,MAAM,yBAAyB,GAAG;IACpC;;;OAGG;IACH,sBAAsB,CAElB,SAAS,CAAC,EAAE,MAAM,CAAC,MAAM,EAAE,KAAK,CAAC,GAClC,iCAAiC,CAAC;CACxC,CAAC"}

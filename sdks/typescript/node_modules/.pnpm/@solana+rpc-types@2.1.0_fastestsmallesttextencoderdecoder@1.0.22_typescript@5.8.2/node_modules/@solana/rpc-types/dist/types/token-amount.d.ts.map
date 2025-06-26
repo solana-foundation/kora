@@ -1,0 +1,1 @@
+{"version":3,"file":"token-amount.d.ts","sourceRoot":"","sources":["../../src/token-amount.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,iBAAiB,EAAE,MAAM,sBAAsB,CAAC;AACzD,OAAO,EAAE,iBAAiB,EAAE,MAAM,sBAAsB,CAAC;AAEzD,MAAM,MAAM,WAAW,GAAG,QAAQ,CAAC;IAC/B,MAAM,EAAE,iBAAiB,CAAC;IAC1B,QAAQ,EAAE,MAAM,CAAC;IACjB,QAAQ,EAAE,MAAM,GAAG,IAAI,CAAC;IACxB,cAAc,EAAE,iBAAiB,CAAC;CACrC,CAAC,CAAC"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"getMaxShredInsertSlot.d.ts","sourceRoot":"","sources":["../../src/getMaxShredInsertSlot.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,IAAI,EAAE,MAAM,mBAAmB,CAAC;AAE9C,KAAK,gCAAgC,GAAG,IAAI,CAAC;AAE7C,MAAM,MAAM,wBAAwB,GAAG;IACnC;;;OAGG;IACH,qBAAqB,CAEjB,SAAS,CAAC,EAAE,MAAM,CAAC,MAAM,EAAE,KAAK,CAAC,GAClC,gCAAgC,CAAC;CACvC,CAAC"}

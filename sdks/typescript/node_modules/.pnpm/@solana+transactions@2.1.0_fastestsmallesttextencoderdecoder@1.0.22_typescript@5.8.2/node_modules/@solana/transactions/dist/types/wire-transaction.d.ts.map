@@ -1,0 +1,1 @@
+{"version":3,"file":"wire-transaction.d.ts","sourceRoot":"","sources":["../../src/wire-transaction.ts"],"names":[],"mappings":"AAGA,OAAO,EAAE,WAAW,EAAE,MAAM,eAAe,CAAC;AAE5C,MAAM,MAAM,4BAA4B,GAAG,MAAM,GAAG;IAChD,QAAQ,CAAC,OAAO,EAAE,OAAO,MAAM,CAAC;CACnC,CAAC;AAEF,wBAAgB,+BAA+B,CAAC,WAAW,EAAE,WAAW,GAAG,4BAA4B,CAGtG"}

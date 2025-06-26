@@ -1,0 +1,1 @@
+{"version":3,"file":"response-transformer-bigint-upcast.d.ts","sourceRoot":"","sources":["../../src/response-transformer-bigint-upcast.ts"],"names":[],"mappings":"AAAA,OAAO,EAAoC,OAAO,EAAoB,cAAc,EAAE,MAAM,kBAAkB,CAAC;AAE/G,wBAAgB,kCAAkC,CAAC,sBAAsB,EAAE,SAAS,OAAO,EAAE,2DAE5F;AAED,wBAAgB,sBAAsB,CAAC,sBAAsB,EAAE,SAAS,OAAO,EAAE,WAC3B,OAAO,eAAe,cAAc,aASzF"}

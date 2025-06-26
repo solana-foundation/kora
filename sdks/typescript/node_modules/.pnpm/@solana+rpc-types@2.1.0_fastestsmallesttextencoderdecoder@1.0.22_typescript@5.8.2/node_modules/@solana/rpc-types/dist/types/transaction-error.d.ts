@@ -1,0 +1,23 @@
+type CustomProgramError = number;
+type InstructionError = 'AccountAlreadyInitialized' | 'AccountBorrowFailed' | 'AccountBorrowOutstanding' | 'AccountDataSizeChanged' | 'AccountDataTooSmall' | 'AccountNotExecutable' | 'AccountNotRentExempt' | 'ArithmeticOverflow' | 'BuiltinProgramsMustConsumeComputeUnits' | 'CallDepth' | 'ComputationalBudgetExceeded' | 'DuplicateAccountIndex' | 'DuplicateAccountOutOfSync' | 'ExecutableAccountNotRentExempt' | 'ExecutableDataModified' | 'ExecutableLamportChange' | 'ExecutableModified' | 'ExternalAccountDataModified' | 'ExternalAccountLamportSpend' | 'GenericError' | 'IllegalOwner' | 'Immutable' | 'IncorrectAuthority' | 'IncorrectProgramId' | 'InsufficientFunds' | 'InvalidAccountData' | 'InvalidAccountOwner' | 'InvalidArgument' | 'InvalidError' | 'InvalidInstructionData' | 'InvalidRealloc' | 'InvalidSeeds' | 'MaxAccountsDataAllocationsExceeded' | 'MaxAccountsExceeded' | 'MaxInstructionTraceLengthExceeded' | 'MaxSeedLengthExceeded' | 'MissingAccount' | 'MissingRequiredSignature' | 'ModifiedProgramId' | 'NotEnoughAccountKeys' | 'PrivilegeEscalation' | 'ProgramEnvironmentSetupFailure' | 'ProgramFailedToCompile' | 'ProgramFailedToComplete' | 'ReadonlyDataModified' | 'ReadonlyLamportChange' | 'ReentrancyNotAllowed' | 'RentEpochModified' | 'UnbalancedInstruction' | 'UninitializedAccount' | 'UnsupportedProgramId' | 'UnsupportedSysvar' | {
+    BorshIoError: string;
+} | {
+    Custom: CustomProgramError;
+};
+type InstructionIndex = number;
+type AccountIndex = number;
+export type TransactionError = 'AccountBorrowOutstanding' | 'AccountInUse' | 'AccountLoadedTwice' | 'AccountNotFound' | 'AddressLookupTableNotFound' | 'AlreadyProcessed' | 'BlockhashNotFound' | 'CallChainTooDeep' | 'ClusterMaintenance' | 'InsufficientFundsForFee' | 'InvalidAccountForFee' | 'InvalidAccountIndex' | 'InvalidAddressLookupTableData' | 'InvalidAddressLookupTableIndex' | 'InvalidAddressLookupTableOwner' | 'InvalidLoadedAccountsDataSizeLimit' | 'InvalidProgramForExecution' | 'InvalidRentPayingAccount' | 'InvalidWritableAccount' | 'MaxLoadedAccountsDataSizeExceeded' | 'MissingSignatureForFee' | 'ProgramAccountNotFound' | 'ResanitizationNeeded' | 'SanitizeFailure' | 'SignatureFailure' | 'TooManyAccountLocks' | 'UnbalancedTransaction' | 'UnsupportedVersion' | 'WouldExceedAccountDataBlockLimit' | 'WouldExceedAccountDataTotalLimit' | 'WouldExceedMaxAccountCostLimit' | 'WouldExceedMaxBlockCostLimit' | 'WouldExceedMaxVoteCostLimit' | {
+    DuplicateInstruction: InstructionIndex;
+} | {
+    InstructionError: [InstructionIndex, InstructionError];
+} | {
+    InsufficientFundsForRent: {
+        account_index: AccountIndex;
+    };
+} | {
+    ProgramExecutionTemporarilyRestricted: {
+        account_index: AccountIndex;
+    };
+};
+export {};
+//# sourceMappingURL=transaction-error.d.ts.map

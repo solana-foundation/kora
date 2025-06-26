@@ -1,0 +1,1 @@
+{"version":3,"file":"common.d.ts","sourceRoot":"","sources":["../../../src/rpc-api/common.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,sBAAsB,CAAC,KAAK,GAAG,MAAM,IAAI,QAAQ,CAAC;IAC1D,MAAM,EAAE;QACJ,IAAI,CAAC,EAAE,KAAK,CAAC;QACb,IAAI,EAAE,MAAM,CAAC;KAChB,CAAC;IAEF,OAAO,EAAE,MAAM,CAAC;IAChB,KAAK,EAAE,MAAM,CAAC;CACjB,CAAC,CAAC"}

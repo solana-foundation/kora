@@ -1,0 +1,142 @@
+import { Codec, Decoder, Encoder, Offset, ReadonlyUint8Array } from '@solana/codecs-core';
+import { DrainOuterGeneric } from './utils';
+/**
+ * Infers the TypeScript type for values that can be encoded using a union codec.
+ *
+ * This type maps the provided variant encoders to their corresponding value types.
+ *
+ * @typeParam TVariants - An array of encoders, each corresponding to a union variant.
+ */
+type GetEncoderTypeFromVariants<TVariants extends readonly Encoder<any>[]> = DrainOuterGeneric<{
+    [I in keyof TVariants]: TVariants[I] extends Encoder<infer TFrom> ? TFrom : never;
+}>[number];
+/**
+ * Infers the TypeScript type for values that can be decoded using a union codec.
+ *
+ * This type maps the provided variant decoders to their corresponding value types.
+ *
+ * @typeParam TVariants - An array of decoders, each corresponding to a union variant.
+ */
+type GetDecoderTypeFromVariants<TVariants extends readonly Decoder<any>[]> = DrainOuterGeneric<{
+    [I in keyof TVariants]: TVariants[I] extends Decoder<infer TFrom> ? TFrom : never;
+}>[number];
+/**
+ * Returns an encoder for union types.
+ *
+ * This encoder serializes values by selecting the correct variant encoder
+ * based on the `getIndexFromValue` function.
+ *
+ * Unlike other codecs, this encoder does not store the variant index.
+ * It is the user's responsibility to manage discriminators separately.
+ *
+ * For more details, see {@link getUnionCodec}.
+ *
+ * @typeParam TVariants - An array of encoders, each corresponding to a union variant.
+ *
+ * @param variants - The encoders for each variant of the union.
+ * @param getIndexFromValue - A function that determines the variant index from the provided value.
+ * @returns An `Encoder` for encoding union values.
+ *
+ * @example
+ * Encoding a union of numbers and booleans.
+ * ```ts
+ * const encoder = getUnionEncoder(
+ *   [getU16Encoder(), getBooleanEncoder()],
+ *   value => (typeof value === 'number' ? 0 : 1)
+ * );
+ *
+ * encoder.encode(42);
+ * // 0x2a00
+ * //   └── Encoded number (42) as `u16`
+ *
+ * encoder.encode(true);
+ * // 0x01
+ * //   └── Encoded boolean (`true`) as `u8`
+ * ```
+ *
+ * @see {@link getUnionCodec}
+ */
+export declare function getUnionEncoder<const TVariants extends readonly Encoder<any>[]>(variants: TVariants, getIndexFromValue: (value: GetEncoderTypeFromVariants<TVariants>) => number): Encoder<GetEncoderTypeFromVariants<TVariants>>;
+/**
+ * Returns a decoder for union types.
+ *
+ * This decoder deserializes values by selecting the correct variant decoder
+ * based on the `getIndexFromBytes` function.
+ *
+ * Unlike other codecs, this decoder does not assume a stored discriminator.
+ * It is the user's responsibility to manage discriminators separately.
+ *
+ * For more details, see {@link getUnionCodec}.
+ *
+ * @typeParam TVariants - An array of decoders, each corresponding to a union variant.
+ *
+ * @param variants - The decoders for each variant of the union.
+ * @param getIndexFromBytes - A function that determines the variant index from the byte array.
+ * @returns A `Decoder` for decoding union values.
+ *
+ * @example
+ * Decoding a union of numbers and booleans.
+ * ```ts
+ * const decoder = getUnionDecoder(
+ *   [getU16Decoder(), getBooleanDecoder()],
+ *   (bytes, offset) => (bytes.length - offset > 1 ? 0 : 1)
+ * );
+ *
+ * decoder.decode(new Uint8Array([0x2a, 0x00])); // 42
+ * decoder.decode(new Uint8Array([0x01]));       // true
+ * // Type is inferred as `number | boolean`
+ * ```
+ *
+ * @see {@link getUnionCodec}
+ */
+export declare function getUnionDecoder<const TVariants extends readonly Decoder<any>[]>(variants: TVariants, getIndexFromBytes: (bytes: ReadonlyUint8Array, offset: Offset) => number): Decoder<GetDecoderTypeFromVariants<TVariants>>;
+/**
+ * Returns a codec for encoding and decoding union types.
+ *
+ * This codec serializes and deserializes union values by selecting the correct variant
+ * based on the provided index functions.
+ *
+ * Unlike the {@link getDiscriminatedUnionCodec}, this codec does not assume a stored
+ * discriminator and must be used with an explicit mechanism for managing discriminators.
+ *
+ * @typeParam TVariants - An array of codecs, each corresponding to a union variant.
+ *
+ * @param variants - The codecs for each variant of the union.
+ * @param getIndexFromValue - A function that determines the variant index from the provided value.
+ * @param getIndexFromBytes - A function that determines the variant index from the byte array.
+ * @returns A `Codec` for encoding and decoding union values.
+ *
+ * @example
+ * Encoding and decoding a union of numbers and booleans.
+ * ```ts
+ * const codec = getUnionCodec(
+ *   [getU16Codec(), getBooleanCodec()],
+ *   value => (typeof value === 'number' ? 0 : 1),
+ *   (bytes, offset) => (bytes.length - offset > 1 ? 0 : 1)
+ * );
+ *
+ * const bytes1 = codec.encode(42); // 0x2a00
+ * const value1: number | boolean = codec.decode(bytes1); // 42
+ *
+ * const bytes2 = codec.encode(true); // 0x01
+ * const value2: number | boolean = codec.decode(bytes2); // true
+ * ```
+ *
+ * @remarks
+ * If you need a codec that includes a stored discriminator,
+ * consider using {@link getDiscriminatedUnionCodec}.
+ *
+ * Separate {@link getUnionEncoder} and {@link getUnionDecoder} functions are also available.
+ *
+ * ```ts
+ * const bytes = getUnionEncoder(variantEncoders, getIndexFromValue).encode(42);
+ * const value = getUnionDecoder(variantDecoders, getIndexFromBytes).decode(bytes);
+ * ```
+ *
+ * @see {@link getUnionEncoder}
+ * @see {@link getUnionDecoder}
+ * @see {@link getDiscriminatedUnionCodec}
+ */
+export declare function getUnionCodec<const TVariants extends readonly Codec<any>[]>(variants: TVariants, getIndexFromValue: (value: GetEncoderTypeFromVariants<TVariants>) => number, getIndexFromBytes: (bytes: ReadonlyUint8Array, offset: Offset) => number): Codec<GetEncoderTypeFromVariants<TVariants>, GetDecoderTypeFromVariants<TVariants> & GetEncoderTypeFromVariants<TVariants>>;
+export {};
+//# sourceMappingURL=union.d.ts.map

@@ -1,0 +1,7 @@
+import { KeyPath } from './tree-traversal';
+export type AllowedNumericKeypaths<TApi> = Partial<Record<keyof TApi, readonly KeyPath[]>>;
+export declare const jsonParsedTokenAccountsConfigs: (string | import("./tree-traversal").KeyPathWildcard)[][];
+export declare const jsonParsedAccountsConfigs: (string | import("./tree-traversal").KeyPathWildcard)[][];
+export declare const innerInstructionsConfigs: (string | import("./tree-traversal").KeyPathWildcard)[][];
+export declare const messageConfig: readonly [readonly ["addressTableLookups", import("./tree-traversal").KeyPathWildcard, "writableIndexes", import("./tree-traversal").KeyPathWildcard], readonly ["addressTableLookups", import("./tree-traversal").KeyPathWildcard, "readonlyIndexes", import("./tree-traversal").KeyPathWildcard], readonly ["header", "numReadonlySignedAccounts"], readonly ["header", "numReadonlyUnsignedAccounts"], readonly ["header", "numRequiredSignatures"], readonly ["instructions", import("./tree-traversal").KeyPathWildcard, "accounts", import("./tree-traversal").KeyPathWildcard], readonly ["instructions", import("./tree-traversal").KeyPathWildcard, "programIdIndex"], readonly ["instructions", import("./tree-traversal").KeyPathWildcard, "stackHeight"]];
+//# sourceMappingURL=response-transformer-allowed-numeric-values.d.ts.map

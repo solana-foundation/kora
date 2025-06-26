@@ -1,0 +1,82 @@
+'use strict';
+
+var errors = require('@solana/errors');
+var rpcSpecTypes = require('@solana/rpc-spec-types');
+
+// src/rpc.ts
+function createRpc(rpcConfig) {
+  return makeProxy(rpcConfig);
+}
+function makeProxy(rpcConfig) {
+  return new Proxy(rpcConfig.api, {
+    defineProperty() {
+      return false;
+    },
+    deleteProperty() {
+      return false;
+    },
+    get(target, p, receiver) {
+      return function(...rawParams) {
+        const methodName = p.toString();
+        const getApiPlan = Reflect.get(target, methodName, receiver);
+        if (!getApiPlan) {
+          throw new errors.SolanaError(errors.SOLANA_ERROR__RPC__API_PLAN_MISSING_FOR_RPC_METHOD, {
+            method: methodName,
+            params: rawParams
+          });
+        }
+        const apiPlan = getApiPlan(...rawParams);
+        return createPendingRpcRequest(rpcConfig, apiPlan);
+      };
+    }
+  });
+}
+function createPendingRpcRequest({ transport }, plan) {
+  return {
+    async send(options) {
+      return await plan.execute({ signal: options?.abortSignal, transport });
+    }
+  };
+}
+function createJsonRpcApi(config) {
+  return new Proxy({}, {
+    defineProperty() {
+      return false;
+    },
+    deleteProperty() {
+      return false;
+    },
+    get(...args) {
+      const [_, p] = args;
+      const methodName = p.toString();
+      return function(...rawParams) {
+        const rawRequest = Object.freeze({ methodName, params: rawParams });
+        const request = config?.requestTransformer ? config?.requestTransformer(rawRequest) : rawRequest;
+        return Object.freeze({
+          execute: async ({ signal, transport }) => {
+            const payload = rpcSpecTypes.createRpcMessage(request);
+            const response = await transport({ payload, signal });
+            if (!config?.responseTransformer) {
+              return response;
+            }
+            return config.responseTransformer(response, request);
+          }
+        });
+      };
+    }
+  });
+}
+
+// src/rpc-transport.ts
+function isJsonRpcPayload(payload) {
+  if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  return "jsonrpc" in payload && payload.jsonrpc === "2.0" && "method" in payload && typeof payload.method === "string" && "params" in payload;
+}
+
+exports.createJsonRpcApi = createJsonRpcApi;
+exports.createRpc = createRpc;
+exports.isJsonRpcPayload = isJsonRpcPayload;
+//# sourceMappingURL=index.node.cjs.map
+//# sourceMappingURL=index.node.cjs.map

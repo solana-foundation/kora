@@ -1,0 +1,1 @@
+{"version":3,"file":"rpc-subscriptions-request.d.ts","sourceRoot":"","sources":["../../src/rpc-subscriptions-request.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,8BAA8B,CAAC,aAAa,IAAI;IACxD,SAAS,CAAC,OAAO,EAAE,mBAAmB,GAAG,OAAO,CAAC,aAAa,CAAC,aAAa,CAAC,CAAC,CAAC;CAClF,CAAC;AAEF,MAAM,MAAM,mBAAmB,GAAG,QAAQ,CAAC;IACvC,WAAW,EAAE,WAAW,CAAC;CAC5B,CAAC,CAAC"}

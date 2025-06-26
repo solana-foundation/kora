@@ -1,0 +1,1 @@
+{"version":3,"file":"is-solana-request.d.ts","sourceRoot":"","sources":["../../src/is-solana-request.ts"],"names":[],"mappings":"AAEA,QAAA,MAAM,kBAAkB,4lCAsDd,CAAC;AAEX;;GAEG;AACH,wBAAgB,eAAe,CAAC,OAAO,EAAE,OAAO,GAAG,OAAO,IAAI,QAAQ,CAAC;IACnE,OAAO,EAAE,KAAK,CAAC;IACf,MAAM,EAAE,CAAC,OAAO,kBAAkB,CAAC,CAAC,MAAM,CAAC,CAAC;IAC5C,MAAM,EAAE,OAAO,CAAC;CACnB,CAAC,CAED"}

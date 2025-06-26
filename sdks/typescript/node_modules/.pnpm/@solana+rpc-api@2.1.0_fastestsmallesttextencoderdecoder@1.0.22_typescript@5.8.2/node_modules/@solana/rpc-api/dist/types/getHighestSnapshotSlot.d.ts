@@ -1,0 +1,17 @@
+import type { Slot } from '@solana/rpc-types';
+type GetHighestSnapshotSlotApiResponse = Readonly<{
+    full: Slot;
+    incremental: Slot | null;
+}>;
+export type GetHighestSnapshotSlotApi = {
+    /**
+     * Returns the highest slot information that the node has snapshots for.
+     *
+     * This will find the highest full snapshot slot, and the highest
+     * incremental snapshot slot based on the full snapshot slot, if there
+     * is one.
+     */
+    getHighestSnapshotSlot(NO_CONFIG?: Record<string, never>): GetHighestSnapshotSlotApiResponse;
+};
+export {};
+//# sourceMappingURL=getHighestSnapshotSlot.d.ts.map

@@ -1,0 +1,1 @@
+{"version":3,"file":"getGenesisHash.d.ts","sourceRoot":"","sources":["../../src/getGenesisHash.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,SAAS,EAAE,MAAM,mBAAmB,CAAC;AAEnD,KAAK,yBAAyB,GAAG,SAAS,CAAC;AAE3C,MAAM,MAAM,iBAAiB,GAAG;IAC5B;;OAEG;IACH,cAAc,CAEV,SAAS,CAAC,EAAE,MAAM,CAAC,MAAM,EAAE,KAAK,CAAC,GAClC,yBAAyB,CAAC;CAChC,CAAC"}

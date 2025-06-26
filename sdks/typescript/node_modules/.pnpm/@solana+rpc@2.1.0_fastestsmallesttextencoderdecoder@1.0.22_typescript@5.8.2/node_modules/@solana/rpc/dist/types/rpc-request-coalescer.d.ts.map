@@ -1,0 +1,1 @@
+{"version":3,"file":"rpc-request-coalescer.d.ts","sourceRoot":"","sources":["../../src/rpc-request-coalescer.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,kBAAkB,CAAC;AASrD,KAAK,qBAAqB,GAAG,CAAC,OAAO,EAAE,OAAO,KAAK,MAAM,GAAG,SAAS,CAAC;AAmBtE,wBAAgB,oCAAoC,CAAC,UAAU,SAAS,YAAY,EAChF,SAAS,EAAE,UAAU,EACrB,mBAAmB,EAAE,qBAAqB,GAC3C,UAAU,CAqEZ"}
