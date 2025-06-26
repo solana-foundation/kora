@@ -1,5 +1,7 @@
 # Kora
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/solana-foundation/kora)
+
 Kora is a Solana paymaster node that provides a JSON-RPC interface for handling gasless transactions and fee abstractions. It enables developers to build applications where users can pay transaction fees in tokens other than SOL.
 
 ## Features
@@ -18,8 +20,8 @@ Kora is a Solana paymaster node that provides a JSON-RPC interface for handling 
 - `kora-lib`: Shared library for kora
 - `kora-rpc`: JSON-RPC server
 - `kora-cli`: Command line interface for kora
-- `tk-rs`: Turnkey signer library
-- `privy-rs`: Privy signer library
+- `turnkey`: Turnkey signer library
+- `privy`: Privy signer library
 
 ## Getting Started
 
