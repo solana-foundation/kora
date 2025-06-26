@@ -41,8 +41,8 @@ deadpool-redis = { workspace = true }
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
 solana-program = { workspace = true }
-kora-turnkey = { workspace = true, version = "1.0.2" }
-kora-privy = { workspace = true, version = "1.0.2" }
+kora-turnkey = { workspace = true }
+kora-privy = { workspace = true }
 spl-token = { workspace = true }
 spl-associated-token-account = { workspace = true }
 bincode = { workspace = true }
