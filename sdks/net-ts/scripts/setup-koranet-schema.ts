@@ -29,7 +29,6 @@ import {
   } from "@solana/kit";
   import { createKeyPairSignerFromPrivateKeyBytes, signTransactionMessageWithSigners } from "@solana/signers";
   import * as bs58 from "bs58";
-  import { schema_struct_serialize } from "./helper.js";
 
   async function createSchema() {
 
@@ -56,26 +55,17 @@ import {
 
     // stub kora config
     const schema = {
-        "domain": "https://kora-runner.xyz/wif",
-        "fee_payer": "G1ajNiQqS962dujnPvzdbQs2aLLuTZ4RUrH4fD1YLn3g",
-        "allowed_programs": [
-            "11111111111111111111111111111111",
-            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-            "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        ],
-        "allowed_tokens": [
-            "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
-        ],
-        "allowed_spl_paid_tokens": [
-            "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
-        ],
-        "max_signatures": 10,
-        "max_allowed_lamports": 1000000,
-        "disallowed_accounts": [],
-        "price_source": "Jupiter",
+        "domain": 12,
+        "fee_payer": 12,
+        "allowed_programs": 25,
+        "allowed_tokens": 25,
+        "allowed_spl_paid_tokens": 25,
+        "max_signatures": 2,
+        "max_allowed_lamports": 3,
+        "disallowed_accounts": 25,
+        "price_source": 12,
     }
 
-    const { fieldNames, valueTypes, byteLayout } = schema_struct_serialize(schema);
 
     const schemaInput: CreateSchemaInput = {
         payer: payer,
@@ -84,8 +74,8 @@ import {
         schema: schemaPda,
         name: "Koranet Schema",
         description: "Schema for koranet",
-        layout: byteLayout,
-        fieldNames: fieldNames,
+        layout: new Uint8Array(Object.values(schema)),
+        fieldNames: Object.keys(schema),
     };
   
     const schemaIx = getCreateSchemaInstruction(schemaInput);
