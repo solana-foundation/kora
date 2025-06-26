@@ -67,9 +67,8 @@ impl PrivySigner {
     pub async fn init(&mut self) -> Result<(), PrivyError> {
         let pubkey = self.get_public_key().await?;
         self.public_key = pubkey;
-    Ok(())
+        Ok(())
     }
-
 
     /// Get the cached public key
     pub fn solana_pubkey(&self) -> Pubkey {

@@ -4,8 +4,12 @@ mod server;
 use clap::Parser;
 use dotenv::dotenv;
 use kora_lib::{
-    args::RpcArgs, config::load_config, log::LoggingFormat, rpc::get_rpc_client,
-    signer::{init::init_signer_type, KoraSigner}, state::init_signer,
+    args::RpcArgs,
+    config::load_config,
+    log::LoggingFormat,
+    rpc::get_rpc_client,
+    signer::{init::init_signer_type, KoraSigner},
+    state::init_signer,
 };
 use rpc::KoraRpc;
 use server::run_rpc_server;
@@ -31,7 +35,7 @@ async fn main() {
     let signer = if !args.common.skip_signer {
         let signer = init_signer_type(&args.common).unwrap();
 
-       // Launch async if privy for init() to populate PublicKey
+        // Launch async if privy for init() to populate PublicKey
         match signer {
             KoraSigner::Privy(mut privy_signer) => {
                 privy_signer.init().await.unwrap_or_else(|e| {
