@@ -1,0 +1,13 @@
+{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "transferTransactionV2",
+    "params": [
+        {
+            "amount": 1000000,
+            "token": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "source": "5KKsLVU6TcbVDK4BS6K1DGDxnh4Q9xjYJ8XaDCG5t8ht",
+            "destination": "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM"
+        }
+    ]
+} 
