@@ -12,6 +12,7 @@ allowed_programs = [
     "Secp256r1SigVerify1111111111111111111111111",  # Raydium AMM program,
     "ComputeBudget111111111111111111111111111111",
     "6Jh4kA4rkZquv9XofKqgbyrRcTDF19uM5HL4xyh6gaSo", # Kora program
+    "9gJ7jZaAvUafgTFPoqkCwbuvC9kpZCPtHfHjMkQ66wu9"
 ]
 allowed_tokens = [
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", # USDC devnet
