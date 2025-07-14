@@ -297,18 +297,81 @@ RUST_LOG=debug  # Logging level
 
 ## Code Style & Best Practices
 
-### Error Handling
-
-- Custom `KoraError` type for consistent error reporting across crates
-- Structured error responses in JSON-RPC format
-- Comprehensive logging for debugging and monitoring
-- Use `Result<T, KoraError>` for fallible operations
-
 ### Async Development
 
 - All RPC methods are async
 - Use `tokio` runtime for async execution
 - Signer operations are async to support remote API calls
+
+## Code Quality
+
+### Concurrency & Thread Safety
+
+Kora is designed for high-performance concurrent operations:
+
+- **Global State Management**: Use `Arc<Mutex<T>>` for shared state across threads
+- **Signer State**: Global signer accessed via `get_signer()` with thread-safe initialization
+- **RPC Server**: Handles multiple concurrent requests using `jsonrpsee` async framework
+- **Cache Operations**: `TokenAccountCache` supports concurrent access for token account lookups
+- **Token Account Access**: Always prioritize cache lookups before making on-chain RPC calls
+
+### Async/Await Patterns
+
+All I/O operations and external API calls are async:
+
+- **RPC Client Operations**: Solana RPC calls are async to avoid blocking
+- **Remote Signer APIs**: Turnkey and Privy API calls are async HTTP requests
+- **Database Operations**: Token cache operations are async
+- **Error Propagation**: Use `?` operator with async functions
+
+### Logging Standards
+
+Use structured logging throughout the codebase:
+
+- **Error Level** (`log::error!`): System failures, critical errors, panics
+- **Warn Level** (`log::warn!`): Recoverable errors, validation failures
+- **Info Level** (`log::info!`): Important state changes, successful operations
+- **Debug Level** (`log::debug!`): Detailed execution flow, parameter values
+- **Trace Level** (`log::trace!`): Very verbose debugging information
+
+**Logging Guidelines:**
+- Include relevant context (transaction IDs, user addresses, amounts)
+- Log entry and exit points for important operations
+- Use structured data when possible for better parsing
+- Never log sensitive information (private keys, secrets)
+- Log errors with full context for debugging
+- **CLI Output**: Use `println!` for CLI command results and user-facing output (not `log::info!`)
+
+### Error Handling Patterns
+
+- **Error Transformation**: Convert external errors to `KoraError` at module boundaries
+- **Error Context**: Add meaningful context when propagating errors up the call stack
+- **Error Classification**: Distinguish between recoverable validation errors and critical system failures
+- **Error Responses**: Structure JSON-RPC error responses consistently across all methods
+
+### Performance Guidelines
+
+- **Memory Allocation**: Minimize allocations in hot paths, reuse buffers where possible
+- **Connection Pooling**: Reuse HTTP clients and RPC connections across requests
+- **Batch Operations**: Prefer batch APIs when available for multiple token account operations
+- **Rate Limiting**: Implement client-side rate limiting for external API calls
+
+### Security Practices
+
+- **Secret Handling**: Never log, print, or serialize sensitive data (keys, tokens, secrets)
+- **Input Sanitization**: Validate all user inputs against allow-lists and size limits
+- **Audit Trail**: Log security-relevant events (authentication, authorization, signing)
+- **Fail Secure**: Default to restrictive behavior when validation or authentication fails
+- **Secure Communication**: Use secure communication for remote signer APIs
+- **Rate Limiting & Authentication**: Implement proper rate limiting and authentication
+
+### Testing Guidelines
+
+- **Test Organization**: Mirror source code structure in test file organization
+- **Mock Strategy**: Mock external dependencies (RPC clients, HTTP APIs) consistently
+- **Test Data**: Use deterministic test data, avoid random values in tests
+- **Integration Coverage**: Test complete request/response cycles for all RPC methods
+- **Error Scenarios**: Test error conditions and edge cases, not just happy paths
 
 ### Testing Strategy
 
@@ -332,10 +395,3 @@ RUST_LOG=debug  # Logging level
 - Add new signer types by implementing the `Signer` trait
 - Update configuration schema when adding new validation rules
 - Keep OpenAPI documentation in sync with method signatures
-
-### Security Considerations
-
-- Never log sensitive data (private keys, API secrets)
-- Validate all user inputs against configuration rules
-- Use secure communication for remote signer APIs
-- Implement proper rate limiting and authentication
