@@ -11,8 +11,11 @@ use kora_lib::{
     config::ValidationConfig,
     constant::NATIVE_SOL,
     get_signer,
-    token::{TokenInterface, TokenProgram, TokenType},
-    transaction::{encode_b64_message, encode_b64_transaction, validator::TransactionValidator},
+    token::TokenInterface,
+    transaction::{
+        encode_b64_message, encode_b64_transaction,
+        validator::{TransactionValidator, ValidatedMint},
+    },
     KoraError, Signer as _,
 };
 
@@ -42,24 +45,22 @@ pub async fn transfer_transaction(
     let validator = TransactionValidator::new(fee_payer, validation)?;
 
     let source = Pubkey::from_str(&request.source)
-        .map_err(|e| KoraError::ValidationError(format!("Invalid source address: {}", e)))?;
+        .map_err(|e| KoraError::ValidationError(format!("Invalid source address: {e}")))?;
     let destination = Pubkey::from_str(&request.destination)
-        .map_err(|e| KoraError::ValidationError(format!("Invalid destination address: {}", e)))?;
+        .map_err(|e| KoraError::ValidationError(format!("Invalid destination address: {e}")))?;
     let token_mint = Pubkey::from_str(&request.token)
-        .map_err(|e| KoraError::ValidationError(format!("Invalid token address: {}", e)))?;
+        .map_err(|e| KoraError::ValidationError(format!("Invalid token address: {e}")))?;
 
     // manually check disallowed account because we're creating the message
     if validator.is_disallowed_account(&source) {
         return Err(KoraError::InvalidTransaction(format!(
-            "Source account {} is disallowed",
-            source
+            "Source account {source} is disallowed"
         )));
     }
 
     if validator.is_disallowed_account(&destination) {
         return Err(KoraError::InvalidTransaction(format!(
-            "Destination account {} is disallowed",
-            destination
+            "Destination account {destination} is disallowed"
         )));
     }
 
@@ -70,17 +71,8 @@ pub async fn transfer_transaction(
         instructions.push(system_instruction::transfer(&source, &destination, request.amount));
     } else {
         // Handle wrapped SOL and other SPL tokens
-        validator.validate_token_mint(&token_mint, rpc_client).await?;
-
-        let mint_account = rpc_client
-            .get_account(&token_mint)
-            .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-        let token_program = TokenProgram::new(TokenType::Spl);
-        let decimals = token_program
-            .get_mint_decimals(&mint_account.data)
-            .map_err(|_| KoraError::ValidationError("Invalid mint account data".to_string()))?;
+        let ValidatedMint { token_program, decimals } =
+            validator.fetch_and_validate_token_mint(&token_mint, rpc_client).await?;
 
         let source_ata = token_program.get_associated_token_address(&source, &token_mint);
         let dest_ata = token_program.get_associated_token_address(&destination, &token_mint);
@@ -110,8 +102,7 @@ pub async fn transfer_transaction(
                 )
                 .map_err(|e| {
                     KoraError::InvalidTransaction(format!(
-                        "Failed to create transfer instruction: {}",
-                        e
+                        "Failed to create transfer instruction: {e}"
                     ))
                 })?,
         );
