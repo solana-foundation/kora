@@ -19,7 +19,6 @@ Kora RPC validates client requests based on a configuration (`kora.toml`) that d
                        └──────────────────────┘
 ```
 
-
 This quick start will launch a local Kora RPC server and demonstrate client integration for testing fee payment workflows.
 
 ## Requirements
