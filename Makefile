@@ -29,6 +29,7 @@ test:
 
 # Run integration tests
 test-integration:
+	cargo run -p tests --bin setup-test-env
 	cargo test --test integration
 
 # Build all binaries
