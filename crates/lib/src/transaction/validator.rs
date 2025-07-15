@@ -2,11 +2,10 @@ use crate::{
     config::ValidationConfig,
     error::KoraError,
     oracle::PriceSource,
-    token::{Token2022Account, TokenInterface, TokenProgram, TokenState, TokenType},
+    token::{Token2022Account, TokenInterface, TokenProgram, TokenType},
     transaction::fees::calculate_token_value_in_lamports,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_program::program_pack::Pack;
 use solana_sdk::{
     instruction::CompiledInstruction, message::Message, pubkey::Pubkey, system_instruction,
     system_program, transaction::Transaction,
@@ -40,6 +39,11 @@ pub struct TransactionValidator {
     price_source: PriceSource,
 }
 
+pub struct ValidatedMint {
+    pub token_program: TokenProgram,
+    pub decimals: u8,
+}
+
 impl TransactionValidator {
     pub fn new(fee_payer_pubkey: Pubkey, config: &ValidationConfig) -> Result<Self, KoraError> {
         // Convert string program IDs to Pubkeys
@@ -49,8 +53,7 @@ impl TransactionValidator {
             .map(|addr| {
                 Pubkey::from_str(addr).map_err(|e| {
                     KoraError::InternalServerError(format!(
-                        "Invalid program address in config: {}",
-                        e
+                        "Invalid program address in config: {e}"
                     ))
                 })
             })
@@ -75,16 +78,15 @@ impl TransactionValidator {
         })
     }
 
-    pub async fn validate_token_mint(
+    pub async fn fetch_and_validate_token_mint(
         &self,
         mint: &Pubkey,
         rpc_client: &RpcClient,
-    ) -> Result<(), KoraError> {
+    ) -> Result<ValidatedMint, KoraError> {
         // First check if the mint is in allowed tokens
         if !self.allowed_tokens.contains(mint) {
             return Err(KoraError::InvalidTransaction(format!(
-                "Mint {} is not a valid token mint",
-                mint
+                "Mint {mint} is not a valid token mint"
             )));
         }
 
@@ -97,9 +99,9 @@ impl TransactionValidator {
             TokenProgram::new(if is_token2022 { TokenType::Token2022 } else { TokenType::Spl });
 
         // Validate mint account data
-        token_program.get_mint_decimals(&mint_account.data)?;
+        let decimals = token_program.get_mint_decimals(&mint_account.data)?;
 
-        Ok(())
+        Ok(ValidatedMint { token_program, decimals })
     }
 
     pub fn validate_transaction(&self, transaction: &Transaction) -> Result<(), KoraError> {
@@ -154,8 +156,7 @@ impl TransactionValidator {
             let program_id = message.account_keys[instruction.program_id_index as usize];
             if !self.allowed_programs.contains(&program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
-                    "Program {} is not in the allowed list",
-                    program_id
+                    "Program {program_id} is not in the allowed list"
                 )));
             }
         }
@@ -218,8 +219,7 @@ impl TransactionValidator {
                 let account = message.account_keys[*account as usize];
                 if self.disallowed_accounts.contains(&account) {
                     return Err(KoraError::InvalidTransaction(format!(
-                        "Account {} is disallowed",
-                        account
+                        "Account {account} is disallowed"
                     )));
                 }
             }
