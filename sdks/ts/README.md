@@ -2,10 +2,36 @@
 
 A TypeScript SDK for interacting with the Kora RPC server. This SDK provides a type-safe interface to all Kora RPC methods.
 
-## Installation
+
+## Development
+
+### Building from Source
 
 ```bash
-pnpm install @kora/sdk
+# Install dependencies
+pnpm install
+
+# Build the SDK
+pnpm run build
+
+# Run tests
+pnpm test
+```
+
+### Running Tests
+
+Tests require a valid devnet wallet address. Update the `/ts-sdk/test/setup.ts` file with the correct env variables:
+
+```env
+KORA_RPC_URL=http://localhost:8080
+TEST_WALLET_PUBKEY=your_devnet_wallet_address
+TEST_WALLET_PRIVATE_KEY=your_local_wallet_private_key_for_tests
+USDC_MINT=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+```
+
+Then run:
+```bash
+pnpm test
 ```
 
 ## Quick Start
@@ -107,35 +133,4 @@ try {
   console.error('Transfer failed:', error.message);
   // Example error: "RPC Error -32602: invalid type: map, expected u64"
 }
-```
-
-## Development
-
-### Building from Source
-
-```bash
-# Install dependencies
-pnpm install
-
-# Build the SDK
-pnpm run build
-
-# Run tests
-pnpm test
-```
-
-### Running Tests
-
-Tests require a valid devnet wallet address. Update the `/ts-sdk/test/setup.ts` file with the correct env variables:
-
-```env
-KORA_RPC_URL=http://localhost:8080
-TEST_WALLET_PUBKEY=your_devnet_wallet_address
-TEST_WALLET_PRIVATE_KEY=your_local_wallet_private_key_for_tests
-USDC_MINT=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
-```
-
-Then run:
-```bash
-pnpm test
 ```
