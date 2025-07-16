@@ -14,6 +14,25 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct FeePayerPolicy {
+    pub allow_sol_transfers: bool,
+    pub allow_spl_transfers: bool,
+    pub allow_token2022_transfers: bool,
+    pub allow_assign: bool,
+}
+
+impl Default for FeePayerPolicy {
+    fn default() -> Self {
+        Self {
+            allow_sol_transfers: true,
+            allow_spl_transfers: true,
+            allow_token2022_transfers: true,
+            allow_assign: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ValidationConfig {
     pub max_allowed_lamports: u64,
     pub max_signatures: u64,
@@ -22,6 +41,8 @@ pub struct ValidationConfig {
     pub allowed_spl_paid_tokens: Vec<String>,
     pub disallowed_accounts: Vec<String>,
     pub price_source: PriceSource,
+    #[serde(default)] // Default for backward compatibility
+    pub fee_payer_policy: FeePayerPolicy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,12 +52,11 @@ pub struct KoraConfig {
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
-    let contents = fs::read_to_string(path).map_err(|e| {
-        KoraError::InternalServerError(format!("Failed to read config file: {}", e))
-    })?;
+    let contents = fs::read_to_string(path)
+        .map_err(|e| KoraError::InternalServerError(format!("Failed to read config file: {e}")))?;
 
     toml::from_str(&contents)
-        .map_err(|e| KoraError::InternalServerError(format!("Failed to parse config file: {}", e)))
+        .map_err(|e| KoraError::InternalServerError(format!("Failed to parse config file: {e}")))
 }
 
 impl Config {
@@ -115,6 +135,7 @@ mod tests {
                 allowed_spl_paid_tokens: vec!["token3".to_string()],
                 disallowed_accounts: vec!["account1".to_string()],
                 price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
             },
             kora: KoraConfig { rate_limit: 100 },
         };
