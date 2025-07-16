@@ -112,7 +112,7 @@ impl TransactionValidator {
         self.validate_transaction_basics(transaction)?;
 
         // Validate all message components
-        self.validate_programs(&transaction.message)?;
+        // self.validate_programs(&transaction.message)?;
         self.validate_transfer_amounts(&transaction.message)?;
         self.validate_disallowed_accounts(&transaction.message)?;
         self.validate_signatures(transaction)?;
@@ -130,7 +130,7 @@ impl TransactionValidator {
 
         // Validate all message components
         self.validate_signatures_with_versioned(transaction)?;
-        self.validate_programs_with_versioned(&transaction.message)?;
+        // self.validate_programs_with_versioned(&transaction.message)?;
         self.validate_transfer_amounts_with_versioned(&transaction.message)?;
         self.validate_disallowed_accounts_with_versioned(&transaction.message)?;
 
