@@ -1,0 +1,20 @@
+[kora]
+rate_limit = 100
+
+[validation]
+max_allowed_lamports = 1000000
+max_signatures = 10
+price_source = "Mock"
+
+allowed_programs = [
+    "11111111111111111111111111111111",  # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+]
+allowed_tokens = [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"    # Update this based on the USDC_LOCAL_KEY public key comment in your .env
+]
+allowed_spl_paid_tokens = [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"    # Update this based on the USDC_LOCAL_KEY public key comment in your .env
+] 
+disallowed_accounts = []

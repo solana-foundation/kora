@@ -15,6 +15,12 @@ Kora is a Solana paymaster node that provides a JSON-RPC interface for handling 
 
 > Note: only `signAndSend` submits a transaction to an RPC, all other methods only return a signed transaction
 
+## Quick Start
+
+Set up a local Kora server and start accepting SPL token payments for transaction fees in just a few minutes.
+
+**[→ Quick Start Guide](docs/getting-started/QUICK_START.md)**
+
 ## Crates
 
 - `kora-lib`: Shared library for kora
@@ -38,7 +44,7 @@ make install
 Basic usage:
 
 ```bash
-kora -- [OPTIONS]
+kora-rpc -- [OPTIONS]
 ```
 
 ### Configuration
@@ -90,8 +96,7 @@ kora -- [OPTIONS]
 | `RUST_LOG`                | Controls log level and filtering                   | "info,sqlx=error" |
 | `RPC_URL`                 | Alternative way to specify the RPC URL             | -                 |
 | `KORA_PRIVATE_KEY`        | Alternative way to specify the signing private key | -                 |
-| `TEST_SENDER_PUBKEY`      | Test sender pubkey                                 | -                 |
-| `TEST_SENDER_MNEMONIC`    | Test sender mnemonic                               | -                 |
+| `TEST_SENDER_KEYPAIR `    | Test sender base 58 private key                    | -                 |
 
 #### Signer Environment Variables
 
@@ -227,7 +232,7 @@ Signs a transaction with the paymaster's key.
 }
 ```
 
-#### `signAndSend`
+#### `signAndSendTransaction`
 
 Signs and submits a transaction to the network.
 
@@ -236,12 +241,10 @@ Signs and submits a transaction to the network.
 {
     "jsonrpc": "2.0",
     "id": 1,
-    "method": "signAndSend",
-    "params": [
-        {
-            "transaction": "<base64-encoded-transaction>"
-        }
-    ]
+    "method": "signAndSendTransaction",
+    "params":  {
+        "transaction": "<base64-encoded-transaction>"
+    }
 }
 
 // Response
@@ -255,7 +258,7 @@ Signs and submits a transaction to the network.
 }
 ```
 
-#### `transactionTransfer`
+#### `transferTransaction`
 
 Create a transfer request and sign as the paymaster (SPL and SOL)
 
@@ -264,13 +267,13 @@ Create a transfer request and sign as the paymaster (SPL and SOL)
 {
     "jsonrpc": "2.0",
     "id": 1,
-    "method": "transactionTransfer",
-    "params": [
-        1000000, // lamports value
-        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // mint address
-        "5KKsLVU6TcbVDK4BS6K1DGDxnh4Q9xjYJ8XaDCG5t8ht", // source
-        "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM" // recipient
-    ]
+    "method": "transferTransaction",
+    "params": {
+        "amount": 1000000,
+        "token": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "source": "5KKsLVU6TcbVDK4BS6K1DGDxnh4Q9xjYJ8XaDCG5t8ht",
+        "destination": "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM"
+    }
 }
 
 // Response
@@ -375,12 +378,10 @@ Signs a transaction if the user has paid the required amount of tokens.
     "jsonrpc": "2.0",
     "id": 1,
     "method": "signTransactionIfPaid",
-    "params": [
-        {
-            "transaction": "<base64-encoded-transaction>",
-            "margin": 0.0
-        }
-    ]
+    "params":  {
+        "transaction": "<base64-encoded-transaction>",
+        "margin": 0.0
+    }
 }
 
 // Response
