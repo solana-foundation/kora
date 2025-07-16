@@ -434,22 +434,24 @@ Integration tests require additional setup for test accounts and local validator
    solana-test-validator --reset
    ```
 
-2. **Setup test environment:**
-   ```bash
-   make setup-test-env
-   ```
-   This will:
-   - Verify test validator is running
-   - Create and fund test accounts
-   - Set up USDC mint and token accounts
-   - Display account summary
+2. **Start local Kora Server:**
+    ```bash
+    make run
+    ```
 
 3. **Run integration tests:**
    ```bash
    make test-integration
    ```
+    This will initialize a test environment (cargo run -p tests --bin setup-test-env):
+   - Verify test validator is running
+   - Create and fund test accounts
+   - Set up USDC mint and token accounts
+   - Display account summary
 
-#### Test Environment Variables
+   And run all integration tests (cargo test --test integration)
+
+#### Customize Test Environment
 
 You can customize test behavior by setting environment variables:
 
@@ -462,6 +464,8 @@ You can customize test behavior by setting environment variables:
 | `KORA_PRIVATE_KEY` | Kora fee payer private key | Built-in test keypair |
 | `TEST_USDC_MINT_KEYPAIR` | Test USDC mint keypair | Built-in test mint |
 | `TEST_USDC_MINT_DECIMALS` | USDC mint decimals | `6` |
+
+Make sure to update kora.toml to reflect the public key of TEST_USDC_MINT_KEYPAIR.
 
 **Example with custom environment:**
 ```bash
