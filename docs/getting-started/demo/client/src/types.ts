@@ -11,10 +11,10 @@ type ValidationConfig = Readonly<{
     max_allowed_lamports: number;
     max_signatures: number;
     price_source: 'Jupiter' | 'Mock';
-    allowed_programs: string[];
-    allowed_tokens: string[];
-    allowed_spl_paid_tokens: string[];
-    disallowed_accounts: string[];
+    allowed_programs: Address[];
+    allowed_tokens: Address[];
+    allowed_spl_paid_tokens: Address[];
+    disallowed_accounts: Address[];
 }>;
 
 type GetBlockHashResponse = {
@@ -22,7 +22,7 @@ type GetBlockHashResponse = {
 }
 
 type GetConfigResponse = Readonly<{
-    fee_payer: string;
+    fee_payer: Address;
     validation_config: ValidationConfig;
 }>;
 
@@ -58,10 +58,10 @@ type SignAndSendTransactionResponse = Readonly<{
 }>;
 
 type TransferTransactionParams = Readonly<{
-    lamports: number;
-    mint: Address;
+    amount: number;
+    token: Address;
     source: Address;
-    recipient: Address;
+    destination: Address;
 }>;
 
 type TransferTransactionResponse = Readonly<{

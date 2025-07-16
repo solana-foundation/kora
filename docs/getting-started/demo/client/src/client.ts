@@ -13,9 +13,8 @@ export function createKoraClient(endpoint: string): Rpc<KoraClient> {
         requestTransformer: (request: RpcRequest<any>) => {
             return {
                 ...request,
-                params: request.params[0] ? Object.values(request.params[0]) : []
+                params: request.params[0] ? request.params[0] : []
             };
-
         },
     });
     return createRpc({ api, transport });
