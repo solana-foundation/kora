@@ -17,3 +17,10 @@ allowed_spl_paid_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
 ]
 disallowed_accounts = []
+
+# Fee payer policy controls what actions the fee payer can perform
+[validation.fee_payer_policy]
+allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
+allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
+allow_token2022_transfers = true # Allow fee payer to be source in Token2022 transfers
+allow_assign = true             # Allow fee payer to use Assign instruction

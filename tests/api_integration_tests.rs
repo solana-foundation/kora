@@ -340,3 +340,31 @@ async fn test_sign_transaction_if_paid() {
 
     assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }
+
+#[tokio::test]
+async fn test_fee_payer_policy_is_present() {
+    let client = get_test_client().await;
+
+    let config_response: serde_json::Value =
+        client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
+
+    let validation_config = config_response["validation_config"]
+        .as_object()
+        .expect("Expected validation_config in response");
+
+    let fee_payer_policy = validation_config["fee_payer_policy"]
+        .as_object()
+        .expect("Expected fee_payer_policy in validation_config");
+
+    assert!(fee_payer_policy.contains_key("allow_sol_transfers"));
+    assert!(fee_payer_policy.contains_key("allow_spl_transfers"));
+    assert!(fee_payer_policy.contains_key("allow_token2022_transfers"));
+    assert!(fee_payer_policy.contains_key("allow_assign"));
+
+    assert_eq!(fee_payer_policy["allow_sol_transfers"], true);
+    assert_eq!(fee_payer_policy["allow_spl_transfers"], true);
+    assert_eq!(fee_payer_policy["allow_token2022_transfers"], true);
+    assert_eq!(fee_payer_policy["allow_assign"], true);
+
+    println!("Fee payer policy API integration tests passed!");
+}
