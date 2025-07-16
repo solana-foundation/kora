@@ -418,8 +418,59 @@ make build
 # Run all tests
 make test
 
+# Setup test environment (for integration tests)
+make setup-test-env
+
 # Run integration tests
-make test-integrations
+make test-integration
+```
+
+#### Integration Test Environment Setup
+
+Integration tests require additional setup for test accounts and local validator:
+
+1. **Start local validator:**
+   ```bash
+   solana-test-validator --reset
+   ```
+
+2. **Setup test environment:**
+   ```bash
+   make setup-test-env
+   ```
+   This will:
+   - Verify test validator is running
+   - Create and fund test accounts
+   - Set up USDC mint and token accounts
+   - Display account summary
+
+3. **Run integration tests:**
+   ```bash
+   make test-integration
+   ```
+
+#### Test Environment Variables
+
+You can customize test behavior by setting environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `RPC_URL` | Solana RPC endpoint | `http://127.0.0.1:8899` |
+| `TEST_SERVER_URL` | Kora RPC server URL | `http://127.0.0.1:8080` |
+| `TEST_SENDER_KEYPAIR` | Base58 encoded test sender keypair | Built-in test keypair |
+| `TEST_RECIPIENT_PUBKEY` | Test recipient public key | Built-in test pubkey |
+| `KORA_PRIVATE_KEY` | Kora fee payer private key | Built-in test keypair |
+| `TEST_USDC_MINT_KEYPAIR` | Test USDC mint keypair | Built-in test mint |
+| `TEST_USDC_MINT_DECIMALS` | USDC mint decimals | `6` |
+
+**Example with custom environment:**
+```bash
+# Create .env file
+echo "RPC_URL=https://api.devnet.solana.com" > .env
+echo "TEST_SENDER_KEYPAIR=your_base58_keypair" >> .env
+
+# Run tests
+make test-integration
 ```
 
 ### Running

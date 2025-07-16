@@ -1,33 +1,40 @@
 use anyhow::Result;
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcRequestAirdropConfig};
+use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
+use kora_lib::{
+    token::{TokenInterface, TokenProgram, TokenType},
+    transaction::encode_b64_transaction,
+};
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
+    message::Message,
     native_token::LAMPORTS_PER_SOL,
     program_pack::Pack,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
+    system_instruction,
     transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::instruction as token_instruction;
 use std::{str::FromStr, sync::Arc};
 
-pub const DEFAULT_RPC_URL: &str = "http://127.0.0.1:8899";
-pub const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
+const DEFAULT_RPC_URL: &str = "http://127.0.0.1:8899";
+const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
 
 // DO NOT USE THESE KEYPAIRS IN PRODUCTION, TESTING KEYPAIRS ONLY
-pub const FEE_PAYER_DEFAULT: &str =
-    "64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6"; // Would be the key used to boot-up Kora --private-key 
-pub const FEE_PAYER_PUBKEY: &str = "8vCbKjax96gWzqRsok7eRG9TvxDttm93F3e46MAYQM3n";
-pub const SENDER_SIGNER_DEFAULT: &str =
+const FEE_PAYER_DEFAULT: &str =
+    "64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6"; // Would be the key used to boot-up Kora --private-key  (pub: 8vCbKjax96gWzqRsok7eRG9TvxDttm93F3e46MAYQM3n)
+
+const SENDER_SIGNER_DEFAULT: &str =
     "3Tdt5TrRGJYPbTo8zZAscNTvgRGnCLM854tCpxapggUazqdYn6VQRQ9DqNz1UkEfoPCYKj6PwSwCNtckGGvAKugb";
-pub const RECIPIENT_DEFAULT: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
+
+const RECIPIENT_DEFAULT: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
 
 // Deterministic test USDC mint keypair (for local testing only)
-pub const TEST_USDC_MINT_KEYPAIR: &str =
-    "59kKmXphL5UJANqpFFjtH17emEq3oRNmYsx6a3P3vSGJRmhMgVdzH77bkNEi9bArRViT45e8L2TsuPxKNFoc3Qfg";
-pub const TEST_USDC_MINT_PUBKEY: &str = "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ";
-pub const TEST_USDC_MINT_DECIMALS: u8 = 6;
+const TEST_USDC_MINT_KEYPAIR: &str =
+    "59kKmXphL5UJANqpFFjtH17emEq3oRNmYsx6a3P3vSGJRmhMgVdzH77bkNEi9bArRViT45e8L2TsuPxKNFoc3Qfg"; // Pub: 9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ
+const TEST_USDC_MINT_DECIMALS: u8 = 6;
 
 /// Test account setup utilities for local validator
 pub struct TestAccountSetup {
@@ -39,13 +46,13 @@ pub struct TestAccountSetup {
 }
 
 impl TestAccountSetup {
-    pub fn new() -> Self {
-        let rpc_client = Arc::new(RpcClient::new(DEFAULT_RPC_URL.to_string()));
-        let sender_keypair = Keypair::from_base58_string(SENDER_SIGNER_DEFAULT);
-        let recipient_pubkey = Pubkey::from_str(RECIPIENT_DEFAULT).unwrap();
-        let fee_payer_keypair = Keypair::from_base58_string(FEE_PAYER_DEFAULT);
+    pub async fn new() -> Self {
+        let rpc_client = Arc::new(RpcClient::new(get_rpc_url().await));
+        let sender_keypair = get_test_sender_keypair();
+        let recipient_pubkey = get_recipient_pubkey();
+        let fee_payer_keypair = get_fee_payer_keypair();
 
-        let usdc_mint = Keypair::from_base58_string(TEST_USDC_MINT_KEYPAIR);
+        let usdc_mint = get_test_usdc_mint_keypair();
 
         Self { rpc_client, sender_keypair, fee_payer_keypair, recipient_pubkey, usdc_mint }
     }
@@ -61,13 +68,14 @@ impl TestAccountSetup {
     }
 
     pub async fn airdrop_sol(&self, receiver: &Pubkey, amount: u64) -> Result<()> {
-        let config = RpcRequestAirdropConfig {
-            commitment: Some(CommitmentConfig::confirmed()),
-            ..Default::default()
-        };
+        let signature = self.rpc_client.request_airdrop(receiver, amount).await?;
 
-        let _signature =
-            self.rpc_client.request_airdrop_with_config(receiver, amount, config).await?;
+        loop {
+            let confirmed = self.rpc_client.confirm_transaction(&signature).await?;
+            if confirmed {
+                break;
+            }
+        }
 
         Ok(())
     }
@@ -150,6 +158,10 @@ impl TestAccountSetup {
             get_associated_token_address(&self.sender_keypair.pubkey(), &self.usdc_mint.pubkey());
         let recipient_token_account =
             get_associated_token_address(&self.recipient_pubkey, &self.usdc_mint.pubkey());
+        let fee_payer_token_account = get_associated_token_address(
+            &self.fee_payer_keypair.pubkey(),
+            &self.usdc_mint.pubkey(),
+        );
 
         let create_associated_token_account_instruction =
             spl_associated_token_account::instruction::create_associated_token_account_idempotent(
@@ -167,6 +179,14 @@ impl TestAccountSetup {
                 &spl_token::id(),
             );
 
+        let create_associated_token_account_instruction_fee_payer =
+            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+                &self.sender_keypair.pubkey(),
+                &self.fee_payer_keypair.pubkey(),
+                &self.usdc_mint.pubkey(),
+                &spl_token::id(),
+            );
+
         println!("Creating associated token accounts...");
 
         let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
@@ -174,6 +194,7 @@ impl TestAccountSetup {
             &[
                 create_associated_token_account_instruction,
                 create_associated_token_account_instruction_recipient,
+                create_associated_token_account_instruction_fee_payer,
             ],
             Some(&self.sender_keypair.pubkey()),
             &[&self.sender_keypair],
@@ -197,6 +218,7 @@ impl TestAccountSetup {
             usdc_mint_pubkey: self.usdc_mint.pubkey(),
             sender_token_account,
             recipient_token_account,
+            fee_payer_token_account,
         })
     }
 
@@ -223,6 +245,7 @@ impl TestAccountSetup {
     }
 }
 
+/// Test account information for outputting to the user
 #[derive(Debug)]
 pub struct TestAccountInfo {
     pub fee_payer_pubkey: Pubkey,
@@ -231,14 +254,149 @@ pub struct TestAccountInfo {
     pub usdc_mint_pubkey: Pubkey,
     pub sender_token_account: Pubkey,
     pub recipient_token_account: Pubkey,
+    pub fee_payer_token_account: Pubkey,
 }
 
 pub async fn setup_test_accounts() -> Result<TestAccountInfo> {
-    let setup = TestAccountSetup::new();
+    let setup = TestAccountSetup::new().await;
     setup.setup_all_accounts().await
 }
 
 pub async fn check_test_validator() -> bool {
     let client = RpcClient::new(DEFAULT_RPC_URL.to_string());
     client.get_health().await.is_ok()
+}
+
+pub async fn get_rpc_url() -> String {
+    dotenv::dotenv().ok();
+    std::env::var("RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string())
+}
+
+pub fn get_test_sender_keypair() -> Keypair {
+    dotenv::dotenv().ok();
+    Keypair::from_base58_string(
+        &std::env::var("TEST_SENDER_KEYPAIR").unwrap_or(SENDER_SIGNER_DEFAULT.to_string()),
+    )
+}
+
+/// Create a fresh HTTP client for each test (no shared state)
+pub async fn get_test_client() -> jsonrpsee::http_client::HttpClient {
+    HttpClientBuilder::default().build(get_test_server_url()).expect("Failed to create HTTP client")
+}
+
+/// Create a fresh RPC client for each test (better for concurrency and isolation)
+pub async fn get_rpc_client() -> Arc<RpcClient> {
+    Arc::new(RpcClient::new(get_rpc_url().await))
+}
+
+/// Create a test SOL transfer transaction
+pub async fn create_test_transaction() -> Result<String> {
+    let sender = get_test_sender_keypair();
+    let recipient = get_recipient_pubkey();
+    let amount = 10;
+    let rpc_client = get_rpc_client().await;
+
+    let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
+
+    let blockhash =
+        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
+
+    let message = Message::new_with_blockhash(&[instruction], None, &blockhash.0);
+    let transaction = Transaction { signatures: vec![Default::default()], message };
+
+    Ok(encode_b64_transaction(&transaction)?)
+}
+
+/// Create a test SPL token transfer transaction
+pub async fn create_test_spl_transaction() -> Result<String> {
+    let rpc_client = get_rpc_client().await;
+    let client = get_test_client().await;
+
+    // Get fee payer from config
+    let response: serde_json::Value = client
+        .request("getConfig", rpc_params![])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get config: {}", e))?;
+    let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap())?;
+
+    let sender = get_test_sender_keypair();
+    let recipient = get_recipient_pubkey();
+
+    // Setup token accounts
+    let token_mint = get_test_usdc_mint_pubkey();
+    let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
+    let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
+
+    // Create token transfer instruction
+    let token_interface = TokenProgram::new(TokenType::Spl);
+    let amount = 1000; // Transfer 1000 token units
+    let instruction = token_interface
+        .create_transfer_instruction(
+            &sender_token_account,
+            &recipient_token_account,
+            &sender.pubkey(),
+            amount,
+        )
+        .expect("Failed to create transfer instruction");
+
+    // Get recent blockhash
+    let blockhash =
+        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
+
+    // Create message and transaction
+    let message = Message::new_with_blockhash(&[instruction], Some(&fee_payer), &blockhash.0);
+    let transaction = Transaction::new_unsigned(message);
+
+    Ok(encode_b64_transaction(&transaction)?)
+}
+
+// Getter functions that check environment variables first, then fall back to defaults
+
+/// Get the test server URL, checking TEST_SERVER_URL env var first
+pub fn get_test_server_url() -> String {
+    dotenv::dotenv().ok();
+    std::env::var("TEST_SERVER_URL").unwrap_or_else(|_| TEST_SERVER_URL.to_string())
+}
+
+/// Get the fee payer keypair, checking KORA_PRIVATE_KEY env var first
+pub fn get_fee_payer_keypair() -> Keypair {
+    dotenv::dotenv().ok();
+    let private_key =
+        std::env::var("KORA_PRIVATE_KEY").unwrap_or_else(|_| FEE_PAYER_DEFAULT.to_string());
+    Keypair::from_base58_string(&private_key)
+}
+
+/// Get the fee payer public key, derived from the fee payer keypair
+pub fn get_fee_payer_pubkey() -> Pubkey {
+    get_fee_payer_keypair().pubkey()
+}
+
+/// Get the recipient pubkey, checking TEST_RECIPIENT_PUBKEY env var first
+pub fn get_recipient_pubkey() -> Pubkey {
+    dotenv::dotenv().ok();
+    let recipient_str =
+        std::env::var("TEST_RECIPIENT_PUBKEY").unwrap_or_else(|_| RECIPIENT_DEFAULT.to_string());
+    Pubkey::from_str(&recipient_str).expect("Invalid recipient pubkey")
+}
+
+/// Get the test USDC mint keypair, checking TEST_USDC_MINT_KEYPAIR env var first
+pub fn get_test_usdc_mint_keypair() -> Keypair {
+    dotenv::dotenv().ok();
+    let mint_keypair = std::env::var("TEST_USDC_MINT_KEYPAIR")
+        .unwrap_or_else(|_| TEST_USDC_MINT_KEYPAIR.to_string());
+    Keypair::from_base58_string(&mint_keypair)
+}
+
+/// Get the test USDC mint pubkey, derived from the mint keypair
+pub fn get_test_usdc_mint_pubkey() -> Pubkey {
+    get_test_usdc_mint_keypair().pubkey()
+}
+
+/// Get the test USDC mint decimals, checking TEST_USDC_MINT_DECIMALS env var first
+pub fn get_test_usdc_mint_decimals() -> u8 {
+    dotenv::dotenv().ok();
+    std::env::var("TEST_USDC_MINT_DECIMALS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(TEST_USDC_MINT_DECIMALS)
 }

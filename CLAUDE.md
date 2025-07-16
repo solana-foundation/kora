@@ -52,11 +52,63 @@ make lint-fix-all
 # Run unit tests
 make test
 
+# Setup test environment (for integration tests)
+make setup-test-env
+
 # Run integration tests
 make test-integration
 
 # Run all tests
 cargo test --workspace
+```
+
+#### Integration Test Environment Setup
+
+Integration tests require a local validator and test account setup:
+
+1. **Start local validator:**
+   ```bash
+   solana-test-validator --reset --quiet
+   ```
+
+2. **Setup test environment:**
+   ```bash
+   make setup-test-env
+   ```
+   This command:
+   - Verifies solana-test-validator is running
+   - Creates and funds test accounts (fee payer, sender, recipient)
+   - Sets up test USDC mint and token accounts
+   - Displays account summary for debugging
+
+3. **Run integration tests:**
+   ```bash
+   make test-integration
+   ```
+
+#### Test Environment Variables
+
+The test suite uses environment variables for configuration (checked before falling back to defaults):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `RPC_URL` | Solana RPC endpoint | `http://127.0.0.1:8899` |
+| `TEST_SERVER_URL` | Kora RPC server URL | `http://127.0.0.1:8080` |
+| `TEST_SENDER_KEYPAIR` | Base58 encoded test sender keypair | Built-in test keypair |
+| `TEST_RECIPIENT_PUBKEY` | Test recipient public key | Built-in test pubkey |
+| `KORA_PRIVATE_KEY` | Kora fee payer private key | Built-in test keypair |
+| `TEST_USDC_MINT_KEYPAIR` | Test USDC mint keypair | Built-in test mint |
+| `TEST_USDC_MINT_DECIMALS` | USDC mint decimals | `6` |
+
+**Example with custom test configuration:**
+```bash
+# Create .env file for custom test setup
+echo "RPC_URL=https://api.devnet.solana.com" > .env
+echo "TEST_SENDER_KEYPAIR=your_base58_keypair" >> .env
+echo "KORA_PRIVATE_KEY=your_fee_payer_keypair" >> .env
+
+# Run tests with custom config
+make test-integration
 ```
 
 ### Running Services

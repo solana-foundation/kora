@@ -1,108 +1,24 @@
-use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
+use jsonrpsee::{core::client::ClientT, rpc_params};
 use kora_lib::{
     token::{TokenInterface, TokenProgram, TokenType},
     transaction::{decode_b64_transaction, encode_b64_transaction},
 };
 use serde_json::json;
-use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    system_instruction, system_program,
+    system_program,
     transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
-use std::{str::FromStr, sync::Arc};
-
+use std::str::FromStr;
 use testing_utils::*;
-
-fn get_rpc_url() -> String {
-    dotenv::dotenv().ok();
-    std::env::var("RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string())
-}
-
-fn get_test_sender_keypair() -> Keypair {
-    dotenv::dotenv().ok();
-    Keypair::from_base58_string(
-        &std::env::var("TEST_SENDER_KEYPAIR").unwrap_or(SENDER_SIGNER_DEFAULT.to_string()),
-    )
-}
-
-async fn setup_test_client() -> jsonrpsee::http_client::HttpClient {
-    HttpClientBuilder::default().build(TEST_SERVER_URL).expect("Failed to create HTTP client")
-}
-
-async fn setup_rpc_client() -> Arc<RpcClient> {
-    Arc::new(RpcClient::new(get_rpc_url()))
-}
-
-async fn create_test_transaction() -> String {
-    let sender = get_test_sender_keypair();
-    let recipient = Pubkey::from_str(RECIPIENT_DEFAULT).unwrap();
-    let amount = 10;
-    let rpc_client = setup_rpc_client().await;
-
-    let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
-
-    let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-        .await
-        .unwrap();
-
-    let message = Message::new_with_blockhash(&[instruction], None, &blockhash.0);
-
-    let transaction = Transaction { signatures: vec![Default::default()], message };
-
-    encode_b64_transaction(&transaction).unwrap()
-}
-
-async fn create_test_spl_transaction() -> String {
-    let rpc_client = setup_rpc_client().await;
-    // get fee payer from config
-    let client = setup_test_client().await;
-    let response: serde_json::Value =
-        client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
-    let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap()).unwrap();
-    let sender = get_test_sender_keypair();
-    let recipient = Pubkey::from_str(RECIPIENT_DEFAULT).unwrap();
-
-    // Setup token accounts using deterministic test USDC mint
-    let token_mint = Pubkey::from_str(TEST_USDC_MINT_PUBKEY).unwrap();
-    let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
-    let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
-
-    // Create an instance of TokenProgram
-    let token_interface = TokenProgram::new(TokenType::Spl);
-
-    // Create token transfer instruction
-    let amount = 1000; // Transfer 1000 token units
-    let instruction = token_interface
-        .create_transfer_instruction(
-            &sender_token_account,
-            &recipient_token_account,
-            &sender.pubkey(),
-            amount,
-        )
-        .unwrap();
-
-    // Get recent blockhash
-    let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-        .await
-        .unwrap();
-
-    // Create message and transaction
-    let message = Message::new_with_blockhash(&[instruction], Some(&fee_payer), &blockhash.0);
-    let transaction = Transaction::new_unsigned(message);
-
-    encode_b64_transaction(&transaction).unwrap()
-}
 
 #[tokio::test]
 async fn test_get_supported_tokens() {
-    let client = setup_test_client().await;
+    let client = get_test_client().await;
 
     let response: serde_json::Value = client
         .request("getSupportedTokens", rpc_params![])
@@ -113,7 +29,7 @@ async fn test_get_supported_tokens() {
     assert!(!tokens.is_empty(), "Tokens list should not be empty");
 
     // Check for specific known tokens
-    let expected_tokens = [TEST_USDC_MINT_PUBKEY];
+    let expected_tokens = [&get_test_usdc_mint_pubkey().to_string()];
 
     for token in expected_tokens.iter() {
         assert!(tokens.contains(&json!(token)), "Expected token {token} not found");
@@ -122,8 +38,8 @@ async fn test_get_supported_tokens() {
 
 #[tokio::test]
 async fn test_estimate_transaction_fee() {
-    let client = setup_test_client().await;
-    let test_tx = create_test_transaction().await;
+    let client = get_test_client().await;
+    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
 
     let response: serde_json::Value = client
         .request(
@@ -138,9 +54,9 @@ async fn test_estimate_transaction_fee() {
 
 #[tokio::test]
 async fn test_sign_transaction() {
-    let client = setup_test_client().await;
-    let test_tx = create_test_transaction().await;
-    let rpc_client = setup_rpc_client().await;
+    let client = get_test_client().await;
+    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
+    let rpc_client = get_rpc_client().await;
 
     let response: serde_json::Value = client
         .request("signTransaction", rpc_params![test_tx])
@@ -167,9 +83,10 @@ async fn test_sign_transaction() {
 
 #[tokio::test]
 async fn test_sign_spl_transaction() {
-    let client = setup_test_client().await;
-    let test_tx = create_test_spl_transaction().await;
-    let rpc_client = setup_rpc_client().await;
+    let client = get_test_client().await;
+    let test_tx =
+        create_test_spl_transaction().await.expect("Failed to create test SPL transaction");
+    let rpc_client = get_rpc_client().await;
     let sender = get_test_sender_keypair();
 
     let response: serde_json::Value = client
@@ -201,8 +118,8 @@ async fn test_sign_spl_transaction() {
 
 #[tokio::test]
 async fn test_sign_and_send_transaction() {
-    let client = setup_test_client().await;
-    let test_tx = create_test_transaction().await;
+    let client = get_test_client().await;
+    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
 
     let result = client
         .request::<serde_json::Value, _>("signAndSendTransaction", rpc_params![test_tx])
@@ -227,7 +144,7 @@ async fn test_sign_and_send_transaction() {
 
 #[tokio::test]
 async fn test_invalid_transaction() {
-    let client = setup_test_client().await;
+    let client = get_test_client().await;
     let invalid_tx = "invalid_base64_transaction";
 
     let result =
@@ -238,8 +155,8 @@ async fn test_invalid_transaction() {
 
 #[tokio::test]
 async fn test_transfer_transaction() {
-    let client = setup_test_client().await;
-    let rpc_client = setup_rpc_client().await;
+    let client = get_test_client().await;
+    let rpc_client = get_rpc_client().await;
 
     let sender = get_test_sender_keypair();
     let recipient = "BrfrZdQNEitACxyYLNmFRWHtRzZFNFpYH5GAtoA1XXU6";
@@ -279,8 +196,8 @@ async fn test_transfer_transaction() {
 
 #[tokio::test]
 async fn test_transfer_transaction_with_ata() {
-    let client = setup_test_client().await;
-    let rpc_client = setup_rpc_client().await;
+    let client = get_test_client().await;
+    let rpc_client = get_rpc_client().await;
     let random_keypair = Keypair::new();
     let random_pubkey = random_keypair.pubkey();
 
@@ -290,7 +207,7 @@ async fn test_transfer_transaction_with_ata() {
             "transferTransaction",
             rpc_params![
                 10,
-                TEST_USDC_MINT_PUBKEY,
+                &get_test_usdc_mint_pubkey().to_string(),
                 sender.pubkey().to_string(),
                 random_pubkey.to_string()
             ],
@@ -316,7 +233,7 @@ async fn test_transfer_transaction_with_ata() {
 
 #[tokio::test]
 async fn test_get_blockhash() {
-    let client = setup_test_client().await;
+    let client = get_test_client().await;
 
     let response: serde_json::Value =
         client.request("getBlockhash", rpc_params![]).await.expect("Failed to get blockhash");
@@ -325,7 +242,7 @@ async fn test_get_blockhash() {
 
 #[tokio::test]
 async fn test_get_config() {
-    let client = setup_test_client().await;
+    let client = get_test_client().await;
 
     let response: serde_json::Value =
         client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
@@ -338,8 +255,8 @@ async fn test_get_config() {
 
 #[tokio::test]
 async fn test_sign_transaction_if_paid() {
-    let client = setup_test_client().await;
-    let rpc_client = setup_rpc_client().await;
+    let client = get_test_client().await;
+    let rpc_client = get_rpc_client().await;
 
     // get fee payer from config
     let response: serde_json::Value =
@@ -347,38 +264,13 @@ async fn test_sign_transaction_if_paid() {
     let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap()).unwrap();
 
     let sender = get_test_sender_keypair();
-    let recipient = Pubkey::from_str(RECIPIENT_DEFAULT).unwrap();
+    let recipient = get_recipient_pubkey();
 
     // Setup token accounts using deterministic test USDC mint
-    let token_mint = Pubkey::from_str(TEST_USDC_MINT_PUBKEY).unwrap();
+    let token_mint = get_test_usdc_mint_pubkey();
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
     let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
     let fee_payer_token_account = get_associated_token_address(&fee_payer, &token_mint);
-
-    // TODO: Remove this ATA creation once Kora bug is fixed
-    // Kora should automatically create the fee payer's ATA when processing signTransactionIfPaid
-    // but currently it's not doing this, so we create it manually for the test to pass
-    if rpc_client.get_account(&fee_payer_token_account).await.is_err() {
-        println!("Creating fee payer's ATA manually (TODO: remove once Kora bug is fixed)");
-        let create_ata_ix =
-            spl_associated_token_account::instruction::create_associated_token_account(
-                &sender.pubkey(), // payer for the creation
-                &fee_payer,
-                &token_mint,
-                &spl_token::id(),
-            );
-
-        let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
-        let tx = Transaction::new_signed_with_payer(
-            &[create_ata_ix],
-            Some(&sender.pubkey()),
-            &[&sender],
-            recent_blockhash,
-        );
-
-        rpc_client.send_and_confirm_transaction(&tx).await.expect("Failed to create fee payer ATA");
-        println!("Fee payer ATA created: {fee_payer_token_account}");
-    }
 
     let fee_amount = 100000;
 

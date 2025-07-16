@@ -25,6 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  USDC Mint: {}", account_info.usdc_mint_pubkey);
             println!("  Sender Token Account: {}", account_info.sender_token_account);
             println!("  Recipient Token Account: {}", account_info.recipient_token_account);
+            println!("  Fee Payer Token Account: {}", account_info.fee_payer_token_account);
             println!();
             println!("🎯 Ready to run integration tests!");
             println!("Run: cargo test --test integration");

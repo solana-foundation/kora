@@ -163,6 +163,7 @@ impl TransactionValidator {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn validate_fee_payer_usage(&self, message: &Message) -> Result<(), KoraError> {
         // Check if fee payer is first account
         if message.account_keys.first() != Some(&self.fee_payer_pubkey) {
