@@ -108,9 +108,9 @@ pub fn decode_b64_transaction(encoded: &str) -> Result<Transaction, KoraError> {
     // For now we don't support versioned transactions, will be added in the future (where it checks the addresses in the lookup tables)
     if let Ok(versioned_tx) = bincode::deserialize::<VersionedTransaction>(&decoded) {
         if let VersionedMessage::V0(_) = versioned_tx.message {
-            return Err(KoraError::InvalidTransaction(format!(
-                "Versioned transaction not supported: {versioned_tx:?}"
-            )));
+            return Err(KoraError::InvalidTransaction(
+                "Versioned transaction not supported".to_string(),
+            ));
         }
     }
 
@@ -220,7 +220,7 @@ mod tests {
 
         assert!(matches!(
             decode_b64_transaction(&encoded),
-            Err(KoraError::InvalidTransaction(e)) if e.contains("Versioned transaction not supported")
+            Err(KoraError::InvalidTransaction(e)) if e == "Versioned transaction not supported"
         ));
     }
 }
