@@ -2,7 +2,7 @@ use super::{solana_signer::SolanaMemorySigner, vault_signer::VaultSigner};
 use crate::error::KoraError;
 use kora_privy::PrivySigner;
 use kora_turnkey::TurnkeySigner;
-use solana_sdk::signature::Signature as SolanaSignature;
+use solana_sdk::{signature::Signature as SolanaSignature, transaction::Transaction};
 use std::error::Error;
 
 #[derive(Debug, Clone)]
@@ -20,12 +20,12 @@ pub trait Signer {
 
     fn sign(
         &self,
-        message: &[u8],
+        transaction: &Transaction,
     ) -> impl std::future::Future<Output = Result<Signature, Self::Error>> + Send;
 
     fn sign_solana(
         &self,
-        message: &[u8],
+        transaction: &Transaction,
     ) -> impl std::future::Future<Output = Result<SolanaSignature, Self::Error>> + Send;
 }
 
@@ -52,16 +52,17 @@ impl KoraSigner {
 impl super::Signer for KoraSigner {
     type Error = KoraError;
 
-    async fn sign(&self, message: &[u8]) -> Result<super::Signature, Self::Error> {
+    async fn sign(&self, transaction: &Transaction) -> Result<super::Signature, Self::Error> {
         match self {
-            KoraSigner::Memory(signer) => signer.sign(message).await,
+            // Some signers expect the serialized message, others expect the message bytes
+            KoraSigner::Memory(signer) => signer.sign(transaction).await,
             KoraSigner::Turnkey(signer) => {
-                let sig = signer.sign(message).await?;
+                let sig = signer.sign(&transaction.message_data()).await?;
                 Ok(super::Signature { bytes: sig, is_partial: false })
             }
-            KoraSigner::Vault(signer) => signer.sign(message).await,
+            KoraSigner::Vault(signer) => signer.sign(transaction).await,
             KoraSigner::Privy(signer) => {
-                let sig = signer.sign(message).await?;
+                let sig = signer.sign(&bincode::serialize(&transaction)?).await?;
                 Ok(super::Signature { bytes: sig, is_partial: false })
             }
         }
@@ -69,15 +70,19 @@ impl super::Signer for KoraSigner {
 
     async fn sign_solana(
         &self,
-        message: &[u8],
+        transaction: &Transaction,
     ) -> Result<solana_sdk::signature::Signature, Self::Error> {
         match self {
-            KoraSigner::Memory(signer) => signer.sign_solana(message).await,
-            KoraSigner::Vault(signer) => signer.sign_solana(message).await,
+            // Some signers expect the serialized message, others expect the message bytes
+            KoraSigner::Memory(signer) => signer.sign_solana(transaction).await,
+            KoraSigner::Vault(signer) => signer.sign_solana(transaction).await,
             KoraSigner::Turnkey(signer) => {
-                signer.sign_solana(message).await.map_err(KoraError::from)
+                signer.sign_solana(&transaction.message_data()).await.map_err(KoraError::from)
             }
-            KoraSigner::Privy(signer) => signer.sign_solana(message).await.map_err(KoraError::from),
+            KoraSigner::Privy(signer) => signer
+                .sign_solana(&bincode::serialize(&transaction)?)
+                .await
+                .map_err(KoraError::from),
         }
     }
 }
