@@ -57,12 +57,12 @@ impl super::Signer for KoraSigner {
             // Some signers expect the serialized message, others expect the message bytes
             KoraSigner::Memory(signer) => signer.sign(transaction).await,
             KoraSigner::Turnkey(signer) => {
-                let sig = signer.sign(&transaction.message_data()).await?;
+                let sig = signer.sign(transaction).await?;
                 Ok(super::Signature { bytes: sig, is_partial: false })
             }
             KoraSigner::Vault(signer) => signer.sign(transaction).await,
             KoraSigner::Privy(signer) => {
-                let sig = signer.sign(&bincode::serialize(&transaction)?).await?;
+                let sig = signer.sign(transaction).await?;
                 Ok(super::Signature { bytes: sig, is_partial: false })
             }
         }
@@ -77,12 +77,11 @@ impl super::Signer for KoraSigner {
             KoraSigner::Memory(signer) => signer.sign_solana(transaction).await,
             KoraSigner::Vault(signer) => signer.sign_solana(transaction).await,
             KoraSigner::Turnkey(signer) => {
-                signer.sign_solana(&transaction.message_data()).await.map_err(KoraError::from)
+                signer.sign_solana(transaction).await.map_err(KoraError::from)
             }
-            KoraSigner::Privy(signer) => signer
-                .sign_solana(&bincode::serialize(&transaction)?)
-                .await
-                .map_err(KoraError::from),
+            KoraSigner::Privy(signer) => {
+                signer.sign_solana(transaction).await.map_err(KoraError::from)
+            }
         }
     }
 }
