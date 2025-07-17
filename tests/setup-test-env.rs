@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Run: cargo test --test integration");
         }
         Err(e) => {
-            eprintln!("❌ Failed to setup test environment: {}", e);
+            eprintln!("❌ Failed to setup test environment: {e}");
             std::process::exit(1);
         }
     }

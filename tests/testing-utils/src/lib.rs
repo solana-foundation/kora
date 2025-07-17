@@ -1,6 +1,7 @@
 use anyhow::Result;
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
 use kora_lib::{
+    signer::KeypairUtil,
     token::{TokenInterface, TokenProgram, TokenType},
     transaction::encode_b64_transaction,
 };
@@ -23,18 +24,28 @@ const DEFAULT_RPC_URL: &str = "http://127.0.0.1:8899";
 const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
 
 // DO NOT USE THESE KEYPAIRS IN PRODUCTION, TESTING KEYPAIRS ONLY
-const FEE_PAYER_DEFAULT: &str =
-    "64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6"; // Would be the key used to boot-up Kora --private-key  (pub: 8vCbKjax96gWzqRsok7eRG9TvxDttm93F3e46MAYQM3n)
 
+// First way of specifying a keypair, as a U8Array (this is the key in local-keys/fee-payer-local.json)
+const FEE_PAYER_DEFAULT: &str = "[83, 95, 208, 191, 240, 53, 167, 97, 136, 84, 201, 6, 227, 219, 127, 205, 196, 136, 233, 5, 11, 57, 78, 218, 238, 120, 63, 214, 215, 201, 170, 33, 91, 171, 141, 1, 35, 128, 88, 51, 169, 136, 73, 240, 133, 201, 121, 40, 56, 112, 147, 245, 143, 88, 54, 8, 155, 45, 57, 4, 195, 114, 19, 138]";
+
+// Second way of specifying a keypair, as a file
 const SENDER_SIGNER_DEFAULT: &str =
-    "3Tdt5TrRGJYPbTo8zZAscNTvgRGnCLM854tCpxapggUazqdYn6VQRQ9DqNz1UkEfoPCYKj6PwSwCNtckGGvAKugb";
+    concat!(env!("CARGO_MANIFEST_DIR"), "/local-keys/sender-local.json");
 
-const RECIPIENT_DEFAULT: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
-
-// Deterministic test USDC mint keypair (for local testing only)
+// Third way of specifying a keypair, as a base58 string
 const TEST_USDC_MINT_KEYPAIR: &str =
     "59kKmXphL5UJANqpFFjtH17emEq3oRNmYsx6a3P3vSGJRmhMgVdzH77bkNEi9bArRViT45e8L2TsuPxKNFoc3Qfg"; // Pub: 9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ
 const TEST_USDC_MINT_DECIMALS: u8 = 6;
+
+const RECIPIENT_DEFAULT: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
+
+/// Helper function to parse a private key string in multiple formats:
+/// - Base58 encoded string (current format)
+/// - U8Array format: "[0, 1, 2, ...]"
+/// - File path to a JSON keypair file
+pub fn parse_private_key_string(private_key: &str) -> Result<Keypair, String> {
+    KeypairUtil::from_private_key_string(private_key).map_err(|e| e.to_string())
+}
 
 /// Test account setup utilities for local validator
 pub struct TestAccountSetup {
@@ -274,9 +285,9 @@ pub async fn get_rpc_url() -> String {
 
 pub fn get_test_sender_keypair() -> Keypair {
     dotenv::dotenv().ok();
-    Keypair::from_base58_string(
-        &std::env::var("TEST_SENDER_KEYPAIR").unwrap_or(SENDER_SIGNER_DEFAULT.to_string()),
-    )
+    let private_key =
+        std::env::var("TEST_SENDER_KEYPAIR").unwrap_or(SENDER_SIGNER_DEFAULT.to_string());
+    parse_private_key_string(&private_key).expect("Failed to parse test sender private key")
 }
 
 /// Create a fresh HTTP client for each test (no shared state)
@@ -363,7 +374,7 @@ pub fn get_fee_payer_keypair() -> Keypair {
     dotenv::dotenv().ok();
     let private_key =
         std::env::var("KORA_PRIVATE_KEY").unwrap_or_else(|_| FEE_PAYER_DEFAULT.to_string());
-    Keypair::from_base58_string(&private_key)
+    parse_private_key_string(&private_key).expect("Failed to parse fee payer private key")
 }
 
 /// Get the fee payer public key, derived from the fee payer keypair
@@ -384,7 +395,7 @@ pub fn get_test_usdc_mint_keypair() -> Keypair {
     dotenv::dotenv().ok();
     let mint_keypair = std::env::var("TEST_USDC_MINT_KEYPAIR")
         .unwrap_or_else(|_| TEST_USDC_MINT_KEYPAIR.to_string());
-    Keypair::from_base58_string(&mint_keypair)
+    parse_private_key_string(&mint_keypair).expect("Failed to parse test USDC mint private key")
 }
 
 /// Get the test USDC mint pubkey, derived from the mint keypair
