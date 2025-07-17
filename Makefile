@@ -1,4 +1,4 @@
-.PHONY: check fmt lint test build run clean all regen-tk fix-all generate-ts-client
+.PHONY: check fmt lint test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration
 
 # Default target
 all: check test build
@@ -27,8 +27,13 @@ lint:
 test:
 	cargo test --lib
 
+# Setup test environment
+setup-test-env:
+	cargo run -p tests --bin setup-test-env
+
 # Run integration tests
 test-integration:
+	cargo run -p tests --bin setup-test-env
 	cargo test --test integration
 
 # Build all binaries

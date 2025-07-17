@@ -1,0 +1,16 @@
+[package]
+name = "testing-utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+solana-sdk = { workspace = true }
+solana-client = { workspace = true }
+spl-token = { workspace = true }
+spl-associated-token-account = { workspace = true }
+tokio = { workspace = true }
+anyhow = "1.0.95"
+dotenv = "0.15"
+jsonrpsee = { workspace = true }
+kora-lib = { path = "../../crates/lib" }
+serde_json = "1.0"

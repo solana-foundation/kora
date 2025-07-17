@@ -1,6 +1,6 @@
 use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
-use solana_program::{program_pack::Pack, pubkey::Pubkey};
+use solana_program::pubkey::Pubkey;
 use solana_sdk::instruction::Instruction;
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
