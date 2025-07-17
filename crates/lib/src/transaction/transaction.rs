@@ -2,9 +2,9 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     instruction::{AccountMeta, CompiledInstruction, Instruction},
-    message::Message,
+    message::{Message, VersionedMessage},
     pubkey::Pubkey,
-    transaction::Transaction,
+    transaction::{Transaction, VersionedTransaction},
 };
 
 use crate::{
@@ -89,33 +89,46 @@ pub async fn sign_and_send_transaction(
 }
 
 pub fn encode_b64_transaction(transaction: &Transaction) -> Result<String, KoraError> {
-    let serialized = bincode::serialize(transaction).map_err(|e| {
-        KoraError::SerializationError(format!("Base64 serialization failed: {}", e))
-    })?;
+    let serialized = bincode::serialize(transaction)
+        .map_err(|e| KoraError::SerializationError(format!("Base64 serialization failed: {e}")))?;
     Ok(STANDARD.encode(serialized))
 }
 
 pub fn encode_b64_message(message: &Message) -> Result<String, KoraError> {
-    let serialized = bincode::serialize(message).map_err(|e| {
-        KoraError::SerializationError(format!("Base64 serialization failed: {}", e))
-    })?;
+    let serialized = bincode::serialize(message)
+        .map_err(|e| KoraError::SerializationError(format!("Base64 serialization failed: {e}")))?;
     Ok(STANDARD.encode(serialized))
 }
 
 pub fn decode_b64_transaction(encoded: &str) -> Result<Transaction, KoraError> {
     let decoded = STANDARD.decode(encoded).map_err(|e| {
-        KoraError::InvalidTransaction(format!("Failed to decode base64 transaction: {}", e))
+        KoraError::InvalidTransaction(format!("Failed to decode base64 transaction: {e}"))
     })?;
 
+    // For now we don't support versioned transactions, will be added in the future (where it checks the addresses in the lookup tables)
+    if let Ok(versioned_tx) = bincode::deserialize::<VersionedTransaction>(&decoded) {
+        if let VersionedMessage::V0(_) = versioned_tx.message {
+            return Err(KoraError::InvalidTransaction(
+                "Versioned transaction not supported".to_string(),
+            ));
+        }
+    }
+
     bincode::deserialize(&decoded).map_err(|e| {
-        KoraError::InvalidTransaction(format!("Failed to deserialize transaction: {}", e))
+        KoraError::InvalidTransaction(format!("Failed to deserialize transaction: {e}"))
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solana_sdk::{hash::Hash, message::Message, signature::Keypair, signer::Signer as _};
+    use solana_sdk::{
+        hash::Hash,
+        message::{v0::Message as V0Message, Message, VersionedMessage},
+        signature::Keypair,
+        signer::Signer as _,
+        transaction::VersionedTransaction,
+    };
 
     #[test]
     fn test_encode_decode_b64_transaction() {
@@ -183,5 +196,31 @@ mod tests {
         assert_eq!(uncompiled.accounts[0].pubkey, account1);
         assert_eq!(uncompiled.accounts[1].pubkey, account2);
         assert_eq!(uncompiled.data, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_encode_decode_b64_versioned_transaction_unsupported() {
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let tx = VersionedTransaction::try_new(
+            VersionedMessage::V0(
+                V0Message::try_compile(&keypair.pubkey(), &[instruction], &[], Hash::default())
+                    .unwrap(),
+            ),
+            &[&keypair],
+        )
+        .unwrap();
+
+        let serialized = bincode::serialize(&tx).unwrap();
+        let encoded = STANDARD.encode(serialized);
+
+        assert!(matches!(
+            decode_b64_transaction(&encoded),
+            Err(KoraError::InvalidTransaction(e)) if e == "Versioned transaction not supported"
+        ));
     }
 }
