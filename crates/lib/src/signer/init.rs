@@ -111,6 +111,6 @@ fn init_memory_signer(private_key: Option<&String>) -> Result<KoraSigner, KoraEr
         KoraError::SigningError("Private key required for memory signer".to_string())
     })?;
 
-    let signer = SolanaMemorySigner::from_base58(key)?;
+    let signer = SolanaMemorySigner::from_private_key_string(key)?;
     Ok(KoraSigner::Memory(signer))
 }
