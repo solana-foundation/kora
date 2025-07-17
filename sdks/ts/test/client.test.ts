@@ -1,12 +1,13 @@
 import { KoraClient } from "../src/index.js";
+import setupTestSuit from "./setup.js";
+
 import {
-  createKeyPairSignerFromBytes,
-  getBase58Encoder,
+  Address,
   getBase64EncodedWireTransaction,
   getBase64Encoder,
   getTransactionDecoder,
-  KeyPairSigner,
   signTransaction,
+  type KeyPairSigner,
   type Transaction,
 } from "@solana/kit";
 
@@ -17,30 +18,23 @@ function transactionFromBase64(base64: string): Transaction {
   return decoder.decode(messageBytes);
 }
 
-async function loadKeypairSignerFromEnvironmentBase58(
-  envVar: string
-): Promise<KeyPairSigner> {
-  const privateKey = process.env[envVar];
-  if (!privateKey) {
-    throw new Error(`Environment variable ${envVar} is not set`);
-  }
-  const privateKeyBytes = getBase58Encoder().encode(privateKey);
-  return createKeyPairSignerFromBytes(privateKeyBytes);
-}
-
 describe("KoraClient Integration Tests", () => {
   let client: KoraClient;
-  let signer: KeyPairSigner;
-  const rpcUrl = process.env.KORA_RPC_URL!;
-  const testWallet = process.env.TEST_WALLET_PUBKEY!;
-  const usdcMint = process.env.USDC_MINT!;
+  let testWallet: KeyPairSigner;
+  let testWalletAddress: Address;
+  let destinationAddress: Address;
+  let usdcMint: Address;
+  let koraAddress: Address;
 
   beforeAll(async () => {
-    client = new KoraClient(rpcUrl);
-    signer = await loadKeypairSignerFromEnvironmentBase58(
-      "TEST_WALLET_PRIVATE_KEY"
-    );
-  });
+    const testSuite = await setupTestSuit();
+    client = testSuite.koraClient;
+    testWallet = testSuite.testWallet;
+    testWalletAddress = testWallet.address;
+    destinationAddress = testSuite.destinationAddress;
+    usdcMint = testSuite.usdcMint;
+    koraAddress = testSuite.koraAddress;
+  }, 30000); // allow adequte time for airdrops and token initialization
 
   describe("Configuration and Setup", () => {
     it("should get config", async () => {
@@ -59,8 +53,7 @@ describe("KoraClient Integration Tests", () => {
       const { tokens } = await client.getSupportedTokens();
       expect(Array.isArray(tokens)).toBe(true);
       expect(tokens.length).toBeGreaterThan(0);
-      // USDC should be supported
-      expect(tokens).toContain(usdcMint);
+      expect(tokens).toContain(usdcMint); // USDC should be supported
     });
 
     it("should get blockhash", async () => {
@@ -77,8 +70,8 @@ describe("KoraClient Integration Tests", () => {
       const request = {
         amount: 1000000, // 1 USDC
         token: usdcMint,
-        source: testWallet,
-        destination: testWallet, // Send to self for testing
+        source: testWalletAddress,
+        destination: destinationAddress,
       };
 
       const response = await client.transferTransaction(request);
@@ -93,8 +86,8 @@ describe("KoraClient Integration Tests", () => {
       const transferRequest = {
         amount: 1000000,
         token: usdcMint,
-        source: testWallet,
-        destination: testWallet,
+        source: testWalletAddress,
+        destination: testWalletAddress,
       };
 
       const { transaction } = await client.transferTransaction(transferRequest);
@@ -109,8 +102,8 @@ describe("KoraClient Integration Tests", () => {
       const transferRequest = {
         amount: 1000000,
         token: usdcMint,
-        source: testWallet,
-        destination: testWallet,
+        source: testWalletAddress,
+        destination: destinationAddress,
       };
 
       const { transaction } = await client.transferTransaction(transferRequest);
@@ -125,8 +118,8 @@ describe("KoraClient Integration Tests", () => {
       const transferRequest = {
         amount: 1000000,
         token: usdcMint,
-        source: testWallet,
-        destination: testWallet,
+        source: testWalletAddress,
+        destination: destinationAddress,
       };
 
       const { transaction: transactionString } =
@@ -135,8 +128,8 @@ describe("KoraClient Integration Tests", () => {
 
       // Sign transaction with test wallet before sending
       const signedTransaction = await signTransaction(
-        [signer.keyPair],
-        transaction
+        [testWallet.keyPair],
+        transaction,
       );
       const base64SignedTransaction =
         getBase64EncodedWireTransaction(signedTransaction);
@@ -153,12 +146,11 @@ describe("KoraClient Integration Tests", () => {
       const transferRequest = {
         amount: 1000000,
         token: usdcMint,
-        source: testWallet,
-        destination: testWallet,
+        source: testWalletAddress,
+        destination: destinationAddress,
       };
 
       const { transaction } = await client.transferTransaction(transferRequest);
-      
 
       const signResult = await client.signTransactionIfPaid({
         transaction,
@@ -176,8 +168,8 @@ describe("KoraClient Integration Tests", () => {
       const request = {
         amount: 1000000,
         token: "InvalidTokenAddress",
-        source: testWallet,
-        destination: testWallet,
+        source: testWalletAddress,
+        destination: destinationAddress,
       };
 
       await expect(client.transferTransaction(request)).rejects.toThrow();
@@ -187,8 +179,8 @@ describe("KoraClient Integration Tests", () => {
       const request = {
         amount: -1, // Invalid amount
         token: usdcMint,
-        source: testWallet,
-        destination: testWallet,
+        source: testWalletAddress,
+        destination: destinationAddress,
       };
 
       await expect(client.transferTransaction(request)).rejects.toThrow();
@@ -198,13 +190,13 @@ describe("KoraClient Integration Tests", () => {
       await expect(
         client.signTransaction({
           transaction: "invalid_transaction",
-        })
+        }),
       ).rejects.toThrow();
     });
 
     it("should handle invalid transaction for fee estimation", async () => {
       await expect(
-        client.estimateTransactionFee("invalid_transaction", usdcMint)
+        client.estimateTransactionFee("invalid_transaction", usdcMint),
       ).rejects.toThrow();
     });
 
@@ -212,13 +204,16 @@ describe("KoraClient Integration Tests", () => {
       const transferRequest = {
         amount: 1000000,
         token: usdcMint,
-        source: testWallet,
-        destination: testWallet,
+        source: testWalletAddress,
+        destination: destinationAddress,
       };
 
       // TODO: API has an error. this endpoint should verify the provided fee token is supported
       const { transaction } = await client.transferTransaction(transferRequest);
-      const fee = await client.estimateTransactionFee(transaction, "InvalidTokenAddress")
+      const fee = await client.estimateTransactionFee(
+        transaction,
+        "InvalidTokenAddress",
+      );
       expect(fee).toBeDefined();
       expect(typeof fee.fee_in_lamports).toBe("number");
       expect(fee.fee_in_lamports).toBeGreaterThan(0);
@@ -230,8 +225,8 @@ describe("KoraClient Integration Tests", () => {
       const request = {
         amount: 1000000,
         token: usdcMint,
-        source: testWallet,
-        destination: testWallet,
+        source: testWalletAddress,
+        destination: destinationAddress,
       };
 
       // Create and sign the transaction
@@ -247,8 +242,8 @@ describe("KoraClient Integration Tests", () => {
       const request = {
         amount: 1000000,
         token: invalidTokenMint,
-        source: testWallet,
-        destination: testWallet,
+        source: testWalletAddress,
+        destination: destinationAddress,
       };
 
       await expect(client.transferTransaction(request)).rejects.toThrow();

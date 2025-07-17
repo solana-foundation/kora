@@ -2,7 +2,6 @@
 
 A TypeScript SDK for interacting with the Kora RPC server. This SDK provides a type-safe interface to all Kora RPC methods.
 
-
 ## Development
 
 ### Building from Source
@@ -13,26 +12,63 @@ pnpm install
 
 # Build the SDK
 pnpm run build
-
-# Run tests
-pnpm test
 ```
 
 ### Running Tests
 
-Tests require a valid devnet wallet address. Update the `/ts-sdk/test/setup.ts` file with the correct env variables:
+Tests rely on [Solana CLI's](https://solana.com/docs/intro/installation) local test validator. 
 
-```env
-KORA_RPC_URL=http://localhost:8080
-TEST_WALLET_PUBKEY=your_devnet_wallet_address
-TEST_WALLET_PRIVATE_KEY=your_local_wallet_private_key_for_tests
-USDC_MINT=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+Start your local Kora RPC Server from the root project directory: 
+
+```bash
+make run
 ```
 
-Then run:
+Make sure the Kora RPC's payer wallet matches `KORA_ADDRESS` (not required if using the default values). 
+Make sure the `TEST_USDC_MINT_SECRET` public key is included in the root's `kora.toml` (not required if using the default values)
+
+Run:
+
+```bash
+pnpm test:integration
+```
+
+This will start a local test validator and run all tests.
+
+Alternatively, you can start your own test validator and run:
+
 ```bash
 pnpm test
 ```
+
+Based on your test file, here's the optional environment configuration section:
+
+You may optionally configure a `.env` file for your tests in `sdks/ts`:
+
+```bash
+# Solana Configuration
+SOLANA_RPC_URL=
+SOLANA_WS_URL=
+SOLANA_VALIDATOR_STARTUP_TIME=
+SOLANA_VALIDATOR_ARGS=
+COMMITMENT=
+
+# Kora API Configuration  
+KORA_ADDRESS=
+KORA_RPC_URL=
+
+# Token Mint Configuration
+TOKEN_DECIMALS=
+TOKEN_DROP_AMOUNT=
+SOL_DROP_AMOUNT=
+
+# Test Configuration
+SENDER_SECRET=your_test_private_key
+TEST_USDC_MINT_SECRET=your_test_usdc_mint_address
+DESTINATION_ADDRESS=your_test_destination_address
+```
+
+All environment variables are optional and have sensible defaults.
 
 ## Quick Start
 
