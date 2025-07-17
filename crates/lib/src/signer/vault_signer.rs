@@ -29,21 +29,21 @@ impl VaultSigner {
                 .token(token)
                 .build()
                 .map_err(|e| {
-                    KoraError::SigningError(format!("Failed to create Vault client: {}", e))
+                    KoraError::SigningError(format!("Failed to create Vault client: {e}"))
                 })?,
         );
 
         let pubkey = Pubkey::try_from(
             bs58::decode(pubkey)
                 .into_vec()
-                .map_err(|e| KoraError::SigningError(format!("Invalid public key: {}", e)))?
+                .map_err(|e| KoraError::SigningError(format!("Invalid public key: {e}")))?
                 .as_slice(),
         )
-        .map_err(|e| KoraError::SigningError(format!("Invalid public key: {}", e)))?;
+        .map_err(|e| KoraError::SigningError(format!("Invalid public key: {e}")))?;
 
         Ok(Self {
             client: Arc::new(client.map_err(|e| {
-                KoraError::SigningError(format!("Failed to create Vault client: {}", e))
+                KoraError::SigningError(format!("Failed to create Vault client: {e}"))
             })?),
             key_name,
             pubkey,
@@ -61,15 +61,15 @@ impl VaultSigner {
             self.client.as_ref(),
             "transit",
             &self.key_name,
-            &STANDARD.encode(&transaction.message_data()),
+            &STANDARD.encode(transaction.message_data()),
             None,
         )
         .await
-        .map_err(|e| KoraError::SigningError(format!("Failed to sign with Vault: {}", e)))?;
+        .map_err(|e| KoraError::SigningError(format!("Failed to sign with Vault: {e}")))?;
 
         let sig_bytes = STANDARD
             .decode(signature.signature)
-            .map_err(|e| KoraError::SigningError(format!("Failed to decode signature: {}", e)))?;
+            .map_err(|e| KoraError::SigningError(format!("Failed to decode signature: {e}")))?;
 
         Ok(KoraSignature { bytes: sig_bytes, is_partial: false })
     }
@@ -79,17 +79,17 @@ impl VaultSigner {
             self.client.as_ref(),
             "transit",
             &self.key_name,
-            &STANDARD.encode(&transaction.message_data()),
+            &STANDARD.encode(transaction.message_data()),
             None,
         )
         .await
-        .map_err(|e| KoraError::SigningError(format!("Failed to sign with Vault: {}", e)))?;
+        .map_err(|e| KoraError::SigningError(format!("Failed to sign with Vault: {e}")))?;
 
         let sig_bytes = STANDARD
             .decode(signature.signature)
-            .map_err(|e| KoraError::SigningError(format!("Failed to decode signature: {}", e)))?;
+            .map_err(|e| KoraError::SigningError(format!("Failed to decode signature: {e}")))?;
 
         Signature::try_from(sig_bytes.as_slice())
-            .map_err(|e| KoraError::SigningError(format!("Invalid signature format: {}", e)))
+            .map_err(|e| KoraError::SigningError(format!("Invalid signature format: {e}")))
     }
 }
