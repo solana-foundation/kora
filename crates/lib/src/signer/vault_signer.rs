@@ -55,10 +55,8 @@ impl VaultSigner {
     }
 }
 
-impl super::Signer for VaultSigner {
-    type Error = KoraError;
-
-    async fn sign(&self, transaction: &Transaction) -> Result<KoraSignature, Self::Error> {
+impl VaultSigner {
+    pub async fn sign(&self, transaction: &Transaction) -> Result<KoraSignature, KoraError> {
         let signature = transit::data::sign(
             self.client.as_ref(),
             "transit",
@@ -76,7 +74,7 @@ impl super::Signer for VaultSigner {
         Ok(KoraSignature { bytes: sig_bytes, is_partial: false })
     }
 
-    async fn sign_solana(&self, transaction: &Transaction) -> Result<Signature, Self::Error> {
+    pub async fn sign_solana(&self, transaction: &Transaction) -> Result<Signature, KoraError> {
         let signature = transit::data::sign(
             self.client.as_ref(),
             "transit",
