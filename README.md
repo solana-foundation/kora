@@ -142,6 +142,52 @@ allowed_spl_paid_tokens = [
     "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
 ]
 disallowed_accounts = []
+
+[validation.fee_payer_policy]
+allow_sol_transfers = true
+allow_spl_transfers = true
+allow_token2022_transfers = true
+allow_assign = true
+```
+
+### Fee Payer Policy
+
+The fee payer policy system allows you to control what actions the fee payer can perform in transactions. This provides enhanced security and flexibility.
+
+#### Configuration Options
+
+- `allow_sol_transfers`: Allow the fee payer to be the source account in SOL transfers
+- `allow_spl_transfers`: Allow the fee payer to be the source/signer in SPL token transfers
+- `allow_token2022_transfers`: Allow the fee payer to be the source/signer in Token2022 transfers
+- `allow_assign`: Allow the fee payer to use the Assign instruction (change account owner)
+
+#### Example Configurations
+
+**Default (Permissive - Backward Compatible)**:
+```toml
+[validation.fee_payer_policy]
+allow_sol_transfers = true
+allow_spl_transfers = true
+allow_token2022_transfers = true
+allow_assign = true
+```
+
+**Restrictive (Enhanced Security)**:
+```toml
+[validation.fee_payer_policy]
+allow_sol_transfers = false
+allow_spl_transfers = false
+allow_token2022_transfers = false
+allow_assign = false
+```
+
+**Selective (Only SOL and Token2022)**:
+```toml
+[validation.fee_payer_policy]
+allow_sol_transfers = true
+allow_spl_transfers = false
+allow_token2022_transfers = true
+allow_assign = false
 ```
 
 ## API Reference
