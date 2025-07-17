@@ -2,23 +2,22 @@ use kora_lib::{
     token::{Token2022Account, Token2022Program, TokenInterface},
     transaction::validator::validate_token2022_account,
 };
-use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
 use std::str::FromStr;
 
+use testing_utils::*;
+
 // PYUSD token mint on devnet
 const PYUSD_MINT: &str = "CXk2AMBfi3TwaEL2468s6zP8xq9NxTXjp9gjMgzeUynM";
 
 #[tokio::test]
 async fn test_pyusd_token_e2e_with_kora() {
-    // Get a connection to devnet
-    let rpc_url = "https://api.devnet.solana.com".to_string();
-    let rpc_client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
+    // Get RPC client
+    let rpc_client = get_rpc_client().await;
 
     // Create a token program interface for Token2022
     let token_program = Token2022Program::new();
@@ -33,7 +32,7 @@ async fn test_pyusd_token_e2e_with_kora() {
     // Get associated token address for this wallet and PYUSD using the TokenInterface
     let token_account_address =
         token_program.get_associated_token_address(&wallet.pubkey(), &pyusd_mint);
-    println!("Token account address: {}", token_account_address);
+    println!("Token account address: {token_account_address}");
 
     // Create a simulated transfer instruction
     let transfer_amount = 1_000_000; // 1 PYUSD with 6 decimals
@@ -99,8 +98,7 @@ async fn test_pyusd_token_e2e_with_kora() {
     // Assert the transaction is valid according to Kora rules
     assert!(
         validation_result.is_ok(),
-        "Expected transfer transaction to be valid: {:?}",
-        validation_result
+        "Expected transfer transaction to be valid: {validation_result:?}"
     );
 
     // For a real token account, we'd need to query the account data
@@ -118,8 +116,7 @@ async fn test_pyusd_token_e2e_with_kora() {
                     validate_token2022_account(token2022_account, transfer_amount);
                 assert!(
                     validation_result.is_ok(),
-                    "Token2022Account validation failed: {:?}",
-                    validation_result
+                    "Token2022Account validation failed: {validation_result:?}"
                 );
             }
         }
