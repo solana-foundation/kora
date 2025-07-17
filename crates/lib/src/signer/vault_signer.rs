@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use bs58;
-use solana_sdk::{pubkey::Pubkey, signature::Signature};
+use solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::Transaction};
 use std::sync::Arc;
 use vaultrs::{
     client::{VaultClient, VaultClientSettingsBuilder},
@@ -58,12 +58,12 @@ impl VaultSigner {
 impl super::Signer for VaultSigner {
     type Error = KoraError;
 
-    async fn sign(&self, message: &[u8]) -> Result<KoraSignature, Self::Error> {
+    async fn sign(&self, transaction: &Transaction) -> Result<KoraSignature, Self::Error> {
         let signature = transit::data::sign(
             self.client.as_ref(),
             "transit",
             &self.key_name,
-            &STANDARD.encode(message),
+            &STANDARD.encode(&transaction.message_data()),
             None,
         )
         .await
@@ -76,12 +76,12 @@ impl super::Signer for VaultSigner {
         Ok(KoraSignature { bytes: sig_bytes, is_partial: false })
     }
 
-    async fn sign_solana(&self, message: &[u8]) -> Result<Signature, Self::Error> {
+    async fn sign_solana(&self, transaction: &Transaction) -> Result<Signature, Self::Error> {
         let signature = transit::data::sign(
             self.client.as_ref(),
             "transit",
             &self.key_name,
-            &STANDARD.encode(message),
+            &STANDARD.encode(&transaction.message_data()),
             None,
         )
         .await

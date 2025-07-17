@@ -5,11 +5,8 @@ all: check test build
 
 # install
 install:
-	for dir in crates/*; do \
-		if [ -f $$dir/Cargo.toml ]; then \
-			cargo install --path $$dir; \
-		fi \
-	done
+	cargo install --path crates/cli
+	cargo install --path crates/rpc
 
 # Check code formatting
 check:
