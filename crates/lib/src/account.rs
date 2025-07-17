@@ -45,8 +45,7 @@ pub async fn get_or_create_token_account(
 
             let blockhash = rpc_client.get_latest_blockhash().await.map_err(|e| {
                 KoraError::RpcError(format!(
-                    "Failed to get blockhash: {}. Original error: {}",
-                    e, original_err
+                    "Failed to get blockhash: {e}. Original error: {original_err}"
                 ))
             })?;
 
@@ -57,7 +56,7 @@ pub async fn get_or_create_token_account(
             );
 
             let mut tx = Transaction::new_unsigned(message);
-            let signature = signer.sign(&tx.message_data()).await?;
+            let signature = signer.sign(&tx).await?;
 
             let sig_bytes: [u8; 64] = signature
                 .bytes
@@ -117,14 +116,13 @@ pub async fn get_or_create_multiple_token_accounts(
     let blockhash = rpc_client
         .get_latest_blockhash()
         .await
-        .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {}", e)))?;
+        .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {e}")))?;
 
-    let program_id = token_interface.program_id();
     let message =
         Message::new_with_blockhash(&instructions, Some(&signer.solana_pubkey()), &blockhash);
 
     let mut tx = Transaction::new_unsigned(message);
-    let signature = signer.sign(&tx.message_data()).await?;
+    let signature = signer.sign(&tx).await?;
 
     let sig_bytes: [u8; 64] = signature
         .bytes

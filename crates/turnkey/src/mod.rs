@@ -7,6 +7,7 @@ use reqwest::Client;
 mod types;
 mod utils;
 
+use solana_sdk::transaction::Transaction;
 pub use types::*;
 pub use utils::*;
 
@@ -28,8 +29,8 @@ impl TurnkeySigner {
         })
     }
 
-    pub async fn sign(&self, message: &[u8]) -> Result<Vec<u8>, anyhow::Error> {
-        let hex_message = hex::encode(message);
+    pub async fn sign(&self, transaction: &Transaction) -> Result<Vec<u8>, anyhow::Error> {
+        let hex_message = hex::encode(transaction.message_data());
 
         let request = SignRequest {
             activity_type: "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2".to_string(),
@@ -95,9 +96,9 @@ impl TurnkeySigner {
 
     pub async fn sign_solana(
         &self,
-        message: &[u8],
+        transaction: &Transaction,
     ) -> Result<solana_sdk::signature::Signature, anyhow::Error> {
-        let sig = self.sign(message).await?;
+        let sig = self.sign(transaction).await?;
         let sig_bytes: [u8; 64] = sig.try_into().unwrap();
         Ok(solana_sdk::signature::Signature::from(sig_bytes))
     }

@@ -62,7 +62,7 @@ pub async fn sign_transaction(
     validator.validate_lamport_fee(estimated_fee)?;
 
     // Sign transaction
-    let signature = signer.sign_solana(&transaction.message_data()).await?;
+    let signature = signer.sign_solana(&transaction).await?;
     transaction.signatures[0] = signature;
 
     // Serialize signed transaction

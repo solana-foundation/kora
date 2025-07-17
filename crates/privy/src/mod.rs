@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
-use solana_sdk::{pubkey::Pubkey, signature::Signature};
+use solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::Transaction};
 use std::str::FromStr;
 
 mod types;
@@ -107,13 +107,14 @@ impl PrivySigner {
     ///
     /// The transaction parameter should be a fully serialized Solana transaction
     /// (including empty signature placeholders), not just the message bytes.
-    pub async fn sign_solana(&self, transaction: &[u8]) -> Result<Signature, PrivyError> {
+    pub async fn sign_solana(&self, transaction: &Transaction) -> Result<Signature, PrivyError> {
         let url = format!("{}/wallets/{}/rpc", self.api_base_url, self.wallet_id);
-
+        let serialized =
+            bincode::serialize(transaction).map_err(|_| PrivyError::SerializationError)?;
         let request = SignTransactionRequest {
             method: "signTransaction",
             params: SignTransactionParams {
-                transaction: STANDARD.encode(transaction),
+                transaction: STANDARD.encode(serialized),
                 encoding: "base64",
             },
         };
@@ -130,7 +131,6 @@ impl PrivySigner {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let error_text = response.text().await.unwrap_or_default();
             return Err(PrivyError::ApiError(status));
         }
 
@@ -154,8 +154,8 @@ impl PrivySigner {
         }
     }
 
-    pub async fn sign(&self, message: &[u8]) -> Result<Vec<u8>, PrivyError> {
-        let signature = self.sign_solana(message).await?;
+    pub async fn sign(&self, transaction: &Transaction) -> Result<Vec<u8>, PrivyError> {
+        let signature = self.sign_solana(transaction).await?;
         Ok(signature.as_ref().to_vec())
     }
 }

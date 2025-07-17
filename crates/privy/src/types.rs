@@ -82,6 +82,7 @@ pub enum PrivyError {
     InvalidResponse,
     InvalidPublicKey,
     InvalidSignature,
+    SerializationError,
     RequestError(reqwest::Error),
     JsonError(serde_json::Error),
     Base64Error(base64::DecodeError),
@@ -93,17 +94,18 @@ pub enum PrivyError {
 impl std::fmt::Display for PrivyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PrivyError::MissingConfig(field) => write!(f, "Missing config: {}", field),
-            PrivyError::ApiError(status) => write!(f, "API error: {}", status),
+            PrivyError::MissingConfig(field) => write!(f, "Missing config: {field}"),
+            PrivyError::ApiError(status) => write!(f, "API error: {status}"),
             PrivyError::InvalidResponse => write!(f, "Invalid response"),
             PrivyError::InvalidPublicKey => write!(f, "Invalid public key"),
             PrivyError::InvalidSignature => write!(f, "Invalid signature"),
-            PrivyError::RequestError(e) => write!(f, "Request error: {}", e),
-            PrivyError::JsonError(e) => write!(f, "JSON error: {}", e),
-            PrivyError::Base64Error(e) => write!(f, "Base64 error: {}", e),
+            PrivyError::SerializationError => write!(f, "Serialization error"),
+            PrivyError::RequestError(e) => write!(f, "Request error: {e}"),
+            PrivyError::JsonError(e) => write!(f, "JSON error: {e}"),
+            PrivyError::Base64Error(e) => write!(f, "Base64 error: {e}"),
             PrivyError::InitializationError => write!(f, "Initialization error"),
             PrivyError::RuntimeError => write!(f, "Runtime error"),
-            PrivyError::Other(e) => write!(f, "{}", e),
+            PrivyError::Other(e) => write!(f, "{e}"),
         }
     }
 }
