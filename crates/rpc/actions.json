@@ -1,1 +1,8 @@
 
+[
+  {
+    "name": "transferTransaction",
+    "params": ["from", "to", "amount"],
+    "description": "Transfers funds from one account to another"
+  }
+]
