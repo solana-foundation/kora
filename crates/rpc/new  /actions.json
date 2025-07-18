@@ -1,1 +1,15 @@
+{
+  "name": "transferTransaction",
+  "description": "Transfer tokens from one account to another",
+  "method": "POST",
+  "path": "/transferTransaction",
+  "params": {
+    "from": "string",
+    "to": "string",
+    "amount": "number"
+  },
+  "response": {
+    "signed_transaction": "string"
+  }
+}
 
