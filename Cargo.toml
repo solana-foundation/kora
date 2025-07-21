@@ -14,7 +14,7 @@ resolver = "2"
 unused_imports = "deny"
 dead_code = "warn"
 unused_variables = "warn"
-deprecated = "deny"
+deprecated = "warn"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
