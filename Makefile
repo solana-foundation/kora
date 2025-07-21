@@ -71,7 +71,7 @@ clean:
 
 # Gen openapi docs
 openapi:
-	cargo run -p kora-rpc --bin kora-openapi
+	cargo run -p kora-rpc --bin kora-openapi --features docs
 
 # Run all fixes and checks
 lint-fix-all:

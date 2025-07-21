@@ -15,7 +15,7 @@ impl TokenAccountCache {
     pub fn new(redis_url: &str) -> Result<Self, KoraError> {
         let cfg = Config::from_url(redis_url);
         let pool = cfg.create_pool(Some(Runtime::Tokio1)).map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to create Redis pool: {}", e))
+            KoraError::InternalServerError(format!("Failed to create Redis pool: {e}"))
         })?;
 
         Ok(Self { pool })
@@ -26,19 +26,19 @@ impl TokenAccountCache {
         user: &Pubkey,
         mint: &Pubkey,
     ) -> Result<Option<Pubkey>, KoraError> {
-        let key = format!("token_account:{}:{}", user, mint);
+        let key = format!("token_account:{user}:{mint}");
         let mut conn = self.pool.get().await.map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to get Redis connection: {}", e))
+            KoraError::InternalServerError(format!("Failed to get Redis connection: {e}"))
         })?;
 
         let result: Option<String> = conn.get(&key).await.map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to get from Redis: {}", e))
+            KoraError::InternalServerError(format!("Failed to get from Redis: {e}"))
         })?;
 
         match result {
             Some(pubkey_str) => {
                 let pubkey = Pubkey::from_str(&pubkey_str).map_err(|e| {
-                    KoraError::InternalServerError(format!("Invalid pubkey in cache: {}", e))
+                    KoraError::InternalServerError(format!("Invalid pubkey in cache: {e}"))
                 })?;
                 Ok(Some(pubkey))
             }
@@ -52,16 +52,14 @@ impl TokenAccountCache {
         mint: &Pubkey,
         token_account: &Pubkey,
     ) -> Result<(), KoraError> {
-        let key = format!("token_account:{}:{}", user, mint);
+        let key = format!("token_account:{user}:{mint}");
         let mut conn = self.pool.get().await.map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to get Redis connection: {}", e))
+            KoraError::InternalServerError(format!("Failed to get Redis connection: {e}"))
         })?;
 
         conn.set_ex::<_, _, ()>(&key, token_account.to_string(), TOKEN_ACCOUNT_CACHE_TTL)
             .await
-            .map_err(|e| {
-                KoraError::InternalServerError(format!("Failed to set in Redis: {}", e))
-            })?;
+            .map_err(|e| KoraError::InternalServerError(format!("Failed to set in Redis: {e}")))?;
 
         Ok(())
     }
@@ -71,13 +69,13 @@ impl TokenAccountCache {
         user: &Pubkey,
         mint: &Pubkey,
     ) -> Result<(), KoraError> {
-        let key = format!("token_account:{}:{}", user, mint);
+        let key = format!("token_account:{user}:{mint}");
         let mut conn = self.pool.get().await.map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to get Redis connection: {}", e))
+            KoraError::InternalServerError(format!("Failed to get Redis connection: {e}"))
         })?;
 
         conn.del::<_, ()>(&key).await.map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to delete from Redis: {}", e))
+            KoraError::InternalServerError(format!("Failed to delete from Redis: {e}"))
         })?;
 
         Ok(())

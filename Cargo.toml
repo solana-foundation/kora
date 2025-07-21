@@ -14,9 +14,11 @@ resolver = "2"
 unused_imports = "deny"
 dead_code = "warn"
 unused_variables = "warn"
+deprecated = "deny"
 
 [workspace.lints.clippy]
-all = "deny"
+all = { level = "deny", priority = -1 }
+module_inception = { level = "allow", priority = 0 }
 
 [workspace.package]
 version = "0.1.1"

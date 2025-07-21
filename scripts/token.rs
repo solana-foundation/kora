@@ -1,7 +1,6 @@
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
-    program_pack::Pack,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     system_instruction,
@@ -34,7 +33,7 @@ fn main() {
     let wallet = Pubkey::from_str("YourWalletAddressHere").unwrap();
     let associated_token_address = token_interface.get_associated_token_address(&wallet, &mint);
 
-    println!("Associated Token Address: {}", associated_token_address);
+    println!("Associated Token Address: {associated_token_address}");
 
     // USDC mint address (this is devnet USDC, replace with mainnet USDC for production)
     let usdc_mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
@@ -86,9 +85,9 @@ fn main() {
     match client.send_and_confirm_transaction(&transaction) {
         Ok(signature) => {
             println!("Token account created successfully!");
-            println!("Transaction signature: {}", signature);
+            println!("Transaction signature: {signature}");
             println!("Token account address: {}", token_account.pubkey());
         }
-        Err(e) => println!("Error creating token account: {}", e),
+        Err(e) => println!("Error creating token account: {e}"),
     }
 }
