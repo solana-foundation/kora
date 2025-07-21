@@ -1,12 +1,11 @@
-use kora_lib::transaction::encode_b64_transaction;
+use kora_lib::transaction::{encode_b64_transaction, new_unsigned_versioned_transaction};
 use solana_client::rpc_client::RpcClient;
+use solana_message::{Message, VersionedMessage};
 use solana_sdk::{
-    message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    system_instruction,
-    transaction::Transaction,
 };
+use solana_system_interface::instruction::transfer;
 use std::str::FromStr;
 
 fn main() {
@@ -17,15 +16,19 @@ fn main() {
     // Create RPC client for devnet
     let rpc_client = RpcClient::new("https://api.devnet.solana.com".to_string());
 
-    let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
+    let instruction = transfer(&sender.pubkey(), &recipient, amount);
 
     // Get recent blockhash from devnet
     let recent_blockhash = rpc_client.get_latest_blockhash().unwrap();
 
-    let message =
-        Message::new_with_blockhash(&[instruction], Some(&sender.pubkey()), &recent_blockhash);
+    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[instruction],
+        Some(&sender.pubkey()),
+        &recent_blockhash,
+    ));
 
-    let transaction = Transaction { signatures: vec![Default::default()], message };
+    let mut transaction = new_unsigned_versioned_transaction(message);
+    transaction.signatures = vec![Default::default()];
 
     let base64_tx = encode_b64_transaction(&transaction).unwrap();
 

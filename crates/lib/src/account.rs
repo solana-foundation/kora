@@ -1,9 +1,9 @@
 use super::{cache::TokenAccountCache, get_signer, KoraError, Signer};
-use crate::token::TokenInterface;
+use crate::{token::TokenInterface, transaction::new_unsigned_versioned_transaction};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    message::Message, pubkey::Pubkey, signature::Signature, transaction::Transaction,
-};
+use solana_message::{Message, VersionedMessage};
+use solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction};
+
 use spl_associated_token_account::{
     get_associated_token_address, instruction::create_associated_token_account,
 };
@@ -15,7 +15,7 @@ pub async fn get_or_create_token_account(
     user_pubkey: &Pubkey,
     mint: &Pubkey,
     token_interface: &impl TokenInterface,
-) -> Result<(Pubkey, Option<Transaction>), KoraError> {
+) -> Result<(Pubkey, Option<VersionedTransaction>), KoraError> {
     let signer = get_signer()?;
 
     // Get ATA using spl-associated-token-account
@@ -49,13 +49,13 @@ pub async fn get_or_create_token_account(
                 ))
             })?;
 
-            let message = Message::new_with_blockhash(
+            let message = VersionedMessage::Legacy(Message::new_with_blockhash(
                 &[create_ata_ix],
                 Some(&signer.solana_pubkey()),
                 &blockhash,
-            );
+            ));
 
-            let mut tx = Transaction::new_unsigned(message);
+            let mut tx = new_unsigned_versioned_transaction(message);
             let signature = signer.sign(&tx).await?;
 
             let sig_bytes: [u8; 64] = signature
@@ -77,7 +77,7 @@ pub async fn get_or_create_multiple_token_accounts(
     user_pubkey: &Pubkey,
     mints: &[Pubkey],
     token_interface: &impl TokenInterface,
-) -> Result<(Vec<Pubkey>, Option<Transaction>), KoraError> {
+) -> Result<(Vec<Pubkey>, Option<VersionedTransaction>), KoraError> {
     let signer = get_signer()?;
 
     let mut atas = Vec::with_capacity(mints.len());
@@ -118,10 +118,13 @@ pub async fn get_or_create_multiple_token_accounts(
         .await
         .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {e}")))?;
 
-    let message =
-        Message::new_with_blockhash(&instructions, Some(&signer.solana_pubkey()), &blockhash);
+    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &instructions,
+        Some(&signer.solana_pubkey()),
+        &blockhash,
+    ));
 
-    let mut tx = Transaction::new_unsigned(message);
+    let mut tx = new_unsigned_versioned_transaction(message);
     let signature = signer.sign(&tx).await?;
 
     let sig_bytes: [u8; 64] = signature

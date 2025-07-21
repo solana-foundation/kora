@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
-use solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::Transaction};
+use solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction};
 use std::str::FromStr;
 
 mod types;
@@ -107,7 +107,10 @@ impl PrivySigner {
     ///
     /// The transaction parameter should be a fully serialized Solana transaction
     /// (including empty signature placeholders), not just the message bytes.
-    pub async fn sign_solana(&self, transaction: &Transaction) -> Result<Signature, PrivyError> {
+    pub async fn sign_solana(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Signature, PrivyError> {
         let url = format!("{}/wallets/{}/rpc", self.api_base_url, self.wallet_id);
         let serialized =
             bincode::serialize(transaction).map_err(|_| PrivyError::SerializationError)?;
@@ -142,8 +145,7 @@ impl PrivySigner {
         let signed_tx_bytes = STANDARD.decode(&sign_response.data.signed_transaction)?;
 
         // Deserialize the transaction to extract the signature
-        use solana_sdk::transaction::Transaction;
-        let signed_tx: Transaction =
+        let signed_tx: VersionedTransaction =
             bincode::deserialize(&signed_tx_bytes).map_err(|_| PrivyError::InvalidResponse)?;
 
         // Get the first signature (which should be the one we just created)
@@ -154,7 +156,7 @@ impl PrivySigner {
         }
     }
 
-    pub async fn sign(&self, transaction: &Transaction) -> Result<Vec<u8>, PrivyError> {
+    pub async fn sign(&self, transaction: &VersionedTransaction) -> Result<Vec<u8>, PrivyError> {
         let signature = self.sign_solana(transaction).await?;
         Ok(signature.as_ref().to_vec())
     }

@@ -44,6 +44,10 @@ jsonrpsee = { version = "0.16.2", features = [
     "client",
 ] }
 solana-sdk = "2.1.9"
+solana-commitment-config = "2.1.9"
+solana-message = "2.1.9"
+solana-system-interface = "1.0.0"
+solana-address-lookup-table-interface = "2.2.2"
 solana-program = "2.1.9"
 solana-client = "2.1.9"
 bs58 = "0.5.1"

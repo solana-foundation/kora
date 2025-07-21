@@ -15,5 +15,4 @@ clap = { workspace = true }
 tokio = { workspace = true }
 env_logger = { workspace = true }
 solana-client = { workspace = true }
-solana-sdk = { workspace = true }
 dotenv = { workspace = true }

@@ -1,17 +1,18 @@
 use jsonrpsee::{core::client::ClientT, rpc_params};
 use kora_lib::{
     token::{TokenInterface, TokenProgram, TokenType},
-    transaction::{decode_b64_transaction, encode_b64_transaction},
+    transaction::{
+        decode_b64_transaction, encode_b64_transaction, new_unsigned_versioned_transaction,
+    },
 };
 use serde_json::json;
+use solana_commitment_config::CommitmentConfig;
+use solana_message::{Message, VersionedMessage};
 use solana_sdk::{
-    commitment_config::CommitmentConfig,
-    message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    system_program,
-    transaction::Transaction,
 };
+use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
 use spl_associated_token_account::get_associated_token_address;
 use std::str::FromStr;
 use testing_utils::*;
@@ -106,7 +107,15 @@ async fn test_sign_spl_transaction() {
 
     let mut transaction = transaction;
 
-    transaction.partial_sign(&[&sender], transaction.message.recent_blockhash);
+    let sender_position = transaction
+        .message
+        .static_account_keys()
+        .iter()
+        .position(|key| key == &sender.pubkey())
+        .expect("Sender not found in account keys");
+
+    let signature = sender.sign_message(&transaction.message.serialize());
+    transaction.signatures[sender_position] = signature;
 
     let simulated_tx = rpc_client
         .simulate_transaction(&transaction)
@@ -159,21 +168,17 @@ async fn test_transfer_transaction() {
     let rpc_client = get_rpc_client().await;
 
     let sender = get_test_sender_keypair();
-    let recipient = "BrfrZdQNEitACxyYLNmFRWHtRzZFNFpYH5GAtoA1XXU6";
-
-    // Fund recipient with some SOL for rent exemption
-    let recipient_pubkey = Pubkey::from_str(recipient).unwrap();
-    let recipient_balance = rpc_client.get_balance(&recipient_pubkey).await.unwrap_or(0);
-    if recipient_balance == 0 {
-        let _signature =
-            rpc_client.request_airdrop(&recipient_pubkey, 1_000_000_000).await.unwrap(); // 1 SOL
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; // Wait for confirmation
-    }
+    let recipient = get_recipient_pubkey();
 
     let response: serde_json::Value = client
         .request(
             "transferTransaction",
-            rpc_params![1, system_program::ID.to_string(), sender.pubkey().to_string(), recipient],
+            rpc_params![
+                1,
+                SYSTEM_PROGRAM_ID.to_string(),
+                sender.pubkey().to_string(),
+                recipient.to_string()
+            ],
         )
         .await
         .expect("Failed to submit transfer transaction");
@@ -300,17 +305,24 @@ async fn test_sign_transaction_if_paid() {
         .unwrap();
 
     // Create message and transaction
-    let message = Message::new_with_blockhash(
+    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &[fee_payer_instruction, recipient_instruction],
         Some(&fee_payer), // Set the fee payer
         &blockhash.0,
-    );
+    ));
 
     // Initialize transaction with correct number of signatures
-    let mut transaction = Transaction::new_unsigned(message);
+    let mut transaction = new_unsigned_versioned_transaction(message);
 
-    // Sign with sender's keypair
-    transaction.partial_sign(&[&sender], blockhash.0);
+    let sender_position = transaction
+        .message
+        .static_account_keys()
+        .iter()
+        .position(|key| key == &sender.pubkey())
+        .expect("Sender not found in account keys");
+
+    let signature = sender.sign_message(&transaction.message.serialize());
+    transaction.signatures[sender_position] = signature;
 
     // At this point, fee payer's signature slot should be empty (first position)
     // and sender's signature should be in the correct position
@@ -367,4 +379,62 @@ async fn test_fee_payer_policy_is_present() {
     assert_eq!(fee_payer_policy["allow_assign"], true);
 
     println!("Fee payer policy API integration tests passed!");
+}
+#[tokio::test]
+async fn test_sign_v0_transaction_with_valid_lookup_table() {
+    let client = get_test_client().await;
+    let rpc_client = get_rpc_client().await;
+
+    let allowed_lookup_table_address = get_allowed_lookup_table_address().await.unwrap();
+
+    // Create a V0 transaction using the allowed lookup table (index 0)
+    let v0_transaction =
+        create_v0_transaction_with_lookup(&allowed_lookup_table_address, &get_recipient_pubkey())
+            .await
+            .expect("Failed to create V0 transaction with allowed lookup table");
+
+    // Test signing the V0 transaction through Kora RPC - this should succeed
+    let response: serde_json::Value = client
+        .request("signTransaction", rpc_params![v0_transaction])
+        .await
+        .expect("Failed to sign V0 transaction with valid lookup table");
+
+    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+    assert!(
+        response["signed_transaction"].as_str().is_some(),
+        "Expected signed_transaction in response"
+    );
+
+    let transaction_string = response["signed_transaction"].as_str().unwrap();
+    let transaction = decode_b64_transaction(transaction_string)
+        .expect("Failed to decode transaction from base64");
+
+    // Simulate the transaction to ensure it's valid
+    let simulated_tx = rpc_client
+        .simulate_transaction(&transaction)
+        .await
+        .expect("Failed to simulate V0 transaction");
+
+    assert!(simulated_tx.value.err.is_none(), "V0 transaction simulation failed");
+}
+
+#[tokio::test]
+async fn test_sign_v0_transaction_with_invalid_lookup_table() {
+    let client = get_test_client().await;
+
+    // Create a V0 transaction using the disallowed lookup table (index 1)
+    let disallowed_lookup_table_address = get_disallowed_lookup_table_address().await.unwrap();
+    let v0_transaction = create_v0_transaction_with_lookup(
+        &disallowed_lookup_table_address,
+        &get_test_disallowed_address(),
+    )
+    .await
+    .expect("Failed to create V0 transaction with disallowed lookup table");
+
+    // Test signing the V0 transaction through Kora RPC - this should fail due to disallowed addresses
+    let result = client
+        .request::<serde_json::Value, _>("signTransaction", rpc_params![v0_transaction])
+        .await;
+
+    assert!(result.is_err(), "Expected error for invalid transaction");
 }

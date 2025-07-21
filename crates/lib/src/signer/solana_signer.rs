@@ -1,8 +1,9 @@
 use crate::error::KoraError;
 use solana_sdk::{
+    pubkey::Pubkey,
     signature::{Keypair, Signature as SolanaSignature},
     signer::Signer as SolanaSigner,
-    transaction::Transaction,
+    transaction::VersionedTransaction,
 };
 
 use super::{KeypairUtil, Signature};
@@ -32,7 +33,7 @@ impl SolanaMemorySigner {
     }
 
     /// Get solana pubkey
-    pub fn solana_pubkey(&self) -> solana_sdk::pubkey::Pubkey {
+    pub fn solana_pubkey(&self) -> Pubkey {
         self.keypair.pubkey()
     }
 
@@ -60,9 +61,9 @@ impl Clone for SolanaMemorySigner {
 impl SolanaMemorySigner {
     pub async fn sign_solana(
         &self,
-        transaction: &Transaction,
+        transaction: &VersionedTransaction,
     ) -> Result<SolanaSignature, KoraError> {
-        let solana_sig = self.keypair.sign_message(&transaction.message_data());
+        let solana_sig = self.keypair.sign_message(&transaction.message.serialize());
 
         let sig_bytes: [u8; 64] = solana_sig
             .as_ref()
@@ -72,8 +73,8 @@ impl SolanaMemorySigner {
         Ok(SolanaSignature::from(sig_bytes))
     }
 
-    pub async fn sign(&self, transaction: &Transaction) -> Result<Signature, KoraError> {
-        let solana_sig = self.keypair.sign_message(&transaction.message_data());
+    pub async fn sign(&self, transaction: &VersionedTransaction) -> Result<Signature, KoraError> {
+        let solana_sig = self.keypair.sign_message(&transaction.message.serialize());
         Ok(Signature { bytes: solana_sig.as_ref().to_vec(), is_partial: false })
     }
 }

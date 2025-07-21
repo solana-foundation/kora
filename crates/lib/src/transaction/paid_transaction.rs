@@ -1,5 +1,5 @@
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::transaction::Transaction;
+use solana_sdk::transaction::VersionedTransaction;
 
 use crate::{
     config::ValidationConfig,
@@ -13,9 +13,9 @@ use super::transaction::sign_transaction;
 pub async fn sign_transaction_if_paid(
     rpc_client: &RpcClient,
     validation: &ValidationConfig,
-    transaction: Transaction,
+    transaction: VersionedTransaction,
     margin: Option<f64>,
-) -> Result<(Transaction, String), KoraError> {
+) -> Result<(VersionedTransaction, String), KoraError> {
     let signer = get_signer()?;
 
     // Get the simulation result for fee calculation

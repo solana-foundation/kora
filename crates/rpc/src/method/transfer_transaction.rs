@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    commitment_config::CommitmentConfig, message::Message, pubkey::Pubkey, system_instruction,
-    transaction::Transaction,
-};
+use solana_commitment_config::CommitmentConfig;
+use solana_message::Message;
+use solana_sdk::{message::VersionedMessage, pubkey::Pubkey};
+use solana_system_interface::instruction::transfer;
 use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;
 
@@ -13,7 +13,7 @@ use kora_lib::{
     get_signer,
     token::TokenInterface,
     transaction::{
-        encode_b64_message, encode_b64_transaction,
+        encode_b64_message, encode_b64_transaction, new_unsigned_versioned_transaction,
         validator::{TransactionValidator, ValidatedMint},
     },
     KoraError, Signer as _,
@@ -68,7 +68,7 @@ pub async fn transfer_transaction(
 
     // Handle native SOL transfers
     if request.token == NATIVE_SOL {
-        instructions.push(system_instruction::transfer(&source, &destination, request.amount));
+        instructions.push(transfer(&source, &destination, request.amount));
     } else {
         // Handle wrapped SOL and other SPL tokens
         let ValidatedMint { token_program, decimals } =
@@ -111,8 +111,12 @@ pub async fn transfer_transaction(
     let blockhash =
         rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
 
-    let message = Message::new_with_blockhash(&instructions, Some(&fee_payer), &blockhash.0);
-    let mut transaction = Transaction::new_unsigned(message);
+    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &instructions,
+        Some(&fee_payer),
+        &blockhash.0,
+    ));
+    let mut transaction = new_unsigned_versioned_transaction(message);
 
     // validate transaction before signing
     validator.validate_transaction(&transaction)?;

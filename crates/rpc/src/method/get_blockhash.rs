@@ -2,7 +2,7 @@ use kora_lib::error::KoraError;
 use nonblocking::rpc_client::RpcClient;
 use serde::Serialize;
 use solana_client::nonblocking;
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_commitment_config::CommitmentConfig;
 use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, ToSchema)]

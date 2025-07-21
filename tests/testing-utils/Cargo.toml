@@ -6,6 +6,9 @@ edition = "2024"
 [dependencies]
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
+solana-message = { workspace = true }
+solana-address-lookup-table-interface = { workspace = true }
+solana-system-interface = { workspace = true }
 spl-token = { workspace = true }
 spl-associated-token-account = { workspace = true }
 tokio = { workspace = true }

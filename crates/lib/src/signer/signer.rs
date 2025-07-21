@@ -2,7 +2,9 @@ use super::{solana_signer::SolanaMemorySigner, vault_signer::VaultSigner};
 use crate::error::KoraError;
 use kora_privy::PrivySigner;
 use kora_turnkey::TurnkeySigner;
-use solana_sdk::{signature::Signature as SolanaSignature, transaction::Transaction};
+use solana_sdk::{
+    pubkey::Pubkey, signature::Signature as SolanaSignature, transaction::VersionedTransaction,
+};
 use std::error::Error;
 
 #[derive(Debug, Clone)]
@@ -20,12 +22,12 @@ pub trait Signer {
 
     fn sign(
         &self,
-        transaction: &Transaction,
+        transaction: &VersionedTransaction,
     ) -> impl std::future::Future<Output = Result<Signature, Self::Error>> + Send;
 
     fn sign_solana(
         &self,
-        transaction: &Transaction,
+        transaction: &VersionedTransaction,
     ) -> impl std::future::Future<Output = Result<SolanaSignature, Self::Error>> + Send;
 }
 
@@ -39,7 +41,7 @@ pub enum KoraSigner {
 }
 
 impl KoraSigner {
-    pub fn solana_pubkey(&self) -> solana_sdk::pubkey::Pubkey {
+    pub fn solana_pubkey(&self) -> Pubkey {
         match self {
             KoraSigner::Memory(signer) => signer.solana_pubkey(),
             KoraSigner::Turnkey(signer) => signer.solana_pubkey(),
@@ -52,7 +54,10 @@ impl KoraSigner {
 impl super::Signer for KoraSigner {
     type Error = KoraError;
 
-    async fn sign(&self, transaction: &Transaction) -> Result<super::Signature, Self::Error> {
+    async fn sign(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<super::Signature, Self::Error> {
         match self {
             // Some signers expect the serialized message, others expect the message bytes
             KoraSigner::Memory(signer) => signer.sign(transaction).await,
@@ -70,8 +75,8 @@ impl super::Signer for KoraSigner {
 
     async fn sign_solana(
         &self,
-        transaction: &Transaction,
-    ) -> Result<solana_sdk::signature::Signature, Self::Error> {
+        transaction: &VersionedTransaction,
+    ) -> Result<SolanaSignature, Self::Error> {
         match self {
             // Some signers expect the serialized message, others expect the message bytes
             KoraSigner::Memory(signer) => signer.sign_solana(transaction).await,

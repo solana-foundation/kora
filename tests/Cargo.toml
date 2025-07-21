@@ -22,6 +22,9 @@ path = "setup-test-env.rs"
 [dependencies]
 kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }
+solana-commitment-config = { workspace = true }
+solana-message = { workspace = true }
+solana-system-interface = { workspace = true }
 solana-client = { workspace = true }
 spl-token = { workspace = true }
 spl-token-2022 = { workspace = true }

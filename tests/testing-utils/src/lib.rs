@@ -3,19 +3,24 @@ use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_param
 use kora_lib::{
     signer::KeypairUtil,
     token::{TokenInterface, TokenProgram, TokenType},
-    transaction::encode_b64_transaction,
+    transaction::{encode_b64_transaction, new_unsigned_versioned_transaction},
+};
+use solana_address_lookup_table_interface::{
+    instruction::create_lookup_table, state::AddressLookupTable,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_message::{
+    AddressLookupTableAccount, Message, VersionedMessage, v0::Message as V0Message,
+};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
-    message::Message,
     native_token::LAMPORTS_PER_SOL,
     program_pack::Pack,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    system_instruction,
     transaction::Transaction,
 };
+use solana_system_interface::instruction::transfer;
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::instruction as token_instruction;
 use std::{str::FromStr, sync::Arc};
@@ -32,12 +37,16 @@ const FEE_PAYER_DEFAULT: &str = "[83, 95, 208, 191, 240, 53, 167, 97, 136, 84, 2
 const SENDER_SIGNER_DEFAULT: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/local-keys/sender-local.json");
 
+const RECIPIENT_DEFAULT: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
+
+// To test lookup tables
+const TEST_DISALLOWED_ADDRESS: &str = "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek";
+
+// Deterministic test USDC mint keypair (for local testing only)
 // Third way of specifying a keypair, as a base58 string
 const TEST_USDC_MINT_KEYPAIR: &str =
     "59kKmXphL5UJANqpFFjtH17emEq3oRNmYsx6a3P3vSGJRmhMgVdzH77bkNEi9bArRViT45e8L2TsuPxKNFoc3Qfg"; // Pub: 9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ
 const TEST_USDC_MINT_DECIMALS: u8 = 6;
-
-const RECIPIENT_DEFAULT: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
 
 /// Helper function to parse a private key string in multiple formats:
 /// - Base58 encoded string (current format)
@@ -54,6 +63,7 @@ pub struct TestAccountSetup {
     pub fee_payer_keypair: Keypair,
     pub recipient_pubkey: Pubkey,
     pub usdc_mint: Keypair,
+    pub lookup_tables_key: Vec<Pubkey>,
 }
 
 impl TestAccountSetup {
@@ -65,13 +75,22 @@ impl TestAccountSetup {
 
         let usdc_mint = get_test_usdc_mint_keypair();
 
-        Self { rpc_client, sender_keypair, fee_payer_keypair, recipient_pubkey, usdc_mint }
+        Self {
+            rpc_client,
+            sender_keypair,
+            fee_payer_keypair,
+            recipient_pubkey,
+            usdc_mint,
+            lookup_tables_key: vec![],
+        }
     }
 
-    pub async fn setup_all_accounts(&self) -> Result<TestAccountInfo> {
+    pub async fn setup_all_accounts(&mut self) -> Result<TestAccountInfo> {
         self.fund_sol_accounts().await?;
 
         self.create_usdc_mint().await?;
+
+        self.create_lookup_tables().await?;
 
         let account_info = self.setup_token_accounts().await?;
 
@@ -254,6 +273,61 @@ impl TestAccountSetup {
         self.rpc_client.send_and_confirm_transaction(&transaction).await?;
         Ok(())
     }
+
+    async fn create_lookup_tables(&mut self) -> Result<()> {
+        let allowed_lookup_table =
+            self.create_with_addresses(vec![solana_sdk::system_program::ID]).await?;
+
+        let disallowed_address = get_test_disallowed_address();
+        let blocked_lookup_table: Pubkey =
+            self.create_with_addresses(vec![disallowed_address]).await?;
+
+        self.lookup_tables_key = vec![allowed_lookup_table, blocked_lookup_table];
+
+        Ok(())
+    }
+
+    async fn create_with_addresses(&self, addresses: Vec<Pubkey>) -> Result<Pubkey> {
+        let recent_slot = self.rpc_client.get_slot().await?;
+        let (create_instruction, lookup_table_key) = create_lookup_table(
+            self.sender_keypair.pubkey(),
+            self.sender_keypair.pubkey(),
+            recent_slot - 1,
+        );
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let create_transaction = Transaction::new_signed_with_payer(
+            &[create_instruction],
+            Some(&self.sender_keypair.pubkey()),
+            &[&self.sender_keypair],
+            recent_blockhash,
+        );
+
+        self.rpc_client.send_and_confirm_transaction(&create_transaction).await?;
+
+        // Add addresses to the lookup table if provided
+        if !addresses.is_empty() {
+            let extend_instruction =
+                solana_address_lookup_table_interface::instruction::extend_lookup_table(
+                    lookup_table_key,
+                    self.sender_keypair.pubkey(),
+                    Some(self.sender_keypair.pubkey()),
+                    addresses.clone(),
+                );
+
+            let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+            let extend_transaction = Transaction::new_signed_with_payer(
+                &[extend_instruction],
+                Some(&self.sender_keypair.pubkey()),
+                &[&self.sender_keypair],
+                recent_blockhash,
+            );
+
+            self.rpc_client.send_and_confirm_transaction(&extend_transaction).await?;
+        }
+
+        Ok(lookup_table_key)
+    }
 }
 
 /// Test account information for outputting to the user
@@ -269,7 +343,7 @@ pub struct TestAccountInfo {
 }
 
 pub async fn setup_test_accounts() -> Result<TestAccountInfo> {
-    let setup = TestAccountSetup::new().await;
+    let mut setup = TestAccountSetup::new().await;
     setup.setup_all_accounts().await
 }
 
@@ -300,6 +374,102 @@ pub async fn get_rpc_client() -> Arc<RpcClient> {
     Arc::new(RpcClient::new(get_rpc_url().await))
 }
 
+pub fn get_test_server_url() -> String {
+    dotenv::dotenv().ok();
+    std::env::var("TEST_SERVER_URL").unwrap_or_else(|_| TEST_SERVER_URL.to_string())
+}
+
+pub fn get_fee_payer_keypair() -> Keypair {
+    dotenv::dotenv().ok();
+    let private_key =
+        std::env::var("KORA_PRIVATE_KEY").unwrap_or_else(|_| FEE_PAYER_DEFAULT.to_string());
+    parse_private_key_string(&private_key).expect("Failed to parse fee payer private key")
+}
+
+/// Get the fee payer public key, derived from the fee payer keypair
+pub fn get_fee_payer_pubkey() -> Pubkey {
+    get_fee_payer_keypair().pubkey()
+}
+
+/// Get the recipient pubkey, checking TEST_RECIPIENT_PUBKEY env var first
+pub fn get_recipient_pubkey() -> Pubkey {
+    dotenv::dotenv().ok();
+    let recipient_str =
+        std::env::var("TEST_RECIPIENT_PUBKEY").unwrap_or_else(|_| RECIPIENT_DEFAULT.to_string());
+    Pubkey::from_str(&recipient_str).expect("Invalid recipient pubkey")
+}
+
+/// Get the test USDC mint keypair, checking TEST_USDC_MINT_KEYPAIR env var first
+pub fn get_test_usdc_mint_keypair() -> Keypair {
+    dotenv::dotenv().ok();
+    let mint_keypair = std::env::var("TEST_USDC_MINT_KEYPAIR")
+        .unwrap_or_else(|_| TEST_USDC_MINT_KEYPAIR.to_string());
+    parse_private_key_string(&mint_keypair).expect("Failed to parse test USDC mint private key")
+}
+
+/// Get the test USDC mint pubkey, derived from the mint keypair
+pub fn get_test_usdc_mint_pubkey() -> Pubkey {
+    get_test_usdc_mint_keypair().pubkey()
+}
+
+/// Get the test USDC mint decimals, checking TEST_USDC_MINT_DECIMALS env var first
+pub fn get_test_usdc_mint_decimals() -> u8 {
+    dotenv::dotenv().ok();
+    std::env::var("TEST_USDC_MINT_DECIMALS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(TEST_USDC_MINT_DECIMALS)
+}
+
+pub fn get_test_disallowed_address() -> Pubkey {
+    Pubkey::from_str(TEST_DISALLOWED_ADDRESS).expect("Invalid disallowed address")
+}
+
+/// Get the allowed lookup table address (contains random address)
+pub async fn get_allowed_lookup_table_address() -> Result<Pubkey> {
+    let lookup_tables = get_test_lookup_table_addresses().await?;
+    Ok(lookup_tables[0])
+}
+
+/// Get the disallowed lookup table address (contains disallowed address)  
+pub async fn get_disallowed_lookup_table_address() -> Result<Pubkey> {
+    let lookup_tables = get_test_lookup_table_addresses().await?;
+    Ok(lookup_tables[1])
+}
+
+/// Get both lookup table addresses by finding them on-chain
+pub async fn get_test_lookup_table_addresses() -> Result<[Pubkey; 2]> {
+    let rpc_client = get_rpc_client().await;
+    let sender = get_test_sender_keypair();
+
+    // Get all address lookup table accounts
+    let accounts = rpc_client
+        .get_program_accounts(&solana_address_lookup_table_interface::program::ID)
+        .await?;
+
+    let disallowed_address = get_test_disallowed_address();
+
+    let mut lookup_addresses = [Pubkey::default(), Pubkey::default()];
+    for (pubkey, account) in accounts {
+        if let Ok(lookup_table) = AddressLookupTable::deserialize(&account.data) {
+            // Check if this lookup table was created by our test sender
+            if lookup_table.meta.authority == Some(sender.pubkey()) {
+                // Determine which lookup table this is based on its contents
+                if lookup_table.addresses.len() == 1 {
+                    let address = lookup_table.addresses[0];
+                    if address == disallowed_address {
+                        lookup_addresses[1] = pubkey;
+                    } else {
+                        lookup_addresses[0] = pubkey;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(lookup_addresses)
+}
+
 /// Create a test SOL transfer transaction
 pub async fn create_test_transaction() -> Result<String> {
     let sender = get_test_sender_keypair();
@@ -307,13 +477,14 @@ pub async fn create_test_transaction() -> Result<String> {
     let amount = 10;
     let rpc_client = get_rpc_client().await;
 
-    let instruction = system_instruction::transfer(&sender.pubkey(), &recipient, amount);
+    let instruction = transfer(&sender.pubkey(), &recipient, amount);
 
     let blockhash =
         rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
 
-    let message = Message::new_with_blockhash(&[instruction], None, &blockhash.0);
-    let transaction = Transaction { signatures: vec![Default::default()], message };
+    let message =
+        VersionedMessage::Legacy(Message::new_with_blockhash(&[instruction], None, &blockhash.0));
+    let transaction = new_unsigned_versioned_transaction(message);
 
     Ok(encode_b64_transaction(&transaction)?)
 }
@@ -355,59 +526,43 @@ pub async fn create_test_spl_transaction() -> Result<String> {
         rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
 
     // Create message and transaction
-    let message = Message::new_with_blockhash(&[instruction], Some(&fee_payer), &blockhash.0);
-    let transaction = Transaction::new_unsigned(message);
+    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[instruction],
+        Some(&fee_payer),
+        &blockhash.0,
+    ));
+    let transaction = new_unsigned_versioned_transaction(message);
 
     Ok(encode_b64_transaction(&transaction)?)
 }
 
-// Getter functions that check environment variables first, then fall back to defaults
+pub async fn create_v0_transaction_with_lookup(
+    lookup_table_key: &Pubkey,
+    recipient: &Pubkey,
+) -> Result<String> {
+    let rpc_client = get_rpc_client().await;
 
-/// Get the test server URL, checking TEST_SERVER_URL env var first
-pub fn get_test_server_url() -> String {
-    dotenv::dotenv().ok();
-    std::env::var("TEST_SERVER_URL").unwrap_or_else(|_| TEST_SERVER_URL.to_string())
-}
+    let sender = get_test_sender_keypair();
+    let lookup_table_account = rpc_client.get_account(lookup_table_key).await?;
+    let lookup_table = AddressLookupTable::deserialize(&lookup_table_account.data)?;
 
-/// Get the fee payer keypair, checking KORA_PRIVATE_KEY env var first
-pub fn get_fee_payer_keypair() -> Keypair {
-    dotenv::dotenv().ok();
-    let private_key =
-        std::env::var("KORA_PRIVATE_KEY").unwrap_or_else(|_| FEE_PAYER_DEFAULT.to_string());
-    parse_private_key_string(&private_key).expect("Failed to parse fee payer private key")
-}
+    let address_lookup_table_account = AddressLookupTableAccount {
+        key: *lookup_table_key,
+        addresses: lookup_table.addresses.to_vec(),
+    };
 
-/// Get the fee payer public key, derived from the fee payer keypair
-pub fn get_fee_payer_pubkey() -> Pubkey {
-    get_fee_payer_keypair().pubkey()
-}
+    let transfer_instruction = transfer(&sender.pubkey(), recipient, 1_000_000);
 
-/// Get the recipient pubkey, checking TEST_RECIPIENT_PUBKEY env var first
-pub fn get_recipient_pubkey() -> Pubkey {
-    dotenv::dotenv().ok();
-    let recipient_str =
-        std::env::var("TEST_RECIPIENT_PUBKEY").unwrap_or_else(|_| RECIPIENT_DEFAULT.to_string());
-    Pubkey::from_str(&recipient_str).expect("Invalid recipient pubkey")
-}
+    let blockhash =
+        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
 
-/// Get the test USDC mint keypair, checking TEST_USDC_MINT_KEYPAIR env var first
-pub fn get_test_usdc_mint_keypair() -> Keypair {
-    dotenv::dotenv().ok();
-    let mint_keypair = std::env::var("TEST_USDC_MINT_KEYPAIR")
-        .unwrap_or_else(|_| TEST_USDC_MINT_KEYPAIR.to_string());
-    parse_private_key_string(&mint_keypair).expect("Failed to parse test USDC mint private key")
-}
+    let versioned_message = VersionedMessage::V0(V0Message::try_compile(
+        &sender.pubkey(),
+        &[transfer_instruction],
+        &[address_lookup_table_account],
+        blockhash.0,
+    )?);
+    let transaction = new_unsigned_versioned_transaction(versioned_message);
 
-/// Get the test USDC mint pubkey, derived from the mint keypair
-pub fn get_test_usdc_mint_pubkey() -> Pubkey {
-    get_test_usdc_mint_keypair().pubkey()
-}
-
-/// Get the test USDC mint decimals, checking TEST_USDC_MINT_DECIMALS env var first
-pub fn get_test_usdc_mint_decimals() -> u8 {
-    dotenv::dotenv().ok();
-    std::env::var("TEST_USDC_MINT_DECIMALS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(TEST_USDC_MINT_DECIMALS)
+    Ok(encode_b64_transaction(&transaction)?)
 }

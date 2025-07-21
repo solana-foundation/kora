@@ -8,7 +8,8 @@ price_source = "Mock"
 allowed_programs = [
     "11111111111111111111111111111111",             # System Program
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
-    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
+    "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
 ]
 allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
@@ -16,7 +17,10 @@ allowed_tokens = [
 allowed_spl_paid_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
 ]
-disallowed_accounts = []
+
+disallowed_accounts = [
+    "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek", # Test disallowed account for lookup table
+]
 
 # Fee payer policy controls what actions the fee payer can perform
 #
