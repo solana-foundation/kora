@@ -10,6 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Please start it with: surfpool start or solana-test-validator");
         std::process::exit(1);
     }
+    let start_time = tokio::time::Instant::now();
 
     println!("✅ Test validator is running");
 
@@ -35,6 +36,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(1);
         }
     }
+
+    println!("Time to setup test environment: {} seconds", start_time.elapsed().as_secs());
 
     Ok(())
 }

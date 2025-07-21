@@ -68,7 +68,10 @@ pub struct TestAccountSetup {
 
 impl TestAccountSetup {
     pub async fn new() -> Self {
-        let rpc_client = Arc::new(RpcClient::new(get_rpc_url().await));
+        let rpc_client = Arc::new(RpcClient::new_with_commitment(
+            get_rpc_url().await,
+            CommitmentConfig::confirmed(),
+        ));
         let sender_keypair = get_test_sender_keypair();
         let recipient_pubkey = get_recipient_pubkey();
         let fee_payer_keypair = get_fee_payer_keypair();
@@ -97,14 +100,24 @@ impl TestAccountSetup {
         Ok(account_info)
     }
 
-    pub async fn airdrop_sol(&self, receiver: &Pubkey, amount: u64) -> Result<()> {
+    pub async fn airdrop_if_required_sol(&self, receiver: &Pubkey, amount: u64) -> Result<()> {
+        let balance = self.rpc_client.get_balance(receiver).await?;
+
+        // 80% of the amount is enough to cover the transaction fees
+        if balance as f64 >= amount as f64 * 0.8 {
+            return Ok(());
+        }
+
         let signature = self.rpc_client.request_airdrop(receiver, amount).await?;
 
         loop {
             let confirmed = self.rpc_client.confirm_transaction(&signature).await?;
+
             if confirmed {
                 break;
             }
+
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
 
         Ok(())
@@ -115,24 +128,14 @@ impl TestAccountSetup {
 
         let sol_to_fund = 10 * LAMPORTS_PER_SOL;
 
-        let sender_balance = self.rpc_client.get_balance(&self.sender_keypair.pubkey()).await?;
-        println!("Sender balance: {} SOL", sender_balance as f64 / LAMPORTS_PER_SOL as f64);
-        if sender_balance < sol_to_fund {
-            self.airdrop_sol(&self.sender_keypair.pubkey(), sol_to_fund).await?;
-        }
+        let sender_pubkey = self.sender_keypair.pubkey();
+        let fee_payer_pubkey = self.fee_payer_keypair.pubkey();
 
-        let recipient_balance = self.rpc_client.get_balance(&self.recipient_pubkey).await?;
-        println!("Recipient balance: {} SOL", recipient_balance as f64 / LAMPORTS_PER_SOL as f64);
-        if recipient_balance < sol_to_fund {
-            self.airdrop_sol(&self.recipient_pubkey, sol_to_fund).await?;
-        }
-
-        let fee_payer_balance =
-            self.rpc_client.get_balance(&self.fee_payer_keypair.pubkey()).await?;
-        println!("Fee payer balance: {} SOL", fee_payer_balance as f64 / LAMPORTS_PER_SOL as f64);
-        if fee_payer_balance < sol_to_fund {
-            self.airdrop_sol(&self.fee_payer_keypair.pubkey(), sol_to_fund).await?;
-        }
+        tokio::try_join!(
+            self.airdrop_if_required_sol(&sender_pubkey, sol_to_fund),
+            self.airdrop_if_required_sol(&self.recipient_pubkey, sol_to_fund),
+            self.airdrop_if_required_sol(&fee_payer_pubkey, sol_to_fund)
+        )?;
 
         Ok(())
     }
