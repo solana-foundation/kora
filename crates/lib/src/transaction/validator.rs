@@ -186,81 +186,78 @@ impl TransactionValidator {
     }
 
     fn is_fee_payer_source(&self, ix: &CompiledInstruction, account_keys: &[Pubkey]) -> bool {
-        // For system program transfers, check if fee payer is the source
-        // For spl token transfers, check if fee payer is the owner/signer
-        match account_keys[ix.program_id_index as usize] {
+        let (account_idx, policy_allowed) = match account_keys[ix.program_id_index as usize] {
             system_program::ID => {
                 if let Ok(sys_ix) =
                     bincode::deserialize::<system_instruction::SystemInstruction>(&ix.data)
                 {
                     match sys_ix {
-                        system_instruction::SystemInstruction::Transfer { .. }
-                        | system_instruction::SystemInstruction::TransferWithSeed { .. } => {
-                            if !self.fee_payer_policy.allow_sol_transfers {
-                                // For transfer instruction, first account is source
-                                return account_keys[ix.accounts[0] as usize]
-                                    == self.fee_payer_pubkey;
-                            }
-                        }
+                        system_instruction::SystemInstruction::Transfer { .. } => (
+                            Some(ix.accounts[0] as usize),
+                            self.fee_payer_policy.allow_sol_transfers,
+                        ),
+                        system_instruction::SystemInstruction::TransferWithSeed { .. } => (
+                            Some(ix.accounts[1] as usize),
+                            self.fee_payer_policy.allow_sol_transfers,
+                        ),
                         system_instruction::SystemInstruction::Assign { .. } => {
-                            if !self.fee_payer_policy.allow_assign {
-                                // For assign instruction, first account is the account being assigned
-                                return account_keys[ix.accounts[0] as usize]
-                                    == self.fee_payer_pubkey;
-                            }
+                            (Some(ix.accounts[0] as usize), self.fee_payer_policy.allow_assign)
                         }
-                        _ => {}
+                        system_instruction::SystemInstruction::AssignWithSeed { .. } => {
+                            (Some(ix.accounts[1] as usize), self.fee_payer_policy.allow_assign)
+                        }
+                        _ => (None, true),
                     }
+                } else {
+                    (None, true)
                 }
             }
             spl_token::ID => {
-                if !self.fee_payer_policy.allow_spl_transfers {
-                    if let Ok(spl_ix) = spl_token::instruction::TokenInstruction::unpack(&ix.data) {
-                        match spl_ix {
-                            spl_token::instruction::TokenInstruction::Transfer { .. } => {
-                                // Account [2] is the owner/signer
-                                return account_keys[ix.accounts[2] as usize]
-                                    == self.fee_payer_pubkey;
-                            }
-                            spl_token::instruction::TokenInstruction::TransferChecked {
-                                ..
-                            } => {
-                                // Account [3] is the owner/signer
-                                return account_keys[ix.accounts[3] as usize]
-                                    == self.fee_payer_pubkey;
-                            }
-                            _ => {}
-                        }
+                if let Ok(spl_ix) = spl_token::instruction::TokenInstruction::unpack(&ix.data) {
+                    match spl_ix {
+                        spl_token::instruction::TokenInstruction::Transfer { .. } => (
+                            Some(ix.accounts[2] as usize),
+                            self.fee_payer_policy.allow_spl_transfers,
+                        ),
+                        spl_token::instruction::TokenInstruction::TransferChecked { .. } => (
+                            Some(ix.accounts[3] as usize),
+                            self.fee_payer_policy.allow_spl_transfers,
+                        ),
+                        _ => (None, true),
                     }
+                } else {
+                    (None, true)
                 }
             }
             spl_token_2022::ID => {
-                if !self.fee_payer_policy.allow_token2022_transfers {
-                    if let Ok(spl_ix) =
-                        spl_token_2022::instruction::TokenInstruction::unpack(&ix.data)
-                    {
-                        match spl_ix {
-                            spl_token_2022::instruction::TokenInstruction::Transfer { .. } => {
-                                // Account [2] is the owner/signer
-                                return account_keys[ix.accounts[2] as usize]
-                                    == self.fee_payer_pubkey;
-                            }
-                            spl_token_2022::instruction::TokenInstruction::TransferChecked {
-                                ..
-                            } => {
-                                // Account [3] is the owner/signer
-                                return account_keys[ix.accounts[3] as usize]
-                                    == self.fee_payer_pubkey;
-                            }
-                            _ => {}
-                        }
+                if let Ok(spl_ix) = spl_token_2022::instruction::TokenInstruction::unpack(&ix.data)
+                {
+                    match spl_ix {
+                        #[allow(deprecated)] // Still need to support it for backwards compatibility
+                        spl_token_2022::instruction::TokenInstruction::Transfer { .. } => (
+                            Some(ix.accounts[2] as usize),
+                            self.fee_payer_policy.allow_token2022_transfers,
+                        ),
+                        spl_token_2022::instruction::TokenInstruction::TransferChecked {
+                            ..
+                        } => (
+                            Some(ix.accounts[3] as usize),
+                            self.fee_payer_policy.allow_token2022_transfers,
+                        ),
+                        _ => (None, true),
                     }
+                } else {
+                    (None, true)
                 }
             }
-            _ => {}
-        }
+            _ => (None, true),
+        };
 
-        false
+        if let Some(idx) = account_idx {
+            !policy_allowed && account_keys[idx] == self.fee_payer_pubkey
+        } else {
+            false
+        }
     }
 
     fn validate_transfer_amounts(&self, message: &Message) -> Result<(), KoraError> {
