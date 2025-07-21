@@ -1,4 +1,4 @@
-.PHONY: check fmt lint test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration
+.PHONY: check fmt lint lint-fix test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration
 
 # Default target
 all: check test build
@@ -18,8 +18,12 @@ fmt:
 
 # Run clippy
 lint:
-	cargo clippy -- -D warnings
+	cargo clippy
 
+# Run clippy with auto-fix
+lint-fix:
+	cargo clippy --fix --allow-dirty
+	
 # Run tests
 test:
 	cargo test --lib

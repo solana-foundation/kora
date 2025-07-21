@@ -21,6 +21,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: make check
+      - name: Run clippy
+        run: make lint
       - name: Run tests
         run: make test
       - name: Build

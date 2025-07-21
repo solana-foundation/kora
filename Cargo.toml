@@ -6,9 +6,17 @@ members = [
     "crates/turnkey",
     "crates/privy",
     "scripts",
-    "tests"
+    "tests",
 ]
 resolver = "2"
+
+[workspace.lints.rust]
+unused_imports = "deny"
+dead_code = "warn"
+unused_variables = "warn"
+
+[workspace.lints.clippy]
+all = "deny"
 
 [workspace.package]
 version = "0.1.1"
@@ -27,7 +35,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 config = "0.13"
 dotenv = "0.15"
-jsonrpsee = { version = "0.16.2", features = ["server", "macros", "http-client", "client"] }
+jsonrpsee = { version = "0.16.2", features = [
+    "server",
+    "macros",
+    "http-client",
+    "client",
+] }
 solana-sdk = "2.1.9"
 solana-program = "2.1.9"
 solana-client = "2.1.9"
