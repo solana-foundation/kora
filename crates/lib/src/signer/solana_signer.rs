@@ -2,9 +2,10 @@ use crate::error::KoraError;
 use solana_sdk::{
     signature::{Keypair, Signature as SolanaSignature},
     signer::Signer as SolanaSigner,
+    transaction::Transaction,
 };
 
-use super::{Signature, Signer};
+use super::Signature;
 
 /// A Solana-based signer that uses an in-memory keypair
 #[derive(Debug)]
@@ -53,11 +54,12 @@ impl Clone for SolanaMemorySigner {
     }
 }
 
-impl Signer for SolanaMemorySigner {
-    type Error = KoraError;
-
-    async fn sign_solana(&self, message: &[u8]) -> Result<SolanaSignature, Self::Error> {
-        let solana_sig = self.keypair.sign_message(message);
+impl SolanaMemorySigner {
+    pub async fn sign_solana(
+        &self,
+        transaction: &Transaction,
+    ) -> Result<SolanaSignature, KoraError> {
+        let solana_sig = self.keypair.sign_message(&transaction.message_data());
 
         let sig_bytes: [u8; 64] = solana_sig
             .as_ref()
@@ -67,8 +69,8 @@ impl Signer for SolanaMemorySigner {
         Ok(SolanaSignature::from(sig_bytes))
     }
 
-    async fn sign(&self, message: &[u8]) -> Result<Signature, Self::Error> {
-        let solana_sig = self.keypair.sign_message(message);
+    pub async fn sign(&self, transaction: &Transaction) -> Result<Signature, KoraError> {
+        let solana_sig = self.keypair.sign_message(&transaction.message_data());
         Ok(Signature { bytes: solana_sig.as_ref().to_vec(), is_partial: false })
     }
 }
