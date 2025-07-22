@@ -17,3 +17,14 @@ allowed_spl_paid_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
 ]
 disallowed_accounts = []
+
+# Fee payer policy controls what actions the fee payer can perform
+#
+# A lot of actions on Solana require System Program and/or SPL Token Programs,
+# but those programs have a lot of instructions that can be used to perform actions that could be problematic
+# for the fee payer, therefore we allow more granular control over what the fee payer can do with those programs.
+[validation.fee_payer_policy]
+allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
+allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
+allow_token2022_transfers = true # Allow fee payer to be source in Token2022 transfers
+allow_assign = true             # Allow fee payer to use Assign instruction

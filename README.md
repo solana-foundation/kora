@@ -57,7 +57,7 @@ kora-rpc -- [OPTIONS]
 | `--rpc-url <RPC_URL>`                                 | RPC URL to connect to                  | http://127.0.0.1:8899 |
 | `--logging-format <FORMAT>`                           | Logging format (standard or json)      | standard              |
 | `--metrics-endpoint <ENDPOINT>`                       | Optional metrics endpoint URL          | -                     |
-| `--private-key <PRIVATE_KEY>`                         | Base58-encoded private key for signing | -                     |
+| `--private-key <PRIVATE_KEY>`                         | Private key for signing (see formats below) | -                     |
 | `--config <FILE>`                                     | Path to kora.toml config file          | kora.toml             |
 
 #### Signer Configuration
@@ -96,7 +96,7 @@ kora-rpc -- [OPTIONS]
 | `RUST_LOG`                | Controls log level and filtering                   | "info,sqlx=error" |
 | `RPC_URL`                 | Alternative way to specify the RPC URL             | -                 |
 | `KORA_PRIVATE_KEY`        | Alternative way to specify the signing private key | -                 |
-| `TEST_SENDER_KEYPAIR `    | Test sender base 58 private key                    | -                 |
+| `TEST_SENDER_KEYPAIR `    | Test sender private key (supports multiple formats) | -                 |
 
 #### Signer Environment Variables
 
@@ -120,6 +120,36 @@ kora-rpc -- [OPTIONS]
 | `PRIVY_WALLET_ID  `       | Privy wallet ID                                    | -                 |
 
 
+#### Private Key Formats
+
+Kora supports multiple private key formats for maximum flexibility:
+
+**1. Base58 Format (Default)**
+```bash
+# Standard Solana base58 encoded private key
+--private-key "5KKsLVU6TcbVDK4BS6K1DGDxnh4Q9xjYJ8XaDCG5t8ht..."
+```
+
+**2. U8Array Format**
+```bash
+# Array of 64 bytes
+--private-key "[174, 47, 154, 16, 202, 193, 206, 113, 199, 190, 53, 133, 169, 175, 31, 56, 222, 53, 138, 189, 224, 216, 117, 173, 10, 149, 53, 45, 73, 251, 237, 246, 15, 185, 186, 82, 177, 240, 148, 69, 241, 227, 167, 80, 141, 89, 240, 121, 121, 35, 172, 247, 68, 251, 226, 218, 48, 63, 176, 109, 168, 89, 238, 135]"
+```
+
+**3. JSON File Path**
+```bash
+# Path to a JSON file containing a 64-byte array
+--private-key "/path/to/keypair.json"
+
+# keypair.json contains:
+[174, 47, 154, 16, 202, 193, 206, 113, 199, 190, 53, 133, 169, 175, 31, 56, 222, 53, 138, 189, 224, 216, 117, 173, 10, 149, 53, 45, 73, 251, 237, 246, 15, 185, 186, 82, 177, 240, 148, 69, 241, 227, 167, 80, 141, 89, 240, 121, 121, 35, 172, 247, 68, 251, 226, 218, 48, 63, 176, 109, 168, 89, 238, 135]
+```
+
+**Format Detection Priority:**
+1. If the input is a valid file path, it reads the file as JSON
+2. If the input starts with `[` and ends with `]`, it's parsed as U8Array format
+3. Otherwise, it's treated as base58 format
+
 #### Configuration File (kora.toml)
 
 The `kora.toml` file configures the paymaster node's features and supported tokens:
@@ -142,6 +172,52 @@ allowed_spl_paid_tokens = [
     "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
 ]
 disallowed_accounts = []
+
+[validation.fee_payer_policy]
+allow_sol_transfers = true
+allow_spl_transfers = true
+allow_token2022_transfers = true
+allow_assign = true
+```
+
+### Fee Payer Policy
+
+The fee payer policy system allows you to control what actions the fee payer can perform in transactions. This provides enhanced security and flexibility.
+
+#### Configuration Options
+
+- `allow_sol_transfers`: Allow the fee payer to be the source account in SOL transfers
+- `allow_spl_transfers`: Allow the fee payer to be the source/signer in SPL token transfers
+- `allow_token2022_transfers`: Allow the fee payer to be the source/signer in Token2022 transfers
+- `allow_assign`: Allow the fee payer to use the Assign instruction (change account owner)
+
+#### Example Configurations
+
+**Default (Permissive - Backward Compatible)**:
+```toml
+[validation.fee_payer_policy]
+allow_sol_transfers = true
+allow_spl_transfers = true
+allow_token2022_transfers = true
+allow_assign = true
+```
+
+**Restrictive (Enhanced Security)**:
+```toml
+[validation.fee_payer_policy]
+allow_sol_transfers = false
+allow_spl_transfers = false
+allow_token2022_transfers = false
+allow_assign = false
+```
+
+**Selective (Only SOL and Token2022)**:
+```toml
+[validation.fee_payer_policy]
+allow_sol_transfers = true
+allow_spl_transfers = false
+allow_token2022_transfers = true
+allow_assign = false
 ```
 
 ## API Reference
@@ -459,7 +535,7 @@ You can customize test behavior by setting environment variables:
 |----------|-------------|---------|
 | `RPC_URL` | Solana RPC endpoint | `http://127.0.0.1:8899` |
 | `TEST_SERVER_URL` | Kora RPC server URL | `http://127.0.0.1:8080` |
-| `TEST_SENDER_KEYPAIR` | Base58 encoded test sender keypair | Built-in test keypair |
+| `TEST_SENDER_KEYPAIR` | Test sender keypair (supports multiple formats) | Built-in test keypair |
 | `TEST_RECIPIENT_PUBKEY` | Test recipient public key | Built-in test pubkey |
 | `KORA_PRIVATE_KEY` | Kora fee payer private key | Built-in test keypair |
 | `TEST_USDC_MINT_KEYPAIR` | Test USDC mint keypair | Built-in test mint |
@@ -471,7 +547,7 @@ Make sure to update kora.toml to reflect the public key of TEST_USDC_MINT_KEYPAI
 ```bash
 # Create .env file
 echo "RPC_URL=https://api.devnet.solana.com" > .env
-echo "TEST_SENDER_KEYPAIR=your_base58_keypair" >> .env
+echo "TEST_SENDER_KEYPAIR=your_keypair" >> .env
 
 # Run tests
 make test-integration

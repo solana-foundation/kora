@@ -1,5 +1,5 @@
 use crate::{
-    config::ValidationConfig,
+    config::{FeePayerPolicy, ValidationConfig},
     error::KoraError,
     oracle::PriceSource,
     token::{Token2022Account, TokenInterface, TokenProgram, TokenType},
@@ -36,7 +36,8 @@ pub struct TransactionValidator {
     max_signatures: u64,
     allowed_tokens: Vec<Pubkey>,
     disallowed_accounts: Vec<Pubkey>,
-    price_source: PriceSource,
+    _price_source: PriceSource,
+    fee_payer_policy: FeePayerPolicy,
 }
 
 pub struct ValidatedMint {
@@ -64,7 +65,7 @@ impl TransactionValidator {
             max_allowed_lamports: config.max_allowed_lamports,
             allowed_programs,
             max_signatures: config.max_signatures,
-            price_source: config.price_source.clone(),
+            _price_source: config.price_source.clone(),
             allowed_tokens: config
                 .allowed_tokens
                 .iter()
@@ -75,6 +76,7 @@ impl TransactionValidator {
                 .iter()
                 .map(|addr| Pubkey::from_str(addr).unwrap())
                 .collect(),
+            fee_payer_policy: config.fee_payer_policy.clone(),
         })
     }
 
@@ -105,11 +107,6 @@ impl TransactionValidator {
     }
 
     pub fn validate_transaction(&self, transaction: &Transaction) -> Result<(), KoraError> {
-        self.validate_programs(&transaction.message)?;
-        self.validate_transfer_amounts(&transaction.message)?;
-        self.validate_signatures(transaction)?;
-        self.validate_disallowed_accounts(&transaction.message)?;
-
         if transaction.message.instructions.is_empty() {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no instructions".to_string(),
@@ -121,6 +118,12 @@ impl TransactionValidator {
                 "Transaction contains no account keys".to_string(),
             ));
         }
+
+        self.validate_programs(&transaction.message)?;
+        self.validate_transfer_amounts(&transaction.message)?;
+        self.validate_signatures(transaction)?;
+        self.validate_disallowed_accounts(&transaction.message)?;
+        self.validate_fee_payer_usage(&transaction.message)?;
 
         Ok(())
     }
@@ -163,16 +166,15 @@ impl TransactionValidator {
         Ok(())
     }
 
-    #[allow(dead_code)]
     fn validate_fee_payer_usage(&self, message: &Message) -> Result<(), KoraError> {
         // Check if fee payer is first account
-        if message.account_keys.first() != Some(&self.fee_payer_pubkey) {
-            return Err(KoraError::InvalidTransaction(
-                "Fee payer must be the first account".to_string(),
-            ));
-        }
+        // if message.account_keys.first() != Some(&self.fee_payer_pubkey) {
+        //     return Err(KoraError::InvalidTransaction(
+        //         "Fee payer must be the first account".to_string(),
+        //     ));
+        // }
 
-        // Ensure fee payer is not being used as a source of funds
+        // Ensure fee payer is not being used as a source of funds or spl transfers
         for instruction in &message.instructions {
             if self.is_fee_payer_source(instruction, &message.account_keys) {
                 return Err(KoraError::InvalidTransaction(
@@ -183,21 +185,79 @@ impl TransactionValidator {
         Ok(())
     }
 
-    #[allow(dead_code)]
     fn is_fee_payer_source(&self, ix: &CompiledInstruction, account_keys: &[Pubkey]) -> bool {
-        // For system program transfers, check if fee payer is the source
-        if account_keys[ix.program_id_index as usize] == system_program::ID {
-            if let Ok(system_ix) =
-                bincode::deserialize::<system_instruction::SystemInstruction>(&ix.data)
-            {
-                if let system_instruction::SystemInstruction::Transfer { lamports: _ } = system_ix {
-                    // For transfer instruction, first account is source
-                    return account_keys[ix.accounts[0] as usize] == self.fee_payer_pubkey;
+        let (account_idx, policy_allowed) = match account_keys[ix.program_id_index as usize] {
+            system_program::ID => {
+                if let Ok(sys_ix) =
+                    bincode::deserialize::<system_instruction::SystemInstruction>(&ix.data)
+                {
+                    match sys_ix {
+                        system_instruction::SystemInstruction::Transfer { .. } => (
+                            Some(ix.accounts[0] as usize),
+                            self.fee_payer_policy.allow_sol_transfers,
+                        ),
+                        system_instruction::SystemInstruction::TransferWithSeed { .. } => (
+                            Some(ix.accounts[1] as usize),
+                            self.fee_payer_policy.allow_sol_transfers,
+                        ),
+                        system_instruction::SystemInstruction::Assign { .. } => {
+                            (Some(ix.accounts[0] as usize), self.fee_payer_policy.allow_assign)
+                        }
+                        system_instruction::SystemInstruction::AssignWithSeed { .. } => {
+                            (Some(ix.accounts[1] as usize), self.fee_payer_policy.allow_assign)
+                        }
+                        _ => (None, true),
+                    }
+                } else {
+                    (None, true)
                 }
             }
-        }
+            spl_token::ID => {
+                if let Ok(spl_ix) = spl_token::instruction::TokenInstruction::unpack(&ix.data) {
+                    match spl_ix {
+                        spl_token::instruction::TokenInstruction::Transfer { .. } => (
+                            Some(ix.accounts[2] as usize),
+                            self.fee_payer_policy.allow_spl_transfers,
+                        ),
+                        spl_token::instruction::TokenInstruction::TransferChecked { .. } => (
+                            Some(ix.accounts[3] as usize),
+                            self.fee_payer_policy.allow_spl_transfers,
+                        ),
+                        _ => (None, true),
+                    }
+                } else {
+                    (None, true)
+                }
+            }
+            spl_token_2022::ID => {
+                if let Ok(spl_ix) = spl_token_2022::instruction::TokenInstruction::unpack(&ix.data)
+                {
+                    match spl_ix {
+                        #[allow(deprecated)] // Still need to support it for backwards compatibility
+                        spl_token_2022::instruction::TokenInstruction::Transfer { .. } => (
+                            Some(ix.accounts[2] as usize),
+                            self.fee_payer_policy.allow_token2022_transfers,
+                        ),
+                        spl_token_2022::instruction::TokenInstruction::TransferChecked {
+                            ..
+                        } => (
+                            Some(ix.accounts[3] as usize),
+                            self.fee_payer_policy.allow_token2022_transfers,
+                        ),
+                        _ => (None, true),
+                    }
+                } else {
+                    (None, true)
+                }
+            }
+            _ => (None, true),
+        };
 
-        false
+        if let Some(idx) = account_idx {
+            !policy_allowed && account_keys[idx] == self.fee_payer_pubkey
+        } else {
+            false
+        }
     }
 
     fn validate_transfer_amounts(&self, message: &Message) -> Result<(), KoraError> {
@@ -235,23 +295,63 @@ impl TransactionValidator {
     fn calculate_total_outflow(&self, message: &Message) -> u64 {
         let mut total = 0u64;
 
+        // Right now, SPL / SPL 2022 transfers of tokens are not calculated in the total outflow.
+        // We could implement something similar to the "validate_token_payment" function to calculate the spl
+        // tokens lamport value and add it to the total outflow.
+
         for instruction in &message.instructions {
             let program_id = message.account_keys[instruction.program_id_index as usize];
 
-            // Handle System Program transfers
+            // Handle System Program transfers / account creation (with and without seed)
             if program_id == system_program::ID {
-                if let Ok(system_ix) =
-                    bincode::deserialize::<system_instruction::SystemInstruction>(&instruction.data)
-                {
-                    if let system_instruction::SystemInstruction::Transfer { lamports } = system_ix
-                    {
-                        // Only count if source is fee payer
+                match bincode::deserialize::<system_instruction::SystemInstruction>(
+                    &instruction.data,
+                ) {
+                    // For all of those, funding account is the account at index 0
+                    Ok(system_instruction::SystemInstruction::CreateAccount {
+                        lamports, ..
+                    })
+                    | Ok(system_instruction::SystemInstruction::CreateAccountWithSeed {
+                        lamports,
+                        ..
+                    }) => {
                         if message.account_keys[instruction.accounts[0] as usize]
                             == self.fee_payer_pubkey
                         {
                             total = total.saturating_add(lamports);
                         }
                     }
+                    Ok(system_instruction::SystemInstruction::Transfer { lamports }) => {
+                        // Check if fee payer is sender (outflow)
+                        if message.account_keys[instruction.accounts[0] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_add(lamports);
+                        }
+                        // Check if fee payer is receiver (inflow, e.g., from account closure)
+                        else if message.account_keys[instruction.accounts[1] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_sub(lamports);
+                        }
+                    }
+                    Ok(system_instruction::SystemInstruction::TransferWithSeed {
+                        lamports,
+                        ..
+                    }) => {
+                        // Check if fee payer is sender (outflow). With seeds sender is at 1
+                        if message.account_keys[instruction.accounts[1] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_add(lamports);
+                        } else if message.account_keys[instruction.accounts[2] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_sub(lamports);
+                        }
+                    }
+
+                    _ => {}
                 }
             }
         }
@@ -272,7 +372,7 @@ pub fn validate_token2022_account(
             1,
             (amount as u128 * 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60)) as u64,
         );
-        println!("DEBUG: In fallback path, amount={}, interest={}", amount, interest);
+        println!("DEBUG: In fallback path, amount={amount}, interest={interest}");
         return Ok(amount + interest);
     }
 
@@ -324,7 +424,7 @@ fn calculate_actual_transfer_amount(
     Ok(actual_amount)
 }
 
-fn calculate_transfer_fee(amount: u64, fee_config: &TransferFeeConfig) -> Result<u64, KoraError> {
+fn calculate_transfer_fee(amount: u64, _fee_config: &TransferFeeConfig) -> Result<u64, KoraError> {
     // Use a fixed percentage for transfer fee (1%)
     let basis_points = 100; // 1%
     let fee = (amount as u128 * basis_points as u128 / 10000) as u64;
@@ -336,6 +436,7 @@ fn calculate_transfer_fee(amount: u64, fee_config: &TransferFeeConfig) -> Result
     Ok(fee)
 }
 
+#[allow(dead_code)]
 fn calculate_interest(
     amount: u64,
     _interest_config: &InterestBearingConfig,
@@ -378,7 +479,7 @@ async fn process_token_transfer(
 
         let token_state = token_program
             .unpack_token_account(&source_account.data)
-            .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {}", e)))?;
+            .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {e}")))?;
 
         if source_account.owner != token_program.program_id() {
             return Ok(false);
@@ -456,8 +557,7 @@ pub async fn validate_token_payment(
     }
 
     Err(KoraError::InvalidTransaction(format!(
-        "Insufficient token payment. Required {} lamports, got {}",
-        required_lamports, total_lamport_value
+        "Insufficient token payment. Required {required_lamports} lamports, got {total_lamport_value}"
     )))
 }
 
@@ -476,19 +576,20 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             price_source: PriceSource::Mock,
-            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_programs: vec![system_program::ID.to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
-        // Test case 1: Transaction using fee payer as source
+        // Test case 1: Transaction using fee payer as source (should now pass with default policy)
         let recipient = Pubkey::new_unique();
-        let instruction = system_instruction::transfer(&fee_payer, &recipient, 5_000_000);
+        let instruction = system_instruction::transfer(&fee_payer, &recipient, 500_000);
         let message = Message::new(&[instruction], Some(&fee_payer));
         let transaction = Transaction::new_unsigned(message);
-        assert!(validator.validate_transaction(&transaction).is_err());
+        assert!(validator.validate_transaction(&transaction).is_ok());
 
         // Test case 2: Valid transaction within limits
         let sender = Pubkey::new_unique();
@@ -505,10 +606,11 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             price_source: PriceSource::Mock,
-            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_programs: vec![system_program::ID.to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -537,10 +639,11 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             price_source: PriceSource::Mock,
-            allowed_programs: vec!["11111111111111111111111111111111".to_string()], // System program
+            allowed_programs: vec![system_program::ID.to_string()], // System program
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -572,10 +675,11 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 2,
             price_source: PriceSource::Mock,
-            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_programs: vec![system_program::ID.to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -600,10 +704,11 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             price_source: PriceSource::Mock,
-            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_programs: vec![system_program::ID.to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
@@ -629,10 +734,11 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             price_source: PriceSource::Mock,
-            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_programs: vec![system_program::ID.to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
@@ -649,10 +755,11 @@ mod tests {
             max_allowed_lamports: 1_000_000,
             max_signatures: 10,
             price_source: PriceSource::Mock,
-            allowed_programs: vec!["11111111111111111111111111111111".to_string()],
+            allowed_programs: vec![system_program::ID.to_string()],
             allowed_tokens: vec![],
             allowed_spl_paid_tokens: vec![],
             disallowed_accounts: vec!["hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek".to_string()],
+            fee_payer_policy: FeePayerPolicy::default(),
         };
 
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
@@ -740,6 +847,268 @@ mod tests {
     }
 
     #[test]
+    fn test_fee_payer_policy_sol_transfers() {
+        let fee_payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        // Test with allow_sol_transfers = true (default)
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec![system_program::ID.to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let instruction = system_instruction::transfer(&fee_payer, &recipient, 1000);
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+
+        assert!(validator.validate_transaction(&transaction).is_ok());
+
+        // Test with allow_sol_transfers = false
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec![system_program::ID.to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy { allow_sol_transfers: false, ..Default::default() },
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let instruction = system_instruction::transfer(&fee_payer, &recipient, 1000);
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+
+        assert!(validator.validate_transaction(&transaction).is_err());
+    }
+
+    #[test]
+    fn test_fee_payer_policy_assign() {
+        let fee_payer = Pubkey::new_unique();
+        let new_owner = Pubkey::new_unique();
+
+        // Test with allow_assign = true (default)
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec![system_program::ID.to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let instruction = system_instruction::assign(&fee_payer, &new_owner);
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+
+        assert!(validator.validate_transaction(&transaction).is_ok());
+
+        // Test with allow_assign = false
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec![system_program::ID.to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy { allow_assign: false, ..Default::default() },
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let instruction = system_instruction::assign(&fee_payer, &new_owner);
+        let message = Message::new(&[instruction], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+
+        assert!(validator.validate_transaction(&transaction).is_err());
+    }
+
+    #[test]
+    fn test_fee_payer_policy_spl_transfers() {
+        let fee_payer = Pubkey::new_unique();
+
+        let fee_payer_token_account = Pubkey::new_unique();
+        let recipient_token_account = Pubkey::new_unique();
+
+        // Test with allow_spl_transfers = true (default)
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec![spl_token::id().to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let transfer_ix = spl_token::instruction::transfer(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &recipient_token_account,
+            &fee_payer, // fee payer is the signer
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = Message::new(&[transfer_ix], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+
+        assert!(validator.validate_transaction(&transaction).is_ok());
+
+        // Test with allow_spl_transfers = false
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec![spl_token::id().to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy { allow_spl_transfers: false, ..Default::default() },
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let transfer_ix = spl_token::instruction::transfer(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &recipient_token_account,
+            &fee_payer, // fee payer is the signer
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = Message::new(&[transfer_ix], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+
+        assert!(validator.validate_transaction(&transaction).is_err());
+
+        // Test with other account as source - should always pass
+        let other_signer = Pubkey::new_unique();
+        let transfer_ix = spl_token::instruction::transfer(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &recipient_token_account,
+            &other_signer, // other account is the signer
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = Message::new(&[transfer_ix], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+
+        assert!(validator.validate_transaction(&transaction).is_ok());
+    }
+
+    #[test]
+    fn test_fee_payer_policy_token2022_transfers() {
+        let fee_payer = Pubkey::new_unique();
+
+        let fee_payer_token_account = Pubkey::new_unique();
+        let recipient_token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Test with allow_token2022_transfers = true (default)
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec![spl_token_2022::id().to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let transfer_ix = spl_token_2022::instruction::transfer_checked(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &mint,
+            &recipient_token_account,
+            &fee_payer, // fee payer is the signer
+            &[],
+            1000,
+            2,
+        )
+        .unwrap();
+
+        let message = Message::new(&[transfer_ix], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+
+        assert!(validator.validate_transaction(&transaction).is_ok());
+
+        // Test with allow_token2022_transfers = false
+        let config = ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec![spl_token_2022::id().to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy {
+                allow_token2022_transfers: false,
+                ..Default::default()
+            },
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let transfer_ix = spl_token_2022::instruction::transfer_checked(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &mint,
+            &recipient_token_account,
+            &fee_payer, // fee payer is the signer
+            &[],
+            1000,
+            2,
+        )
+        .unwrap();
+
+        let message = Message::new(&[transfer_ix], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+
+        // Should fail because fee payer is not allowed to be source
+        assert!(validator.validate_transaction(&transaction).is_err());
+
+        // Test with other account as source - should always pass
+        let other_signer = Pubkey::new_unique();
+        let transfer_ix = spl_token_2022::instruction::transfer_checked(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &mint,
+            &recipient_token_account,
+            &other_signer, // other account is the signer
+            &[],
+            1000,
+            2,
+        )
+        .unwrap();
+
+        let message = Message::new(&[transfer_ix], Some(&fee_payer));
+        let transaction = Transaction::new_unsigned(message);
+
+        // Should pass because fee payer is not the source
+        assert!(validator.validate_transaction(&transaction).is_ok());
+    }
+
+    #[test]
     fn test_validate_token2022_account_with_transfer_fee_and_interest() {
         use spl_pod::{
             optional_keys::OptionalNonZeroPubkey,
@@ -802,5 +1171,117 @@ mod tests {
 
         // The final amount should reflect both interest and fees
         assert!(final_amount != amount, "Amount should be adjusted for both interest and fees");
+    }
+
+    #[test]
+    fn test_calculate_total_outflow() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 10_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec![system_program::ID.to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        // Test 1: Fee payer as sender in Transfer - should add to outflow
+        let recipient = Pubkey::new_unique();
+        let transfer_instruction = system_instruction::transfer(&fee_payer, &recipient, 100_000);
+        let message = Message::new(&[transfer_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 100_000, "Transfer from fee payer should add to outflow");
+
+        // Test 2: Fee payer as recipient in Transfer - should subtract from outflow (account closure)
+        let sender = Pubkey::new_unique();
+        let transfer_instruction = system_instruction::transfer(&sender, &fee_payer, 50_000);
+        let message = Message::new(&[transfer_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 0, "Transfer to fee payer should subtract from outflow"); // 0 - 50_000 = 0 (saturating_sub)
+
+        // Test 3: Fee payer as funding account in CreateAccount - should add to outflow
+        let new_account = Pubkey::new_unique();
+        let create_instruction = system_instruction::create_account(
+            &fee_payer,
+            &new_account,
+            200_000, // lamports
+            100,     // space
+            &system_program::ID,
+        );
+        let message = Message::new(&[create_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 200_000, "CreateAccount funded by fee payer should add to outflow");
+
+        // Test 4: Fee payer as funding account in CreateAccountWithSeed - should add to outflow
+        let create_with_seed_instruction = system_instruction::create_account_with_seed(
+            &fee_payer,
+            &new_account,
+            &fee_payer,
+            "test_seed",
+            300_000, // lamports
+            100,     // space
+            &system_program::ID,
+        );
+        let message = Message::new(&[create_with_seed_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(
+            outflow, 300_000,
+            "CreateAccountWithSeed funded by fee payer should add to outflow"
+        );
+
+        // Test 5: TransferWithSeed from fee payer - should add to outflow
+        let transfer_with_seed_instruction = system_instruction::transfer_with_seed(
+            &fee_payer,
+            &fee_payer,
+            "test_seed".to_string(),
+            &system_program::ID,
+            &recipient,
+            150_000,
+        );
+        let message = Message::new(&[transfer_with_seed_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 150_000, "TransferWithSeed from fee payer should add to outflow");
+
+        // Test 6: Multiple instructions - should sum correctly
+        let instructions = vec![
+            system_instruction::transfer(&fee_payer, &recipient, 100_000), // +100_000
+            system_instruction::transfer(&sender, &fee_payer, 30_000),     // -30_000
+            system_instruction::create_account(
+                &fee_payer,
+                &new_account,
+                50_000,
+                100,
+                &system_program::ID,
+            ), // +50_000
+        ];
+        let message = Message::new(&instructions, Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(
+            outflow, 120_000,
+            "Multiple instructions should sum correctly: 100000 - 30000 + 50000 = 120000"
+        );
+
+        // Test 7: Other account as sender - should not affect outflow
+        let other_sender = Pubkey::new_unique();
+        let transfer_instruction = system_instruction::transfer(&other_sender, &recipient, 500_000);
+        let message = Message::new(&[transfer_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 0, "Transfer from other account should not affect outflow");
+
+        // Test 8: Other account funding CreateAccount - should not affect outflow
+        let other_funder = Pubkey::new_unique();
+        let create_instruction = system_instruction::create_account(
+            &other_funder,
+            &new_account,
+            1_000_000,
+            100,
+            &system_program::ID,
+        );
+        let message = Message::new(&[create_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 0, "CreateAccount funded by other account should not affect outflow");
     }
 }
