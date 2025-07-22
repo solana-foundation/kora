@@ -95,7 +95,8 @@ async fn test_pyusd_token_e2e_with_kora() {
         &validation_config,
     )
     .unwrap()
-    .validate_transaction(&transfer_tx);
+    .validate_transaction(&transfer_tx, None)
+    .await;
 
     // Assert the transaction is valid according to Kora rules
     assert!(
