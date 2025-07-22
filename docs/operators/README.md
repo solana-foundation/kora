@@ -191,7 +191,7 @@ Use the sample Dockerfile to deploy on any container platform:
 
 ## Need Help?
 
-- **[Solana Stack Exchange](https://solana.stackexchange.com/) - Ask questions/share learnings (make sure to use the `kora` tag)**
+- **[Solana Stack Exchange](https://solana.stackexchange.com/)** - Ask questions/share learnings (make sure to use the `kora` tag)
 - **[GitHub Issues](https://github.com/solana-foundation/kora/issues)** - Report bugs or get help
 
 
