@@ -310,18 +310,12 @@ impl TransactionValidator {
                     // For all of those, funding account is the account at index 0
                     Ok(system_instruction::SystemInstruction::CreateAccount {
                         lamports, ..
-                    }) => {
-                        if message.account_keys[instruction.accounts[0] as usize]
-                            == self.fee_payer_pubkey
-                        {
-                            total = total.saturating_add(lamports);
-                        }
-                    }
-                    Ok(system_instruction::SystemInstruction::CreateAccountWithSeed {
+                    })
+                    | Ok(system_instruction::SystemInstruction::CreateAccountWithSeed {
                         lamports,
                         ..
                     }) => {
-                        if message.account_keys[instruction.accounts[2] as usize]
+                        if message.account_keys[instruction.accounts[0] as usize]
                             == self.fee_payer_pubkey
                         {
                             total = total.saturating_add(lamports);
