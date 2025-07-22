@@ -117,7 +117,7 @@ pub async fn transfer_transaction(
     // validate transaction before signing
     validator.validate_transaction(&transaction)?;
 
-    let signature = signer.sign_solana(&transaction.message_data()).await?;
+    let signature = signer.sign_solana(&transaction).await?;
     transaction.signatures[0] = signature;
 
     let encoded = encode_b64_transaction(&transaction)?;
