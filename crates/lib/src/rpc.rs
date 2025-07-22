@@ -19,7 +19,7 @@ pub async fn create_rpc_client(url: &str) -> Result<Arc<RpcClient>, KoraError> {
     client
         .get_version()
         .await
-        .map_err(|e| KoraError::RpcError(format!("Failed to connect to RPC: {}", e)))?;
+        .map_err(|e| KoraError::RpcError(format!("Failed to connect to RPC: {e}")))?;
 
     Ok(client)
 }

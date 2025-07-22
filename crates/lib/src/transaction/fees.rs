@@ -98,7 +98,7 @@ pub async fn calculate_token_value_in_lamports(
     let token_price = oracle
         .get_token_price(&mint.to_string())
         .await
-        .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {}", e)))?;
+        .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {e}")))?;
 
     // Convert token amount to its real value based on decimals and multiply by SOL price
     let token_amount = amount as f64 / 10f64.powi(decimals as i32);

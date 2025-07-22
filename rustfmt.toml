@@ -6,3 +6,4 @@ use_small_heuristics = "Max"
 imports_granularity = "Crate"
 wrap_comments = false
 normalize_doc_attributes = false
+reorder_imports = true

@@ -44,7 +44,7 @@ impl PriceOracle for JupiterPriceOracle {
             .get(&url)
             .send()
             .await
-            .map_err(|e| KoraError::RpcError(format!("Jupiter API request failed: {}", e)))?;
+            .map_err(|e| KoraError::RpcError(format!("Jupiter API request failed: {e}")))?;
 
         if !response.status().is_success() {
             return Err(KoraError::RpcError(format!("Jupiter API error: {}", response.status())));
@@ -53,7 +53,7 @@ impl PriceOracle for JupiterPriceOracle {
         let jupiter_response: JupiterResponse = response
             .json()
             .await
-            .map_err(|e| KoraError::RpcError(format!("Failed to parse Jupiter response: {}", e)))?;
+            .map_err(|e| KoraError::RpcError(format!("Failed to parse Jupiter response: {e}")))?;
 
         let price_data = jupiter_response
             .data
@@ -64,7 +64,7 @@ impl PriceOracle for JupiterPriceOracle {
         let price = price_data
             .price
             .parse::<f64>()
-            .map_err(|e| KoraError::RpcError(format!("Failed to parse price: {}", e)))?;
+            .map_err(|e| KoraError::RpcError(format!("Failed to parse price: {e}")))?;
 
         Ok(TokenPrice { price, confidence: 0.95, source: PriceSource::Jupiter })
     }

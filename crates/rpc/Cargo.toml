@@ -12,6 +12,7 @@ path = "src/main.rs"
 [[bin]]
 name = "kora-openapi"
 path = "src/openapi/main.rs"
+required-features = ["docs"]
 
 [dependencies]
 kora-lib = { path = "../lib", version = "1.0.3" }
@@ -49,6 +50,9 @@ bincode = { workspace = true }
 bs58 = { workspace = true }
 utoipa.workspace = true
 dirs = "6.0.0"
+
+[features]
+docs = []
 
 [dev-dependencies]
 tokio = { workspace = true }

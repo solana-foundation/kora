@@ -32,9 +32,8 @@ pub fn check_valid_tokens(tokens: &[String]) -> Result<Vec<Pubkey>, KoraError> {
     tokens
         .iter()
         .map(|token| {
-            Pubkey::from_str(token).map_err(|_| {
-                KoraError::ValidationError(format!("Invalid token address: {}", token))
-            })
+            Pubkey::from_str(token)
+                .map_err(|_| KoraError::ValidationError(format!("Invalid token address: {token}")))
         })
         .collect()
 }

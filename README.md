@@ -39,6 +39,16 @@ cd kora
 make install
 ```
 
+### Pre-commit Setup
+
+This project uses pre-commit hooks to automatically format code before commits. Install the hooks:
+
+```bash
+pre-commit install
+```
+
+Now your code will be automatically formatted when you commit!
+
 ### Running the Server
 
 Basic usage:

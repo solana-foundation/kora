@@ -62,6 +62,7 @@ export interface ValidationConfig {
   allowed_tokens: string[];
   allowed_spl_paid_tokens: string[];
   disallowed_accounts: string[];
+  fee_payer_policy: FeePayerPolicy;
 }
 
 export interface Config {
@@ -74,3 +75,10 @@ export interface RpcError {
   code: number;
   message: string;
 } 
+
+export interface FeePayerPolicy {
+  allow_sol_transfers: boolean;
+  allow_spl_transfers: boolean;
+  allow_token2022_transfers: boolean;
+  allow_assign: boolean;
+}

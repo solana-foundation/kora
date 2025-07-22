@@ -15,6 +15,14 @@ type ValidationConfig = Readonly<{
     allowed_tokens: Address[];
     allowed_spl_paid_tokens: Address[];
     disallowed_accounts: Address[];
+    fee_payer_policy: FeePayerPolicy;
+}>;
+
+type FeePayerPolicy = Readonly<{
+    allow_sol_transfers: boolean;
+    allow_spl_transfers: boolean;
+    allow_token2022_transfers: boolean;
+    allow_assign: boolean;
 }>;
 
 type GetBlockHashResponse = {

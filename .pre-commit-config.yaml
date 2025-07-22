@@ -1,0 +1,11 @@
+# See https://pre-commit.com for more information
+repos:
+  - repo: local
+    hooks:
+      - id: make-fmt
+        name: make fmt
+        description: Format Rust code automatically
+        entry: make fmt
+        language: system
+        types: [rust]
+        pass_filenames: false
