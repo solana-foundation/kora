@@ -2,7 +2,8 @@ use jsonrpsee::{core::client::ClientT, rpc_params};
 use kora_lib::{
     token::{TokenInterface, TokenProgram, TokenType},
     transaction::{
-        decode_b64_transaction, encode_b64_transaction, new_unsigned_versioned_transaction,
+        decode_b64_transaction, encode_b64_transaction, find_signer_position,
+        new_unsigned_versioned_transaction,
     },
 };
 use serde_json::json;
@@ -107,11 +108,7 @@ async fn test_sign_spl_transaction() {
 
     let mut transaction = transaction;
 
-    let sender_position = transaction
-        .message
-        .static_account_keys()
-        .iter()
-        .position(|key| key == &sender.pubkey())
+    let sender_position = find_signer_position(&transaction, &sender.pubkey())
         .expect("Sender not found in account keys");
 
     let signature = sender.sign_message(&transaction.message.serialize());
@@ -314,11 +311,7 @@ async fn test_sign_transaction_if_paid() {
     // Initialize transaction with correct number of signatures
     let mut transaction = new_unsigned_versioned_transaction(message);
 
-    let sender_position = transaction
-        .message
-        .static_account_keys()
-        .iter()
-        .position(|key| key == &sender.pubkey())
+    let sender_position = find_signer_position(&transaction, &sender.pubkey())
         .expect("Sender not found in account keys");
 
     let signature = sender.sign_message(&transaction.message.serialize());

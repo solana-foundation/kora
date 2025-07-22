@@ -65,18 +65,8 @@ pub async fn sign_transaction(
     let signer = get_signer()?;
     let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
 
-    // Validate transaction and accounts
-    validator.validate_transaction(&transaction)?;
-    validator.validate_disallowed_accounts(&transaction.message)?;
-
-    match &transaction.message {
-        VersionedMessage::V0(message) => {
-            let lookup_addresses =
-                resolve_lookup_table_addresses(rpc_client, &message.address_table_lookups).await?;
-            validator.validate_lookup_table_addresses(&lookup_addresses)?;
-        }
-        VersionedMessage::Legacy(_) => {}
-    }
+    // Validate transaction and accounts with lookup table resolution for V0 transactions
+    validator.validate_transaction(&transaction, Some(rpc_client)).await?;
 
     // Get latest blockhash and update transaction
     let mut transaction = transaction;
@@ -194,6 +184,22 @@ pub async fn resolve_lookup_table_addresses(
     }
 
     Ok(resolved_addresses)
+}
+
+pub fn find_signer_position(
+    transaction: &VersionedTransaction,
+    signer_pubkey: &Pubkey,
+) -> Result<usize, KoraError> {
+    transaction
+        .message
+        .static_account_keys()
+        .iter()
+        .position(|key| key == signer_pubkey)
+        .ok_or_else(|| {
+            KoraError::InvalidTransaction(format!(
+                "Signer {signer_pubkey} not found in transaction account keys"
+            ))
+        })
 }
 
 #[cfg(test)]
@@ -426,5 +432,97 @@ mod tests {
         assert_eq!(resolved_addresses[0], address1);
         assert_eq!(resolved_addresses[1], address3);
         assert_eq!(resolved_addresses[2], address2);
+    }
+
+    #[test]
+    fn test_find_signer_position_success() {
+        let keypair = Keypair::new();
+        let program_id = Pubkey::new_unique();
+        let instruction = Instruction::new_with_bytes(
+            program_id,
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        let position = find_signer_position(&transaction, &keypair.pubkey()).unwrap();
+        assert_eq!(position, 0); // Fee payer is typically at position 0
+    }
+
+    #[test]
+    fn test_find_signer_position_success_v0() {
+        let keypair = Keypair::new();
+        let program_id = Pubkey::new_unique();
+        let other_account = Pubkey::new_unique();
+
+        let v0_message = v0::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 2,
+            },
+            account_keys: vec![keypair.pubkey(), other_account, program_id],
+            recent_blockhash: Hash::default(),
+            instructions: vec![CompiledInstruction {
+                program_id_index: 2,
+                accounts: vec![0, 1],
+                data: vec![1, 2, 3],
+            }],
+            address_table_lookups: vec![],
+        };
+        let message = VersionedMessage::V0(v0_message);
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        let position = find_signer_position(&transaction, &keypair.pubkey()).unwrap();
+        assert_eq!(position, 0);
+
+        let other_position = find_signer_position(&transaction, &other_account).unwrap();
+        assert_eq!(other_position, 1);
+    }
+
+    #[test]
+    fn test_find_signer_position_not_found() {
+        let keypair = Keypair::new();
+        let missing_keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        let result = find_signer_position(&transaction, &missing_keypair.pubkey());
+        assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
+
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains(&missing_keypair.pubkey().to_string()));
+            assert!(msg.contains("not found in transaction account keys"));
+        }
+    }
+
+    #[test]
+    fn test_find_signer_position_empty_account_keys() {
+        // Create a transaction with minimal account keys
+        let v0_message = v0::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 0,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 0,
+            },
+            account_keys: vec![], // Empty account keys
+            recent_blockhash: Hash::default(),
+            instructions: vec![],
+            address_table_lookups: vec![],
+        };
+        let message = VersionedMessage::V0(v0_message);
+        let transaction = new_unsigned_versioned_transaction(message);
+        let search_key = Pubkey::new_unique();
+
+        let result = find_signer_position(&transaction, &search_key);
+        assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
     }
 }

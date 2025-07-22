@@ -13,7 +13,8 @@ use kora_lib::{
     get_signer,
     token::TokenInterface,
     transaction::{
-        encode_b64_message, encode_b64_transaction, new_unsigned_versioned_transaction,
+        encode_b64_message, encode_b64_transaction, find_signer_position,
+        new_unsigned_versioned_transaction,
         validator::{TransactionValidator, ValidatedMint},
     },
     KoraError, Signer as _,
@@ -119,10 +120,13 @@ pub async fn transfer_transaction(
     let mut transaction = new_unsigned_versioned_transaction(message);
 
     // validate transaction before signing
-    validator.validate_transaction(&transaction)?;
+    validator.validate_transaction(&transaction, None).await?;
+
+    // Find the fee payer position in the account keys
+    let fee_payer_position = find_signer_position(&transaction, &fee_payer)?;
 
     let signature = signer.sign_solana(&transaction).await?;
-    transaction.signatures[0] = signature;
+    transaction.signatures[fee_payer_position] = signature;
 
     let encoded = encode_b64_transaction(&transaction)?;
     let message_encoded = encode_b64_message(&transaction.message)?;
