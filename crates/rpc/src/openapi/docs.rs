@@ -109,6 +109,6 @@ pub fn update_docs() {
 
     if !validate_result.status.success() {
         let stderr = String::from_utf8_lossy(&validate_result.stderr);
-        panic!("Failed to validate OpenAPI schema: {}", stderr);
+        panic!("Failed to validate OpenAPI schema: {stderr}");
     }
 }

@@ -10,7 +10,7 @@ use tower_http::cors::CorsLayer;
 
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    log::info!("RPC server started on {}, port {}", addr, port);
+    log::info!("RPC server started on {addr}, port {port}");
 
     // Build middleware stack with tracing and CORS
     let cors = CorsLayer::new()

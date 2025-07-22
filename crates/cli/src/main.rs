@@ -57,14 +57,14 @@ async fn main() -> Result<(), KoraError> {
     let cli = Cli::parse();
 
     let config = load_config(&cli.args.common.config).unwrap_or_else(|e| {
-        print_error(&format!("Failed to load config: {}", e));
+        print_error(&format!("Failed to load config: {e}"));
         std::process::exit(1);
     });
 
     let rpc_client = get_rpc_client(&cli.args.common.rpc_url);
 
     if let Err(e) = config.validate(rpc_client.as_ref()).await {
-        print_error(&format!("Config validation failed: {}", e));
+        print_error(&format!("Config validation failed: {e}"));
         std::process::exit(1);
     }
 
@@ -72,7 +72,7 @@ async fn main() -> Result<(), KoraError> {
     if !cli.args.common.skip_signer {
         let signer = init_signer_type(&cli.args.common).unwrap();
         init_signer(signer).unwrap_or_else(|e| {
-            print_error(&format!("Failed to initialize signer: {}", e));
+            print_error(&format!("Failed to initialize signer: {e}"));
             std::process::exit(1);
         });
     }
@@ -83,14 +83,14 @@ async fn main() -> Result<(), KoraError> {
             let validation = config.validation;
 
             let transaction = decode_b64_transaction(&transaction).map_err(|e| {
-                print_error(&format!("Failed to decode transaction: {}", e));
+                print_error(&format!("Failed to decode transaction: {e}"));
                 e
             })?;
 
             let (transaction, signed_tx) =
                 sign_transaction(&rpc_client, &validation, transaction).await?;
             println!("Signature: {}", transaction.signatures[0]);
-            println!("Signed Transaction: {}", signed_tx);
+            println!("Signed Transaction: {signed_tx}");
         }
         Some(Commands::SignAndSend { transaction }) => {
             if transaction.is_empty() {
@@ -101,32 +101,32 @@ async fn main() -> Result<(), KoraError> {
             let validation = config.validation;
 
             let transaction = decode_b64_transaction(&transaction).map_err(|e| {
-                print_error(&format!("Failed to decode transaction: {}", e));
+                print_error(&format!("Failed to decode transaction: {e}"));
                 e
             })?;
 
             let (signature, signed_tx) =
                 sign_and_send_transaction(&rpc_client, &validation, transaction).await?;
-            println!("Signature: {}", signature);
-            println!("Signed Transaction: {}", signed_tx);
+            println!("Signature: {signature}");
+            println!("Signed Transaction: {signed_tx}");
         }
         Some(Commands::EstimateFee { transaction }) => {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
 
             let transaction = decode_b64_transaction(&transaction).map_err(|e| {
-                print_error(&format!("Failed to decode transaction: {}", e));
+                print_error(&format!("Failed to decode transaction: {e}"));
                 e
             })?;
 
             let fee = estimate_transaction_fee(&rpc_client, &transaction).await?;
-            println!("Estimated fee: {} lamports", fee);
+            println!("Estimated fee: {fee} lamports");
         }
         Some(Commands::SignIfPaid { transaction, margin }) => {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
             let transaction = decode_b64_transaction(&transaction).map_err(|e| {
-                print_error(&format!("Failed to decode transaction: {}", e));
+                print_error(&format!("Failed to decode transaction: {e}"));
                 e
             })?;
 
@@ -134,7 +134,7 @@ async fn main() -> Result<(), KoraError> {
                 sign_transaction_if_paid(&rpc_client, &validation, transaction, margin).await?;
 
             println!("Signature: {}", transaction.signatures[0]);
-            println!("Signed Transaction: {}", signed_tx);
+            println!("Signed Transaction: {signed_tx}");
         }
         None => {
             println!("No command specified. Use --help for usage information.");
@@ -145,6 +145,6 @@ async fn main() -> Result<(), KoraError> {
 }
 
 fn print_error(message: &str) {
-    eprintln!("Error: {}", message);
+    eprintln!("Error: {message}");
     std::process::exit(1);
 }

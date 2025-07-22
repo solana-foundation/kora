@@ -30,5 +30,5 @@ fn main() {
     let base64_tx = encode_b64_transaction(&transaction).unwrap();
 
     println!("Sender pubkey: {}", sender.pubkey());
-    println!("Base64 encoded unsigned transaction: {}", base64_tx);
+    println!("Base64 encoded unsigned transaction: {base64_tx}");
 }
