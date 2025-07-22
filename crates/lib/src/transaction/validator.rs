@@ -310,10 +310,6 @@ impl TransactionValidator {
                     // For all of those, funding account is the account at index 0
                     Ok(system_instruction::SystemInstruction::CreateAccount {
                         lamports, ..
-                    })
-                    | Ok(system_instruction::SystemInstruction::CreateAccountWithSeed {
-                        lamports,
-                        ..
                     }) => {
                         if message.account_keys[instruction.accounts[0] as usize]
                             == self.fee_payer_pubkey
@@ -321,11 +317,17 @@ impl TransactionValidator {
                             total = total.saturating_add(lamports);
                         }
                     }
-                    Ok(system_instruction::SystemInstruction::Transfer { lamports })
-                    | Ok(system_instruction::SystemInstruction::TransferWithSeed {
+                    Ok(system_instruction::SystemInstruction::CreateAccountWithSeed {
                         lamports,
                         ..
                     }) => {
+                        if message.account_keys[instruction.accounts[2] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_add(lamports);
+                        }
+                    }
+                    Ok(system_instruction::SystemInstruction::Transfer { lamports }) => {
                         // Check if fee payer is sender (outflow)
                         if message.account_keys[instruction.accounts[0] as usize]
                             == self.fee_payer_pubkey
@@ -339,6 +341,22 @@ impl TransactionValidator {
                             total = total.saturating_sub(lamports);
                         }
                     }
+                    Ok(system_instruction::SystemInstruction::TransferWithSeed {
+                        lamports,
+                        ..
+                    }) => {
+                        // Check if fee payer is sender (outflow). With seeds sender is at 1
+                        if message.account_keys[instruction.accounts[1] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_add(lamports);
+                        } else if message.account_keys[instruction.accounts[2] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_sub(lamports);
+                        }
+                    }
+
                     _ => {}
                 }
             }
