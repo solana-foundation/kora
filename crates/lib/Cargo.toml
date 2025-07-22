@@ -5,6 +5,9 @@ edition = "2021"
 license = "MIT"
 description = "Core library for Kora gasless relayer"
 
+[lints]
+workspace = true
+
 [lib]
 path = "src/mod.rs"
 

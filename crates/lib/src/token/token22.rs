@@ -196,6 +196,7 @@ impl TokenInterface for Token2022Program {
         amount: u64,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
         // Get the mint from the source account data
+        #[allow(deprecated)]
         Ok(spl_token_2022::instruction::transfer(
             &self.program_id(),
             source,
@@ -254,6 +255,7 @@ impl TokenInterface for Token2022Program {
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         let instruction = instruction::TokenInstruction::unpack(data)?;
         match instruction {
+            #[allow(deprecated)]
             instruction::TokenInstruction::Transfer { amount } => Ok(amount),
             instruction::TokenInstruction::TransferChecked { amount, .. } => Ok(amount),
             _ => Err("Not a transfer instruction".into()),

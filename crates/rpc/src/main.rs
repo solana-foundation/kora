@@ -21,14 +21,14 @@ async fn main() {
     setup_logging(&args.logging_format);
 
     let config = load_config(&args.common.config).unwrap_or_else(|e| {
-        log::error!("Config load failed: {}", e);
+        log::error!("Config load failed: {e}");
         std::process::exit(1);
     });
 
     let rpc_client = get_rpc_client(&args.common.rpc_url);
 
     if let Err(e) = config.validate(rpc_client.as_ref()).await {
-        log::error!("Config validation failed: {}", e);
+        log::error!("Config validation failed: {e}");
         std::process::exit(1);
     }
 
@@ -39,7 +39,7 @@ async fn main() {
         match signer {
             KoraSigner::Privy(mut privy_signer) => {
                 privy_signer.init().await.unwrap_or_else(|e| {
-                    log::error!("Privy signer init failed: {}", e);
+                    log::error!("Privy signer init failed: {e}");
                     std::process::exit(1);
                 });
                 Some(KoraSigner::Privy(privy_signer))
@@ -52,7 +52,7 @@ async fn main() {
 
     if let Some(signer) = signer {
         init_signer(signer).unwrap_or_else(|e| {
-            log::error!("Signer init failed: {}", e);
+            log::error!("Signer init failed: {e}");
             std::process::exit(1);
         });
     }
@@ -60,7 +60,7 @@ async fn main() {
     let rpc_server = KoraRpc::new(rpc_client, config.validation, config.kora);
     let server_handle =
         run_rpc_server(rpc_server, args.port.unwrap_or(8080)).await.unwrap_or_else(|e| {
-            log::error!("Server start failed: {}", e);
+            log::error!("Server start failed: {e}");
             std::process::exit(1);
         });
 

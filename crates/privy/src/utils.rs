@@ -7,5 +7,5 @@ pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, anyhow::Error> {
 }
 
 pub fn bytes_to_hex(bytes: &[u8]) -> Result<String, anyhow::Error> {
-    Ok(bytes.iter().map(|byte| format!("{:02x}", byte)).collect())
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }

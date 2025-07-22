@@ -5,7 +5,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 
-use super::{KeypairUtil, Signature, Signer};
+use super::{KeypairUtil, Signature};
 
 /// A Solana-based signer that uses an in-memory keypair
 #[derive(Debug)]
@@ -21,7 +21,7 @@ impl SolanaMemorySigner {
 
     /// Creates a new signer from a private key byte array
     pub fn from_bytes(private_key: &[u8]) -> Result<Self, KoraError> {
-        let keypair = Keypair::from_bytes(private_key)
+        let keypair = Keypair::try_from(private_key)
             .map_err(|e| KoraError::SigningError(format!("Invalid private key bytes: {e}")))?;
         Ok(Self { keypair })
     }
