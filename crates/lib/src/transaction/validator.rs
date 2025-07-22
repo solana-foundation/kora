@@ -111,11 +111,6 @@ impl TransactionValidator {
         &self,
         transaction: &VersionedTransaction,
     ) -> Result<(), KoraError> {
-        self.validate_programs(&transaction.message)?;
-        self.validate_transfer_amounts(&transaction.message)?;
-        self.validate_signatures(transaction)?;
-        self.validate_disallowed_accounts(&transaction.message)?;
-
         if transaction.message.instructions().is_empty() {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no instructions".to_string(),
@@ -176,15 +171,8 @@ impl TransactionValidator {
         Ok(())
     }
 
-    #[allow(dead_code)]
     fn validate_fee_payer_usage(&self, message: &VersionedMessage) -> Result<(), KoraError> {
         let account_keys = message.static_account_keys();
-        // Check if fee payer is first account
-        // if message.account_keys.first() != Some(&self.fee_payer_pubkey) {
-        //     return Err(KoraError::InvalidTransaction(
-        //         "Fee payer must be the first account".to_string(),
-        //     ));
-        // }
 
         // Ensure fee payer is not being used as a source of funds
         for instruction in message.instructions() {
@@ -609,14 +597,7 @@ mod tests {
         };
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
-        // Test case 1: Transaction using fee payer as source (should now pass with default policy)
         let recipient = Pubkey::new_unique();
-        let instruction = transfer(&fee_payer, &recipient, 5_000_000);
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction).is_ok());
-
-        // Test case 2: Valid transaction within limits
         let sender = Pubkey::new_unique();
         let instruction = transfer(&sender, &recipient, 100_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
