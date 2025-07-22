@@ -295,23 +295,63 @@ impl TransactionValidator {
     fn calculate_total_outflow(&self, message: &Message) -> u64 {
         let mut total = 0u64;
 
+        // Right now, SPL / SPL 2022 transfers of tokens are not calculated in the total outflow.
+        // We could implement something similar to the "validate_token_payment" function to calculate the spl
+        // tokens lamport value and add it to the total outflow.
+
         for instruction in &message.instructions {
             let program_id = message.account_keys[instruction.program_id_index as usize];
 
-            // Handle System Program transfers
+            // Handle System Program transfers / account creation (with and without seed)
             if program_id == system_program::ID {
-                if let Ok(system_ix) =
-                    bincode::deserialize::<system_instruction::SystemInstruction>(&instruction.data)
-                {
-                    if let system_instruction::SystemInstruction::Transfer { lamports } = system_ix
-                    {
-                        // Only count if source is fee payer
+                match bincode::deserialize::<system_instruction::SystemInstruction>(
+                    &instruction.data,
+                ) {
+                    // For all of those, funding account is the account at index 0
+                    Ok(system_instruction::SystemInstruction::CreateAccount {
+                        lamports, ..
+                    })
+                    | Ok(system_instruction::SystemInstruction::CreateAccountWithSeed {
+                        lamports,
+                        ..
+                    }) => {
                         if message.account_keys[instruction.accounts[0] as usize]
                             == self.fee_payer_pubkey
                         {
                             total = total.saturating_add(lamports);
                         }
                     }
+                    Ok(system_instruction::SystemInstruction::Transfer { lamports }) => {
+                        // Check if fee payer is sender (outflow)
+                        if message.account_keys[instruction.accounts[0] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_add(lamports);
+                        }
+                        // Check if fee payer is receiver (inflow, e.g., from account closure)
+                        else if message.account_keys[instruction.accounts[1] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_sub(lamports);
+                        }
+                    }
+                    Ok(system_instruction::SystemInstruction::TransferWithSeed {
+                        lamports,
+                        ..
+                    }) => {
+                        // Check if fee payer is sender (outflow). With seeds sender is at 1
+                        if message.account_keys[instruction.accounts[1] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_add(lamports);
+                        } else if message.account_keys[instruction.accounts[2] as usize]
+                            == self.fee_payer_pubkey
+                        {
+                            total = total.saturating_sub(lamports);
+                        }
+                    }
+
+                    _ => {}
                 }
             }
         }
@@ -1131,5 +1171,117 @@ mod tests {
 
         // The final amount should reflect both interest and fees
         assert!(final_amount != amount, "Amount should be adjusted for both interest and fees");
+    }
+
+    #[test]
+    fn test_calculate_total_outflow() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ValidationConfig {
+            max_allowed_lamports: 10_000_000,
+            max_signatures: 10,
+            price_source: PriceSource::Mock,
+            allowed_programs: vec![system_program::ID.to_string()],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            fee_payer_policy: FeePayerPolicy::default(),
+        };
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        // Test 1: Fee payer as sender in Transfer - should add to outflow
+        let recipient = Pubkey::new_unique();
+        let transfer_instruction = system_instruction::transfer(&fee_payer, &recipient, 100_000);
+        let message = Message::new(&[transfer_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 100_000, "Transfer from fee payer should add to outflow");
+
+        // Test 2: Fee payer as recipient in Transfer - should subtract from outflow (account closure)
+        let sender = Pubkey::new_unique();
+        let transfer_instruction = system_instruction::transfer(&sender, &fee_payer, 50_000);
+        let message = Message::new(&[transfer_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 0, "Transfer to fee payer should subtract from outflow"); // 0 - 50_000 = 0 (saturating_sub)
+
+        // Test 3: Fee payer as funding account in CreateAccount - should add to outflow
+        let new_account = Pubkey::new_unique();
+        let create_instruction = system_instruction::create_account(
+            &fee_payer,
+            &new_account,
+            200_000, // lamports
+            100,     // space
+            &system_program::ID,
+        );
+        let message = Message::new(&[create_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 200_000, "CreateAccount funded by fee payer should add to outflow");
+
+        // Test 4: Fee payer as funding account in CreateAccountWithSeed - should add to outflow
+        let create_with_seed_instruction = system_instruction::create_account_with_seed(
+            &fee_payer,
+            &new_account,
+            &fee_payer,
+            "test_seed",
+            300_000, // lamports
+            100,     // space
+            &system_program::ID,
+        );
+        let message = Message::new(&[create_with_seed_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(
+            outflow, 300_000,
+            "CreateAccountWithSeed funded by fee payer should add to outflow"
+        );
+
+        // Test 5: TransferWithSeed from fee payer - should add to outflow
+        let transfer_with_seed_instruction = system_instruction::transfer_with_seed(
+            &fee_payer,
+            &fee_payer,
+            "test_seed".to_string(),
+            &system_program::ID,
+            &recipient,
+            150_000,
+        );
+        let message = Message::new(&[transfer_with_seed_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 150_000, "TransferWithSeed from fee payer should add to outflow");
+
+        // Test 6: Multiple instructions - should sum correctly
+        let instructions = vec![
+            system_instruction::transfer(&fee_payer, &recipient, 100_000), // +100_000
+            system_instruction::transfer(&sender, &fee_payer, 30_000),     // -30_000
+            system_instruction::create_account(
+                &fee_payer,
+                &new_account,
+                50_000,
+                100,
+                &system_program::ID,
+            ), // +50_000
+        ];
+        let message = Message::new(&instructions, Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(
+            outflow, 120_000,
+            "Multiple instructions should sum correctly: 100000 - 30000 + 50000 = 120000"
+        );
+
+        // Test 7: Other account as sender - should not affect outflow
+        let other_sender = Pubkey::new_unique();
+        let transfer_instruction = system_instruction::transfer(&other_sender, &recipient, 500_000);
+        let message = Message::new(&[transfer_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 0, "Transfer from other account should not affect outflow");
+
+        // Test 8: Other account funding CreateAccount - should not affect outflow
+        let other_funder = Pubkey::new_unique();
+        let create_instruction = system_instruction::create_account(
+            &other_funder,
+            &new_account,
+            1_000_000,
+            100,
+            &system_program::ID,
+        );
+        let message = Message::new(&[create_instruction], Some(&fee_payer));
+        let outflow = validator.calculate_total_outflow(&message);
+        assert_eq!(outflow, 0, "CreateAccount funded by other account should not affect outflow");
     }
 }
