@@ -5,7 +5,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 
-use super::{KeypairUtil, Signature, Signer};
+use super::{KeypairUtil, Signature};
 
 /// A Solana-based signer that uses an in-memory keypair
 #[derive(Debug)]
