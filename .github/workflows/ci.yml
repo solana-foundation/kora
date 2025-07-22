@@ -74,7 +74,7 @@ jobs:
       - name: Start Solana test validator
         run: |
           echo "🚀 Starting Solana test validator..."
-          solana-test-validator --reset --quiet --log &
+          solana-test-validator --reset --quiet &
           VALIDATOR_PID=$!
           echo "VALIDATOR_PID=$VALIDATOR_PID" >> $GITHUB_ENV
 
