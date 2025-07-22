@@ -2,9 +2,10 @@ use crate::error::KoraError;
 use solana_sdk::{
     signature::{Keypair, Signature as SolanaSignature},
     signer::Signer as SolanaSigner,
+    transaction::Transaction,
 };
 
-use super::{Signature, Signer};
+use super::{KeypairUtil, Signature, Signer};
 
 /// A Solana-based signer that uses an in-memory keypair
 #[derive(Debug)]
@@ -21,13 +22,7 @@ impl SolanaMemorySigner {
     /// Creates a new signer from a private key byte array
     pub fn from_bytes(private_key: &[u8]) -> Result<Self, KoraError> {
         let keypair = Keypair::from_bytes(private_key)
-            .map_err(|e| KoraError::SigningError(format!("Invalid private key bytes: {}", e)))?;
-        Ok(Self { keypair })
-    }
-
-    /// Creates a new signer from a base58-encoded private key string
-    pub fn from_base58(private_key: &str) -> Result<Self, KoraError> {
-        let keypair = Keypair::from_base58_string(private_key);
+            .map_err(|e| KoraError::SigningError(format!("Invalid private key bytes: {e}")))?;
         Ok(Self { keypair })
     }
 
@@ -45,6 +40,15 @@ impl SolanaMemorySigner {
     pub fn pubkey_base58(&self) -> String {
         bs58::encode(self.pubkey()).into_string()
     }
+
+    /// Creates a new signer from a private key string that can be in multiple formats:
+    /// - Base58 encoded string (current format)
+    /// - U8Array format: "[0, 1, 2, ...]"
+    /// - File path to a JSON keypair file
+    pub fn from_private_key_string(private_key: &str) -> Result<Self, KoraError> {
+        let keypair = KeypairUtil::from_private_key_string(private_key)?;
+        Ok(Self::new(keypair))
+    }
 }
 
 impl Clone for SolanaMemorySigner {
@@ -53,11 +57,12 @@ impl Clone for SolanaMemorySigner {
     }
 }
 
-impl Signer for SolanaMemorySigner {
-    type Error = KoraError;
-
-    async fn sign_solana(&self, message: &[u8]) -> Result<SolanaSignature, Self::Error> {
-        let solana_sig = self.keypair.sign_message(message);
+impl SolanaMemorySigner {
+    pub async fn sign_solana(
+        &self,
+        transaction: &Transaction,
+    ) -> Result<SolanaSignature, KoraError> {
+        let solana_sig = self.keypair.sign_message(&transaction.message_data());
 
         let sig_bytes: [u8; 64] = solana_sig
             .as_ref()
@@ -67,8 +72,8 @@ impl Signer for SolanaMemorySigner {
         Ok(SolanaSignature::from(sig_bytes))
     }
 
-    async fn sign(&self, message: &[u8]) -> Result<Signature, Self::Error> {
-        let solana_sig = self.keypair.sign_message(message);
+    pub async fn sign(&self, transaction: &Transaction) -> Result<Signature, KoraError> {
+        let solana_sig = self.keypair.sign_message(&transaction.message_data());
         Ok(Signature { bytes: solana_sig.as_ref().to_vec(), is_partial: false })
     }
 }

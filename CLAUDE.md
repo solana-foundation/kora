@@ -371,6 +371,37 @@ The fee payer policy is configured via the `[validation.fee_payer_policy]` secti
 3. **Token2022 Transfers** - Token2022 program Transfer and TransferChecked instructions
 4. **Assign** - System program Assign instruction (changes account owner)
 
+## Private Key Formats
+
+Kora supports multiple private key formats for enhanced usability and compatibility with different tooling:
+
+### 1. Base58 Format (Default)
+Traditional Solana private key format - base58-encoded 64-byte private key:
+```bash
+--private-key FEE_PAYER_KEYPAIR_BASE58_STRING
+```
+
+### 2. U8Array Format
+Comma-separated byte array format compatible with Solana CLI outputs:
+```bash
+--private-key "[123,45,67,89,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56]"
+```
+
+### 3. JSON File Path
+Path to a JSON file containing the private key:
+```bash
+--private-key "/path/to/keypair.json"
+```
+
+### Format Detection
+The system automatically detects the format based on input patterns:
+1. **File path** - Attempts to read as file first
+2. **U8Array** - Detects `[...]` format
+3. **Base58** - Default fallback format
+
+### Environment Variables
+All private key environment variables support the same multiple formats.
+
 ## Transaction Flow
 
 1. **Client Request** - Client submits transaction to RPC endpoint
