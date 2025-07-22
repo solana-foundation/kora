@@ -302,6 +302,14 @@ allowed_spl_paid_tokens = [
 ] 
 
 disallowed_accounts = []  # Blocked account addresses
+
+# Fee payer policy controls what actions the fee payer can perform
+# All default to true for backward compatibility
+[validation.fee_payer_policy]
+allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
+allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
+allow_token2022_transfers = true # Allow fee payer to be source in Token2022 transfers
+allow_assign = true             # Allow fee payer to use Assign instruction
 ```
 
 ### Environment Variables
@@ -335,6 +343,34 @@ VAULT_PUBKEY=your_base58_public_key
 RUST_LOG=debug  # Logging level
 ```
 
+## Fee Payer Policy System
+
+### Overview
+
+The fee payer policy system provides fine-grained control over what actions the fee payer can perform in transactions. By default, all actions are permitted to maintain backward compatibility with existing behavior.
+
+### Policy Configuration
+
+The fee payer policy is configured via the `[validation.fee_payer_policy]` section in `kora.toml`:
+
+### Implementation Details
+
+**Core Structure** (`crates/lib/src/config.rs`):
+- `FeePayerPolicy` struct with 4 boolean fields
+- `Default` implementation sets all fields to `true` (permissive)
+- `#[serde(default)]` attribute ensures backward compatibility
+
+**Validation Logic** (`crates/lib/src/transaction/validator.rs`):
+- `TransactionValidator` stores the policy configuration
+- `is_fee_payer_source()` method checks policy flags before validating restrictions
+- Different validation logic for each program type (System, SPL Token, Token2022)
+
+**Supported Actions**:
+1. **SOL Transfers** - System program Transfer and TransferWithSeed instructions
+2. **SPL Token Transfers** - SPL Token program Transfer and TransferChecked instructions
+3. **Token2022 Transfers** - Token2022 program Transfer and TransferChecked instructions
+4. **Assign** - System program Assign instruction (changes account owner)
+
 ## Private Key Formats
 
 Kora supports multiple private key formats for enhanced usability and compatibility with different tooling:
@@ -365,12 +401,11 @@ The system automatically detects the format based on input patterns:
 
 ### Environment Variables
 All private key environment variables support the same multiple formats.
-```
 
 ## Transaction Flow
 
 1. **Client Request** - Client submits transaction to RPC endpoint
-2. **Validation** - Transaction validated against configuration rules
+2. **Validation** - Transaction validated against configuration rules including fee payer policy
 3. **Fee Calculation** - Fee calculated based on token type and current prices
 4. **Signing** - Transaction signed using configured signer backend
 5. **Response** - Signed transaction returned or broadcast to network

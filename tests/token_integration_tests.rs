@@ -86,6 +86,7 @@ async fn test_pyusd_token_e2e_with_kora() {
         allowed_spl_paid_tokens: vec![],
         disallowed_accounts: vec![],
         price_source: kora_lib::oracle::PriceSource::Jupiter,
+        fee_payer_policy: kora_lib::config::FeePayerPolicy::default(),
     };
 
     let validation_result = kora_lib::transaction::validator::TransactionValidator::new(
