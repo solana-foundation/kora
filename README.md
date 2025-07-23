@@ -520,7 +520,7 @@ Kora uses `cargo-llvm-cov` for comprehensive code coverage analysis across all w
 make coverage
 
 # Generate coverage with integration tests (requires running services)
-make coverage-integration
+make coverage-all
 
 # Clean coverage artifacts
 make coverage-clean
@@ -531,13 +531,11 @@ make coverage-clean
 - **HTML Report**: `coverage/html/index.html` - Interactive browser-based report
 - **Full Report**: `coverage/html-full/` - Includes both unit and integration test coverage
 
-> **Note**: LCOV reports are generated automatically in CI for Codecov integration.
 > The coverage tools (`cargo-llvm-cov`) are installed automatically when needed.
 
 #### CI Coverage
 
 Coverage reports are automatically generated in CI and uploaded to:
-- **Codecov**: Integrated coverage tracking with PR comparisons
 - **Artifacts**: Downloadable HTML reports for each CI run
 
 The coverage job runs after both unit and integration tests pass, ensuring comprehensive coverage analysis across:

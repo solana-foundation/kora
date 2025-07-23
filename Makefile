@@ -1,4 +1,4 @@
-.PHONY: check fmt lint lint-fix test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration coverage-html coverage-all
+.PHONY: check fmt lint lint-fix test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration coverage coverage-all
 
 # Default target
 all: check test build
