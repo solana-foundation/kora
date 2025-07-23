@@ -37,15 +37,6 @@ runs:
         path: target/release/
       continue-on-error: true
 
-    - name: Ensure Kora RPC binary exists
-      shell: bash
-      run: |
-        if [ ! -f target/release/kora-rpc ]; then
-          echo "Building missing Kora RPC binary..."
-          make build
-        fi
-        chmod +x target/release/kora-rpc
-
     - name: Start Kora RPC server
       shell: bash
       run: |

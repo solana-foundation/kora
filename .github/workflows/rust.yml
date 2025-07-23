@@ -74,6 +74,9 @@ jobs:
           rpc-url: ${{ env.RPC_URL }}
           timeout: ${{ env.VALIDATOR_TIMEOUT }}
 
+      - name: Build Kora RPC server
+        run: make build
+
       - name: Setup Kora RPC server
         uses: ./.github/actions/setup-kora-rpc
         with:

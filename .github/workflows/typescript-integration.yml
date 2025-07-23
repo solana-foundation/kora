@@ -64,6 +64,9 @@ jobs:
           solana-test-validator --version
           echo "✅ Solana CLI ready for TypeScript test script"
 
+      - name: Build Kora RPC server
+        run: make build
+
       - name: Setup Kora RPC server
         uses: ./.github/actions/setup-kora-rpc
         with:
