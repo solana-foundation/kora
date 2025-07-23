@@ -726,6 +726,7 @@ mod tests {
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()]) // System program
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
@@ -758,6 +759,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_max_signatures(2)
             .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
@@ -782,6 +784,7 @@ mod tests {
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
@@ -807,6 +810,7 @@ mod tests {
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         // Create an empty message using Message::new with empty instructions
@@ -922,6 +926,7 @@ mod tests {
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
@@ -940,6 +945,7 @@ mod tests {
                 allow_sol_transfers: false,
                 ..Default::default()
             });
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
@@ -960,6 +966,7 @@ mod tests {
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
@@ -974,6 +981,7 @@ mod tests {
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy { allow_assign: false, ..Default::default() });
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
@@ -996,6 +1004,7 @@ mod tests {
             .with_allowed_programs(vec![spl_token::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let transfer_ix = spl_token::instruction::transfer(
@@ -1022,6 +1031,7 @@ mod tests {
                 allow_spl_transfers: false,
                 ..Default::default()
             });
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let transfer_ix = spl_token::instruction::transfer(
@@ -1071,6 +1081,7 @@ mod tests {
             .with_allowed_programs(vec![spl_token_2022::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let transfer_ix = spl_token_2022::instruction::transfer_checked(
@@ -1099,6 +1110,7 @@ mod tests {
                 allow_token2022_transfers: false,
                 ..Default::default()
             });
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let transfer_ix = spl_token_2022::instruction::transfer_checked(
@@ -1213,6 +1225,7 @@ mod tests {
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(10_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         // Test 1: Fee payer as sender in Transfer - should add to outflow

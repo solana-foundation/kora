@@ -37,3 +37,7 @@ allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
 allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
 allow_token2022_transfers = true # Allow fee payer to be source in Token2022 transfers
 allow_assign = true             # Allow fee payer to use Assign instruction
+
+[validation.price]
+type = "margin" # free / margin / fixed
+margin = 0.1  # Default margin (10%) for paid transaction validation

@@ -1,4 +1,4 @@
-mod fees;
+pub mod fees;
 mod paid_transaction;
 #[cfg(test)]
 mod tests;
