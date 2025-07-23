@@ -1,5 +1,4 @@
 use kora_lib::{
-    constant::JUPITER_API_BASE_URL,
     token::{Token2022Account, Token2022Program, TokenInterface},
     transaction::{new_unsigned_versioned_transaction, validator::validate_token2022_account},
 };
