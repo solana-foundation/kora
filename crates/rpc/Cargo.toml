@@ -41,6 +41,9 @@ redis = { workspace = true }
 deadpool-redis = { workspace = true }
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
+solana-commitment-config = { workspace = true }
+solana-message = { workspace = true }
+solana-system-interface = { workspace = true }
 solana-program = { workspace = true }
 kora-turnkey = { workspace = true }
 kora-privy = { workspace = true }
@@ -57,4 +60,4 @@ docs = []
 [dev-dependencies]
 tokio = { workspace = true }
 jsonrpsee = { workspace = true }
-serde_json = { workspace = true } 
+serde_json = { workspace = true }

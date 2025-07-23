@@ -1,11 +1,12 @@
 use kora_lib::{
     token::{Token2022Account, Token2022Program, TokenInterface},
-    transaction::validator::validate_token2022_account,
+    transaction::{new_unsigned_versioned_transaction, validator::validate_token2022_account},
 };
+use solana_message::{Message, VersionedMessage};
 use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    transaction::Transaction,
+    transaction::VersionedTransaction,
 };
 use std::str::FromStr;
 
@@ -67,12 +68,12 @@ async fn test_pyusd_token_e2e_with_kora() {
     let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
     // Create a transaction for the transfer that includes creating the destination account
-    let transfer_tx = Transaction::new_signed_with_payer(
+    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &[destination_ata_ix, transfer_ix],
         Some(&wallet.pubkey()),
-        &[&wallet],
-        recent_blockhash,
-    );
+        &recent_blockhash,
+    ));
+    let transfer_tx = VersionedTransaction::try_new(message, &[&wallet]).unwrap();
 
     // Validate the transaction using Kora's validator
     let validation_config = kora_lib::config::ValidationConfig {
@@ -94,7 +95,8 @@ async fn test_pyusd_token_e2e_with_kora() {
         &validation_config,
     )
     .unwrap()
-    .validate_transaction(&transfer_tx);
+    .validate_transaction(&transfer_tx, None)
+    .await;
 
     // Assert the transaction is valid according to Kora rules
     assert!(
@@ -154,10 +156,13 @@ fn test_token2022_operations() {
         .unwrap();
 
     // Create a transaction with both instructions
-    let transaction =
-        Transaction::new_with_payer(&[create_ata_ix, transfer_ix], Some(&wallet.pubkey()));
+    let message = VersionedMessage::Legacy(Message::new(
+        &[create_ata_ix, transfer_ix],
+        Some(&wallet.pubkey()),
+    ));
+    let transaction = new_unsigned_versioned_transaction(message);
 
     // Verify transaction structure
-    assert_eq!(transaction.message.instructions.len(), 2);
-    assert_eq!(transaction.message.header.num_required_signatures, 1);
+    assert_eq!(transaction.message.instructions().len(), 2);
+    assert_eq!(transaction.message.header().num_required_signatures, 1);
 }

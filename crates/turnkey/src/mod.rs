@@ -3,11 +3,12 @@ use std::str::FromStr;
 use base64::Engine;
 use p256::ecdsa::signature::Signer;
 use reqwest::Client;
+use solana_sdk::{pubkey::Pubkey, signature::Signature};
 
 mod types;
 mod utils;
 
-use solana_sdk::transaction::Transaction;
+use solana_sdk::transaction::VersionedTransaction;
 pub use types::*;
 pub use utils::*;
 
@@ -29,8 +30,8 @@ impl TurnkeySigner {
         })
     }
 
-    pub async fn sign(&self, transaction: &Transaction) -> Result<Vec<u8>, anyhow::Error> {
-        let hex_message = hex::encode(transaction.message_data());
+    pub async fn sign(&self, transaction: &VersionedTransaction) -> Result<Vec<u8>, anyhow::Error> {
+        let hex_message = hex::encode(transaction.message.serialize());
 
         let request = SignRequest {
             activity_type: "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2".to_string(),
@@ -96,11 +97,11 @@ impl TurnkeySigner {
 
     pub async fn sign_solana(
         &self,
-        transaction: &Transaction,
-    ) -> Result<solana_sdk::signature::Signature, anyhow::Error> {
+        transaction: &VersionedTransaction,
+    ) -> Result<Signature, anyhow::Error> {
         let sig = self.sign(transaction).await?;
         let sig_bytes: [u8; 64] = sig.try_into().unwrap();
-        Ok(solana_sdk::signature::Signature::from(sig_bytes))
+        Ok(Signature::from(sig_bytes))
     }
 
     fn create_stamp(&self, message: &str) -> Result<String, anyhow::Error> {
@@ -128,7 +129,7 @@ impl TurnkeySigner {
         Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json_stamp.as_bytes()))
     }
 
-    pub fn solana_pubkey(&self) -> solana_sdk::pubkey::Pubkey {
-        solana_sdk::pubkey::Pubkey::from_str(&self.public_key).unwrap()
+    pub fn solana_pubkey(&self) -> Pubkey {
+        Pubkey::from_str(&self.public_key).unwrap()
     }
 }

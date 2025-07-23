@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use solana_sdk::pubkey::Pubkey;
 
 #[derive(Clone, Debug)]
 pub struct PrivySigner {
@@ -8,7 +9,7 @@ pub struct PrivySigner {
     pub wallet_id: String,
     pub api_base_url: String,
     pub client: Client,
-    pub public_key: solana_sdk::pubkey::Pubkey,
+    pub public_key: Pubkey,
 }
 
 #[derive(Default)]

@@ -25,4 +25,3 @@ env_logger = "0.10"
 [lib]
 name = "kora_privy"
 path = "src/mod.rs"
-

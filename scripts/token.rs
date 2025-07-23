@@ -3,12 +3,12 @@ use solana_sdk::{
     commitment_config::CommitmentConfig,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    system_instruction,
     transaction::Transaction,
 };
 use std::str::FromStr;
 
 use kora_lib::token::{TokenInterface, TokenProgram, TokenType};
+use solana_system_interface::instruction::create_account;
 
 pub struct TokenAccount {
     pub mint: Pubkey,
@@ -48,7 +48,7 @@ fn main() {
     let rent = client.get_minimum_balance_for_rent_exemption(TokenAccount::LEN).unwrap();
 
     // Create token account
-    let create_account_ix = system_instruction::create_account(
+    let create_account_ix = create_account(
         &payer.pubkey(),
         &token_account.pubkey(),
         rent,

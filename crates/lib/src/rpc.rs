@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use crate::error::KoraError;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_commitment_config::CommitmentConfig;
 
 pub fn get_rpc_client(rpc_url: &str) -> Arc<RpcClient> {
     Arc::new(RpcClient::new_with_timeout_and_commitment(
