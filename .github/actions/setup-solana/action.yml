@@ -1,0 +1,37 @@
+name: 'Setup Solana CLI'
+description: 'Install and cache Solana CLI'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Get current week for cache key
+      id: week
+      shell: bash
+      run: echo "week=$(date +'%Y-W%U')" >> $GITHUB_OUTPUT
+
+    - name: Cache Solana CLI installation
+      uses: actions/cache@v4
+      with:
+        path: ~/.local/share/solana
+        key: solana-cli-stable-${{ runner.os }}-${{ steps.week.outputs.week }}
+        restore-keys: |
+          solana-cli-stable-${{ runner.os }}-
+
+    - name: Install Solana CLI
+      shell: bash
+      run: |
+        # Check if already installed
+        if command -v solana &> /dev/null; then
+          echo "Solana CLI already installed"
+          solana --version
+          exit 0
+        fi
+        
+        # Install Solana CLI (stable version)
+        sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+        echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+        export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+        # Verify installation
+        solana --version
+        solana-test-validator --version

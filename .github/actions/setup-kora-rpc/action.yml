@@ -1,0 +1,88 @@
+name: 'Setup Kora RPC Server'
+description: 'Build and start Kora RPC server with health check'
+
+inputs:
+  private-key:
+    description: 'Kora private key'
+    required: true
+  config-file:
+    description: 'Kora config file path'
+    required: false
+    default: 'kora.toml'
+  rpc-url:
+    description: 'Solana RPC URL'
+    required: false
+    default: 'http://127.0.0.1:8899'
+  port:
+    description: 'Kora RPC server port'
+    required: false
+    default: '8080'
+  timeout:
+    description: 'Timeout in seconds to wait for server'
+    required: false
+    default: '30'
+
+outputs:
+  server-url:
+    description: 'Kora RPC server URL'
+    value: 'http://127.0.0.1:${{ inputs.port }}'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: rust-binaries
+        path: target/release/
+      continue-on-error: true
+
+    - name: Ensure Kora RPC binary exists
+      shell: bash
+      run: |
+        if [ ! -f target/release/kora-rpc ]; then
+          echo "Building missing Kora RPC binary..."
+          make build
+        fi
+        chmod +x target/release/kora-rpc
+
+    - name: Start Kora RPC server
+      shell: bash
+      run: |
+        echo "🚀 Starting Kora RPC server on port ${{ inputs.port }}..."
+        
+        ./target/release/kora-rpc \
+          --private-key ${{ inputs.private-key }} \
+          --config ${{ inputs.config-file }} \
+          --rpc-url ${{ inputs.rpc-url }} \
+          --port ${{ inputs.port }} &
+        
+        KORA_PID=$!
+        echo "KORA_PID=$KORA_PID" >> $GITHUB_ENV
+        
+        # Save PID to file for cleanup action
+        echo $KORA_PID > /tmp/kora_pid
+        
+        # Wait for Kora RPC server to be ready
+        echo "⏳ Waiting for Kora RPC server to be ready..."
+        SERVER_URL="http://127.0.0.1:${{ inputs.port }}"
+        timeout=${{ inputs.timeout }}
+        counter=0
+        
+        while [ $counter -lt $timeout ]; do
+          if curl -s $SERVER_URL/health >/dev/null 2>&1; then
+            echo "✅ Kora RPC server ready at $SERVER_URL!"
+            break
+          fi
+          sleep 1
+          counter=$((counter + 1))
+        done
+        
+        if [ $counter -eq $timeout ]; then
+          echo "❌ Kora RPC server timeout after $timeout seconds"
+          echo "Current processes:"
+          jobs
+          echo "Port status:"
+          netstat -tlnp | grep ${{ inputs.port }} || true
+          exit 1
+        fi
