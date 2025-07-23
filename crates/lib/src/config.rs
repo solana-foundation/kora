@@ -160,6 +160,7 @@ mod tests {
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
         assert_eq!(config.validation.allowed_spl_paid_tokens, vec!["token3"]);
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
+        assert_eq!(config.validation.price_source, PriceSource::Jupiter);
         assert_eq!(config.kora.rate_limit, 100);
     }
 
