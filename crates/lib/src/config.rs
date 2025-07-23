@@ -160,11 +160,7 @@ mod tests {
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
         assert_eq!(config.validation.allowed_spl_paid_tokens, vec!["token3"]);
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
-        if let PriceSource::Jupiter { api_url: _ } = config.validation.price_source {
-            // Test passes - Jupiter source was correctly parsed
-        } else {
-            panic!("Expected Jupiter price source");
-        }
+        assert!(matches!(config.validation.price_source, PriceSource::Jupiter { api_url: None }));
         assert_eq!(config.kora.rate_limit, 100);
     }
 
