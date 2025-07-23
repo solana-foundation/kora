@@ -67,14 +67,36 @@ jobs:
       - name: Build Kora RPC server
         run: make build
 
-      - name: Setup Kora RPC server
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          private-key: ${{ env.KORA_PRIVATE_KEY }}
-          config-file: ${{ env.KORA_CONFIG_FILE }}
-          rpc-url: ${{ env.RPC_URL }}
-          port: ${{ env.KORA_RPC_PORT }}
-          timeout: ${{ env.KORA_TIMEOUT }}
+      - name: Start Kora RPC server
+        run: |
+          echo "🚀 Starting Kora RPC server..."
+          cargo run -p kora-rpc --bin kora-rpc -- \
+            --private-key ${{ env.KORA_PRIVATE_KEY }} \
+            --config ${{ env.KORA_CONFIG_FILE }} \
+            --rpc-url ${{ env.RPC_URL }} \
+            --port ${{ env.KORA_RPC_PORT }} \
+            &
+          KORA_PID=$!
+          echo "KORA_PID=$KORA_PID" >> $GITHUB_ENV
+
+          # Wait for Kora RPC server to be ready
+          echo "⏳ Waiting for Kora RPC server to be ready..."
+          timeout=${{ env.KORA_TIMEOUT }}
+          counter=0
+          while [ $counter -lt $timeout ]; do
+            if curl -s ${{ env.TEST_SERVER_URL }}/health >/dev/null 2>&1; then
+              echo "✅ Kora RPC server is ready!"
+              break
+            fi
+            sleep 1
+            counter=$((counter + 1))
+          done
+
+          if [ $counter -eq $timeout ]; then
+            echo "❌ Kora RPC server failed to start within $timeout seconds"
+            jobs
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
