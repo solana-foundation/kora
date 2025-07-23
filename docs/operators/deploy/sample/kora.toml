@@ -1,0 +1,21 @@
+[kora]
+rate_limit = 100
+
+[validation]
+price_source = "Mock"
+max_allowed_lamports = 1000000
+max_signatures = 10
+allowed_programs = [
+    "11111111111111111111111111111111", # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # Token Program
+]
+allowed_tokens = [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # mainnet USDC
+    "So11111111111111111111111111111111111111112", # SOL
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", # devnet USDC
+]
+allowed_spl_paid_tokens = [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # mainnet USDC
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", # devnet USDC
+]
+disallowed_accounts = []
