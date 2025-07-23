@@ -150,15 +150,15 @@ jobs:
           echo "🧪 Running integration tests with coverage..."
           # Clean previous coverage data
           cargo llvm-cov clean --workspace
-          
+
           # Run unit tests with coverage
           echo "Running unit tests with coverage..."
           cargo llvm-cov --workspace --no-report
-          
+
           # Run integration tests with coverage
           echo "Running integration tests with coverage..."
           cargo llvm-cov --workspace --tests --no-report
-          
+
           # Generate reports
           echo "Generating coverage reports..."
           mkdir -p coverage
@@ -166,7 +166,7 @@ jobs:
           cargo llvm-cov report --html --output-dir coverage/html
 
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage/
@@ -200,4 +200,3 @@ jobs:
 
           echo "=== Network status ==="
           netstat -tlnp | grep -E "(${{ env.VALIDATOR_PORT }}|${{ env.KORA_RPC_PORT }})" || true
-
