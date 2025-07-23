@@ -8,6 +8,16 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Test environment configuration
+  RPC_URL: http://127.0.0.1:8899
+  TEST_SERVER_URL: http://127.0.0.1:8080
+  KORA_PRIVATE_KEY: 64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6
+  KORA_CONFIG_FILE: kora.toml
+  VALIDATOR_PORT: 8899
+  KORA_RPC_PORT: 8080
+  VALIDATOR_TIMEOUT: 60
+  KORA_TIMEOUT: 30
+  RUST_LOG: info
 
 jobs:
   test:
@@ -78,12 +88,12 @@ jobs:
           VALIDATOR_PID=$!
           echo "VALIDATOR_PID=$VALIDATOR_PID" >> $GITHUB_ENV
 
-          # Wait for validator to be ready (max 60 seconds)
+          # Wait for validator to be ready
           echo "⏳ Waiting for validator to be ready..."
-          timeout=60
+          timeout=${{ env.VALIDATOR_TIMEOUT }}
           counter=0
           while [ $counter -lt $timeout ]; do
-            if solana cluster-version --url http://127.0.0.1:8899 >/dev/null 2>&1; then
+            if solana cluster-version --url ${{ env.RPC_URL }} >/dev/null 2>&1; then
               echo "✅ Validator is ready!"
               break
             fi
@@ -100,20 +110,20 @@ jobs:
         run: |
           echo "🚀 Starting Kora RPC server..."
           cargo run -p kora-rpc --bin kora-rpc -- \
-            --private-key 64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6 \
-            --config kora.toml \
-            --rpc-url http://127.0.0.1:8899 \
-            --port 8080 \
+            --private-key ${{ env.KORA_PRIVATE_KEY }} \
+            --config ${{ env.KORA_CONFIG_FILE }} \
+            --rpc-url ${{ env.RPC_URL }} \
+            --port ${{ env.KORA_RPC_PORT }} \
             &
           KORA_PID=$!
           echo "KORA_PID=$KORA_PID" >> $GITHUB_ENV
 
-          # Wait for Kora RPC server to be ready (max 30 seconds)
+          # Wait for Kora RPC server to be ready
           echo "⏳ Waiting for Kora RPC server to be ready..."
-          timeout=30
+          timeout=${{ env.KORA_TIMEOUT }}
           counter=0
           while [ $counter -lt $timeout ]; do
-            if curl -s http://127.0.0.1:8080/health >/dev/null 2>&1; then
+            if curl -s ${{ env.TEST_SERVER_URL }}/health >/dev/null 2>&1; then
               echo "✅ Kora RPC server is ready!"
               break
             fi
@@ -132,15 +142,35 @@ jobs:
           echo "🔧 Setting up test environment..."
           cargo run -p tests --bin setup-test-env
 
-      - name: Run integration tests
-        env:
-          RPC_URL: http://127.0.0.1:8899
-          TEST_SERVER_URL: http://127.0.0.1:8080
-          KORA_PRIVATE_KEY: 64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6
-          RUST_LOG: info
+      - name: Install cargo-llvm-cov for coverage
+        run: cargo install cargo-llvm-cov
+
+      - name: Run integration tests with coverage
         run: |
-          echo "🧪 Running integration tests..."
-          make test-integration
+          echo "🧪 Running integration tests with coverage..."
+          # Clean previous coverage data
+          cargo llvm-cov clean --workspace
+          
+          # Run unit tests with coverage
+          echo "Running unit tests with coverage..."
+          cargo llvm-cov --workspace --no-report
+          
+          # Run integration tests with coverage
+          echo "Running integration tests with coverage..."
+          cargo llvm-cov --workspace --tests --no-report
+          
+          # Generate reports
+          echo "Generating coverage reports..."
+          mkdir -p coverage
+          cargo llvm-cov report --lcov --output-path coverage/lcov.info
+          cargo llvm-cov report --html --output-dir coverage/html
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
 
       - name: Cleanup processes
         if: always()
@@ -169,4 +199,5 @@ jobs:
           ps aux | grep -E "(solana|kora)" || true
 
           echo "=== Network status ==="
-          netstat -tlnp | grep -E "(8899|8080)" || true
+          netstat -tlnp | grep -E "(${{ env.VALIDATOR_PORT }}|${{ env.KORA_RPC_PORT }})" || true
+

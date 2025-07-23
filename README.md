@@ -511,6 +511,40 @@ make setup-test-env
 make test-integration
 ```
 
+### Coverage
+
+Kora uses `cargo-llvm-cov` for comprehensive code coverage analysis across all workspace crates and integration tests.
+
+```bash
+# Generate HTML coverage report (unit tests only)
+make coverage
+
+# Generate coverage with integration tests (requires running services)
+make coverage-integration
+
+# Clean coverage artifacts
+make coverage-clean
+```
+
+#### Coverage Reports
+
+- **HTML Report**: `coverage/html/index.html` - Interactive browser-based report
+- **Full Report**: `coverage/html-full/` - Includes both unit and integration test coverage
+
+> **Note**: LCOV reports are generated automatically in CI for Codecov integration.
+> The coverage tools (`cargo-llvm-cov`) are installed automatically when needed.
+
+#### CI Coverage
+
+Coverage reports are automatically generated in CI and uploaded to:
+- **Codecov**: Integrated coverage tracking with PR comparisons
+- **Artifacts**: Downloadable HTML reports for each CI run
+
+The coverage job runs after both unit and integration tests pass, ensuring comprehensive coverage analysis across:
+- All workspace crates (`kora-lib`, `kora-rpc`, `kora-cli`, `kora-turnkey`, `kora-privy`)
+- Unit tests with `#[cfg(test)]` modules
+- Integration tests in `tests/` directory
+
 #### Integration Test Environment Setup
 
 Integration tests require additional setup for test accounts and local validator:

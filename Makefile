@@ -1,4 +1,4 @@
-.PHONY: check fmt lint lint-fix test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration
+.PHONY: check fmt lint lint-fix test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration coverage-html coverage-all
 
 # Default target
 all: check test build
@@ -86,3 +86,43 @@ gen-ts-client:
 		-g typescript-fetch \
 		-o /local/generated/typescript-client \
 		--additional-properties=supportsES6=true,npmName=kora-client,npmVersion=0.1.0
+
+# Helper function to check and install cargo-llvm-cov and llvm-tools-preview
+define check_coverage_tool
+        @if ! command -v cargo-llvm-cov >/dev/null 2>&1; then \
+                echo "🔧 cargo-llvm-cov not found, installing..."; \
+                cargo install cargo-llvm-cov; \
+        fi
+        @if ! rustup component list --installed | grep -q llvm-tools-preview; then \
+                echo "🔧 Installing llvm-tools-preview..."; \
+                rustup component add llvm-tools-preview; \
+        fi
+  endef
+
+# Generate HTML coverage report (unit tests only)
+coverage:
+	$(call check_coverage_tool)
+	@echo "🧪 Generating HTML coverage report (unit tests only)..."
+	@mkdir -p coverage
+	cargo llvm-cov clean --workspace
+	cargo llvm-cov --lib --html --output-dir coverage/html
+	@echo "✅ HTML coverage report generated in coverage/html/"
+	@echo "📊 Open coverage/html/index.html in your browser"
+
+# Generate HTML coverage report (all tests including integration)
+coverage-all:
+	$(call check_coverage_tool)
+	@echo "🧪 Generating HTML coverage report (all tests)..."
+	@echo "⚠️  Note: Integration tests may fail if external services aren't available"
+	@mkdir -p coverage
+	cargo llvm-cov clean --workspace
+	cargo llvm-cov --workspace --html --output-dir coverage/html
+	@echo "✅ HTML coverage report generated in coverage/html/"
+	@echo "📊 Open coverage/html/index.html in your browser"
+
+# Clean coverage artifacts
+coverage-clean:
+	@echo "🧹 Cleaning coverage artifacts..."
+	rm -rf coverage/
+	cargo llvm-cov clean --workspace
+	@echo "✅ Coverage artifacts cleaned"
