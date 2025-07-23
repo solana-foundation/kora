@@ -97,6 +97,13 @@ impl TestAccountSetup {
 
         let account_info = self.setup_token_accounts().await?;
 
+        // Wait for the accounts to be fully initialized (lookup tables, etc.)
+        let await_for_slot = self.rpc_client.get_slot().await? + 30;
+
+        while self.rpc_client.get_slot().await? < await_for_slot {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+
         Ok(account_info)
     }
 
