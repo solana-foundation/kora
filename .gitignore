@@ -13,3 +13,7 @@ dist/
 .env*
 
 test-ledger/
+
+# Coverage reports
+coverage/
+*.profraw
