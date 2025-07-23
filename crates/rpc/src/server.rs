@@ -37,69 +37,93 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
     server.start(rpc_module).map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))
 }
 
+macro_rules! register_method_if_enabled {
+    // For methods without parameters
+    ($module:expr, $enabled_methods:expr, $field:ident, $method_name:expr, $rpc_method:ident) => {
+        if $enabled_methods.$field {
+            let _ = $module.register_async_method(
+                $method_name,
+                |_rpc_params, rpc_context| async move {
+                    let rpc = rpc_context.as_ref();
+                    rpc.$rpc_method().await.map_err(Into::into)
+                },
+            );
+        }
+    };
+
+    // For methods with parameters
+    ($module:expr, $enabled_methods:expr, $field:ident, $method_name:expr, $rpc_method:ident, with_params) => {
+        if $enabled_methods.$field {
+            let _ =
+                $module.register_async_method($method_name, |rpc_params, rpc_context| async move {
+                    let rpc = rpc_context.as_ref();
+                    let params = rpc_params.parse()?;
+                    rpc.$rpc_method(params).await.map_err(Into::into)
+                });
+        }
+    };
+}
+
 fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
-    let mut module = RpcModule::new(rpc);
+    let mut module = RpcModule::new(rpc.clone());
+    let enabled_methods = &rpc.config.enabled_methods;
 
-    let _ = module.register_async_method("liveness", |_params, _rpc_context| async move {
-        log::debug!("liveness called");
-        let rpc = _rpc_context.as_ref();
-        rpc.liveness().await.map_err(Into::into)
-    });
+    register_method_if_enabled!(module, enabled_methods, liveness, "liveness", liveness);
 
-    let _ = module.register_async_method(
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
+        estimate_transaction_fee,
         "estimateTransactionFee",
-        |rpc_params, rpc_context| async move {
-            let rpc = rpc_context.as_ref();
-            let request = rpc_params.parse()?;
-            rpc.estimate_transaction_fee(request).await.map_err(Into::into)
-        },
+        estimate_transaction_fee,
+        with_params
     );
-
-    let _ =
-        module.register_async_method("getSupportedTokens", |_rpc_params, rpc_context| async move {
-            let rpc = rpc_context.as_ref();
-            rpc.get_supported_tokens().await.map_err(Into::into)
-        });
-
-    let _ = module.register_async_method("signTransaction", |rpc_params, rpc_context| async move {
-        let rpc = rpc_context.as_ref();
-        let params = rpc_params.parse()?;
-        rpc.sign_transaction(params).await.map_err(Into::into)
-    });
-
-    let _ = module.register_async_method(
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
+        get_supported_tokens,
+        "getSupportedTokens",
+        get_supported_tokens
+    );
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
+        sign_transaction,
+        "signTransaction",
+        sign_transaction,
+        with_params
+    );
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
+        sign_and_send_transaction,
         "signAndSendTransaction",
-        |rpc_params, rpc_context| async move {
-            let rpc = rpc_context.as_ref();
-            let params = rpc_params.parse()?;
-            rpc.sign_and_send_transaction(params).await.map_err(Into::into)
-        },
+        sign_and_send_transaction,
+        with_params
     );
-
-    let _ =
-        module.register_async_method("transferTransaction", |rpc_params, rpc_context| async move {
-            let rpc = rpc_context.as_ref();
-            let params = rpc_params.parse()?;
-            rpc.transfer_transaction(params).await.map_err(Into::into)
-        });
-
-    let _ = module.register_async_method("getBlockhash", |_rpc_params, rpc_context| async move {
-        let rpc = rpc_context.as_ref();
-        rpc.get_blockhash().await.map_err(Into::into)
-    });
-
-    let _ = module.register_async_method("getConfig", |_rpc_params, rpc_context| async move {
-        let rpc = rpc_context.as_ref();
-        rpc.get_config().await.map_err(Into::into)
-    });
-
-    let _ = module.register_async_method(
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
+        transfer_transaction,
+        "transferTransaction",
+        transfer_transaction,
+        with_params
+    );
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
+        get_blockhash,
+        "getBlockhash",
+        get_blockhash
+    );
+    register_method_if_enabled!(module, enabled_methods, get_config, "getConfig", get_config);
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
+        sign_transaction_if_paid,
         "signTransactionIfPaid",
-        |rpc_params, rpc_context| async move {
-            let rpc = rpc_context.as_ref();
-            let params = rpc_params.parse()?;
-            rpc.sign_transaction_if_paid(params).await.map_err(Into::into)
-        },
+        sign_transaction_if_paid,
+        with_params
     );
 
     Ok(module)
