@@ -45,6 +45,62 @@ pub struct ValidationConfig {
     pub fee_payer_policy: FeePayerPolicy,
 }
 
+#[cfg(test)]
+impl ValidationConfig {
+    pub fn test_default() -> Self {
+        Self {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            allowed_programs: vec![],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            price_source: PriceSource::Mock,
+            fee_payer_policy: FeePayerPolicy::default(),
+        }
+    }
+
+    pub fn with_price_source(mut self, price_source: PriceSource) -> Self {
+        self.price_source = price_source;
+        self
+    }
+
+    pub fn with_allowed_programs(mut self, programs: Vec<String>) -> Self {
+        self.allowed_programs = programs;
+        self
+    }
+
+    pub fn with_fee_payer_policy(mut self, policy: FeePayerPolicy) -> Self {
+        self.fee_payer_policy = policy;
+        self
+    }
+
+    pub fn with_max_allowed_lamports(mut self, lamports: u64) -> Self {
+        self.max_allowed_lamports = lamports;
+        self
+    }
+
+    pub fn with_max_signatures(mut self, signatures: u64) -> Self {
+        self.max_signatures = signatures;
+        self
+    }
+
+    pub fn with_allowed_tokens(mut self, tokens: Vec<String>) -> Self {
+        self.allowed_tokens = tokens;
+        self
+    }
+
+    pub fn with_allowed_spl_paid_tokens(mut self, tokens: Vec<String>) -> Self {
+        self.allowed_spl_paid_tokens = tokens;
+        self
+    }
+
+    pub fn with_disallowed_accounts(mut self, accounts: Vec<String>) -> Self {
+        self.disallowed_accounts = accounts;
+        self
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KoraConfig {
     pub rate_limit: u64,
@@ -104,7 +160,11 @@ mod tests {
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
         assert_eq!(config.validation.allowed_spl_paid_tokens, vec!["token3"]);
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
-        assert_eq!(config.validation.price_source, PriceSource::Jupiter);
+        if let PriceSource::Jupiter { api_url: _ } = config.validation.price_source {
+            // Test passes - Jupiter source was correctly parsed
+        } else {
+            panic!("Expected Jupiter price source");
+        }
         assert_eq!(config.kora.rate_limit, 100);
     }
 
@@ -134,7 +194,7 @@ mod tests {
                 allowed_tokens: vec!["token1".to_string()],
                 allowed_spl_paid_tokens: vec!["token3".to_string()],
                 disallowed_accounts: vec!["account1".to_string()],
-                price_source: PriceSource::Jupiter,
+                price_source: PriceSource::Jupiter { api_url: None },
                 fee_payer_policy: FeePayerPolicy::default(),
             },
             kora: KoraConfig { rate_limit: 100 },
