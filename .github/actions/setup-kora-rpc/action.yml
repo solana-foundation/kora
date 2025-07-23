@@ -42,7 +42,7 @@ runs:
       run: |
         echo "🚀 Starting Kora RPC server on port ${{ inputs.port }}..."
         
-        cargo run -p kora-rpc --bin kora-rpc \
+      cargo run -p kora-rpc --bin kora-rpc -- \
           --private-key ${{ inputs.private-key }} \
           --config ${{ inputs.config-file }} \
           --rpc-url ${{ inputs.rpc-url }} \
