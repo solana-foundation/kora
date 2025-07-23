@@ -12,77 +12,10 @@ pub struct TokenPrice {
     pub source: PriceSource,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
-#[serde(tag = "type")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PriceSource {
-    Jupiter { api_url: Option<String> },
+    Jupiter,
     Mock,
-}
-
-impl<'de> serde::Deserialize<'de> for PriceSource {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use serde::de::Error;
-
-        // Try to deserialize as a string first (backward compatibility)
-        struct StringOrObject;
-
-        impl<'de> serde::de::Visitor<'de> for StringOrObject {
-            type Value = PriceSource;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a string or object representing a price source")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                match value {
-                    "Jupiter" => Ok(PriceSource::Jupiter { api_url: None }),
-                    "Mock" => Ok(PriceSource::Mock),
-                    _ => Err(E::custom(format!("Unknown price source: {value}"))),
-                }
-            }
-
-            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
-            where
-                M: serde::de::MapAccess<'de>,
-            {
-                let mut api_url = None;
-                let mut source_type = None;
-
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "type" => {
-                            source_type = Some(map.next_value::<String>()?);
-                        }
-                        "api_url" => {
-                            // Handle both string and null values
-                            api_url = Some(map.next_value::<Option<String>>()?);
-                        }
-                        _ => {
-                            // Ignore unknown fields
-                            let _ = map.next_value::<serde::de::IgnoredAny>()?;
-                        }
-                    }
-                }
-
-                match source_type.as_deref() {
-                    Some("Jupiter") => {
-                        Ok(PriceSource::Jupiter { api_url: api_url.unwrap_or_default() })
-                    }
-                    Some("Mock") => Ok(PriceSource::Mock),
-                    Some(other) => Err(M::Error::custom(format!("Unknown price source: {other}"))),
-                    None => Err(M::Error::custom("Missing type field")),
-                }
-            }
-        }
-
-        deserializer.deserialize_any(StringOrObject)
-    }
 }
 
 #[automock]
@@ -101,7 +34,7 @@ pub struct RetryingPriceOracle {
 
 pub fn get_price_oracle(source: PriceSource) -> Arc<dyn PriceOracle + Send + Sync> {
     match source {
-        PriceSource::Jupiter { api_url } => Arc::new(JupiterPriceOracle::new(api_url)),
+        PriceSource::Jupiter => Arc::new(JupiterPriceOracle::new(None)),
         PriceSource::Mock => {
             let mut mock = MockPriceOracle::new();
             // Set up default mock behavior for devnet tokens
@@ -164,11 +97,7 @@ mod tests {
     async fn test_price_oracle_retries() {
         let mut mock_oracle = MockPriceOracle::new();
         mock_oracle.expect_get_price().times(1).returning(|_, _| {
-            Ok(TokenPrice {
-                price: 1.0,
-                confidence: 0.95,
-                source: PriceSource::Jupiter { api_url: None },
-            })
+            Ok(TokenPrice { price: 1.0, confidence: 0.95, source: PriceSource::Jupiter })
         });
 
         let oracle = RetryingPriceOracle::new(3, Duration::from_millis(100), Arc::new(mock_oracle));

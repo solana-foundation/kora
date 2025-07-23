@@ -5,7 +5,7 @@ rate_limit = 100
 max_allowed_lamports = 1000000
 max_signatures = 10
 price_source = "Mock"
-# price_source = { type = "Jupiter", api_url = null } # Jupiter Example, can specify custom base API url
+
 allowed_programs = [
     "11111111111111111111111111111111",             # System Program
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program

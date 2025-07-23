@@ -160,7 +160,6 @@ mod tests {
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
         assert_eq!(config.validation.allowed_spl_paid_tokens, vec!["token3"]);
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
-        assert!(matches!(config.validation.price_source, PriceSource::Jupiter { api_url: None }));
         assert_eq!(config.kora.rate_limit, 100);
     }
 
@@ -190,7 +189,7 @@ mod tests {
                 allowed_tokens: vec!["token1".to_string()],
                 allowed_spl_paid_tokens: vec!["token3".to_string()],
                 disallowed_accounts: vec!["account1".to_string()],
-                price_source: PriceSource::Jupiter { api_url: None },
+                price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
             },
             kora: KoraConfig { rate_limit: 100 },

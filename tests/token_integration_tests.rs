@@ -87,9 +87,7 @@ async fn test_pyusd_token_e2e_with_kora() {
         allowed_tokens: vec![pyusd_mint.to_string()],
         allowed_spl_paid_tokens: vec![],
         disallowed_accounts: vec![],
-        price_source: kora_lib::oracle::PriceSource::Jupiter {
-            api_url: Some(JUPITER_API_BASE_URL.to_string()),
-        },
+        price_source: kora_lib::oracle::PriceSource::Jupiter,
         fee_payer_policy: kora_lib::config::FeePayerPolicy::default(),
     };
 
