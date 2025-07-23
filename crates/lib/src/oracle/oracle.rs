@@ -43,7 +43,7 @@ impl<'de> serde::Deserialize<'de> for PriceSource {
                 match value {
                     "Jupiter" => Ok(PriceSource::Jupiter { api_url: None }),
                     "Mock" => Ok(PriceSource::Mock),
-                    _ => Err(E::custom(format!("Unknown price source: {}", value))),
+                    _ => Err(E::custom(format!("Unknown price source: {value}"))),
                 }
             }
 
@@ -75,9 +75,7 @@ impl<'de> serde::Deserialize<'de> for PriceSource {
                         Ok(PriceSource::Jupiter { api_url: api_url.unwrap_or_default() })
                     }
                     Some("Mock") => Ok(PriceSource::Mock),
-                    Some(other) => {
-                        Err(M::Error::custom(format!("Unknown price source: {}", other)))
-                    }
+                    Some(other) => Err(M::Error::custom(format!("Unknown price source: {other}"))),
                     None => Err(M::Error::custom("Missing type field")),
                 }
             }
