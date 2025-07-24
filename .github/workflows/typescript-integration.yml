@@ -48,13 +48,6 @@ jobs:
       - name: Setup Solana CLI
         uses: ./.github/actions/setup-solana
 
-      - name: Verify Solana CLI installation
-        run: |
-          echo "Verifying Solana CLI is available for TypeScript tests..."
-          solana --version
-          solana-test-validator --version
-          echo "✅ Solana CLI ready for TypeScript test script"
-
       - name: Setup Kora RPC server
         uses: ./.github/actions/setup-kora-rpc
 
