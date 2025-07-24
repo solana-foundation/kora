@@ -1,0 +1,112 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.*'
+      - 'Makefile'
+      - '.github/workflows/rust.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.*'
+      - 'Makefile'
+      - '.github/workflows/rust.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_LOG: info
+  # Need to set this here for Setup tests to acces the correct private key
+  KORA_PRIVATE_KEY: 64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6
+
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: make check
+      - name: Run clippy
+        run: make lint
+      - name: Run tests
+        run: make test
+      - name: Build
+        run: make build
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Setup Solana CLI
+        uses: ./.github/actions/setup-solana
+
+      - name: Setup Solana test validator
+        uses: ./.github/actions/setup-solana-validator
+
+      - name: Setup Kora RPC server
+        uses: ./.github/actions/setup-kora-rpc
+
+      - name: Setup test environment
+        run: |
+          echo "🔧 Setting up test environment..."
+          cargo run -p tests --bin setup-test-env
+
+      - name: Install cargo-llvm-cov for coverage
+        run: cargo install cargo-llvm-cov
+
+      - name: Run integration tests with coverage
+        run: |
+          echo "🧪 Running integration tests with coverage..."
+          # Clean previous coverage data
+          cargo llvm-cov clean --workspace
+
+          # Run unit tests with coverage
+          echo "Running unit tests with coverage..."
+          cargo llvm-cov --workspace --no-report
+
+          # Run integration tests with coverage
+          echo "Running integration tests with coverage..."
+          cargo llvm-cov --workspace --tests --no-report
+
+          # Generate reports
+          echo "Generating coverage reports..."
+          mkdir -p coverage
+          cargo llvm-cov report --lcov --output-path coverage/lcov.info
+          cargo llvm-cov report --html --output-dir coverage/html
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+      - name: Cleanup test environment
+        uses: ./.github/actions/cleanup-test-env
+
+      - name: Show failure logs
+        uses: ./.github/actions/show-failure-logs
+        with:
+          test-type: "Rust integration"
