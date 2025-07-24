@@ -1,0 +1,52 @@
+name: 'Show Failure Logs'
+description: 'Show debugging information when tests fail'
+
+inputs:
+  test-type:
+    description: 'Type of test that failed (e.g., "Rust integration", "TypeScript integration")'
+    required: true
+  validator-port:
+    description: 'Solana validator port'
+    required: false
+    default: '8899'
+  kora-port:
+    description: 'Kora RPC port'
+    required: false
+    default: '8080'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Show debugging information
+      shell: bash
+      if: failure()
+      run: |
+        echo "=== ${{ inputs.test-type }} failure logs ==="
+        echo "Timestamp: $(date)"
+        echo ""
+        
+        echo "=== Process status ==="
+        ps aux | grep -E "(solana|kora|node)" || echo "No matching processes found"
+        echo ""
+        
+        echo "=== Network status ==="
+        netstat -tlnp | grep -E "(${{ inputs.validator-port }}|${{ inputs.kora-port }})" || echo "No matching ports found"
+        echo ""
+        
+        echo "=== Recent log files ==="
+        find . -name "*.log" -type f -mtime -1 -exec echo "=== {} ===" \; -exec tail -50 {} \; 2>/dev/null || echo "No log files found"
+        echo ""
+        
+        echo "=== System resources ==="
+        echo "Memory usage:"
+        free -h || echo "free command not available"
+        echo ""
+        echo "Disk usage:"
+        df -h . || echo "df command not available"
+        echo ""
+        
+        echo "=== Environment variables ==="
+        env | grep -E "(KORA|RPC|VALIDATOR|SOLANA)" | sort || echo "No relevant environment variables"
+        echo ""
+        
+        echo "=== End of failure logs ==="

@@ -1,0 +1,74 @@
+name: 'Setup Kora RPC Server'
+description: 'Build and start the Kora RPC server with health check'
+
+inputs:
+  private-key:
+    description: 'Kora private key'
+    required: false
+    default: '64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6'
+  config-file:
+    description: 'Kora config file path'
+    required: false
+    default: 'kora.toml'
+  rpc-url:
+    description: 'Solana RPC URL'
+    required: false
+    default: 'http://127.0.0.1:8899'
+  port:
+    description: 'Kora RPC server port'
+    required: false
+    default: '8080'
+  timeout:
+    description: 'Timeout in seconds to wait for server startup'
+    required: false
+    default: '30'
+  test-server-url:
+    description: 'Test server URL for health checks'
+    required: false
+    default: 'http://127.0.0.1:8080'
+
+outputs:
+  kora-pid:
+    description: 'Process ID of the started Kora RPC server'
+    value: ${{ steps.start-server.outputs.kora-pid }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Build Kora RPC server
+      shell: bash
+      run: make build
+
+    - name: Start Kora RPC server
+      id: start-server
+      shell: bash
+      run: |
+        echo "🚀 Starting Kora RPC server..."
+        cargo run -p kora-rpc --bin kora-rpc -- \
+          --private-key ${{ inputs.private-key }} \
+          --config ${{ inputs.config-file }} \
+          --rpc-url ${{ inputs.rpc-url }} \
+          --port ${{ inputs.port }} \
+          &
+        KORA_PID=$!
+        echo "KORA_PID=$KORA_PID" >> $GITHUB_ENV
+        echo "kora-pid=$KORA_PID" >> $GITHUB_OUTPUT
+
+        # Wait for Kora RPC server to be ready
+        echo "⏳ Waiting for Kora RPC server to be ready..."
+        timeout=${{ inputs.timeout }}
+        counter=0
+        while [ $counter -lt $timeout ]; do
+          if curl -s ${{ inputs.test-server-url }}/health >/dev/null 2>&1; then
+            echo "✅ Kora RPC server is ready!"
+            break
+          fi
+          sleep 1
+          counter=$((counter + 1))
+        done
+
+        if [ $counter -eq $timeout ]; then
+          echo "❌ Kora RPC server failed to start within $timeout seconds"
+          jobs
+          exit 1
+        fi
