@@ -17,6 +17,18 @@ pub static JSON_TEST_BODY: Lazy<Value> = Lazy::new(|| {
     })
 });
 
+pub static JSON_TEST_BODY_WITH_PARAMS: Lazy<Value> = Lazy::new(|| {
+    json!({
+        "jsonrpc": "2.0",
+        "method": "estimateTransactionFee",
+        "params": {
+            "transaction": "base64_encoded_transaction_here",
+            "commitment": "confirmed"
+        },
+        "id": 1
+    })
+});
+
 /// Helper to make JSON-RPC request with custom headers to test server
 async fn make_auth_request(headers: Option<Vec<(&str, &str)>>) -> reqwest::Response {
     let client = reqwest::Client::new();
@@ -25,6 +37,25 @@ async fn make_auth_request(headers: Option<Vec<(&str, &str)>>) -> reqwest::Respo
         .post(get_test_server_url())
         .header("Content-Type", "application/json")
         .json(&JSON_TEST_BODY.clone());
+
+    if let Some(custom_headers) = headers {
+        for (key, value) in custom_headers {
+            request = request.header(key, value);
+        }
+    }
+
+    request.send().await.expect("Request should complete")
+}
+
+/// Helper to make JSON-RPC request with custom headers and custom body to test server
+async fn make_auth_request_with_body(
+    body: &Value,
+    headers: Option<Vec<(&str, &str)>>,
+) -> reqwest::Response {
+    let client = reqwest::Client::new();
+
+    let mut request =
+        client.post(get_test_server_url()).header("Content-Type", "application/json").json(body);
 
     if let Some(custom_headers) = headers {
         for (key, value) in custom_headers {
@@ -60,6 +91,18 @@ fn create_valid_hmac_signature_headers() -> Vec<(String, String)> {
 
     let signature =
         create_hmac_signature(TEST_HMAC_SECRET, &timestamp, &JSON_TEST_BODY.to_string());
+
+    vec![(X_TIMESTAMP.to_string(), timestamp), (X_HMAC_SIGNATURE.to_string(), signature)]
+}
+
+fn create_valid_hmac_signature_headers_with_body(body: &Value) -> Vec<(String, String)> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .to_string();
+
+    let signature = create_hmac_signature(TEST_HMAC_SECRET, &timestamp, &body.to_string());
 
     vec![(X_TIMESTAMP.to_string(), timestamp), (X_HMAC_SIGNATURE.to_string(), signature)]
 }
@@ -161,5 +204,27 @@ async fn test_liveness_bypass() {
         liveness_response.status().is_success(),
         "Liveness should bypass auth, got {}",
         liveness_response.status()
+    );
+}
+
+#[tokio::test]
+async fn test_auth_with_params() {
+    let valid_hmac = create_valid_hmac_signature_headers_with_body(&JSON_TEST_BODY_WITH_PARAMS);
+    let valid_headers_hmac = valid_hmac.iter().map(|(k, v)| (k.as_str(), v.as_str()));
+
+    let response = make_auth_request_with_body(
+        &JSON_TEST_BODY_WITH_PARAMS,
+        Some(
+            std::iter::once((X_API_KEY, TEST_API_KEY))
+                .chain(valid_headers_hmac.clone())
+                .collect::<Vec<(&str, &str)>>(),
+        ),
+    )
+    .await;
+
+    assert!(
+        response.status().is_success(),
+        "Valid API key with params should return 200, got {}",
+        response.status()
     );
 }
