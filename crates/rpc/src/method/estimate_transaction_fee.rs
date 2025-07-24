@@ -5,6 +5,7 @@ use kora_lib::{
     error::KoraError,
     transaction::{
         decode_b64_transaction, estimate_transaction_fee as lib_estimate_transaction_fee,
+        VersionedTransactionResolved,
     },
 };
 
@@ -27,7 +28,12 @@ pub async fn estimate_transaction_fee(
     request: EstimateTransactionFeeRequest,
 ) -> Result<EstimateTransactionFeeResponse, KoraError> {
     let transaction = decode_b64_transaction(&request.transaction)?;
-    let fee = lib_estimate_transaction_fee(rpc_client, &transaction).await?;
+
+    // Resolve lookup tables for V0 transactions to ensure accurate fee calculation
+    let mut resolved_transaction = VersionedTransactionResolved::new(&transaction);
+    resolved_transaction.resolve_addresses(rpc_client).await?;
+
+    let fee = lib_estimate_transaction_fee(rpc_client, &resolved_transaction).await?;
 
     Ok(EstimateTransactionFeeResponse { fee_in_lamports: fee })
 }

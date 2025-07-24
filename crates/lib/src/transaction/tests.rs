@@ -110,9 +110,7 @@ async fn test_estimate_transaction_fee_with_token_creation() {
     let min_expected_lamports = 2_039_280;
     assert!(
         fee >= min_expected_lamports,
-        "Fee {} lamports is less than minimum expected {} lamports",
-        fee,
-        min_expected_lamports
+        "Fee {fee} lamports is less than minimum expected {min_expected_lamports} lamports"
     );
 }
 

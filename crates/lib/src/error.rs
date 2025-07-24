@@ -236,8 +236,7 @@ mod tests {
 
     #[test]
     fn test_error_conversions() {
-        let client_error =
-            ClientError::from(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        let client_error = ClientError::from(std::io::Error::other("test"));
         let kora_error: KoraError = client_error.into();
         assert!(matches!(kora_error, KoraError::RpcError(_)));
 
@@ -245,7 +244,7 @@ mod tests {
         let kora_error: KoraError = signer_error.into();
         assert!(matches!(kora_error, KoraError::SigningError(_)));
 
-        let io_error = std::io::Error::new(std::io::ErrorKind::Other, "test");
+        let io_error = std::io::Error::other("test");
         let kora_error: KoraError = io_error.into();
         assert!(matches!(kora_error, KoraError::InternalServerError(_)));
     }

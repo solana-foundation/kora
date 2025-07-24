@@ -8,7 +8,7 @@ use kora_lib::{
     state::init_signer,
     transaction::{
         decode_b64_transaction, estimate_transaction_fee, sign_and_send_transaction,
-        sign_transaction, sign_transaction_if_paid,
+        sign_transaction, sign_transaction_if_paid, VersionedTransactionResolved,
     },
 };
 
@@ -116,7 +116,11 @@ async fn main() -> Result<(), KoraError> {
                 e
             })?;
 
-            let fee = estimate_transaction_fee(&rpc_client, &transaction).await?;
+            // Resolve lookup tables for V0 transactions to ensure accurate fee calculation
+            let mut resolved_transaction = VersionedTransactionResolved::new(&transaction);
+            resolved_transaction.resolve_addresses(&rpc_client).await?;
+
+            let fee = estimate_transaction_fee(&rpc_client, &resolved_transaction).await?;
             println!("Estimated fee: {fee} lamports");
         }
         Some(Commands::SignIfPaid { transaction }) => {
@@ -128,8 +132,11 @@ async fn main() -> Result<(), KoraError> {
                 e
             })?;
 
+            let mut resolved_transaction = VersionedTransactionResolved::new(&transaction);
+            resolved_transaction.resolve_addresses(&rpc_client).await?;
+
             let (transaction, signed_tx) =
-                sign_transaction_if_paid(&rpc_client, &validation, transaction).await?;
+                sign_transaction_if_paid(&rpc_client, &validation, &resolved_transaction).await?;
 
             println!("Signature: {}", transaction.signatures[0]);
             println!("Signed Transaction: {signed_tx}");

@@ -35,6 +35,13 @@ pub mod test_utils {
         let rpc_url = "http://localhost:8899".to_string();
         let mut mocks = HashMap::new();
         mocks.insert(RpcRequest::GetMinimumBalanceForRentExemption, json!(2_039_280));
+        mocks.insert(
+            RpcRequest::GetFeeForMessage,
+            json!({
+                "context": { "slot": 5068 },
+                "value": 5000
+            }),
+        ); // Mock fee of 5000 lamports
         Arc::new(RpcClient::new_mock_with_mocks(rpc_url, mocks))
     }
 }
