@@ -11,9 +11,11 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:integration": "pnpm run build && node scripts/test-with-validator.js",
+    "test:ci": "node scripts/test-with-validator.js",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "prepare": "pnpm run build"
+    "prepare": "pnpm run build",
+    "type-check": "tsc --noEmit"
   },
   "files": [
     "dist"
@@ -33,13 +35,14 @@
     "@solana/kit": "^2.3.0",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.17.27",
-    "@typescript-eslint/eslint-plugin": "^7.1.1",
-    "@typescript-eslint/parser": "^7.1.1",
+    "@typescript-eslint/eslint-plugin": "^8.38.0",
+    "@typescript-eslint/parser": "^8.38.0",
     "dotenv": "^16.4.5",
-    "eslint": "^8.57.0",
+    "eslint": "^9.31.0",
     "jest": "^29.7.0",
     "prettier": "^3.2.5",
     "ts-jest": "^29.1.2",
+    "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }
 }
