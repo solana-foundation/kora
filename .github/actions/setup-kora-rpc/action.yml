@@ -4,26 +4,27 @@ description: 'Build and start the Kora RPC server with health check'
 inputs:
   private-key:
     description: 'Kora private key'
-    required: true
+    required: false
+    default: 64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6
   config-file:
     description: 'Kora config file path'
-    required: true
+    required: false
     default: 'kora.toml'
   rpc-url:
     description: 'Solana RPC URL'
-    required: true
+    required: false
     default: 'http://127.0.0.1:8899'
   port:
     description: 'Kora RPC server port'
-    required: true
+    required: false
     default: '8080'
   timeout:
     description: 'Timeout in seconds to wait for server startup'
-    required: true
+    required: false
     default: '30'
   test-server-url:
     description: 'Test server URL for health checks'
-    required: true
+    required: false
     default: 'http://127.0.0.1:8080'
 
 outputs:

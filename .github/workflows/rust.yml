@@ -18,15 +18,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Test environment configuration
-  RPC_URL: http://127.0.0.1:8899
-  TEST_SERVER_URL: http://127.0.0.1:8080
-  KORA_PRIVATE_KEY: 64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6
-  KORA_CONFIG_FILE: kora.toml
-  VALIDATOR_PORT: 8899
-  KORA_RPC_PORT: 8080
-  VALIDATOR_TIMEOUT: 60
-  KORA_TIMEOUT: 30
   RUST_LOG: info
 
 jobs:
@@ -70,19 +61,9 @@ jobs:
 
       - name: Setup Solana test validator
         uses: ./.github/actions/setup-solana-validator
-        with:
-          rpc-url: ${{ env.RPC_URL }}
-          timeout: ${{ env.VALIDATOR_TIMEOUT }}
 
       - name: Setup Kora RPC server
         uses: ./.github/actions/setup-kora-rpc
-        with:
-          private-key: ${{ env.KORA_PRIVATE_KEY }}
-          config-file: ${{ env.KORA_CONFIG_FILE }}
-          rpc-url: ${{ env.RPC_URL }}
-          port: ${{ env.KORA_RPC_PORT }}
-          timeout: ${{ env.KORA_TIMEOUT }}
-          test-server-url: ${{ env.TEST_SERVER_URL }}
 
       - name: Setup test environment
         run: |
@@ -126,5 +107,3 @@ jobs:
         uses: ./.github/actions/show-failure-logs
         with:
           test-type: "Rust integration"
-          validator-port: ${{ env.VALIDATOR_PORT }}
-          kora-port: ${{ env.KORA_RPC_PORT }}

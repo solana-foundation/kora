@@ -25,15 +25,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Test environment configuration
-  RPC_URL: http://127.0.0.1:8899
-  TEST_SERVER_URL: http://127.0.0.1:8080
-  KORA_PRIVATE_KEY: 64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6
-  KORA_CONFIG_FILE: kora.toml
-  VALIDATOR_PORT: 8899
-  KORA_RPC_PORT: 8080
-  VALIDATOR_TIMEOUT: 60
-  KORA_TIMEOUT: 30
   RUST_LOG: info
 
 jobs:
@@ -66,13 +57,6 @@ jobs:
 
       - name: Setup Kora RPC server
         uses: ./.github/actions/setup-kora-rpc
-        with:
-          private-key: ${{ env.KORA_PRIVATE_KEY }}
-          config-file: ${{ env.KORA_CONFIG_FILE }}
-          rpc-url: ${{ env.RPC_URL }}
-          port: ${{ env.KORA_RPC_PORT }}
-          timeout: ${{ env.KORA_TIMEOUT }}
-          test-server-url: ${{ env.TEST_SERVER_URL }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -118,5 +102,3 @@ jobs:
         uses: ./.github/actions/show-failure-logs
         with:
           test-type: "TypeScript integration"
-          validator-port: ${{ env.VALIDATOR_PORT }}
-          kora-port: ${{ env.KORA_RPC_PORT }}
