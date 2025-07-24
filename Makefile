@@ -33,7 +33,7 @@ lint:
 	
 # Run tests
 test:
-	cargo test --lib
+	cargo test --lib --quiet
 
 # Generate a random key that can be used as an API key or as an HMAC secret
 generate-key:

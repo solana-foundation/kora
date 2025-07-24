@@ -382,6 +382,7 @@ async fn test_fee_payer_policy_is_present() {
 
     println!("Fee payer policy API integration tests passed!");
 }
+
 #[tokio::test]
 async fn test_sign_v0_transaction_with_valid_lookup_table() {
     let client = get_test_client().await;
@@ -442,6 +443,7 @@ async fn test_sign_v0_transaction_with_invalid_lookup_table() {
 }
 
 #[tokio::test]
+
 async fn test_estimate_transaction_fee_without_fee_token() {
     let client = get_test_client().await;
     let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
@@ -455,6 +457,130 @@ async fn test_estimate_transaction_fee_without_fee_token() {
     assert!(
         response["fee_in_token"].is_null(),
         "Expected fee_in_token to be null when not requested"
+    );
+}
+
+#[tokio::test]
+async fn test_estimate_fee_with_all_outflow_costs() {
+    let client = get_test_client().await;
+    let rpc_client = get_rpc_client().await;
+
+    let response: serde_json::Value =
+        client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
+    let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap()).unwrap();
+
+    let sender = get_test_sender_keypair();
+    let recipient = get_recipient_pubkey();
+    let new_account = Keypair::new();
+    let nonce_account = Keypair::new();
+    let authority = get_test_sender_keypair(); // Use sender as authority for simplicity
+
+    // Create instructions that exercise all outflow calculation paths:
+
+    // 1. SOL Transfer (fee payer as sender) - adds to outflow
+    let sol_transfer =
+        solana_system_interface::instruction::transfer(&fee_payer, &recipient, 100_000);
+
+    // 2. Account creation (fee payer funding) - adds to outflow
+    let account_creation = solana_system_interface::instruction::create_account(
+        &fee_payer,
+        &new_account.pubkey(),
+        50_000,
+        100,
+        &solana_system_interface::program::ID,
+    );
+
+    // 3. Nonce account creation and withdrawal setup (fee payer receives funds) - subtracts from outflow
+    let nonce_creation = solana_system_interface::instruction::create_account(
+        &sender.pubkey(), // Different funder to not affect fee payer outflow
+        &nonce_account.pubkey(),
+        1_000_000, // Nonce accounts need minimum balance
+        80,        // Nonce account size
+        &solana_system_interface::program::ID,
+    );
+
+    let nonce_withdraw = solana_system_interface::instruction::withdraw_nonce_account(
+        &nonce_account.pubkey(),
+        &authority.pubkey(),
+        &fee_payer, // Fee payer receives funds
+        200_000,
+    );
+
+    // 4. Space allocation (fee payer allocating) - adds rent cost to outflow
+    let space_allocation = solana_system_interface::instruction::allocate(
+        &fee_payer, 500, // Allocate 500 bytes
+    );
+
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .await
+        .unwrap();
+
+    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[sol_transfer, account_creation, nonce_creation, nonce_withdraw, space_allocation],
+        Some(&fee_payer), // Fee payer pays transaction fees
+        &blockhash.0,
+    ));
+
+    let transaction = new_unsigned_versioned_transaction(message);
+    let encoded_transaction = encode_b64_transaction(&transaction).unwrap();
+
+    let response: serde_json::Value = client
+        .request(
+            "estimateTransactionFee",
+            rpc_params![encoded_transaction, &get_test_usdc_mint_pubkey().to_string()],
+        )
+        .await
+        .expect("Failed to estimate transaction fee");
+
+    assert!(response["fee_in_lamports"].as_u64().is_some(), "Expected fee_in_lamports in response");
+    let fee_lamports = response["fee_in_lamports"].as_u64().unwrap();
+
+    let rent = solana_sdk::rent::Rent::default();
+
+    // Get current fee payer account to calculate actual rent difference
+    let fee_payer_account = rpc_client.get_account(&fee_payer).await.unwrap_or_else(|_| {
+        solana_sdk::account::Account {
+            lamports: 0,
+            data: vec![], // Default empty account
+            owner: solana_sdk::system_program::ID,
+            executable: false,
+            rent_epoch: 0,
+        }
+    });
+
+    let current_lamport_balance = fee_payer_account.lamports;
+    let required_balance_for_500_bytes = rent.minimum_balance(500);
+
+    let space_allocation_rent =
+        required_balance_for_500_bytes.saturating_sub(current_lamport_balance);
+
+    // Expected outflow breakdown:
+    let sol_transfer_outflow = 100_000u64;
+    let account_creation_outflow = 50_000u64;
+    let nonce_withdrawal_inflow = 200_000u64;
+
+    // Net outflow calculation
+    let gross_outflow = sol_transfer_outflow + account_creation_outflow + space_allocation_rent;
+    let net_outflow = gross_outflow.saturating_sub(nonce_withdrawal_inflow);
+
+    // Expected fee components
+    let expected_base_fee = 20_000u64; // Complex transaction with 5 instructions
+    let expected_account_creation_fee = 0u64; // No ATA creation
+    let expected_kora_signature_fee = 0u64; // Fee payer is in signers
+    let expected_total_fee = expected_base_fee
+        + expected_account_creation_fee
+        + expected_kora_signature_fee
+        + net_outflow;
+
+    // Calculate percentage difference
+    let diff = expected_total_fee.abs_diff(fee_lamports);
+    let percentage_diff = (diff as f64 / expected_total_fee as f64) * 100.0;
+
+    // Assert within 0.1% of expected calculation
+    assert!(
+        percentage_diff < 0.1,
+        "Fee calculation should be within 0.1% of expected. Expected: {expected_total_fee}, Actual: {fee_lamports}, Diff: {percentage_diff:.2}%"
     );
 }
 

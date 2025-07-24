@@ -6,7 +6,7 @@ use crate::{
         calculate_token_value_in_lamports, Token2022Account, TokenInterface, TokenProgram,
         TokenType,
     },
-    transaction::VersionedTransactionExt,
+    transaction::{fees::calculate_fee_payer_outflow, VersionedTransactionExt},
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
@@ -134,6 +134,7 @@ impl TransactionValidator {
      */
     pub async fn validate_transaction(
         &self,
+        rpc_client: &RpcClient,
         transaction_resolved: &impl VersionedTransactionExt,
     ) -> Result<(), KoraError> {
         let transaction = transaction_resolved.get_transaction();
@@ -154,7 +155,7 @@ impl TransactionValidator {
         self.validate_signatures(transaction)?;
 
         self.validate_programs(&transaction.message, &all_account_keys)?;
-        self.validate_transfer_amounts(&transaction.message, &all_account_keys)?;
+        self.validate_transfer_amounts(rpc_client, &transaction.message, &all_account_keys).await?;
         self.validate_disallowed_accounts(&transaction.message, &all_account_keys)?;
         self.validate_fee_payer_usage(&transaction.message, &all_account_keys)?;
 
@@ -301,12 +302,13 @@ impl TransactionValidator {
         }
     }
 
-    fn validate_transfer_amounts(
+    async fn validate_transfer_amounts(
         &self,
+        rpc_client: &RpcClient,
         message: &VersionedMessage,
         account_keys: &[Pubkey],
     ) -> Result<(), KoraError> {
-        let total_outflow = self.calculate_total_outflow(message, account_keys)?;
+        let total_outflow = self.calculate_total_outflow(rpc_client, message, account_keys).await?;
 
         if total_outflow > self.max_allowed_lamports {
             return Err(KoraError::InvalidTransaction(format!(
@@ -352,74 +354,14 @@ impl TransactionValidator {
         self.disallowed_accounts.contains(account)
     }
 
-    fn calculate_total_outflow(
+    async fn calculate_total_outflow(
         &self,
+        rpc_client: &RpcClient,
         message: &VersionedMessage,
         account_keys: &[Pubkey],
     ) -> Result<u64, KoraError> {
-        let mut total = 0u64;
-
-        // Right now, SPL / SPL 2022 transfers of tokens are not calculated in the total outflow.
-        // We could implement something similar to the "validate_token_payment" function to calculate the spl
-        // tokens lamport value and add it to the total outflow.
-
-        let is_fee_payer = |instruction: &CompiledInstruction,
-                            account_index: usize|
-         -> Result<bool, KoraError> {
-            if account_index >= instruction.accounts.len() {
-                return Ok(false); // If account index is invalid, fee payer can't be the source
-            }
-            let account_key_index = instruction.accounts[account_index];
-            match self.get_account_key(account_keys, account_key_index, "fee payer source check") {
-                Ok(account_pubkey) => Ok(account_pubkey == self.fee_payer_pubkey),
-                Err(_) => Ok(false), // If account index is invalid, fee payer can't be the source
-            }
-        };
-
-        for instruction in message.instructions() {
-            let program_id = self.get_account_key(
-                account_keys,
-                instruction.program_id_index,
-                "outflow calculation",
-            )?;
-
-            // Handle System Program transfers / account creation (with and without seed)
-            if program_id == SYSTEM_PROGRAM_ID {
-                match bincode::deserialize::<SystemInstruction>(&instruction.data) {
-                    // For all of those, funding account is the account at index 0
-                    Ok(SystemInstruction::CreateAccount { lamports, .. })
-                    | Ok(SystemInstruction::CreateAccountWithSeed { lamports, .. }) => {
-                        if is_fee_payer(instruction, 0)? {
-                            total = total.saturating_add(lamports);
-                        }
-                    }
-                    Ok(SystemInstruction::Transfer { lamports }) => {
-                        // Check if fee payer is sender (outflow)
-                        if is_fee_payer(instruction, 0)? {
-                            total = total.saturating_add(lamports);
-                        }
-                        // Check if fee payer is receiver (inflow, e.g., from account closure)
-                        else if is_fee_payer(instruction, 1)? {
-                            total = total.saturating_sub(lamports);
-                        }
-                    }
-                    Ok(SystemInstruction::TransferWithSeed { lamports, .. }) => {
-                        // Check if fee payer is sender (outflow). With seeds sender is at 1
-                        if is_fee_payer(instruction, 1)? {
-                            total = total.saturating_add(lamports);
-                        }
-                        // Check if fee payer is receiver (inflow)
-                        else if is_fee_payer(instruction, 2)? {
-                            total = total.saturating_sub(lamports);
-                        }
-                    }
-
-                    _ => {}
-                }
-            }
-        }
-
-        Ok(total)
+        // Use the shared outflow calculation from fees module
+        calculate_fee_payer_outflow(rpc_client, &self.fee_payer_pubkey, message, account_keys).await
     }
 }
 
@@ -644,14 +586,39 @@ pub async fn validate_token_payment(
 mod tests {
     use super::*;
     use crate::transaction::new_unsigned_versioned_transaction;
+    use base64::{self, Engine};
+    use serde_json::json;
+    use solana_client::rpc_request::RpcRequest;
     use solana_message::Message;
-    use solana_sdk::instruction::Instruction;
+    use solana_sdk::{account::Account, instruction::Instruction};
     use solana_system_interface::instruction::{
         assign, create_account, create_account_with_seed, transfer, transfer_with_seed,
     };
     use spl_token_2022::extension::{
         interest_bearing_mint::InterestBearingConfig, transfer_fee::TransferFeeConfig,
     };
+    use std::{collections::HashMap, sync::Arc};
+
+    fn get_mock_rpc_client(account: &Account) -> Arc<RpcClient> {
+        let mut mocks = HashMap::new();
+        let encoded_data = base64::engine::general_purpose::STANDARD.encode(&account.data);
+        mocks.insert(
+            RpcRequest::GetAccountInfo,
+            json!({
+                "context": {
+                    "slot": 1
+                },
+                "value": {
+                    "data": [encoded_data, "base64"],
+                    "executable": account.executable,
+                    "lamports": account.lamports,
+                    "owner": account.owner.to_string(),
+                    "rentEpoch": account.rent_epoch
+                }
+            }),
+        );
+        Arc::new(RpcClient::new_mock_with_mocks("http://localhost:8899".to_string(), mocks))
+    }
 
     #[tokio::test]
     async fn test_validate_transaction() {
@@ -668,7 +635,9 @@ mod tests {
         let instruction = transfer(&sender, &recipient, 100_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -682,19 +651,21 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
+        let rpc_client = get_mock_rpc_client(&Account::default());
 
         // Test transaction with amount over limit
         let instruction = transfer(&sender, &recipient, 2_000_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction).await.is_ok()); // Should pass because sender is not fee payer
+
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok()); // Should pass because sender is not fee payer
 
         // Test multiple transfers
         let instructions =
             vec![transfer(&sender, &recipient, 500_000), transfer(&sender, &recipient, 500_000)];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -714,7 +685,8 @@ mod tests {
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test disallowed program
         let fake_program = Pubkey::new_unique();
@@ -726,7 +698,8 @@ mod tests {
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -752,7 +725,8 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
         let mut transaction = new_unsigned_versioned_transaction(message);
         transaction.signatures = vec![Default::default(); 3]; // Add 3 dummy signatures
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -772,13 +746,15 @@ mod tests {
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test SignAndSend mode without fee payer (should succeed)
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], None)); // No fee payer specified
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -795,7 +771,8 @@ mod tests {
         // Create an empty message using Message::new with empty instructions
         let message = VersionedMessage::Legacy(Message::new(&[], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -818,7 +795,8 @@ mod tests {
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[test]
@@ -913,7 +891,8 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test with allow_sol_transfers = false
         let config = ValidationConfig::test_default()
@@ -931,7 +910,8 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -952,7 +932,8 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test with allow_assign = false
         let config = ValidationConfig::test_default()
@@ -967,7 +948,8 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -999,7 +981,8 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test with allow_spl_transfers = false
         let config = ValidationConfig::test_default()
@@ -1026,7 +1009,8 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
 
         // Test with other account as source - should always pass
         let other_signer = Pubkey::new_unique();
@@ -1043,7 +1027,8 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -1078,7 +1063,8 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test with allow_token2022_transfers = false
         let config = ValidationConfig::test_default()
@@ -1108,7 +1094,8 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer is not allowed to be source
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
 
         // Test with other account as source - should always pass
         let other_signer = Pubkey::new_unique();
@@ -1128,7 +1115,8 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should pass because fee payer is not the source
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        let rpc_client = get_mock_rpc_client(&Account::default());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
     }
 
     #[test]
@@ -1196,8 +1184,8 @@ mod tests {
         assert!(final_amount != amount, "Amount should be adjusted for both interest and fees");
     }
 
-    #[test]
-    fn test_calculate_total_outflow() {
+    #[tokio::test]
+    async fn test_calculate_total_outflow() {
         let fee_payer = Pubkey::new_unique();
         let config = ValidationConfig::test_default()
             .with_price_source(PriceSource::Mock)
@@ -1206,14 +1194,17 @@ mod tests {
             .with_fee_payer_policy(FeePayerPolicy::default());
 
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let rpc_client = get_mock_rpc_client(&Account::default());
 
         // Test 1: Fee payer as sender in Transfer - should add to outflow
         let recipient = Pubkey::new_unique();
         let transfer_instruction = transfer(&fee_payer, &recipient, 100_000);
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
-        let outflow =
-            validator.calculate_total_outflow(&message, message.static_account_keys()).unwrap();
+        let outflow = validator
+            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
+            .await
+            .unwrap();
         assert_eq!(outflow, 100_000, "Transfer from fee payer should add to outflow");
 
         // Test 2: Fee payer as recipient in Transfer - should subtract from outflow (account closure)
@@ -1222,8 +1213,10 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
 
-        let outflow =
-            validator.calculate_total_outflow(&message, message.static_account_keys()).unwrap();
+        let outflow = validator
+            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
+            .await
+            .unwrap();
         assert_eq!(outflow, 0, "Transfer to fee payer should subtract from outflow"); // 0 - 50_000 = 0 (saturating_sub)
 
         // Test 3: Fee payer as funding account in CreateAccount - should add to outflow
@@ -1237,8 +1230,10 @@ mod tests {
         );
         let message =
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
-        let outflow =
-            validator.calculate_total_outflow(&message, message.static_account_keys()).unwrap();
+        let outflow = validator
+            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
+            .await
+            .unwrap();
         assert_eq!(outflow, 200_000, "CreateAccount funded by fee payer should add to outflow");
 
         // Test 4: Fee payer as funding account in CreateAccountWithSeed - should add to outflow
@@ -1255,8 +1250,10 @@ mod tests {
             &[create_with_seed_instruction],
             Some(&fee_payer),
         ));
-        let outflow =
-            validator.calculate_total_outflow(&message, message.static_account_keys()).unwrap();
+        let outflow = validator
+            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
+            .await
+            .unwrap();
         assert_eq!(
             outflow, 300_000,
             "CreateAccountWithSeed funded by fee payer should add to outflow"
@@ -1275,8 +1272,10 @@ mod tests {
             &[transfer_with_seed_instruction],
             Some(&fee_payer),
         ));
-        let outflow =
-            validator.calculate_total_outflow(&message, message.static_account_keys()).unwrap();
+        let outflow = validator
+            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
+            .await
+            .unwrap();
         assert_eq!(outflow, 150_000, "TransferWithSeed from fee payer should add to outflow");
 
         // Test 6: Multiple instructions - should sum correctly
@@ -1286,8 +1285,10 @@ mod tests {
             create_account(&fee_payer, &new_account, 50_000, 100, &SYSTEM_PROGRAM_ID), // +50_000
         ];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
-        let outflow =
-            validator.calculate_total_outflow(&message, message.static_account_keys()).unwrap();
+        let outflow = validator
+            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
+            .await
+            .unwrap();
         assert_eq!(
             outflow, 120_000,
             "Multiple instructions should sum correctly: 100000 - 30000 + 50000 = 120000"
@@ -1298,8 +1299,10 @@ mod tests {
         let transfer_instruction = transfer(&other_sender, &recipient, 500_000);
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
-        let outflow =
-            validator.calculate_total_outflow(&message, message.static_account_keys()).unwrap();
+        let outflow = validator
+            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
+            .await
+            .unwrap();
         assert_eq!(outflow, 0, "Transfer from other account should not affect outflow");
 
         // Test 8: Other account funding CreateAccount - should not affect outflow
@@ -1308,8 +1311,10 @@ mod tests {
             create_account(&other_funder, &new_account, 1_000_000, 100, &SYSTEM_PROGRAM_ID);
         let message =
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
-        let outflow =
-            validator.calculate_total_outflow(&message, message.static_account_keys()).unwrap();
+        let outflow = validator
+            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
+            .await
+            .unwrap();
         assert_eq!(outflow, 0, "CreateAccount funded by other account should not affect outflow");
     }
 }

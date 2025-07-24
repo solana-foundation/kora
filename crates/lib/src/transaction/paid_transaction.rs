@@ -19,9 +19,11 @@ pub async fn sign_transaction_if_paid(
     resolved_transaction: &impl VersionedTransactionExt,
 ) -> Result<(VersionedTransaction, String), KoraError> {
     let signer = get_signer()?;
+    let fee_payer = signer.solana_pubkey();
 
     // Get the simulation result for fee calculation
-    let min_transaction_fee = estimate_transaction_fee(rpc_client, resolved_transaction).await?;
+    let min_transaction_fee =
+        estimate_transaction_fee(rpc_client, resolved_transaction, Some(&fee_payer)).await?;
 
     let required_lamports = validation
         .price
