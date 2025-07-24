@@ -1,3 +1,4 @@
+mod auth;
 mod method;
 mod rpc;
 mod server;

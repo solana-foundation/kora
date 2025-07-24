@@ -21,8 +21,8 @@ export interface SignTransactionIfPaidRequest {
 }
 
 export interface EstimateTransactionFeeRequest {
-    transaction: string;
-    fee_token: string;
+  transaction: string;
+  fee_token: string;
 }
 
 /**
@@ -71,7 +71,7 @@ export interface TokenPriceInfo {
 export interface ValidationConfig {
   max_allowed_lamports: number;
   max_signatures: number;
-  price_source: 'Jupiter' | 'Mock';
+  price_source: "Jupiter" | "Mock";
   allowed_programs: string[];
   allowed_tokens: string[];
   allowed_spl_paid_tokens: string[];
@@ -81,9 +81,9 @@ export interface ValidationConfig {
 }
 
 export type PriceModel =
-  | { type: 'margin'; margin: number }
-  | { type: 'fixed'; amount: number; token: string }
-  | { type: 'free' };
+  | { type: "margin"; margin: number }
+  | { type: "fixed"; amount: number; token: string }
+  | { type: "free" };
 
 export type PriceConfig = PriceModel;
 
@@ -105,11 +105,24 @@ export interface FeePayerPolicy {
 export interface RpcError {
   code: number;
   message: string;
-} 
+}
 
 export interface RpcRequest<T> {
-    jsonrpc: '2.0';
-    id: number;
-    method: string;
-    params: T;
+  jsonrpc: "2.0";
+  id: number;
+  method: string;
+  params: T;
+}
+// Authentication Types
+export interface AuthenticationHeaders {
+  "x-api-key"?: string;
+  "x-timestamp"?: string;
+  "x-hmac-signature"?: string;
+}
+
+// Client Types
+export interface KoraClientOptions {
+  rpcUrl: string;
+  apiKey?: string;
+  hmacSecret?: string;
 }

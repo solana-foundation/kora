@@ -50,3 +50,9 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 hex = { workspace = true }
 testing-utils = { path = "testing-utils" }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+reqwest = { workspace = true }
+futures = { workspace = true }
+anyhow = { workspace = true }
+once_cell = "1.21.3"
