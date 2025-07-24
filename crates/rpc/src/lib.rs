@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod method;
 #[cfg(feature = "docs")]
 pub mod openapi;

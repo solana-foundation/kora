@@ -87,3 +87,5 @@ vaultrs = "0.7.3"
 kora-turnkey = { path = "crates/turnkey", version = "1.0.2" }
 kora-privy = { path = "crates/privy", version = "1.0.2" }
 utoipa = { version = "4.2.0", features = ["yaml", "chrono"] }
+hmac = "0.12.1"
+sha2 = "0.10.9"
