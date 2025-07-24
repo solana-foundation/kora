@@ -154,7 +154,6 @@ describe("KoraClient Integration Tests", () => {
 
       const signResult = await client.signTransactionIfPaid({
         transaction,
-        margin: 0.1, // 10% margin
       });
 
       expect(signResult).toBeDefined();

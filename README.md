@@ -491,7 +491,6 @@ Signs a transaction if the user has paid the required amount of tokens.
     "method": "signTransactionIfPaid",
     "params":  {
         "transaction": "<base64-encoded-transaction>",
-        "margin": 0.0
     }
 }
 

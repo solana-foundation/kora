@@ -16,7 +16,6 @@ export interface SignAndSendTransactionRequest {
 
 export interface SignTransactionIfPaidRequest {
   transaction: string;
-  margin?: number;
 }
 
 // Response Types
@@ -63,7 +62,15 @@ export interface ValidationConfig {
   allowed_spl_paid_tokens: string[];
   disallowed_accounts: string[];
   fee_payer_policy: FeePayerPolicy;
+  price: PriceConfig;
 }
+
+export type PriceModel =
+  | { type: 'margin'; margin: number }
+  | { type: 'fixed'; amount: number; token: string }
+  | { type: 'free' };
+
+export type PriceConfig = PriceModel;
 
 export interface Config {
   fee_payer: string;
@@ -73,7 +80,7 @@ export interface Config {
 export interface RpcError {
   code: number;
   message: string;
-} 
+}
 
 export interface FeePayerPolicy {
   allow_sol_transfers: boolean;
