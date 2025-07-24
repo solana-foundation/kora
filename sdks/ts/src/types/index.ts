@@ -69,7 +69,6 @@ export interface Config {
   fee_payer: string;
   validation_config: ValidationConfig;
 }
-
 // Error Types
 export interface RpcError {
   code: number;

@@ -35,7 +35,7 @@ export class KoraClient {
     });
 
     const json = await response.json() as { error?: RpcError; result: T };
-    
+
     if ('error' in json) {
       const error = json.error!;
       throw new Error(`RPC Error ${error.code}: ${error.message}`);
