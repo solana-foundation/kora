@@ -5,7 +5,7 @@ inputs:
   private-key:
     description: 'Kora private key'
     required: false
-    default: 64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6
+    default: '64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6'
   config-file:
     description: 'Kora config file path'
     required: false
