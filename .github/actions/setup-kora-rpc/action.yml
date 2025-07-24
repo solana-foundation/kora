@@ -5,11 +5,11 @@ inputs:
   private-key:
     description: 'Kora private key'
     required: false
-    default: '64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6'
+    default: './tests/testing-utils/local-keys/fee-payer-local.json'
   config-file:
     description: 'Kora config file path'
     required: false
-    default: 'kora.toml'
+    default: 'tests/kora-test.toml'
   rpc-url:
     description: 'Solana RPC URL'
     required: false
