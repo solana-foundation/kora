@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_message::{v0::MessageAddressTableLookup, VersionedMessage};
@@ -14,6 +16,71 @@ use crate::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use solana_address_lookup_table_interface::state::AddressLookupTable;
+
+pub trait VersionedTransactionExt {
+    fn get_all_account_keys(&self) -> Vec<Pubkey>;
+    fn get_transaction(&self) -> &VersionedTransaction;
+}
+
+pub struct VersionedTransactionResolved<'a> {
+    pub transaction: &'a VersionedTransaction,
+
+    pub is_resolved: bool,
+
+    pub resolved_addresses: Vec<Pubkey>,
+}
+
+impl Deref for VersionedTransactionResolved<'_> {
+    type Target = VersionedTransaction;
+
+    fn deref(&self) -> &Self::Target {
+        self.transaction
+    }
+}
+
+impl<'a> VersionedTransactionExt for VersionedTransactionResolved<'a> {
+    fn get_all_account_keys(&self) -> Vec<Pubkey> {
+        let mut account_keys = self.transaction.message.static_account_keys().to_vec();
+        account_keys.append(&mut self.resolved_addresses.clone());
+        account_keys
+    }
+
+    fn get_transaction(&self) -> &VersionedTransaction {
+        self.transaction
+    }
+}
+
+impl<'a> VersionedTransactionResolved<'a> {
+    pub fn new(transaction: &'a VersionedTransaction) -> Self {
+        Self { transaction, is_resolved: false, resolved_addresses: vec![] }
+    }
+
+    pub async fn resolve_addresses(&mut self, rpc_client: &RpcClient) -> Result<(), KoraError> {
+        if self.is_resolved {
+            return Ok(());
+        }
+
+        self.resolved_addresses = match &self.transaction.message {
+            VersionedMessage::Legacy(_) => vec![],
+            VersionedMessage::V0(v0_message) => {
+                resolve_lookup_table_addresses(rpc_client, &v0_message.address_table_lookups)
+                    .await?
+            }
+        };
+
+        Ok(())
+    }
+}
+
+impl VersionedTransactionExt for VersionedTransaction {
+    fn get_all_account_keys(&self) -> Vec<Pubkey> {
+        self.message.static_account_keys().to_vec()
+    }
+
+    fn get_transaction(&self) -> &VersionedTransaction {
+        self
+    }
+}
 
 pub fn new_unsigned_versioned_transaction(message: VersionedMessage) -> VersionedTransaction {
     let num_required_signatures = message.header().num_required_signatures as usize;
@@ -65,11 +132,15 @@ pub async fn sign_transaction(
     let signer = get_signer()?;
     let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
 
+    let mut resolved_transaction = VersionedTransactionResolved::new(&transaction);
+    resolved_transaction.resolve_addresses(rpc_client).await?;
+
     // Validate transaction and accounts with lookup table resolution for V0 transactions
-    validator.validate_transaction(&transaction, Some(rpc_client)).await?;
+    validator.validate_transaction(&resolved_transaction).await?;
 
     // Get latest blockhash and update transaction
-    let mut transaction = transaction;
+    let mut transaction = resolved_transaction.get_transaction().clone();
+
     if transaction.signatures.is_empty() {
         let blockhash =
             rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
