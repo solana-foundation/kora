@@ -19,6 +19,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_LOG: info
+  # Need to set this here for Setup tests to acces the correct private key
+  KORA_PRIVATE_KEY: 64TVMxZyYyLHwyfZRJUJMqF8GJsMsZQKk4JhdKkyMB7k3fNUjWZdAF1YmyLd43dWEBLCLYjKDkoRGfMwMoGUrDF6
+
 
 jobs:
   test:
