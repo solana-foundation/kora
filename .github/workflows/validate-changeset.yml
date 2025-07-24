@@ -21,6 +21,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup git for changeset
+        run: |
+          git fetch origin main:main
+          git branch --set-upstream-to=origin/main main || true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -49,7 +55,7 @@ jobs:
 
       - name: Check for changeset
         run: |
-          if [ -z "$(ls .changeset/*.md 2>/dev/null | grep -v README)" ]; then
+          if ! find .changeset -name "*.md" -not -name "README.md" -print -quit | grep -q .; then
             echo "❌ No changeset found!"
             echo "Please run 'pnpm changeset' to create a changeset for your changes."
             echo "If this PR doesn't need a changeset, add the 'no-changeset' label."
