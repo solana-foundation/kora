@@ -116,7 +116,7 @@ impl KoraRpc {
 
     pub async fn get_config(&self) -> Result<GetConfigResponse, KoraError> {
         info!("Get config request received");
-        let result = get_config(&self.validation).await;
+        let result = get_config(&self.config, &self.validation).await;
         info!("Get config response: {result:?}");
         result
     }
