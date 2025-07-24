@@ -118,15 +118,11 @@ jobs:
 
           # Run unit tests with coverage
           echo "Running unit tests with coverage..."
-          cargo llvm-cov --workspace --no-report
+          cargo llvm-cov --lib --no-report
 
-          # Run integration tests with coverage
-          echo "Running integration tests with coverage..."
-          cargo llvm-cov --workspace --tests --no-report
-
-          # Run integration tests using Makefile (handles all server lifecycle)
-          echo "Running integration tests via Makefile..."
-          make test-integration
+          # Run integration tests using Makefile with coverage instrumentation
+          echo "Running integration tests via Makefile with coverage..."
+          make test-integration-coverage
 
           # Generate reports
           echo "Generating coverage reports..."

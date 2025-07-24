@@ -1,4 +1,17 @@
-.PHONY: check fmt lint lint-fix test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration coverage coverage-all
+.PHONY: check fmt lint lint-fix test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration test-integration-coverage coverage coverage-all
+
+# Common configuration
+TEST_PORT := 8080
+TEST_PRIVATE_KEY := ./tests/testing-utils/local-keys/fee-payer-local.json
+TEST_RPC_URL := http://127.0.0.1:8899
+REGULAR_CONFIG := kora.toml
+AUTH_CONFIG := tests/fixtures/auth-test.toml
+
+# Output control patterns
+QUIET_OUTPUT := >/dev/null 2>&1
+TEST_OUTPUT_FILTER := 2>&1 | grep -E "(test |running |ok$$|FAILED|failed|error:|Error:|ERROR)" || true
+SETUP_OUTPUT := >/dev/null 2>&1
+
 
 # Default target
 all: check test build
@@ -28,6 +41,42 @@ lint-fix:
 test:
 	cargo test --lib
 
+
+# Server lifecycle management functions
+define stop_server
+	@echo "🛑 Stopping $(1) server..."
+	@pkill -f "kora-rpc.*--port $(TEST_PORT)" || true
+	@sleep 2
+endef
+
+define start_server
+	@echo "🛑 Stopping any existing server..."
+	@pkill -f "kora-rpc.*--port $(TEST_PORT)" || true
+	@sleep 2
+	@echo "🚀 Starting Kora $(1) server..."
+	@$(2) -p kora-rpc --bin kora-rpc $(3) -- --private-key $(TEST_PRIVATE_KEY) --config $(4) --rpc-url $(TEST_RPC_URL) --port $(TEST_PORT) $(QUIET_OUTPUT) &
+	@echo "⏳ Waiting for server to start..."
+	@sleep 5
+endef
+
+define run_regular_tests
+	@echo "🧪 Running regular integration tests..."
+	@$(1) --test api_integration $(2) $(TEST_OUTPUT_FILTER)
+	@$(1) --test token_integration $(2) $(TEST_OUTPUT_FILTER)
+endef
+
+define run_auth_tests
+	@echo "🧪 Running auth integration tests..."
+	@$(1) --test integration auth_integration_tests $(2) -- --nocapture $(TEST_OUTPUT_FILTER)
+endef
+
+define run_integration_phase
+	@echo "📋 Phase $(1): $(2)"
+	$(call start_server,$(2),$(3),$(4),$(5))
+	$(6)
+	$(call stop_server,$(2))
+endef
+
 # Setup test environment
 setup-test-env:
 	cargo run -p tests --bin setup-test-env
@@ -35,29 +84,19 @@ setup-test-env:
 # Run all integration tests (regular + auth)
 test-integration:
 	@echo "🧪 Running all integration tests..."
-	@echo "📋 Phase 1: Setup and regular integration tests"
-	cargo run -p tests --bin setup-test-env
-	@echo "🚀 Starting Kora RPC server for regular tests..."
-	@pkill -f "kora-rpc.*--port 8080" || true
-	@sleep 2
-	cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config kora.toml --rpc-url http://127.0.0.1:8899 --port 8080 &
-	@echo "⏳ Waiting for server to start..."
-	@sleep 5
-	@echo "🧪 Running regular integration tests..."
-	cargo test --test api_integration
-	cargo test --test token_integration
-	@echo "🛑 Stopping regular server..."
-	@pkill -f "kora-rpc.*--port 8080" || true
-	@sleep 2
-	@echo "📋 Phase 2: Auth integration tests"
-	@echo "🚀 Starting Kora server with auth config..."
-	cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/fixtures/auth-test.toml --rpc-url http://127.0.0.1:8899 --port 8080 &
-	@echo "⏳ Waiting for auth server to start..."
-	@sleep 5
-	@echo "🧪 Running auth integration tests..."
-	cargo test --test integration auth_integration_tests -- --nocapture
-	@echo "🛑 Stopping auth server..."
-	@pkill -f "kora-rpc.*--port 8080" || true
+	@echo "🔧 Setting up test environment..."
+	@cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT)
+	$(call run_integration_phase,1,regular tests,cargo run,,$(REGULAR_CONFIG),$(call run_regular_tests,cargo test,))
+	$(call run_integration_phase,2,auth tests,cargo run,,$(AUTH_CONFIG),$(call run_auth_tests,cargo test,))
+	@echo "✅ All integration tests completed"
+
+# Run all integration tests with coverage instrumentation (for CI)
+test-integration-coverage:
+	@echo "🧪 Running all integration tests with coverage..."
+	@echo "🔧 Setting up test environment..."
+	@cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT)
+	$(call run_integration_phase,1,regular tests,cargo llvm-cov run,--no-report,$(REGULAR_CONFIG),$(call run_regular_tests,cargo llvm-cov test,--no-report))
+	$(call run_integration_phase,2,auth tests,cargo llvm-cov run,--no-report,$(AUTH_CONFIG),$(call run_auth_tests,cargo llvm-cov test,--no-report))
 	@echo "✅ All integration tests completed"
 
 # Build all binaries
