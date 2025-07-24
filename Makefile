@@ -32,10 +32,33 @@ test:
 setup-test-env:
 	cargo run -p tests --bin setup-test-env
 
-# Run integration tests
+# Run all integration tests (regular + auth)
 test-integration:
+	@echo "🧪 Running all integration tests..."
+	@echo "📋 Phase 1: Setup and regular integration tests"
 	cargo run -p tests --bin setup-test-env
-	cargo test --test integration
+	@echo "🚀 Starting Kora RPC server for regular tests..."
+	@pkill -f "kora-rpc.*--port 8080" || true
+	@sleep 2
+	cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config kora.toml --rpc-url http://127.0.0.1:8899 --port 8080 &
+	@echo "⏳ Waiting for server to start..."
+	@sleep 5
+	@echo "🧪 Running regular integration tests..."
+	cargo test --test api_integration
+	cargo test --test token_integration
+	@echo "🛑 Stopping regular server..."
+	@pkill -f "kora-rpc.*--port 8080" || true
+	@sleep 2
+	@echo "📋 Phase 2: Auth integration tests"
+	@echo "🚀 Starting Kora server with auth config..."
+	cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/fixtures/auth-test.toml --rpc-url http://127.0.0.1:8899 --port 8080 &
+	@echo "⏳ Waiting for auth server to start..."
+	@sleep 5
+	@echo "🧪 Running auth integration tests..."
+	cargo test --test integration auth_integration_tests -- --nocapture
+	@echo "🛑 Stopping auth server..."
+	@pkill -f "kora-rpc.*--port 8080" || true
+	@echo "✅ All integration tests completed"
 
 # Build all binaries
 build:

@@ -1,9 +1,13 @@
-use crate::rpc::KoraRpc;
+use crate::{
+    auth::{ApiKeyAuthLayer, HmacAuthLayer},
+    rpc::KoraRpc,
+};
 use http::{header, Method};
 use jsonrpsee::{
     server::{middleware::proxy_get_request::ProxyGetRequestLayer, ServerBuilder, ServerHandle},
     RpcModule,
 };
+use kora_lib::constant::{X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP};
 use std::{net::SocketAddr, time::Duration};
 use tower::limit::RateLimitLayer;
 use tower_http::cors::CorsLayer;
@@ -16,13 +20,24 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
         .allow_methods([Method::POST, Method::GET])
-        .allow_headers([header::CONTENT_TYPE])
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::HeaderName::from_static(X_API_KEY),
+            header::HeaderName::from_static(X_HMAC_SIGNATURE),
+            header::HeaderName::from_static(X_TIMESTAMP),
+        ])
         .max_age(Duration::from_secs(3600));
 
     let middleware = tower::ServiceBuilder::new()
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
         .layer(RateLimitLayer::new(rpc.config.rate_limit, Duration::from_secs(1)))
-        .layer(cors);
+        .layer(cors)
+        // Add authentication layer for API key if configured
+        .option_layer(rpc.config.api_key.as_ref().map(|key| ApiKeyAuthLayer::new(key.clone())))
+        // Add authentication layer for HMAC if configured
+        .option_layer(
+            rpc.config.hmac_secret.as_ref().map(|secret| HmacAuthLayer::new(secret.clone())),
+        );
 
     // Configure and build the server with HTTP support
     let server = ServerBuilder::default()

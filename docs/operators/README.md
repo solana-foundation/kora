@@ -170,6 +170,78 @@ allow_assign = true             # Allow fee payer to use Assign instruction
 
 Your `kora.toml` should live in the same directory as your deployment or be specified via the `--config` flag when starting the server.
 
+## Authentication
+
+Kora supports two optional authentication methods for securing your RPC endpoint:
+
+### API Key Authentication
+
+For simple API key-based authentication, add an `api_key` to your configuration:
+
+```toml
+[kora]
+rate_limit = 100
+api_key = "your-secret-api-key"
+```
+
+Clients must include the API key in the `x-api-key` header:
+
+```bash
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: your-secret-api-key" \
+  -d '{"jsonrpc": "2.0", "method": "getBlockhash", "id": 1}'
+```
+
+### HMAC Authentication
+
+For more secure HMAC-based authentication, add an `hmac_secret` to your configuration:
+
+```toml
+[kora]
+rate_limit = 100
+hmac_secret = "your-hmac-secret"
+```
+
+Clients must include:
+- `x-timestamp`: Unix timestamp (within 5 minutes)
+- `x-hmac-signature`: HMAC-SHA256 signature of `{timestamp}{body}`
+
+Example client code:
+
+```javascript
+const crypto = require('crypto');
+
+const timestamp = Math.floor(Date.now() / 1000).toString();
+const body = JSON.stringify({
+  jsonrpc: "2.0",
+  method: "getBlockhash",
+  id: 1
+});
+const message = timestamp + body;
+const signature = crypto
+  .createHmac('sha256', 'your-hmac-secret')
+  .update(message)
+  .digest('hex');
+
+fetch('http://localhost:8080', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-timestamp': timestamp,
+    'x-hmac-signature': signature
+  },
+  body: body
+});
+```
+
+### Authentication Notes
+
+- The `/liveness` endpoint is exempt from authentication
+- Both authentication methods are optional - if neither is configured, no authentication is required
+- You can use both methods simultaneously for maximum security
+- HMAC authentication provides replay protection via timestamp validation
+
 ## Deployment 
 
 ### Local Deployment

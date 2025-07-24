@@ -17,6 +17,18 @@ The repository consists of 5 main workspace crates:
 - `scripts`: Utility scripts for development
 - `sdks/`: TypeScript SDKs for client integration
 
+## TL;DR - Authentication Methods
+
+Kora supports two authentication methods that can be used individually or together:
+
+1. **API Key Authentication**: Simple header-based auth using `x-api-key` header
+2. **HMAC Authentication**: Request signature auth using `x-timestamp` and `x-hmac-signature` headers
+
+**Testing:**
+```bash
+make test-integration           # Run all integration tests
+```
+
 ## Common Development Commands
 
 ### Build & Check
@@ -71,22 +83,22 @@ Integration tests require a local validator and test account setup:
    solana-test-validator --reset --quiet
    ```
 
-2. **Start local Kora Server:**
-    ```bash
-    make run
-    ```
-
-3. **Run integration tests:**
+2. **Run integration tests:**
    ```bash
    make test-integration
    ```
-    This will initialize a test environment (cargo run -p tests --bin setup-test-env):
-   - Verify test validator is running
-   - Create and fund test accounts
-   - Set up USDC mint and token accounts
-   - Display account summary
-
-   And run all integration tests (cargo test --test integration)
+   This will run all integration tests in two phases (fully self-contained):
+   
+   **Phase 1: Regular integration tests**
+   - Initialize test environment (cargo run -p tests --bin setup-test-env)
+   - Start Kora RPC server with regular configuration
+   - Run API and token integration tests
+   - Stop the regular server
+   
+   **Phase 2: Auth integration tests**
+   - Start Kora server with auth configuration (`tests/fixtures/auth-test.toml`)
+   - Run auth integration tests (API key and HMAC authentication)
+   - Clean up the auth server
 
 #### Customize Test Environment
 
@@ -487,6 +499,15 @@ Use structured logging throughout the codebase:
 - **Fail Secure**: Default to restrictive behavior when validation or authentication fails
 - **Secure Communication**: Use secure communication for remote signer APIs
 - **Rate Limiting & Authentication**: Implement proper rate limiting and authentication
+
+## Authentication Methods
+
+Kora supports two optional authentication methods:
+
+1. **API Key Auth** (`api_key` in kora.toml): Simple header-based auth using `x-api-key`
+2. **HMAC Auth** (`hmac_secret` in kora.toml): Secure signature-based auth using `x-timestamp` + `x-hmac-signature` (SHA256 of timestamp+body)
+
+Both skip `/liveness` endpoint and can be used simultaneously. Implementation uses async tower middleware for non-blocking concurrent requests.
 
 ### Testing Guidelines
 

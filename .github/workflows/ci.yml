@@ -106,41 +106,6 @@ jobs:
             exit 1
           fi
 
-      - name: Start Kora RPC server
-        run: |
-          echo "🚀 Starting Kora RPC server..."
-          cargo run -p kora-rpc --bin kora-rpc -- \
-            --private-key ${{ env.KORA_PRIVATE_KEY }} \
-            --config ${{ env.KORA_CONFIG_FILE }} \
-            --rpc-url ${{ env.RPC_URL }} \
-            --port ${{ env.KORA_RPC_PORT }} \
-            &
-          KORA_PID=$!
-          echo "KORA_PID=$KORA_PID" >> $GITHUB_ENV
-
-          # Wait for Kora RPC server to be ready
-          echo "⏳ Waiting for Kora RPC server to be ready..."
-          timeout=${{ env.KORA_TIMEOUT }}
-          counter=0
-          while [ $counter -lt $timeout ]; do
-            if curl -s ${{ env.TEST_SERVER_URL }}/health >/dev/null 2>&1; then
-              echo "✅ Kora RPC server is ready!"
-              break
-            fi
-            sleep 1
-            counter=$((counter + 1))
-          done
-
-          if [ $counter -eq $timeout ]; then
-            echo "❌ Kora RPC server failed to start within $timeout seconds"
-            jobs
-            exit 1
-          fi
-
-      - name: Setup test environment
-        run: |
-          echo "🔧 Setting up test environment..."
-          cargo run -p tests --bin setup-test-env
 
       - name: Install cargo-llvm-cov for coverage
         run: cargo install cargo-llvm-cov
@@ -159,6 +124,10 @@ jobs:
           echo "Running integration tests with coverage..."
           cargo llvm-cov --workspace --tests --no-report
 
+          # Run integration tests using Makefile (handles all server lifecycle)
+          echo "Running integration tests via Makefile..."
+          make test-integration
+
           # Generate reports
           echo "Generating coverage reports..."
           mkdir -p coverage
@@ -176,16 +145,12 @@ jobs:
         if: always()
         run: |
           echo "🧹 Cleaning up processes..."
-          if [ ! -z "$KORA_PID" ]; then
-            echo "Stopping Kora RPC server (PID: $KORA_PID)"
-            kill $KORA_PID || true
-          fi
           if [ ! -z "$VALIDATOR_PID" ]; then
             echo "Stopping Solana validator (PID: $VALIDATOR_PID)"
             kill $VALIDATOR_PID || true
           fi
 
-          # Kill any remaining processes
+          # Kill any remaining processes (Makefile handles Kora server lifecycle)
           pkill -f "solana-test-validator" || true
           pkill -f "kora-rpc" || true
 
