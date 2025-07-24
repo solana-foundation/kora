@@ -22,7 +22,7 @@ struct JupiterPriceData {
     decimals: u8,
     #[serde(rename = "priceChange24h")]
     #[allow(dead_code)]
-    price_change_24h: f64,
+    price_change_24h: Option<f64>,
 }
 
 pub struct JupiterPriceOracle {
