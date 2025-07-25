@@ -113,7 +113,7 @@ Let's fetch them from Turnkey:
 
 Click the user menu in the top right corner of the Turnkey dashboard and copy the organization ID: 
 
-![Turnkey Organization ID](../assets/signers-turnkey-org.jpg)
+![Turnkey Organization ID](../assets/img/signers/turnkey-org.jpg)
 
 Store the organization ID in an environment variable:
 ```bash
@@ -128,7 +128,7 @@ TURNKEY_ORGANIZATION_ID="your_organization_id"
 - Enter a name for the API key and click "Continue"
 - Save the public and private keys and click "Approve"
 
-![Turnkey API Keys](../assets/signers-turnkey-api.jpg)
+![Turnkey API Keys](../assets/img/signers/turnkey-api.jpg)
 
 Store the API public and private keys in environment variables:
 ```bash
@@ -142,7 +142,7 @@ From the main menu, navigate to ["Wallets"](https://app.turnkey.com/dashboard/wa
 
 We are going to create a new ED25519 private key with "Solana" asset address type:
 
-![Turnkey Wallets](../assets/signers-turnkey-pk.jpg)
+![Turnkey Wallets](../assets/img/signers/turnkey-pk.jpg)
 
 Click "Continue" and then "Approve".
 
@@ -153,7 +153,7 @@ TURNKEY_PRIVATE_KEY_ID="your_private_key_id" #7936...
 TURNKEY_PUBLIC_KEY="your_solana_address" # 4gBe...
 ```
 
-![Turnkey Wallet Details](../assets/signers-turnkey-pk2.jpg)
+![Turnkey Wallet Details](../assets/img/signers/turnkey-pk2.jpg)
 
 You will need to fund the wallet with SOL to pay for transaction fees.
 
@@ -221,7 +221,7 @@ From your dashboard, select the application you want to use for Kora (or click "
 
 Select "Retrieve API Keys" anc click "+ New Secret":
 
-![Privy Wallets](../assets/signers-privy-app.jpg)
+![Privy Wallets](../assets/img/signers/privy-app.jpg)
 
 Copy your "App ID" and "App Secret" and store them in environment variables:
 
@@ -238,7 +238,7 @@ Select "Solana" as the blockchain and click "Save".
 
 Click on the wallet to view the details:
 
-![Privy Wallets](../assets/signers-privy-wallet.jpg)
+![Privy Wallets](../assets/img/signers/privy-wallet.jpg)
 
 Copy the "Wallet ID" and store them in environment variables:
 
