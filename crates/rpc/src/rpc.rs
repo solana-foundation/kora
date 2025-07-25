@@ -65,7 +65,7 @@ impl KoraRpc {
         request: EstimateTransactionFeeRequest,
     ) -> Result<EstimateTransactionFeeResponse, KoraError> {
         info!("Estimate transaction fee request: {request:?}");
-        let result = estimate_transaction_fee(&self.rpc_client, request).await;
+        let result = estimate_transaction_fee(&self.rpc_client, &self.validation, request).await;
         info!("Estimate transaction fee response: {result:?}");
         result
     }

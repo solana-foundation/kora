@@ -46,7 +46,7 @@ async fn test_estimate_transaction_fee() {
     let response: serde_json::Value = client
         .request(
             "estimateTransactionFee",
-            rpc_params![test_tx, "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"],
+            rpc_params![test_tx, get_test_usdc_mint_pubkey().to_string()],
         )
         .await
         .expect("Failed to estimate transaction fee");
@@ -439,4 +439,66 @@ async fn test_sign_v0_transaction_with_invalid_lookup_table() {
         .await;
 
     assert!(result.is_err(), "Expected error for invalid transaction");
+}
+
+#[tokio::test]
+async fn test_estimate_transaction_fee_without_fee_token() {
+    let client = get_test_client().await;
+    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
+
+    let response: serde_json::Value = client
+        .request("estimateTransactionFee", rpc_params![test_tx])
+        .await
+        .expect("Failed to estimate transaction fee");
+
+    assert!(response["fee_in_lamports"].as_u64().is_some(), "Expected fee_in_lamports in response");
+    assert!(
+        response["fee_in_token"].is_null(),
+        "Expected fee_in_token to be null when not requested"
+    );
+}
+
+#[tokio::test]
+async fn test_estimate_transaction_fee_with_fee_token() {
+    let client = get_test_client().await;
+    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
+
+    let usdc_mint = get_test_usdc_mint_pubkey().to_string();
+
+    let response: serde_json::Value = client
+        .request("estimateTransactionFee", rpc_params![test_tx, usdc_mint])
+        .await
+        .expect("Failed to estimate transaction fee with token");
+
+    assert!(response["fee_in_lamports"].as_u64().is_some(), "Expected fee_in_lamports in response");
+    assert!(
+        response["fee_in_token"].as_f64().is_some(),
+        "Expected fee_in_token when fee_token is provided"
+    );
+
+    let fee_in_lamports = response["fee_in_lamports"].as_u64().unwrap();
+    let fee_in_token = response["fee_in_token"].as_f64().unwrap();
+
+    // Verify the conversion makes sense
+    // Mocked price DEFAULT_MOCKED_PRICE is 0.001, so 0.001 SOL per usdc
+    // Fee in lamport is 10000
+    // 10000 lamports -> 0.00001 SOL -> 0.00001 / 0.001 (sol per usdc) = 0.01 usdc
+    // 0.01 usdc * 10^6 = 10000 usdc in base units
+    assert_eq!(fee_in_lamports, 10000, "Fee in lamports should be 10000");
+    assert_eq!(fee_in_token, 10000.0, "Fee in token should be 10000");
+}
+
+#[tokio::test]
+async fn test_estimate_transaction_fee_with_invalid_mint() {
+    let client = get_test_client().await;
+    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
+
+    let result = client
+        .request::<serde_json::Value, _>(
+            "estimateTransactionFee",
+            rpc_params![test_tx, "invalid_mint_address"],
+        )
+        .await;
+
+    assert!(result.is_err(), "Expected error for invalid mint address");
 }
