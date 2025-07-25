@@ -1,14 +1,14 @@
 use crate::{
-    constant::{BASE_COMPUTE_UNIT_LIMIT, BASE_COMPUTE_UNIT_PRICE, MICRO_LAMPORTS_PER_LAMPORTS},
+    constant::LAMPORTS_PER_SIGNATURE,
     error::KoraError,
+    get_signer,
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle},
     token::{TokenInterface, TokenProgram, TokenType},
     transaction::{get_estimate_fee, VersionedTransactionExt},
 };
-use borsh::BorshDeserialize;
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_compute_budget_interface::{ComputeBudgetInstruction, ID as COMPUTE_BUDGET_ID};
+use solana_message::VersionedMessage;
 use solana_sdk::{
     native_token::LAMPORTS_PER_SOL, pubkey::Pubkey, rent::Rent, transaction::VersionedTransaction,
 };
@@ -21,53 +21,27 @@ pub struct TokenPriceInfo {
     pub price: f64,
 }
 
-#[derive(Debug, Clone)]
-pub struct ComputeUnitInfo {
-    pub compute_unit_limit: Option<u32>,
-    pub compute_unit_price: Option<u64>,
-}
+pub fn is_fee_payer_in_signers(
+    transaction: &impl VersionedTransactionExt,
+) -> Result<bool, KoraError> {
+    let fee_payer = get_signer()
+        .map(|signer| signer.solana_pubkey())
+        .map_err(|e| KoraError::InternalServerError(format!("Failed to get signer: {e}")))?;
 
-impl ComputeUnitInfo {
-    pub fn calculate_priority_fee(&self) -> u64 {
-        let limit = self.compute_unit_limit.unwrap_or(BASE_COMPUTE_UNIT_LIMIT);
-        let price = self.compute_unit_price.unwrap_or(BASE_COMPUTE_UNIT_PRICE);
+    let all_account_keys = transaction.get_all_account_keys();
+    let transaction_inner = transaction.get_transaction();
 
-        // Priority fee = compute_unit_limit * compute_unit_price
-        // Note: compute_unit_price is in microlamports, so we divide by 1_000_000 to get lamports
-        (limit as u64).saturating_mul(price) / MICRO_LAMPORTS_PER_LAMPORTS
-    }
-
-    /// Extract compute unit information from transaction instructions
-    pub fn extract_compute_unit_info(loaded_transaction: &impl VersionedTransactionExt) -> Self {
-        let mut compute_unit_limit = None;
-        let mut compute_unit_price = None;
-
-        let transaction = loaded_transaction.get_transaction();
-        let account_keys = loaded_transaction.get_all_account_keys();
-
-        for instruction in transaction.message.instructions() {
-            let program_id = account_keys[instruction.program_id_index as usize];
-            if program_id != COMPUTE_BUDGET_ID {
-                continue;
-            }
-
-            if instruction.data.is_empty() {
-                continue;
-            }
-
-            match ComputeBudgetInstruction::try_from_slice(&instruction.data) {
-                Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) => {
-                    compute_unit_limit = Some(limit);
-                }
-                Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) => {
-                    compute_unit_price = Some(price);
-                }
-                _ => {}
-            }
+    // In messages, the first num_required_signatures accounts are signers
+    Ok(match &transaction_inner.message {
+        VersionedMessage::Legacy(legacy_message) => {
+            let num_signers = legacy_message.header.num_required_signatures as usize;
+            all_account_keys.iter().take(num_signers).any(|key| *key == fee_payer)
         }
-
-        ComputeUnitInfo { compute_unit_limit, compute_unit_price }
-    }
+        VersionedMessage::V0(v0_message) => {
+            let num_signers = v0_message.header.num_required_signatures as usize;
+            all_account_keys.iter().take(num_signers).any(|key| *key == fee_payer)
+        }
+    })
 }
 
 pub async fn estimate_transaction_fee(
@@ -85,11 +59,15 @@ pub async fn estimate_transaction_fee(
         .await
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-    // Extract compute unit information from transaction instructions
-    let compute_unit_info = ComputeUnitInfo::extract_compute_unit_info(resolved_transaction);
-    let priority_fee = compute_unit_info.calculate_priority_fee();
+    // Priority fees are now included in the calculate done by the RPC getFeeForMessage
 
-    Ok(base_fee + priority_fee + account_creation_fee)
+    // If the Kora signer is not inclded in the signers, we add another base fee, since each transaction will be 5000 lamports
+    let mut kora_signature_fee = 0u64;
+    if !is_fee_payer_in_signers(resolved_transaction)? {
+        kora_signature_fee = LAMPORTS_PER_SIGNATURE;
+    }
+
+    Ok(base_fee + account_creation_fee + kora_signature_fee)
 }
 
 async fn get_associated_token_account_creation_fees(
@@ -163,174 +141,106 @@ pub async fn calculate_token_value_in_lamports(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solana_sdk::{
-        message::{v0, VersionedMessage},
-        pubkey::Pubkey,
-        signature::{Keypair, Signer},
-        transaction::VersionedTransaction,
+    use crate::{
+        signer::{KoraSigner, SolanaMemorySigner},
+        state::init_signer,
+        transaction::{new_unsigned_versioned_transaction, VersionedTransactionResolved},
     };
-
-    use solana_compute_budget_interface::ComputeBudgetInstruction;
+    use solana_message::{v0, Message};
+    use solana_sdk::{
+        hash::Hash,
+        signature::{Keypair, Signer},
+    };
     use solana_system_interface::instruction::transfer;
 
-    #[test]
-    fn test_extract_compute_unit_info_with_both_instructions() {
-        // Create a transaction with both SetComputeUnitLimit and SetComputeUnitPrice instructions
-        let payer = Keypair::new();
-        let to = Pubkey::new_unique();
+    fn setup_or_get_test_signer() -> Pubkey {
+        if let Ok(signer) = get_signer() {
+            return signer.solana_pubkey();
+        }
 
-        let instructions = vec![
-            ComputeBudgetInstruction::set_compute_unit_limit(300_000),
-            ComputeBudgetInstruction::set_compute_unit_price(50_000),
-            transfer(&payer.pubkey(), &to, 1_000_000),
-        ];
-
-        let message = VersionedMessage::V0(
-            v0::Message::try_compile(
-                &payer.pubkey(),
-                &instructions,
-                &[],
-                solana_sdk::hash::Hash::default(),
-            )
-            .unwrap(),
-        );
-
-        let transaction = VersionedTransaction {
-            signatures: vec![solana_sdk::signature::Signature::default()],
-            message,
-        };
-
-        let compute_info = ComputeUnitInfo::extract_compute_unit_info(&transaction);
-
-        assert_eq!(compute_info.compute_unit_limit, Some(300_000));
-        assert_eq!(compute_info.compute_unit_price, Some(50_000));
-
-        // Test priority fee calculation: 300_000 * 50_000 / 1_000_000 = 15_000 lamports
-        assert_eq!(compute_info.calculate_priority_fee(), 15_000);
+        let test_keypair = Keypair::new();
+        let signer = SolanaMemorySigner::new(test_keypair.insecure_clone());
+        match init_signer(KoraSigner::Memory(signer)) {
+            Ok(_) => test_keypair.pubkey(),
+            Err(_) => {
+                // Signer already initialized, get it
+                get_signer().expect("Signer should be available").solana_pubkey()
+            }
+        }
     }
 
     #[test]
-    fn test_extract_compute_unit_info_with_only_limit() {
-        let payer = Keypair::new();
-        let to = Pubkey::new_unique();
+    fn test_is_fee_payer_in_signers_legacy_fee_payer_is_signer() {
+        let fee_payer = setup_or_get_test_signer();
+        let other_signer = Keypair::new();
+        let recipient = Keypair::new();
 
-        let instructions = vec![
-            ComputeBudgetInstruction::set_compute_unit_limit(150_000),
-            transfer(&payer.pubkey(), &to, 1_000_000),
-        ];
+        let instruction = transfer(&other_signer.pubkey(), &recipient.pubkey(), 1000);
 
-        let message = VersionedMessage::V0(
-            v0::Message::try_compile(
-                &payer.pubkey(),
-                &instructions,
-                &[],
-                solana_sdk::hash::Hash::default(),
-            )
-            .unwrap(),
-        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
 
-        let transaction = VersionedTransaction {
-            signatures: vec![solana_sdk::signature::Signature::default()],
-            message,
-        };
+        let transaction = new_unsigned_versioned_transaction(message);
+        let resolved_transaction = VersionedTransactionResolved::new(&transaction);
 
-        let compute_info = ComputeUnitInfo::extract_compute_unit_info(&transaction);
-
-        assert_eq!(compute_info.compute_unit_limit, Some(150_000));
-        assert_eq!(compute_info.compute_unit_price, None);
-
-        // Test priority fee calculation: 150_000 * 0 / 1_000_000 = 0 lamports (no price set)
-        assert_eq!(compute_info.calculate_priority_fee(), 0);
+        assert!(is_fee_payer_in_signers(&resolved_transaction).unwrap());
     }
 
     #[test]
-    fn test_extract_compute_unit_info_with_only_price() {
-        let payer = Keypair::new();
-        let to = Pubkey::new_unique();
+    fn test_is_fee_payer_in_signers_legacy_fee_payer_not_signer() {
+        setup_or_get_test_signer();
+        let sender = Keypair::new();
+        let recipient = Keypair::new();
 
-        let instructions = vec![
-            ComputeBudgetInstruction::set_compute_unit_price(25_000),
-            transfer(&payer.pubkey(), &to, 1_000_000),
-        ];
+        let instruction = transfer(&sender.pubkey(), &recipient.pubkey(), 1000);
 
-        let message = VersionedMessage::V0(
-            v0::Message::try_compile(
-                &payer.pubkey(),
-                &instructions,
-                &[],
-                solana_sdk::hash::Hash::default(),
-            )
-            .unwrap(),
-        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&sender.pubkey())));
 
-        let transaction = VersionedTransaction {
-            signatures: vec![solana_sdk::signature::Signature::default()],
-            message,
-        };
+        let transaction = new_unsigned_versioned_transaction(message);
+        let resolved_transaction = VersionedTransactionResolved::new(&transaction);
 
-        let compute_info = ComputeUnitInfo::extract_compute_unit_info(&transaction);
-
-        assert_eq!(compute_info.compute_unit_limit, None);
-        assert_eq!(compute_info.compute_unit_price, Some(25_000));
-
-        // Test priority fee calculation: 200_000 (default) * 25_000 / 1_000_000 = 5_000 lamports
-        assert_eq!(compute_info.calculate_priority_fee(), 5_000);
+        assert!(!is_fee_payer_in_signers(&resolved_transaction).unwrap());
     }
 
     #[test]
-    fn test_extract_compute_unit_info_no_compute_budget_instructions() {
-        let payer = Keypair::new();
-        let to = Pubkey::new_unique();
+    fn test_is_fee_payer_in_signers_v0_fee_payer_is_signer() {
+        let fee_payer = setup_or_get_test_signer();
+        let other_signer = Keypair::new();
+        let recipient = Keypair::new();
 
-        let instructions = vec![transfer(&payer.pubkey(), &to, 1_000_000)];
+        let v0_message = v0::Message::try_compile(
+            &fee_payer,
+            &[transfer(&other_signer.pubkey(), &recipient.pubkey(), 1000)],
+            &[],
+            Hash::default(),
+        )
+        .expect("Failed to compile V0 message");
 
-        let message = VersionedMessage::V0(
-            v0::Message::try_compile(
-                &payer.pubkey(),
-                &instructions,
-                &[],
-                solana_sdk::hash::Hash::default(),
-            )
-            .unwrap(),
-        );
+        let message = VersionedMessage::V0(v0_message);
+        let transaction = new_unsigned_versioned_transaction(message);
+        let resolved_transaction = VersionedTransactionResolved::new(&transaction);
 
-        let transaction = VersionedTransaction {
-            signatures: vec![solana_sdk::signature::Signature::default()],
-            message,
-        };
-
-        let compute_info = ComputeUnitInfo::extract_compute_unit_info(&transaction);
-
-        assert_eq!(compute_info.compute_unit_limit, None);
-        assert_eq!(compute_info.compute_unit_price, None);
-
-        // Test priority fee calculation: 200_000 (default) * 0 (default) / 1_000_000 = 0 lamports
-        assert_eq!(compute_info.calculate_priority_fee(), 0);
+        assert!(is_fee_payer_in_signers(&resolved_transaction).unwrap());
     }
 
     #[test]
-    fn test_compute_unit_info_calculate_priority_fee_edge_cases() {
-        // Test with maximum values to check for overflow
-        let compute_info = ComputeUnitInfo {
-            compute_unit_limit: Some(1_400_000), // Max allowed compute units
-            compute_unit_price: Some(u64::MAX),
-        };
+    fn test_is_fee_payer_in_signers_v0_fee_payer_not_signer() {
+        setup_or_get_test_signer();
+        let sender = Keypair::new();
+        let recipient = Keypair::new();
 
-        // Should use saturating_mul to prevent overflow
-        let priority_fee = compute_info.calculate_priority_fee();
-        assert!(priority_fee > 0); // Should not overflow to 0
+        let v0_message = v0::Message::try_compile(
+            &sender.pubkey(),
+            &[transfer(&sender.pubkey(), &recipient.pubkey(), 1000)],
+            &[],
+            Hash::default(),
+        )
+        .expect("Failed to compile V0 message");
 
-        // Test with zero values
-        let compute_info_zero =
-            ComputeUnitInfo { compute_unit_limit: Some(0), compute_unit_price: Some(0) };
-        assert_eq!(compute_info_zero.calculate_priority_fee(), 0);
+        let message = VersionedMessage::V0(v0_message);
+        let transaction = new_unsigned_versioned_transaction(message);
+        let resolved_transaction = VersionedTransactionResolved::new(&transaction);
 
-        // Test calculation correctness with known values
-        let compute_info_known = ComputeUnitInfo {
-            compute_unit_limit: Some(1_000_000),
-            compute_unit_price: Some(1_000_000), // 1 lamport per CU
-        };
-        // 1_000_000 * 1_000_000 / 1_000_000 = 1_000_000 lamports
-        assert_eq!(compute_info_known.calculate_priority_fee(), 1_000_000);
+        assert!(!is_fee_payer_in_signers(&resolved_transaction).unwrap());
     }
 }

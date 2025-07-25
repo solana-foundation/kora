@@ -37,7 +37,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
     let response: serde_json::Value = client
         .request(
             "estimateTransactionFee",
-            rpc_params![encoded_tx, "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"],
+            rpc_params![encoded_tx, get_test_usdc_mint_pubkey().to_string()],
         )
         .await
         .expect("Failed to estimate transaction fee");
@@ -47,8 +47,9 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
 
     // Fee should include priority fee from compute budget instructions
     // Priority fee calculation: 300_000 * 50_000 / 1_000_000 = 15_000 lamports
-    // Plus base transaction fee (20 000 for this transaction) = 35_000 lamports total
-    assert!(fee >= 35_000, "Fee should include compute budget priority fee, got {fee}");
+    // Plus base transaction fee (5000 for this transaction) = 20_000 lamports total
+    // Plus Kora signature fee (5000 for this transaction) = 25_000 lamports total
+    assert!(fee == 25_000, "Fee should include compute budget priority fee, got {fee}");
 
     println!("Successfully calculated fee with compute budget instructions: {fee} lamports");
 }
@@ -57,6 +58,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
 async fn test_estimate_transaction_fee_with_compute_budget_v0() {
     let rpc_client = get_rpc_client().await;
     let client = get_test_client().await;
+    let fee_payer = get_fee_payer_keypair();
     let sender = get_test_sender_keypair();
     let recipient = get_recipient_pubkey();
 
@@ -70,7 +72,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
         .unwrap();
 
     let v0_message = v0::Message::try_compile(
-        &sender.pubkey(),
+        &fee_payer.pubkey(),
         &[compute_limit_ix, compute_price_ix, transfer_ix],
         &[],
         blockhash.0,
@@ -78,14 +80,14 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
     .expect("Failed to compile V0 message");
 
     let message = VersionedMessage::V0(v0_message);
-    let transaction = VersionedTransaction::try_new(message, &[&sender]).unwrap();
+    let transaction = VersionedTransaction::try_new(message, &[&fee_payer, &sender]).unwrap();
 
     let encoded_tx = encode_b64_transaction(&transaction).expect("Failed to encode transaction");
 
     let response: serde_json::Value = client
         .request(
             "estimateTransactionFee",
-            rpc_params![encoded_tx, "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"],
+            rpc_params![encoded_tx, get_test_usdc_mint_pubkey().to_string()],
         )
         .await
         .expect("Failed to estimate transaction fee with V0 transaction");
@@ -94,8 +96,9 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
     let fee = response["fee_in_lamports"].as_u64().expect("Fee should be a number");
 
     // Priority fee calculation: 1_000_000 * 25_000 / 1_000_000 = 25_000 lamports
-    // Plus base transaction fee (20 000 for this transaction) = 45_000 lamports total
-    assert!(fee >= 45_000, "Fee should include V0 compute budget priority fee, got {fee}");
+    // Plus base transaction fee (2 signatures) (10000 for this transaction) = 35_000 lamports total
+    // We don't include the Kora signature EXTRA fee because the fee payer is already Kora and added as a signer
+    assert!(fee == 35_000, "Fee should include V0 compute budget priority fee, got {fee}");
 
     println!("Successfully calculated fee with V0 compute budget instructions: {fee} lamports");
 }
