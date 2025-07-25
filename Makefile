@@ -45,7 +45,6 @@ test:
 generate-key:
 	openssl rand -hex 32
 
-
 # Server lifecycle management functions
 define stop_server
 	@echo "🛑 Stopping $(1) server..."
