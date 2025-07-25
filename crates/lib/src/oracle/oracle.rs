@@ -34,7 +34,7 @@ pub struct RetryingPriceOracle {
 
 pub fn get_price_oracle(source: PriceSource) -> Arc<dyn PriceOracle + Send + Sync> {
     match source {
-        PriceSource::Jupiter => Arc::new(JupiterPriceOracle::new(None)),
+        PriceSource::Jupiter => Arc::new(JupiterPriceOracle::new()),
         PriceSource::Mock => {
             let mut mock = MockPriceOracle::new();
             // Set up default mock behavior for devnet tokens

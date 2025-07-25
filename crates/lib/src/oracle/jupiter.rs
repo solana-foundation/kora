@@ -3,11 +3,30 @@ use crate::{
     constant::{JUPITER_API_LITE_URL, JUPITER_API_PRO_URL, SOL_MINT},
     error::KoraError,
 };
+use once_cell::sync::Lazy;
+use parking_lot::RwLock;
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 const JUPITER_AUTH_HEADER: &str = "x-api-key";
+
+static GLOBAL_JUPITER_API_KEY: Lazy<Arc<RwLock<Option<String>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(None)));
+
+/// Initialize the global Jupiter API key from the environment variable
+pub fn init_jupiter_api_key() {
+    let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
+    if api_key_guard.is_none() {
+        *api_key_guard = std::env::var("JUPITER_API_KEY").ok();
+    }
+}
+
+/// Get the global Jupiter API key
+fn get_jupiter_api_key() -> Option<String> {
+    let api_key_guard = GLOBAL_JUPITER_API_KEY.read();
+    api_key_guard.clone()
+}
 
 type JupiterResponse = HashMap<String, JupiterPriceData>;
 
@@ -31,10 +50,16 @@ pub struct JupiterPriceOracle {
     api_key: Option<String>,
 }
 
+impl Default for JupiterPriceOracle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JupiterPriceOracle {
-    pub fn new(api_key: Option<String>) -> Self {
-        // Check environment variable for API key
-        let api_key = api_key.or_else(|| std::env::var("JUPITER_API_KEY").ok());
+    pub fn new() -> Self {
+        // Use provided API key, or fallback to global API key from environment
+        let api_key = get_jupiter_api_key();
 
         let pro_api_url = Self::build_price_api_url(JUPITER_API_PRO_URL);
         let lite_api_url = Self::build_price_api_url(JUPITER_API_LITE_URL);
@@ -138,8 +163,13 @@ mod tests {
     use mockito::{Matcher, Server};
 
     #[tokio::test]
-    async fn test_jupiter_price_fetch_without_api_key() {
-        // Jupiter Price API v3 response format
+    async fn test_jupiter_price_fetch() {
+        // No API key
+        {
+            let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
+            *api_key_guard = None;
+        }
+
         let mock_response = r#"{
             "So11111111111111111111111111111111111111112": {
                 "usdPrice": 100.0,
@@ -165,7 +195,7 @@ mod tests {
 
         let client = Client::new();
         // Test without API key - should use lite API
-        let mut oracle = JupiterPriceOracle::new(None);
+        let mut oracle = JupiterPriceOracle::new();
         oracle.lite_api_url = format!("{}/price/v3", server.url());
 
         let result = oracle.get_price(&client, "So11111111111111111111111111111111111111112").await;
@@ -174,11 +204,12 @@ mod tests {
         let price = result.unwrap();
         assert_eq!(price.price, 1.0);
         assert_eq!(price.source, PriceSource::Jupiter);
-    }
 
-    #[tokio::test]
-    async fn test_jupiter_price_fetch_with_api_key() {
-        // Jupiter Price API v3 response format
+        // With API key
+        {
+            let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
+            *api_key_guard = Some("test-api-key".to_string());
+        }
         let mock_response = r#"{
             "So11111111111111111111111111111111111111112": {
                 "usdPrice": 100.0,
@@ -205,7 +236,7 @@ mod tests {
 
         let client = Client::new();
         // Test with API key - should use pro API
-        let mut oracle = JupiterPriceOracle::new(Some("test-api-key".to_string()));
+        let mut oracle = JupiterPriceOracle::new();
         oracle.pro_api_url = format!("{}/price/v3", server.url());
 
         let result = oracle.get_price(&client, "So11111111111111111111111111111111111111112").await;
@@ -214,24 +245,5 @@ mod tests {
         let price = result.unwrap();
         assert_eq!(price.price, 1.0);
         assert_eq!(price.source, PriceSource::Jupiter);
-    }
-
-    #[test]
-    fn test_jupiter_api_key_priority() {
-        // Test that config URL takes priority over env var
-        std::env::set_var("JUPITER_API_KEY", "321");
-
-        let oracle_config = JupiterPriceOracle::new(Some("123".to_string()));
-        assert_eq!(oracle_config.api_key, Some("123".to_string()));
-
-        // Test env var fallback when config is None
-        let oracle_env = JupiterPriceOracle::new(None);
-        assert_eq!(oracle_env.api_key, Some("321".to_string()));
-
-        std::env::remove_var("JUPITER_API_KEY");
-
-        // Test default fallback when both config and env are None
-        let oracle_default = JupiterPriceOracle::new(None);
-        assert_eq!(oracle_default.api_key, None);
     }
 }
