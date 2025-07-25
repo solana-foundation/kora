@@ -22,7 +22,7 @@ env:
 
 jobs:
   test:
-    name: Unit Tests
+    name: Rust Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
