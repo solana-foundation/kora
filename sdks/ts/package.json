@@ -11,6 +11,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:integration": "pnpm run build && node scripts/test-with-validator.js",
+    "test:unit": "pnpm run build && jest test/unit.test.ts",
     "test:ci": "node scripts/test-with-validator.js",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",

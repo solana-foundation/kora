@@ -1,4 +1,6 @@
-// Request Types
+/**
+ * Request Types
+ */
 export interface TransferTransactionRequest {
   amount: number;
   token: string;
@@ -19,7 +21,14 @@ export interface SignTransactionIfPaidRequest {
   margin?: number;
 }
 
-// Response Types
+export interface EstimateTransactionFeeRequest {
+    transaction: string;
+    fee_token: string;
+}
+
+/**
+ * Response Types
+ */
 export interface TransferTransactionResponse {
   transaction: string;
   message: string;
@@ -49,7 +58,13 @@ export interface GetSupportedTokensResponse {
   tokens: string[];
 }
 
-// Configuration Types
+export interface EstimateTransactionFeeResponse {
+  fee_in_lamports: number;
+}
+
+/**
+ * Configuration Types
+ */
 export interface TokenPriceInfo {
   price: number;
 }
@@ -69,15 +84,25 @@ export interface Config {
   fee_payer: string;
   validation_config: ValidationConfig;
 }
-// Error Types
-export interface RpcError {
-  code: number;
-  message: string;
-} 
 
 export interface FeePayerPolicy {
   allow_sol_transfers: boolean;
   allow_spl_transfers: boolean;
   allow_token2022_transfers: boolean;
   allow_assign: boolean;
+}
+
+/**
+ * RPC Types
+ */
+export interface RpcError {
+  code: number;
+  message: string;
+} 
+
+export interface RpcRequest<T> {
+    jsonrpc: '2.0';
+    id: number;
+    method: string;
+    params: T;
 }
