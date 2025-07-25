@@ -17,3 +17,5 @@ test-ledger/
 # Coverage reports
 coverage/
 *.profraw
+
+.DS_Store

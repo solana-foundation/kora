@@ -100,7 +100,7 @@ Applications can access the Kora RPC Server via the [Kora CLI](../../crates/cli/
 
 Every Kora RPC node must be configured with at least:
 - a Solana RPC endpoint (specified via the `--rpc-url` flag or `RPC_URL` environment variable) [default: http://127.0.0.1:8899]
-- a Solana signer (specified via the `--private-key` or `KORA_PRIVATE_KEY=` environment variable) <!-- Check out our [Signers Dcoumentation](./SIGNERS.md) for signing with a key management provider -->
+- a Solana signer (specified via the `--private-key` or `KORA_PRIVATE_KEY=` environment variable) (Check out the **[Signers Documentation](./SIGNERS.md)** for signing with a key management provider)
 - a config file, `kora.toml` (specified via the `--config path/to/kora.toml` flag)
 
 ### kora.toml
