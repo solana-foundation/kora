@@ -197,6 +197,7 @@ pnpm run format
   - Transaction validation against configuration rules
   - Paid transaction verification
   - Solana transaction utilities
+  - **Lookup Table Resolution**: V0 transactions require address lookup table resolution for proper fee calculation and validation. The system uses `VersionedTransactionExt` trait and `VersionedTransactionResolved` wrapper for efficient caching of resolved addresses.
 
 - **token/** - SPL token handling:
   - Token interface abstractions (SPL vs Token-2022)
@@ -405,6 +406,29 @@ The system automatically detects the format based on input patterns:
 
 ### Environment Variables
 All private key environment variables support the same multiple formats.
+
+## Lookup Table Resolution System
+
+### Overview
+
+Kora handles both legacy and V0 versioned transactions. V0 transactions use address lookup tables to compress transaction size by referencing frequently used addresses. Before processing V0 transactions for fee calculation or validation, these lookup tables must be resolved to get the actual addresses.
+
+### Design Pattern
+
+**Trait-Based Abstraction**: The system uses the `VersionedTransactionExt` trait to provide a unified interface for both legacy and V0 transactions:
+
+```rust
+pub trait VersionedTransactionExt {
+    fn get_all_account_keys(&self) -> Vec<Pubkey>;
+    fn get_transaction(&self) -> &VersionedTransaction;
+}
+```
+
+**Caller Responsibility Pattern**: Following Rust best practices, the system uses caller responsibility where expensive operations (RPC calls to resolve lookup tables) are explicit:
+
+- `VersionedTransaction` - Implements trait directly, returns only static account keys
+- `VersionedTransactionResolved<'a>` - Wrapper that caches resolved addresses after calling `resolve_addresses(rpc_client).await`
+
 
 ## Transaction Flow
 
