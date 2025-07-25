@@ -82,3 +82,17 @@ export interface FeePayerPolicy {
   allow_token2022_transfers: boolean;
   allow_assign: boolean;
 }
+
+// Authentication Types
+export interface AuthenticationHeaders {
+  'x-api-key'?: string;
+  'x-timestamp'?: string;
+  'x-hmac-signature'?: string;
+}
+
+// Client Types
+export interface KoraClientOptions {
+  rpcUrl: string;
+  apiKey?: string;
+  hmacSecret?: string;
+}

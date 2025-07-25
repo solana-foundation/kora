@@ -329,7 +329,7 @@ async function setupTestSuit(): Promise<TestSuite> {
   });
 
   return {
-    koraClient: new KoraClient(koraRpcUrl),
+    koraClient: new KoraClient({rpcUrl: koraRpcUrl}),
     testWallet,
     usdcMint: usdcMint.address,
     destinationAddress,
