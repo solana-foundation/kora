@@ -18,7 +18,6 @@ export interface SignAndSendTransactionRequest {
 
 export interface SignTransactionIfPaidRequest {
   transaction: string;
-  margin?: number;
 }
 
 export interface EstimateTransactionFeeRequest {
@@ -78,7 +77,15 @@ export interface ValidationConfig {
   allowed_spl_paid_tokens: string[];
   disallowed_accounts: string[];
   fee_payer_policy: FeePayerPolicy;
+  price: PriceConfig;
 }
+
+export type PriceModel =
+  | { type: 'margin'; margin: number }
+  | { type: 'fixed'; amount: number; token: string }
+  | { type: 'free' };
+
+export type PriceConfig = PriceModel;
 
 export interface Config {
   fee_payer: string;
