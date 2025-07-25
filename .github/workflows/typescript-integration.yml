@@ -2,6 +2,7 @@ name: TypeScript Integration Tests
 
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     branches: [main]
     paths:
