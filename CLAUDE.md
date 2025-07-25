@@ -71,10 +71,11 @@ Integration tests require a local validator and test account setup:
    solana-test-validator --reset --quiet
    ```
 
-2. **Start local Kora Server:**
+2. **Start local Kora Server with test configuration:**
     ```bash
-    make run
+    cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
     ```
+    This runs the Kora RPC server with `tests/kora-test.toml` config file, which includes test-specific settings and the correct test USDC mint.
 
 3. **Run integration tests:**
    ```bash
@@ -102,7 +103,7 @@ The test suite uses environment variables for configuration (checked before fall
 | `TEST_USDC_MINT_KEYPAIR` | Test USDC mint keypair | Built-in test mint |
 | `TEST_USDC_MINT_DECIMALS` | USDC mint decimals | `6` |
 
-Make sure to update kora.toml to reflect the public key of TEST_USDC_MINT_KEYPAIR.
+Make sure to update the appropriate config file (kora.toml for production, tests/kora-test.toml for testing) to reflect the public key of TEST_USDC_MINT_KEYPAIR.
 
 **Example with custom test configuration:**
 ```bash
@@ -118,8 +119,11 @@ make test-integration
 ### Running Services
 
 ```bash
-# Basic server run
+# Basic server run (production config)
 make run
+
+# Run with test configuration (for integration testing)
+cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
 
 # Run with debug logging
 RUST_LOG=debug cargo run -p kora-rpc --bin kora-rpc

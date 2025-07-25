@@ -45,6 +45,35 @@ pub struct ValidationConfig {
     pub fee_payer_policy: FeePayerPolicy,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct EnabledMethods {
+    pub liveness: bool,
+    pub estimate_transaction_fee: bool,
+    pub get_supported_tokens: bool,
+    pub sign_transaction: bool,
+    pub sign_and_send_transaction: bool,
+    pub transfer_transaction: bool,
+    pub get_blockhash: bool,
+    pub get_config: bool,
+    pub sign_transaction_if_paid: bool,
+}
+
+impl Default for EnabledMethods {
+    fn default() -> Self {
+        Self {
+            liveness: true,
+            estimate_transaction_fee: true,
+            get_supported_tokens: true,
+            sign_transaction: true,
+            sign_and_send_transaction: true,
+            transfer_transaction: true,
+            get_blockhash: true,
+            get_config: true,
+            sign_transaction_if_paid: true,
+        }
+    }
+}
+
 #[cfg(test)]
 impl ValidationConfig {
     pub fn test_default() -> Self {
@@ -104,7 +133,8 @@ impl ValidationConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KoraConfig {
     pub rate_limit: u64,
-    // pub redis_url: String,
+    #[serde(default)]
+    pub enabled_methods: EnabledMethods,
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
@@ -162,6 +192,51 @@ mod tests {
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
         assert_eq!(config.validation.price_source, PriceSource::Jupiter);
         assert_eq!(config.kora.rate_limit, 100);
+        // Test default enabled methods
+        assert!(config.kora.enabled_methods.estimate_transaction_fee);
+        assert!(config.kora.enabled_methods.sign_and_send_transaction);
+    }
+
+    #[test]
+    fn test_load_config_with_enabled_methods() {
+        let config_content = r#"
+            [validation]
+            max_allowed_lamports = 1000000000
+            max_signatures = 10
+            allowed_programs = ["program1", "program2"]
+            allowed_tokens = ["token1", "token2"]
+            allowed_spl_paid_tokens = ["token3"]
+            disallowed_accounts = ["account1"]
+            price_source = "Jupiter"
+            [kora]
+            rate_limit = 100
+            [kora.enabled_methods]
+            liveness = true
+            estimate_transaction_fee = false
+            get_supported_tokens = true
+            sign_transaction = true
+            sign_and_send_transaction = false
+            transfer_transaction = true
+            get_blockhash = true
+            get_config = true
+            sign_transaction_if_paid = true
+        "#;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        fs::write(&temp_file, config_content).unwrap();
+
+        let config = load_config(temp_file.path()).unwrap();
+
+        assert_eq!(config.kora.rate_limit, 100);
+        assert!(config.kora.enabled_methods.liveness);
+        assert!(!config.kora.enabled_methods.estimate_transaction_fee);
+        assert!(config.kora.enabled_methods.get_supported_tokens);
+        assert!(config.kora.enabled_methods.sign_transaction);
+        assert!(!config.kora.enabled_methods.sign_and_send_transaction);
+        assert!(config.kora.enabled_methods.transfer_transaction);
+        assert!(config.kora.enabled_methods.get_blockhash);
+        assert!(config.kora.enabled_methods.get_config);
+        assert!(config.kora.enabled_methods.sign_transaction_if_paid);
     }
 
     #[test]
@@ -193,7 +268,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
             },
-            kora: KoraConfig { rate_limit: 100 },
+            kora: KoraConfig { rate_limit: 100, enabled_methods: EnabledMethods::default() },
         };
 
         // Test empty tokens list
