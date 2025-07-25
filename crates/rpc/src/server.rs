@@ -12,6 +12,11 @@ use std::{net::SocketAddr, time::Duration};
 use tower::limit::RateLimitLayer;
 use tower_http::cors::CorsLayer;
 
+// We'll always prioritize the environment variable over the config value
+fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<String> {
+    std::env::var(env_var).ok().or(config_value)
+}
+
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log::info!("RPC server started on {addr}, port {port}");
@@ -33,10 +38,14 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
         .layer(RateLimitLayer::new(rpc.config.rate_limit, Duration::from_secs(1)))
         .layer(cors)
         // Add authentication layer for API key if configured
-        .option_layer(rpc.config.api_key.as_ref().map(|key| ApiKeyAuthLayer::new(key.clone())))
+        .option_layer(
+            (get_value_by_priority("KORA_API_KEY", rpc.config.api_key.clone()))
+                .map(|key| ApiKeyAuthLayer::new(key.clone())),
+        )
         // Add authentication layer for HMAC if configured
         .option_layer(
-            rpc.config.hmac_secret.as_ref().map(|secret| HmacAuthLayer::new(secret.clone())),
+            (get_value_by_priority("KORA_HMAC_SECRET", rpc.config.hmac_secret.clone()))
+                .map(|secret| HmacAuthLayer::new(secret.clone())),
         );
 
     // Configure and build the server with HTTP support

@@ -41,6 +41,10 @@ lint-fix:
 test:
 	cargo test --lib
 
+# Generate a random key that can be used as an API key or as an HMAC secret
+generate-key:
+	openssl rand -hex 32
+
 
 # Server lifecycle management functions
 define stop_server

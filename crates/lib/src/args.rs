@@ -9,6 +9,14 @@ pub struct CommonArgs {
     #[arg(long, env = "RPC_URL", default_value = "http://127.0.0.1:8899")]
     pub rpc_url: String,
 
+    /// API key for the Kora API
+    #[arg(long, env = "KORA_API_KEY")]
+    pub api_key: Option<String>,
+
+    /// HMAC secret for the Kora API
+    #[arg(long, env = "KORA_HMAC_SECRET")]
+    pub hmac_secret: Option<String>,
+
     /// Base58-encoded private key for signing
     #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present_any = ["skip_signer", "turnkey_signer", "vault_signer", "privy_signer"])]
     pub private_key: Option<String>,

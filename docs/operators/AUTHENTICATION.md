@@ -30,7 +30,10 @@ openssl rand -hex 32
 
 ### Server Configuration
 
-Add an `api_key` to your `kora.toml`:
+
+- Add a `KORA_API_KEY` to your .env (environment variables) (has priority)
+  or
+- Add an `api_key` to your `kora.toml`:
 
 ```toml
 [kora]
@@ -83,7 +86,9 @@ Instead of sending an API key with every request, HMAC creates a unique cryptogr
 
 ### Server Configuration
 
-Add a global `hmac_secret` to your `kora.toml` (minimum 32 characters--you can generate one with `openssl rand -hex 32` or similar):
+- Add `KORA_HMAC_SECRET` to your .env (environment variables) (has priority)
+  or
+- Add a global `hmac_secret` to your `kora.toml` (minimum 32 characters--you can generate one with `openssl rand -hex 32` or similar):
 
 ```toml
 [kora]
