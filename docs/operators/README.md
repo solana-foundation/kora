@@ -103,9 +103,14 @@ Every Kora RPC node must be configured with at least:
 - a Solana signer (specified via the `--private-key` or `KORA_PRIVATE_KEY=` environment variable) <!-- Check out our [Signers Dcoumentation](./SIGNERS.md) for signing with a key management provider -->
 - a config file, `kora.toml` (specified via the `--config path/to/kora.toml` flag)
 
-### kora.toml
+**kora.toml**
 
 Before deploying, you'll need to create and configure a `kora.toml` to specify: payment tokens, security rules, rate limits, fee payer protections, and pricing oracle. Begin with tight limits, then gradually expand based on your application's needs.
+Your `kora.toml` should live in the same directory as your deployment or be specified via the `--config` flag when starting the server.
+
+<!-- **[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)** -->
+**[→ Sample kora.toml](./deploy/sample/kora.toml)**
+
 
 
 ### 1. Rate Limiting
@@ -165,82 +170,21 @@ allow_token2022_transfers = true # Allow fee payer to be source in Token2022 tra
 allow_assign = true             # Allow fee payer to use Assign instruction
 ```
 
+### 6. User Authentication
+
+Kora supports two optional authentication methods for securing your RPC endpoint: a global API key for all users or [HMAC authentication](https://en.wikipedia.org/wiki/HMAC) with replay protection. If neither is configured, no authentication is required to use the RPC endpoint. You can use both methods simultaneously for maximum security.
+
+```toml
+[kora]
+# Simple API key authentication
+api_key = "kora_live_sk_1234567890abcdef"
+
+# Or HMAC authentication with replay protection  
+hmac_secret = "your-strong-hmac-secret-minimum-32-chars"
+```
+
 <!-- **[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)** -->
-**[→ Sample kora.toml](./deploy/sample/kora.toml)**
-
-Your `kora.toml` should live in the same directory as your deployment or be specified via the `--config` flag when starting the server.
-
-## Authentication
-
-Kora supports two optional authentication methods for securing your RPC endpoint:
-
-### API Key Authentication
-
-For simple API key-based authentication, add an `api_key` to your configuration:
-
-```toml
-[kora]
-rate_limit = 100
-api_key = "your-secret-api-key"
-```
-
-Clients must include the API key in the `x-api-key` header:
-
-```bash
-curl -X POST http://localhost:8080 \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: your-secret-api-key" \
-  -d '{"jsonrpc": "2.0", "method": "getBlockhash", "id": 1}'
-```
-
-### HMAC Authentication
-
-For more secure HMAC-based authentication, add an `hmac_secret` to your configuration:
-
-```toml
-[kora]
-rate_limit = 100
-hmac_secret = "your-hmac-secret"
-```
-
-Clients must include:
-- `x-timestamp`: Unix timestamp (within 5 minutes)
-- `x-hmac-signature`: HMAC-SHA256 signature of `{timestamp}{body}`
-
-Example client code:
-
-```javascript
-const crypto = require('crypto');
-
-const timestamp = Math.floor(Date.now() / 1000).toString();
-const body = JSON.stringify({
-  jsonrpc: "2.0",
-  method: "getBlockhash",
-  id: 1
-});
-const message = timestamp + body;
-const signature = crypto
-  .createHmac('sha256', 'your-hmac-secret')
-  .update(message)
-  .digest('hex');
-
-fetch('http://localhost:8080', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'x-timestamp': timestamp,
-    'x-hmac-signature': signature
-  },
-  body: body
-});
-```
-
-### Authentication Notes
-
-- The `/liveness` endpoint is exempt from authentication
-- Both authentication methods are optional - if neither is configured, no authentication is required
-- You can use both methods simultaneously for maximum security
-- HMAC authentication provides replay protection via timestamp validation
+For more information on authentication, see [Kora Authentication](./AUTHENTICATION.md)
 
 ## Deployment 
 
