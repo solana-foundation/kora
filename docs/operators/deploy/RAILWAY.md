@@ -100,7 +100,7 @@ If you need to create a new keypair:
 solana-keygen new --outfile ~/.config/solana/kora-keypair.json
 ```
 
-Make sure to depeosit adequate SOL for testing/operator your node.
+Make sure to deposit adequate SOL for testing/operator your node.
 
 ## Step 4: Redeploy
 
