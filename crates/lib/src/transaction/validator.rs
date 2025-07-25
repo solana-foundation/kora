@@ -2,8 +2,11 @@ use crate::{
     config::{FeePayerPolicy, ValidationConfig},
     error::KoraError,
     oracle::PriceSource,
-    token::{Token2022Account, TokenInterface, TokenProgram, TokenType},
-    transaction::{fees::calculate_token_value_in_lamports, resolve_lookup_table_addresses},
+    token::{
+        calculate_token_value_in_lamports, Token2022Account, TokenInterface, TokenProgram,
+        TokenType,
+    },
+    transaction::resolve_lookup_table_addresses,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
