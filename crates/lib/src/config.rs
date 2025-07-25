@@ -74,6 +74,62 @@ impl Default for EnabledMethods {
     }
 }
 
+#[cfg(test)]
+impl ValidationConfig {
+    pub fn test_default() -> Self {
+        Self {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            allowed_programs: vec![],
+            allowed_tokens: vec![],
+            allowed_spl_paid_tokens: vec![],
+            disallowed_accounts: vec![],
+            price_source: PriceSource::Mock,
+            fee_payer_policy: FeePayerPolicy::default(),
+        }
+    }
+
+    pub fn with_price_source(mut self, price_source: PriceSource) -> Self {
+        self.price_source = price_source;
+        self
+    }
+
+    pub fn with_allowed_programs(mut self, programs: Vec<String>) -> Self {
+        self.allowed_programs = programs;
+        self
+    }
+
+    pub fn with_fee_payer_policy(mut self, policy: FeePayerPolicy) -> Self {
+        self.fee_payer_policy = policy;
+        self
+    }
+
+    pub fn with_max_allowed_lamports(mut self, lamports: u64) -> Self {
+        self.max_allowed_lamports = lamports;
+        self
+    }
+
+    pub fn with_max_signatures(mut self, signatures: u64) -> Self {
+        self.max_signatures = signatures;
+        self
+    }
+
+    pub fn with_allowed_tokens(mut self, tokens: Vec<String>) -> Self {
+        self.allowed_tokens = tokens;
+        self
+    }
+
+    pub fn with_allowed_spl_paid_tokens(mut self, tokens: Vec<String>) -> Self {
+        self.allowed_spl_paid_tokens = tokens;
+        self
+    }
+
+    pub fn with_disallowed_accounts(mut self, accounts: Vec<String>) -> Self {
+        self.disallowed_accounts = accounts;
+        self
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KoraConfig {
     pub rate_limit: u64,
