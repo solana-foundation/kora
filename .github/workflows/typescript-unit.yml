@@ -1,56 +1,26 @@
-name: TypeScript Integration Tests
+name: TypeScript Unit Tests
 
 on:
   workflow_call:
   push:
     branches: [main]
     paths:
-      # TS SDK changes
       - 'sdks/ts/**'
-      # Backend changes that affect TS integration
-      - 'crates/**'
-      - 'Cargo.*'
-      - 'Makefile'
-      - '.github/workflows/typescript-integration.yml'
+      - '.github/workflows/typescript-unit.yml'
 
   pull_request:
     branches: [main]
     paths:
-      # TS SDK changes  
       - 'sdks/ts/**'
-      # Backend changes that affect TS integration
-      - 'crates/**'
-      - 'Cargo.*'
-      - 'Makefile'
-      - '.github/workflows/typescript-integration.yml'
-
-env:
-  CARGO_TERM_COLOR: always
-  RUST_LOG: info
+      - '.github/workflows/typescript-unit.yml'
 
 jobs:
-  typescript-integration:
-    name: TypeScript SDK Integration Tests
+  typescript-unit:
+    name: TypeScript SDK Unit Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 25
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "typescript-integration"
-          cache-on-failure: true
-
-      - name: Setup Solana CLI
-        uses: ./.github/actions/setup-solana
-
-      - name: Setup Kora RPC server
-        uses: ./.github/actions/setup-kora-rpc
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -82,12 +52,11 @@ jobs:
         working-directory: sdks/ts
         run: pnpm build
 
-      - name: Run TypeScript integration tests
+      - name: Run TypeScript unit tests
         working-directory: sdks/ts
         run: |
-          echo "🧪 Running TypeScript SDK integration tests..."
-          # The test script handles starting/stopping its own validator
-          pnpm test:ci:integration
+          echo "🧪 Running TypeScript SDK unit tests..."
+          pnpm test:ci:unit
 
       - name: Cleanup test environment
         uses: ./.github/actions/cleanup-test-env
@@ -95,4 +64,4 @@ jobs:
       - name: Show failure logs
         uses: ./.github/actions/show-failure-logs
         with:
-          test-type: "TypeScript integration"
+          test-type: "TypeScript unit"

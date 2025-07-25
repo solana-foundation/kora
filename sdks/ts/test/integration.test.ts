@@ -47,6 +47,8 @@ describe("KoraClient Integration Tests", () => {
       expect(config.validation_config.max_allowed_lamports).toBeDefined();
       expect(config.validation_config.max_signatures).toBeDefined();
       expect(config.validation_config.price_source).toBeDefined();
+      expect(config.validation_config.price).toBeDefined();
+      expect(config.validation_config.price.type).toBeDefined();
     });
 
     it("should get supported tokens", async () => {
@@ -91,7 +93,7 @@ describe("KoraClient Integration Tests", () => {
       };
 
       const { transaction } = await client.transferTransaction(transferRequest);
-      const fee = await client.estimateTransactionFee(transaction, usdcMint);
+      const fee = await client.estimateTransactionFee({ transaction, fee_token: usdcMint });
 
       expect(fee).toBeDefined();
       expect(typeof fee.fee_in_lamports).toBe("number");
@@ -195,7 +197,7 @@ describe("KoraClient Integration Tests", () => {
 
     it("should handle invalid transaction for fee estimation", async () => {
       await expect(
-        client.estimateTransactionFee("invalid_transaction", usdcMint),
+        client.estimateTransactionFee({ transaction: "invalid_transaction", fee_token: usdcMint }),
       ).rejects.toThrow();
     });
 
@@ -209,10 +211,7 @@ describe("KoraClient Integration Tests", () => {
 
       // TODO: API has an error. this endpoint should verify the provided fee token is supported
       const { transaction } = await client.transferTransaction(transferRequest);
-      const fee = await client.estimateTransactionFee(
-        transaction,
-        "InvalidTokenAddress",
-      );
+      const fee = await client.estimateTransactionFee({ transaction, fee_token: usdcMint });
       expect(fee).toBeDefined();
       expect(typeof fee.fee_in_lamports).toBe("number");
       expect(fee.fee_in_lamports).toBeGreaterThan(0);

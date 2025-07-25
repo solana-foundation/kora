@@ -1,5 +1,7 @@
 import {
   Config,
+  EstimateTransactionFeeRequest,
+  EstimateTransactionFeeResponse,
   GetBlockhashResponse,
   GetSupportedTokensResponse,
   SignAndSendTransactionRequest,
@@ -11,6 +13,7 @@ import {
   TransferTransactionRequest,
   TransferTransactionResponse,
   RpcError,
+  RpcRequest,
 } from './types/index.js';
 
 export class KoraClient {
@@ -20,7 +23,7 @@ export class KoraClient {
     this.rpcUrl = rpcUrl;
   }
 
-  private async rpcRequest<T>(method: string, params: any): Promise<T> {
+  private async rpcRequest<T, U>(method: string, params: U): Promise<T> {
     const response = await fetch(this.rpcUrl, {
       method: 'POST',
       headers: {
@@ -31,12 +34,12 @@ export class KoraClient {
         id: 1,
         method,
         params,
-      }),
+      } as RpcRequest<U>),
     });
 
-    const json = await response.json() as { error?: RpcError; result: T };
+    const json = (await response.json()) as { error?: RpcError; result: T };
 
-    if ('error' in json) {
+    if (json.error) {
       const error = json.error!;
       throw new Error(`RPC Error ${error.code}: ${error.message}`);
     }
@@ -45,40 +48,54 @@ export class KoraClient {
   }
 
   async getConfig(): Promise<Config> {
-    return this.rpcRequest<Config>('getConfig', []);
+    return this.rpcRequest<Config, undefined>('getConfig', undefined);
   }
 
   async getBlockhash(): Promise<GetBlockhashResponse> {
-    return this.rpcRequest<GetBlockhashResponse>('getBlockhash', []);
+    return this.rpcRequest<GetBlockhashResponse, undefined>('getBlockhash', undefined);
   }
 
   async getSupportedTokens(): Promise<GetSupportedTokensResponse> {
-    return this.rpcRequest<GetSupportedTokensResponse>('getSupportedTokens', []);
+    return this.rpcRequest<GetSupportedTokensResponse, undefined>('getSupportedTokens', undefined);
   }
 
-  async estimateTransactionFee(transaction: string, feeToken: string): Promise<{ fee_in_lamports: number }> {
-    return this.rpcRequest<{ fee_in_lamports: number }>('estimateTransactionFee', [transaction, feeToken]);
+  async estimateTransactionFee(
+    request: EstimateTransactionFeeRequest
+  ): Promise<EstimateTransactionFeeResponse> {
+    return this.rpcRequest<EstimateTransactionFeeResponse, EstimateTransactionFeeRequest>(
+      'estimateTransactionFee',
+      request
+    );
   }
 
   async signTransaction(request: SignTransactionRequest): Promise<SignTransactionResponse> {
-    return this.rpcRequest<SignTransactionResponse>('signTransaction', request);
+    return this.rpcRequest<SignTransactionResponse, SignTransactionRequest>('signTransaction', request);
   }
 
   async signAndSendTransaction(
     request: SignAndSendTransactionRequest
   ): Promise<SignAndSendTransactionResponse> {
-    return this.rpcRequest<SignAndSendTransactionResponse>('signAndSendTransaction', request);
+    return this.rpcRequest<
+      SignAndSendTransactionResponse,
+      SignAndSendTransactionRequest
+    >('signAndSendTransaction', request);
   }
 
   async signTransactionIfPaid(
     request: SignTransactionIfPaidRequest
   ): Promise<SignTransactionIfPaidResponse> {
-    return this.rpcRequest<SignTransactionIfPaidResponse>('signTransactionIfPaid', request);
+    return this.rpcRequest<
+      SignTransactionIfPaidResponse,
+      SignTransactionIfPaidRequest
+    >('signTransactionIfPaid', request);
   }
 
   async transferTransaction(
     request: TransferTransactionRequest
   ): Promise<TransferTransactionResponse> {
-    return this.rpcRequest<TransferTransactionResponse>('transferTransaction', request);
+    return this.rpcRequest<
+      TransferTransactionResponse,
+      TransferTransactionRequest
+    >('transferTransaction', request);
   }
 }
