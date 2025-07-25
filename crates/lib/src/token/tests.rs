@@ -58,7 +58,6 @@ mod tests {
 
     #[test]
     fn test_create_transfer_instruction() {
-        let program = TokenProgram::new(TokenType::Spl);
         let source = Pubkey::new_unique();
         let dest = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
@@ -78,6 +77,7 @@ mod tests {
 
         // Test Token2022 transfer
         // Create the instruction directly for testing
+        #[allow(deprecated)]
         let ix = spl_token_2022::instruction::transfer(
             &spl_token_2022::id(),
             &source,
@@ -184,8 +184,7 @@ mod tests {
     fn test_get_mint_decimals() {
         let program = TokenProgram::new(TokenType::Spl);
         let mut mint_data = vec![0; Mint::LEN];
-        let mut mint = Mint::default();
-        mint.is_initialized = true;
+        let mut mint = Mint { is_initialized: true, ..Default::default() };
         mint.decimals = 9;
         mint.pack_into_slice(&mut mint_data);
         let result = program.get_mint_decimals(&mint_data);
@@ -200,6 +199,7 @@ mod tests {
         let amount = 100;
 
         // Create the instruction directly for testing
+        #[allow(deprecated)]
         let ix = spl_token_2022::instruction::transfer(
             &spl_token_2022::id(),
             &source,
@@ -267,8 +267,8 @@ mod tests {
 
     #[test]
     fn test_token2022_transfer_fee_calculation() {
-        let program = TokenProgram::new(TokenType::Token2022);
-        let mint = Pubkey::new_unique();
+        // let program = TokenProgram::new(TokenType::Token2022);
+        // let mint = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
         let amount = 1000;
 
@@ -365,26 +365,26 @@ mod tests {
 
         // Create mint with transfer fee
         let mint = Keypair::new();
-        let mint_space = ExtensionType::try_calculate_account_len::<Token2022MintState>(&[
-            ExtensionType::TransferFeeConfig,
-        ])
-        .unwrap();
+        // let mint_space = ExtensionType::try_calculate_account_len::<Token2022MintState>(&[
+        //     ExtensionType::TransferFeeConfig,
+        // ])
+        // .unwrap();
 
-        let transfer_fee_config = TransferFeeConfig {
-            transfer_fee_config_authority: OptionalNonZeroPubkey::try_from(None).unwrap(),
-            withdraw_withheld_authority: OptionalNonZeroPubkey::try_from(None).unwrap(),
-            withheld_amount: PodU64::from(0),
-            newer_transfer_fee: TransferFee {
-                epoch: PodU64::from(1),
-                transfer_fee_basis_points: PodU16::from(100), // 1%
-                maximum_fee: PodU64::from(10_000),
-            },
-            older_transfer_fee: TransferFee {
-                epoch: PodU64::from(0),
-                transfer_fee_basis_points: PodU16::from(0),
-                maximum_fee: PodU64::from(0),
-            },
-        };
+        // let transfer_fee_config = TransferFeeConfig {
+        //     transfer_fee_config_authority: OptionalNonZeroPubkey::try_from(None).unwrap(),
+        //     withdraw_withheld_authority: OptionalNonZeroPubkey::try_from(None).unwrap(),
+        //     withheld_amount: PodU64::from(0),
+        //     newer_transfer_fee: TransferFee {
+        //         epoch: PodU64::from(1),
+        //         transfer_fee_basis_points: PodU16::from(100), // 1%
+        //         maximum_fee: PodU64::from(10_000),
+        //     },
+        //     older_transfer_fee: TransferFee {
+        //         epoch: PodU64::from(0),
+        //         transfer_fee_basis_points: PodU16::from(0),
+        //         maximum_fee: PodU64::from(0),
+        //     },
+        // };
 
         // Initialize mint
         let decimals = 9;

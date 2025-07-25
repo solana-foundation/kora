@@ -55,6 +55,9 @@ pub enum KoraError {
 
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
+
+    #[error("Rate limit exceeded")]
+    RateLimitExceeded,
 }
 
 impl From<ClientError> for KoraError {

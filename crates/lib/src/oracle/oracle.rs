@@ -1,4 +1,4 @@
-use crate::error::KoraError;
+use crate::{error::KoraError, oracle::jupiter::JupiterPriceOracle};
 use mockall::automock;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -34,7 +34,7 @@ pub struct RetryingPriceOracle {
 
 pub fn get_price_oracle(source: PriceSource) -> Arc<dyn PriceOracle + Send + Sync> {
     match source {
-        PriceSource::Jupiter => Arc::new(crate::oracle::jupiter::JupiterPriceOracle),
+        PriceSource::Jupiter => Arc::new(JupiterPriceOracle::new()),
         PriceSource::Mock => {
             let mut mock = MockPriceOracle::new();
             // Set up default mock behavior for devnet tokens
