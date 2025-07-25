@@ -1,5 +1,5 @@
 use crate::{
-    constant::{BASE_COMPUTE_UNIT_LIMIT, BASE_COMPUTE_UNIT_PRICE},
+    constant::{BASE_COMPUTE_UNIT_LIMIT, BASE_COMPUTE_UNIT_PRICE, MICRO_LAMPORTS_PER_LAMPORTS},
     error::KoraError,
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle},
     token::{TokenInterface, TokenProgram, TokenType},
@@ -34,7 +34,7 @@ impl ComputeUnitInfo {
 
         // Priority fee = compute_unit_limit * compute_unit_price
         // Note: compute_unit_price is in microlamports, so we divide by 1_000_000 to get lamports
-        (limit as u64).saturating_mul(price) / 1_000_000
+        (limit as u64).saturating_mul(price) / MICRO_LAMPORTS_PER_LAMPORTS
     }
 
     /// Extract compute unit information from transaction instructions
