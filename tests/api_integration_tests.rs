@@ -332,7 +332,7 @@ async fn test_sign_transaction_if_paid() {
 
     // Rest of the test remains the same...
     let response: serde_json::Value = client
-        .request("signTransactionIfPaid", rpc_params![base64_transaction, 0])
+        .request("signTransactionIfPaid", rpc_params![base64_transaction])
         .await
         .expect("Failed to sign transaction");
 

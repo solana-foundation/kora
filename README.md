@@ -190,6 +190,31 @@ allow_token2022_transfers = true
 allow_assign = true
 ```
 
+#### Pricing Models (validation.price)
+
+Configure payment validation with three pricing models:
+
+- **Margin**: Dynamic fee calculation with configurable margin percentage
+- **Fixed**: Fixed fee amount in token units (not lamports)  
+- **Free**: No payment validation required
+
+```toml
+# Margin model - add percentage to transaction fee
+[validation.price]
+type = "margin"
+margin = 0.1  # 10% margin
+
+# Fixed model - charge fixed amount in specific token
+[validation.price]
+type = "fixed"
+amount = 1000  # token units (not lamports)
+token = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC
+
+# Free model - no payment required
+[validation.price]
+type = "free"
+```
+
 ### Fee Payer Policy
 
 The fee payer policy system allows you to control what actions the fee payer can perform in transactions. This provides enhanced security and flexibility.
@@ -466,7 +491,6 @@ Signs a transaction if the user has paid the required amount of tokens.
     "method": "signTransactionIfPaid",
     "params":  {
         "transaction": "<base64-encoded-transaction>",
-        "margin": 0.0
     }
 }
 
