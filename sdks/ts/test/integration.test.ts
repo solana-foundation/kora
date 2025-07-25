@@ -47,6 +47,8 @@ describe("KoraClient Integration Tests", () => {
       expect(config.validation_config.max_allowed_lamports).toBeDefined();
       expect(config.validation_config.max_signatures).toBeDefined();
       expect(config.validation_config.price_source).toBeDefined();
+      expect(config.validation_config.price).toBeDefined();
+      expect(config.validation_config.price.type).toBeDefined();
     });
 
     it("should get supported tokens", async () => {

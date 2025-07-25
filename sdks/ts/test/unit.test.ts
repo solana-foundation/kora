@@ -124,6 +124,10 @@ describe('KoraClient Unit Tests', () => {
                         allow_token2022_transfers: false,
                         allow_assign: true,
                     },
+                    price: {
+                        type: 'margin',
+                        margin: 0.1,
+                    },
                 },
             };
 
