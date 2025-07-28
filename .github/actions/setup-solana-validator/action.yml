@@ -1,0 +1,54 @@
+name: 'Setup Solana Validator'
+description: 'Start Solana test validator with health check'
+
+inputs:
+  rpc-url:
+    description: 'Solana RPC URL'
+    required: false
+    default: 'http://127.0.0.1:8899'
+  timeout:
+    description: 'Timeout in seconds to wait for validator'
+    required: false
+    default: '60'
+
+outputs:
+  rpc-url:
+    description: 'Solana RPC URL'
+    value: ${{ inputs.rpc-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Start Solana test validator
+      shell: bash
+      run: |
+        echo "🚀 Starting Solana test validator..."
+        
+        # Start validator in background
+        solana-test-validator --reset --quiet &
+        VALIDATOR_PID=$!
+        echo "VALIDATOR_PID=$VALIDATOR_PID" >> $GITHUB_ENV
+        
+        # Save PID to file for cleanup action
+        echo $VALIDATOR_PID > /tmp/validator_pid
+        
+        # Wait for validator to be ready
+        echo "⏳ Waiting for validator to be ready..."
+        timeout=${{ inputs.timeout }}
+        counter=0
+        
+        while [ $counter -lt $timeout ]; do
+          if solana cluster-version --url ${{ inputs.rpc-url }} >/dev/null 2>&1; then
+            echo "✅ Solana validator ready at ${{ inputs.rpc-url }}!"
+            break
+          fi
+          sleep 1
+          counter=$((counter + 1))
+        done
+        
+        if [ $counter -eq $timeout ]; then
+          echo "❌ Solana validator timeout after $timeout seconds"
+          echo "Current processes:"
+          ps aux | grep solana || true
+          exit 1
+        fi

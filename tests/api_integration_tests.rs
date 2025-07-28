@@ -234,6 +234,15 @@ async fn test_transfer_transaction_with_ata() {
 }
 
 #[tokio::test]
+async fn test_liveness_is_disabled() {
+    let client = get_test_client().await;
+
+    let response = client.request::<serde_json::Value, _>("liveness", rpc_params![]).await;
+    assert!(response.is_err());
+    assert!(response.err().unwrap().to_string().contains("Method not found"));
+}
+
+#[tokio::test]
 async fn test_get_blockhash() {
     let client = get_test_client().await;
 
@@ -323,7 +332,7 @@ async fn test_sign_transaction_if_paid() {
 
     // Rest of the test remains the same...
     let response: serde_json::Value = client
-        .request("signTransactionIfPaid", rpc_params![base64_transaction, 0])
+        .request("signTransactionIfPaid", rpc_params![base64_transaction])
         .await
         .expect("Failed to sign transaction");
 

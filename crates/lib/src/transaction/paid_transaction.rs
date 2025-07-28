@@ -14,26 +14,32 @@ pub async fn sign_transaction_if_paid(
     rpc_client: &RpcClient,
     validation: &ValidationConfig,
     transaction: VersionedTransaction,
-    margin: Option<f64>,
 ) -> Result<(VersionedTransaction, String), KoraError> {
     let signer = get_signer()?;
 
     // Get the simulation result for fee calculation
     let min_transaction_fee = estimate_transaction_fee(rpc_client, &transaction).await?;
 
-    // Calculate required lamports including the margin
-    let margin = margin.unwrap_or(0.0);
-    let required_lamports = (min_transaction_fee as f64 * (1.0 + margin)) as u64;
+    let required_lamports = validation
+        .price
+        .get_required_lamports(
+            Some(rpc_client),
+            Some(validation.price_source.clone()),
+            min_transaction_fee,
+        )
+        .await?;
 
-    // Validate token payment
-    validate_token_payment(
-        &transaction,
-        required_lamports,
-        validation,
-        rpc_client,
-        signer.solana_pubkey(),
-    )
-    .await?;
+    // Only validate payment if not free
+    if required_lamports > 0 {
+        validate_token_payment(
+            &transaction,
+            required_lamports,
+            validation,
+            rpc_client,
+            signer.solana_pubkey(),
+        )
+        .await?;
+    }
 
     // Sign the transaction
     sign_transaction(rpc_client, validation, transaction).await

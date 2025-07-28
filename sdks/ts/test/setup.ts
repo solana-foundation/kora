@@ -59,7 +59,7 @@ const DEFAULTS = {
   SOL_DROP_AMOUNT: 1_000_000_000,
 
   // DO NOT USE THESE KEYPAIRS IN PRODUCTION, TESTING KEYPAIRS ONLY
-  KORA_ADDRESS: "8vCbKjax96gWzqRsok7eRG9TvxDttm93F3e46MAYQM3n", // Make sure this matches the kora-rpc signer address on launch (root .env)
+  KORA_ADDRESS: "7AqpcUvgJ7Kh1VmJZ44rWp2XDow33vswo9VK9VqpPU2d", // Make sure this matches the kora-rpc signer address on launch (root .env)
   SENDER_SECRET:
     "3Tdt5TrRGJYPbTo8zZAscNTvgRGnCLM854tCpxapggUazqdYn6VQRQ9DqNz1UkEfoPCYKj6PwSwCNtckGGvAKugb",
   TEST_USDC_MINT_SECRET:

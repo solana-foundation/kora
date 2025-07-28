@@ -677,16 +677,11 @@ mod tests {
     #[tokio::test]
     async fn test_validate_transaction() {
         let fee_payer = Pubkey::new_unique();
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let recipient = Pubkey::new_unique();
@@ -700,16 +695,11 @@ mod tests {
     #[tokio::test]
     async fn test_transfer_amount_limits() {
         let fee_payer = Pubkey::new_unique();
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
@@ -731,16 +721,12 @@ mod tests {
     #[tokio::test]
     async fn test_validate_programs() {
         let fee_payer = Pubkey::new_unique();
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()], // System program
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()]) // System program
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
@@ -767,16 +753,13 @@ mod tests {
     #[tokio::test]
     async fn test_validate_signatures() {
         let fee_payer = Pubkey::new_unique();
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 2,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_max_signatures(2)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
@@ -796,16 +779,12 @@ mod tests {
     #[tokio::test]
     async fn test_sign_and_send_transaction_mode() {
         let fee_payer = Pubkey::new_unique();
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
@@ -826,16 +805,12 @@ mod tests {
     #[tokio::test]
     async fn test_empty_transaction() {
         let fee_payer = Pubkey::new_unique();
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         // Create an empty message using Message::new with empty instructions
@@ -847,16 +822,14 @@ mod tests {
     #[tokio::test]
     async fn test_disallowed_accounts() {
         let fee_payer = Pubkey::new_unique();
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec!["hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek".to_string()],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_disallowed_accounts(vec![
+                "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek".to_string()
+            ])
+            .with_fee_payer_policy(FeePayerPolicy::default());
 
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
         let instruction = transfer(
@@ -948,16 +921,12 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         // Test with allow_sol_transfers = true (default)
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
@@ -968,16 +937,15 @@ mod tests {
         assert!(validator.validate_transaction(&transaction, None).await.is_ok());
 
         // Test with allow_sol_transfers = false
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy { allow_sol_transfers: false, ..Default::default() },
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy {
+                allow_sol_transfers: false,
+                ..Default::default()
+            });
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
@@ -993,16 +961,12 @@ mod tests {
         let new_owner = Pubkey::new_unique();
 
         // Test with allow_assign = true (default)
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
@@ -1012,16 +976,12 @@ mod tests {
         assert!(validator.validate_transaction(&transaction, None).await.is_ok());
 
         // Test with allow_assign = false
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy { allow_assign: false, ..Default::default() },
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy { allow_assign: false, ..Default::default() });
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
@@ -1039,16 +999,12 @@ mod tests {
         let recipient_token_account = Pubkey::new_unique();
 
         // Test with allow_spl_transfers = true (default)
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![spl_token::id().to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let transfer_ix = spl_token::instruction::transfer(
@@ -1067,16 +1023,15 @@ mod tests {
         assert!(validator.validate_transaction(&transaction, None).await.is_ok());
 
         // Test with allow_spl_transfers = false
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![spl_token::id().to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy { allow_spl_transfers: false, ..Default::default() },
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy {
+                allow_spl_transfers: false,
+                ..Default::default()
+            });
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let transfer_ix = spl_token::instruction::transfer(
@@ -1121,16 +1076,12 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         // Test with allow_token2022_transfers = true (default)
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![spl_token_2022::id().to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let transfer_ix = spl_token_2022::instruction::transfer_checked(
@@ -1151,19 +1102,15 @@ mod tests {
         assert!(validator.validate_transaction(&transaction, None).await.is_ok());
 
         // Test with allow_token2022_transfers = false
-        let config = ValidationConfig {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![spl_token_2022::id().to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy {
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy {
                 allow_token2022_transfers: false,
                 ..Default::default()
-            },
-        };
+            });
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         let transfer_ix = spl_token_2022::instruction::transfer_checked(
@@ -1273,16 +1220,12 @@ mod tests {
     #[test]
     fn test_calculate_total_outflow() {
         let fee_payer = Pubkey::new_unique();
-        let config = ValidationConfig {
-            max_allowed_lamports: 10_000_000,
-            max_signatures: 10,
-            price_source: PriceSource::Mock,
-            allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            fee_payer_policy: FeePayerPolicy::default(),
-        };
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(10_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
         let validator = TransactionValidator::new(fee_payer, &config).unwrap();
 
         // Test 1: Fee payer as sender in Transfer - should add to outflow

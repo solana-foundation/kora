@@ -37,8 +37,6 @@ enum Commands {
         /// Base64 encoded transaction to sign if paid
         #[arg(long, short = 't')]
         transaction: String,
-        #[arg(long)]
-        margin: Option<f64>,
     },
 }
 
@@ -121,7 +119,7 @@ async fn main() -> Result<(), KoraError> {
             let fee = estimate_transaction_fee(&rpc_client, &transaction).await?;
             println!("Estimated fee: {fee} lamports");
         }
-        Some(Commands::SignIfPaid { transaction, margin }) => {
+        Some(Commands::SignIfPaid { transaction }) => {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
@@ -131,7 +129,7 @@ async fn main() -> Result<(), KoraError> {
             })?;
 
             let (transaction, signed_tx) =
-                sign_transaction_if_paid(&rpc_client, &validation, transaction, margin).await?;
+                sign_transaction_if_paid(&rpc_client, &validation, transaction).await?;
 
             println!("Signature: {}", transaction.signatures[0]);
             println!("Signed Transaction: {signed_tx}");

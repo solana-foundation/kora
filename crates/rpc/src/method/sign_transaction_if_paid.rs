@@ -14,8 +14,6 @@ use utoipa::ToSchema;
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SignTransactionIfPaidRequest {
     pub transaction: String,
-    #[serde(default)]
-    pub margin: Option<f64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -32,7 +30,7 @@ pub async fn sign_transaction_if_paid(
     let transaction_requested = decode_b64_transaction(&request.transaction)?;
 
     let (transaction, signed_transaction) =
-        lib_sign_transaction_if_paid(rpc_client, validation, transaction_requested, request.margin)
+        lib_sign_transaction_if_paid(rpc_client, validation, transaction_requested)
             .await
             .map_err(|e| KoraError::TokenOperationError(e.to_string()))?;
 

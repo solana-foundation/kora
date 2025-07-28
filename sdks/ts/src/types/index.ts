@@ -1,4 +1,6 @@
-// Request Types
+/**
+ * Request Types
+ */
 export interface TransferTransactionRequest {
   amount: number;
   token: string;
@@ -16,10 +18,16 @@ export interface SignAndSendTransactionRequest {
 
 export interface SignTransactionIfPaidRequest {
   transaction: string;
-  margin?: number;
 }
 
-// Response Types
+export interface EstimateTransactionFeeRequest {
+    transaction: string;
+    fee_token: string;
+}
+
+/**
+ * Response Types
+ */
 export interface TransferTransactionResponse {
   transaction: string;
   message: string;
@@ -49,7 +57,13 @@ export interface GetSupportedTokensResponse {
   tokens: string[];
 }
 
-// Configuration Types
+export interface EstimateTransactionFeeResponse {
+  fee_in_lamports: number;
+}
+
+/**
+ * Configuration Types
+ */
 export interface TokenPriceInfo {
   price: number;
 }
@@ -63,18 +77,20 @@ export interface ValidationConfig {
   allowed_spl_paid_tokens: string[];
   disallowed_accounts: string[];
   fee_payer_policy: FeePayerPolicy;
+  price: PriceConfig;
 }
+
+export type PriceModel =
+  | { type: 'margin'; margin: number }
+  | { type: 'fixed'; amount: number; token: string }
+  | { type: 'free' };
+
+export type PriceConfig = PriceModel;
 
 export interface Config {
   fee_payer: string;
   validation_config: ValidationConfig;
 }
-
-// Error Types
-export interface RpcError {
-  code: number;
-  message: string;
-} 
 
 export interface FeePayerPolicy {
   allow_sol_transfers: boolean;
@@ -83,16 +99,32 @@ export interface FeePayerPolicy {
   allow_assign: boolean;
 }
 
-// Authentication Types
+/*
+ * Client & Authentication Types
+ */
+export interface KoraClientOptions {
+  rpcUrl: string;
+  apiKey?: string;
+  hmacSecret?: string;
+}
+
 export interface AuthenticationHeaders {
   'x-api-key'?: string;
   'x-timestamp'?: string;
   'x-hmac-signature'?: string;
 }
 
-// Client Types
-export interface KoraClientOptions {
-  rpcUrl: string;
-  apiKey?: string;
-  hmacSecret?: string;
+/**
+ * RPC Types
+ */
+export interface RpcError {
+  code: number;
+  message: string;
+} 
+
+export interface RpcRequest<T> {
+    jsonrpc: '2.0';
+    id: number;
+    method: string;
+    params: T;
 }

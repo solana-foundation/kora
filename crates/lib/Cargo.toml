@@ -35,7 +35,6 @@ jup-ag = { workspace = true }
 spl-token = { workspace = true }
 spl-token-2022 = { workspace = true }
 spl-associated-token-account = { workspace = true }
-jupiter = { workspace = true }
 vaultrs = { workspace = true }
 kora-turnkey = { workspace = true }
 kora-privy = { workspace = true }

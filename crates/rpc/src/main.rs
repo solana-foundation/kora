@@ -8,6 +8,7 @@ use kora_lib::{
     args::RpcArgs,
     config::load_config,
     log::LoggingFormat,
+    oracle::{jupiter::init_jupiter_api_key, PriceSource},
     rpc::get_rpc_client,
     signer::{init::init_signer_type, KoraSigner},
     state::init_signer,
@@ -31,6 +32,10 @@ async fn main() {
     if let Err(e) = config.validate(rpc_client.as_ref()).await {
         log::error!("Config validation failed: {e}");
         std::process::exit(1);
+    }
+
+    if config.validation.price_source == PriceSource::Jupiter {
+        init_jupiter_api_key();
     }
 
     let signer = if !args.common.skip_signer {

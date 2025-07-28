@@ -78,7 +78,7 @@ Great! We are all set up! You will probably notice an error in your logs ("error
 
 Open your Railway dashboard at [railway.app](https://railway.app) and navigate to your project. In your project, click "Settings" > "Variables"
 
-![Railway Environment Variables for Kora](./img/variables.png)
+![Railway Environment Variables for Kora](../../assets/img/deploy/railway-variables.jpg)
 
 Add these environment variables:
 
@@ -100,7 +100,7 @@ If you need to create a new keypair:
 solana-keygen new --outfile ~/.config/solana/kora-keypair.json
 ```
 
-Make sure to depeosit adequate SOL for testing/operator your node.
+Make sure to deposit adequate SOL for testing/operator your node.
 
 ## Step 4: Redeploy
 
@@ -114,7 +114,7 @@ After saving your variables, you will be prompted to redeploy your server--do th
 To send requests to your endpoint, you will need to generate a public Domain. 
 From your deployment, go to "Settings" > "Generate domain".
 
-![Railway Domain Setup](./img/domain.png)
+![Railway Domain Setup](../../assets/img/deploy/railway-domain.jpg)
 
 Use the default port, "8080" and click "Generate Domain".
 
