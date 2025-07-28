@@ -26,7 +26,7 @@ lint-fix:
 	
 # Run tests
 test:
-	cargo test --lib
+	cargo test --lib --quiet
 
 # Setup test environment
 setup-test-env:
@@ -35,7 +35,7 @@ setup-test-env:
 # Run integration tests
 test-integration:
 	cargo run -p tests --bin setup-test-env
-	cargo test --test integration
+	cargo test --test integration --quiet
 
 # Build all binaries
 build:

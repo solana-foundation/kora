@@ -20,9 +20,11 @@ pub async fn sign_transaction_if_paid(
     margin: Option<f64>,
 ) -> Result<(VersionedTransaction, String), KoraError> {
     let signer = get_signer()?;
+    let fee_payer = signer.solana_pubkey();
 
     // Get the simulation result for fee calculation
-    let min_transaction_fee = estimate_transaction_fee(rpc_client, resolved_transaction).await?;
+    let min_transaction_fee =
+        estimate_transaction_fee(rpc_client, resolved_transaction, Some(&fee_payer)).await?;
 
     // Calculate required lamports including the margin
     let margin = margin.unwrap_or(0.0);

@@ -136,7 +136,7 @@ pub async fn sign_transaction(
     resolved_transaction.resolve_addresses(rpc_client).await?;
 
     // Validate transaction and accounts with lookup table resolution for V0 transactions
-    validator.validate_transaction(&resolved_transaction).await?;
+    validator.validate_transaction(rpc_client, &resolved_transaction).await?;
 
     // Get latest blockhash and update transaction
     let mut transaction = resolved_transaction.get_transaction().clone();

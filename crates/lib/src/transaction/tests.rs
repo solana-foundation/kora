@@ -62,7 +62,7 @@ async fn test_estimate_transaction_fee_basic() {
         message: VersionedMessage::Legacy(message),
     };
 
-    let fee = estimate_transaction_fee(&rpc_client, &transaction).await.unwrap();
+    let fee = estimate_transaction_fee(&rpc_client, &transaction, None).await.unwrap();
 
     // Base fee + priority fee
     assert!(fee > 0);
@@ -80,7 +80,7 @@ async fn test_estimate_transaction_fee_invalid_transaction() {
         message: VersionedMessage::Legacy(Message::default()),
     };
 
-    let result = estimate_transaction_fee(&rpc_client, &transaction).await;
+    let result = estimate_transaction_fee(&rpc_client, &transaction, None).await;
     assert!(result.is_ok()); // Fee estimation should still work for invalid transactions
 }
 
@@ -104,7 +104,7 @@ async fn test_estimate_transaction_fee_with_token_creation() {
         message: VersionedMessage::Legacy(message),
     };
 
-    let fee = estimate_transaction_fee(&rpc_client, &transaction).await.unwrap();
+    let fee = estimate_transaction_fee(&rpc_client, &transaction, None).await.unwrap();
 
     // Fee should include base fee + priority fee + rent for token account
     let min_expected_lamports = 2_039_280;
