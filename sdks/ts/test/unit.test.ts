@@ -72,7 +72,7 @@ describe('KoraClient Unit Tests', () => {
     };
 
     beforeEach(() => {
-        client = new KoraClient(mockRpcUrl);
+        client = new KoraClient({ rpcUrl: mockRpcUrl });
         mockFetch.mockClear();
     });
 
@@ -83,7 +83,7 @@ describe('KoraClient Unit Tests', () => {
     describe('Constructor', () => {
         it('should create KoraClient instance with provided RPC URL', () => {
             const testUrl = 'https://api.example.com';
-            const testClient = new KoraClient(testUrl);
+            const testClient = new KoraClient({ rpcUrl: testUrl });
             expect(testClient).toBeInstanceOf(KoraClient);
         });
     });

@@ -531,7 +531,7 @@ make test
 # Setup test environment (for integration tests)
 make setup-test-env
 
-# Run integration tests
+# Run integration tests (fully self-contained, includes both regular and auth tests)
 make test-integration
 ```
 
@@ -576,22 +576,22 @@ Integration tests require additional setup for test accounts and local validator
    solana-test-validator --reset
    ```
 
-2. **Start local Kora Server:**
-    ```bash
-    make run
-    ```
-
-3. **Run integration tests:**
+2. **Run integration tests:**
    ```bash
    make test-integration
    ```
-    This will initialize a test environment (cargo run -p tests --bin setup-test-env):
-   - Verify test validator is running
-   - Create and fund test accounts
-   - Set up USDC mint and token accounts
-   - Display account summary
-
-   And run all integration tests (cargo test --test integration)
+   This will run all integration tests in two phases (fully self-contained):
+   
+   **Phase 1: Regular integration tests**
+   - Initialize test environment (cargo run -p tests --bin setup-test-env)
+   - Start Kora RPC server with regular configuration
+   - Run API and token integration tests
+   - Stop the regular server
+   
+   **Phase 2: Auth integration tests**
+   - Start Kora server with auth configuration (`tests/fixtures/auth-test.toml`)
+   - Run auth integration tests (API key and HMAC authentication)
+   - Clean up the auth server
 
 #### Customize Test Environment
 

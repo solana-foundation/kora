@@ -17,6 +17,18 @@ The repository consists of 5 main workspace crates:
 - `scripts`: Utility scripts for development
 - `sdks/`: TypeScript SDKs for client integration
 
+## TL;DR - Authentication Methods
+
+Kora supports two authentication methods that can be used individually or together:
+
+1. **API Key Authentication**: Simple header-based auth using `x-api-key` header
+2. **HMAC Authentication**: Request signature auth using `x-timestamp` and `x-hmac-signature` headers
+
+**Testing:**
+```bash
+make test-integration           # Run all integration tests
+```
+
 ## Common Development Commands
 
 ### Build & Check
@@ -71,23 +83,22 @@ Integration tests require a local validator and test account setup:
    solana-test-validator --reset --quiet
    ```
 
-2. **Start local Kora Server with test configuration:**
-    ```bash
-    cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
-    ```
-    This runs the Kora RPC server with `tests/kora-test.toml` config file, which includes test-specific settings and the correct test USDC mint.
-
-3. **Run integration tests:**
+2. **Run integration tests:**
    ```bash
    make test-integration
    ```
-    This will initialize a test environment (cargo run -p tests --bin setup-test-env):
-   - Verify test validator is running
-   - Create and fund test accounts
-   - Set up USDC mint and token accounts
-   - Display account summary
-
-   And run all integration tests (cargo test --test integration)
+   This will run all integration tests in two phases (fully self-contained):
+   
+   **Phase 1: Regular integration tests**
+   - Initialize test environment (cargo run -p tests --bin setup-test-env)
+   - Start Kora RPC server with regular configuration
+   - Run API and token integration tests
+   - Stop the regular server
+   
+   **Phase 2: Auth integration tests**
+   - Start Kora server with auth configuration (`tests/fixtures/auth-test.toml`)
+   - Run auth integration tests (API key and HMAC authentication)
+   - Clean up the auth server
 
 #### Customize Test Environment
 
@@ -103,7 +114,7 @@ The test suite uses environment variables for configuration (checked before fall
 | `TEST_USDC_MINT_KEYPAIR` | Test USDC mint keypair | Built-in test mint |
 | `TEST_USDC_MINT_DECIMALS` | USDC mint decimals | `6` |
 
-Make sure to update the appropriate config file (kora.toml for production, tests/kora-test.toml for testing) to reflect the public key of TEST_USDC_MINT_KEYPAIR.
+Make sure to update kora.toml to reflect the public key of TEST_USDC_MINT_KEYPAIR.
 
 **Example with custom test configuration:**
 ```bash
@@ -119,11 +130,8 @@ make test-integration
 ### Running Services
 
 ```bash
-# Basic server run (production config)
+# Basic server run
 make run
-
-# Run with test configuration (for integration testing)
-cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
 
 # Run with debug logging
 RUST_LOG=debug cargo run -p kora-rpc --bin kora-rpc
@@ -491,6 +499,15 @@ Use structured logging throughout the codebase:
 - **Fail Secure**: Default to restrictive behavior when validation or authentication fails
 - **Secure Communication**: Use secure communication for remote signer APIs
 - **Rate Limiting & Authentication**: Implement proper rate limiting and authentication
+
+## Authentication Methods
+
+Kora supports two optional authentication methods:
+
+1. **API Key Auth** (`api_key` in kora.toml): Simple header-based auth using `x-api-key`
+2. **HMAC Auth** (`hmac_secret` in kora.toml): Secure signature-based auth using `x-timestamp` + `x-hmac-signature` (SHA256 of timestamp+body)
+
+Both skip `/liveness` endpoint and can be used simultaneously. Implementation uses async tower middleware for non-blocking concurrent requests.
 
 ### Testing Guidelines
 

@@ -5,9 +5,7 @@ use utoipa::ToSchema;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
 
-use crate::{
-    error::KoraError, oracle::PriceSource, token::check_valid_tokens, transaction::PriceConfig,
-};
+use crate::{error::KoraError, oracle::PriceSource, token::check_valid_tokens};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -45,37 +43,6 @@ pub struct ValidationConfig {
     pub price_source: PriceSource,
     #[serde(default)] // Default for backward compatibility
     pub fee_payer_policy: FeePayerPolicy,
-    #[serde(default)]
-    pub price: PriceConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct EnabledMethods {
-    pub liveness: bool,
-    pub estimate_transaction_fee: bool,
-    pub get_supported_tokens: bool,
-    pub sign_transaction: bool,
-    pub sign_and_send_transaction: bool,
-    pub transfer_transaction: bool,
-    pub get_blockhash: bool,
-    pub get_config: bool,
-    pub sign_transaction_if_paid: bool,
-}
-
-impl Default for EnabledMethods {
-    fn default() -> Self {
-        Self {
-            liveness: true,
-            estimate_transaction_fee: true,
-            get_supported_tokens: true,
-            sign_transaction: true,
-            sign_and_send_transaction: true,
-            transfer_transaction: true,
-            get_blockhash: true,
-            get_config: true,
-            sign_transaction_if_paid: true,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -90,7 +57,6 @@ impl ValidationConfig {
             disallowed_accounts: vec![],
             price_source: PriceSource::Mock,
             fee_payer_policy: FeePayerPolicy::default(),
-            price: PriceConfig::default(),
         }
     }
 
@@ -133,18 +99,14 @@ impl ValidationConfig {
         self.disallowed_accounts = accounts;
         self
     }
-
-    pub fn with_price(mut self, price: PriceConfig) -> Self {
-        self.price = price;
-        self
-    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct KoraConfig {
     pub rate_limit: u64,
-    #[serde(default)]
-    pub enabled_methods: EnabledMethods,
+    pub api_key: Option<String>,
+    pub hmac_secret: Option<String>,
+    // pub redis_url: String,
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
@@ -202,51 +164,6 @@ mod tests {
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
         assert_eq!(config.validation.price_source, PriceSource::Jupiter);
         assert_eq!(config.kora.rate_limit, 100);
-        // Test default enabled methods
-        assert!(config.kora.enabled_methods.estimate_transaction_fee);
-        assert!(config.kora.enabled_methods.sign_and_send_transaction);
-    }
-
-    #[test]
-    fn test_load_config_with_enabled_methods() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1", "program2"]
-            allowed_tokens = ["token1", "token2"]
-            allowed_spl_paid_tokens = ["token3"]
-            disallowed_accounts = ["account1"]
-            price_source = "Jupiter"
-            [kora]
-            rate_limit = 100
-            [kora.enabled_methods]
-            liveness = true
-            estimate_transaction_fee = false
-            get_supported_tokens = true
-            sign_transaction = true
-            sign_and_send_transaction = false
-            transfer_transaction = true
-            get_blockhash = true
-            get_config = true
-            sign_transaction_if_paid = true
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = load_config(temp_file.path()).unwrap();
-
-        assert_eq!(config.kora.rate_limit, 100);
-        assert!(config.kora.enabled_methods.liveness);
-        assert!(!config.kora.enabled_methods.estimate_transaction_fee);
-        assert!(config.kora.enabled_methods.get_supported_tokens);
-        assert!(config.kora.enabled_methods.sign_transaction);
-        assert!(!config.kora.enabled_methods.sign_and_send_transaction);
-        assert!(config.kora.enabled_methods.transfer_transaction);
-        assert!(config.kora.enabled_methods.get_blockhash);
-        assert!(config.kora.enabled_methods.get_config);
-        assert!(config.kora.enabled_methods.sign_transaction_if_paid);
     }
 
     #[test]
@@ -277,9 +194,8 @@ mod tests {
                 disallowed_accounts: vec!["account1".to_string()],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
-                price: PriceConfig::default(),
             },
-            kora: KoraConfig { rate_limit: 100, enabled_methods: EnabledMethods::default() },
+            kora: KoraConfig { rate_limit: 100, api_key: None, hmac_secret: None },
         };
 
         // Test empty tokens list
@@ -288,169 +204,5 @@ mod tests {
         let result = config.validate(&rpc_client).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), KoraError::InternalServerError(_)));
-    }
-
-    #[test]
-    fn test_parse_margin_price_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [validation.price]
-            type = "margin"
-            margin = 0.1
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = load_config(temp_file.path()).unwrap();
-
-        match &config.validation.price.model {
-            crate::transaction::PriceModel::Margin { margin } => {
-                assert_eq!(*margin, 0.1);
-            }
-            _ => panic!("Expected Margin price model"),
-        }
-    }
-
-    #[test]
-    fn test_parse_fixed_price_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [validation.price]
-            type = "fixed"
-            amount = 1000000
-            token = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = load_config(temp_file.path()).unwrap();
-
-        match &config.validation.price.model {
-            crate::transaction::PriceModel::Fixed { amount, token } => {
-                assert_eq!(*amount, 1000000); // Amount as token units, not lamports
-                assert_eq!(token, "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
-            }
-            _ => panic!("Expected Fixed price model"),
-        }
-    }
-
-    #[test]
-    fn test_parse_free_price_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [validation.price]
-            type = "free"
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = load_config(temp_file.path()).unwrap();
-
-        match &config.validation.price.model {
-            crate::transaction::PriceModel::Free => {
-                // Test passed - Free model has no additional fields
-            }
-            _ => panic!("Expected Free price model"),
-        }
-    }
-
-    #[test]
-    fn test_parse_missing_price_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = load_config(temp_file.path()).unwrap();
-
-        // Should default to Margin with 0.0 margin
-        match &config.validation.price.model {
-            crate::transaction::PriceModel::Margin { margin } => {
-                assert_eq!(*margin, 0.0);
-            }
-            _ => panic!("Expected default Margin price model with 0.0 margin"),
-        }
-    }
-
-    #[test]
-    fn test_parse_invalid_price_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [validation.price]
-            type = "invalid_type"
-            margin = 0.1
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let result = load_config(temp_file.path());
-        assert!(result.is_err());
-
-        // Verify it's a parsing error
-        if let Err(KoraError::InternalServerError(msg)) = result {
-            assert!(msg.contains("Failed to parse config file"));
-        } else {
-            panic!("Expected InternalServerError with parsing failure message");
-        }
     }
 }

@@ -99,6 +99,21 @@ export interface FeePayerPolicy {
   allow_assign: boolean;
 }
 
+/*
+ * Client & Authentication Types
+ */
+export interface KoraClientOptions {
+  rpcUrl: string;
+  apiKey?: string;
+  hmacSecret?: string;
+}
+
+export interface AuthenticationHeaders {
+  'x-api-key'?: string;
+  'x-timestamp'?: string;
+  'x-hmac-signature'?: string;
+}
+
 /**
  * RPC Types
  */
