@@ -182,7 +182,7 @@ mod tests {
         let mut mint_data = vec![0u8; Mint::LEN];
         let mint = Mint {
             mint_authority: Some(Pubkey::new_unique()).into(),
-            supply: 1000000u64.into(),
+            supply: 1000000,
             decimals: mint_decimals,
             is_initialized: true,
             freeze_authority: None.into(),

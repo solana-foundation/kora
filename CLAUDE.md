@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## TL;DR - Development Workflow
+
+### Branches & Commits
+- **Main branch**: `main` (protected, requires PRs)
+- **Commit format**: Use conventional commits for automatic releases
+  - `feat:` → minor version bump (1.0.3 → 1.1.0)
+  - `fix:` → patch version bump (1.0.3 → 1.0.4)
+  - `BREAKING CHANGE:` → major version bump (1.0.3 → 2.0.0)
+  - `chore:`, `docs:`, `refactor:` → patch version bump
+
+### Publishing Flow
+- **Rust crates**: Automatic publishing when files change + conventional commits
+- **TypeScript SDKs**: Changeset-based releases (require `pnpm changeset`)
+- **Individual crate releases**: Each crate publishes independently when modified
+- **GitHub releases**: Auto-generated with commit-based release notes
+
 ## Project Overview
 
 Kora is a Solana paymaster node that provides a JSON-RPC interface for handling gasless transactions and fee abstractions. It enables developers to build applications where users can pay transaction fees in tokens other than SOL.
