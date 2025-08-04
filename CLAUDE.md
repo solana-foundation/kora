@@ -14,7 +14,6 @@ The repository consists of 5 main workspace crates:
 - `kora-turnkey`: Turnkey signer integration library
 - `kora-privy`: Privy signer integration library
 - `tests`: Integration tests for the entire workspace
-- `scripts`: Utility scripts for development
 - `sdks/`: TypeScript SDKs for client integration
 
 ## Common Development Commands
