@@ -2,10 +2,10 @@
 repos:
   - repo: local
     hooks:
-      - id: make-fmt
-        name: make fmt
-        description: Format Rust code automatically
-        entry: make fmt
+      - id: make-lint
+        name: make lint
+        description: Lint Rust code automatically
+        entry: make lint
         language: system
         types: [rust]
         pass_filenames: false

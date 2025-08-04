@@ -29,9 +29,14 @@ async fn main() {
 
     let rpc_client = get_rpc_client(&args.common.rpc_url);
 
-    if let Err(e) = config.validate(rpc_client.as_ref()).await {
-        log::error!("Config validation failed: {e}");
-        std::process::exit(1);
+    if args.common.validate_config {
+        let _ = config.validate_with_result(rpc_client.as_ref()).await;
+    } else {
+        // Normal validation for non-validate-config mode
+        if let Err(e) = config.validate(rpc_client.as_ref()).await {
+            log::error!("Config validation failed: {e}");
+            std::process::exit(1);
+        }
     }
 
     if config.validation.price_source == PriceSource::Jupiter {

@@ -1,4 +1,4 @@
-.PHONY: check fmt lint lint-fix test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration test-integration-coverage coverage
+.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-integration-coverage test-all test-ts coverage coverage-clean build-bin build-lib build-rpc build-tk run-presigned openapi gen-ts-client
 
 # Common configuration
 TEST_PORT := 8080
@@ -25,17 +25,11 @@ install:
 check:
 	cargo fmt --all -- --check
 
-# Format code
-fmt:
-	cargo fmt --all
-
-# Run clippy
+# Run all fixes and checks
 lint:
-	cargo clippy
-
-# Run clippy with auto-fix
-lint-fix:
-	cargo clippy --fix --allow-dirty
+	cargo clippy --fix --allow-dirty -- -D warnings
+	cargo fmt --all
+	cargo fmt --all -- --check
 	
 # Run tests
 test:
@@ -101,6 +95,15 @@ test-integration-coverage:
 	$(call run_integration_phase,2,auth tests,cargo llvm-cov run,--no-report,$(AUTH_CONFIG),$(call run_auth_tests,cargo llvm-cov test,--no-report))
 	@echo "✅ All integration tests completed"
 
+
+# Run TypeScript SDK tests
+test-ts:
+	@echo "🧪 Running TypeScript SDK tests..."
+	@cd sdks/ts && pnpm test
+	@cd sdks/net-ts && pnpm test
+
+test-all: test test-integration test-ts
+
 # Build all binaries
 build:
 	cargo build --workspace
@@ -136,12 +139,6 @@ clean:
 # Gen openapi docs
 openapi:
 	cargo run -p kora-rpc --bin kora-openapi --features docs
-
-# Run all fixes and checks
-lint-fix-all:
-	cargo clippy --fix --allow-dirty -- -D warnings
-	cargo fmt --all
-	cargo fmt --all -- --check
 
 # Generate TypeScript client
 gen-ts-client:
