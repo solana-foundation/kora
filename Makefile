@@ -1,4 +1,4 @@
-.PHONY: check fmt lint lint-fix test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration test-integration-coverage coverage coverage-all
+.PHONY: check fmt lint lint-fix test build run clean all regen-tk fix-all generate-ts-client setup-test-env test-integration test-integration-coverage coverage
 
 # Common configuration
 TEST_PORT := 8080
@@ -57,7 +57,7 @@ define start_server
 	@pkill -f "kora-rpc.*--port $(TEST_PORT)" || true
 	@sleep 2
 	@echo "🚀 Starting Kora $(1) server..."
-	@env -u KORA_API_KEY -u KORA_HMAC_SECRET $(2) -p kora-rpc --bin kora-rpc $(3) -- --private-key $(TEST_PRIVATE_KEY) --config $(4) --rpc-url $(TEST_RPC_URL) --port $(TEST_PORT) $(QUIET_OUTPUT) &
+	@$(2) -p kora-rpc --bin kora-rpc $(3) -- --private-key $(TEST_PRIVATE_KEY) --config $(4) --rpc-url $(TEST_RPC_URL) --port $(TEST_PORT) $(QUIET_OUTPUT) &
 	@echo "⏳ Waiting for server to start..."
 	@sleep 5
 endef
@@ -171,17 +171,6 @@ coverage:
 	@mkdir -p coverage
 	cargo llvm-cov clean --workspace
 	cargo llvm-cov --lib --html --output-dir coverage/html
-	@echo "✅ HTML coverage report generated in coverage/html/"
-	@echo "📊 Open coverage/html/index.html in your browser"
-
-# Generate HTML coverage report (all tests including integration)
-coverage-all:
-	$(call check_coverage_tool)
-	@echo "🧪 Generating HTML coverage report (all tests)..."
-	@echo "⚠️  Note: Integration tests may fail if external services aren't available"
-	@mkdir -p coverage
-	cargo llvm-cov clean --workspace
-	cargo llvm-cov --workspace --html --output-dir coverage/html
 	@echo "✅ HTML coverage report generated in coverage/html/"
 	@echo "📊 Open coverage/html/index.html in your browser"
 

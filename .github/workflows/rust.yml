@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: make check
@@ -50,6 +50,8 @@ jobs:
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -62,30 +64,22 @@ jobs:
       - name: Setup Solana test validator
         uses: ./.github/actions/setup-solana-validator
 
-      - name: Setup Kora RPC server
-        uses: ./.github/actions/setup-kora-rpc
-
-      - name: Setup test environment
-        run: |
-          echo "🔧 Setting up test environment..."
-          cargo run -p tests --bin setup-test-env
-
       - name: Install cargo-llvm-cov for coverage
         run: cargo install cargo-llvm-cov
 
-      - name: Run integration tests with coverage
+      - name: Run all tests with coverage
         run: |
-          echo "🧪 Running integration tests with coverage..."
+          echo "🧪 Running all tests with coverage..."
           # Clean previous coverage data
           cargo llvm-cov clean --workspace
 
-          # Run unit tests with coverage
+          # Run unit tests with coverage first
           echo "Running unit tests with coverage..."
-          cargo llvm-cov --workspace --no-report
+          cargo llvm-cov --lib --no-report
 
-          # Run integration tests with coverage
+          # Run integration tests with proper server setup
           echo "Running integration tests with coverage..."
-          cargo llvm-cov --workspace --tests --no-report
+          make test-integration-coverage
 
           # Generate reports
           echo "Generating coverage reports..."
