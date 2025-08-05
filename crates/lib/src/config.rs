@@ -133,18 +133,16 @@ impl ValidationConfig {
         self.disallowed_accounts = accounts;
         self
     }
-
-    pub fn with_price(mut self, price: PriceConfig) -> Self {
-        self.price = price;
-        self
-    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct KoraConfig {
     pub rate_limit: u64,
     #[serde(default)]
     pub enabled_methods: EnabledMethods,
+    pub api_key: Option<String>,
+    pub hmac_secret: Option<String>,
+    // pub redis_url: String,
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
@@ -279,7 +277,12 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
             },
-            kora: KoraConfig { rate_limit: 100, enabled_methods: EnabledMethods::default() },
+            kora: KoraConfig {
+                rate_limit: 100,
+                api_key: None,
+                hmac_secret: None,
+                enabled_methods: EnabledMethods::default(),
+            },
         };
 
         // Test empty tokens list

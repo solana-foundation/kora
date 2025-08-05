@@ -12,9 +12,19 @@ use solana_system_interface::instruction::transfer;
 
 use super::{decode_b64_transaction, estimate_transaction_fee};
 use crate::{
+    get_signer, init_signer,
     rpc::test_utils::setup_test_rpc_client,
+    signer::{KoraSigner, SolanaMemorySigner},
     token::{TokenInterface, TokenProgram, TokenType},
 };
+
+fn ensure_test_signer_initialized() {
+    if get_signer().is_err() {
+        let test_keypair = Keypair::new();
+        let signer = SolanaMemorySigner::new(test_keypair);
+        let _ = init_signer(KoraSigner::Memory(signer));
+    }
+}
 
 #[test]
 fn test_decode_b64_transaction() {
@@ -50,6 +60,7 @@ fn test_decode_b64_transaction_invalid_input() {
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_basic() {
+    ensure_test_signer_initialized();
     let rpc_client = setup_test_rpc_client();
 
     // Create a simple transfer transaction
@@ -72,6 +83,7 @@ async fn test_estimate_transaction_fee_basic() {
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_invalid_transaction() {
+    ensure_test_signer_initialized();
     let rpc_client = setup_test_rpc_client();
 
     // Create an invalid transaction (empty message)
@@ -86,6 +98,7 @@ async fn test_estimate_transaction_fee_invalid_transaction() {
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_token_creation() {
+    ensure_test_signer_initialized();
     let rpc_client = setup_test_rpc_client();
 
     // Create a transaction that includes token account creation

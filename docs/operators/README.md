@@ -103,9 +103,14 @@ Every Kora RPC node must be configured with at least:
 - a Solana signer (specified via the `--private-key` or `KORA_PRIVATE_KEY=` environment variable) (Check out the **[Signers Documentation](./SIGNERS.md)** for signing with a key management provider)
 - a config file, `kora.toml` (specified via the `--config path/to/kora.toml` flag)
 
-### kora.toml
+**kora.toml**
 
 Before deploying, you'll need to create and configure a `kora.toml` to specify: payment tokens, security rules, rate limits, fee payer protections, and pricing oracle. Begin with tight limits, then gradually expand based on your application's needs.
+Your `kora.toml` should live in the same directory as your deployment or be specified via the `--config` flag when starting the server.
+
+<!-- **[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)** -->
+**[→ Sample kora.toml](./deploy/sample/kora.toml)**
+
 
 
 ### 1. Rate Limiting
@@ -165,10 +170,12 @@ allow_token2022_transfers = true # Allow fee payer to be source in Token2022 tra
 allow_assign = true             # Allow fee payer to use Assign instruction
 ```
 
-<!-- **[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)** -->
-**[→ Sample kora.toml](./deploy/sample/kora.toml)**
+### 6. User Authentication
 
-Your `kora.toml` should live in the same directory as your deployment or be specified via the `--config` flag when starting the server.
+Kora supports two optional authentication methods for securing your RPC endpoint: a global API key for all users or [HMAC authentication](https://en.wikipedia.org/wiki/HMAC) with replay protection. If neither is configured, no authentication is required to use the RPC endpoint. You can use both methods simultaneously for maximum security.
+
+<!-- **[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)** -->
+For more information on authentication, see [Kora Authentication](./AUTHENTICATION.md)
 
 ## Deployment 
 

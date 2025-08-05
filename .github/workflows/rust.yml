@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: make check
@@ -50,6 +50,8 @@ jobs:
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -62,33 +64,50 @@ jobs:
       - name: Setup Solana test validator
         uses: ./.github/actions/setup-solana-validator
 
-      - name: Setup Kora RPC server
-        uses: ./.github/actions/setup-kora-rpc
+      - name: Install cargo-llvm-cov for coverage
+        run: cargo install cargo-llvm-cov
+
+      - name: Run unit tests with coverage
+        run: |
+          echo "🧪 Running unit tests with coverage..."
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --lib --no-report
 
       - name: Setup test environment
         run: |
           echo "🔧 Setting up test environment..."
           cargo run -p tests --bin setup-test-env
 
-      - name: Install cargo-llvm-cov for coverage
-        run: cargo install cargo-llvm-cov
+      - name: Setup Kora RPC server (regular config)
+        uses: ./.github/actions/setup-kora-rpc
+        with:
+          config-file: 'tests/kora-test.toml'
 
-      - name: Run integration tests with coverage
+      - name: Run regular integration tests with coverage
         run: |
-          echo "🧪 Running integration tests with coverage..."
-          # Clean previous coverage data
-          cargo llvm-cov clean --workspace
+          echo "🧪 Running regular integration tests..."
+          cargo llvm-cov test --no-report --tests -- --skip auth_integration_tests
 
-          # Run unit tests with coverage
-          echo "Running unit tests with coverage..."
-          cargo llvm-cov --workspace --no-report
+      - name: Stop Kora RPC server
+        run: |
+          if [ ! -z "$KORA_PID" ]; then
+            kill $KORA_PID || true
+          fi
+          sleep 2
 
-          # Run integration tests with coverage
-          echo "Running integration tests with coverage..."
-          cargo llvm-cov --workspace --tests --no-report
+      - name: Setup Kora RPC server (auth config)
+        uses: ./.github/actions/setup-kora-rpc
+        with:
+          config-file: 'tests/fixtures/auth-test.toml'
 
-          # Generate reports
-          echo "Generating coverage reports..."
+      - name: Run auth integration tests with coverage
+        run: |
+          echo "🧪 Running auth integration tests..."
+          cargo llvm-cov test --no-report --test integration auth_integration_tests
+
+      - name: Generate coverage reports
+        run: |
+          echo "📊 Generating coverage reports..."
           mkdir -p coverage
           cargo llvm-cov report --lcov --output-path coverage/lcov.info
           cargo llvm-cov report --html --output-dir coverage/html
