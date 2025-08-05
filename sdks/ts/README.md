@@ -76,7 +76,7 @@ All environment variables are optional and have sensible defaults.
 import { KoraClient } from '@kora/sdk';
 
 // Initialize the client with your RPC endpoint
-const client = new KoraClient('http://localhost:8080');
+const client = new KoraClient({ rpcUrl: 'http://localhost:8080' });
 
 // Example: Transfer tokens
 const signature = await client.transferTransaction({
