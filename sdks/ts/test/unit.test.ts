@@ -181,7 +181,8 @@ describe("KoraClient Unit Tests", () => {
       };
       const mockResponse: EstimateTransactionFeeResponse = {
         fee_in_lamports: 5000,
-     , fee_in_token: 25 };
+        fee_in_token: 25,
+      };
 
       await testSuccessfulRpcMethod(
         "estimateTransactionFee",
