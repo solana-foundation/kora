@@ -32,7 +32,7 @@ async function main() {
   // Initialize the client with your RPC endpoint
   const rpcUrl = process.env.KORA_RPC_URL!;
   const usdcMint = process.env.USDC_MINT!;
-  const client = new KoraClient(rpcUrl);
+  const client = new KoraClient({ rpcUrl });
 
   try {
     // Get supported tokens
