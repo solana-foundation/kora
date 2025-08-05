@@ -77,6 +77,10 @@ pub struct CommonArgs {
 
     #[arg(long, env = "VAULT_PUBKEY")]
     pub vault_pubkey: Option<String>,
+
+    /// Validate configuration file and show results
+    #[arg(long)]
+    pub validate_config: bool,
 }
 
 // RPC-specific arguments

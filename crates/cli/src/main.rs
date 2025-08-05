@@ -61,9 +61,14 @@ async fn main() -> Result<(), KoraError> {
 
     let rpc_client = get_rpc_client(&cli.args.common.rpc_url);
 
-    if let Err(e) = config.validate(rpc_client.as_ref()).await {
-        print_error(&format!("Config validation failed: {e}"));
-        std::process::exit(1);
+    if cli.args.common.validate_config {
+        let _ = config.validate_with_result(rpc_client.as_ref()).await;
+    } else {
+        // Normal validation for non-validate-config mode
+        if let Err(e) = config.validate(rpc_client.as_ref()).await {
+            print_error(&format!("Config validation failed: {e}"));
+            std::process::exit(1);
+        }
     }
 
     // Initialize the signer

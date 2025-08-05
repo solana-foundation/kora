@@ -1,12 +1,17 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{pubkey::Pubkey, system_program::ID as SYSTEM_PROGRAM_ID};
+use spl_token::ID as SPL_TOKEN_PROGRAM_ID;
+use spl_token_2022::ID as TOKEN_2022_PROGRAM_ID;
+use std::{fs, path::Path, str::FromStr};
 use toml;
 use utoipa::ToSchema;
 
-use solana_client::nonblocking::rpc_client::RpcClient;
-
 use crate::{
-    error::KoraError, oracle::PriceSource, token::check_valid_tokens, transaction::PriceConfig,
+    error::KoraError,
+    oracle::PriceSource,
+    token::check_valid_tokens,
+    transaction::{PriceConfig, PriceModel},
 };
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +65,43 @@ pub struct EnabledMethods {
     pub get_blockhash: bool,
     pub get_config: bool,
     pub sign_transaction_if_paid: bool,
+}
+
+impl EnabledMethods {
+    pub fn iter(&self) -> impl Iterator<Item = bool> {
+        [
+            self.liveness,
+            self.estimate_transaction_fee,
+            self.get_supported_tokens,
+            self.sign_transaction,
+            self.sign_and_send_transaction,
+            self.transfer_transaction,
+            self.get_blockhash,
+            self.get_config,
+            self.sign_transaction_if_paid,
+        ]
+        .into_iter()
+    }
+}
+
+impl IntoIterator for &EnabledMethods {
+    type Item = bool;
+    type IntoIter = std::array::IntoIter<bool, 9>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        [
+            self.liveness,
+            self.estimate_transaction_fee,
+            self.get_supported_tokens,
+            self.sign_transaction,
+            self.sign_and_send_transaction,
+            self.transfer_transaction,
+            self.get_blockhash,
+            self.get_config,
+            self.sign_transaction_if_paid,
+        ]
+        .into_iter()
+    }
 }
 
 impl Default for EnabledMethods {
@@ -161,6 +203,130 @@ impl Config {
 
         check_valid_tokens(&self.validation.allowed_tokens)?;
         Ok(())
+    }
+
+    pub async fn validate_with_result(
+        &self,
+        _rpc_client: &RpcClient,
+    ) -> Result<Vec<String>, Vec<String>> {
+        let mut errors = Vec::new();
+        let mut warnings = Vec::new();
+
+        // Validate rate limit (warn if 0)
+        if self.kora.rate_limit == 0 {
+            warnings.push("Rate limit is set to 0 - this will block all requests".to_string());
+        }
+
+        // Validate enabled methods (warn if all false)
+        let methods = &self.kora.enabled_methods;
+        if !methods.iter().any(|enabled| enabled) {
+            warnings.push(
+                "All rpc methods are disabled - this will block all functionality".to_string(),
+            );
+        }
+
+        // Validate max allowed lamports (warn if 0)
+        if self.validation.max_allowed_lamports == 0 {
+            warnings
+                .push("Max allowed lamports is 0 - this will block all SOL transfers".to_string());
+        }
+
+        // Validate max signatures (warn if 0)
+        if self.validation.max_signatures == 0 {
+            warnings.push("Max signatures is 0 - this will block all transactions".to_string());
+        }
+
+        // Validate price source (warn if Mock)
+        if matches!(self.validation.price_source, PriceSource::Mock) {
+            warnings.push("Using Mock price source - not suitable for production".to_string());
+        }
+
+        // Validate allowed programs (warn if empty or missing system/token programs)
+        if self.validation.allowed_programs.is_empty() {
+            warnings.push(
+                "No allowed programs configured - this will block all transactions".to_string(),
+            );
+        } else {
+            if !self.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string()) {
+                warnings.push("Missing System Program in allowed programs - SOL transfers and account operations will be blocked".to_string());
+            }
+            if !self.validation.allowed_programs.contains(&SPL_TOKEN_PROGRAM_ID.to_string())
+                && !self.validation.allowed_programs.contains(&TOKEN_2022_PROGRAM_ID.to_string())
+            {
+                warnings.push("Missing Token Program in allowed programs - SPL token operations will be blocked".to_string());
+            }
+        }
+
+        // Validate allowed tokens
+        if self.validation.allowed_tokens.is_empty() {
+            errors.push("No allowed tokens configured".to_string());
+        } else if let Err(e) = check_valid_tokens(&self.validation.allowed_tokens) {
+            errors.push(format!("Invalid token address: {e}"));
+        }
+
+        // Validate allowed spl paid tokens
+        if let Err(e) = check_valid_tokens(&self.validation.allowed_spl_paid_tokens) {
+            errors.push(format!("Invalid spl paid token address: {e}"));
+        }
+
+        // Validate disallowed accounts
+        if let Err(e) = check_valid_tokens(&self.validation.disallowed_accounts) {
+            errors.push(format!("Invalid disallowed account address: {e}"));
+        }
+
+        // Validate margin (error if negative)
+        match &self.validation.price.model {
+            PriceModel::Fixed { amount, token } => {
+                if *amount == 0 {
+                    warnings
+                        .push("Fixed price amount is 0 - transactions will be free".to_string());
+                }
+                if Pubkey::from_str(token).is_err() {
+                    errors.push(format!("Invalid token address for fixed price: {token}"));
+                }
+                if !self.validation.allowed_spl_paid_tokens.contains(token) {
+                    errors.push(format!(
+                        "Token address for fixed price is not in allowed spl paid tokens: {token}"
+                    ));
+                }
+            }
+            PriceModel::Margin { margin } => {
+                if *margin < 0.0 {
+                    errors.push("Margin cannot be negative".to_string());
+                } else if *margin > 1.0 {
+                    warnings.push(format!("Margin is {}% - this is very high", margin * 100.0));
+                }
+            }
+            _ => {}
+        };
+
+        // Output results
+        println!("=== Configuration Validation ===");
+        if errors.is_empty() {
+            println!("✓ Configuration validation successful!");
+            println!("\n=== Current Configuration ===");
+            println!("{self:#?}");
+        } else {
+            println!("✗ Configuration validation failed!");
+            println!("\n❌ Errors:");
+            for error in &errors {
+                println!("   - {error}");
+            }
+            println!("\nPlease fix the configuration errors above before deploying.");
+        }
+
+        if !warnings.is_empty() {
+            println!("\n⚠️  Warnings:");
+            for warning in &warnings {
+                println!("   - {warning}");
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(warnings)
+        } else {
+            Err(errors)
+        }
     }
 }
 
@@ -455,5 +621,272 @@ mod tests {
         } else {
             panic!("Expected InternalServerError with parsing failure message");
         }
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_successful_config() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
+                ],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+            },
+        };
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = config.validate_with_result(&rpc_client).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+        assert!(warnings.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_warnings() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 0,  // Should warn
+                max_signatures: 0,        // Should warn
+                allowed_programs: vec![], // Should warn
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Mock, // Should warn
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig {
+                    model: PriceModel::Margin { margin: 1.5 }, // Should warn - high margin
+                },
+            },
+            kora: KoraConfig {
+                rate_limit: 0, // Should warn
+                enabled_methods: EnabledMethods {
+                    liveness: false,
+                    estimate_transaction_fee: false,
+                    get_supported_tokens: false,
+                    sign_transaction: false,
+                    sign_and_send_transaction: false,
+                    transfer_transaction: false,
+                    get_blockhash: false,
+                    get_config: false,
+                    sign_transaction_if_paid: false, // All false - should warn
+                },
+                api_key: None,
+                hmac_secret: None,
+            },
+        };
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = config.validate_with_result(&rpc_client).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        assert!(!warnings.is_empty());
+        assert!(warnings.iter().any(|w| w.contains("Rate limit is set to 0")));
+        assert!(warnings.iter().any(|w| w.contains("All rpc methods are disabled")));
+        assert!(warnings.iter().any(|w| w.contains("Max allowed lamports is 0")));
+        assert!(warnings.iter().any(|w| w.contains("Max signatures is 0")));
+        assert!(warnings.iter().any(|w| w.contains("Using Mock price source")));
+        assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
+        assert!(warnings.iter().any(|w| w.contains("Margin is 150%")));
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_missing_system_program_warning() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec!["SomeOtherProgram".to_string()], // Missing system program
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+            },
+        };
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = config.validate_with_result(&rpc_client).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        assert!(warnings.iter().any(|w| w.contains("Missing System Program in allowed programs")));
+        assert!(warnings.iter().any(|w| w.contains("Missing Token Program in allowed programs")));
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_errors() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec![], // Error - no tokens
+                allowed_spl_paid_tokens: vec!["invalid_token_address".to_string()], // Error - invalid token
+                disallowed_accounts: vec!["invalid_account_address".to_string()], // Error - invalid account
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig {
+                    model: PriceModel::Margin { margin: -0.1 }, // Error - negative margin
+                },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+            },
+        };
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = config.validate_with_result(&rpc_client).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors.iter().any(|e| e.contains("No allowed tokens configured")));
+        assert!(errors.iter().any(|e| e.contains("Invalid spl paid token address")));
+        assert!(errors.iter().any(|e| e.contains("Invalid disallowed account address")));
+        assert!(errors.iter().any(|e| e.contains("Margin cannot be negative")));
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_fixed_price_errors() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
+                ],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig {
+                    model: PriceModel::Fixed {
+                        amount: 0,                                  // Should warn
+                        token: "invalid_token_address".to_string(), // Should error
+                    },
+                },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+            },
+        };
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = config.validate_with_result(&rpc_client).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors.iter().any(|e| e.contains("Invalid token address for fixed price")));
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_fixed_price_not_in_allowed_tokens() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
+                ],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig {
+                    model: PriceModel::Fixed {
+                        amount: 1000,
+                        token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(), // Valid but not in allowed
+                    },
+                },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+            },
+        };
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = config.validate_with_result(&rpc_client).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(
+            errors
+                .iter()
+                .any(|e| e
+                    .contains("Token address for fixed price is not in allowed spl paid tokens"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_fixed_price_zero_amount_warning() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
+                ],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig {
+                    model: PriceModel::Fixed {
+                        amount: 0, // Should warn
+                        token: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                    },
+                },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+            },
+        };
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = config.validate_with_result(&rpc_client).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Fixed price amount is 0 - transactions will be free")));
     }
 }
