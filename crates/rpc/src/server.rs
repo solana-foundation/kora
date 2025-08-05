@@ -12,6 +12,20 @@ use std::{net::SocketAddr, time::Duration};
 use tower::limit::RateLimitLayer;
 use tower_http::cors::CorsLayer;
 
+#[cfg(feature = "metrics")]
+use kora_metrics::{HttpMetricsLayer, MetricsHandlerLayer};
+
+pub fn get_metrics_layer() -> (Option<HttpMetricsLayer>, Option<MetricsHandlerLayer>) {
+    #[cfg(feature = "metrics")]
+    {
+        (Some(HttpMetricsLayer::new()), Some(MetricsHandlerLayer))
+    }
+    #[cfg(not(feature = "metrics"))]
+    {
+        (None, None)
+    }
+}
+
 // We'll always prioritize the environment variable over the config value
 fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<String> {
     std::env::var(env_var).ok().or(config_value)
@@ -33,10 +47,18 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
         ])
         .max_age(Duration::from_secs(3600));
 
+    // Get optional metrics layer
+    let (optional_http_metrics_layer, optional_metrics_handler_layer) = get_metrics_layer();
+
     let middleware = tower::ServiceBuilder::new()
+        // Add metrics handler first (before other layers) so it can intercept /metrics
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
         .layer(RateLimitLayer::new(rpc.config.rate_limit, Duration::from_secs(1)))
+        // Add metrics handler layer for Prometheus metrics
+        .option_layer(optional_metrics_handler_layer)
         .layer(cors)
+        // Add metrics collection layer
+        .option_layer(optional_http_metrics_layer)
         // Add authentication layer for API key if configured
         .option_layer(
             (get_value_by_priority("KORA_API_KEY", rpc.config.api_key.clone()))

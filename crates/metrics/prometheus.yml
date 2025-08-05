@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+# rule_files:
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "kora"
+    static_configs:
+      - targets: ["kora:8080"]
+    metrics_path: "/metrics"
+    scrape_interval: 60s
+    scrape_timeout: 60s

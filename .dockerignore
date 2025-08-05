@@ -1,0 +1,56 @@
+# Build artifacts
+target/
+**/target/
+
+# Node.js
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test and development files
+# Don't exclude tests/ as it's part of the workspace
+coverage/
+generated/
+
+# Documentation
+docs/
+README.md
+*.md
+
+# SDKs (not needed for server build)
+sdks/
+
+# Environment and config
+.env
+.env.*
+kora.toml
+prometheus.yml
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/

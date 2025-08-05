@@ -5,6 +5,7 @@ members = [
     "crates/cli",
     "crates/turnkey",
     "crates/privy",
+    "crates/metrics",
     "tests",
 ]
 resolver = "2"
@@ -82,8 +83,12 @@ p256 = "0.13.3"
 redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
 deadpool-redis = "0.14.0"
 vaultrs = "0.7.3"
-kora-turnkey = { path = "crates/turnkey", version = "1.0.2" }
-kora-privy = { path = "crates/privy", version = "1.0.2" }
+kora-lib = { path = "crates/lib" }
+kora-turnkey = { path = "crates/turnkey" }
+kora-privy = { path = "crates/privy" }
+kora-metrics = { path = "crates/metrics" }
 utoipa = { version = "4.2.0", features = ["yaml", "chrono"] }
 hmac = "0.12.1"
 sha2 = "0.10.9"
+prometheus = "0.14.0"
+http-body-util = "0.1.3"

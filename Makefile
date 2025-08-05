@@ -1,4 +1,4 @@
-.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-integration-coverage test-all test-ts coverage coverage-clean build-bin build-lib build-rpc build-tk run-presigned openapi gen-ts-client
+.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-integration-coverage test-all test-ts coverage coverage-clean build-bin build-lib build-rpc build-tk run-presigned openapi gen-ts-client run-with-metrics
 
 # Common configuration
 TEST_PORT := 8080
@@ -177,3 +177,15 @@ coverage-clean:
 	rm -rf coverage/
 	cargo llvm-cov clean --workspace
 	@echo "✅ Coverage artifacts cleaned"
+
+# Run Kora in Docker (no metrics)
+run-docker:
+	docker compose down
+	docker compose build --no-cache kora
+	docker compose up
+
+# Run full monitoring stack (Kora + Prometheus + Grafana)
+run-with-metrics:
+	cd crates/metrics && docker compose -f docker-compose.metrics.yml down
+	cd crates/metrics && docker compose -f docker-compose.metrics.yml build --no-cache kora
+	cd crates/metrics && docker compose -f docker-compose.metrics.yml up

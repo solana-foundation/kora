@@ -1,0 +1,21 @@
+[package]
+name = "kora-metrics"
+version = "0.0.1"
+edition = "2021"
+description = "A Rust library for Kora metrics"
+license = "MIT"
+
+[dependencies]
+prometheus = { workspace = true }
+tower = { workspace = true }
+http = { workspace = true }
+pin-project = "1.1"
+futures-util = { workspace = true }
+jsonrpsee = { workspace = true }
+serde_json = { workspace = true }
+kora-lib = { workspace = true }
+
+
+[lib]
+name = "kora_metrics"
+path = "src/mod.rs"
