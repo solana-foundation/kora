@@ -86,14 +86,7 @@ jobs:
       - name: Run regular integration tests with coverage
         run: |
           echo "🧪 Running regular integration tests..."
-          # Find and run all test files except auth_integration_tests
-          for test_file in tests/*_test*.rs tests/*integration*.rs; do
-            if [[ -f "$test_file" && ! "$test_file" =~ auth_integration_tests ]]; then
-              test_name=$(basename "$test_file" .rs)
-              echo "Running test: $test_name"
-              cargo llvm-cov test --no-report --test "$test_name" || exit 1
-            fi
-          done
+          cargo llvm-cov test --no-report --tests -- --skip auth_integration_tests
 
       - name: Stop Kora RPC server
         run: |

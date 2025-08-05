@@ -64,8 +64,7 @@ endef
 
 define run_regular_tests
 	@echo "🧪 Running regular integration tests..."
-	@$(1) --test api_integration $(2) $(TEST_OUTPUT_FILTER)
-	@$(1) --test token_integration $(2) $(TEST_OUTPUT_FILTER)
+	@$(1) --tests $(2) -- --skip auth_integration_tests $(TEST_OUTPUT_FILTER)
 endef
 
 define run_auth_tests
