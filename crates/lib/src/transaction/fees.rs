@@ -2,18 +2,16 @@ use crate::{
     constant::LAMPORTS_PER_SIGNATURE,
     error::KoraError,
     get_signer,
-    oracle::{get_price_oracle, PriceSource, RetryingPriceOracle},
-    token::{TokenInterface, TokenProgram, TokenType},
+    oracle::PriceSource,
+    token::calculate_token_value_in_lamports,
     transaction::{get_estimate_fee, VersionedTransactionExt},
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
-use solana_sdk::{
-    native_token::LAMPORTS_PER_SOL, pubkey::Pubkey, rent::Rent, transaction::VersionedTransaction,
-};
+use solana_sdk::{pubkey::Pubkey, rent::Rent, transaction::VersionedTransaction};
 use spl_associated_token_account::get_associated_token_address;
-use std::{str::FromStr, time::Duration};
+use std::str::FromStr;
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -152,39 +150,6 @@ async fn get_associated_token_account_creation_fees(
     let exempt_min = rent.minimum_balance(ATA_ACCOUNT_SIZE);
 
     Ok(exempt_min * ata_count)
-}
-
-pub async fn calculate_token_value_in_lamports(
-    amount: u64,
-    mint: &Pubkey,
-    price_source: PriceSource,
-    rpc_client: &RpcClient,
-) -> Result<u64, KoraError> {
-    // Fetch mint account data to determine token decimals
-    let mint_account =
-        rpc_client.get_account(mint).await.map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-    let token_program = TokenProgram::new(TokenType::Spl);
-    let decimals = token_program.get_mint_decimals(&mint_account.data)?;
-
-    // Initialize price oracle with retries for reliability
-    let oracle =
-        RetryingPriceOracle::new(3, Duration::from_secs(1), get_price_oracle(price_source));
-
-    // Get token price in SOL directly
-    let token_price = oracle
-        .get_token_price(&mint.to_string())
-        .await
-        .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {e}")))?;
-
-    // Convert token amount to its real value based on decimals and multiply by SOL price
-    let token_amount = amount as f64 / 10f64.powi(decimals as i32);
-    let sol_amount = token_amount * token_price.price;
-
-    // Convert SOL to lamports and round down
-    let lamports = (sol_amount * LAMPORTS_PER_SOL as f64).floor() as u64;
-
-    Ok(lamports)
 }
 
 #[cfg(test)]

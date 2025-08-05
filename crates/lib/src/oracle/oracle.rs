@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
 
+pub const DEFAULT_MOCKED_PRICE: f64 = 0.001;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenPrice {
     pub price: f64,
@@ -45,7 +47,7 @@ pub fn get_price_oracle(source: PriceSource) -> Arc<dyn PriceOracle + Send + Syn
                     let price = match mint_address {
                         USDC_DEVNET_MINT => 0.0001,                           // USDC
                         "So11111111111111111111111111111111111111112" => 1.0, // SOL
-                        _ => 0.001, // Default price for unknown tokens
+                        _ => DEFAULT_MOCKED_PRICE, // Default price for unknown tokens
                     };
                     Ok(TokenPrice { price, confidence: 1.0, source: PriceSource::Mock })
                 });
