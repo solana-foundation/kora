@@ -1,7 +1,5 @@
 pub mod fees;
 mod paid_transaction;
-#[cfg(test)]
-mod tests;
 mod transaction;
 
 pub use fees::*;

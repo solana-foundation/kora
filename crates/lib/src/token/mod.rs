@@ -5,16 +5,14 @@ use crate::{
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 use std::{str::FromStr, time::Duration};
-mod interface;
-mod token;
-mod token22;
-
-#[cfg(test)]
-mod tests;
 
 pub use interface::{TokenInterface, TokenState};
 pub use token::{TokenAccount, TokenProgram};
 pub use token22::{Token2022Account, Token2022Program};
+
+pub mod interface;
+pub mod token;
+pub mod token22;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType {

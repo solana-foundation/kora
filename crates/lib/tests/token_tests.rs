@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::token::{
+    use kora_lib::token::{
         interface::{TokenInterface, TokenState},
         token22::Token2022Account as Token2022AccountImpl,
         Token2022Program, TokenProgram, TokenType,
@@ -12,7 +12,6 @@ mod tests {
         signature::{Keypair, Signer},
         transaction::Transaction,
     };
-    use spl_associated_token_account;
     use spl_pod::{
         optional_keys::OptionalNonZeroPubkey,
         primitives::{PodU16, PodU64},
@@ -636,7 +635,7 @@ mod tests {
         let account = TokenProgram::new(TokenType::Spl).unpack_token_account(&bytes).unwrap();
         // Use the aliased interface trait name
         let token_account =
-            account.as_any().downcast_ref::<crate::token::token::TokenAccount>().unwrap();
+            account.as_any().downcast_ref::<kora_lib::token::token::TokenAccount>().unwrap();
         assert_eq!(token_account.amount, 0);
     }
 
