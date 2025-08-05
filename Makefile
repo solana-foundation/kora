@@ -57,7 +57,7 @@ define start_server
 	@pkill -f "kora-rpc.*--port $(TEST_PORT)" || true
 	@sleep 2
 	@echo "🚀 Starting Kora $(1) server..."
-	@$(2) -p kora-rpc --bin kora-rpc $(3) -- --private-key $(TEST_PRIVATE_KEY) --config $(4) --rpc-url $(TEST_RPC_URL) --port $(TEST_PORT) $(QUIET_OUTPUT) &
+	@env -u KORA_API_KEY -u KORA_HMAC_SECRET $(2) -p kora-rpc --bin kora-rpc $(3) -- --private-key $(TEST_PRIVATE_KEY) --config $(4) --rpc-url $(TEST_RPC_URL) --port $(TEST_PORT) $(QUIET_OUTPUT) &
 	@echo "⏳ Waiting for server to start..."
 	@sleep 5
 endef
