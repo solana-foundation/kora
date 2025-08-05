@@ -130,7 +130,8 @@ run-presigned:
 
 # Run with default configuration
 run:
-	cargo run -p kora-rpc --bin kora-rpc
+	cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
+
 
 # Clean build artifacts
 clean:
