@@ -1,18 +1,20 @@
+use crate::{
+    constant::LAMPORTS_PER_SIGNATURE,
+    error::KoraError,
+    get_signer,
+    oracle::{get_price_oracle, PriceSource, RetryingPriceOracle},
+    token::{TokenInterface, TokenProgram, TokenType},
+    transaction::{get_estimate_fee, VersionedTransactionExt},
+};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_message::VersionedMessage;
 use solana_sdk::{
     native_token::LAMPORTS_PER_SOL, pubkey::Pubkey, rent::Rent, transaction::VersionedTransaction,
 };
 use spl_associated_token_account::get_associated_token_address;
 use std::{str::FromStr, time::Duration};
 use utoipa::ToSchema;
-
-use crate::{
-    error::KoraError,
-    oracle::{get_price_oracle, PriceSource, RetryingPriceOracle},
-    token::{TokenInterface, TokenProgram, TokenType},
-    transaction::get_estimate_fee,
-};
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TokenPriceInfo {
@@ -68,10 +70,36 @@ impl PriceConfig {
     }
 }
 
+pub fn is_fee_payer_in_signers(
+    transaction: &impl VersionedTransactionExt,
+) -> Result<bool, KoraError> {
+    let fee_payer = get_signer()
+        .map(|signer| signer.solana_pubkey())
+        .map_err(|e| KoraError::InternalServerError(format!("Failed to get signer: {e}")))?;
+
+    let all_account_keys = transaction.get_all_account_keys();
+    let transaction_inner = transaction.get_transaction();
+
+    // In messages, the first num_required_signatures accounts are signers
+    Ok(match &transaction_inner.message {
+        VersionedMessage::Legacy(legacy_message) => {
+            let num_signers = legacy_message.header.num_required_signatures as usize;
+            all_account_keys.iter().take(num_signers).any(|key| *key == fee_payer)
+        }
+        VersionedMessage::V0(v0_message) => {
+            let num_signers = v0_message.header.num_required_signatures as usize;
+            all_account_keys.iter().take(num_signers).any(|key| *key == fee_payer)
+        }
+    })
+}
+
 pub async fn estimate_transaction_fee(
     rpc_client: &RpcClient,
-    transaction: &VersionedTransaction,
+    // Should have resolved addresses for lookup tables
+    resolved_transaction: &impl VersionedTransactionExt,
 ) -> Result<u64, KoraError> {
+    let transaction = resolved_transaction.get_transaction();
+
     // Get base transaction fee
     let base_fee = get_estimate_fee(rpc_client, &transaction.message).await?;
 
@@ -80,14 +108,15 @@ pub async fn estimate_transaction_fee(
         .await
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-    // Get priority fee from recent blocks
-    let priority_stats = rpc_client
-        .get_recent_prioritization_fees(&[])
-        .await
-        .map_err(|e| KoraError::RpcError(e.to_string()))?;
-    let priority_fee = priority_stats.iter().map(|fee| fee.prioritization_fee).max().unwrap_or(0);
+    // Priority fees are now included in the calculate done by the RPC getFeeForMessage
 
-    Ok(base_fee + priority_fee + account_creation_fee)
+    // If the Kora signer is not inclded in the signers, we add another base fee, since each transaction will be 5000 lamports
+    let mut kora_signature_fee = 0u64;
+    if !is_fee_payer_in_signers(resolved_transaction)? {
+        kora_signature_fee = LAMPORTS_PER_SIGNATURE;
+    }
+
+    Ok(base_fee + account_creation_fee + kora_signature_fee)
 }
 
 async fn get_associated_token_account_creation_fees(
@@ -161,11 +190,23 @@ pub async fn calculate_token_value_in_lamports(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        signer::{KoraSigner, SolanaMemorySigner},
+        state::init_signer,
+        transaction::{new_unsigned_versioned_transaction, VersionedTransactionResolved},
+    };
     use base64::Engine;
     use serde_json::json;
     use solana_client::rpc_request::RpcRequest;
+    use solana_message::{v0, Message};
     use solana_program::program_pack::Pack;
-    use solana_sdk::{account::Account, pubkey::Pubkey};
+    use solana_sdk::{
+        account::Account,
+        hash::Hash,
+        pubkey::Pubkey,
+        signature::{Keypair, Signer},
+    };
+    use solana_system_interface::instruction::transfer;
     use spl_token::state::Mint;
     use std::{collections::HashMap, sync::Arc};
 
@@ -386,5 +427,96 @@ mod tests {
             PriceModel::Margin { margin } => assert_eq!(margin, 0.0),
             _ => panic!("Default should be Margin with 0.0 margin"),
         }
+    }
+
+    fn setup_or_get_test_signer() -> Pubkey {
+        if let Ok(signer) = get_signer() {
+            return signer.solana_pubkey();
+        }
+
+        let test_keypair = Keypair::new();
+        let signer = SolanaMemorySigner::new(test_keypair.insecure_clone());
+        match init_signer(KoraSigner::Memory(signer)) {
+            Ok(_) => test_keypair.pubkey(),
+            Err(_) => {
+                // Signer already initialized, get it
+                get_signer().expect("Signer should be available").solana_pubkey()
+            }
+        }
+    }
+
+    #[test]
+    fn test_is_fee_payer_in_signers_legacy_fee_payer_is_signer() {
+        let fee_payer = setup_or_get_test_signer();
+        let other_signer = Keypair::new();
+        let recipient = Keypair::new();
+
+        let instruction = transfer(&other_signer.pubkey(), &recipient.pubkey(), 1000);
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+
+        let transaction = new_unsigned_versioned_transaction(message);
+        let resolved_transaction = VersionedTransactionResolved::new(&transaction);
+
+        assert!(is_fee_payer_in_signers(&resolved_transaction).unwrap());
+    }
+
+    #[test]
+    fn test_is_fee_payer_in_signers_legacy_fee_payer_not_signer() {
+        setup_or_get_test_signer();
+        let sender = Keypair::new();
+        let recipient = Keypair::new();
+
+        let instruction = transfer(&sender.pubkey(), &recipient.pubkey(), 1000);
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&sender.pubkey())));
+
+        let transaction = new_unsigned_versioned_transaction(message);
+        let resolved_transaction = VersionedTransactionResolved::new(&transaction);
+
+        assert!(!is_fee_payer_in_signers(&resolved_transaction).unwrap());
+    }
+
+    #[test]
+    fn test_is_fee_payer_in_signers_v0_fee_payer_is_signer() {
+        let fee_payer = setup_or_get_test_signer();
+        let other_signer = Keypair::new();
+        let recipient = Keypair::new();
+
+        let v0_message = v0::Message::try_compile(
+            &fee_payer,
+            &[transfer(&other_signer.pubkey(), &recipient.pubkey(), 1000)],
+            &[],
+            Hash::default(),
+        )
+        .expect("Failed to compile V0 message");
+
+        let message = VersionedMessage::V0(v0_message);
+        let transaction = new_unsigned_versioned_transaction(message);
+        let resolved_transaction = VersionedTransactionResolved::new(&transaction);
+
+        assert!(is_fee_payer_in_signers(&resolved_transaction).unwrap());
+    }
+
+    #[test]
+    fn test_is_fee_payer_in_signers_v0_fee_payer_not_signer() {
+        setup_or_get_test_signer();
+        let sender = Keypair::new();
+        let recipient = Keypair::new();
+
+        let v0_message = v0::Message::try_compile(
+            &sender.pubkey(),
+            &[transfer(&sender.pubkey(), &recipient.pubkey(), 1000)],
+            &[],
+            Hash::default(),
+        )
+        .expect("Failed to compile V0 message");
+
+        let message = VersionedMessage::V0(v0_message);
+        let transaction = new_unsigned_versioned_transaction(message);
+        let resolved_transaction = VersionedTransactionResolved::new(&transaction);
+
+        assert!(!is_fee_payer_in_signers(&resolved_transaction).unwrap());
     }
 }

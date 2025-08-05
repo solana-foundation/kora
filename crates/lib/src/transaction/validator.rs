@@ -3,7 +3,7 @@ use crate::{
     error::KoraError,
     oracle::PriceSource,
     token::{Token2022Account, TokenInterface, TokenProgram, TokenType},
-    transaction::{fees::calculate_token_value_in_lamports, resolve_lookup_table_addresses},
+    transaction::{fees::calculate_token_value_in_lamports, VersionedTransactionExt},
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
@@ -124,11 +124,18 @@ impl TransactionValidator {
         Ok(account_keys[idx])
     }
 
+    /*
+    This function is used to validate a transaction.
+    It takes a VersionedTransactionResolved or VersionedTransaction.
+    The caller is responsible for resolving the addresses before calling this function if needed.
+     */
     pub async fn validate_transaction(
         &self,
-        transaction: &VersionedTransaction,
-        rpc_client: Option<&RpcClient>,
+        transaction_resolved: &impl VersionedTransactionExt,
     ) -> Result<(), KoraError> {
+        let transaction = transaction_resolved.get_transaction();
+        let all_account_keys = transaction_resolved.get_all_account_keys();
+
         if transaction.message.instructions().is_empty() {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no instructions".to_string(),
@@ -142,26 +149,6 @@ impl TransactionValidator {
         }
 
         self.validate_signatures(transaction)?;
-
-        // For Legacy transactions, we can safely do all validations since no lookup tables are used
-        // For V0 transactions, we need to resolve lookup table addresses and do all validations
-        let all_account_keys = match &transaction.message {
-            VersionedMessage::Legacy(_) => transaction.message.static_account_keys().to_vec(),
-            VersionedMessage::V0(v0_message) => {
-                let rpc_client = rpc_client.ok_or(KoraError::InvalidTransaction(
-                    "RPC client is required for V0 transactions".to_string(),
-                ))?;
-
-                let mut resolved_addresses =
-                    resolve_lookup_table_addresses(rpc_client, &v0_message.address_table_lookups)
-                        .await?;
-
-                // Combine static keys with resolved addresses
-                let mut combined_keys = transaction.message.static_account_keys().to_vec();
-                combined_keys.append(&mut resolved_addresses);
-                combined_keys
-            }
-        };
 
         self.validate_programs(&transaction.message, &all_account_keys)?;
         self.validate_transfer_amounts(&transaction.message, &all_account_keys)?;
@@ -600,7 +587,8 @@ async fn process_token_transfer(
 }
 
 pub async fn validate_token_payment(
-    transaction: &VersionedTransaction,
+    // Should have resolved addresses for lookup tables
+    resolved_transaction: &impl VersionedTransactionExt,
     required_lamports: u64,
     validation: &ValidationConfig,
     rpc_client: &RpcClient,
@@ -608,20 +596,8 @@ pub async fn validate_token_payment(
 ) -> Result<(), KoraError> {
     let mut total_lamport_value = 0;
 
-    // Resolve all account keys including lookup table addresses for V0 transactions
-    let all_account_keys = match &transaction.message {
-        VersionedMessage::V0(v0_message) => {
-            let mut resolved_addresses =
-                resolve_lookup_table_addresses(rpc_client, &v0_message.address_table_lookups)
-                    .await?;
-
-            // Combine static keys with resolved addresses
-            let mut combined_keys = transaction.message.static_account_keys().to_vec();
-            combined_keys.append(&mut resolved_addresses);
-            combined_keys
-        }
-        VersionedMessage::Legacy(_) => transaction.message.static_account_keys().to_vec(),
-    };
+    let transaction = resolved_transaction.get_transaction();
+    let all_account_keys = resolved_transaction.get_all_account_keys();
 
     for ix in transaction.message.instructions() {
         // Safe program ID resolution
@@ -689,7 +665,7 @@ mod tests {
         let instruction = transfer(&sender, &recipient, 100_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -708,14 +684,14 @@ mod tests {
         let instruction = transfer(&sender, &recipient, 2_000_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok()); // Should pass because sender is not fee payer
+        assert!(validator.validate_transaction(&transaction).await.is_ok()); // Should pass because sender is not fee payer
 
         // Test multiple transfers
         let instructions =
             vec![transfer(&sender, &recipient, 500_000), transfer(&sender, &recipient, 500_000)];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -735,7 +711,7 @@ mod tests {
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
 
         // Test disallowed program
         let fake_program = Pubkey::new_unique();
@@ -747,7 +723,7 @@ mod tests {
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction, None).await.is_err());
+        assert!(validator.validate_transaction(&transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -773,7 +749,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
         let mut transaction = new_unsigned_versioned_transaction(message);
         transaction.signatures = vec![Default::default(); 3]; // Add 3 dummy signatures
-        assert!(validator.validate_transaction(&transaction, None).await.is_err());
+        assert!(validator.validate_transaction(&transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -793,13 +769,13 @@ mod tests {
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
 
         // Test SignAndSend mode without fee payer (should succeed)
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], None)); // No fee payer specified
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -816,7 +792,7 @@ mod tests {
         // Create an empty message using Message::new with empty instructions
         let message = VersionedMessage::Legacy(Message::new(&[], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction, None).await.is_err());
+        assert!(validator.validate_transaction(&transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -839,7 +815,7 @@ mod tests {
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&transaction, None).await.is_err());
+        assert!(validator.validate_transaction(&transaction).await.is_err());
     }
 
     #[test]
@@ -934,7 +910,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
 
         // Test with allow_sol_transfers = false
         let config = ValidationConfig::test_default()
@@ -952,7 +928,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction, None).await.is_err());
+        assert!(validator.validate_transaction(&transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -973,7 +949,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
 
         // Test with allow_assign = false
         let config = ValidationConfig::test_default()
@@ -988,7 +964,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction, None).await.is_err());
+        assert!(validator.validate_transaction(&transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1020,7 +996,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
 
         // Test with allow_spl_transfers = false
         let config = ValidationConfig::test_default()
@@ -1047,7 +1023,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction, None).await.is_err());
+        assert!(validator.validate_transaction(&transaction).await.is_err());
 
         // Test with other account as source - should always pass
         let other_signer = Pubkey::new_unique();
@@ -1064,7 +1040,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -1099,7 +1075,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
 
         // Test with allow_token2022_transfers = false
         let config = ValidationConfig::test_default()
@@ -1129,7 +1105,7 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer is not allowed to be source
-        assert!(validator.validate_transaction(&transaction, None).await.is_err());
+        assert!(validator.validate_transaction(&transaction).await.is_err());
 
         // Test with other account as source - should always pass
         let other_signer = Pubkey::new_unique();
@@ -1149,7 +1125,7 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should pass because fee payer is not the source
-        assert!(validator.validate_transaction(&transaction, None).await.is_ok());
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
     }
 
     #[test]
