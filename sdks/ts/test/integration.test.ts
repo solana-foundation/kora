@@ -98,6 +98,8 @@ describe("KoraClient Integration Tests", () => {
       expect(fee).toBeDefined();
       expect(typeof fee.fee_in_lamports).toBe("number");
       expect(fee.fee_in_lamports).toBeGreaterThan(0);
+      expect(typeof fee.fee_in_token).toBe("number");
+      expect(fee.fee_in_token).toBeGreaterThan(0);
     });
 
     it("should sign transaction", async () => {

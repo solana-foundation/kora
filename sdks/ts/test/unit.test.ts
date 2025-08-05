@@ -161,7 +161,7 @@ describe('KoraClient Unit Tests', () => {
                 transaction: 'base64_encoded_transaction',
                 fee_token: 'SOL',
             };
-            const mockResponse: EstimateTransactionFeeResponse = { fee_in_lamports: 5000 };
+            const mockResponse: EstimateTransactionFeeResponse = { fee_in_lamports: 5000, fee_in_token: 25 };
 
             await testSuccessfulRpcMethod(
                 'estimateTransactionFee',

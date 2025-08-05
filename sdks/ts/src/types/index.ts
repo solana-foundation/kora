@@ -59,6 +59,7 @@ export interface GetSupportedTokensResponse {
 
 export interface EstimateTransactionFeeResponse {
   fee_in_lamports: number;
+  fee_in_token: number;
 }
 
 /**
