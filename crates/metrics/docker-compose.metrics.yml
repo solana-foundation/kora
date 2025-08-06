@@ -1,23 +1,4 @@
 services:
-  kora:
-    build:
-      context: ../../
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    volumes:
-      - ../../kora.toml:/app/kora.toml
-      - ../../.env:/app/.env:ro
-    environment:
-      - RUST_LOG=info
-    env_file:
-      - ../../.env
-    command: 
-      - sh
-      - -c
-      - 'kora-rpc --config /app/kora.toml --private-key "$$KORA_PRIVATE_KEY"'
-    restart: unless-stopped
-
   prometheus:
     image: prom/prometheus:latest
     ports:
@@ -30,6 +11,8 @@ services:
       - "--web.console.libraries=/etc/prometheus/console_libraries"
       - "--web.console.templates=/etc/prometheus/consoles"
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Allow access to host machine
 
   grafana:
     image: grafana/grafana:latest

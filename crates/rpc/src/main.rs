@@ -14,7 +14,7 @@ use kora_lib::{
     state::init_signer,
 };
 use rpc::KoraRpc;
-use server::run_rpc_server;
+use server::{run_rpc_server, ServerHandles};
 
 #[tokio::main]
 async fn main() {
@@ -68,15 +68,20 @@ async fn main() {
         });
     }
 
-    let rpc_server = KoraRpc::new(rpc_client, config.validation, config.kora);
-    let server_handle =
-        run_rpc_server(rpc_server, args.port.unwrap_or(8080)).await.unwrap_or_else(|e| {
-            log::error!("Server start failed: {e}");
-            std::process::exit(1);
-        });
+    let rpc_server = KoraRpc::new(rpc_client, config.validation.clone(), config.kora.clone());
+    let ServerHandles { rpc_handle, metrics_handle } =
+        run_rpc_server(rpc_server, args.port.unwrap_or(8080), &config.metrics)
+            .await
+            .unwrap_or_else(|e| {
+                log::error!("Server start failed: {e}");
+                std::process::exit(1);
+            });
 
     tokio::signal::ctrl_c().await.unwrap();
-    server_handle.stop().unwrap();
+    rpc_handle.stop().unwrap();
+    if let Some(handle) = metrics_handle {
+        handle.stop().unwrap();
+    }
 }
 
 fn setup_logging(format: &LoggingFormat) {

@@ -96,10 +96,6 @@ pub struct RpcArgs {
     /// Logging Format
     #[arg(long, default_value = "standard")]
     pub logging_format: LoggingFormat,
-
-    /// Metrics
-    #[arg(long, default_value = None)]
-    pub metrics_endpoint: Option<String>,
 }
 
 // CLI-specific arguments

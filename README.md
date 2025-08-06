@@ -66,7 +66,6 @@ kora-rpc -- [OPTIONS]
 | `-p, --port <PORT>`                                   | Port number for the RPC server         | 8080                  |
 | `--rpc-url <RPC_URL>`                                 | RPC URL to connect to                  | http://127.0.0.1:8899 |
 | `--logging-format <FORMAT>`                           | Logging format (standard or json)      | standard              |
-| `--metrics-endpoint <ENDPOINT>`                       | Optional metrics endpoint URL          | -                     |
 | `--private-key <PRIVATE_KEY>`                         | Private key for signing (see formats below) | -                     |
 | `--config <FILE>`                                     | Path to kora.toml config file          | kora.toml             |
 

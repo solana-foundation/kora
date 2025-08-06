@@ -58,13 +58,12 @@ sha2 = { workspace = true }
 hex = "0.4.3"
 http-body = "1.0.1"
 http-body-util = { workspace = true }
-kora-metrics = { workspace = true, optional = true }
+kora-metrics = { workspace = true }
 bytes = { workspace = true }
 
 [features]
-default = ["metrics"]
+default = []
 docs = []
-metrics = ["dep:kora-metrics"]
 
 [dev-dependencies]
 tokio = { workspace = true }

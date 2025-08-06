@@ -5,20 +5,35 @@ use std::task::{Context, Poll};
 use tower::{Layer, Service};
 
 /// Layer that intercepts /metrics requests and returns Prometheus metrics directly
-#[derive(Clone, Default)]
-pub struct MetricsHandlerLayer;
+#[derive(Clone)]
+pub struct MetricsHandlerLayer {
+    endpoint: String,
+}
+
+impl MetricsHandlerLayer {
+    pub fn new(endpoint: String) -> Self {
+        Self { endpoint }
+    }
+}
+
+impl Default for MetricsHandlerLayer {
+    fn default() -> Self {
+        Self { endpoint: "/metrics".to_string() }
+    }
+}
 
 impl<S> Layer<S> for MetricsHandlerLayer {
     type Service = MetricsHandlerService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        MetricsHandlerService { inner }
+        MetricsHandlerService { inner, endpoint: self.endpoint.clone() }
     }
 }
 
 #[derive(Clone)]
 pub struct MetricsHandlerService<S> {
     inner: S,
+    endpoint: String,
 }
 
 impl<S> Service<Request<Body>> for MetricsHandlerService<S>
@@ -36,7 +51,8 @@ where
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         // Check if this is a metrics request
-        if req.uri().path() == "/metrics" && req.method() == http::Method::GET {
+        let endpoint = self.endpoint.clone();
+        if req.uri().path() == endpoint && req.method() == http::Method::GET {
             // Return metrics directly
             Box::pin(async move {
                 match crate::gather() {

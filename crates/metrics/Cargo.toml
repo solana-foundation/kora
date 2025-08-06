@@ -5,6 +5,10 @@ edition = "2021"
 description = "A Rust library for Kora metrics"
 license = "MIT"
 
+[[bin]]
+name = "update-config"
+path = "src/bin/update-config.rs"
+
 [dependencies]
 prometheus = { workspace = true }
 tower = { workspace = true }
@@ -14,7 +18,9 @@ futures-util = { workspace = true }
 jsonrpsee = { workspace = true }
 serde_json = { workspace = true }
 kora-lib = { workspace = true }
-
+anyhow = { workspace = true }
+log = { workspace = true }
+regex = "1.10"
 
 [lib]
 name = "kora_metrics"
