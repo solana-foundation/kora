@@ -195,6 +195,12 @@ Use the sample Dockerfile to deploy on any container platform:
 
 *More integration guides coming soon*
 
+## Monitoring
+
+Kora provides a `/metrics` endpoint that provides real-time performance data in Prometheus format.
+
+**[→ Metrics Documentation](./MONITORING.md)**
+
 
 ## Need Help?
 

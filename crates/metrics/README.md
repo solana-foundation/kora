@@ -20,3 +20,7 @@ This crate provides comprehensive metrics collection and monitoring for the Kora
   - Response Time Percentiles (95th/50th)
   - Total Request Counter
   - Request Distribution by Method
+
+## Additional Documentation
+
+- [Kora Monitoring Guide](../../docs/operators/MONITORING.md)
