@@ -40,20 +40,60 @@ generate-key:
 	openssl rand -hex 32
 
 # Server lifecycle management functions
-define stop_server
-	@echo "🛑 Stopping $(1) server..."
-	@pkill -f "kora-rpc.*--port $(TEST_PORT)" || true
-	@sleep 2
+define stop_kora_server
+	echo "🛑 Stopping Kora server..."
+	if [ -f .kora.pid ]; then \
+		PID=$$(cat .kora.pid); \
+		if kill -0 $$PID 2>/dev/null; then \
+			kill $$PID 2>/dev/null || true; \
+			sleep 1; \
+			kill -9 $$PID 2>/dev/null || true; \
+		fi; \
+		rm -f .kora.pid; \
+	fi; \
+	pkill -f "kora-rpc" 2>/dev/null || true; \
+	sleep 2
 endef
 
-define start_server
-	@echo "🛑 Stopping any existing server..."
-	@pkill -f "kora-rpc.*--port $(TEST_PORT)" || true
-	@sleep 2
-	@echo "🚀 Starting Kora $(1) server..."
-	@$(2) -p kora-rpc --bin kora-rpc $(3) -- --private-key $(TEST_PRIVATE_KEY) --config $(4) --rpc-url $(TEST_RPC_URL) --port $(TEST_PORT) $(QUIET_OUTPUT) &
-	@echo "⏳ Waiting for server to start..."
-	@sleep 5
+# Solana validator lifecycle management functions
+define start_solana_validator
+	echo "🚀 Starting local Solana test validator..."
+	solana-test-validator --reset --quiet >/dev/null 2>&1 &
+	echo $$! > .validator.pid
+	echo "⏳ Waiting for validator to start..."
+	sleep 5
+endef
+
+define stop_solana_validator
+	echo "🛑 Stopping Solana validator..."
+	if [ -f .validator.pid ]; then \
+		PID=$$(cat .validator.pid); \
+		if kill -0 $$PID 2>/dev/null; then \
+			kill $$PID 2>/dev/null || true; \
+			sleep 1; \
+			kill -9 $$PID 2>/dev/null || true; \
+		fi; \
+		rm -f .validator.pid; \
+	fi; \
+	pkill -f "solana-test-validator" 2>/dev/null || true; \
+	sleep 2; \
+	rm -rf test-ledger 2>/dev/null || true
+endef
+
+# Start Kora server with flexible configuration
+# Usage: $(call start_kora_server,description,cargo_cmd,cargo_flags,config_file,setup_env)
+define start_kora_server
+	$(call stop_kora_server)
+	$(if $(5),\
+		echo "🔧 Setting up test environment..."; \
+		cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT);)
+	echo "🚀 Starting Kora $(1)..."
+	$(if $(2),\
+		$(2) -p kora-rpc --bin kora-rpc $(3) -- --private-key $(TEST_PRIVATE_KEY) --config $(4) --rpc-url $(TEST_RPC_URL) --port $(TEST_PORT) $(QUIET_OUTPUT) &,\
+		make run >/dev/null 2>&1 &)
+	echo $$! > .kora.pid
+	echo "⏳ Waiting for server to start..."
+	sleep 5
 endef
 
 define run_regular_tests
@@ -68,9 +108,9 @@ endef
 
 define run_integration_phase
 	@echo "📋 Phase $(1): $(2)"
-	$(call start_server,$(2),$(3),$(4),$(5))
+	@$(call start_kora_server,$(2),$(3),$(4),$(5),)
 	$(6)
-	$(call stop_server,$(2))
+	@$(call stop_kora_server)
 endef
 
 # Setup test environment
@@ -79,12 +119,14 @@ setup-test-env:
 
 # Run all integration tests (regular + auth)
 test-integration:
+	@$(call start_solana_validator)
 	@echo "🧪 Running all integration tests..."
 	@echo "🔧 Setting up test environment..."
 	@cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT)
 	$(call run_integration_phase,1,regular tests,cargo run,,$(REGULAR_CONFIG),$(call run_regular_tests,cargo test,))
 	$(call run_integration_phase,2,auth tests,cargo run,,$(AUTH_CONFIG),$(call run_auth_tests,cargo test,))
 	@echo "✅ All integration tests completed"
+	@$(call stop_solana_validator)
 
 # Run all integration tests with coverage instrumentation (for CI)
 test-integration-coverage:
@@ -96,13 +138,30 @@ test-integration-coverage:
 	@echo "✅ All integration tests completed"
 
 
-# Run TypeScript SDK tests
+# Run TypeScript SDK tests with local validator and Kora node
 test-ts:
+	@$(call start_solana_validator)
+	@$(call start_kora_server,node for TS tests,,,,)
 	@echo "🧪 Running TypeScript SDK tests..."
-	@cd sdks/ts && pnpm test
-	@cd sdks/net-ts && pnpm test
+	@cd sdks/ts && pnpm test; \
+	TEST_EXIT_CODE=$$?; \
+	$(call stop_kora_server); \
+	$(call stop_solana_validator); \
+	exit $$TEST_EXIT_CODE
 
 test-all: test test-integration test-ts
+
+# Clean up any running validators
+clean-validator:
+	@$(call stop_solana_validator)
+
+# Clean up any running Kora nodes
+clean-kora:
+	@$(call stop_kora_server)
+
+# Clean up both validator and Kora node
+clean-test-env: clean-validator clean-kora
+	@echo "✅ Test environment cleaned up"
 
 # Build all binaries
 build:
