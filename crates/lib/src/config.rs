@@ -8,6 +8,7 @@ use toml;
 use utoipa::ToSchema;
 
 use crate::{
+    constant::DEFAULT_MAX_TIMESTAMP_AGE,
     error::KoraError,
     oracle::PriceSource,
     token::check_valid_tokens,
@@ -177,6 +178,10 @@ impl ValidationConfig {
     }
 }
 
+fn default_max_timestamp_age() -> i64 {
+    DEFAULT_MAX_TIMESTAMP_AGE
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct KoraConfig {
     pub rate_limit: u64,
@@ -184,6 +189,8 @@ pub struct KoraConfig {
     pub enabled_methods: EnabledMethods,
     pub api_key: Option<String>,
     pub hmac_secret: Option<String>,
+    #[serde(default = "default_max_timestamp_age")]
+    pub max_timestamp_age: i64,
     // pub redis_url: String,
 }
 
@@ -332,7 +339,7 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use crate::oracle::PriceSource;
+    use crate::{constant::DEFAULT_MAX_TIMESTAMP_AGE, oracle::PriceSource};
 
     use super::*;
     use std::fs;
@@ -447,6 +454,7 @@ mod tests {
                 rate_limit: 100,
                 api_key: None,
                 hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
                 enabled_methods: EnabledMethods::default(),
             },
         };
@@ -647,6 +655,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 api_key: None,
                 hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
             },
         };
 
@@ -688,6 +697,7 @@ mod tests {
                 },
                 api_key: None,
                 hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
             },
         };
 
@@ -725,6 +735,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 api_key: None,
                 hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
             },
         };
 
@@ -758,6 +769,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 api_key: None,
                 hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
             },
         };
 
@@ -798,6 +810,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 api_key: None,
                 hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
             },
         };
 
@@ -835,6 +848,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 api_key: None,
                 hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
             },
         };
 
@@ -877,6 +891,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 api_key: None,
                 hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
             },
         };
 
