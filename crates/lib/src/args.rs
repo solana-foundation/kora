@@ -85,6 +85,7 @@ pub struct CommonArgs {
 
 // RPC-specific arguments
 #[derive(Debug, Parser)]
+#[command(name = "kora-rpc", version)]
 pub struct RpcArgs {
     #[command(flatten)]
     pub common: CommonArgs,

@@ -56,6 +56,7 @@ The `[kora]` section configures core server behavior:
 rate_limit = 100
 api_key = "kora_live_sk_1234567890abcdef"
 hmac_secret = "kora_hmac_your-strong-hmac-secret-key-here"
+max_timestamp_age = 300
 ```
 
 
@@ -64,7 +65,7 @@ hmac_secret = "kora_hmac_your-strong-hmac-secret-key-here"
 | `rate_limit` | Global rate limit (requests per second) across all clients | ✅ | number |
 | `api_key` | API key for simple authentication | ❌ | string |
 | `hmac_secret` | HMAC secret for signature-based authentication (min 32 chars) | ❌ | string |
-
+| `max_timestamp_age` | Maximum age of an HMAC timestamp in seconds | ❌ (default: 300) | number |
 
 > *Note: `api_key` and `hmac_secret` set a global authentication policy for all clients. For detailed authentication setup, see [Authentication Guide](./AUTHENTICATION.md).*
 
