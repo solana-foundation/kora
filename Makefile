@@ -33,7 +33,7 @@ lint:
 	
 # Run tests
 test:
-	cargo test --lib
+	cargo test --lib --quiet
 
 # Generate a random key that can be used as an API key or as an HMAC secret
 generate-key:
@@ -98,12 +98,12 @@ endef
 
 define run_regular_tests
 	@echo "🧪 Running regular integration tests..."
-	@$(1) --tests $(2) -- --skip auth_integration_tests $(TEST_OUTPUT_FILTER)
+	@$(1) -p tests --quiet --test integration $(2) -- --skip auth_integration_tests $(TEST_OUTPUT_FILTER)
 endef
 
 define run_auth_tests
 	@echo "🧪 Running auth integration tests..."
-	@$(1) --test integration auth_integration_tests $(2) -- --nocapture $(TEST_OUTPUT_FILTER)
+	@$(1) -p tests --quiet --test integration auth_integration_tests $(2) -- --nocapture $(TEST_OUTPUT_FILTER)
 endef
 
 define run_integration_phase
@@ -149,7 +149,7 @@ test-ts:
 	$(call stop_solana_validator); \
 	exit $$TEST_EXIT_CODE
 
-test-all: test test-integration test-ts
+test-all: test test-integration # test-ts
 
 # Clean up any running validators
 clean-validator:

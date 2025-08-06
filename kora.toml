@@ -37,6 +37,8 @@ allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
 allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
 allow_token2022_transfers = true # Allow fee payer to be source in Token2022 transfers
 allow_assign = true             # Allow fee payer to use Assign instruction
+allow_burn = true               # Allow fee payer to burn tokens
+allow_close_account = true      # Allow fee payer to close token accounts
 
 [validation.price]
 type = "margin" # free / margin / fixed

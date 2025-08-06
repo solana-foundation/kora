@@ -39,3 +39,5 @@ allow_sol_transfers = true
 allow_spl_transfers = true
 allow_token2022_transfers = true
 allow_assign = true
+allow_burn = true
+allow_close_account = true
