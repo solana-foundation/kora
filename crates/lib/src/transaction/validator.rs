@@ -281,6 +281,12 @@ impl TransactionValidator {
                         spl_token::instruction::TokenInstruction::CloseAccount { .. } => {
                             check_fee_payer(2, self.fee_payer_policy.allow_close_account)
                         }
+                        spl_token::instruction::TokenInstruction::Approve { .. } => {
+                            check_fee_payer(2, self.fee_payer_policy.allow_approve)
+                        }
+                        spl_token::instruction::TokenInstruction::ApproveChecked { .. } => {
+                            check_fee_payer(3, self.fee_payer_policy.allow_approve)
+                        }
                         _ => Ok(false),
                     }
                 } else {
@@ -304,6 +310,12 @@ impl TransactionValidator {
                         }
                         spl_token_2022::instruction::TokenInstruction::CloseAccount => {
                             check_fee_payer(2, self.fee_payer_policy.allow_close_account)
+                        }
+                        spl_token_2022::instruction::TokenInstruction::Approve { .. } => {
+                            check_fee_payer(2, self.fee_payer_policy.allow_approve)
+                        }
+                        spl_token_2022::instruction::TokenInstruction::ApproveChecked { .. } => {
+                            check_fee_payer(3, self.fee_payer_policy.allow_approve)
                         }
                         _ => Ok(false),
                     }
@@ -1461,6 +1473,83 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fee_payer_policy_approve() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let delegate = Pubkey::new_unique();
+
+        // Test with allow_approve = true (default)
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let approve_ix = spl_token::instruction::approve(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &delegate,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should pass because allow_approve is true by default
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
+
+        // Test with allow_approve = false
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy { allow_approve: false, ..Default::default() });
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let approve_ix = spl_token::instruction::approve(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &delegate,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should fail because fee payer cannot approve when allow_approve is false
+        assert!(validator.validate_transaction(&transaction).await.is_err());
+
+        // Test approve_checked instruction
+        let mint = Pubkey::new_unique();
+        let approve_checked_ix = spl_token::instruction::approve_checked(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &mint,
+            &delegate,
+            &fee_payer,
+            &[],
+            1000,
+            2,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should also fail for approve_checked
+        assert!(validator.validate_transaction(&transaction).await.is_err());
+    }
+
+    #[tokio::test]
     async fn test_fee_payer_policy_token2022_burn() {
         let fee_payer = Pubkey::new_unique();
         let fee_payer_token_account = Pubkey::new_unique();
@@ -1525,4 +1614,82 @@ mod tests {
         // Should fail for Token2022 close account
         assert!(validator.validate_transaction(&transaction).await.is_err());
     }
+
+    #[tokio::test]
+    async fn test_fee_payer_policy_token2022_approve() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let delegate = Pubkey::new_unique();
+
+        // Test with allow_approve = true (default)
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let approve_ix = spl_token_2022::instruction::approve(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &delegate,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should pass because allow_approve is true by default
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
+
+        // Test with allow_approve = false
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy { allow_approve: false, ..Default::default() });
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let approve_ix = spl_token_2022::instruction::approve(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &delegate,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should fail because fee payer cannot approve when allow_approve is false
+        assert!(validator.validate_transaction(&transaction).await.is_err());
+
+        // Test approve_checked instruction
+        let mint = Pubkey::new_unique();
+        let approve_checked_ix = spl_token_2022::instruction::approve_checked(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &mint,
+            &delegate,
+            &fee_payer,
+            &[],
+            1000,
+            2,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should also fail for approve_checked
+        assert!(validator.validate_transaction(&transaction).await.is_err());
+    }
+
 }
