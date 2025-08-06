@@ -274,6 +274,13 @@ impl TransactionValidator {
                         spl_token::instruction::TokenInstruction::TransferChecked { .. } => {
                             check_fee_payer(3, self.fee_payer_policy.allow_spl_transfers)
                         }
+                        spl_token::instruction::TokenInstruction::Burn { .. }
+                        | spl_token::instruction::TokenInstruction::BurnChecked { .. } => {
+                            check_fee_payer(2, self.fee_payer_policy.allow_burn)
+                        }
+                        spl_token::instruction::TokenInstruction::CloseAccount { .. } => {
+                            check_fee_payer(2, self.fee_payer_policy.allow_close_account)
+                        }
                         _ => Ok(false),
                     }
                 } else {
@@ -291,6 +298,13 @@ impl TransactionValidator {
                         spl_token_2022::instruction::TokenInstruction::TransferChecked {
                             ..
                         } => check_fee_payer(3, self.fee_payer_policy.allow_token2022_transfers),
+                        spl_token_2022::instruction::TokenInstruction::Burn { .. }
+                        | spl_token_2022::instruction::TokenInstruction::BurnChecked { .. } => {
+                            check_fee_payer(2, self.fee_payer_policy.allow_burn)
+                        }
+                        spl_token_2022::instruction::TokenInstruction::CloseAccount => {
+                            check_fee_payer(2, self.fee_payer_policy.allow_close_account)
+                        }
                         _ => Ok(false),
                     }
                 } else {
@@ -1311,5 +1325,204 @@ mod tests {
         let outflow =
             validator.calculate_total_outflow(&message, message.static_account_keys()).unwrap();
         assert_eq!(outflow, 0, "CreateAccount funded by other account should not affect outflow");
+    }
+
+    #[tokio::test]
+    async fn test_fee_payer_policy_burn() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Test with allow_burn = true (default)
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let burn_ix = spl_token::instruction::burn(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &mint,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should pass because allow_burn is true by default
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
+
+        // Test with allow_burn = false
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy { allow_burn: false, ..Default::default() });
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let burn_ix = spl_token::instruction::burn(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &mint,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should fail because fee payer cannot burn tokens when allow_burn is false
+        assert!(validator.validate_transaction(&transaction).await.is_err());
+
+        // Test burn_checked instruction
+        let burn_checked_ix = spl_token::instruction::burn_checked(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &mint,
+            &fee_payer,
+            &[],
+            1000,
+            2,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[burn_checked_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should also fail for burn_checked
+        assert!(validator.validate_transaction(&transaction).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fee_payer_policy_close_account() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+
+        // Test with allow_close_account = true (default)
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let close_ix = spl_token::instruction::close_account(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &destination,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should pass because allow_close_account is true by default
+        assert!(validator.validate_transaction(&transaction).await.is_ok());
+
+        // Test with allow_close_account = false
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy {
+                allow_close_account: false,
+                ..Default::default()
+            });
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let close_ix = spl_token::instruction::close_account(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &destination,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should fail because fee payer cannot close accounts when allow_close_account is false
+        assert!(validator.validate_transaction(&transaction).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fee_payer_policy_token2022_burn() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Test with allow_burn = false for Token2022
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy { allow_burn: false, ..Default::default() });
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let burn_ix = spl_token_2022::instruction::burn(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &mint,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should fail for Token2022 burn
+        assert!(validator.validate_transaction(&transaction).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fee_payer_policy_token2022_close_account() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+
+        // Test with allow_close_account = false for Token2022
+        let config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy {
+                allow_close_account: false,
+                ..Default::default()
+            });
+
+        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+
+        let close_ix = spl_token_2022::instruction::close_account(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &destination,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let transaction = new_unsigned_versioned_transaction(message);
+
+        // Should fail for Token2022 close account
+        assert!(validator.validate_transaction(&transaction).await.is_err());
     }
 }

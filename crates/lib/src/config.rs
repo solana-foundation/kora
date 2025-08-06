@@ -27,6 +27,8 @@ pub struct FeePayerPolicy {
     pub allow_spl_transfers: bool,
     pub allow_token2022_transfers: bool,
     pub allow_assign: bool,
+    pub allow_burn: bool,
+    pub allow_close_account: bool,
 }
 
 impl Default for FeePayerPolicy {
@@ -36,6 +38,8 @@ impl Default for FeePayerPolicy {
             allow_spl_transfers: true,
             allow_token2022_transfers: true,
             allow_assign: true,
+            allow_burn: true,
+            allow_close_account: true,
         }
     }
 }
