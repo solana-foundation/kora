@@ -281,6 +281,37 @@ impl Config {
             errors.push(format!("Invalid disallowed account address: {e}"));
         }
 
+        // Check if fees are enabled (not Free pricing)
+        let fees_enabled = !matches!(self.validation.price.model, PriceModel::Free);
+
+        if fees_enabled {
+            // If fees enabled, token or token22 must be enabled in allowed_programs
+            let has_token_program =
+                self.validation.allowed_programs.contains(&SPL_TOKEN_PROGRAM_ID.to_string());
+            let has_token22_program =
+                self.validation.allowed_programs.contains(&TOKEN_2022_PROGRAM_ID.to_string());
+
+            if !has_token_program && !has_token22_program {
+                errors.push("When fees are enabled, at least one token program (SPL Token or Token2022) must be in allowed_programs".to_string());
+            }
+
+            // If fees enabled, allowed_spl_paid_tokens can't be empty
+            if self.validation.allowed_spl_paid_tokens.is_empty() {
+                errors.push(
+                    "When fees are enabled, allowed_spl_paid_tokens cannot be empty".to_string(),
+                );
+            }
+        }
+
+        // Validate that all tokens in allowed_spl_paid_tokens are also in allowed_tokens
+        for paid_token in &self.validation.allowed_spl_paid_tokens {
+            if !self.validation.allowed_tokens.contains(paid_token) {
+                errors.push(format!(
+                    "Token {paid_token} in allowed_spl_paid_tokens must also be in allowed_tokens"
+                ));
+            }
+        }
+
         // Validate margin (error if negative)
         match &self.validation.price.model {
             PriceModel::Fixed { amount, token } => {
@@ -678,9 +709,7 @@ mod tests {
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Mock, // Should warn
                 fee_payer_policy: FeePayerPolicy::default(),
-                price: PriceConfig {
-                    model: PriceModel::Margin { margin: 1.5 }, // Should warn - high margin
-                },
+                price: PriceConfig { model: PriceModel::Free },
             },
             kora: KoraConfig {
                 rate_limit: 0, // Should warn
@@ -713,7 +742,6 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("Max signatures is 0")));
         assert!(warnings.iter().any(|w| w.contains("Using Mock price source")));
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
-        assert!(warnings.iter().any(|w| w.contains("Margin is 150%")));
     }
 
     #[tokio::test]
@@ -728,7 +756,7 @@ mod tests {
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
-                price: PriceConfig::default(),
+                price: PriceConfig { model: PriceModel::Free },
             },
             kora: KoraConfig {
                 rate_limit: 100,
@@ -871,7 +899,10 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
@@ -903,5 +934,75 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.contains("Fixed price amount is 0 - transactions will be free")));
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_fee_validation_errors() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()], // Missing token programs
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![], // Empty when fees enabled - should error
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+            },
+        };
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = config.validate_with_result(&rpc_client).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors.iter().any(|e| e.contains("When fees are enabled, at least one token program (SPL Token or Token2022) must be in allowed_programs")));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("When fees are enabled, allowed_spl_paid_tokens cannot be empty")));
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_paid_tokens_not_in_allowed_tokens() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![
+                    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(), // Not in allowed_tokens
+                ],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+            },
+        };
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = config.validate_with_result(&rpc_client).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors.iter().any(|e| e.contains("Token EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v in allowed_spl_paid_tokens must also be in allowed_tokens")));
     }
 }
