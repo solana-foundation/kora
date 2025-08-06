@@ -10,9 +10,10 @@ Kora is a **fee abstraction layer** for Solana that lets users pay transaction f
 
 ### Example Use Cases
 
-- **Cash Apps**: Let users send USDC without needing SOL for fees
+- **Neobanks**: Let users send USDC without needing SOL for fees
 - **Gaming**: Players spend in-game tokens for all transactions  
 - **Liquid Staking**: Enable users of your dApp to hold/use your liquid staking tokens rather than Native SOL
+- **Loyalty Rewards**: Reward users with a certain number of subsidized fees based on their loyalty level
 
 ### Key Features
 
