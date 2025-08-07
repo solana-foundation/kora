@@ -3,6 +3,7 @@ use kora_lib::{
     args::CliArgs,
     config::load_config,
     error::KoraError,
+    get_signer,
     rpc::{create_rpc_client, get_rpc_client},
     signer::init::init_signer_type,
     state::init_signer,
@@ -61,8 +62,10 @@ async fn main() -> Result<(), KoraError> {
 
     let rpc_client = get_rpc_client(&cli.args.common.rpc_url);
 
-    if cli.args.common.validate_config {
-        let _ = config.validate_with_result(rpc_client.as_ref()).await;
+    if cli.args.common.validate_config || cli.args.common.validate_config_with_rpc {
+        let skip_rpc_validation = !cli.args.common.validate_config_with_rpc;
+        let _ = config.validate_with_result(rpc_client.as_ref(), skip_rpc_validation).await;
+        std::process::exit(0);
     } else {
         // Normal validation for non-validate-config mode
         if let Err(e) = config.validate(rpc_client.as_ref()).await {
@@ -125,7 +128,16 @@ async fn main() -> Result<(), KoraError> {
             let mut resolved_transaction = VersionedTransactionResolved::new(&transaction);
             resolved_transaction.resolve_addresses(&rpc_client).await?;
 
-            let fee = estimate_transaction_fee(&rpc_client, &resolved_transaction).await?;
+            let fee_payer = get_signer()?;
+            let fee_payer_pubkey = fee_payer.solana_pubkey();
+
+            let fee = estimate_transaction_fee(
+                &rpc_client,
+                &resolved_transaction,
+                Some(&fee_payer_pubkey),
+            )
+            .await?;
+
             println!("Estimated fee: {fee} lamports");
         }
         Some(Commands::SignIfPaid { transaction }) => {

@@ -5,95 +5,112 @@ use clap::{command, Parser};
 #[derive(Debug, Parser)]
 #[command(name = "kora")]
 pub struct CommonArgs {
-    /// RPC URL
+    /// Solana RPC endpoint URL
     #[arg(long, env = "RPC_URL", default_value = "http://127.0.0.1:8899")]
     pub rpc_url: String,
 
-    /// API key for the Kora API
-    #[arg(long, env = "KORA_API_KEY")]
+    /// API key for authenticating requests to the Kora server (optional) - can be set in `kora.toml`
+    #[arg(long, env = "KORA_API_KEY", help_heading = "Authentication")]
     pub api_key: Option<String>,
 
-    /// HMAC secret for the Kora API
-    #[arg(long, env = "KORA_HMAC_SECRET")]
+    /// HMAC secret for request signature authentication (optional, provides stronger security than API key) - can be set in `kora.toml`
+    #[arg(long, env = "KORA_HMAC_SECRET", help_heading = "Authentication")]
     pub hmac_secret: Option<String>,
 
-    /// Base58-encoded private key for signing
-    #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present_any = ["skip_signer", "turnkey_signer", "vault_signer", "privy_signer"])]
+    /// Private key for transaction signing (base58, u8 array, or path to JSON keypair file).
+    /// Required unless `skip_signer`, `turnkey_signer`, `vault_signer`, or `privy_signer` is set
+    #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present_any = ["skip_signer", "turnkey_signer", "vault_signer", "privy_signer"], help_heading = "Signing Options")]
     pub private_key: Option<String>,
 
-    /// Path to kora.toml config file
+    /// Path to Kora configuration file (TOML format)
     #[arg(long, default_value = "kora.toml")]
     pub config: String,
 
-    /// Skip loading the signer
-    #[arg(long = "no-load-signer")]
+    /// Skip signer initialization (useful for testing or operations that don't require signing)
+    #[arg(long = "no-load-signer", help_heading = "Signing Options")]
     pub skip_signer: bool,
 
-    /// Turnkey signer
-    #[arg(long = "with-turnkey-signer")]
+    /// Use Turnkey remote signer for secure key management
+    #[arg(long = "with-turnkey-signer", help_heading = "Turnkey Signer")]
     pub turnkey_signer: bool,
 
-    /// Turnkey API credentials
-    #[arg(long, env = "TURNKEY_API_PUBLIC_KEY")]
+    /// Turnkey API public key for authentication
+    #[arg(long, env = "TURNKEY_API_PUBLIC_KEY", help_heading = "Turnkey Signer")]
     pub turnkey_api_public_key: Option<String>,
 
-    #[arg(long, env = "TURNKEY_API_PRIVATE_KEY")]
+    /// Turnkey API private key for authentication
+    #[arg(long, env = "TURNKEY_API_PRIVATE_KEY", help_heading = "Turnkey Signer")]
     pub turnkey_api_private_key: Option<String>,
 
-    #[arg(long, env = "TURNKEY_ORGANIZATION_ID")]
+    /// Turnkey organization ID where keys are stored
+    #[arg(long, env = "TURNKEY_ORGANIZATION_ID", help_heading = "Turnkey Signer")]
     pub turnkey_organization_id: Option<String>,
 
-    #[arg(long, env = "TURNKEY_PRIVATE_KEY_ID")]
+    /// Turnkey private key ID to use for signing
+    #[arg(long, env = "TURNKEY_PRIVATE_KEY_ID", help_heading = "Turnkey Signer")]
     pub turnkey_private_key_id: Option<String>,
 
-    #[arg(long, env = "TURNKEY_PUBLIC_KEY")]
+    /// Turnkey public key (base58 encoded) for verification
+    #[arg(long, env = "TURNKEY_PUBLIC_KEY", help_heading = "Turnkey Signer")]
     pub turnkey_public_key: Option<String>,
 
-    /// Privy API Credentials
-    #[arg(long = "with-privy-signer")]
+    /// Use Privy remote signer for secure wallet management
+    #[arg(long = "with-privy-signer", help_heading = "Privy Signer")]
     pub privy_signer: bool,
 
-    /// Privy API credentials
-    #[arg(long, env = "PRIVY_APP_ID")]
+    /// Privy application ID for authentication
+    #[arg(long, env = "PRIVY_APP_ID", help_heading = "Privy Signer")]
     pub privy_app_id: Option<String>,
 
-    #[arg(long, env = "PRIVY_APP_SECRET")]
+    /// Privy application secret for authentication
+    #[arg(long, env = "PRIVY_APP_SECRET", help_heading = "Privy Signer")]
     pub privy_app_secret: Option<String>,
 
-    #[arg(long, env = "PRIVY_WALLET_ID")]
+    /// Privy wallet ID to use for signing
+    #[arg(long, env = "PRIVY_WALLET_ID", help_heading = "Privy Signer")]
     pub privy_wallet_id: Option<String>,
 
-    #[arg(long)]
+    /// Use HashiCorp Vault signer for enterprise key management
+    #[arg(long, help_heading = "Vault Signer")]
     pub vault_signer: bool,
 
-    #[arg(long, env = "VAULT_ADDR")]
+    /// HashiCorp Vault server address
+    #[arg(long, env = "VAULT_ADDR", help_heading = "Vault Signer")]
     pub vault_addr: Option<String>,
 
-    #[arg(long, env = "VAULT_TOKEN")]
+    /// HashiCorp Vault authentication token
+    #[arg(long, env = "VAULT_TOKEN", help_heading = "Vault Signer")]
     pub vault_token: Option<String>,
 
-    #[arg(long, env = "VAULT_KEY_NAME")]
+    /// Key name in Vault to use for signing
+    #[arg(long, env = "VAULT_KEY_NAME", help_heading = "Vault Signer")]
     pub vault_key_name: Option<String>,
 
-    #[arg(long, env = "VAULT_PUBKEY")]
+    /// Vault public key (base58 encoded) for verification
+    #[arg(long, env = "VAULT_PUBKEY", help_heading = "Vault Signer")]
     pub vault_pubkey: Option<String>,
 
-    /// Validate configuration file and show results
+    /// Validate configuration file and show results (fast, no RPC calls)
     #[arg(long)]
     pub validate_config: bool,
+
+    /// Validate configuration file with RPC validation (slower but more thorough)
+    #[arg(long)]
+    pub validate_config_with_rpc: bool,
 }
 
 // RPC-specific arguments
 #[derive(Debug, Parser)]
+#[command(name = "kora-rpc", author, version, about = "RPC server for Kora gasless relayer", long_about = None)]
 pub struct RpcArgs {
     #[command(flatten)]
     pub common: CommonArgs,
 
-    /// Port
+    /// HTTP port to listen on for RPC requests
     #[arg(short = 'p', long, default_value = "8080")]
     pub port: Option<u16>,
 
-    /// Logging Format
+    /// Output format for logs (standard or json)
     #[arg(long, default_value = "standard")]
     pub logging_format: LoggingFormat,
 }

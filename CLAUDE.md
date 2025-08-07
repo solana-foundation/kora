@@ -188,12 +188,6 @@ pnpm run build
 pnpm run test
 pnpm run lint
 pnpm run format
-
-# In sdks/net-ts/
-pnpm run build
-pnpm run test
-pnpm run lint
-pnpm run format
 ```
 
 ## Architecture Overview
@@ -282,14 +276,7 @@ cargo run -p kora-cli --bin kora-cli -- sign \
 ### TypeScript SDKs
 
 - **sdks/ts/** - Main TypeScript SDK for client integration
-- **sdks/net-ts/** - Network-specific SDK with SAS (Solana Attestation Standard) utilities
 - Provide typed interfaces for all RPC methods
-
-**SAS Setup Scripts (`sdks/net-ts/scripts/`):**
-- `setup-koranet-credential.ts` - Creates credentials for attestation
-- `setup-koranet-example-attestation.ts` - Example attestation creation  
-- `setup-koranet-schema.ts` - Schema setup for attestations
-- Used for initializing SAS-based credential and attestation systems
 
 ## Configuration & Environment
 

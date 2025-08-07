@@ -7,8 +7,6 @@ use kora_lib::{
 };
 use sha2::Sha256;
 
-const MAX_TIMESTAMP_AGE: i64 = 300; // 5 minutes in seconds (could make this configurable?)
-
 #[derive(Clone)]
 pub struct ApiKeyAuthLayer {
     api_key: String,
@@ -81,11 +79,12 @@ where
 #[derive(Clone)]
 pub struct HmacAuthLayer {
     secret: String,
+    max_timestamp_age: i64,
 }
 
 impl HmacAuthLayer {
-    pub fn new(secret: String) -> Self {
-        Self { secret }
+    pub fn new(secret: String, max_timestamp_age: i64) -> Self {
+        Self { secret, max_timestamp_age }
     }
 }
 
@@ -93,7 +92,11 @@ impl<S> tower::Layer<S> for HmacAuthLayer {
     type Service = HmacAuthService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        HmacAuthService { inner, secret: self.secret.clone() }
+        HmacAuthService {
+            inner,
+            secret: self.secret.clone(),
+            max_timestamp_age: self.max_timestamp_age,
+        }
     }
 }
 
@@ -101,6 +104,7 @@ impl<S> tower::Layer<S> for HmacAuthLayer {
 pub struct HmacAuthService<S> {
     inner: S,
     secret: String,
+    max_timestamp_age: i64,
 }
 
 impl<S> tower::Service<Request<Body>> for HmacAuthService<S>
@@ -123,6 +127,7 @@ where
 
     fn call(&mut self, request: Request<Body>) -> Self::Future {
         let secret = self.secret.clone();
+        let max_timestamp_age = self.max_timestamp_age;
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
@@ -161,7 +166,7 @@ where
                 .unwrap()
                 .as_secs() as i64;
 
-            if (now - ts).abs() > MAX_TIMESTAMP_AGE {
+            if (now - ts).abs() > max_timestamp_age {
                 return Ok(unauthorized_response);
             }
 
@@ -198,7 +203,7 @@ mod tests {
     use hmac::{Hmac, Mac};
     use http::Method;
     use jsonrpsee::server::logger::Body;
-    use kora_lib::constant::{X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP};
+    use kora_lib::constant::{DEFAULT_MAX_TIMESTAMP_AGE, X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP};
     use sha2::Sha256;
     use std::{
         future::Ready,
@@ -280,7 +285,7 @@ mod tests {
     #[tokio::test]
     async fn test_hmac_auth_valid_signature() {
         let secret = "test-secret";
-        let layer = HmacAuthLayer::new(secret.to_string());
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
         let mut service = layer.layer(MockService);
 
         let timestamp = std::time::SystemTime::now()
@@ -311,7 +316,7 @@ mod tests {
     #[tokio::test]
     async fn test_hmac_auth_invalid_signature() {
         let secret = "test-secret";
-        let layer = HmacAuthLayer::new(secret.to_string());
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
         let mut service = layer.layer(MockService);
 
         let timestamp = std::time::SystemTime::now()
@@ -337,7 +342,7 @@ mod tests {
     #[tokio::test]
     async fn test_hmac_auth_missing_headers() {
         let secret = "test-secret";
-        let layer = HmacAuthLayer::new(secret.to_string());
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
         let mut service = layer.layer(MockService);
 
         let request =
@@ -350,7 +355,7 @@ mod tests {
     #[tokio::test]
     async fn test_hmac_auth_expired_timestamp() {
         let secret = "test-secret";
-        let layer = HmacAuthLayer::new(secret.to_string());
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
         let mut service = layer.layer(MockService);
 
         // Timestamp from 10 minutes ago (expired)
@@ -381,7 +386,7 @@ mod tests {
     #[tokio::test]
     async fn test_hmac_auth_liveness_bypass() {
         let secret = "test-secret";
-        let layer = HmacAuthLayer::new(secret.to_string());
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
         let mut service = layer.layer(MockService);
 
         let liveness_body = r#"{"jsonrpc":"2.0","method":"liveness","params":[],"id":1}"#;
@@ -398,7 +403,7 @@ mod tests {
     #[tokio::test]
     async fn test_hmac_auth_malformed_timestamp() {
         let secret = "test-secret";
-        let layer = HmacAuthLayer::new(secret.to_string());
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
         let mut service = layer.layer(MockService);
 
         let body = r#"{"jsonrpc":"2.0","method":"test","id":1}"#;

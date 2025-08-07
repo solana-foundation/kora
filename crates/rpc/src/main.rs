@@ -29,8 +29,10 @@ async fn main() {
 
     let rpc_client = get_rpc_client(&args.common.rpc_url);
 
-    if args.common.validate_config {
-        let _ = config.validate_with_result(rpc_client.as_ref()).await;
+    if args.common.validate_config || args.common.validate_config_with_rpc {
+        let skip_rpc_validation = !args.common.validate_config_with_rpc;
+        let _ = config.validate_with_result(rpc_client.as_ref(), skip_rpc_validation).await;
+        std::process::exit(0);
     } else {
         // Normal validation for non-validate-config mode
         if let Err(e) = config.validate(rpc_client.as_ref()).await {

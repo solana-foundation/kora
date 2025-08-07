@@ -7,26 +7,6 @@ edition = { workspace = true }
 name = "integration"
 path = "integration_tests.rs"
 
-[[test]]
-name = "api_integration"
-path = "api_integration_tests.rs"
-
-[[test]]
-name = "token_integration"
-path = "token_integration_tests.rs"
-
-[[test]]
-name = "oracle"
-path = "integrations/oracle/mod.rs"
-
-[[test]]
-name = "integrations"
-path = "integrations/mod.rs"
-
-[[test]]
-name = "jupiter"
-path = "integrations/oracle/jupiter_tests.rs"
-
 [[bin]]
 name = "setup-test-env"
 path = "setup-test-env.rs"

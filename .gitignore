@@ -4,7 +4,6 @@
 .idea/
 .vscode/
 *.pdb
-Cargo.lock
 generated/
 
 # SDK
@@ -12,10 +11,13 @@ node_modules/
 dist/
 .env*
 
-test-ledger/
-
 # Coverage reports
 coverage/
 *.profraw
 
 .DS_Store
+
+# Make test files
+.validator.pid
+.kora.pid
+test-ledger/

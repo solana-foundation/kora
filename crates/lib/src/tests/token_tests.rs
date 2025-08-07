@@ -12,7 +12,6 @@ mod tests {
         signature::{Keypair, Signer},
         transaction::Transaction,
     };
-    use spl_associated_token_account;
     use spl_pod::{
         optional_keys::OptionalNonZeroPubkey,
         primitives::{PodU16, PodU64},

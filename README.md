@@ -105,16 +105,10 @@ make run
 
 ### Local Testing
 
-To run the tests locally, you need to set up a local validator and test environment.
+And run all tests:
 
 ```bash
-solana-test-validator -r
-```
-
-And run integration tests:
-
-```bash
-make test-integration
+make test-all
 ```
 
 ## Repository Structure

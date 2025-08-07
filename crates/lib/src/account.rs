@@ -1,139 +1,127 @@
-use super::{cache::TokenAccountCache, get_signer, KoraError, Signer};
-use crate::{token::TokenInterface, transaction::new_unsigned_versioned_transaction};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_message::{Message, VersionedMessage};
-use solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction};
-
-use spl_associated_token_account::{
-    get_associated_token_address, instruction::create_associated_token_account,
+use solana_sdk::{
+    account::Account, program_pack::Pack, pubkey::Pubkey, system_program::ID as SYSTEM_PROGRAM_ID,
 };
-use std::sync::Arc;
+use spl_token::{
+    state::{Account as SplTokenAccount, Mint},
+    ID as SPL_TOKEN_PROGRAM_ID,
+};
+use spl_token_2022::{
+    state::{Account as Token2022Account, Mint as Token2022Mint},
+    ID as TOKEN_2022_PROGRAM_ID,
+};
 
-pub async fn get_or_create_token_account(
-    rpc_client: &Arc<RpcClient>,
-    cache: &TokenAccountCache,
-    user_pubkey: &Pubkey,
-    mint: &Pubkey,
-    token_interface: &impl TokenInterface,
-) -> Result<(Pubkey, Option<VersionedTransaction>), KoraError> {
-    let signer = get_signer()?;
+use crate::KoraError;
 
-    // Get ATA using spl-associated-token-account
-    let ata = get_associated_token_address(user_pubkey, mint);
+#[derive(Debug, Clone, PartialEq)]
+pub enum AccountType {
+    Mint,
+    TokenAccount,
+    System,
+    Program,
+}
 
-    // Check cache first
-    if let Some(cached_ata) = cache.get_token_account(user_pubkey, mint).await? {
-        return Ok((cached_ata, None));
-    }
+impl AccountType {
+    pub fn validate_account_type(
+        self,
+        account: &Account,
+        account_pubkey: &Pubkey,
+    ) -> Result<(), KoraError> {
+        let mut should_be_executable: Option<bool> = None;
+        let mut should_be_owned_by: Option<Pubkey> = None;
 
-    // If not in cache, check on-chain
-    match rpc_client.get_account(&ata).await {
-        Ok(_) => {
-            // Account exists, cache it and return
-            cache.set_token_account(user_pubkey, mint, &ata).await?;
-            Ok((ata, None))
+        match self {
+            AccountType::Mint => match account.owner {
+                SPL_TOKEN_PROGRAM_ID => {
+                    should_be_executable = Some(false);
+
+                    Mint::unpack(&account.data).map_err(|e| {
+                        KoraError::InternalServerError(format!(
+                            "Account {account_pubkey} has invalid data for a Mint account: {e}"
+                        ))
+                    })?;
+                }
+                TOKEN_2022_PROGRAM_ID => {
+                    should_be_executable = Some(false);
+
+                    Token2022Mint::unpack(&account.data).map_err(|e| {
+                        KoraError::InternalServerError(format!(
+                            "Account {account_pubkey} has invalid data for a Mint account: {e}"
+                        ))
+                    })?;
+                }
+                _ => {
+                    return Err(KoraError::InternalServerError(format!(
+                            "Account {account_pubkey} is not owned by a token program, cannot be a Mint"
+                        )));
+                }
+            },
+            AccountType::TokenAccount => match account.owner {
+                SPL_TOKEN_PROGRAM_ID => {
+                    should_be_executable = Some(false);
+
+                    SplTokenAccount::unpack(&account.data).map_err(|e| {
+                        KoraError::InternalServerError(format!(
+                            "Account {account_pubkey} has invalid data for a TokenAccount account: {e}"
+                        ))
+                    })?;
+                }
+                TOKEN_2022_PROGRAM_ID => {
+                    should_be_executable = Some(false);
+
+                    Token2022Account::unpack(&account.data).map_err(|e| {
+                        KoraError::InternalServerError(format!(
+                            "Account {account_pubkey} has invalid data for a TokenAccount account: {e}"
+                        ))
+                    })?;
+                }
+                _ => {
+                    return Err(KoraError::InternalServerError(format!(
+                                "Account {account_pubkey} is not owned by a token program, cannot be a TokenAccount"
+                            )));
+                }
+            },
+            AccountType::System => {
+                should_be_owned_by = Some(SYSTEM_PROGRAM_ID);
+            }
+            AccountType::Program => {
+                should_be_executable = Some(true);
+            }
         }
-        Err(original_err) => {
-            // Account doesn't exist, create it
-            let program_id = token_interface.program_id();
-            let create_ata_ix = create_associated_token_account(
-                &signer.solana_pubkey(),
-                user_pubkey,
-                mint,
-                &program_id,
-            );
 
-            let blockhash = rpc_client.get_latest_blockhash().await.map_err(|e| {
-                KoraError::RpcError(format!(
-                    "Failed to get blockhash: {e}. Original error: {original_err}"
-                ))
-            })?;
-
-            let message = VersionedMessage::Legacy(Message::new_with_blockhash(
-                &[create_ata_ix],
-                Some(&signer.solana_pubkey()),
-                &blockhash,
-            ));
-
-            let mut tx = new_unsigned_versioned_transaction(message);
-            let signature = signer.sign(&tx).await?;
-
-            let sig_bytes: [u8; 64] = signature
-                .bytes
-                .try_into()
-                .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
-
-            let sig = Signature::from(sig_bytes);
-            tx.signatures = vec![sig];
-
-            Ok((ata, Some(tx)))
+        if let Some(should_be_executable) = should_be_executable {
+            if account.executable != should_be_executable {
+                return Err(KoraError::InternalServerError(format!(
+                    "Account {account_pubkey} is not executable, cannot be a Program"
+                )));
+            }
         }
+
+        if let Some(should_be_owned_by) = should_be_owned_by {
+            if account.owner != should_be_owned_by {
+                return Err(KoraError::InternalServerError(format!(
+                    "Account {account_pubkey} is not owned by {should_be_owned_by}, found owner: {}",
+                    account.owner
+                )));
+            }
+        }
+
+        Ok(())
     }
 }
 
-pub async fn get_or_create_multiple_token_accounts(
-    rpc_client: &Arc<RpcClient>,
-    cache: &TokenAccountCache,
-    user_pubkey: &Pubkey,
-    mints: &[Pubkey],
-    token_interface: &impl TokenInterface,
-) -> Result<(Vec<Pubkey>, Option<VersionedTransaction>), KoraError> {
-    let signer = get_signer()?;
+pub async fn validate_account(
+    rpc_client: &RpcClient,
+    account_pubkey: &Pubkey,
+    expected_account_type: Option<AccountType>,
+) -> Result<(), KoraError> {
+    let account = rpc_client.get_account(account_pubkey).await.map_err(|e| {
+        KoraError::InternalServerError(format!("Failed to get account {account_pubkey}: {e}"))
+    })?;
 
-    let mut atas = Vec::with_capacity(mints.len());
-    let mut instructions = Vec::with_capacity(mints.len());
-    let mut needs_creation = false;
-
-    for mint in mints {
-        let ata = get_associated_token_address(user_pubkey, mint);
-        atas.push(ata);
-
-        // Check cache first
-        if let Some(_cached_ata) = cache.get_token_account(user_pubkey, mint).await? {
-            continue;
-        }
-
-        // If not in cache, check on-chain
-        if rpc_client.get_account(&ata).await.is_err() {
-            needs_creation = true;
-            let program_id = token_interface.program_id();
-            instructions.push(create_associated_token_account(
-                &signer.solana_pubkey(),
-                user_pubkey,
-                mint,
-                &program_id,
-            ));
-        } else {
-            // Account exists, cache it
-            cache.set_token_account(user_pubkey, mint, &ata).await?;
-        }
+    if let Some(expected_type) = expected_account_type {
+        expected_type.validate_account_type(&account, account_pubkey)?;
     }
 
-    if !needs_creation {
-        return Ok((atas, None));
-    }
-
-    let blockhash = rpc_client
-        .get_latest_blockhash()
-        .await
-        .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {e}")))?;
-
-    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
-        &instructions,
-        Some(&signer.solana_pubkey()),
-        &blockhash,
-    ));
-
-    let mut tx = new_unsigned_versioned_transaction(message);
-    let signature = signer.sign(&tx).await?;
-
-    let sig_bytes: [u8; 64] = signature
-        .bytes
-        .try_into()
-        .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
-
-    let sig = Signature::from(sig_bytes);
-    tx.signatures = vec![sig];
-
-    Ok((atas, Some(tx)))
+    Ok(())
 }

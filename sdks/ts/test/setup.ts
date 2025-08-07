@@ -169,6 +169,15 @@ const signAndSendTransaction = async (
   return signature;
 };
 
+function safeStringify(obj: any) {
+  return JSON.stringify(obj, (key, value) => {
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+    return value;
+  }, 2);
+}
+
 async function sendAndConfirmInstructions(
   client: Client,
   payer: TransactionSigner,
@@ -191,6 +200,7 @@ async function sendAndConfirmInstructions(
     );
     return signature;
   } catch (error) {
+    console.error(safeStringify(error));
     throw new Error(
       `Failed to ${description.toLowerCase()}: ${error instanceof Error ? error.message : "Unknown error"}`,
     );

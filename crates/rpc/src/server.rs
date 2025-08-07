@@ -68,7 +68,7 @@ pub async fn run_rpc_server(
         // Add authentication layer for HMAC if configured
         .option_layer(
             (get_value_by_priority("KORA_HMAC_SECRET", rpc.config.hmac_secret.clone()))
-                .map(|secret| HmacAuthLayer::new(secret.clone())),
+                .map(|secret| HmacAuthLayer::new(secret.clone(), rpc.config.max_timestamp_age)),
         );
 
     // Configure and build the server with HTTP support
