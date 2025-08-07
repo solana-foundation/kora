@@ -1,12 +1,13 @@
 use crate::{
     config::{FeePayerPolicy, ValidationConfig},
     error::KoraError,
+    fee::fee::FeeConfigUtil,
     oracle::PriceSource,
     token::{
-        calculate_token_value_in_lamports, Token2022Account, TokenInterface, TokenProgram,
-        TokenType,
+        token::{calculate_token_value_in_lamports, TokenType},
+        Token2022Account, TokenInterface, TokenProgram,
     },
-    transaction::{fees::calculate_fee_payer_outflow, VersionedTransactionExt},
+    transaction::VersionedTransactionExt,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
@@ -387,7 +388,13 @@ impl TransactionValidator {
         account_keys: &[Pubkey],
     ) -> Result<u64, KoraError> {
         // Use the shared outflow calculation from fees module
-        calculate_fee_payer_outflow(rpc_client, &self.fee_payer_pubkey, message, account_keys).await
+        FeeConfigUtil::calculate_fee_payer_outflow(
+            rpc_client,
+            &self.fee_payer_pubkey,
+            message,
+            account_keys,
+        )
+        .await
     }
 }
 

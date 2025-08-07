@@ -15,8 +15,8 @@ use kora_lib::{
     transaction::{
         encode_b64_message, encode_b64_transaction, find_signer_position,
         new_unsigned_versioned_transaction,
-        validator::{TransactionValidator, ValidatedMint},
     },
+    validator::transaction_validator::{TransactionValidator, ValidatedMint},
     KoraError, Signer as _,
 };
 

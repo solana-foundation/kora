@@ -2,7 +2,7 @@ use anyhow::Result;
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
 use kora_lib::{
     signer::KeypairUtil,
-    token::{TokenInterface, TokenProgram, TokenType},
+    token::{TokenInterface, TokenProgram, token::TokenType},
     transaction::{encode_b64_transaction, new_unsigned_versioned_transaction},
 };
 use solana_address_lookup_table_interface::{

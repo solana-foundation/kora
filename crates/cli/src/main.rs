@@ -1,16 +1,18 @@
 use clap::{Parser, Subcommand};
 use kora_lib::{
     args::CliArgs,
-    config::load_config,
     error::KoraError,
+    fee::fee::FeeConfigUtil,
     get_signer,
     rpc::{create_rpc_client, get_rpc_client},
     signer::init::init_signer_type,
     state::init_signer,
     transaction::{
-        decode_b64_transaction, estimate_transaction_fee, sign_and_send_transaction,
-        sign_transaction, sign_transaction_if_paid, VersionedTransactionResolved,
+        decode_b64_transaction, sign_and_send_transaction, sign_transaction,
+        sign_transaction_if_paid, VersionedTransactionResolved,
     },
+    validator::config_validator::ConfigValidator,
+    Config,
 };
 
 #[derive(Subcommand)]
@@ -55,7 +57,7 @@ struct Cli {
 async fn main() -> Result<(), KoraError> {
     let cli = Cli::parse();
 
-    let config = load_config(&cli.args.common.config).unwrap_or_else(|e| {
+    let config = Config::load_config(&cli.args.common.config).unwrap_or_else(|e| {
         print_error(&format!("Failed to load config: {e}"));
         std::process::exit(1);
     });
@@ -64,11 +66,16 @@ async fn main() -> Result<(), KoraError> {
 
     if cli.args.common.validate_config || cli.args.common.validate_config_with_rpc {
         let skip_rpc_validation = !cli.args.common.validate_config_with_rpc;
-        let _ = config.validate_with_result(rpc_client.as_ref(), skip_rpc_validation).await;
+        let _ = ConfigValidator::validate_with_result(
+            &config,
+            rpc_client.as_ref(),
+            skip_rpc_validation,
+        )
+        .await;
         std::process::exit(0);
     } else {
         // Normal validation for non-validate-config mode
-        if let Err(e) = config.validate(rpc_client.as_ref()).await {
+        if let Err(e) = ConfigValidator::validate(&config, rpc_client.as_ref()).await {
             print_error(&format!("Config validation failed: {e}"));
             std::process::exit(1);
         }
@@ -131,7 +138,7 @@ async fn main() -> Result<(), KoraError> {
             let fee_payer = get_signer()?;
             let fee_payer_pubkey = fee_payer.solana_pubkey();
 
-            let fee = estimate_transaction_fee(
+            let fee = FeeConfigUtil::estimate_transaction_fee(
                 &rpc_client,
                 &resolved_transaction,
                 Some(&fee_payer_pubkey),

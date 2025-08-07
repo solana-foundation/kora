@@ -1,6 +1,7 @@
 use kora_lib::{
     token::{Token2022Account, Token2022Program, TokenInterface},
-    transaction::{new_unsigned_versioned_transaction, validator::validate_token2022_account},
+    transaction::new_unsigned_versioned_transaction,
+    validator::transaction_validator::validate_token2022_account,
 };
 use solana_message::{Message, VersionedMessage};
 use solana_sdk::{
@@ -88,10 +89,10 @@ async fn test_pyusd_token_e2e_with_kora() {
         disallowed_accounts: vec![],
         price_source: kora_lib::oracle::PriceSource::Jupiter,
         fee_payer_policy: kora_lib::config::FeePayerPolicy::default(),
-        price: kora_lib::transaction::fees::PriceConfig::default(),
+        price: kora_lib::fee::price::PriceConfig::default(),
     };
 
-    let validation_result = kora_lib::transaction::validator::TransactionValidator::new(
+    let validation_result = kora_lib::validator::transaction_validator::TransactionValidator::new(
         wallet.pubkey(),
         &validation_config,
     )

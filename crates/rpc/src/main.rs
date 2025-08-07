@@ -6,12 +6,13 @@ use clap::Parser;
 use dotenv::dotenv;
 use kora_lib::{
     args::RpcArgs,
-    config::load_config,
     log::LoggingFormat,
     oracle::{jupiter::init_jupiter_api_key, PriceSource},
     rpc::get_rpc_client,
     signer::{init::init_signer_type, KoraSigner},
     state::init_signer,
+    validator::config_validator::ConfigValidator,
+    Config,
 };
 use rpc::KoraRpc;
 use server::run_rpc_server;
@@ -22,7 +23,7 @@ async fn main() {
     let args = RpcArgs::parse();
     setup_logging(&args.logging_format);
 
-    let config = load_config(&args.common.config).unwrap_or_else(|e| {
+    let config = Config::load_config(&args.common.config).unwrap_or_else(|e| {
         log::error!("Config load failed: {e}");
         std::process::exit(1);
     });
@@ -31,11 +32,16 @@ async fn main() {
 
     if args.common.validate_config || args.common.validate_config_with_rpc {
         let skip_rpc_validation = !args.common.validate_config_with_rpc;
-        let _ = config.validate_with_result(rpc_client.as_ref(), skip_rpc_validation).await;
+        let _ = ConfigValidator::validate_with_result(
+            &config,
+            rpc_client.as_ref(),
+            skip_rpc_validation,
+        )
+        .await;
         std::process::exit(0);
     } else {
         // Normal validation for non-validate-config mode
-        if let Err(e) = config.validate(rpc_client.as_ref()).await {
+        if let Err(e) = ConfigValidator::validate(&config, rpc_client.as_ref()).await {
             log::error!("Config validation failed: {e}");
             std::process::exit(1);
         }

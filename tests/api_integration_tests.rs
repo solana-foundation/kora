@@ -1,6 +1,6 @@
 use jsonrpsee::{core::client::ClientT, rpc_params};
 use kora_lib::{
-    token::{TokenInterface, TokenProgram, TokenType},
+    token::{token::TokenType, TokenInterface, TokenProgram},
     transaction::{
         decode_b64_transaction, encode_b64_transaction, find_signer_position,
         new_unsigned_versioned_transaction,

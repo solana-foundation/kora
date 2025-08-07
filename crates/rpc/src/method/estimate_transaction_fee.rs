@@ -4,12 +4,10 @@ use utoipa::ToSchema;
 use kora_lib::{
     config::ValidationConfig,
     error::KoraError,
+    fee::fee::FeeConfigUtil,
     get_signer,
-    token::calculate_lamports_value_in_token,
-    transaction::{
-        decode_b64_transaction, estimate_transaction_fee as lib_estimate_transaction_fee,
-        VersionedTransactionResolved,
-    },
+    token::token::calculate_lamports_value_in_token,
+    transaction::{decode_b64_transaction, VersionedTransactionResolved},
 };
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
@@ -44,8 +42,12 @@ pub async fn estimate_transaction_fee(
     let mut resolved_transaction = VersionedTransactionResolved::new(&transaction);
     resolved_transaction.resolve_addresses(rpc_client).await?;
 
-    let fee_in_lamports =
-        lib_estimate_transaction_fee(rpc_client, &resolved_transaction, Some(&fee_payer)).await?;
+    let fee_in_lamports = FeeConfigUtil::estimate_transaction_fee(
+        rpc_client,
+        &resolved_transaction,
+        Some(&fee_payer),
+    )
+    .await?;
 
     let mut fee_in_token = None;
 
