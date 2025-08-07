@@ -149,7 +149,7 @@ test-ts:
 	$(call stop_solana_validator); \
 	exit $$TEST_EXIT_CODE
 
-test-all: test test-integration # test-ts
+test-all: test test-integration test-ts
 
 # Clean up any running validators
 clean-validator:
