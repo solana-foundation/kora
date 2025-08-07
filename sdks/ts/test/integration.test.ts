@@ -49,6 +49,22 @@ describe("KoraClient Integration Tests", () => {
       expect(config.validation_config.price_source).toBeDefined();
       expect(config.validation_config.price).toBeDefined();
       expect(config.validation_config.price.type).toBeDefined();
+      expect(config.validation_config.fee_payer_policy).toBeDefined();
+      expect(config.validation_config.fee_payer_policy.allow_sol_transfers).toBeDefined();
+      expect(config.validation_config.fee_payer_policy.allow_spl_transfers).toBeDefined();
+      expect(config.validation_config.fee_payer_policy.allow_token2022_transfers).toBeDefined();
+      expect(config.validation_config.fee_payer_policy.allow_assign).toBeDefined();
+      expect(config.validation_config.fee_payer_policy.allow_burn).toBeDefined();
+      expect(config.enabled_methods).toBeDefined();
+      expect(config.enabled_methods.liveness).toBeDefined();
+      expect(config.enabled_methods.estimate_transaction_fee).toBeDefined();
+      expect(config.enabled_methods.get_supported_tokens).toBeDefined();
+      expect(config.enabled_methods.sign_transaction).toBeDefined();
+      expect(config.enabled_methods.sign_and_send_transaction).toBeDefined();
+      expect(config.enabled_methods.transfer_transaction).toBeDefined();
+      expect(config.enabled_methods.get_blockhash).toBeDefined();
+      expect(config.enabled_methods.get_config).toBeDefined();
+      expect(config.enabled_methods.sign_transaction_if_paid).toBeDefined();
     });
 
     it("should get supported tokens", async () => {

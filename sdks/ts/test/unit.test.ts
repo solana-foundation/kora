@@ -129,11 +129,25 @@ describe("KoraClient Unit Tests", () => {
             allow_spl_transfers: true,
             allow_token2022_transfers: false,
             allow_assign: true,
+            allow_burn: true,
+            allow_close_account: true,
+            allow_approve: true,
           },
           price: {
             type: "margin",
             margin: 0.1,
           },
+        },
+        enabled_methods: {
+          liveness: true,
+          estimate_transaction_fee: true,
+          get_supported_tokens: true,
+          sign_transaction: true,
+          sign_and_send_transaction: true,
+          transfer_transaction: true,
+          get_blockhash: true,
+          get_config: true,
+          sign_transaction_if_paid: true,
         },
       };
 

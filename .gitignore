@@ -21,3 +21,7 @@ coverage/
 .validator.pid
 .kora.pid
 test-ledger/
+
+# Docs
+sdks/ts/docs-html/
+sdks/ts/docs-md/
