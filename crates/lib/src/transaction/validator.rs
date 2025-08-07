@@ -1371,9 +1371,9 @@ mod tests {
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-
+        let rpc_client = get_mock_rpc_client(&Account::default());
         // Should pass because allow_burn is true by default
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test with allow_burn = false
         let config = ValidationConfig::test_default()
@@ -1398,7 +1398,7 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer cannot burn tokens when allow_burn is false
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
 
         // Test burn_checked instruction
         let burn_checked_ix = spl_token::instruction::burn_checked(
@@ -1416,7 +1416,7 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should also fail for burn_checked
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1445,9 +1445,9 @@ mod tests {
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-
+        let rpc_client = get_mock_rpc_client(&Account::default());
         // Should pass because allow_close_account is true by default
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test with allow_close_account = false
         let config = ValidationConfig::test_default()
@@ -1474,7 +1474,7 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer cannot close accounts when allow_close_account is false
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1504,9 +1504,9 @@ mod tests {
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-
+        let rpc_client = get_mock_rpc_client(&Account::default());
         // Should pass because allow_approve is true by default
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test with allow_approve = false
         let config = ValidationConfig::test_default()
@@ -1531,7 +1531,7 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer cannot approve when allow_approve is false
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
 
         // Test approve_checked instruction
         let mint = Pubkey::new_unique();
@@ -1552,7 +1552,7 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should also fail for approve_checked
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1582,9 +1582,9 @@ mod tests {
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-
+        let rpc_client = get_mock_rpc_client(&Account::default());
         // Should fail for Token2022 burn
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1616,9 +1616,9 @@ mod tests {
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-
+        let rpc_client = get_mock_rpc_client(&Account::default());
         // Should fail for Token2022 close account
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1648,9 +1648,9 @@ mod tests {
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
-
+        let rpc_client = get_mock_rpc_client(&Account::default());
         // Should pass because allow_approve is true by default
-        assert!(validator.validate_transaction(&transaction).await.is_ok());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test with allow_approve = false
         let config = ValidationConfig::test_default()
@@ -1675,7 +1675,7 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer cannot approve when allow_approve is false
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
 
         // Test approve_checked instruction
         let mint = Pubkey::new_unique();
@@ -1696,6 +1696,6 @@ mod tests {
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should also fail for approve_checked
-        assert!(validator.validate_transaction(&transaction).await.is_err());
+        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
 }
