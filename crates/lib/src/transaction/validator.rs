@@ -314,9 +314,9 @@ impl TransactionValidator {
                         spl_token_2022::instruction::TokenInstruction::Approve { .. } => {
                             check_fee_payer(2, self.fee_payer_policy.allow_approve)
                         }
-                        spl_token_2022::instruction::TokenInstruction::ApproveChecked { .. } => {
-                            check_fee_payer(3, self.fee_payer_policy.allow_approve)
-                        }
+                        spl_token_2022::instruction::TokenInstruction::ApproveChecked {
+                            ..
+                        } => check_fee_payer(3, self.fee_payer_policy.allow_approve),
                         _ => Ok(false),
                     }
                 } else {
@@ -1542,7 +1542,8 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
+        let message =
+            VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should also fail for approve_checked
@@ -1685,11 +1686,11 @@ mod tests {
         )
         .unwrap();
 
-        let message = VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
+        let message =
+            VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
         let transaction = new_unsigned_versioned_transaction(message);
 
         // Should also fail for approve_checked
         assert!(validator.validate_transaction(&transaction).await.is_err());
     }
-
 }
