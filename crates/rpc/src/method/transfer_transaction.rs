@@ -120,7 +120,7 @@ pub async fn transfer_transaction(
     let mut transaction = new_unsigned_versioned_transaction(message);
 
     // validate transaction before signing
-    validator.validate_transaction(&transaction).await?;
+    validator.validate_transaction(rpc_client, &transaction).await?;
 
     // Find the fee payer position in the account keys
     let fee_payer_position = find_signer_position(&transaction, &fee_payer)?;

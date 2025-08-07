@@ -3,6 +3,7 @@ use kora_lib::{
     args::CliArgs,
     config::load_config,
     error::KoraError,
+    get_signer,
     rpc::{create_rpc_client, get_rpc_client},
     signer::init::init_signer_type,
     state::init_signer,
@@ -127,7 +128,16 @@ async fn main() -> Result<(), KoraError> {
             let mut resolved_transaction = VersionedTransactionResolved::new(&transaction);
             resolved_transaction.resolve_addresses(&rpc_client).await?;
 
-            let fee = estimate_transaction_fee(&rpc_client, &resolved_transaction).await?;
+            let fee_payer = get_signer()?;
+            let fee_payer_pubkey = fee_payer.solana_pubkey();
+
+            let fee = estimate_transaction_fee(
+                &rpc_client,
+                &resolved_transaction,
+                Some(&fee_payer_pubkey),
+            )
+            .await?;
+
             println!("Estimated fee: {fee} lamports");
         }
         Some(Commands::SignIfPaid { transaction }) => {
