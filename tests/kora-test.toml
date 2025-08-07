@@ -41,3 +41,4 @@ allow_token2022_transfers = true
 allow_assign = true
 allow_burn = true
 allow_close_account = true
+allow_approve = true

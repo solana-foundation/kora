@@ -29,6 +29,7 @@ pub struct FeePayerPolicy {
     pub allow_assign: bool,
     pub allow_burn: bool,
     pub allow_close_account: bool,
+    pub allow_approve: bool,
 }
 
 impl Default for FeePayerPolicy {
@@ -40,6 +41,7 @@ impl Default for FeePayerPolicy {
             allow_assign: true,
             allow_burn: true,
             allow_close_account: true,
+            allow_approve: true,
         }
     }
 }

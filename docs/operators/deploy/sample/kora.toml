@@ -33,3 +33,4 @@ allow_token2022_transfers = true # Allow fee payer to be source in Token2022 tra
 allow_assign = true             # Allow fee payer to use Assign instruction
 allow_burn = true               # Allow fee payer to burn tokens from their accounts
 allow_close_account = true      # Allow fee payer to close their token accounts
+allow_approve = true            # Allow fee payer to approve tokens from their accounts
