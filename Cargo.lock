@@ -2976,6 +2976,8 @@ dependencies = [
  "clap",
  "deadpool-redis",
  "dirs",
+ "futures-util",
+ "http 0.2.12",
  "jsonrpsee",
  "jup-ag",
  "kora-privy",
@@ -3010,6 +3012,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "kora-metrics"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "http 0.2.12",
+ "jsonrpsee",
+ "kora-lib",
+ "log",
+ "pin-project",
+ "prometheus",
+ "regex",
+ "serde_json",
+ "tower 0.4.13",
+]
+
+[[package]]
 name = "kora-privy"
 version = "1.0.3"
 dependencies = [
@@ -3036,6 +3055,7 @@ dependencies = [
  "async-trait",
  "bincode",
  "bs58 0.5.1",
+ "bytes",
  "clap",
  "config",
  "deadpool-redis",
@@ -3053,6 +3073,7 @@ dependencies = [
  "jsonrpsee",
  "jsonrpsee-core",
  "kora-lib",
+ "kora-metrics",
  "kora-privy",
  "kora-turnkey",
  "log",
@@ -3997,6 +4018,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02b3e5e68a3a1a02aad3ec490a98007cbc13c37cbe84a3cd7b8e406d76e7f778"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "prometheus"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ca5326d8d0b950a9acd87e6a3f94745394f62e4dae1b1ee22b2bc0c394af43a"
+dependencies = [
+ "cfg-if",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "protobuf",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "protobuf"
+version = "3.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d65a1d4ddae7d8b5de68153b48f6aa3bba8cb002b243dbdbc55a5afbc98f99f4"
+dependencies = [
+ "once_cell",
+ "protobuf-support",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "protobuf-support"
+version = "3.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e36c2f31e0a47f9280fb347ef5e461ffcd2c52dd520d8e216b52f93b0b0d7d6"
+dependencies = [
+ "thiserror 1.0.69",
 ]
 
 [[package]]
