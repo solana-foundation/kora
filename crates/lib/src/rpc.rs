@@ -23,25 +23,3 @@ pub async fn create_rpc_client(url: &str) -> Result<Arc<RpcClient>, KoraError> {
 
     Ok(client)
 }
-
-#[cfg(test)]
-pub mod test_utils {
-    use super::*;
-    use serde_json::json;
-    use solana_client::rpc_request::RpcRequest;
-    use std::collections::HashMap;
-
-    pub fn setup_test_rpc_client() -> Arc<RpcClient> {
-        let rpc_url = "http://localhost:8899".to_string();
-        let mut mocks = HashMap::new();
-        mocks.insert(RpcRequest::GetMinimumBalanceForRentExemption, json!(2_039_280));
-        mocks.insert(
-            RpcRequest::GetFeeForMessage,
-            json!({
-                "context": { "slot": 5068 },
-                "value": 5000
-            }),
-        ); // Mock fee of 5000 lamports
-        Arc::new(RpcClient::new_mock_with_mocks(rpc_url, mocks))
-    }
-}
