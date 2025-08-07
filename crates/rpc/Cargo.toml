@@ -45,16 +45,14 @@ solana-commitment-config = { workspace = true }
 solana-message = { workspace = true }
 solana-system-interface = { workspace = true }
 solana-program = { workspace = true }
-kora-turnkey = { workspace = true }
-kora-privy = { workspace = true }
 spl-token = { workspace = true }
 spl-associated-token-account = { workspace = true }
 bincode = { workspace = true }
 bs58 = { workspace = true }
 utoipa.workspace = true
 dirs = "6.0.0"
-hmac = {workspace = true}
-sha2 = {workspace = true}
+hmac = { workspace = true }
+sha2 = { workspace = true }
 hex = "0.4.3"
 http-body = "1.0.1"
 http-body-util = "0.1.3"

@@ -1,10 +1,11 @@
 use crate::{
     args::CommonArgs,
     error::KoraError,
-    signer::{KoraSigner, SolanaMemorySigner, VaultSigner},
+    signer::{
+        privy::types::PrivySigner, turnkey::types::TurnkeySigner, KoraSigner, SolanaMemorySigner,
+        VaultSigner,
+    },
 };
-use kora_privy::PrivySigner;
-use kora_turnkey::TurnkeySigner;
 
 pub fn init_signer_type(args: &CommonArgs) -> Result<KoraSigner, KoraError> {
     if args.turnkey_signer {

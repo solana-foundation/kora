@@ -5,12 +5,12 @@ use p256::ecdsa::signature::Signer;
 use reqwest::Client;
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
 
-mod types;
-mod utils;
-
 use solana_sdk::transaction::VersionedTransaction;
-pub use types::*;
-pub use utils::*;
+
+use crate::signer::{
+    turnkey::types::{ActivityResponse, SignParameters, SignRequest, TurnkeySigner},
+    utils::{bytes_to_hex, hex_to_bytes},
+};
 
 impl TurnkeySigner {
     pub fn new(

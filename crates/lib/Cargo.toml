@@ -36,8 +36,6 @@ spl-token = { workspace = true }
 spl-token-2022 = { workspace = true }
 spl-associated-token-account = { workspace = true }
 vaultrs = { workspace = true }
-kora-turnkey = { workspace = true }
-kora-privy = { workspace = true }
 deadpool-redis = { workspace = true }
 jsonrpsee = { workspace = true }
 once_cell = { workspace = true }
@@ -50,6 +48,10 @@ utoipa = { workspace = true }
 dirs = "6.0.0"
 mockall = "0.13.1"
 spl-pod = "0.5.0"
+p256 = { version = "0.13", features = ["ecdsa"] }
+chrono = { workspace = true }
+hex = { workspace = true }
+
 [dev-dependencies]
 tempfile = "3.2"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
