@@ -168,6 +168,30 @@ export type PriceModel =
 export type PriceConfig = PriceModel;
 
 /**
+ * Enabled status for methods for the Kora server.
+ */
+export interface EnabledMethods {
+  /** Whether the liveness method is enabled */
+  liveness: boolean;
+  /** Whether the estimate_transaction_fee method is enabled */
+  estimate_transaction_fee: boolean;
+  /** Whether the get_supported_tokens method is enabled */
+  get_supported_tokens: boolean;
+  /** Whether the sign_transaction method is enabled */
+  sign_transaction: boolean;
+  /** Whether the sign_and_send_transaction method is enabled */
+  sign_and_send_transaction: boolean;
+  /** Whether the transfer_transaction method is enabled */
+  transfer_transaction: boolean;
+  /** Whether the get_blockhash method is enabled */
+  get_blockhash: boolean;
+  /** Whether the get_config method is enabled */
+  get_config: boolean;
+  /** Whether the sign_transaction_if_paid method is enabled */
+  sign_transaction_if_paid: boolean;
+}
+
+/**
  * Kora server configuration.
  */
 export interface Config {
@@ -175,6 +199,8 @@ export interface Config {
   fee_payer: string;
   /** Validation rules and constraints */
   validation_config: ValidationConfig;
+  /** Enabled methods */
+  enabled_methods: EnabledMethods;
 }
 
 /**
@@ -189,6 +215,12 @@ export interface FeePayerPolicy {
   allow_token2022_transfers: boolean;
   /** Allow fee payer to use Assign instruction */
   allow_assign: boolean;
+  /** Allow fee payer to use Burn instruction */
+  allow_burn: boolean;
+  /** Allow fee payer to use CloseAccount instruction */
+  allow_close_account: boolean;
+  /** Allow fee payer to use Approve instruction */
+  allow_approve: boolean;
 }
 
 /**

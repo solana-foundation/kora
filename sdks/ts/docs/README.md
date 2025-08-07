@@ -330,8 +330,29 @@ Kora server configuration.
 
 | Property | Type | Description |
 | ------ | ------ | ------ |
+| <a id="enabled_methods"></a> `enabled_methods` | [`EnabledMethods`](#enabledmethods) | Enabled methods |
 | <a id="fee_payer"></a> `fee_payer` | `string` | Public key of the fee payer account |
 | <a id="validation_config"></a> `validation_config` | [`ValidationConfig`](#validationconfig) | Validation rules and constraints |
+
+***
+
+### EnabledMethods
+
+Enabled status for methods for the Kora server.
+
+#### Properties
+
+| Property | Type | Description |
+| ------ | ------ | ------ |
+| <a id="estimate_transaction_fee"></a> `estimate_transaction_fee` | `boolean` | Whether the estimate_transaction_fee method is enabled |
+| <a id="get_blockhash"></a> `get_blockhash` | `boolean` | Whether the get_blockhash method is enabled |
+| <a id="get_config"></a> `get_config` | `boolean` | Whether the get_config method is enabled |
+| <a id="get_supported_tokens"></a> `get_supported_tokens` | `boolean` | Whether the get_supported_tokens method is enabled |
+| <a id="liveness"></a> `liveness` | `boolean` | Whether the liveness method is enabled |
+| <a id="sign_and_send_transaction"></a> `sign_and_send_transaction` | `boolean` | Whether the sign_and_send_transaction method is enabled |
+| <a id="sign_transaction"></a> `sign_transaction` | `boolean` | Whether the sign_transaction method is enabled |
+| <a id="sign_transaction_if_paid"></a> `sign_transaction_if_paid` | `boolean` | Whether the sign_transaction_if_paid method is enabled |
+| <a id="transfer_transaction"></a> `transfer_transaction` | `boolean` | Whether the transfer_transaction method is enabled |
 
 ***
 
@@ -369,7 +390,10 @@ Policy controlling what actions the fee payer can perform.
 
 | Property | Type | Description |
 | ------ | ------ | ------ |
+| <a id="allow_approve"></a> `allow_approve` | `boolean` | Allow fee payer to use Approve instruction |
 | <a id="allow_assign"></a> `allow_assign` | `boolean` | Allow fee payer to use Assign instruction |
+| <a id="allow_burn"></a> `allow_burn` | `boolean` | Allow fee payer to use Burn instruction |
+| <a id="allow_close_account"></a> `allow_close_account` | `boolean` | Allow fee payer to use CloseAccount instruction |
 | <a id="allow_sol_transfers"></a> `allow_sol_transfers` | `boolean` | Allow fee payer to be source in SOL transfers |
 | <a id="allow_spl_transfers"></a> `allow_spl_transfers` | `boolean` | Allow fee payer to be source in SPL token transfers |
 | <a id="allow_token2022_transfers"></a> `allow_token2022_transfers` | `boolean` | Allow fee payer to be source in Token2022 transfers |
