@@ -8,8 +8,8 @@ use kora_lib::{
     signer::init::init_signer_type,
     state::init_signer,
     transaction::{
-        decode_b64_transaction, sign_and_send_transaction, sign_transaction,
-        sign_transaction_if_paid, VersionedTransactionResolved,
+        TransactionUtil, VersionedTransactionExt, VersionedTransactionResolved,
+        VersionedTransactionUtilExt,
     },
     validator::config_validator::ConfigValidator,
     Config,
@@ -95,13 +95,14 @@ async fn main() -> Result<(), KoraError> {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
-            let transaction = decode_b64_transaction(&transaction).map_err(|e| {
-                print_error(&format!("Failed to decode transaction: {e}"));
-                e
-            })?;
+            let transaction =
+                TransactionUtil::decode_b64_transaction(&transaction).map_err(|e| {
+                    print_error(&format!("Failed to decode transaction: {e}"));
+                    e
+                })?;
 
             let (transaction, signed_tx) =
-                sign_transaction(&rpc_client, &validation, transaction).await?;
+                transaction.sign_transaction(&rpc_client, &validation).await?;
             println!("Signature: {}", transaction.signatures[0]);
             println!("Signed Transaction: {signed_tx}");
         }
@@ -113,23 +114,25 @@ async fn main() -> Result<(), KoraError> {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
-            let transaction = decode_b64_transaction(&transaction).map_err(|e| {
-                print_error(&format!("Failed to decode transaction: {e}"));
-                e
-            })?;
+            let transaction =
+                TransactionUtil::decode_b64_transaction(&transaction).map_err(|e| {
+                    print_error(&format!("Failed to decode transaction: {e}"));
+                    e
+                })?;
 
             let (signature, signed_tx) =
-                sign_and_send_transaction(&rpc_client, &validation, transaction).await?;
+                transaction.sign_and_send_transaction(&rpc_client, &validation).await?;
             println!("Signature: {signature}");
             println!("Signed Transaction: {signed_tx}");
         }
         Some(Commands::EstimateFee { transaction }) => {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
 
-            let transaction = decode_b64_transaction(&transaction).map_err(|e| {
-                print_error(&format!("Failed to decode transaction: {e}"));
-                e
-            })?;
+            let transaction =
+                TransactionUtil::decode_b64_transaction(&transaction).map_err(|e| {
+                    print_error(&format!("Failed to decode transaction: {e}"));
+                    e
+                })?;
 
             // Resolve lookup tables for V0 transactions to ensure accurate fee calculation
             let mut resolved_transaction = VersionedTransactionResolved::new(&transaction);
@@ -151,16 +154,17 @@ async fn main() -> Result<(), KoraError> {
             let rpc_client = create_rpc_client(&cli.args.common.rpc_url).await?;
             let validation = config.validation;
 
-            let transaction = decode_b64_transaction(&transaction).map_err(|e| {
-                print_error(&format!("Failed to decode transaction: {e}"));
-                e
-            })?;
+            let transaction =
+                TransactionUtil::decode_b64_transaction(&transaction).map_err(|e| {
+                    print_error(&format!("Failed to decode transaction: {e}"));
+                    e
+                })?;
 
             let mut resolved_transaction = VersionedTransactionResolved::new(&transaction);
             resolved_transaction.resolve_addresses(&rpc_client).await?;
 
             let (transaction, signed_tx) =
-                sign_transaction_if_paid(&rpc_client, &validation, &resolved_transaction).await?;
+                resolved_transaction.sign_transaction_if_paid(&rpc_client, &validation).await?;
 
             println!("Signature: {}", transaction.signatures[0]);
             println!("Signed Transaction: {signed_tx}");

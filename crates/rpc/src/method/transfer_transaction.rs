@@ -12,10 +12,7 @@ use kora_lib::{
     constant::NATIVE_SOL,
     get_signer,
     token::TokenInterface,
-    transaction::{
-        encode_b64_message, encode_b64_transaction, find_signer_position,
-        new_unsigned_versioned_transaction,
-    },
+    transaction::{TransactionUtil, VersionedMessageExt, VersionedTransactionUtilExt},
     validator::transaction_validator::{TransactionValidator, ValidatedMint},
     KoraError, Signer as _,
 };
@@ -117,19 +114,19 @@ pub async fn transfer_transaction(
         Some(&fee_payer),
         &blockhash.0,
     ));
-    let mut transaction = new_unsigned_versioned_transaction(message);
+    let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
     // validate transaction before signing
     validator.validate_transaction(rpc_client, &transaction).await?;
 
     // Find the fee payer position in the account keys
-    let fee_payer_position = find_signer_position(&transaction, &fee_payer)?;
+    let fee_payer_position = transaction.find_signer_position(&fee_payer)?;
 
     let signature = signer.sign_solana(&transaction).await?;
     transaction.signatures[fee_payer_position] = signature;
 
-    let encoded = encode_b64_transaction(&transaction)?;
-    let message_encoded = encode_b64_message(&transaction.message)?;
+    let encoded = transaction.encode_b64_transaction()?;
+    let message_encoded = transaction.message.encode_b64_message()?;
 
     Ok(TransferTransactionResponse {
         transaction: encoded,

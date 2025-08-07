@@ -1,8 +1,6 @@
 use crate::{
-    constant::LAMPORTS_PER_SIGNATURE,
-    error::KoraError,
-    get_signer,
-    transaction::{get_estimate_fee, VersionedTransactionExt},
+    constant::LAMPORTS_PER_SIGNATURE, error::KoraError, get_signer,
+    transaction::VersionedTransactionExt,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
@@ -82,7 +80,8 @@ impl FeeConfigUtil {
         let transaction = resolved_transaction.get_transaction();
 
         // Get base transaction fee
-        let base_fee = get_estimate_fee(rpc_client, &transaction.message).await?;
+        let base_fee =
+            TransactionFeeUtil::get_estimate_fee(rpc_client, &transaction.message).await?;
 
         // Get account creation fees (for ATA creation)
         let account_creation_fee =
@@ -242,12 +241,27 @@ impl FeeConfigUtil {
     }
 }
 
+pub struct TransactionFeeUtil {}
+
+impl TransactionFeeUtil {
+    pub async fn get_estimate_fee(
+        rpc_client: &RpcClient,
+        message: &VersionedMessage,
+    ) -> Result<u64, KoraError> {
+        match message {
+            VersionedMessage::Legacy(message) => rpc_client.get_fee_for_message(message).await,
+            VersionedMessage::V0(message) => rpc_client.get_fee_for_message(message).await,
+        }
+        .map_err(|e| KoraError::RpcError(e.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
         fee::fee::FeeConfigUtil,
         tests::common::{get_mock_rpc_client, setup_or_get_test_signer},
-        transaction::{new_unsigned_versioned_transaction, VersionedTransactionResolved},
+        transaction::{TransactionUtil, VersionedTransactionResolved},
     };
     use solana_message::{v0, Message, VersionedMessage};
     use solana_sdk::{
@@ -277,7 +291,7 @@ mod tests {
 
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
 
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let resolved_transaction = VersionedTransactionResolved::new(&transaction);
 
         assert!(FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction).unwrap());
@@ -294,7 +308,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&sender.pubkey())));
 
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let resolved_transaction = VersionedTransactionResolved::new(&transaction);
 
         assert!(!FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction).unwrap());
@@ -315,7 +329,7 @@ mod tests {
         .expect("Failed to compile V0 message");
 
         let message = VersionedMessage::V0(v0_message);
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let resolved_transaction = VersionedTransactionResolved::new(&transaction);
 
         assert!(FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction).unwrap());
@@ -336,7 +350,7 @@ mod tests {
         .expect("Failed to compile V0 message");
 
         let message = VersionedMessage::V0(v0_message);
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let resolved_transaction = VersionedTransactionResolved::new(&transaction);
 
         assert!(!FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction).unwrap());

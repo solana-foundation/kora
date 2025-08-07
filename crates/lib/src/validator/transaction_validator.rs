@@ -617,8 +617,9 @@ pub async fn validate_token_payment(
 
 #[cfg(test)]
 mod tests {
+    use crate::transaction::TransactionUtil;
+
     use super::*;
-    use crate::transaction::new_unsigned_versioned_transaction;
     use base64::{self, Engine};
     use serde_json::json;
     use solana_client::rpc_request::RpcRequest;
@@ -667,7 +668,7 @@ mod tests {
         let sender = Pubkey::new_unique();
         let instruction = transfer(&sender, &recipient, 100_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
@@ -689,7 +690,7 @@ mod tests {
         // Test transaction with amount over limit
         let instruction = transfer(&sender, &recipient, 2_000_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok()); // Should pass because sender is not fee payer
 
@@ -697,7 +698,7 @@ mod tests {
         let instructions =
             vec![transfer(&sender, &recipient, 500_000), transfer(&sender, &recipient, 500_000)];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
     }
 
@@ -717,7 +718,7 @@ mod tests {
         // Test allowed program (system program)
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
@@ -730,7 +731,7 @@ mod tests {
             vec![], // no accounts needed for this test
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
@@ -756,7 +757,7 @@ mod tests {
             transfer(&sender, &recipient, 1000),
         ];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
-        let mut transaction = new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         transaction.signatures = vec![Default::default(); 3]; // Add 3 dummy signatures
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -778,14 +779,14 @@ mod tests {
         // Test SignAndSend mode with fee payer already set should not error
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
 
         // Test SignAndSend mode without fee payer (should succeed)
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], None)); // No fee payer specified
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
     }
@@ -803,7 +804,7 @@ mod tests {
 
         // Create an empty message using Message::new with empty instructions
         let message = VersionedMessage::Legacy(Message::new(&[], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
@@ -827,7 +828,7 @@ mod tests {
             1000,
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
     }
@@ -922,7 +923,7 @@ mod tests {
         let instruction = transfer(&fee_payer, &recipient, 1000);
 
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
@@ -941,7 +942,7 @@ mod tests {
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -963,7 +964,7 @@ mod tests {
 
         let instruction = assign(&fee_payer, &new_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
@@ -979,7 +980,7 @@ mod tests {
 
         let instruction = assign(&fee_payer, &new_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -1012,7 +1013,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
@@ -1040,7 +1041,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -1058,7 +1059,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
@@ -1094,7 +1095,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
@@ -1124,7 +1125,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer is not allowed to be source
         let rpc_client = get_mock_rpc_client(&Account::default());
@@ -1145,7 +1146,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         // Should pass because fee payer is not the source
         let rpc_client = get_mock_rpc_client(&Account::default());
@@ -1377,7 +1378,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         // Should pass because allow_burn is true by default
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
@@ -1402,7 +1403,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer cannot burn tokens when allow_burn is false
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -1420,7 +1421,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_checked_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         // Should also fail for burn_checked
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -1451,7 +1452,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         // Should pass because allow_close_account is true by default
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
@@ -1478,7 +1479,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer cannot close accounts when allow_close_account is false
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -1510,7 +1511,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         // Should pass because allow_approve is true by default
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
@@ -1535,7 +1536,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer cannot approve when allow_approve is false
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -1556,7 +1557,7 @@ mod tests {
 
         let message =
             VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         // Should also fail for approve_checked
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -1588,7 +1589,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         // Should fail for Token2022 burn
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -1622,7 +1623,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         // Should fail for Token2022 close account
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -1654,7 +1655,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         // Should pass because allow_approve is true by default
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
@@ -1679,7 +1680,7 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         // Should fail because fee payer cannot approve when allow_approve is false
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
@@ -1700,7 +1701,7 @@ mod tests {
 
         let message =
             VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
-        let transaction = new_unsigned_versioned_transaction(message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
         // Should also fail for approve_checked
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());

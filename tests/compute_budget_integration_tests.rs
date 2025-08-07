@@ -1,5 +1,5 @@
 use jsonrpsee::{core::client::ClientT, rpc_params};
-use kora_lib::transaction::encode_b64_transaction;
+use kora_lib::transaction::VersionedTransactionUtilExt;
 use solana_commitment_config::CommitmentConfig;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::{v0, Message, VersionedMessage};
@@ -32,7 +32,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
     ));
     let transaction = VersionedTransaction::try_new(message, &[&sender]).unwrap();
 
-    let encoded_tx = encode_b64_transaction(&transaction).expect("Failed to encode transaction");
+    let encoded_tx = transaction.encode_b64_transaction().expect("Failed to encode transaction");
 
     let response: serde_json::Value = client
         .request(
@@ -82,7 +82,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
     let message = VersionedMessage::V0(v0_message);
     let transaction = VersionedTransaction::try_new(message, &[&fee_payer, &sender]).unwrap();
 
-    let encoded_tx = encode_b64_transaction(&transaction).expect("Failed to encode transaction");
+    let encoded_tx = transaction.encode_b64_transaction().expect("Failed to encode transaction");
 
     let response: serde_json::Value = client
         .request(

@@ -1,6 +1,6 @@
 use kora_lib::{
     token::{Token2022Account, Token2022Program, TokenInterface},
-    transaction::new_unsigned_versioned_transaction,
+    transaction::TransactionUtil,
     validator::transaction_validator::validate_token2022_account,
 };
 use solana_message::{Message, VersionedMessage};
@@ -162,7 +162,7 @@ fn test_token2022_operations() {
         &[create_ata_ix, transfer_ix],
         Some(&wallet.pubkey()),
     ));
-    let transaction = new_unsigned_versioned_transaction(message);
+    let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
     // Verify transaction structure
     assert_eq!(transaction.message.instructions().len(), 2);

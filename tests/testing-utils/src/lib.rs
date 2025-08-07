@@ -3,7 +3,7 @@ use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_param
 use kora_lib::{
     signer::KeypairUtil,
     token::{TokenInterface, TokenProgram, token::TokenType},
-    transaction::{encode_b64_transaction, new_unsigned_versioned_transaction},
+    transaction::{TransactionUtil, VersionedTransactionUtilExt},
 };
 use solana_address_lookup_table_interface::{
     instruction::create_lookup_table, state::AddressLookupTable,
@@ -494,9 +494,9 @@ pub async fn create_test_transaction() -> Result<String> {
 
     let message =
         VersionedMessage::Legacy(Message::new_with_blockhash(&[instruction], None, &blockhash.0));
-    let transaction = new_unsigned_versioned_transaction(message);
+    let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-    Ok(encode_b64_transaction(&transaction)?)
+    Ok(transaction.encode_b64_transaction()?)
 }
 
 /// Create a test SPL token transfer transaction
@@ -541,9 +541,9 @@ pub async fn create_test_spl_transaction() -> Result<String> {
         Some(&fee_payer),
         &blockhash.0,
     ));
-    let transaction = new_unsigned_versioned_transaction(message);
+    let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-    Ok(encode_b64_transaction(&transaction)?)
+    Ok(transaction.encode_b64_transaction()?)
 }
 
 pub async fn create_v0_transaction_with_lookup(
@@ -572,7 +572,7 @@ pub async fn create_v0_transaction_with_lookup(
         &[address_lookup_table_account],
         blockhash.0,
     )?);
-    let transaction = new_unsigned_versioned_transaction(versioned_message);
+    let transaction = TransactionUtil::new_unsigned_versioned_transaction(versioned_message);
 
-    Ok(encode_b64_transaction(&transaction)?)
+    Ok(transaction.encode_b64_transaction()?)
 }

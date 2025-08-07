@@ -1,8 +1,6 @@
 use kora_lib::{
     config::ValidationConfig,
-    transaction::{
-        decode_b64_transaction, encode_b64_transaction, sign_transaction as lib_sign_transaction,
-    },
+    transaction::{TransactionUtil, VersionedTransactionUtilExt},
     KoraError,
 };
 use serde::{Deserialize, Serialize};
@@ -26,11 +24,10 @@ pub async fn sign_transaction(
     validation: &ValidationConfig,
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResponse, KoraError> {
-    let transaction = decode_b64_transaction(&request.transaction)?;
-    let _signed_transaction =
-        lib_sign_transaction(rpc_client, validation, transaction.clone()).await?;
+    let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
+    let _signed_transaction = transaction.sign_transaction(rpc_client, validation).await?;
 
-    let encoded = encode_b64_transaction(&transaction)?;
+    let encoded = transaction.encode_b64_transaction()?;
 
     Ok(SignTransactionResponse {
         signature: transaction.signatures[0].to_string(),

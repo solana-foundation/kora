@@ -1,10 +1,7 @@
 use jsonrpsee::{core::client::ClientT, rpc_params};
 use kora_lib::{
     token::{token::TokenType, TokenInterface, TokenProgram},
-    transaction::{
-        decode_b64_transaction, encode_b64_transaction, find_signer_position,
-        new_unsigned_versioned_transaction,
-    },
+    transaction::{TransactionUtil, VersionedTransactionUtilExt},
 };
 use serde_json::json;
 use solana_commitment_config::CommitmentConfig;
@@ -72,7 +69,7 @@ async fn test_sign_transaction() {
     );
 
     let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let transaction = decode_b64_transaction(transaction_string)
+    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
     let simulated_tx = rpc_client
@@ -103,12 +100,13 @@ async fn test_sign_spl_transaction() {
     );
 
     let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let transaction = decode_b64_transaction(transaction_string)
+    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
     let mut transaction = transaction;
 
-    let sender_position = find_signer_position(&transaction, &sender.pubkey())
+    let sender_position = transaction
+        .find_signer_position(&sender.pubkey())
         .expect("Sender not found in account keys");
 
     let signature = sender.sign_message(&transaction.message.serialize());
@@ -185,7 +183,7 @@ async fn test_transfer_transaction() {
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
 
     let transaction_string = response["transaction"].as_str().unwrap();
-    let transaction = decode_b64_transaction(transaction_string)
+    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
     let simulated_tx = rpc_client
@@ -222,7 +220,7 @@ async fn test_transfer_transaction_with_ata() {
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
 
     let transaction_string = response["transaction"].as_str().unwrap();
-    let transaction = decode_b64_transaction(transaction_string)
+    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
     let simulated_tx = rpc_client
@@ -318,9 +316,10 @@ async fn test_sign_transaction_if_paid() {
     ));
 
     // Initialize transaction with correct number of signatures
-    let mut transaction = new_unsigned_versioned_transaction(message);
+    let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-    let sender_position = find_signer_position(&transaction, &sender.pubkey())
+    let sender_position = transaction
+        .find_signer_position(&sender.pubkey())
         .expect("Sender not found in account keys");
 
     let signature = sender.sign_message(&transaction.message.serialize());
@@ -328,7 +327,7 @@ async fn test_sign_transaction_if_paid() {
 
     // At this point, fee payer's signature slot should be empty (first position)
     // and sender's signature should be in the correct position
-    let base64_transaction = encode_b64_transaction(&transaction).unwrap();
+    let base64_transaction = transaction.encode_b64_transaction().unwrap();
 
     // Rest of the test remains the same...
     let response: serde_json::Value = client
@@ -343,7 +342,7 @@ async fn test_sign_transaction_if_paid() {
 
     // Decode the base64 transaction string
     let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let transaction = decode_b64_transaction(transaction_string)
+    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
     // Simulate the transaction
@@ -409,7 +408,7 @@ async fn test_sign_v0_transaction_with_valid_lookup_table() {
     );
 
     let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let transaction = decode_b64_transaction(transaction_string)
+    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
     // Simulate the transaction to ensure it's valid
@@ -522,8 +521,8 @@ async fn test_estimate_fee_with_all_outflow_costs() {
         &blockhash.0,
     ));
 
-    let transaction = new_unsigned_versioned_transaction(message);
-    let encoded_transaction = encode_b64_transaction(&transaction).unwrap();
+    let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+    let encoded_transaction = transaction.encode_b64_transaction().unwrap();
 
     let response: serde_json::Value = client
         .request(

@@ -7,7 +7,7 @@ use kora_lib::{
     fee::fee::FeeConfigUtil,
     get_signer,
     token::token::calculate_lamports_value_in_token,
-    transaction::{decode_b64_transaction, VersionedTransactionResolved},
+    transaction::{TransactionUtil, VersionedTransactionResolved},
 };
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
@@ -33,7 +33,7 @@ pub async fn estimate_transaction_fee(
     validation: &ValidationConfig,
     request: EstimateTransactionFeeRequest,
 ) -> Result<EstimateTransactionFeeResponse, KoraError> {
-    let transaction = decode_b64_transaction(&request.transaction)?;
+    let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
     let signer = get_signer()?;
     let fee_payer = signer.solana_pubkey();
