@@ -149,8 +149,7 @@ cargo run -p kora-rpc --bin kora-rpc -- \
   --port 8080 \
   --config kora.toml \
   --rpc-url https://api.devnet.solana.com \
-  --logging-format standard \
-  --metrics-endpoint http://localhost:9090
+  --logging-format standard
 
 # Run with Turnkey signer
 cargo run -p kora-rpc --bin kora-rpc -- \

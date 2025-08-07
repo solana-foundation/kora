@@ -113,10 +113,6 @@ pub struct RpcArgs {
     /// Output format for logs (standard or json)
     #[arg(long, default_value = "standard")]
     pub logging_format: LoggingFormat,
-
-    /// Prometheus metrics endpoint URL for monitoring
-    #[arg(long, default_value = None)]
-    pub metrics_endpoint: Option<String>,
 }
 
 // CLI-specific arguments
