@@ -4,7 +4,6 @@
 .idea/
 .vscode/
 *.pdb
-Cargo.lock
 generated/
 
 # SDK

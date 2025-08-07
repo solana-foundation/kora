@@ -8,6 +8,7 @@ use toml;
 use utoipa::ToSchema;
 
 use crate::{
+    account::{validate_account, AccountType},
     constant::DEFAULT_MAX_TIMESTAMP_AGE,
     error::KoraError,
     oracle::PriceSource,
@@ -220,7 +221,8 @@ impl Config {
 
     pub async fn validate_with_result(
         &self,
-        _rpc_client: &RpcClient,
+        rpc_client: &RpcClient,
+        skip_rpc_validation: bool,
     ) -> Result<Vec<String>, Vec<String>> {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
@@ -344,6 +346,43 @@ impl Config {
             _ => {}
         };
 
+        // RPC validation - only if not skipped
+        if !skip_rpc_validation {
+            // Validate allowed programs - should be executable
+            for program_str in &self.validation.allowed_programs {
+                if let Ok(program_pubkey) = Pubkey::from_str(program_str) {
+                    if let Err(e) =
+                        validate_account(rpc_client, &program_pubkey, Some(AccountType::Program))
+                            .await
+                    {
+                        errors.push(format!("Program {program_str} validation failed: {e}"));
+                    }
+                }
+            }
+
+            // Validate allowed tokens - should be non-executable token mints
+            for token_str in &self.validation.allowed_tokens {
+                if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
+                    if let Err(e) =
+                        validate_account(rpc_client, &token_pubkey, Some(AccountType::Mint)).await
+                    {
+                        errors.push(format!("Token {token_str} validation failed: {e}"));
+                    }
+                }
+            }
+
+            // Validate allowed spl paid tokens - should be non-executable token mints
+            for token_str in &self.validation.allowed_spl_paid_tokens {
+                if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
+                    if let Err(e) =
+                        validate_account(rpc_client, &token_pubkey, Some(AccountType::Mint)).await
+                    {
+                        errors.push(format!("SPL paid token {token_str} validation failed: {e}"));
+                    }
+                }
+            }
+        }
+
         // Output results
         println!("=== Configuration Validation ===");
         if errors.is_empty() {
@@ -379,7 +418,13 @@ mod tests {
     use crate::{constant::DEFAULT_MAX_TIMESTAMP_AGE, oracle::PriceSource};
 
     use super::*;
-    use std::fs;
+    use base64::Engine;
+    use serde_json::json;
+    use solana_client::rpc_request::RpcRequest;
+    use solana_program::program_pack::Pack;
+    use solana_sdk::account::Account;
+    use spl_token::state::Mint;
+    use std::{collections::HashMap, fs, sync::Arc};
     use tempfile::NamedTempFile;
 
     #[test]
@@ -697,7 +742,7 @@ mod tests {
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = config.validate_with_result(&rpc_client).await;
+        let result = config.validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
         assert!(warnings.is_empty());
@@ -737,7 +782,7 @@ mod tests {
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = config.validate_with_result(&rpc_client).await;
+        let result = config.validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
 
@@ -774,7 +819,7 @@ mod tests {
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = config.validate_with_result(&rpc_client).await;
+        let result = config.validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
 
@@ -808,7 +853,7 @@ mod tests {
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = config.validate_with_result(&rpc_client).await;
+        let result = config.validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
 
@@ -849,7 +894,7 @@ mod tests {
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = config.validate_with_result(&rpc_client).await;
+        let result = config.validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
 
@@ -887,7 +932,7 @@ mod tests {
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = config.validate_with_result(&rpc_client).await;
+        let result = config.validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
 
@@ -933,7 +978,7 @@ mod tests {
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = config.validate_with_result(&rpc_client).await;
+        let result = config.validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
 
@@ -966,7 +1011,7 @@ mod tests {
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = config.validate_with_result(&rpc_client).await;
+        let result = config.validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
 
@@ -1005,10 +1050,266 @@ mod tests {
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = config.validate_with_result(&rpc_client).await;
+        let result = config.validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
 
         assert!(errors.iter().any(|e| e.contains("Token EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v in allowed_spl_paid_tokens must also be in allowed_tokens")));
+    }
+
+    // Helper functions for mocking RPC responses
+    fn create_mock_program_account() -> Account {
+        Account {
+            lamports: 1000000,
+            data: vec![0u8; 100],        // Program data
+            owner: Pubkey::new_unique(), // Programs are owned by the loader
+            executable: true,            // Programs are executable
+            rent_epoch: 0,
+        }
+    }
+
+    fn create_mock_non_executable_account() -> Account {
+        Account {
+            lamports: 1000000,
+            data: vec![0u8; 100],
+            owner: Pubkey::new_unique(),
+            executable: false, // Not executable
+            rent_epoch: 0,
+        }
+    }
+
+    fn create_mock_token_mint_account() -> Account {
+        let mut mint_data = vec![0u8; Mint::LEN];
+        let mint = Mint {
+            mint_authority: Some(Pubkey::new_unique()).into(),
+            supply: 1000000u64.into(),
+            decimals: 6,
+            is_initialized: true,
+            freeze_authority: None.into(),
+        };
+        Mint::pack(mint, &mut mint_data).unwrap();
+
+        Account {
+            lamports: 1000000,
+            data: mint_data,
+            owner: spl_token::id(), // Token mint owned by SPL Token program
+            executable: false,      // Mints are not executable
+            rent_epoch: 0,
+        }
+    }
+
+    fn create_mock_rpc_client_with_account(account: Account) -> Arc<RpcClient> {
+        let mut mocks = HashMap::new();
+        let encoded_data = base64::engine::general_purpose::STANDARD.encode(&account.data);
+
+        mocks.insert(
+            RpcRequest::GetAccountInfo,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "data": [encoded_data, "base64"],
+                    "executable": account.executable,
+                    "lamports": account.lamports,
+                    "owner": account.owner.to_string(),
+                    "rentEpoch": account.rent_epoch
+                }
+            }),
+        );
+
+        Arc::new(RpcClient::new_mock_with_mocks("http://localhost:8899".to_string(), mocks))
+    }
+
+    fn create_mock_rpc_client_account_not_found() -> Arc<RpcClient> {
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::GetAccountInfo,
+            json!({
+                "context": { "slot": 1 },
+                "value": null
+            }),
+        );
+
+        Arc::new(RpcClient::new_mock_with_mocks("http://localhost:8899".to_string(), mocks))
+    }
+
+    // Helper to create a simple test that only validates programs (no tokens)
+    fn create_program_only_config() -> Config {
+        Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()], // Required to pass basic validation
+                allowed_spl_paid_tokens: vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
+                ],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+            },
+        }
+    }
+
+    // Helper to create a simple test that only validates tokens (no programs)
+    fn create_token_only_config() -> Config {
+        Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![], // No programs
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![], // Empty to avoid duplicate validation
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_rpc_validation_valid_program() {
+        let config = create_program_only_config();
+
+        let mock_account = create_mock_program_account();
+        let rpc_client = create_mock_rpc_client_with_account(mock_account);
+
+        // Test with RPC validation enabled (skip_rpc_validation = false)
+        // The program validation should pass, but token validation will fail (AccountNotFound)
+        let result = config.validate_with_result(&rpc_client, false).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        // Should have token validation errors (account not found), but no program validation errors
+        assert!(errors.iter().any(|e| e.contains("Token")
+            && e.contains("validation failed")
+            && e.contains("AccountNotFound")));
+        assert!(!errors.iter().any(|e| e.contains("Program") && e.contains("validation failed")));
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_rpc_validation_valid_token_mint() {
+        let config = create_token_only_config();
+
+        let mock_account = create_mock_token_mint_account();
+        let rpc_client = create_mock_rpc_client_with_account(mock_account);
+
+        // Test with RPC validation enabled (skip_rpc_validation = false)
+        // Token validation should pass (mock returns token mint) since we have no programs
+        let result = config.validate_with_result(&rpc_client, false).await;
+        assert!(result.is_ok());
+        // Should have warnings about no programs but no errors
+        let warnings = result.unwrap();
+        assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_rpc_validation_non_executable_program_fails() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+            },
+        };
+
+        let mock_account = create_mock_non_executable_account(); // Non-executable
+        let rpc_client = create_mock_rpc_client_with_account(mock_account);
+
+        // Test with RPC validation enabled (skip_rpc_validation = false)
+        let result = config.validate_with_result(&rpc_client, false).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("Program") && e.contains("validation failed")));
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_rpc_validation_account_not_found_fails() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+            },
+        };
+
+        let rpc_client = create_mock_rpc_client_account_not_found();
+
+        // Test with RPC validation enabled (skip_rpc_validation = false)
+        let result = config.validate_with_result(&rpc_client, false).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("Failed to get account")));
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_result_skip_rpc_validation() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+            },
+            kora: KoraConfig {
+                rate_limit: 100,
+                enabled_methods: EnabledMethods::default(),
+                api_key: None,
+                hmac_secret: None,
+                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+            },
+        };
+
+        // Use account not found RPC client - should not matter when skipping RPC validation
+        let rpc_client = create_mock_rpc_client_account_not_found();
+
+        // Test with RPC validation disabled (skip_rpc_validation = true)
+        let result = config.validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok()); // Should pass because RPC validation is skipped
     }
 }

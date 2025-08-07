@@ -90,9 +90,13 @@ pub struct CommonArgs {
     #[arg(long, env = "VAULT_PUBKEY", help_heading = "Vault Signer")]
     pub vault_pubkey: Option<String>,
 
-    /// Validate configuration file and show results (exits after validation)
+    /// Validate configuration file and show results (fast, no RPC calls)
     #[arg(long)]
     pub validate_config: bool,
+
+    /// Validate configuration file with RPC validation (slower but more thorough)
+    #[arg(long)]
+    pub validate_config_with_rpc: bool,
 }
 
 // RPC-specific arguments
