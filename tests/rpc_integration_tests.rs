@@ -1,6 +1,6 @@
 use jsonrpsee::{core::client::ClientT, rpc_params};
 use kora_lib::{
-    token::{token::TokenType, TokenInterface, TokenProgram},
+    token::{TokenInterface, TokenProgram},
     transaction::{TransactionUtil, VersionedTransactionUtilExt},
 };
 use serde_json::json;
@@ -284,7 +284,7 @@ async fn test_sign_transaction_if_paid() {
     let fee_amount = 100000;
 
     // Create instructions
-    let token_interface = TokenProgram::new(TokenType::Spl);
+    let token_interface = TokenProgram::new();
     let fee_payer_instruction = token_interface
         .create_transfer_instruction(
             &sender_token_account,

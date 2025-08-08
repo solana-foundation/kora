@@ -3,7 +3,7 @@ use std::str::FromStr;
 use crate::{
     fee::price::PriceModel,
     oracle::PriceSource,
-    token::token::check_valid_tokens,
+    token::token::TokenUtil,
     validator::account_validator::{validate_account, AccountType},
     Config, KoraError,
 };
@@ -25,7 +25,7 @@ impl ConfigValidator {
             return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
         }
 
-        check_valid_tokens(&config.validation.allowed_tokens)?;
+        TokenUtil::check_valid_tokens(&config.validation.allowed_tokens)?;
         Ok(())
     }
 
@@ -85,17 +85,17 @@ impl ConfigValidator {
         // Validate allowed tokens
         if config.validation.allowed_tokens.is_empty() {
             errors.push("No allowed tokens configured".to_string());
-        } else if let Err(e) = check_valid_tokens(&config.validation.allowed_tokens) {
+        } else if let Err(e) = TokenUtil::check_valid_tokens(&config.validation.allowed_tokens) {
             errors.push(format!("Invalid token address: {e}"));
         }
 
         // Validate allowed spl paid tokens
-        if let Err(e) = check_valid_tokens(&config.validation.allowed_spl_paid_tokens) {
+        if let Err(e) = TokenUtil::check_valid_tokens(&config.validation.allowed_spl_paid_tokens) {
             errors.push(format!("Invalid spl paid token address: {e}"));
         }
 
         // Validate disallowed accounts
-        if let Err(e) = check_valid_tokens(&config.validation.disallowed_accounts) {
+        if let Err(e) = TokenUtil::check_valid_tokens(&config.validation.disallowed_accounts) {
             errors.push(format!("Invalid disallowed account address: {e}"));
         }
 

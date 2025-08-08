@@ -2,7 +2,7 @@ use anyhow::Result;
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
 use kora_lib::{
     signer::KeypairUtil,
-    token::{TokenInterface, TokenProgram, token::TokenType},
+    token::{TokenInterface, TokenProgram},
     transaction::{TransactionUtil, VersionedTransactionUtilExt},
 };
 use solana_address_lookup_table_interface::{
@@ -523,7 +523,7 @@ pub async fn create_test_spl_transaction() -> Result<String> {
     let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
 
     // Create token transfer instruction
-    let token_interface = TokenProgram::new(TokenType::Spl);
+    let token_interface = TokenProgram::new();
     let amount = 1000; // Transfer 1000 token units
     let instruction = token_interface
         .create_transfer_instruction(

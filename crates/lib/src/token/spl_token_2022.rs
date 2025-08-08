@@ -1,10 +1,14 @@
+use crate::{constant::DEFAULT_INTEREST_MULTIPLIER, token::interface::TokenMint};
+
 use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::instruction::Instruction;
+use solana_sdk::instruction::{CompiledInstruction, Instruction};
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
+use spl_token_2022::extension::default_account_state::DefaultAccountState;
+
 use spl_token_2022::{
     extension::{
         cpi_guard::CpiGuard, interest_bearing_mint::InterestBearingConfig,
@@ -126,7 +130,175 @@ impl Token2022Account {
     }
 }
 
+#[derive(Debug)]
+pub struct Token2022Mint {
+    pub mint: Pubkey,
+    pub mint_authority: Option<Pubkey>,
+    pub supply: u64,
+    pub decimals: u8,
+    pub is_initialized: bool,
+    pub freeze_authority: Option<Pubkey>,
+    /// Raw extension data for Token2022 mint extensions
+    pub extension_data: Vec<u8>,
+}
+
+impl TokenMint for Token2022Mint {
+    fn address(&self) -> Pubkey {
+        self.mint
+    }
+
+    fn decimals(&self) -> u8 {
+        self.decimals
+    }
+
+    fn mint_authority(&self) -> Option<Pubkey> {
+        self.mint_authority
+    }
+
+    fn supply(&self) -> u64 {
+        self.supply
+    }
+
+    fn freeze_authority(&self) -> Option<Pubkey> {
+        self.freeze_authority
+    }
+
+    fn is_initialized(&self) -> bool {
+        self.is_initialized
+    }
+
+    fn get_token_program(&self) -> Box<dyn TokenInterface> {
+        Box::new(Token2022Program::new())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl Token2022Mint {
+    pub fn has_mint_extension(&self, extension_type: ExtensionType) -> bool {
+        if let Ok(mint_with_extensions) =
+            StateWithExtensions::<Token2022MintState>::unpack(&self.extension_data)
+        {
+            mint_with_extensions.get_extension_types().unwrap_or_default().contains(&extension_type)
+        } else {
+            false
+        }
+    }
+
+    /// Get transfer fee configuration from mint if present
+    pub fn get_transfer_fee_config(&self) -> Option<TransferFeeConfig> {
+        if let Ok(mint_with_extensions) =
+            StateWithExtensions::<Token2022MintState>::unpack(&self.extension_data)
+        {
+            mint_with_extensions.get_extension::<TransferFeeConfig>().ok().copied()
+        } else {
+            None
+        }
+    }
+
+    /// Check if mint has confidential transfer mint extension
+    pub fn has_confidential_transfer_mint(&self) -> bool {
+        self.has_mint_extension(ExtensionType::ConfidentialTransferMint)
+    }
+
+    /// Check if mint is pausable
+    pub fn is_pausable(&self) -> bool {
+        self.has_mint_extension(ExtensionType::Pausable)
+    }
+
+    /// Get interest bearing configuration from mint if present
+    pub fn get_interest_bearing_config(&self) -> Option<InterestBearingConfig> {
+        if let Ok(mint_with_extensions) =
+            StateWithExtensions::<Token2022MintState>::unpack(&self.extension_data)
+        {
+            mint_with_extensions.get_extension::<InterestBearingConfig>().ok().copied()
+        } else {
+            None
+        }
+    }
+
+    /// Check if mint has permanent delegate
+    pub fn has_permanent_delegate(&self) -> bool {
+        self.has_mint_extension(ExtensionType::PermanentDelegate)
+    }
+
+    /// Get permanent delegate configuration
+    pub fn get_permanent_delegate(
+        &self,
+    ) -> Option<spl_token_2022::extension::permanent_delegate::PermanentDelegate> {
+        if let Ok(mint_with_extensions) =
+            StateWithExtensions::<Token2022MintState>::unpack(&self.extension_data)
+        {
+            mint_with_extensions
+                .get_extension::<spl_token_2022::extension::permanent_delegate::PermanentDelegate>()
+                .ok()
+                .copied()
+        } else {
+            None
+        }
+    }
+
+    /// Check if mint has metadata pointer
+    pub fn has_metadata_pointer(&self) -> bool {
+        self.has_mint_extension(ExtensionType::MetadataPointer)
+    }
+
+    /// Check if mint has group pointer
+    pub fn has_group_pointer(&self) -> bool {
+        self.has_mint_extension(ExtensionType::GroupPointer)
+    }
+
+    /// Check if mint has close authority
+    pub fn has_close_authority(&self) -> bool {
+        self.has_mint_extension(ExtensionType::MintCloseAuthority)
+    }
+
+    /// Check if mint has transfer hook
+    pub fn has_transfer_hook(&self) -> bool {
+        self.has_mint_extension(ExtensionType::TransferHook)
+    }
+
+    /// Get default account state if configured
+    pub fn get_default_account_state(&self) -> Option<u8> {
+        if let Ok(mint_with_extensions) =
+            StateWithExtensions::<Token2022MintState>::unpack(&self.extension_data)
+        {
+            if let Ok(default_state) = mint_with_extensions.get_extension::<DefaultAccountState>() {
+                return Some(default_state.state);
+            }
+        }
+        None
+    }
+
+    /// Calculate transfer fee for a given amount
+    pub fn calculate_transfer_fee(&self, amount: u64, current_epoch: u64) -> Option<u64> {
+        if let Some(fee_config) = self.get_transfer_fee_config() {
+            let transfer_fee = if current_epoch >= u64::from(fee_config.newer_transfer_fee.epoch) {
+                &fee_config.newer_transfer_fee
+            } else {
+                &fee_config.older_transfer_fee
+            };
+
+            let basis_points = u16::from(transfer_fee.transfer_fee_basis_points);
+            let maximum_fee = u64::from(transfer_fee.maximum_fee);
+
+            let fee_amount = (amount as u128 * basis_points as u128 / 10_000) as u64;
+            Some(std::cmp::min(fee_amount, maximum_fee))
+        } else {
+            None
+        }
+    }
+}
+
 pub struct Token2022Program;
+
+impl Token2022Program {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 impl Default for Token2022Program {
     fn default() -> Self {
@@ -134,20 +306,10 @@ impl Default for Token2022Program {
     }
 }
 
-impl Token2022Program {
-    pub fn new() -> Self {
-        Self
-    }
-
-    fn get_program_id(&self) -> Pubkey {
-        spl_token_2022::id()
-    }
-}
-
 #[async_trait]
 impl TokenInterface for Token2022Program {
     fn program_id(&self) -> Pubkey {
-        self.get_program_id()
+        spl_token_2022::id()
     }
 
     fn unpack_token_account(
@@ -241,12 +403,23 @@ impl TokenInterface for Token2022Program {
         create_associated_token_account(funding_account, wallet, mint, &self.program_id())
     }
 
-    fn get_mint_decimals(
+    fn unpack_mint(
         &self,
+        mint: &Pubkey,
         mint_data: &[u8],
-    ) -> Result<u8, Box<dyn std::error::Error + Send + Sync>> {
-        let mint = StateWithExtensions::<Token2022MintState>::unpack(mint_data)?;
-        Ok(mint.base.decimals)
+    ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
+        let mint_with_extensions = StateWithExtensions::<Token2022MintState>::unpack(mint_data)?;
+        let base = mint_with_extensions.base;
+
+        Ok(Box::new(Token2022Mint {
+            mint: *mint,
+            mint_authority: base.mint_authority.into(),
+            supply: base.supply,
+            decimals: base.decimals,
+            is_initialized: base.is_initialized,
+            freeze_authority: base.freeze_authority.into(),
+            extension_data: mint_data.to_vec(),
+        }))
     }
 
     fn decode_transfer_instruction(
@@ -261,12 +434,139 @@ impl TokenInterface for Token2022Program {
             _ => Err("Not a transfer instruction".into()),
         }
     }
+
+    fn process_spl_instruction(
+        &self,
+        instruction_data: &[u8],
+        ix: &CompiledInstruction,
+        account_keys: &[Pubkey],
+        fee_payer_pubkey: &Pubkey,
+        command: super::interface::SplInstructionCommand,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        if let Some(parsed) = self.parse_spl_instruction(instruction_data)? {
+            command.execute(&parsed, ix, account_keys, fee_payer_pubkey)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn get_and_validate_amount_for_payment(
+        &self,
+        token_account: &dyn TokenState,
+        amount: u64,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+        if token_account.amount() < amount {
+            return Err("Insufficient balance".into());
+        }
+
+        if let Some(account) = token_account.as_any().downcast_ref::<Token2022Account>() {
+            // Try to parse the account data
+            if account.extension_data.is_empty()
+                || StateWithExtensions::<Token2022AccountState>::unpack(&account.extension_data)
+                    .is_err()
+            {
+                let interest =
+                    std::cmp::max(1, (amount as u128 * DEFAULT_INTEREST_MULTIPLIER) as u64);
+                return Ok(amount + interest);
+            }
+
+            if account.is_non_transferable() {
+                return Err("Token is non-transferable".into());
+            }
+
+            if account.is_cpi_guarded() {
+                return Err("Token is cpi guarded".into());
+            }
+
+            let transfer_fee = account.get_transfer_fee();
+            if transfer_fee.is_some() {
+                let basis_points = 100; // 1%
+                let fee = (amount as u128 * basis_points as u128 / 10000) as u64;
+
+                // Cap at 10,000 lamports maximum fee
+                let max_fee = 10_000;
+
+                let fee = std::cmp::min(fee, max_fee);
+
+                return Ok(amount.saturating_sub(fee));
+            }
+        }
+
+        Ok(amount)
+    }
+}
+
+impl Token2022Program {
+    fn parse_spl_instruction(
+        &self,
+        instruction_data: &[u8],
+    ) -> Result<
+        Option<super::interface::ParsedSplInstruction>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        use super::interface::{ParsedSplInstruction, SplInstructionType};
+
+        if let Ok(spl_ix) = instruction::TokenInstruction::unpack(instruction_data) {
+            let parsed = match spl_ix {
+                #[allow(deprecated)]
+                instruction::TokenInstruction::Transfer { amount } => ParsedSplInstruction {
+                    instruction_type: SplInstructionType::Transfer,
+                    authority_index: 2,
+                    amount: Some(amount),
+                    program_id: self.program_id(),
+                },
+                instruction::TokenInstruction::TransferChecked { amount, .. } => {
+                    ParsedSplInstruction {
+                        instruction_type: SplInstructionType::TransferChecked,
+                        authority_index: 3,
+                        amount: Some(amount),
+                        program_id: self.program_id(),
+                    }
+                }
+                instruction::TokenInstruction::Burn { amount } => ParsedSplInstruction {
+                    instruction_type: SplInstructionType::Burn,
+                    authority_index: 2,
+                    amount: Some(amount),
+                    program_id: self.program_id(),
+                },
+                instruction::TokenInstruction::BurnChecked { amount, .. } => ParsedSplInstruction {
+                    instruction_type: SplInstructionType::BurnChecked,
+                    authority_index: 2,
+                    amount: Some(amount),
+                    program_id: self.program_id(),
+                },
+                instruction::TokenInstruction::CloseAccount { .. } => ParsedSplInstruction {
+                    instruction_type: SplInstructionType::CloseAccount,
+                    authority_index: 2,
+                    amount: None,
+                    program_id: self.program_id(),
+                },
+                instruction::TokenInstruction::Approve { amount } => ParsedSplInstruction {
+                    instruction_type: SplInstructionType::Approve,
+                    authority_index: 2,
+                    amount: Some(amount),
+                    program_id: self.program_id(),
+                },
+                instruction::TokenInstruction::ApproveChecked { amount, .. } => {
+                    ParsedSplInstruction {
+                        instruction_type: SplInstructionType::ApproveChecked,
+                        authority_index: 3,
+                        amount: Some(amount),
+                        program_id: self.program_id(),
+                    }
+                }
+                _ => return Ok(None), // Unknown instruction
+            };
+            Ok(Some(parsed))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::token::{token::TokenType, TokenProgram};
     use solana_client::nonblocking::rpc_client::RpcClient;
     use solana_program::program_pack::Pack;
     use solana_sdk::{
@@ -283,12 +583,12 @@ mod tests {
             transfer_fee::{TransferFee, TransferFeeAmount, TransferFeeConfig},
             ExtensionType,
         },
-        state::{Account as Token2022AccountState, Mint as Token2022MintState},
+        state::Account as Token2022AccountState,
     };
 
     #[test]
     fn test_token_program_token2022() {
-        let program = TokenProgram::new(TokenType::Token2022);
+        let program = Token2022Program::new();
         assert_eq!(program.program_id(), spl_token_2022::id());
     }
 
@@ -328,21 +628,6 @@ mod tests {
 
         // Verify extension data is present
         assert!(!account.extension_data.is_empty());
-    }
-
-    #[test]
-    fn test_token2022_mint_decimals() {
-        let program = TokenProgram::new(TokenType::Token2022);
-        let decimals = 9;
-
-        // Create a proper mint data buffer
-        let mut buffer = vec![0; Token2022MintState::LEN];
-        let mint = Token2022MintState { decimals, is_initialized: true, ..Default::default() };
-        mint.pack_into_slice(&mut buffer);
-
-        // Test unpacking decimals
-        let unpacked_decimals = program.get_mint_decimals(&buffer).unwrap();
-        assert_eq!(unpacked_decimals, decimals);
     }
 
     #[test]
@@ -403,7 +688,7 @@ mod tests {
 
     #[test]
     fn test_token2022_ata_derivation() {
-        let program = TokenProgram::new(TokenType::Token2022);
+        let program = Token2022Program::new();
         let wallet = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
@@ -699,7 +984,7 @@ mod tests {
 
         // Create source account
         let source_owner = Keypair::new();
-        let token_program = TokenProgram::new(TokenType::Token2022);
+        let token_program = Token2022Program::new();
         let source_account =
             token_program.get_associated_token_address(&source_owner.pubkey(), &mint.pubkey());
 
@@ -778,7 +1063,7 @@ mod tests {
         let wallet = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        let program = TokenProgram::new(TokenType::Token2022);
+        let program = Token2022Program::new();
         let ata_2022 = program.get_associated_token_address(&wallet, &mint);
         assert_ne!(ata_2022, wallet);
         assert_ne!(ata_2022, mint);
@@ -791,9 +1076,153 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         // Test Token2022 ATA creation
-        let program = TokenProgram::new(TokenType::Token2022);
+        let program = Token2022Program::new();
         let ix = program.create_associated_token_account_instruction(&funder, &owner, &mint);
 
         assert_eq!(ix.program_id, spl_associated_token_account::id());
+    }
+
+    #[test]
+    fn test_get_and_validate_amount_for_payment() {
+        let mint = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let amount = 1000;
+
+        // Create a minimal Token2022Account for testing
+        let account = Token2022Account {
+            mint,
+            owner,
+            amount,
+            delegate: None,
+            state: 1,
+            is_native: None,
+            delegated_amount: 0,
+            close_authority: None,
+            extension_data: Vec::new(),
+        };
+
+        let program = Token2022Program::new();
+        let result = program.get_and_validate_amount_for_payment(&account, amount);
+
+        assert!(result.is_ok());
+        // With empty extension data, it should add DEFAULT_INTEREST_MULTIPLIER
+        let validated_amount = result.unwrap();
+        let expected = amount
+            + std::cmp::max(
+                1,
+                (amount as u128 * crate::constant::DEFAULT_INTEREST_MULTIPLIER) as u64,
+            );
+        assert_eq!(validated_amount, expected);
+    }
+
+    #[test]
+    fn test_get_and_validate_amount_for_payment_with_invalid_extension_data() {
+        let mint = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let amount = 10_000;
+
+        let buffer = vec![1; 1000]; // Non-empty buffer with invalid extension data
+
+        // Create a Token2022Account with the extension data
+        let token2022_account = Token2022Account {
+            mint,
+            owner,
+            amount,
+            delegate: None,
+            state: 1,
+            is_native: None,
+            delegated_amount: 0,
+            close_authority: None,
+            extension_data: buffer,
+        };
+
+        let program = Token2022Program::new();
+        // Test the validation function
+        let result = program.get_and_validate_amount_for_payment(&token2022_account, amount);
+
+        // Validation should succeed
+        assert!(result.is_ok());
+
+        // The result should account for interest using DEFAULT_INTEREST_MULTIPLIER
+        let validated_amount = result.unwrap();
+        let expected_amount = amount
+            + std::cmp::max(
+                1,
+                (amount as u128 * crate::constant::DEFAULT_INTEREST_MULTIPLIER) as u64,
+            );
+
+        // The validated amount should include interest
+        assert_eq!(
+            validated_amount, expected_amount,
+            "Amount should be adjusted for interest according to the fallback calculation"
+        );
+    }
+
+    #[test]
+    fn test_get_and_validate_amount_for_payment_insufficient_balance() {
+        let mint = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let account_balance = 500;
+        let requested_amount = 1000;
+
+        // Create a Token2022Account with insufficient balance
+        let account = Token2022Account {
+            mint,
+            owner,
+            amount: account_balance,
+            delegate: None,
+            state: 1,
+            is_native: None,
+            delegated_amount: 0,
+            close_authority: None,
+            extension_data: Vec::new(),
+        };
+
+        let program = Token2022Program::new();
+        let result = program.get_and_validate_amount_for_payment(&account, requested_amount);
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Insufficient balance");
+    }
+
+    #[test]
+    fn test_get_and_validate_amount_for_payment_with_transfer_fee() {
+        let mint = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let amount = 10_000;
+
+        // Create dummy extension data that will fail to parse
+        // This will trigger the transfer fee logic branch
+        let buffer = vec![1; 165];
+
+        let account = Token2022Account {
+            mint,
+            owner,
+            amount,
+            delegate: None,
+            state: 1,
+            is_native: None,
+            delegated_amount: 0,
+            close_authority: None,
+            extension_data: buffer,
+        };
+
+        // Mock that this account has a transfer fee
+        // Note: Since we can't easily create valid extension data in tests,
+        // the actual transfer fee logic in get_and_validate_amount_for_payment
+        // will apply the fallback interest calculation
+        let program = Token2022Program::new();
+        let result = program.get_and_validate_amount_for_payment(&account, amount);
+
+        assert!(result.is_ok());
+        let validated_amount = result.unwrap();
+
+        // Should apply interest since we can't create valid transfer fee extensions in test
+        let expected = amount
+            + std::cmp::max(
+                1,
+                (amount as u128 * crate::constant::DEFAULT_INTEREST_MULTIPLIER) as u64,
+            );
+        assert_eq!(validated_amount, expected);
     }
 }

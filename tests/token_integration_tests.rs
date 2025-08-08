@@ -1,7 +1,6 @@
 use kora_lib::{
     token::{Token2022Account, Token2022Program, TokenInterface},
     transaction::TransactionUtil,
-    validator::transaction_validator::validate_token2022_account,
 };
 use solana_message::{Message, VersionedMessage};
 use solana_sdk::{
@@ -113,9 +112,9 @@ async fn test_pyusd_token_e2e_with_kora() {
             // Verify it's a Token2022Account
             if let Some(token2022_account) = token_state.as_any().downcast_ref::<Token2022Account>()
             {
-                // Validate token extensions
-                let validation_result =
-                    validate_token2022_account(token2022_account, transfer_amount);
+                // Validate token extensions using the interface method
+                let validation_result = original_token_program
+                    .get_and_validate_amount_for_payment(token2022_account, transfer_amount);
                 assert!(
                     validation_result.is_ok(),
                     "Token2022Account validation failed: {validation_result:?}"

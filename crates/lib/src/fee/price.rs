@@ -1,6 +1,4 @@
-use crate::{
-    error::KoraError, oracle::PriceSource, token::token::calculate_token_value_in_lamports,
-};
+use crate::{error::KoraError, oracle::PriceSource, token::token::TokenUtil};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -40,7 +38,7 @@ impl PriceConfig {
             }
             PriceModel::Fixed { amount, token } => {
                 if let (Some(price_source), Some(rpc_client)) = (price_source, rpc_client) {
-                    Ok(calculate_token_value_in_lamports(
+                    Ok(TokenUtil::calculate_token_value_in_lamports(
                         *amount,
                         &Pubkey::from_str(token).unwrap(),
                         price_source,

@@ -1,10 +1,11 @@
-use super::{
-    interface::{TokenInterface, TokenState},
-    token::TokenType,
+use crate::token::interface::TokenMint;
+
+use super::interface::{
+    ParsedSplInstruction, SplInstructionCommand, SplInstructionType, TokenInterface, TokenState,
 };
 use async_trait::async_trait;
 use solana_program::{program_pack::Pack, pubkey::Pubkey};
-use solana_sdk::instruction::Instruction;
+use solana_sdk::instruction::{CompiledInstruction, Instruction};
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
@@ -43,27 +44,68 @@ impl TokenState for TokenAccount {
     }
 }
 
-pub struct TokenProgram {
-    token_type: TokenType,
+#[derive(Debug)]
+pub struct SplMint {
+    pub mint: Pubkey,
+    pub mint_authority: Option<Pubkey>,
+    pub supply: u64,
+    pub decimals: u8,
+    pub is_initialized: bool,
+    pub freeze_authority: Option<Pubkey>,
+}
+
+impl TokenMint for SplMint {
+    fn address(&self) -> Pubkey {
+        self.mint
+    }
+
+    fn decimals(&self) -> u8 {
+        self.decimals
+    }
+
+    fn mint_authority(&self) -> Option<Pubkey> {
+        self.mint_authority
+    }
+
+    fn supply(&self) -> u64 {
+        self.supply
+    }
+
+    fn freeze_authority(&self) -> Option<Pubkey> {
+        self.freeze_authority
+    }
+
+    fn is_initialized(&self) -> bool {
+        self.is_initialized
+    }
+
+    fn get_token_program(&self) -> Box<dyn TokenInterface> {
+        Box::new(TokenProgram::new())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+pub struct TokenProgram;
+
+impl Default for TokenProgram {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TokenProgram {
-    pub fn new(token_type: TokenType) -> Self {
-        Self { token_type }
-    }
-
-    fn get_program_id(&self) -> Pubkey {
-        match self.token_type {
-            TokenType::Spl => spl_token::id(),
-            TokenType::Token2022 => spl_token_2022::id(),
-        }
+    pub fn new() -> Self {
+        Self
     }
 }
 
 #[async_trait]
 impl TokenInterface for TokenProgram {
     fn program_id(&self) -> Pubkey {
-        self.get_program_id()
+        spl_token::id()
     }
 
     fn unpack_token_account(
@@ -148,11 +190,21 @@ impl TokenInterface for TokenProgram {
         create_associated_token_account(funding_account, wallet, mint, &self.program_id())
     }
 
-    fn get_mint_decimals(
+    fn unpack_mint(
         &self,
+        mint: &Pubkey,
         mint_data: &[u8],
-    ) -> Result<u8, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(MintState::unpack(mint_data)?.decimals)
+    ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
+        let mint_state = MintState::unpack(mint_data)?;
+
+        Ok(Box::new(SplMint {
+            mint: *mint,
+            mint_authority: mint_state.mint_authority.into(),
+            supply: mint_state.supply,
+            decimals: mint_state.decimals,
+            is_initialized: mint_state.is_initialized,
+            freeze_authority: mint_state.freeze_authority.into(),
+        }))
     }
 
     fn decode_transfer_instruction(
@@ -166,6 +218,103 @@ impl TokenInterface for TokenProgram {
             _ => Err("Not a transfer instruction".into()),
         }
     }
+
+    fn process_spl_instruction(
+        &self,
+        instruction_data: &[u8],
+        ix: &CompiledInstruction,
+        account_keys: &[Pubkey],
+        fee_payer_pubkey: &Pubkey,
+        command: SplInstructionCommand,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        if let Some(parsed) = self.parse_spl_instruction(instruction_data)? {
+            command.execute(&parsed, ix, account_keys, fee_payer_pubkey)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn get_and_validate_amount_for_payment(
+        &self,
+        token_account: &dyn TokenState,
+        amount: u64,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+        if token_account.amount() < amount {
+            return Err("Insufficient balance".into());
+        }
+
+        Ok(amount)
+    }
+}
+
+impl TokenProgram {
+    fn parse_spl_instruction(
+        &self,
+        instruction_data: &[u8],
+    ) -> Result<Option<ParsedSplInstruction>, Box<dyn std::error::Error + Send + Sync>> {
+        if let Ok(spl_ix) = spl_token::instruction::TokenInstruction::unpack(instruction_data) {
+            let parsed = match spl_ix {
+                spl_token::instruction::TokenInstruction::Transfer { amount } => {
+                    ParsedSplInstruction {
+                        instruction_type: SplInstructionType::Transfer,
+                        authority_index: 2,
+                        amount: Some(amount),
+                        program_id: self.program_id(),
+                    }
+                }
+                spl_token::instruction::TokenInstruction::TransferChecked { amount, .. } => {
+                    ParsedSplInstruction {
+                        instruction_type: SplInstructionType::TransferChecked,
+                        authority_index: 3,
+                        amount: Some(amount),
+                        program_id: self.program_id(),
+                    }
+                }
+                spl_token::instruction::TokenInstruction::Burn { amount } => ParsedSplInstruction {
+                    instruction_type: SplInstructionType::Burn,
+                    authority_index: 2,
+                    amount: Some(amount),
+                    program_id: self.program_id(),
+                },
+                spl_token::instruction::TokenInstruction::BurnChecked { amount, .. } => {
+                    ParsedSplInstruction {
+                        instruction_type: SplInstructionType::BurnChecked,
+                        authority_index: 2,
+                        amount: Some(amount),
+                        program_id: self.program_id(),
+                    }
+                }
+                spl_token::instruction::TokenInstruction::CloseAccount { .. } => {
+                    ParsedSplInstruction {
+                        instruction_type: SplInstructionType::CloseAccount,
+                        authority_index: 2,
+                        amount: None,
+                        program_id: self.program_id(),
+                    }
+                }
+                spl_token::instruction::TokenInstruction::Approve { amount } => {
+                    ParsedSplInstruction {
+                        instruction_type: SplInstructionType::Approve,
+                        authority_index: 2,
+                        amount: Some(amount),
+                        program_id: self.program_id(),
+                    }
+                }
+                spl_token::instruction::TokenInstruction::ApproveChecked { amount, .. } => {
+                    ParsedSplInstruction {
+                        instruction_type: SplInstructionType::ApproveChecked,
+                        authority_index: 3,
+                        amount: Some(amount),
+                        program_id: self.program_id(),
+                    }
+                }
+                _ => return Ok(None), // Unknown instruction
+            };
+            Ok(Some(parsed))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -173,29 +322,18 @@ mod tests {
     use super::*;
     use solana_program::program_pack::Pack;
     use solana_sdk::pubkey::Pubkey;
-    use spl_token::state::{Account as SplTokenAccount, Mint};
+    use spl_token::state::Account as SplTokenAccount;
 
     #[test]
     fn test_token_program_spl() {
-        let program = TokenProgram::new(TokenType::Spl);
+        let program = TokenProgram::new();
         assert_eq!(program.program_id(), spl_token::id());
     }
 
     #[test]
     fn test_token_program_creation() {
-        let program = TokenProgram::new(TokenType::Spl);
+        let program = TokenProgram::new();
         assert_eq!(program.program_id(), spl_token::id());
-    }
-
-    #[test]
-    fn test_get_mint_decimals() {
-        let program = TokenProgram::new(TokenType::Spl);
-        let mut mint_data = vec![0; Mint::LEN];
-        let mut mint = Mint { is_initialized: true, ..Default::default() };
-        mint.decimals = 9;
-        mint.pack_into_slice(&mut mint_data);
-        let result = program.get_mint_decimals(&mint_data);
-        assert!(result.is_ok());
     }
 
     #[test]
@@ -211,7 +349,7 @@ mod tests {
         };
         dummy_account.pack_into_slice(&mut bytes);
 
-        let account = TokenProgram::new(TokenType::Spl).unpack_token_account(&bytes).unwrap();
+        let account = TokenProgram::new().unpack_token_account(&bytes).unwrap();
         let token_account = account.as_any().downcast_ref::<TokenAccount>().unwrap();
         assert_eq!(token_account.amount, 0);
     }
@@ -261,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_get_associated_token_address() {
-        let program = TokenProgram::new(TokenType::Spl);
+        let program = TokenProgram::new();
         let wallet = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
@@ -272,7 +410,7 @@ mod tests {
 
     #[test]
     fn test_create_ata_instruction() {
-        let program = TokenProgram::new(TokenType::Spl);
+        let program = TokenProgram::new();
         let funder = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
         let mint = Pubkey::new_unique();

@@ -6,7 +6,7 @@ use crate::{
     error::KoraError,
     fee::fee::FeeConfigUtil,
     get_signer,
-    token::token::calculate_lamports_value_in_token,
+    token::token::TokenUtil,
     transaction::{TransactionUtil, VersionedTransactionResolved},
 };
 use solana_sdk::pubkey::Pubkey;
@@ -57,7 +57,7 @@ pub async fn estimate_transaction_fee(
             KoraError::InvalidTransaction("Invalid fee token mint address".to_string())
         })?;
 
-        let fee_value_in_token = calculate_lamports_value_in_token(
+        let fee_value_in_token = TokenUtil::calculate_lamports_value_in_token(
             fee_in_lamports,
             &token_mint,
             &validation.price_source,

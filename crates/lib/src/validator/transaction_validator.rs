@@ -4,8 +4,8 @@ use crate::{
     fee::fee::FeeConfigUtil,
     oracle::PriceSource,
     token::{
-        token::{calculate_token_value_in_lamports, TokenType},
-        Token2022Account, TokenInterface, TokenProgram,
+        interface::{SplInstructionCommand, TokenMint},
+        token::{TokenType, TokenUtil},
     },
     transaction::VersionedTransactionExt,
 };
@@ -43,11 +43,6 @@ pub struct TransactionValidator {
     disallowed_accounts: Vec<Pubkey>,
     _price_source: PriceSource,
     fee_payer_policy: FeePayerPolicy,
-}
-
-pub struct ValidatedMint {
-    pub token_program: TokenProgram,
-    pub decimals: u8,
 }
 
 impl TransactionValidator {
@@ -89,7 +84,7 @@ impl TransactionValidator {
         &self,
         mint: &Pubkey,
         rpc_client: &RpcClient,
-    ) -> Result<ValidatedMint, KoraError> {
+    ) -> Result<Box<dyn TokenMint + Send + Sync>, KoraError> {
         // First check if the mint is in allowed tokens
         if !self.allowed_tokens.contains(mint) {
             return Err(KoraError::InvalidTransaction(format!(
@@ -97,23 +92,13 @@ impl TransactionValidator {
             )));
         }
 
-        // Get the mint account to determine if it's SPL or Token2022
-        let mint_account = rpc_client.get_account(mint).await?;
+        let mint = TokenUtil::get_mint(rpc_client, mint).await?;
 
-        // Check if it's a Token2022 mint
-        let is_token2022 = mint_account.owner == spl_token_2022::id();
-        let token_program =
-            TokenProgram::new(if is_token2022 { TokenType::Token2022 } else { TokenType::Spl });
-
-        // Validate mint account data
-        let decimals = token_program.get_mint_decimals(&mint_account.data)?;
-
-        Ok(ValidatedMint { token_program, decimals })
+        Ok(mint)
     }
 
     /// Safe account key resolution for both Legacy and V0 transactions
     fn get_account_key(
-        &self,
         account_keys: &[Pubkey],
         index: u8,
         context: &str,
@@ -196,7 +181,7 @@ impl TransactionValidator {
     ) -> Result<(), KoraError> {
         for instruction in message.instructions() {
             let program_id =
-                self.get_account_key(account_keys, instruction.program_id_index, "program ID")?;
+                Self::get_account_key(account_keys, instruction.program_id_index, "program ID")?;
             if !self.allowed_programs.contains(&program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Program {program_id} is not in the allowed list"
@@ -222,108 +207,74 @@ impl TransactionValidator {
         Ok(())
     }
 
+    pub fn check_fee_payer(
+        fee_payer_pubkey: &Pubkey,
+        account_index: usize,
+        policy_allowed: bool,
+        ix: &CompiledInstruction,
+        account_keys: &[Pubkey],
+    ) -> Result<bool, KoraError> {
+        if account_index >= ix.accounts.len() {
+            return Ok(false); // If account index is invalid, fee payer can't be the source
+        }
+        let account_key_index = ix.accounts[account_index];
+        match Self::get_account_key(account_keys, account_key_index, "fee payer source check") {
+            Ok(account_pubkey) => Ok(!policy_allowed && account_pubkey == *fee_payer_pubkey),
+            Err(_) => Ok(false), // If account index is invalid, fee payer can't be the source
+        }
+    }
+
     fn is_fee_payer_source(
         &self,
         ix: &CompiledInstruction,
         account_keys: &[Pubkey],
     ) -> Result<bool, KoraError> {
         let program_id =
-            self.get_account_key(account_keys, ix.program_id_index, "fee payer check")?;
-
-        let check_fee_payer = |account_index: usize,
-                               policy_allowed: bool|
-         -> Result<bool, KoraError> {
-            if account_index >= ix.accounts.len() {
-                return Ok(false); // If account index is invalid, fee payer can't be the source
-            }
-            let account_key_index = ix.accounts[account_index];
-            match self.get_account_key(account_keys, account_key_index, "fee payer source check") {
-                Ok(account_pubkey) => {
-                    Ok(!policy_allowed && account_pubkey == self.fee_payer_pubkey)
-                }
-                Err(_) => Ok(false), // If account index is invalid, fee payer can't be the source
-            }
-        };
+            Self::get_account_key(account_keys, ix.program_id_index, "fee payer check")?;
 
         match program_id {
             SYSTEM_PROGRAM_ID => {
                 if let Ok(sys_ix) = bincode::deserialize::<SystemInstruction>(&ix.data) {
-                    match sys_ix {
+                    let (index, policy_allowed) = match sys_ix {
                         SystemInstruction::Transfer { .. } => {
-                            check_fee_payer(0, self.fee_payer_policy.allow_sol_transfers)
+                            (0, self.fee_payer_policy.allow_sol_transfers)
                         }
                         SystemInstruction::TransferWithSeed { .. } => {
-                            check_fee_payer(1, self.fee_payer_policy.allow_sol_transfers)
+                            (1, self.fee_payer_policy.allow_sol_transfers)
                         }
-                        SystemInstruction::Assign { .. } => {
-                            check_fee_payer(0, self.fee_payer_policy.allow_assign)
-                        }
+                        SystemInstruction::Assign { .. } => (0, self.fee_payer_policy.allow_assign),
                         SystemInstruction::AssignWithSeed { .. } => {
-                            check_fee_payer(1, self.fee_payer_policy.allow_assign)
+                            (1, self.fee_payer_policy.allow_assign)
                         }
-                        _ => Ok(false),
-                    }
+                        _ => (0, false),
+                    };
+                    Self::check_fee_payer(
+                        &self.fee_payer_pubkey,
+                        index,
+                        policy_allowed,
+                        ix,
+                        account_keys,
+                    )
                 } else {
                     Ok(false)
                 }
             }
-            spl_token::ID => {
-                if let Ok(spl_ix) = spl_token::instruction::TokenInstruction::unpack(&ix.data) {
-                    match spl_ix {
-                        spl_token::instruction::TokenInstruction::Transfer { .. } => {
-                            check_fee_payer(2, self.fee_payer_policy.allow_spl_transfers)
-                        }
-                        spl_token::instruction::TokenInstruction::TransferChecked { .. } => {
-                            check_fee_payer(3, self.fee_payer_policy.allow_spl_transfers)
-                        }
-                        spl_token::instruction::TokenInstruction::Burn { .. }
-                        | spl_token::instruction::TokenInstruction::BurnChecked { .. } => {
-                            check_fee_payer(2, self.fee_payer_policy.allow_burn)
-                        }
-                        spl_token::instruction::TokenInstruction::CloseAccount { .. } => {
-                            check_fee_payer(2, self.fee_payer_policy.allow_close_account)
-                        }
-                        spl_token::instruction::TokenInstruction::Approve { .. } => {
-                            check_fee_payer(2, self.fee_payer_policy.allow_approve)
-                        }
-                        spl_token::instruction::TokenInstruction::ApproveChecked { .. } => {
-                            check_fee_payer(3, self.fee_payer_policy.allow_approve)
-                        }
-                        _ => Ok(false),
-                    }
-                } else {
-                    Ok(false)
-                }
-            }
-            spl_token_2022::ID => {
-                if let Ok(spl_ix) = spl_token_2022::instruction::TokenInstruction::unpack(&ix.data)
-                {
-                    match spl_ix {
-                        #[allow(deprecated)] // Still need to support it for backwards compatibility
-                        spl_token_2022::instruction::TokenInstruction::Transfer { .. } => {
-                            check_fee_payer(2, self.fee_payer_policy.allow_token2022_transfers)
-                        }
-                        spl_token_2022::instruction::TokenInstruction::TransferChecked {
-                            ..
-                        } => check_fee_payer(3, self.fee_payer_policy.allow_token2022_transfers),
-                        spl_token_2022::instruction::TokenInstruction::Burn { .. }
-                        | spl_token_2022::instruction::TokenInstruction::BurnChecked { .. } => {
-                            check_fee_payer(2, self.fee_payer_policy.allow_burn)
-                        }
-                        spl_token_2022::instruction::TokenInstruction::CloseAccount => {
-                            check_fee_payer(2, self.fee_payer_policy.allow_close_account)
-                        }
-                        spl_token_2022::instruction::TokenInstruction::Approve { .. } => {
-                            check_fee_payer(2, self.fee_payer_policy.allow_approve)
-                        }
-                        spl_token_2022::instruction::TokenInstruction::ApproveChecked {
-                            ..
-                        } => check_fee_payer(3, self.fee_payer_policy.allow_approve),
-                        _ => Ok(false),
-                    }
-                } else {
-                    Ok(false)
-                }
+            spl_token::ID | spl_token_2022::ID => {
+                let command = SplInstructionCommand::ValidateFeePayerPolicy {
+                    fee_payer_policy: self.fee_payer_policy.clone(),
+                };
+
+                let token_interface = TokenType::get_token_program_from_owner(&program_id)?;
+
+                let result = token_interface.process_spl_instruction(
+                    &ix.data,
+                    ix,
+                    account_keys,
+                    &self.fee_payer_pubkey,
+                    command,
+                )?;
+
+                Ok(result)
             }
             _ => Ok(false),
         }
@@ -353,7 +304,7 @@ impl TransactionValidator {
         account_keys: &[Pubkey],
     ) -> Result<(), KoraError> {
         for instruction in message.instructions() {
-            let program_id = self.get_account_key(
+            let program_id = Self::get_account_key(
                 account_keys,
                 instruction.program_id_index,
                 "disallowed account check (program)",
@@ -365,8 +316,11 @@ impl TransactionValidator {
             }
 
             for account_index in instruction.accounts.iter() {
-                let account_pubkey =
-                    self.get_account_key(account_keys, *account_index, "disallowed account check")?;
+                let account_pubkey = Self::get_account_key(
+                    account_keys,
+                    *account_index,
+                    "disallowed account check",
+                )?;
                 if self.disallowed_accounts.contains(&account_pubkey) {
                     return Err(KoraError::InvalidTransaction(format!(
                         "Account {account_pubkey} is disallowed"
@@ -396,223 +350,49 @@ impl TransactionValidator {
         )
         .await
     }
-}
 
-pub fn validate_token2022_account(
-    account: &Token2022Account,
-    amount: u64,
-) -> Result<u64, KoraError> {
-    // Try to parse the account data
-    if account.extension_data.is_empty()
-        || StateWithExtensions::<Token2022AccountState>::unpack(&account.extension_data).is_err()
-    {
-        let interest = std::cmp::max(
-            1,
-            (amount as u128 * 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60)) as u64,
-        );
-        return Ok(amount + interest);
-    }
+    pub async fn validate_token_payment(
+        // Should have resolved addresses for lookup tables
+        resolved_transaction: &impl VersionedTransactionExt,
+        required_lamports: u64,
+        validation: &ValidationConfig,
+        rpc_client: &RpcClient,
+        _signer_pubkey: Pubkey,
+    ) -> Result<(), KoraError> {
+        let mut total_lamport_value = 0;
 
-    // If we get here, we can successfully unpack the extension data
-    let account_data =
-        StateWithExtensions::<Token2022AccountState>::unpack(&account.extension_data)?;
+        let transaction = resolved_transaction.get_transaction();
+        let all_account_keys = resolved_transaction.get_all_account_keys();
 
-    // Check for extensions that might block transfers
-    check_transfer_blocking_extensions(&account_data)?;
+        for ix in transaction.message.instructions() {
+            // Safe program ID resolution
+            let program_idx = ix.program_id_index as usize;
+            if program_idx >= all_account_keys.len() {
+                continue; // Skip invalid program ID index
+            }
+            let program_id = all_account_keys[program_idx];
 
-    // Calculate the actual amount after fees and interest
-    let actual_amount = calculate_actual_transfer_amount(amount, &account_data)?;
-
-    Ok(actual_amount)
-}
-
-/// Check for extensions that might block transfers entirely
-fn check_transfer_blocking_extensions(
-    account_data: &StateWithExtensions<Token2022AccountState>,
-) -> Result<(), KoraError> {
-    // Check if token is non-transferable
-    if account_data.get_extension::<NonTransferable>().is_ok() {
-        return Err(KoraError::InvalidTransaction("Token is non-transferable".to_string()));
-    }
-
-    // Check for CPI guard
-    if let Ok(cpi_guard) = account_data.get_extension::<CpiGuard>() {
-        if cpi_guard.lock_cpi.into() {
-            return Err(KoraError::InvalidTransaction("CPI transfers are locked".to_string()));
-        }
-    }
-
-    Ok(())
-}
-
-/// Calculate the actual amount to be received after accounting for transfer fees and interest
-fn calculate_actual_transfer_amount(
-    amount: u64,
-    account_data: &StateWithExtensions<Token2022AccountState>,
-) -> Result<u64, KoraError> {
-    let mut actual_amount = amount;
-
-    // Apply transfer fee if present
-    if let Ok(fee_config) = account_data.get_extension::<TransferFeeConfig>() {
-        let fee = calculate_transfer_fee(amount, fee_config)?;
-        actual_amount = actual_amount.saturating_sub(fee);
-    }
-
-    Ok(actual_amount)
-}
-
-fn calculate_transfer_fee(amount: u64, _fee_config: &TransferFeeConfig) -> Result<u64, KoraError> {
-    // Use a fixed percentage for transfer fee (1%)
-    let basis_points = 100; // 1%
-    let fee = (amount as u128 * basis_points as u128 / 10000) as u64;
-
-    // Cap at 10,000 lamports maximum fee
-    let max_fee = 10_000;
-
-    let fee = std::cmp::min(fee, max_fee);
-    Ok(fee)
-}
-
-#[allow(dead_code)]
-fn calculate_interest(
-    amount: u64,
-    _interest_config: &InterestBearingConfig,
-) -> Result<u64, KoraError> {
-    // For testing purposes, we'll use a fixed interest rate (1% annually)
-    let interest_rate = 100; // 1%
-
-    // Assume interest has been accruing for 1 day
-    let time_delta = 24 * 60 * 60; // One day in seconds
-
-    let seconds_per_year: u128 = 365 * 24 * 60 * 60;
-    let interest = (amount as u128)
-        .saturating_mul(interest_rate as u128)
-        .saturating_mul(time_delta as u128)
-        .checked_div(10000)
-        .and_then(|x| x.checked_div(seconds_per_year))
-        .unwrap_or(0);
-
-    Ok(amount.saturating_add(interest as u64))
-}
-
-async fn process_token_transfer(
-    ix: &CompiledInstruction,
-    token_type: TokenType,
-    account_keys: &[Pubkey],
-    rpc_client: &RpcClient,
-    validation: &ValidationConfig,
-    total_lamport_value: &mut u64,
-    required_lamports: u64,
-) -> Result<bool, KoraError> {
-    let token_program = TokenProgram::new(token_type);
-
-    if let Ok(amount) = token_program.decode_transfer_instruction(&ix.data) {
-        if ix.accounts.is_empty() {
-            return Ok(false);
-        }
-
-        let source_idx = ix.accounts[0] as usize;
-        if source_idx >= account_keys.len() {
-            return Ok(false);
-        }
-        let source_key = account_keys[source_idx];
-
-        let source_account = rpc_client
-            .get_account(&source_key)
-            .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-        let token_state = token_program
-            .unpack_token_account(&source_account.data)
-            .map_err(|e| KoraError::InvalidTransaction(format!("Invalid token account: {e}")))?;
-
-        if source_account.owner != token_program.program_id() {
-            return Ok(false);
-        }
-
-        // Check Token2022 specific restrictions
-        let actual_amount = if let Some(token2022_account) =
-            token_state.as_any().downcast_ref::<Token2022Account>()
-        {
-            validate_token2022_account(token2022_account, amount)?
-        } else {
-            amount
-        };
-
-        if token_state.amount() < actual_amount {
-            return Ok(false);
-        }
-
-        if !validation.allowed_spl_paid_tokens.contains(&token_state.mint().to_string()) {
-            return Ok(false);
-        }
-
-        let lamport_value = calculate_token_value_in_lamports(
-            actual_amount,
-            &token_state.mint(),
-            validation.price_source.clone(),
-            rpc_client,
-        )
-        .await?;
-
-        *total_lamport_value += lamport_value;
-        if *total_lamport_value >= required_lamports {
-            return Ok(true); // Payment satisfied
-        }
-    }
-
-    Ok(false)
-}
-
-pub async fn validate_token_payment(
-    // Should have resolved addresses for lookup tables
-    resolved_transaction: &impl VersionedTransactionExt,
-    required_lamports: u64,
-    validation: &ValidationConfig,
-    rpc_client: &RpcClient,
-    _signer_pubkey: Pubkey,
-) -> Result<(), KoraError> {
-    let mut total_lamport_value = 0;
-
-    let transaction = resolved_transaction.get_transaction();
-    let all_account_keys = resolved_transaction.get_all_account_keys();
-
-    for ix in transaction.message.instructions() {
-        // Safe program ID resolution
-        let program_idx = ix.program_id_index as usize;
-        if program_idx >= all_account_keys.len() {
-            continue; // Skip invalid program ID index
-        }
-        let program_id = all_account_keys[program_idx];
-
-        let token_type = if program_id == spl_token::id() {
-            Some(TokenType::Spl)
-        } else if program_id == spl_token_2022::id() {
-            Some(TokenType::Token2022)
-        } else {
-            None
-        };
-
-        if let Some(token_type) = token_type {
-            if process_token_transfer(
-                ix,
-                token_type,
-                &all_account_keys,
-                rpc_client,
-                validation,
-                &mut total_lamport_value,
-                required_lamports,
-            )
-            .await?
-            {
-                return Ok(());
+            if let Ok(token_program) = TokenType::get_token_program_from_owner(&program_id) {
+                if TokenUtil::process_token_transfer(
+                    ix,
+                    &*token_program,
+                    &all_account_keys,
+                    rpc_client,
+                    validation,
+                    &mut total_lamport_value,
+                    required_lamports,
+                )
+                .await?
+                {
+                    return Ok(());
+                }
             }
         }
-    }
 
-    Err(KoraError::InvalidTransaction(format!(
-        "Insufficient token payment. Required {required_lamports} lamports, got {total_lamport_value}"
-    )))
+        Err(KoraError::InvalidTransaction(format!(
+            "Insufficient token payment. Required {required_lamports} lamports, got {total_lamport_value}"
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -624,9 +404,6 @@ mod tests {
     use solana_sdk::{account::Account, instruction::Instruction};
     use solana_system_interface::instruction::{
         assign, create_account, create_account_with_seed, transfer, transfer_with_seed,
-    };
-    use spl_token_2022::extension::{
-        interest_bearing_mint::InterestBearingConfig, transfer_fee::TransferFeeConfig,
     };
 
     #[tokio::test]
@@ -806,79 +583,6 @@ mod tests {
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
-    }
-
-    #[test]
-    fn test_validate_token2022_account() {
-        let mint = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
-        let amount = 1000;
-
-        // Create a minimal Token2022Account for testing
-        let account = Token2022Account {
-            mint,
-            owner,
-            amount,
-            delegate: None,
-            state: 1,
-            is_native: None,
-            delegated_amount: 0,
-            close_authority: None,
-            extension_data: Vec::new(),
-        };
-
-        let result = validate_token2022_account(&account, amount);
-
-        assert!(result.is_ok());
-        assert!(result.unwrap() >= amount);
-    }
-
-    #[test]
-    fn test_validate_token2022_account_with_fallback_calculation() {
-        let mint = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
-        let amount = 10_000;
-
-        let buffer = vec![1; 1000]; // Non-empty buffer with invalid extension data
-
-        // Create a Token2022Account with the extension data
-        let token2022_account = Token2022Account {
-            mint,
-            owner,
-            amount,
-            delegate: None,
-            state: 1,
-            is_native: None,
-            delegated_amount: 0,
-            close_authority: None,
-            extension_data: buffer,
-        };
-
-        // Test the validation function
-        let result = validate_token2022_account(&token2022_account, amount);
-
-        // Validation should succeed
-        assert!(result.is_ok());
-
-        // The result should account for interest (using the fallback calculation)
-        let validated_amount = result.unwrap();
-
-        // Calculate expected interest (1% annual for 1 day)
-        // This matches the calculation in the fallback path of validate_token2022_account
-        let interest = std::cmp::max(
-            1,
-            (amount as u128 * 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60)) as u64,
-        );
-        let expected_amount = amount + interest;
-
-        // The validated amount should include interest
-        assert_eq!(
-            validated_amount, expected_amount,
-            "Amount should be adjusted for interest according to the fallback calculation"
-        );
-
-        // Verify that interest was added
-        assert!(validated_amount > amount, "Interest should be added to the amount");
     }
 
     #[tokio::test]
@@ -1126,71 +830,6 @@ mod tests {
         // Should pass because fee payer is not the source
         let rpc_client = get_mock_rpc_client(&Account::default());
         assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
-    }
-
-    #[test]
-    fn test_validate_token2022_account_with_transfer_fee_and_interest() {
-        use spl_pod::{
-            optional_keys::OptionalNonZeroPubkey,
-            primitives::{PodI16, PodI64, PodU16, PodU64},
-        };
-        // Test parameters
-        let amount = 10_000;
-
-        // 1. Test transfer fee calculation
-        let transfer_fee = TransferFee {
-            epoch: PodU64::from(1),
-            maximum_fee: PodU64::from(10_000),
-            transfer_fee_basis_points: PodU16::from(100), // 1% fee
-        };
-
-        let transfer_fee_config = TransferFeeConfig {
-            transfer_fee_config_authority: OptionalNonZeroPubkey::default(),
-            withdraw_withheld_authority: OptionalNonZeroPubkey::default(),
-            withheld_amount: PodU64::from(0),
-            older_transfer_fee: transfer_fee,
-            newer_transfer_fee: transfer_fee,
-        };
-
-        let fee_result = calculate_transfer_fee(amount, &transfer_fee_config);
-        assert!(fee_result.is_ok());
-
-        let fee = fee_result.unwrap();
-        let expected_fee = (amount as u128 * 100 / 10000) as u64;
-        assert_eq!(fee, expected_fee, "Transfer fee calculation should match expected value");
-
-        // 2. Test interest calculation
-        let interest_config = InterestBearingConfig {
-            rate_authority: OptionalNonZeroPubkey::default(),
-            initialization_timestamp: PodI64::from(0),
-            pre_update_average_rate: PodI16::from(0),
-            last_update_timestamp: PodI64::from(0),
-            current_rate: PodI16::from(100), // 1% annual interest rate
-        };
-
-        let interest_result = calculate_interest(amount, &interest_config);
-        assert!(interest_result.is_ok());
-
-        let amount_with_interest = interest_result.unwrap();
-
-        // Calculate expected interest (1% annual for 1 day)
-        let seconds_per_day = 24 * 60 * 60;
-        let seconds_per_year = 365 * seconds_per_day;
-        let expected_interest =
-            (amount as u128 * 100 * seconds_per_day / 10000 / seconds_per_year) as u64;
-        let expected_amount_with_interest = amount + expected_interest;
-
-        assert_eq!(
-            amount_with_interest, expected_amount_with_interest,
-            "Interest calculation should match expected value"
-        );
-
-        // In a real scenario with both extensions, the interest would be added and then the fee subtracted
-        let amount_after_interest = amount_with_interest;
-        let final_amount = amount_after_interest.saturating_sub(fee);
-
-        // The final amount should reflect both interest and fees
-        assert!(final_amount != amount, "Amount should be adjusted for both interest and fees");
     }
 
     #[tokio::test]

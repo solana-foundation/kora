@@ -11,9 +11,8 @@ use crate::{
     config::ValidationConfig,
     constant::NATIVE_SOL,
     get_signer,
-    token::TokenInterface,
     transaction::{TransactionUtil, VersionedMessageExt, VersionedTransactionUtilExt},
-    validator::transaction_validator::{TransactionValidator, ValidatedMint},
+    validator::transaction_validator::TransactionValidator,
     KoraError, Signer as _,
 };
 
@@ -69,11 +68,13 @@ pub async fn transfer_transaction(
         instructions.push(transfer(&source, &destination, request.amount));
     } else {
         // Handle wrapped SOL and other SPL tokens
-        let ValidatedMint { token_program, decimals } =
-            validator.fetch_and_validate_token_mint(&token_mint, rpc_client).await?;
+        let token_mint = validator.fetch_and_validate_token_mint(&token_mint, rpc_client).await?;
+        let token_program = token_mint.get_token_program();
+        let decimals = token_mint.decimals();
 
-        let source_ata = token_program.get_associated_token_address(&source, &token_mint);
-        let dest_ata = token_program.get_associated_token_address(&destination, &token_mint);
+        let source_ata = token_program.get_associated_token_address(&source, &token_mint.address());
+        let dest_ata =
+            token_program.get_associated_token_address(&destination, &token_mint.address());
 
         let _ = rpc_client
             .get_account(&source_ata)
@@ -84,7 +85,7 @@ pub async fn transfer_transaction(
             instructions.push(token_program.create_associated_token_account_instruction(
                 &fee_payer,
                 &destination,
-                &token_mint,
+                &token_mint.address(),
             ));
         }
 
@@ -92,7 +93,7 @@ pub async fn transfer_transaction(
             token_program
                 .create_transfer_checked_instruction(
                     &source_ata,
-                    &token_mint,
+                    &token_mint.address(),
                     &dest_ata,
                     &source,
                     request.amount,

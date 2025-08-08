@@ -11,7 +11,7 @@ use crate::{
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
     get_signer,
-    validator::transaction_validator::{validate_token_payment, TransactionValidator},
+    validator::transaction_validator::TransactionValidator,
     Signer,
 };
 use solana_address_lookup_table_interface::state::AddressLookupTable;
@@ -46,7 +46,7 @@ pub trait VersionedTransactionExt: Sized {
         // Only validate payment if not free
         if required_lamports > 0 {
             // Validate token payment
-            validate_token_payment(
+            TransactionValidator::validate_token_payment(
                 self,
                 required_lamports,
                 validation,
