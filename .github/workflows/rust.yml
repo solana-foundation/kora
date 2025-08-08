@@ -4,17 +4,17 @@ on:
   push:
     branches: [main]
     paths:
-      - 'crates/**'
-      - 'Cargo.*'
-      - 'Makefile'
-      - '.github/workflows/rust.yml'
+      - "crates/**"
+      - "Cargo.*"
+      - "Makefile"
+      - ".github/workflows/rust.yml"
   pull_request:
     branches: [main]
     paths:
-      - 'crates/**'
-      - 'Cargo.*'
-      - 'Makefile'
-      - '.github/workflows/rust.yml'
+      - "crates/**"
+      - "Cargo.*"
+      - "Makefile"
+      - ".github/workflows/rust.yml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -76,12 +76,12 @@ jobs:
       - name: Setup test environment
         run: |
           echo "🔧 Setting up test environment..."
-          cargo run -p tests --bin setup-test-env
+          cargo run -p tests --bin setup_test_env
 
       - name: Setup Kora RPC server (regular config)
         uses: ./.github/actions/setup-kora-rpc
         with:
-          config-file: 'tests/kora-test.toml'
+          config-file: "tests/testing-utils/fixtures/kora-test.toml"
 
       - name: Run regular integration tests with coverage
         run: |
@@ -98,7 +98,7 @@ jobs:
       - name: Setup Kora RPC server (auth config)
         uses: ./.github/actions/setup-kora-rpc
         with:
-          config-file: 'tests/fixtures/auth-test.toml'
+          config-file: "tests/testing-utils/fixtures/auth-test.toml"
 
       - name: Run auth integration tests with coverage
         run: |

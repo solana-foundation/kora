@@ -1,7 +1,8 @@
 use super::{solana_signer::SolanaMemorySigner, vault_signer::VaultSigner};
-use crate::error::KoraError;
-use kora_privy::PrivySigner;
-use kora_turnkey::TurnkeySigner;
+use crate::{
+    error::KoraError,
+    signer::{privy::types::PrivySigner, turnkey::types::TurnkeySigner},
+};
 use solana_sdk::{
     pubkey::Pubkey, signature::Signature as SolanaSignature, transaction::VersionedTransaction,
 };

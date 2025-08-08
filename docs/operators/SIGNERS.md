@@ -78,7 +78,7 @@ KORA_PRIVATE_KEY="your_private_key_here"
 
 Start Kora:
 ```bash
-kora-rpc
+kora rpc
 ```
 
 #### Method 2: CLI Flags
@@ -86,7 +86,7 @@ kora-rpc
 Pass the private key directly via command line:
 
 ```bash
-kora-rpc --private-key "your_private_key_here"
+kora rpc --private-key "your_private_key_here"
 ```
 
 ## Turnkey Signer
@@ -177,7 +177,7 @@ See [.env.example](../../.env.example) for a complete example.
 To start Kora with the Turnkey signer, you just use the `--with-turnkey-signer` flag:
 
 ```bash
-kora-rpc --with-turnkey-signer
+kora rpc --with-turnkey-signer
 ```
 
 ### CLI Alternative
@@ -185,7 +185,7 @@ kora-rpc --with-turnkey-signer
 When deploying on a server, you may want to pass Turnkey secrets via CLI flags:
 
 ```bash
-kora-rpc \
+kora rpc \
     --with-turnkey-signer \
     --turnkey-api-public-key "your_api_public_key" \
     --turnkey-api-private-key "your_api_private_key" \
@@ -266,7 +266,7 @@ See [.env.example](../../.env.example) for a complete example.
 To start Kora with the Privy signer, you just use the `--with-privy-signer` flag:
 
 ```bash
-kora-rpc --with-privy-signer
+kora rpc --with-privy-signer
 ```
 
 ### CLI Alternative
@@ -274,7 +274,7 @@ kora-rpc --with-privy-signer
 Pass Privy credentials via CLI flags:
 
 ```bash
-kora-rpc \
+kora rpc \
     --with-privy-signer \
     --privy-app-id "your_app_id" \
     --privy-app-secret "your_app_secret" \
@@ -288,7 +288,7 @@ For support with Privy, see the [Privy documentation](https://docs.privy.io/wall
 If no signer is configured, Kora will throw an error. If you want to run Kora without a signer, you run it with the `--no-signer` flag:
 
 ```bash
-kora-rpc --no-signer
+kora rpc --no-signer
 ```
 
 Note that this will limit your node to only processing requests that do not require a signer.
@@ -311,7 +311,7 @@ Note that this will limit your node to only processing requests that do not requ
 #### Enable Verbose Logging
 Add detailed logging to diagnose issues:
 ```bash
-RUST_LOG=debug kora-rpc --with-turnkey-signer
+RUST_LOG=debug kora rpc --with-turnkey-signer
 ```
 
 #### Minimal Working Configuration
@@ -320,7 +320,7 @@ Start with the simplest setup and add complexity:
 # Generate and test with a new local keypair first
 solana-keygen new --outfile test-keypair.json
 # Test with the new keypair
-kora-rpc --private-key "test-keypair.json"
+kora rpc --private-key "test-keypair.json"
 ```
 
 ## Security & Best Practices

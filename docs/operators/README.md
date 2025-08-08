@@ -13,7 +13,7 @@ As a Kora node operator, you run a **paymaster service** that sponsors Solana tr
 
 - [Quick Start](#quick-start)
 - [Core Concepts](#core-concepts)
-- [Kora-RPC Crate](#kora-rpc-crate)
+- [Kora CLI](#kora-cli)
 - [Configuration](#configuration)
 - [Deployment](#deployment)
 - [Need Help?](#need-help)
@@ -54,15 +54,15 @@ Continuously track your node's security, performance, and business metrics:
 - **Operational alerts**: System health, balance warnings, and security events
 - **Financial tracking**: SOL costs vs. token revenue, profitability analysis
 
-## Kora-RPC Crate
+## Kora CLI
 
-The [kora-rpc crate](https://crates.io/crates/kora-rpc) is a production-ready Rust binary that provides everything you need to run a Kora paymaster node. It's distributed as a standalone executable that you can install globally or deploy in containers.
+The [kora-cli crate](https://crates.io/crates/kora-cli) is a production-ready Rust binary that provides everything you need to run a Kora paymaster node. It's distributed as a standalone executable that you can install globally or deploy in containers.
 
 ### Installation Options
 
 **Global Installation (recommended for development)**
 ```bash
-cargo install kora-rpc
+cargo install kora-cli
 ```
 
 **Or build from source  (recommended for contributing)**
@@ -75,23 +75,23 @@ make install
 
 ### Basic Usage
 
-The Kora RPC server exposes a JSON-RPC endpoint (default: http://localhost:8080). Launch it with the `kora-rpc` command:
+The Kora RPC server exposes a JSON-RPC endpoint (default: http://localhost:8080). Launch it with the `kora rpc` command:
 
 ```bash
 # Run with default configuration (looks for .env and kora.toml in current directory)
-kora-rpc
+kora rpc
 
 # Specify custom configuration path
-kora-rpc --config /path/to/kora.toml
+kora --config /path/to/kora.toml rpc
 
 # Specify private key location
-kora-rpc --private-key /path/to/keypair.json
+kora rpc --private-key /path/to/keypair.json
 
 # Set custom port
-kora-rpc --port 3000
+kora rpc --port 3000
 
 # Help
-kora-rpc --help
+kora rpc --help
 ```
 
 Applications can access the Kora RPC Server via the [Kora CLI](../../crates/cli/) or the [Kora TS SDK](../../sdks/ts/)

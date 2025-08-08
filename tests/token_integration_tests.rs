@@ -1,6 +1,6 @@
 use kora_lib::{
     token::{Token2022Account, Token2022Program, TokenInterface},
-    transaction::{new_unsigned_versioned_transaction, validator::validate_token2022_account},
+    transaction::TransactionUtil,
 };
 use solana_message::{Message, VersionedMessage};
 use solana_sdk::{
@@ -10,10 +10,7 @@ use solana_sdk::{
 };
 use std::str::FromStr;
 
-use testing_utils::*;
-
-// PYUSD token mint on devnet
-const PYUSD_MINT: &str = "CXk2AMBfi3TwaEL2468s6zP8xq9NxTXjp9gjMgzeUynM";
+use testing_utils::{helpers::get_rpc_client, PYUSD_MINT};
 
 #[tokio::test]
 async fn test_pyusd_token_e2e_with_kora() {
@@ -88,10 +85,10 @@ async fn test_pyusd_token_e2e_with_kora() {
         disallowed_accounts: vec![],
         price_source: kora_lib::oracle::PriceSource::Jupiter,
         fee_payer_policy: kora_lib::config::FeePayerPolicy::default(),
-        price: kora_lib::transaction::fees::PriceConfig::default(),
+        price: kora_lib::fee::price::PriceConfig::default(),
     };
 
-    let validation_result = kora_lib::transaction::validator::TransactionValidator::new(
+    let validation_result = kora_lib::validator::transaction_validator::TransactionValidator::new(
         wallet.pubkey(),
         &validation_config,
     )
@@ -115,9 +112,9 @@ async fn test_pyusd_token_e2e_with_kora() {
             // Verify it's a Token2022Account
             if let Some(token2022_account) = token_state.as_any().downcast_ref::<Token2022Account>()
             {
-                // Validate token extensions
-                let validation_result =
-                    validate_token2022_account(token2022_account, transfer_amount);
+                // Validate token extensions using the interface method
+                let validation_result = original_token_program
+                    .get_and_validate_amount_for_payment(token2022_account, transfer_amount);
                 assert!(
                     validation_result.is_ok(),
                     "Token2022Account validation failed: {validation_result:?}"
@@ -161,7 +158,7 @@ fn test_token2022_operations() {
         &[create_ata_ix, transfer_ix],
         Some(&wallet.pubkey()),
     ));
-    let transaction = new_unsigned_versioned_transaction(message);
+    let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
     // Verify transaction structure
     assert_eq!(transaction.message.instructions().len(), 2);

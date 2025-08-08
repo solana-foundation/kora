@@ -1,12 +1,7 @@
-pub mod fees;
-mod paid_transaction;
-
 mod transaction;
+mod versioned_message;
+mod versioned_transaction;
 
-pub use fees::*;
-pub use paid_transaction::*;
 pub use transaction::*;
-
-pub mod validator;
-
-pub use validator::TransactionValidator;
+pub use versioned_message::*;
+pub use versioned_transaction::*;
