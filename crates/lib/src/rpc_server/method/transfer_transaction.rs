@@ -7,7 +7,7 @@ use solana_system_interface::instruction::transfer;
 use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;
 
-use kora_lib::{
+use crate::{
     config::ValidationConfig,
     constant::NATIVE_SOL,
     get_signer,

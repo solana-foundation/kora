@@ -32,7 +32,7 @@ This quick start will launch a local Kora RPC server and demonstrate client inte
 Install the Kora RPC server globally:
 
 ```bash
-cargo install kora-rpc
+cargo install kora-cli
 ```
 
 ## Create Project
@@ -126,10 +126,10 @@ allowed_spl_paid_tokens = [
 ### Terminal 3: Start Kora RPC Server
 ```bash
 # From ./server directory
-kora-rpc
+kora rpc
 ```
 
-The server reads configuration from `kora.toml` and uses environment variables from the shared `.env` file. If you are using a different folder structure than specified here, you may need to use the `--config` to specify the location of `kora.toml` and `--private-key` to specify the directory of your private key. You can access `kora-rpc -h` for help on the function.
+The server reads configuration from `kora.toml` and uses environment variables from the shared `.env` file. If you are using a different folder structure than specified here, you may need to use the `--config` to specify the location of `kora.toml` and `--private-key` to specify the directory of your private key. You can access `kora rpc -h` for help on the RPC server options.
 
 ### Terminal 4: Run Client Demo
 ```bash

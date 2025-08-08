@@ -19,7 +19,7 @@ Kora is a **fee abstraction layer** for Solana that lets users pay transaction f
 
 - **Secure**: Configurable validation rules for programs, tokens, and accounts
 - **Flexible Pricing**: Support multiple fee payment tokens with real-time pricing
-- **Easy Deployment**: Ready-to-deploy [Kora-RPC crate](https://crates.io/crates/kora-rpc)
+- **Easy Deployment**: Ready-to-deploy [Kora CLI crate](https://crates.io/crates/kora-cli)
 - **Developer Friendly**: JSON-RPC API with CLI and TypeScript SDK for seamless interaction with Solana Kit
 - **Production Ready**: Built-in rate limiting, monitoring, and security features
 

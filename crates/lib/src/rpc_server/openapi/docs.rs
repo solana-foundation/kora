@@ -1,4 +1,7 @@
-use kora_lib::{config::ValidationConfig, transaction::TokenPriceInfo};
+use crate::{
+    config::ValidationConfig,
+    oracle::oracle::{PriceSource, TokenPrice},
+};
 use std::path::PathBuf;
 use utoipa::{
     openapi::{
@@ -8,7 +11,7 @@ use utoipa::{
     OpenApi,
 };
 
-use crate::{
+use crate::rpc_server::{
     method::{
         get_blockhash::GetBlockhashResponse,
         get_config::GetConfigResponse,
@@ -20,7 +23,7 @@ use crate::{
         sign_transaction_if_paid::{SignTransactionIfPaidRequest, SignTransactionIfPaidResponse},
         transfer_transaction::{TransferTransactionRequest, TransferTransactionResponse},
     },
-    rpc::KoraRpc,
+    KoraRpc,
 };
 
 use super::helper::{build_error_response, request_schema};
@@ -37,7 +40,8 @@ const JSON_CONTENT_TYPE: &str = "application/json";
     ),
     components(schemas(
         ValidationConfig,
-        TokenPriceInfo,
+        TokenPrice,
+        PriceSource,
         GetBlockhashResponse,
         GetConfigResponse,
         GetSupportedTokensResponse,

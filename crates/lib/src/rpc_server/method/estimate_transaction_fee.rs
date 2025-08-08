@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use utoipa::ToSchema;
 
-use kora_lib::{
+use crate::{
     config::ValidationConfig,
     error::KoraError,
     fee::fee::FeeConfigUtil,

@@ -1,4 +1,4 @@
-use kora_lib::{
+use crate::{
     config::ValidationConfig,
     transaction::{TransactionUtil, VersionedTransactionUtilExt},
     KoraError,

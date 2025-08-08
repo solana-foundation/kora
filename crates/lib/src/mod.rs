@@ -1,4 +1,3 @@
-pub mod args;
 pub mod config;
 pub mod constant;
 pub mod error;
@@ -6,6 +5,7 @@ pub mod fee;
 pub mod log;
 pub mod oracle;
 pub mod rpc;
+pub mod rpc_server;
 pub mod signer;
 pub mod state;
 pub mod token;

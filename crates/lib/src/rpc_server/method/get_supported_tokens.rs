@@ -1,4 +1,4 @@
-use kora_lib::error::KoraError;
+use crate::error::KoraError;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 

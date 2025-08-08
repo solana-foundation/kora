@@ -9,6 +9,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "docs", derive(utoipa::ToSchema))]
 pub struct TokenPrice {
     pub price: f64,
     pub confidence: f64,
@@ -16,6 +17,7 @@ pub struct TokenPrice {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "docs", derive(utoipa::ToSchema))]
 pub enum PriceSource {
     Jupiter,
     Mock,

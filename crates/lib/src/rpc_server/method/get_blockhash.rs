@@ -1,4 +1,4 @@
-use kora_lib::error::KoraError;
+use crate::error::KoraError;
 use nonblocking::rpc_client::RpcClient;
 use serde::Serialize;
 use solana_client::nonblocking;

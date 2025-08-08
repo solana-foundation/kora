@@ -3,7 +3,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
-use kora_lib::{
+use crate::{
     config::ValidationConfig,
     transaction::{TransactionUtil, VersionedTransactionUtilExt},
     KoraError,

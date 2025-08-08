@@ -1,4 +1,4 @@
-.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-integration-coverage test-all test-ts coverage coverage-clean build-bin build-lib build-rpc build-tk run-presigned openapi gen-ts-client
+.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-integration-coverage test-all test-ts coverage coverage-clean build-bin build-lib build-cli run-presigned openapi gen-ts-client
 
 # Common configuration
 TEST_PORT := 8080
@@ -19,7 +19,6 @@ all: check test build
 # install
 install:
 	cargo install --path crates/cli
-	cargo install --path crates/rpc
 
 # Check code formatting
 check:
@@ -41,8 +40,8 @@ generate-key:
 
 # Server lifecycle management functions
 define stop_kora_server
-	echo "🛑 Stopping Kora server..."
-	if [ -f .kora.pid ]; then \
+	@echo "🛑 Stopping Kora server..."
+	@if [ -f .kora.pid ]; then \
 		PID=$$(cat .kora.pid); \
 		if kill -0 $$PID 2>/dev/null; then \
 			kill $$PID 2>/dev/null || true; \
@@ -51,22 +50,22 @@ define stop_kora_server
 		fi; \
 		rm -f .kora.pid; \
 	fi; \
-	pkill -f "kora-rpc" 2>/dev/null || true; \
+	pkill -f "kora" 2>/dev/null || true; \
 	sleep 2
 endef
 
 # Solana validator lifecycle management functions
 define start_solana_validator
-	echo "🚀 Starting local Solana test validator..."
-	solana-test-validator --reset --quiet >/dev/null 2>&1 &
-	echo $$! > .validator.pid
-	echo "⏳ Waiting for validator to start..."
-	sleep 5
+	@echo "🚀 Starting local Solana test validator..."
+	@solana-test-validator --reset --quiet >/dev/null 2>&1 &
+	@echo $$! > .validator.pid
+	@echo "⏳ Waiting for validator to start..."
+	@sleep 5
 endef
 
 define stop_solana_validator
-	echo "🛑 Stopping Solana validator..."
-	if [ -f .validator.pid ]; then \
+	@echo "🛑 Stopping Solana validator..."
+	@if [ -f .validator.pid ]; then \
 		PID=$$(cat .validator.pid); \
 		if kill -0 $$PID 2>/dev/null; then \
 			kill $$PID 2>/dev/null || true; \
@@ -83,17 +82,17 @@ endef
 # Start Kora server with flexible configuration
 # Usage: $(call start_kora_server,description,cargo_cmd,cargo_flags,config_file,setup_env)
 define start_kora_server
-	$(call stop_kora_server)
-	$(if $(5),\
+	@$(call stop_kora_server)
+	@$(if $(5),\
 		echo "🔧 Setting up test environment..."; \
 		cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT);)
-	echo "🚀 Starting Kora $(1)..."
-	$(if $(2),\
-		$(2) -p kora-rpc --bin kora-rpc $(3) -- --private-key $(TEST_PRIVATE_KEY) --config $(4) --rpc-url $(TEST_RPC_URL) --port $(TEST_PORT) $(QUIET_OUTPUT) &,\
+	@echo "🚀 Starting Kora $(1)..."
+	@$(if $(2),\
+		$(2) -p kora-cli --bin kora $(3) -- --config $(4) --rpc-url $(TEST_RPC_URL) rpc --private-key $(TEST_PRIVATE_KEY) --port $(TEST_PORT) $(QUIET_OUTPUT) &,\
 		make run >/dev/null 2>&1 &)
-	echo $$! > .kora.pid
-	echo "⏳ Waiting for server to start..."
-	sleep 5
+	@echo $$! > .kora.pid
+	@echo "⏳ Waiting for server to start..."
+	@sleep 5
 endef
 
 define run_regular_tests
@@ -175,9 +174,9 @@ build-bin:
 build-lib:
 	cargo build -p kora-lib
 
-# Build rpc
-build-rpc:
-	cargo build -p kora-rpc
+# Build cli
+build-cli:
+	cargo build -p kora-cli
 
 # Build tk-rs
 build-tk:
@@ -189,21 +188,21 @@ run-presigned:
 
 # Run with default configuration
 run:
-	cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
+	cargo run -p kora-cli --bin kora -- --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
 
 
 # Clean build artifacts
 clean:
 	cargo clean
 
-# Gen openapi docs
+# Generate OpenAPI documentation
 openapi:
-	cargo run -p kora-rpc --bin kora-openapi --features docs
+	cargo run -p kora-cli --bin kora --features docs -- openapi -o openapi.json
 
 # Generate TypeScript client
 gen-ts-client:
 	docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate \
-		-i /local/crates/rpc/src/openapi/spec/combined_api.json \
+		-i /local/crates/lib/src/rpc_server/openapi/spec/combined_api.json \
 		-g typescript-fetch \
 		-o /local/generated/typescript-client \
 		--additional-properties=supportsES6=true,npmName=kora-client,npmVersion=0.1.0

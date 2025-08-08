@@ -6,8 +6,11 @@ description = "CLI for Kora gasless relayer"
 license = "MIT"
 
 [[bin]]
-name = "kora-cli"
+name = "kora"
 path = "src/main.rs"
+
+[features]
+docs = ["kora-lib/docs", "dep:utoipa"]
 
 [dependencies]
 kora-lib = { path = "../lib", version = "1.0.2" }
@@ -16,3 +19,5 @@ tokio = { workspace = true }
 env_logger = { workspace = true }
 solana-client = { workspace = true }
 dotenv = { workspace = true }
+serde_json = { workspace = true }
+utoipa = { workspace = true, optional = true }

@@ -21,7 +21,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
     ];
 
     let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
         .await
         .unwrap();
 
@@ -67,7 +67,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
     let transfer_ix = transfer(&sender.pubkey(), &recipient, 500_000);
 
     let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
         .await
         .unwrap();
 

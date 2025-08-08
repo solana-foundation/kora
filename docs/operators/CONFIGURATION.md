@@ -287,10 +287,10 @@ margin = 0.15  # 15% margin on network fees
 
 ## Configuration Validation
 
-Kora validates your configuration on startup. If you would like to validate your configuration without starting the server, you can use the `--validate-config` flag:
+Kora validates your configuration on startup. If you would like to validate your configuration without starting the server, you can use the config validation command:
 
 ```bash
-kora-rpc --config kora.toml --validate-config
+kora --config kora.toml config validate
 ```
 
 ## Starting the Server
@@ -298,7 +298,7 @@ kora-rpc --config kora.toml --validate-config
 Once you have configured your `kora.toml` file, you can start the Kora server:
 
 ```bash
-kora-rpc --config path/to/kora.toml # --other-flags-here
+kora --config path/to/kora.toml rpc # --other-rpc-flags-here
 ```
 
 ## Best Practices

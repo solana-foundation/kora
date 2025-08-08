@@ -1,13 +1,13 @@
 use crate::{
-    args::CommonArgs,
     error::KoraError,
+    rpc_server::RpcArgs,
     signer::{
         privy::types::PrivySigner, turnkey::types::TurnkeySigner, KoraSigner, SolanaMemorySigner,
         VaultSigner,
     },
 };
 
-pub fn init_signer_type(args: &CommonArgs) -> Result<KoraSigner, KoraError> {
+pub fn init_signer_type(args: &RpcArgs) -> Result<KoraSigner, KoraError> {
     if args.turnkey_signer {
         init_turnkey_signer(args)
     } else if args.vault_signer {
@@ -19,7 +19,7 @@ pub fn init_signer_type(args: &CommonArgs) -> Result<KoraSigner, KoraError> {
     }
 }
 
-fn init_vault_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
+fn init_vault_signer(config: &RpcArgs) -> Result<KoraSigner, KoraError> {
     let vault_addr = config
         .vault_addr
         .as_ref()
@@ -50,7 +50,7 @@ fn init_vault_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
     Ok(KoraSigner::Vault(signer))
 }
 
-fn init_turnkey_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
+fn init_turnkey_signer(config: &RpcArgs) -> Result<KoraSigner, KoraError> {
     let api_pub = config
         .turnkey_api_public_key
         .as_ref()
@@ -83,7 +83,7 @@ fn init_turnkey_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
     Ok(KoraSigner::Turnkey(signer))
 }
 
-fn init_privy_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
+fn init_privy_signer(config: &RpcArgs) -> Result<KoraSigner, KoraError> {
     let app_id = config
         .privy_app_id
         .clone()

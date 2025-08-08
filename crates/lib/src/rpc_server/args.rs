@@ -1,14 +1,22 @@
 use crate::log::LoggingFormat;
-use clap::{command, Parser};
+use clap::Parser;
 
-// Common arguments shared between CLI and RPC
+/// RPC server arguments
 #[derive(Debug, Parser)]
-#[command(name = "kora")]
-pub struct CommonArgs {
-    /// Solana RPC endpoint URL
-    #[arg(long, env = "RPC_URL", default_value = "http://127.0.0.1:8899")]
-    pub rpc_url: String,
+pub struct RpcArgs {
+    /// HTTP port to listen on for RPC requests
+    #[arg(short = 'p', long, default_value = "8080")]
+    pub port: u16,
 
+    /// Output format for logs (standard or json)
+    #[arg(long, default_value = "standard")]
+    pub logging_format: LoggingFormat,
+
+    /// Prometheus metrics endpoint URL for monitoring
+    #[arg(long)]
+    pub metrics_endpoint: Option<String>,
+
+    // Authentication
     /// API key for authenticating requests to the Kora server (optional) - can be set in `kora.toml`
     #[arg(long, env = "KORA_API_KEY", help_heading = "Authentication")]
     pub api_key: Option<String>,
@@ -17,19 +25,17 @@ pub struct CommonArgs {
     #[arg(long, env = "KORA_HMAC_SECRET", help_heading = "Authentication")]
     pub hmac_secret: Option<String>,
 
+    // Signing Options
     /// Private key for transaction signing (base58, u8 array, or path to JSON keypair file).
     /// Required unless `skip_signer`, `turnkey_signer`, `vault_signer`, or `privy_signer` is set
     #[arg(long, env = "KORA_PRIVATE_KEY", required_unless_present_any = ["skip_signer", "turnkey_signer", "vault_signer", "privy_signer"], help_heading = "Signing Options")]
     pub private_key: Option<String>,
 
-    /// Path to Kora configuration file (TOML format)
-    #[arg(long, default_value = "kora.toml")]
-    pub config: String,
-
     /// Skip signer initialization (useful for testing or operations that don't require signing)
     #[arg(long = "no-load-signer", help_heading = "Signing Options")]
     pub skip_signer: bool,
 
+    // Turnkey Signer
     /// Use Turnkey remote signer for secure key management
     #[arg(long = "with-turnkey-signer", help_heading = "Turnkey Signer")]
     pub turnkey_signer: bool,
@@ -54,6 +60,7 @@ pub struct CommonArgs {
     #[arg(long, env = "TURNKEY_PUBLIC_KEY", help_heading = "Turnkey Signer")]
     pub turnkey_public_key: Option<String>,
 
+    // Privy Signer
     /// Use Privy remote signer for secure wallet management
     #[arg(long = "with-privy-signer", help_heading = "Privy Signer")]
     pub privy_signer: bool,
@@ -70,6 +77,7 @@ pub struct CommonArgs {
     #[arg(long, env = "PRIVY_WALLET_ID", help_heading = "Privy Signer")]
     pub privy_wallet_id: Option<String>,
 
+    // Vault Signer
     /// Use HashiCorp Vault signer for enterprise key management
     #[arg(long, help_heading = "Vault Signer")]
     pub vault_signer: bool,
@@ -89,39 +97,4 @@ pub struct CommonArgs {
     /// Vault public key (base58 encoded) for verification
     #[arg(long, env = "VAULT_PUBKEY", help_heading = "Vault Signer")]
     pub vault_pubkey: Option<String>,
-
-    /// Validate configuration file and show results (fast, no RPC calls)
-    #[arg(long)]
-    pub validate_config: bool,
-
-    /// Validate configuration file with RPC validation (slower but more thorough)
-    #[arg(long)]
-    pub validate_config_with_rpc: bool,
-}
-
-// RPC-specific arguments
-#[derive(Debug, Parser)]
-#[command(name = "kora-rpc", author, version, about = "RPC server for Kora gasless relayer", long_about = None)]
-pub struct RpcArgs {
-    #[command(flatten)]
-    pub common: CommonArgs,
-
-    /// HTTP port to listen on for RPC requests
-    #[arg(short = 'p', long, default_value = "8080")]
-    pub port: Option<u16>,
-
-    /// Output format for logs (standard or json)
-    #[arg(long, default_value = "standard")]
-    pub logging_format: LoggingFormat,
-
-    /// Prometheus metrics endpoint URL for monitoring
-    #[arg(long, default_value = None)]
-    pub metrics_endpoint: Option<String>,
-}
-
-// CLI-specific arguments
-#[derive(Debug, Parser)]
-pub struct CliArgs {
-    #[command(flatten)]
-    pub common: CommonArgs,
 }

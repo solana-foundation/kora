@@ -68,35 +68,10 @@ impl TransactionUtil {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
-
     use super::*;
     use crate::error::KoraError;
-    use serde_json::json;
-    use solana_client::{nonblocking::rpc_client::RpcClient, rpc_request::RpcRequest};
     use solana_message::{v0, Message};
-    use solana_sdk::{account::Account, hash::Hash, signature::Keypair, signer::Signer as _};
-
-    fn get_mock_rpc_client(account: &Account) -> Arc<RpcClient> {
-        let mut mocks = HashMap::new();
-        let encoded_data = base64::engine::general_purpose::STANDARD.encode(&account.data);
-        mocks.insert(
-            RpcRequest::GetAccountInfo,
-            json!({
-                "context": {
-                    "slot": 1
-                },
-                "value": {
-                    "data": [encoded_data, "base64"],
-                    "executable": account.executable,
-                    "lamports": account.lamports,
-                    "owner": account.owner.to_string(),
-                    "rentEpoch": account.rent_epoch
-                }
-            }),
-        );
-        Arc::new(RpcClient::new_mock_with_mocks("http://localhost:8899".to_string(), mocks))
-    }
+    use solana_sdk::{hash::Hash, signature::Keypair, signer::Signer as _};
 
     #[test]
     fn test_decode_b64_transaction_invalid_input() {

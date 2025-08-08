@@ -6,13 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Kora is a Solana paymaster node that provides a JSON-RPC interface for handling gasless transactions and fee abstractions. It enables developers to build applications where users can pay transaction fees in tokens other than SOL.
 
-The repository consists of 5 main workspace crates:
+The repository consists of 2 main workspace crates:
 
-- `kora-lib`: Core library containing shared functionality, signers, transaction handling, and configuration
-- `kora-rpc`: JSON-RPC server implementation with middleware support
-- `kora-cli`: Command-line interface for transaction operations
-- `kora-turnkey`: Turnkey signer integration library
-- `kora-privy`: Privy signer integration library
+- `kora-lib`: Core library with integrated RPC server functionality, signers, transaction handling, and configuration
+- `kora-cli`: Unified command-line interface with RPC server and configuration commands
 - `tests`: Integration tests for the entire workspace
 - `sdks/`: TypeScript SDKs for client integration
 
@@ -38,7 +35,6 @@ make build
 
 # Build specific packages
 make build-lib    # Build the lib crate
-make build-rpc    # Build the RPC server
 make build-cli    # Build the CLI tool
 
 # Install all binaries
@@ -84,7 +80,7 @@ Integration tests require a local validator and test account setup:
 
 2. **Start local Kora Server with test configuration:**
     ```bash
-    cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
+    cargo run -p kora-cli --bin kora -- --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
     ```
     This runs the Kora RPC server with `tests/kora-test.toml` config file, which includes test-specific settings and the correct test USDC mint.
 
@@ -139,21 +135,19 @@ make test-integration
 make run
 
 # Run with test configuration (for integration testing)
-cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
+cargo run -p kora-cli --bin kora -- --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
 
 # Run with debug logging
-RUST_LOG=debug cargo run -p kora-rpc --bin kora-rpc
+RUST_LOG=debug cargo run -p kora-cli --bin kora -- rpc
 
 # Run RPC server with all parameters
-cargo run -p kora-rpc --bin kora-rpc -- \
+cargo run -p kora-cli --bin kora -- --config kora.toml --rpc-url https://api.devnet.solana.com rpc \
   --port 8080 \
-  --config kora.toml \
-  --rpc-url https://api.devnet.solana.com \
   --logging-format standard \
   --metrics-endpoint http://localhost:9090
 
 # Run with Turnkey signer
-cargo run -p kora-rpc --bin kora-rpc -- \
+cargo run -p kora-cli --bin kora -- rpc \
   --with-turnkey-signer \
   --turnkey-api-public-key $TURNKEY_API_PUBLIC_KEY \
   --turnkey-api-private-key $TURNKEY_API_PRIVATE_KEY \
@@ -163,22 +157,26 @@ cargo run -p kora-rpc --bin kora-rpc -- \
   --port 8080
 
 # Run with Privy signer
-cargo run -p kora-rpc --bin kora-rpc -- \
+cargo run -p kora-cli --bin kora -- rpc \
   --with-privy-signer \
   --privy-app-id $PRIVY_APP_ID \
   --privy-app-secret $PRIVY_APP_SECRET \
   --privy-wallet-id $PRIVY_WALLET_ID
 
 # Run with Vault signer  
-cargo run -p kora-rpc --bin kora-rpc -- \
+cargo run -p kora-cli --bin kora -- rpc \
   --vault-signer \
   --vault-addr $VAULT_ADDR \
   --vault-token $VAULT_TOKEN \
   --vault-key-name $VAULT_KEY_NAME \
   --vault-pubkey $VAULT_PUBKEY
 
-# Run CLI commands
-cargo run -p kora-cli --bin kora-cli -- [subcommand]
+# Configuration validation commands
+cargo run -p kora-cli --bin kora -- config validate
+cargo run -p kora-cli --bin kora -- config validate-with-rpc
+
+# Generate OpenAPI documentation
+cargo run -p kora-cli --bin kora --features docs -- openapi -o openapi.json
 ```
 
 ### TypeScript SDK Development
@@ -223,7 +221,7 @@ pnpm run format
 - **cache.rs** - Token account caching
 - **rpc.rs** - Solana RPC client utilities
 
-### RPC Server (`kora-rpc/src/`)
+### RPC Server (now in `kora-lib/src/rpc_server/`)
 
 - **server.rs** - HTTP JSON-RPC server setup with middleware:
   - CORS configuration
@@ -242,29 +240,38 @@ pnpm run format
   - `signTransactionIfPaid` - Conditional signing based on payment verification
 
 - **openapi/** - Auto-generated API documentation using `utoipa`
+- **args.rs** - RPC-specific command line arguments
 
 ### CLI Tool (`kora-cli/src/`)
 
-- Command-line interface with commands: `sign`, `sign-and-send`, `estimate-fee`, `sign-if-paid`
-- Supports same configuration system as RPC server
-- Can use any supported signer type
+- Unified command-line interface with subcommands:
+  - `kora config validate` - Validate configuration file
+  - `kora config validate-with-rpc` - Validate configuration with RPC calls
+  - `kora rpc` - Start the RPC server with all signer options
+  - `kora openapi` - Generate OpenAPI documentation
+- Global arguments (rpc-url, config) separated from RPC-specific arguments
+- All signer types supported for RPC server mode
 
 **Example CLI usage:**
 ```bash
-# Sign transaction with local private key
-cargo run -p kora-cli --bin kora-cli -- sign \
-  --private-key your_base58_private_key \
-  --config kora.toml \
-  --rpc-url https://api.devnet.solana.com
+# Validate configuration
+cargo run -p kora-cli --bin kora -- --config kora.toml config validate
 
-# Sign with Turnkey
-cargo run -p kora-cli --bin kora-cli -- sign \
+# Start RPC server with local private key
+cargo run -p kora-cli --bin kora -- --config kora.toml --rpc-url https://api.devnet.solana.com rpc \
+  --private-key your_base58_private_key
+
+# Start RPC server with Turnkey signer
+cargo run -p kora-cli --bin kora -- rpc \
   --with-turnkey-signer \
   --turnkey-api-public-key $TURNKEY_API_PUBLIC_KEY \
   --turnkey-api-private-key $TURNKEY_API_PRIVATE_KEY \
   --turnkey-organization-id $TURNKEY_ORGANIZATION_ID \
   --turnkey-private-key-id $TURNKEY_PRIVATE_KEY_ID \
   --turnkey-public-key $TURNKEY_PUBLIC_KEY
+
+# Generate OpenAPI documentation
+cargo run -p kora-cli --bin kora --features docs -- openapi -o openapi.json
 ```
 
 ### Signer Integrations

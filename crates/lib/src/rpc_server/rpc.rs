@@ -2,7 +2,7 @@ use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 
-use kora_lib::{
+use crate::{
     config::{KoraConfig, ValidationConfig},
     error::KoraError,
 };
@@ -12,7 +12,7 @@ use utoipa::{
     ToSchema,
 };
 
-use crate::method::{
+use crate::rpc_server::method::{
     estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest, EstimateTransactionFeeResponse,
     },
