@@ -80,9 +80,9 @@ Integration tests require a local validator and test account setup:
 
 2. **Start local Kora Server with test configuration:**
     ```bash
-    cargo run -p kora-cli --bin kora -- --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
+    cargo run -p kora-cli --bin kora -- --config tests/testing-utils/fixtures/testkora-test.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
     ```
-    This runs the Kora RPC server with `tests/kora-test.toml` config file, which includes test-specific settings and the correct test USDC mint.
+    This runs the Kora RPC server with `tests/testing-utils/fixtures/kora-test.toml` config file, which includes test-specific settings and the correct test USDC mint.
 
 3. **Run integration tests:**
    ```bash
@@ -91,13 +91,13 @@ Integration tests require a local validator and test account setup:
    This will run all integration tests in two phases (fully self-contained):
    
    **Phase 1: Regular integration tests**
-   - Initialize test environment (cargo run -p tests --bin setup-test-env)
+   - Initialize test environment (cargo run -p tests --bin setup_test_env)
    - Start Kora RPC server with regular configuration
    - Run API and token integration tests
    - Stop the regular server
    
    **Phase 2: Auth integration tests**
-   - Start Kora server with auth configuration (`tests/fixtures/auth-test.toml`)
+   - Start Kora server with auth configuration (`tests/testing-utils/fixtures/auth-test.toml`)
    - Run auth integration tests (API key and HMAC authentication)
    - Clean up the auth server
 
@@ -115,7 +115,7 @@ The test suite uses environment variables for configuration (checked before fall
 | `TEST_USDC_MINT_KEYPAIR` | Test USDC mint keypair | Built-in test mint |
 | `TEST_USDC_MINT_DECIMALS` | USDC mint decimals | `6` |
 
-Make sure to update the appropriate config file (kora.toml for production, tests/kora-test.toml for testing) to reflect the public key of TEST_USDC_MINT_KEYPAIR.
+Make sure to update the appropriate config file (kora.toml for production, tests/testing-utils/fixtures/kora-test.toml for testing) to reflect the public key of TEST_USDC_MINT_KEYPAIR.
 
 **Example with custom test configuration:**
 ```bash
@@ -135,7 +135,7 @@ make test-integration
 make run
 
 # Run with test configuration (for integration testing)
-cargo run -p kora-cli --bin kora -- --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
+cargo run -p kora-cli --bin kora -- --config tests/testing-utils/fixtures/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
 
 # Run with debug logging
 RUST_LOG=debug cargo run -p kora-cli --bin kora -- rpc

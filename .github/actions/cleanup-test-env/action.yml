@@ -45,7 +45,7 @@ runs:
         # Kill any remaining processes by name (nuclear option)
         echo "Killing any remaining test processes..."
         pkill -f "solana-test-validator" 2>/dev/null || true
-        pkill -f "kora-rpc" 2>/dev/null || true
+        pkill -f "kora" 2>/dev/null || true
         
         # Wait a moment for processes to stop
         sleep 2

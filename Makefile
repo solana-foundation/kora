@@ -4,8 +4,8 @@
 TEST_PORT := 8080
 TEST_PRIVATE_KEY := ./tests/testing-utils/local-keys/fee-payer-local.json
 TEST_RPC_URL := http://127.0.0.1:8899
-REGULAR_CONFIG := tests/kora-test.toml
-AUTH_CONFIG := tests/fixtures/auth-test.toml
+REGULAR_CONFIG := tests/testing-utils/fixtures/kora-test.toml
+AUTH_CONFIG := tests/testing-utils/fixtures/auth-test.toml
 
 # Output control patterns
 QUIET_OUTPUT := >/dev/null 2>&1
@@ -85,7 +85,7 @@ define start_kora_server
 	@$(call stop_kora_server)
 	@$(if $(5),\
 		echo "🔧 Setting up test environment..."; \
-		cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT);)
+		cargo run -p tests --bin setup_test_env $(SETUP_OUTPUT);)
 	@echo "🚀 Starting Kora $(1)..."
 	@$(if $(2),\
 		$(2) -p kora-cli --bin kora $(3) -- --config $(4) --rpc-url $(TEST_RPC_URL) rpc --private-key $(TEST_PRIVATE_KEY) --port $(TEST_PORT) $(QUIET_OUTPUT) &,\
@@ -114,14 +114,14 @@ endef
 
 # Setup test environment
 setup-test-env:
-	cargo run -p tests --bin setup-test-env
+	cargo run -p tests --bin setup_test_env
 
 # Run all integration tests (regular + auth)
 test-integration:
 	@$(call start_solana_validator)
 	@echo "🧪 Running all integration tests..."
 	@echo "🔧 Setting up test environment..."
-	@cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT)
+	@cargo run -p tests --bin setup_test_env $(SETUP_OUTPUT)
 	$(call run_integration_phase,1,regular tests,cargo run,,$(REGULAR_CONFIG),$(call run_regular_tests,cargo test,))
 	$(call run_integration_phase,2,auth tests,cargo run,,$(AUTH_CONFIG),$(call run_auth_tests,cargo test,))
 	@echo "✅ All integration tests completed"
@@ -131,7 +131,7 @@ test-integration:
 test-integration-coverage:
 	@echo "🧪 Running all integration tests with coverage..."
 	@echo "🔧 Setting up test environment..."
-	@cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT)
+	@cargo run -p tests --bin setup_test_env $(SETUP_OUTPUT)
 	$(call run_integration_phase,1,regular tests,cargo llvm-cov run,--no-report,$(REGULAR_CONFIG),$(call run_regular_tests,cargo llvm-cov test,--no-report))
 	$(call run_integration_phase,2,auth tests,cargo llvm-cov run,--no-report,$(AUTH_CONFIG),$(call run_auth_tests,cargo llvm-cov test,--no-report))
 	@echo "✅ All integration tests completed"
@@ -188,7 +188,7 @@ run-presigned:
 
 # Run with default configuration
 run:
-	cargo run -p kora-cli --bin kora -- --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
+	cargo run -p kora-cli --bin kora -- --config tests/testing-utils/fixtures/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
 
 
 # Clean build artifacts

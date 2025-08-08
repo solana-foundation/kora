@@ -8,8 +8,8 @@ name = "integration"
 path = "integration_tests.rs"
 
 [[bin]]
-name = "setup-test-env"
-path = "setup-test-env.rs"
+name = "setup_test_env"
+path = "testing-utils/src/bin/setup_test_env.rs"
 
 [dependencies]
 kora-lib = { path = "../crates/lib" }

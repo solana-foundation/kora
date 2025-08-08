@@ -11,10 +11,7 @@ use solana_sdk::{
 };
 use std::str::FromStr;
 
-use testing_utils::*;
-
-// PYUSD token mint on devnet
-const PYUSD_MINT: &str = "CXk2AMBfi3TwaEL2468s6zP8xq9NxTXjp9gjMgzeUynM";
+use testing_utils::{helpers::get_rpc_client, PYUSD_MINT};
 
 #[tokio::test]
 async fn test_pyusd_token_e2e_with_kora() {

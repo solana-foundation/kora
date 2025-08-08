@@ -1,7 +1,6 @@
-use testing_utils::{check_test_validator, setup_test_accounts};
+use crate::helpers::{check_test_validator, setup_test_accounts};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔧 Setting up test environment...");
 
     // Check if test validator is running
