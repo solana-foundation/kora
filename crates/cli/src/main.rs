@@ -4,7 +4,7 @@ use args::GlobalArgs;
 use clap::{Parser, Subcommand};
 use kora_lib::{
     error::KoraError,
-    rpc::{create_rpc_client, get_rpc_client},
+    rpc::get_rpc_client,
     rpc_server::{run_rpc_server, KoraRpc, RpcArgs},
     signer::init::init_signer_type,
     state::init_signer,
@@ -99,7 +99,7 @@ async fn main() -> Result<(), KoraError> {
                 });
             }
 
-            let rpc_client = create_rpc_client(&cli.global_args.rpc_url).await?;
+            let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
 
             let kora_rpc = KoraRpc::new(rpc_client, config.validation, config.kora);
 

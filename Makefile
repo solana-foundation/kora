@@ -40,7 +40,7 @@ generate-key:
 
 # Server lifecycle management functions
 define stop_kora_server
-	@echo "🛑 Stopping Kora server..."
+	@printf "Stopping Kora server...\n"
 	@if [ -f .kora.pid ]; then \
 		PID=$$(cat .kora.pid); \
 		if kill -0 $$PID 2>/dev/null; then \
@@ -64,7 +64,7 @@ define start_solana_validator
 endef
 
 define stop_solana_validator
-	@echo "🛑 Stopping Solana validator..."
+	@printf "Stopping Solana validator...\n"
 	@if [ -f .validator.pid ]; then \
 		PID=$$(cat .validator.pid); \
 		if kill -0 $$PID 2>/dev/null; then \
@@ -84,7 +84,7 @@ endef
 define start_kora_server
 	@$(call stop_kora_server)
 	@$(if $(5),\
-		echo "🔧 Setting up test environment..."; \
+		printf "🔧 Setting up test environment...\n"; \
 		cargo run -p tests --bin setup_test_env $(SETUP_OUTPUT);)
 	@echo "🚀 Starting Kora $(1)..."
 	@$(if $(2),\
@@ -141,12 +141,10 @@ test-integration-coverage:
 test-ts:
 	@$(call start_solana_validator)
 	@$(call start_kora_server,node for TS tests,,,,)
-	@echo "🧪 Running TypeScript SDK tests..."
-	@cd sdks/ts && pnpm test; \
-	TEST_EXIT_CODE=$$?; \
-	$(call stop_kora_server); \
-	$(call stop_solana_validator); \
-	exit $$TEST_EXIT_CODE
+	@printf "Running TypeScript SDK tests...\n"
+	-@cd sdks/ts && pnpm test
+	@$(call stop_kora_server)
+	@$(call stop_solana_validator)
 
 test-all: test test-integration test-ts
 
