@@ -95,15 +95,11 @@ pub async fn calculate_lamports_value_in_token(
 
 #[cfg(test)]
 mod tests_token {
+    use crate::tests::common::{
+        create_mock_spl_mint_account, create_mock_token2022_mint_account, get_mock_rpc_client,
+    };
+
     use super::*;
-    use base64::Engine;
-    use serde_json::json;
-    use solana_client::rpc_request::RpcRequest;
-    use solana_program::program_pack::Pack;
-    use solana_sdk::{account::Account, program_option::COption};
-    use spl_token::state::Mint;
-    use spl_token_2022::state::Mint as Mint2022;
-    use std::{collections::HashMap, sync::Arc};
 
     #[test]
     fn test_token_program_id() {
@@ -125,57 +121,6 @@ mod tests_token {
             _ => panic!("Unknown token program ID"),
         };
         assert_eq!(token_22_type, TokenType::Token2022);
-    }
-
-    fn get_mock_rpc_client(account: &Account) -> Arc<RpcClient> {
-        let mut mocks = HashMap::new();
-        let encoded_data = base64::engine::general_purpose::STANDARD.encode(&account.data);
-        mocks.insert(
-            RpcRequest::GetAccountInfo,
-            json!({
-                "context": {
-                    "slot": 1
-                },
-                "value": {
-                    "data": [encoded_data, "base64"],
-                    "executable": account.executable,
-                    "lamports": account.lamports,
-                    "owner": account.owner.to_string(),
-                    "rentEpoch": account.rent_epoch
-                }
-            }),
-        );
-        Arc::new(RpcClient::new_mock_with_mocks("http://localhost:8899".to_string(), mocks))
-    }
-
-    fn create_mock_spl_mint_account(decimals: u8) -> Account {
-        let mint_data = Mint {
-            mint_authority: COption::Some(Pubkey::new_unique()),
-            supply: 1_000_000_000_000,
-            decimals,
-            is_initialized: true,
-            freeze_authority: COption::None,
-        };
-
-        let mut data = vec![0u8; Mint::LEN];
-        mint_data.pack_into_slice(&mut data);
-
-        Account { lamports: 0, data, owner: spl_token::id(), executable: false, rent_epoch: 0 }
-    }
-
-    fn create_mock_token2022_mint_account(decimals: u8) -> Account {
-        let mint_data = Mint2022 {
-            mint_authority: COption::Some(Pubkey::new_unique()),
-            supply: 1_000_000_000_000,
-            decimals,
-            is_initialized: true,
-            freeze_authority: COption::None,
-        };
-
-        let mut data = vec![0u8; Mint2022::LEN];
-        mint_data.pack_into_slice(&mut data);
-
-        Account { lamports: 0, data, owner: spl_token_2022::id(), executable: false, rent_epoch: 0 }
     }
 
     #[tokio::test]

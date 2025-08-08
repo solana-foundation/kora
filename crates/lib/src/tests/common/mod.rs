@@ -9,14 +9,19 @@ use solana_client::{nonblocking::rpc_client::RpcClient, rpc_request::RpcRequest}
 use solana_program::program_pack::Pack;
 use solana_sdk::{
     account::Account,
+    program_option::COption,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
 };
 use spl_token::state::Mint;
+use spl_token_2022::state::Mint as Mint2022;
 use std::{collections::HashMap, sync::Arc};
 
 pub const DEFAULT_LOCAL_RPC_URL: &str = "http://localhost:8899";
 
+/*
+Signer Mocks
+*/
 pub fn setup_or_get_test_signer() -> Pubkey {
     if let Ok(signer) = get_signer() {
         return signer.solana_pubkey();
@@ -35,6 +40,9 @@ pub fn setup_or_get_test_signer() -> Pubkey {
     }
 }
 
+/*
+RPC Mocks
+*/
 pub fn get_mock_rpc_client(account: &Account) -> Arc<RpcClient> {
     let mut mocks = HashMap::new();
     let encoded_data = base64::engine::general_purpose::STANDARD.encode(&account.data);
@@ -77,4 +85,70 @@ pub fn get_mock_rpc_client_with_mint(mint_decimals: u8) -> Arc<RpcClient> {
     };
 
     get_mock_rpc_client(&mint_account)
+}
+
+pub fn create_mock_rpc_client_account_not_found() -> Arc<RpcClient> {
+    let mut mocks = HashMap::new();
+    mocks.insert(
+        RpcRequest::GetAccountInfo,
+        json!({
+            "context": { "slot": 1 },
+            "value": null
+        }),
+    );
+
+    Arc::new(RpcClient::new_mock_with_mocks("http://localhost:8899".to_string(), mocks))
+}
+
+/*
+Account Mocks
+*/
+pub fn create_mock_program_account() -> Account {
+    Account {
+        lamports: 1000000,
+        data: vec![0u8; 100],        // Program data
+        owner: Pubkey::new_unique(), // Programs are owned by the loader
+        executable: true,            // Programs are executable
+        rent_epoch: 0,
+    }
+}
+
+pub fn create_mock_non_executable_account() -> Account {
+    Account {
+        lamports: 1000000,
+        data: vec![0u8; 100],
+        owner: Pubkey::new_unique(),
+        executable: false, // Not executable
+        rent_epoch: 0,
+    }
+}
+
+pub fn create_mock_spl_mint_account(decimals: u8) -> Account {
+    let mint_data = Mint {
+        mint_authority: COption::Some(Pubkey::new_unique()),
+        supply: 1_000_000_000_000,
+        decimals,
+        is_initialized: true,
+        freeze_authority: COption::None,
+    };
+
+    let mut data = vec![0u8; Mint::LEN];
+    mint_data.pack_into_slice(&mut data);
+
+    Account { lamports: 0, data, owner: spl_token::id(), executable: false, rent_epoch: 0 }
+}
+
+pub fn create_mock_token2022_mint_account(decimals: u8) -> Account {
+    let mint_data = Mint2022 {
+        mint_authority: COption::Some(Pubkey::new_unique()),
+        supply: 1_000_000_000_000,
+        decimals,
+        is_initialized: true,
+        freeze_authority: COption::None,
+    };
+
+    let mut data = vec![0u8; Mint2022::LEN];
+    mint_data.pack_into_slice(&mut data);
+
+    Account { lamports: 0, data, owner: spl_token_2022::id(), executable: false, rent_epoch: 0 }
 }

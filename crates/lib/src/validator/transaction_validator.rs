@@ -617,12 +617,9 @@ pub async fn validate_token_payment(
 
 #[cfg(test)]
 mod tests {
-    use crate::transaction::TransactionUtil;
+    use crate::{tests::common::get_mock_rpc_client, transaction::TransactionUtil};
 
     use super::*;
-    use base64::{self, Engine};
-    use serde_json::json;
-    use solana_client::rpc_request::RpcRequest;
     use solana_message::Message;
     use solana_sdk::{account::Account, instruction::Instruction};
     use solana_system_interface::instruction::{
@@ -631,28 +628,6 @@ mod tests {
     use spl_token_2022::extension::{
         interest_bearing_mint::InterestBearingConfig, transfer_fee::TransferFeeConfig,
     };
-    use std::{collections::HashMap, sync::Arc};
-
-    fn get_mock_rpc_client(account: &Account) -> Arc<RpcClient> {
-        let mut mocks = HashMap::new();
-        let encoded_data = base64::engine::general_purpose::STANDARD.encode(&account.data);
-        mocks.insert(
-            RpcRequest::GetAccountInfo,
-            json!({
-                "context": {
-                    "slot": 1
-                },
-                "value": {
-                    "data": [encoded_data, "base64"],
-                    "executable": account.executable,
-                    "lamports": account.lamports,
-                    "owner": account.owner.to_string(),
-                    "rentEpoch": account.rent_epoch
-                }
-            }),
-        );
-        Arc::new(RpcClient::new_mock_with_mocks("http://localhost:8899".to_string(), mocks))
-    }
 
     #[tokio::test]
     async fn test_validate_transaction() {

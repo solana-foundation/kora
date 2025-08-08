@@ -282,18 +282,16 @@ impl ValidationConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
-
-    use base64::Engine;
-    use serde_json::json;
-    use solana_client::rpc_request::RpcRequest;
-    use solana_sdk::{account::Account, program_pack::Pack};
-    use spl_token::state::Mint;
 
     use crate::{
         config::{EnabledMethods, KoraConfig},
         constant::DEFAULT_MAX_TIMESTAMP_AGE,
         fee::price::PriceConfig,
+        tests::common::{
+            create_mock_non_executable_account, create_mock_program_account,
+            create_mock_rpc_client_account_not_found, create_mock_spl_mint_account,
+            get_mock_rpc_client,
+        },
     };
 
     use super::*;
@@ -673,81 +671,6 @@ mod tests {
         assert!(errors.iter().any(|e| e.contains("Token EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v in allowed_spl_paid_tokens must also be in allowed_tokens")));
     }
 
-    // Helper functions for mocking RPC responses
-    fn create_mock_program_account() -> Account {
-        Account {
-            lamports: 1000000,
-            data: vec![0u8; 100],        // Program data
-            owner: Pubkey::new_unique(), // Programs are owned by the loader
-            executable: true,            // Programs are executable
-            rent_epoch: 0,
-        }
-    }
-
-    fn create_mock_non_executable_account() -> Account {
-        Account {
-            lamports: 1000000,
-            data: vec![0u8; 100],
-            owner: Pubkey::new_unique(),
-            executable: false, // Not executable
-            rent_epoch: 0,
-        }
-    }
-
-    fn create_mock_token_mint_account() -> Account {
-        let mut mint_data = vec![0u8; Mint::LEN];
-        let mint = Mint {
-            mint_authority: Some(Pubkey::new_unique()).into(),
-            supply: 1000000,
-            decimals: 6,
-            is_initialized: true,
-            freeze_authority: None.into(),
-        };
-        Mint::pack(mint, &mut mint_data).unwrap();
-
-        Account {
-            lamports: 1000000,
-            data: mint_data,
-            owner: spl_token::id(), // Token mint owned by SPL Token program
-            executable: false,      // Mints are not executable
-            rent_epoch: 0,
-        }
-    }
-
-    fn create_mock_rpc_client_with_account(account: Account) -> Arc<RpcClient> {
-        let mut mocks = HashMap::new();
-        let encoded_data = base64::engine::general_purpose::STANDARD.encode(&account.data);
-
-        mocks.insert(
-            RpcRequest::GetAccountInfo,
-            json!({
-                "context": { "slot": 1 },
-                "value": {
-                    "data": [encoded_data, "base64"],
-                    "executable": account.executable,
-                    "lamports": account.lamports,
-                    "owner": account.owner.to_string(),
-                    "rentEpoch": account.rent_epoch
-                }
-            }),
-        );
-
-        Arc::new(RpcClient::new_mock_with_mocks("http://localhost:8899".to_string(), mocks))
-    }
-
-    fn create_mock_rpc_client_account_not_found() -> Arc<RpcClient> {
-        let mut mocks = HashMap::new();
-        mocks.insert(
-            RpcRequest::GetAccountInfo,
-            json!({
-                "context": { "slot": 1 },
-                "value": null
-            }),
-        );
-
-        Arc::new(RpcClient::new_mock_with_mocks("http://localhost:8899".to_string(), mocks))
-    }
-
     // Helper to create a simple test that only validates programs (no tokens)
     fn create_program_only_config() -> Config {
         Config {
@@ -803,7 +726,7 @@ mod tests {
         let config = create_program_only_config();
 
         let mock_account = create_mock_program_account();
-        let rpc_client = create_mock_rpc_client_with_account(mock_account);
+        let rpc_client = get_mock_rpc_client(&mock_account);
 
         // Test with RPC validation enabled (skip_rpc_validation = false)
         // The program validation should pass, but token validation will fail (AccountNotFound)
@@ -821,8 +744,8 @@ mod tests {
     async fn test_validate_with_result_rpc_validation_valid_token_mint() {
         let config = create_token_only_config();
 
-        let mock_account = create_mock_token_mint_account();
-        let rpc_client = create_mock_rpc_client_with_account(mock_account);
+        let mock_account = create_mock_spl_mint_account(6);
+        let rpc_client = get_mock_rpc_client(&mock_account);
 
         // Test with RPC validation enabled (skip_rpc_validation = false)
         // Token validation should pass (mock returns token mint) since we have no programs
@@ -857,7 +780,7 @@ mod tests {
         };
 
         let mock_account = create_mock_non_executable_account(); // Non-executable
-        let rpc_client = create_mock_rpc_client_with_account(mock_account);
+        let rpc_client = get_mock_rpc_client(&mock_account);
 
         // Test with RPC validation enabled (skip_rpc_validation = false)
         let result = ConfigValidator::validate_with_result(&config, &rpc_client, false).await;

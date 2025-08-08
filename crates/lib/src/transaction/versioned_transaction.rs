@@ -275,15 +275,10 @@ impl LookupTableUtil {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
-
-    use crate::transaction::TransactionUtil;
+    use crate::{tests::common::get_mock_rpc_client, transaction::TransactionUtil};
 
     use super::*;
-    use base64::Engine;
-    use serde_json::json;
     use solana_address_lookup_table_interface::state::LookupTableMeta;
-    use solana_client::rpc_request::RpcRequest;
     use solana_message::{v0, Message};
     use solana_sdk::{
         account::Account,
@@ -292,27 +287,6 @@ mod tests {
         signature::Keypair,
         signer::Signer,
     };
-
-    fn get_mock_rpc_client(account: &Account) -> Arc<RpcClient> {
-        let mut mocks = HashMap::new();
-        let encoded_data = base64::engine::general_purpose::STANDARD.encode(&account.data);
-        mocks.insert(
-            RpcRequest::GetAccountInfo,
-            json!({
-                "context": {
-                    "slot": 1
-                },
-                "value": {
-                    "data": [encoded_data, "base64"],
-                    "executable": account.executable,
-                    "lamports": account.lamports,
-                    "owner": account.owner.to_string(),
-                    "rentEpoch": account.rent_epoch
-                }
-            }),
-        );
-        Arc::new(RpcClient::new_mock_with_mocks("http://localhost:8899".to_string(), mocks))
-    }
 
     #[test]
     fn test_encode_transaction_b64() {
