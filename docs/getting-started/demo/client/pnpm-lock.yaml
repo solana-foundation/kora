@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@kora/sdk':
+        specifier: file:../../../../sdks/ts
+        version: file:../../../../sdks/ts
       '@solana-program/compute-budget':
         specifier: ^0.8.0
         version: 0.8.0(@solana/kit@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(ws@8.18.3))
@@ -52,6 +55,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
+
+  '@kora/sdk@file:../../../../sdks/ts':
+    resolution: {directory: ../../../../sdks/ts, type: directory}
 
   '@solana-program/compute-budget@0.8.0':
     resolution: {integrity: sha512-qPKxdxaEsFxebZ4K5RPuy7VQIm/tfJLa1+Nlt3KNA8EYQkz9Xm8htdoEaXVrer9kpgzzp9R3I3Bh6omwCM06tQ==}
@@ -397,6 +403,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.4
+
+  '@kora/sdk@file:../../../../sdks/ts': {}
 
   '@solana-program/compute-budget@0.8.0(@solana/kit@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(ws@8.18.3))':
     dependencies:

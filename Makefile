@@ -20,6 +20,10 @@ all: check test build
 install:
 	cargo install --path crates/cli
 
+# install ts sdk
+install-ts-sdk:
+	cd sdks/ts && pnpm install
+
 # Check code formatting
 check:
 	cargo fmt --all -- --check
@@ -179,6 +183,10 @@ build-cli:
 # Build tk-rs
 build-tk:
 	cargo build -p tk-rs
+
+# Build ts sdk
+build-ts-sdk:
+	cd sdks/ts && pnpm build
 
 # Run presigned release binary
 run-presigned:
