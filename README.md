@@ -118,11 +118,9 @@ make test-all
 kora/
 ├── crates/                   # Rust workspace
 │   ├── kora-lib/             # Core library with RPC server (signers, validation, transactions)
-│   ├── kora-cli/             # Command-line interface and RPC server
-│   ├── kora-turnkey/         # Turnkey signer integration
-│   └── kora-privy/           # Privy signer integration
+│   └── kora-cli/             # Command-line interface and RPC server
 ├── sdks/                     # Client SDKs
-│   ├── ts/                   # TypeScript SDK
+│   └── ts/                   # TypeScript SDK
 ├── tests/                    # Integration tests
 ├── docs/                     # Documentation
 │   ├── getting-started/      # Quick start guides
