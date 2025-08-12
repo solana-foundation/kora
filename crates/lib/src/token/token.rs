@@ -152,7 +152,10 @@ impl TokenUtil {
             // token program will fail. Same with the balance of the source account, if too low the instruction will fail.
             // This might be useful if the token account is being created within the same transaction, since the source account is not yet created.
             let (mint_address, actual_amount) = if let Some(mint_index) = mint_index {
-                let mint_key = account_keys[mint_index];
+                if mint_index >= ix.accounts.len() {
+                    return Ok(false);
+                }
+                let mint_key = account_keys[ix.accounts[mint_index] as usize];
                 let mint_account = rpc_client.get_account(&mint_key).await?;
                 let mint_state = token_program.unpack_mint(&mint_key, &mint_account.data)?;
 
