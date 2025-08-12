@@ -41,13 +41,14 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
         .layer(cors)
         // Add authentication layer for API key if configured
         .option_layer(
-            (get_value_by_priority("KORA_API_KEY", rpc.config.api_key.clone()))
+            (get_value_by_priority("KORA_API_KEY", rpc.config.auth.api_key.clone()))
                 .map(|key| ApiKeyAuthLayer::new(key.clone())),
         )
         // Add authentication layer for HMAC if configured
         .option_layer(
-            (get_value_by_priority("KORA_HMAC_SECRET", rpc.config.hmac_secret.clone()))
-                .map(|secret| HmacAuthLayer::new(secret.clone(), rpc.config.max_timestamp_age)),
+            (get_value_by_priority("KORA_HMAC_SECRET", rpc.config.auth.hmac_secret.clone())).map(
+                |secret| HmacAuthLayer::new(secret.clone(), rpc.config.auth.max_timestamp_age),
+            ),
         );
 
     // Configure and build the server with HTTP support

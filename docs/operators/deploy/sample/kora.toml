@@ -1,5 +1,7 @@
 [kora]
 rate_limit = 100
+
+[kora.auth]
 # Optional: API key for simple authentication
 # api_key = "your-api-key-here"
 # Optional: HMAC secret for signed requests

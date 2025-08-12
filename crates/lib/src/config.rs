@@ -129,11 +129,22 @@ pub struct KoraConfig {
     pub rate_limit: u64,
     #[serde(default)]
     pub enabled_methods: EnabledMethods,
+    #[serde(default)]
+    pub auth: AuthConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AuthConfig {
     pub api_key: Option<String>,
     pub hmac_secret: Option<String>,
     #[serde(default = "default_max_timestamp_age")]
     pub max_timestamp_age: i64,
-    // pub redis_url: String,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self { api_key: None, hmac_secret: None, max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE }
+    }
 }
 
 impl Config {

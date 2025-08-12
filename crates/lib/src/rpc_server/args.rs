@@ -16,15 +16,6 @@ pub struct RpcArgs {
     #[arg(long)]
     pub metrics_endpoint: Option<String>,
 
-    // Authentication
-    /// API key for authenticating requests to the Kora server (optional) - can be set in `kora.toml`
-    #[arg(long, env = "KORA_API_KEY", help_heading = "Authentication")]
-    pub api_key: Option<String>,
-
-    /// HMAC secret for request signature authentication (optional, provides stronger security than API key) - can be set in `kora.toml`
-    #[arg(long, env = "KORA_HMAC_SECRET", help_heading = "Authentication")]
-    pub hmac_secret: Option<String>,
-
     // Signing Options
     /// Private key for transaction signing (base58, u8 array, or path to JSON keypair file).
     /// Required unless `skip_signer`, `turnkey_signer`, `vault_signer`, or `privy_signer` is set
@@ -35,7 +26,51 @@ pub struct RpcArgs {
     #[arg(long = "no-load-signer", help_heading = "Signing Options")]
     pub skip_signer: bool,
 
-    // Turnkey Signer
+    #[command(flatten)]
+    pub auth_args: AuthArgs,
+
+    #[command(flatten)]
+    pub privy_args: PrivyArgs,
+
+    #[command(flatten)]
+    pub turnkey_args: TurnkeyArgs,
+
+    #[command(flatten)]
+    pub vault_args: VaultArgs,
+}
+
+#[derive(Debug, Parser)]
+pub struct AuthArgs {
+    /// API key for authenticating requests to the Kora server (optional) - can be set in `kora.toml`
+    #[arg(long, env = "KORA_API_KEY", help_heading = "Authentication")]
+    pub api_key: Option<String>,
+
+    /// HMAC secret for request signature authentication (optional, provides stronger security than API key) - can be set in `kora.toml`
+    #[arg(long, env = "KORA_HMAC_SECRET", help_heading = "Authentication")]
+    pub hmac_secret: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+pub struct PrivyArgs {
+    /// Use Privy remote signer for secure wallet management
+    #[arg(long = "with-privy-signer", help_heading = "Privy Signer")]
+    pub privy_signer: bool,
+
+    /// Privy application ID for authentication
+    #[arg(long, env = "PRIVY_APP_ID", help_heading = "Privy Signer")]
+    pub privy_app_id: Option<String>,
+
+    /// Privy application secret for authentication
+    #[arg(long, env = "PRIVY_APP_SECRET", help_heading = "Privy Signer")]
+    pub privy_app_secret: Option<String>,
+
+    /// Privy wallet ID to use for signing
+    #[arg(long, env = "PRIVY_WALLET_ID", help_heading = "Privy Signer")]
+    pub privy_wallet_id: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+pub struct TurnkeyArgs {
     /// Use Turnkey remote signer for secure key management
     #[arg(long = "with-turnkey-signer", help_heading = "Turnkey Signer")]
     pub turnkey_signer: bool,
@@ -59,25 +94,10 @@ pub struct RpcArgs {
     /// Turnkey public key (base58 encoded) for verification
     #[arg(long, env = "TURNKEY_PUBLIC_KEY", help_heading = "Turnkey Signer")]
     pub turnkey_public_key: Option<String>,
+}
 
-    // Privy Signer
-    /// Use Privy remote signer for secure wallet management
-    #[arg(long = "with-privy-signer", help_heading = "Privy Signer")]
-    pub privy_signer: bool,
-
-    /// Privy application ID for authentication
-    #[arg(long, env = "PRIVY_APP_ID", help_heading = "Privy Signer")]
-    pub privy_app_id: Option<String>,
-
-    /// Privy application secret for authentication
-    #[arg(long, env = "PRIVY_APP_SECRET", help_heading = "Privy Signer")]
-    pub privy_app_secret: Option<String>,
-
-    /// Privy wallet ID to use for signing
-    #[arg(long, env = "PRIVY_WALLET_ID", help_heading = "Privy Signer")]
-    pub privy_wallet_id: Option<String>,
-
-    // Vault Signer
+#[derive(Debug, Parser)]
+pub struct VaultArgs {
     /// Use HashiCorp Vault signer for enterprise key management
     #[arg(long, help_heading = "Vault Signer")]
     pub vault_signer: bool,

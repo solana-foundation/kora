@@ -2938,6 +2938,8 @@ dependencies = [
  "serde_json",
  "solana-client",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "utoipa",
 ]
 

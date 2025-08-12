@@ -6,7 +6,7 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 
-use super::{KeypairUtil, Signature};
+use crate::signer::{KeypairUtil, Signature};
 
 /// A Solana-based signer that uses an in-memory keypair
 #[derive(Debug)]

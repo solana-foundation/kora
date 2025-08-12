@@ -1,4 +1,10 @@
-use crate::{constant::DEFAULT_INTEREST_MULTIPLIER, token::interface::TokenMint};
+use crate::{
+    constant::{
+        DEFAULT_INTEREST_MULTIPLIER, MAX_BASIS_POINTS, MAX_TRANSFER_HOOK_FEE,
+        MAX_TRANSFER_HOOK_FEE_BASIS_POINTS,
+    },
+    token::interface::TokenMint,
+};
 
 use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
@@ -480,13 +486,9 @@ impl TokenInterface for Token2022Program {
 
             let transfer_fee = account.get_transfer_fee();
             if transfer_fee.is_some() {
-                let basis_points = 100; // 1%
-                let fee = (amount as u128 * basis_points as u128 / 10000) as u64;
-
-                // Cap at 10,000 lamports maximum fee
-                let max_fee = 10_000;
-
-                let fee = std::cmp::min(fee, max_fee);
+                let fee =
+                    (amount as u128 * MAX_TRANSFER_HOOK_FEE_BASIS_POINTS / MAX_BASIS_POINTS) as u64;
+                let fee = std::cmp::min(fee, MAX_TRANSFER_HOOK_FEE);
 
                 return Ok(amount.saturating_sub(fee));
             }

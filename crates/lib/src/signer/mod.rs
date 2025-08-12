@@ -1,13 +1,13 @@
 pub mod init;
 pub mod keypair_util;
+pub mod memory_signer;
 pub mod privy;
 pub mod signer;
-pub mod solana_signer;
 pub mod turnkey;
 pub mod utils;
-pub mod vault_signer;
+pub mod vault;
 
 pub use keypair_util::KeypairUtil;
+pub use memory_signer::solana_signer::SolanaMemorySigner;
 pub use signer::{KoraSigner, Signature, Signer};
-pub use solana_signer::SolanaMemorySigner;
-pub use vault_signer::VaultSigner;
+pub use vault::vault_signer::VaultSigner;

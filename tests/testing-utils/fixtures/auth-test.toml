@@ -1,5 +1,7 @@
 [kora]
 rate_limit = 100
+
+[kora.auth]
 api_key = "test-api-key-123"
 hmac_secret = "test-hmac-secret-456"
 

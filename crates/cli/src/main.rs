@@ -4,6 +4,7 @@ use args::GlobalArgs;
 use clap::{Parser, Subcommand};
 use kora_lib::{
     error::KoraError,
+    log::LoggingFormat,
     rpc::get_rpc_client,
     rpc_server::{run_rpc_server, KoraRpc, RpcArgs},
     signer::init::init_signer_type,
@@ -58,6 +59,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), KoraError> {
+    dotenv::dotenv().ok();
     let cli = Cli::parse();
 
     let config = Config::load_config(&cli.global_args.config).unwrap_or_else(|e| {
@@ -89,6 +91,8 @@ async fn main() -> Result<(), KoraError> {
                 print_error(&format!("Config validation failed: {e}"));
                 std::process::exit(1);
             }
+
+            setup_logging(&rpc_args.logging_format);
 
             // Initialize the signer
             if !rpc_args.skip_signer {
@@ -139,4 +143,15 @@ async fn main() -> Result<(), KoraError> {
 
 fn print_error(message: &str) {
     eprintln!("Error: {message}");
+}
+
+fn setup_logging(format: &LoggingFormat) {
+    let env_filter = std::env::var("RUST_LOG")
+        .unwrap_or_else(|_| "info,sqlx=error,sea_orm_migration=error,jsonrpsee_server=warn".into());
+
+    let subscriber = tracing_subscriber::fmt().with_env_filter(env_filter);
+    match format {
+        LoggingFormat::Standard => subscriber.init(),
+        LoggingFormat::Json => subscriber.json().init(),
+    }
 }

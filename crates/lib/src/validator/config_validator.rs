@@ -284,8 +284,7 @@ impl ValidationConfig {
 mod tests {
 
     use crate::{
-        config::{EnabledMethods, KoraConfig},
-        constant::DEFAULT_MAX_TIMESTAMP_AGE,
+        config::{AuthConfig, EnabledMethods, KoraConfig},
         fee::price::PriceConfig,
         tests::common::{
             create_mock_non_executable_account, create_mock_program_account,
@@ -312,10 +311,8 @@ mod tests {
             },
             kora: KoraConfig {
                 rate_limit: 100,
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
                 enabled_methods: EnabledMethods::default(),
+                auth: AuthConfig::default(),
             },
         };
 
@@ -349,9 +346,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -389,9 +384,7 @@ mod tests {
                     get_config: false,
                     sign_transaction_if_paid: false, // All false - should warn
                 },
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -426,9 +419,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -460,9 +451,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -501,9 +490,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -539,9 +526,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -585,9 +570,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -618,9 +601,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -657,9 +638,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -690,9 +669,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         }
     }
@@ -714,9 +691,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         }
     }
@@ -773,9 +748,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -806,9 +779,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 
@@ -838,9 +809,7 @@ mod tests {
             kora: KoraConfig {
                 rate_limit: 100,
                 enabled_methods: EnabledMethods::default(),
-                api_key: None,
-                hmac_secret: None,
-                max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+                auth: AuthConfig::default(),
             },
         };
 

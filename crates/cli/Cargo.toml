@@ -21,3 +21,5 @@ solana-client = { workspace = true }
 dotenv = { workspace = true }
 serde_json = { workspace = true }
 utoipa = { workspace = true, optional = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
