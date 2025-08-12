@@ -172,7 +172,7 @@ allow_assign = true             # Allow fee payer to use Assign instruction
 
 ### 6. User Authentication
 
-Kora supports two optional authentication methods for securing your RPC endpoint: a global API key for all users or [HMAC authentication](https://en.wikipedia.org/wiki/HMAC) with replay protection. If neither is configured, no authentication is required to use the RPC endpoint. You can use both methods simultaneously for maximum security.
+Kora supports two optional authentication methods for securing your RPC endpoint: a global API key for all users or [HMAC authentication](https://en.wikipedia.org/wiki/HMAC) with replay protection. If neither is configured, no authentication is required to use the RPC endpoint. You can use both methods simultaneously for maximum security. Authentication is configured in the `kora.toml` file in the `[kora.auth]` section.
 
 For more information on authentication, see [Kora Authentication](./AUTHENTICATION.md)
 

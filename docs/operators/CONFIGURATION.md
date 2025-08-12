@@ -18,6 +18,7 @@ Your configuration file should be placed in your deployment directory or specifi
 The `kora.toml` file is organized into sections, each with its own set of options. This guide walks through each section and explains the options available:
 
 - [Kora Core Policies](#kora-core-policies) - Core server settings
+- [Kora Authentication](#kora-authentication) - Authentication settings
 - [Kora Enabled Methods](#kora-enabled-methods) - Kora RPC methods to enable
 - [Validation Policies](#validation-policies) - Transaction validation and security
 - [Fee Payer Policy](#fee-payer-policy) - Restrictions on fee payer wallet
@@ -29,6 +30,9 @@ Sample `kora.toml` file sections:
 ```toml
 [kora]
 # Core server settings
+
+[kora.auth]
+# Authentication settings
 
 [kora.enabled_methods]
 # Kora RPC methods to enable
@@ -54,6 +58,19 @@ The `[kora]` section configures core server behavior:
 ```toml
 [kora]
 rate_limit = 100
+```
+
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `rate_limit` | Global rate limit (requests per second) across all clients | ✅ | number |
+
+## Kora Authentication
+
+The `[kora.auth]` section configures authentication for the Kora server:
+
+```toml
+[kora.auth]
 api_key = "kora_live_sk_1234567890abcdef"
 hmac_secret = "kora_hmac_your-strong-hmac-secret-key-here"
 max_timestamp_age = 300
@@ -62,7 +79,6 @@ max_timestamp_age = 300
 
 | Option | Description | Required | Type |
 |--------|-------------|---------|---------|
-| `rate_limit` | Global rate limit (requests per second) across all clients | ✅ | number |
 | `api_key` | API key for simple authentication | ❌ | string |
 | `hmac_secret` | HMAC secret for signature-based authentication (min 32 chars) | ❌ | string |
 | `max_timestamp_age` | Maximum age of an HMAC timestamp in seconds | ❌ (default: 300) | number |
