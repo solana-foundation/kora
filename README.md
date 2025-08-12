@@ -1,5 +1,6 @@
 # Kora
 
+![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/solana-foundation/kora/main/.github/badges/coverage.json)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/solana-foundation/kora)
 [![Crates.io](https://img.shields.io/crates/v/kora-rpc.svg)](https://crates.io/crates/kora-rpc)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

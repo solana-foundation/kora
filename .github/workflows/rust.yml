@@ -44,6 +44,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -67,11 +70,10 @@ jobs:
       - name: Install cargo-llvm-cov for coverage
         run: cargo install cargo-llvm-cov
 
-      - name: Run unit tests with coverage
+      - name: Initialize coverage
         run: |
-          echo "🧪 Running unit tests with coverage..."
+          echo "🧪 Initializing coverage instrumentation..."
           cargo llvm-cov clean --workspace
-          cargo llvm-cov --lib --no-report
 
       - name: Setup test environment
         run: |
@@ -83,10 +85,11 @@ jobs:
         with:
           config-file: 'tests/kora-test.toml'
 
-      - name: Run regular integration tests with coverage
+      - name: Run all tests with coverage
         run: |
-          echo "🧪 Running regular integration tests..."
-          cargo llvm-cov test --no-report --tests -- --skip auth_integration_tests
+          echo "🧪 Running all tests with coverage..."
+          # Run lib tests and integration tests together with coverage
+          cargo llvm-cov test --no-report --lib --tests -- --skip auth_integration_tests
 
       - name: Stop Kora RPC server
         run: |
@@ -115,9 +118,67 @@ jobs:
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
+          name: rust-coverage-report
           path: coverage/
           retention-days: 30
+
+      - name: Post coverage comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Extract coverage percentage from lcov.info
+            const fs = require('fs');
+            let coverage = '0';
+            
+            try {
+              const lcov = fs.readFileSync('coverage/lcov.info', 'utf8');
+              const linesFound = lcov.match(/^LF:(\d+)$/gm)?.reduce((sum, line) => sum + parseInt(line.split(':')[1]), 0) || 0;
+              const linesHit = lcov.match(/^LH:(\d+)$/gm)?.reduce((sum, line) => sum + parseInt(line.split(':')[1]), 0) || 0;
+              coverage = linesFound > 0 ? ((linesHit / linesFound) * 100).toFixed(1) : '0';
+            } catch (error) {
+              console.log('Error reading coverage:', error);
+            }
+            
+            const comment = `## 📊 Rust Coverage Report
+            
+            **Coverage:** ${coverage}%
+            
+            <details>
+            <summary>View detailed report</summary>
+            
+            Coverage artifacts have been uploaded to this workflow run.
+            [View Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            
+            </details>`;
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('## 📊 Rust Coverage Report')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
 
       - name: Cleanup test environment
         uses: ./.github/actions/cleanup-test-env
