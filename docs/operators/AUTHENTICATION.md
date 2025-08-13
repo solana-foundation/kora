@@ -11,6 +11,8 @@ Authentication is optional but **strongly recommended** for production deploymen
 | **HMAC** | High | Public APIs, untrusted networks | Medium |
 | **Both** | Maximum | High-security environments | Medium |
 
+Kora Authentication is configured in the `kora.toml` file in the `[kora.auth]` section.
+
 In this document:
 
 - [API Key Authentication](#api-key-authentication)
@@ -36,8 +38,7 @@ openssl rand -hex 32
 - Add an `api_key` to your `kora.toml`:
 
 ```toml
-[kora]
-rate_limit = 100
+[kora.auth]
 api_key = "kora_live_sk_1234567890abcdef"  # Use a strong, unique key
 ```
 
@@ -91,8 +92,7 @@ Instead of sending an API key with every request, HMAC creates a unique cryptogr
 - Add a global `hmac_secret` to your `kora.toml` (minimum 32 characters--you can generate one with `openssl rand -hex 32` or similar):
 
 ```toml
-[kora]
-rate_limit = 100
+[kora.auth]
 hmac_secret = "kora_hmac_your-strong-hmac-secret-key"
 ```
 
@@ -156,8 +156,7 @@ console.log(config);
 You can enable both authentication methods simultaneously for maximum security:
 
 ```toml
-[kora]
-rate_limit = 100
+[kora.auth]
 api_key = "kora_live_sk_1234567890abcdef"
 hmac_secret = "kora_hmac_your-strong-hmac-secret-key"
 ```

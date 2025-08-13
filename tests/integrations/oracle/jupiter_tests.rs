@@ -18,9 +18,9 @@ async fn test_jupiter_integration_usdc() {
             assert_eq!(token_price.source, PriceSource::Jupiter);
         }
         Err(e) => {
-            println!("Warning: Jupiter USDC integration test failed (may be expected in volatile market conditions): {:?}", e);
+            println!("Warning: Jupiter USDC integration test failed (may be expected in volatile market conditions): {e:?}");
             if e.to_string().contains("Invalid") || e.to_string().contains("parse") {
-                panic!("Jupiter USDC integration test failed with code error: {:?}", e);
+                panic!("Jupiter USDC integration test failed with code error: {e:?}");
             }
         }
     }
@@ -44,9 +44,9 @@ async fn test_jupiter_integration_cbtc() {
             assert_eq!(token_price.source, PriceSource::Jupiter);
         }
         Err(e) => {
-            println!("Warning: Jupiter cBTC integration test failed (may be expected in volatile market conditions): {:?}", e);
+            println!("Warning: Jupiter cBTC integration test failed (may be expected in volatile market conditions): {e:?}");
             if e.to_string().contains("Invalid") || e.to_string().contains("parse") {
-                panic!("Jupiter cBTC integration test failed with code error: {:?}", e);
+                panic!("Jupiter cBTC integration test failed with code error: {e:?}");
             }
         }
     }
@@ -74,9 +74,9 @@ async fn test_jupiter_integration_sol() {
             assert_eq!(token_price.source, PriceSource::Jupiter);
         }
         Err(e) => {
-            println!("Warning: Jupiter SOL integration test failed (may be expected in some environments): {:?}", e);
+            println!("Warning: Jupiter SOL integration test failed (may be expected in some environments): {e:?}");
             if e.to_string().contains("Invalid") || e.to_string().contains("parse") {
-                panic!("Jupiter SOL integration test failed with code error: {:?}", e);
+                panic!("Jupiter SOL integration test failed with code error: {e:?}");
             }
         }
     }

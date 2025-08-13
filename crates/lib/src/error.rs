@@ -183,8 +183,8 @@ impl From<anyhow::Error> for KoraError {
     }
 }
 
-impl From<kora_privy::PrivyError> for KoraError {
-    fn from(err: kora_privy::PrivyError) -> Self {
+impl From<crate::signer::privy::types::PrivyError> for KoraError {
+    fn from(err: crate::signer::privy::types::PrivyError) -> Self {
         KoraError::SigningError(err.to_string())
     }
 }

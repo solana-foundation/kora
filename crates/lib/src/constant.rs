@@ -2,6 +2,13 @@ pub const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 pub const NATIVE_SOL: &str = "11111111111111111111111111111111";
 pub const LAMPORTS_PER_SIGNATURE: u64 = 5000;
 pub const MIN_BALANCE_FOR_RENT_EXEMPTION: u64 = 2_039_280;
+pub const DEFAULT_INTEREST_MULTIPLIER: u128 = 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60);
+
+pub const MAX_BASIS_POINTS: u128 = 10_000;
+
+// Token2022
+pub const MAX_TRANSFER_HOOK_FEE: u64 = 10_000; // Cap at 10,000 lamports maximum fee
+pub const MAX_TRANSFER_HOOK_FEE_BASIS_POINTS: u128 = 100; // 1%
 
 // HTTP Headers
 pub const X_API_KEY: &str = "x-api-key";

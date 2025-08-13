@@ -1,24 +1,28 @@
 use crate::{
-    args::CommonArgs,
     error::KoraError,
-    signer::{KoraSigner, SolanaMemorySigner, VaultSigner},
+    rpc_server::{
+        args::{PrivyArgs, TurnkeyArgs, VaultArgs},
+        RpcArgs,
+    },
+    signer::{
+        privy::types::PrivySigner, turnkey::types::TurnkeySigner, KoraSigner, SolanaMemorySigner,
+        VaultSigner,
+    },
 };
-use kora_privy::PrivySigner;
-use kora_turnkey::TurnkeySigner;
 
-pub fn init_signer_type(args: &CommonArgs) -> Result<KoraSigner, KoraError> {
-    if args.turnkey_signer {
-        init_turnkey_signer(args)
-    } else if args.vault_signer {
-        init_vault_signer(args)
-    } else if args.privy_signer {
-        init_privy_signer(args)
+pub fn init_signer_type(args: &RpcArgs) -> Result<KoraSigner, KoraError> {
+    if args.turnkey_args.turnkey_signer {
+        init_turnkey_signer(&args.turnkey_args)
+    } else if args.vault_args.vault_signer {
+        init_vault_signer(&args.vault_args)
+    } else if args.privy_args.privy_signer {
+        init_privy_signer(&args.privy_args)
     } else {
         init_memory_signer(args.private_key.as_ref())
     }
 }
 
-fn init_vault_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
+fn init_vault_signer(config: &VaultArgs) -> Result<KoraSigner, KoraError> {
     let vault_addr = config
         .vault_addr
         .as_ref()
@@ -49,7 +53,7 @@ fn init_vault_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
     Ok(KoraSigner::Vault(signer))
 }
 
-fn init_turnkey_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
+fn init_turnkey_signer(config: &TurnkeyArgs) -> Result<KoraSigner, KoraError> {
     let api_pub = config
         .turnkey_api_public_key
         .as_ref()
@@ -82,7 +86,7 @@ fn init_turnkey_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
     Ok(KoraSigner::Turnkey(signer))
 }
 
-fn init_privy_signer(config: &CommonArgs) -> Result<KoraSigner, KoraError> {
+fn init_privy_signer(config: &PrivyArgs) -> Result<KoraSigner, KoraError> {
     let app_id = config
         .privy_app_id
         .clone()

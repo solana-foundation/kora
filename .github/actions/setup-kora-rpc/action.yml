@@ -1,39 +1,39 @@
-name: 'Setup Kora RPC Server'
-description: 'Build and start the Kora RPC server with health check'
+name: "Setup Kora RPC Server"
+description: "Build and start the Kora RPC server with health check"
 
 inputs:
   private-key:
-    description: 'Kora private key'
+    description: "Kora private key"
     required: false
-    default: './tests/testing-utils/local-keys/fee-payer-local.json'
+    default: "./tests/testing-utils/local-keys/fee-payer-local.json"
   config-file:
-    description: 'Kora config file path'
+    description: "Kora config file path"
     required: false
-    default: 'tests/kora-test.toml'
+    default: "tests/testing-utils/fixtures/kora-test.toml"
   rpc-url:
-    description: 'Solana RPC URL'
+    description: "Solana RPC URL"
     required: false
-    default: 'http://127.0.0.1:8899'
+    default: "http://127.0.0.1:8899"
   port:
-    description: 'Kora RPC server port'
+    description: "Kora RPC server port"
     required: false
-    default: '8080'
+    default: "8080"
   timeout:
-    description: 'Timeout in seconds to wait for server startup'
+    description: "Timeout in seconds to wait for server startup"
     required: false
-    default: '30'
+    default: "30"
   test-server-url:
-    description: 'Test server URL for health checks'
+    description: "Test server URL for health checks"
     required: false
-    default: 'http://127.0.0.1:8080'
+    default: "http://127.0.0.1:8080"
 
 outputs:
   kora-pid:
-    description: 'Process ID of the started Kora RPC server'
+    description: "Process ID of the started Kora RPC server"
     value: ${{ steps.start-server.outputs.kora-pid }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Build Kora RPC server
       shell: bash
@@ -44,10 +44,11 @@ runs:
       shell: bash
       run: |
         echo "🚀 Starting Kora RPC server..."
-        cargo run -p kora-rpc --bin kora-rpc -- \
-          --private-key ${{ inputs.private-key }} \
+        cargo run -p kora-cli --bin kora -- \
           --config ${{ inputs.config-file }} \
           --rpc-url ${{ inputs.rpc-url }} \
+          rpc \
+          --private-key ${{ inputs.private-key }} \
           --port ${{ inputs.port }} \
           &
         KORA_PID=$!
