@@ -10,7 +10,10 @@ import {
   signTransaction,
   type KeyPairSigner,
   type Transaction,
+  address,
 } from "@solana/kit";
+import { deserializedBase64Transaction } from "./helpers.js";
+import { findAssociatedTokenPda } from "@solana-program/token";
 
 function transactionFromBase64(base64: string): Transaction {
   const encoder = getBase64Encoder();
@@ -188,6 +191,51 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? "with auth" : "without 
       expect(signResult.transaction).toBeDefined();
       expect(signResult.signed_transaction).toBeDefined();
     });
+    it("should generate payment instruction", async () => {
+      const tokenProgramId = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+      const initialRequest = {
+        amount: 1000000, // 1 USDC
+        token: usdcMint,
+        source: testWalletAddress,
+        destination: destinationAddress,
+      };
+
+      const { transaction } = await client.transferTransaction(initialRequest);
+
+      const appendRequest = {
+        transaction,
+        fee_token: usdcMint,
+        source_wallet: testWalletAddress,
+        token_program_id: tokenProgramId,
+      };
+      const estimatedFee = await client.estimateTransactionFee({ transaction, fee_token: usdcMint });
+      const response = await client.appendPaymentInstruction(appendRequest);
+
+      const decompiledTransaction = deserializedBase64Transaction(response.transaction);
+
+      const [expectedSenderAta] = await findAssociatedTokenPda({owner: testWalletAddress, tokenProgram: tokenProgramId, mint: usdcMint});
+      const [koraAta] = await findAssociatedTokenPda({owner: koraAddress, tokenProgram: tokenProgramId, mint: usdcMint});
+      
+      expect(decompiledTransaction.feePayer.address).toBe(koraAddress);
+      expect(decompiledTransaction.instructions.length).toBe(2); // 1 for original transfer, 1 for payment instruction
+
+      expect(decompiledTransaction.instructions[1].accounts?.[0].address).toBe(expectedSenderAta);
+      expect(decompiledTransaction.instructions[1].accounts?.[2].address).toBe(koraAta);
+
+      expect(response).toBeDefined();
+      expect(response.transaction).toBeDefined();
+      expect(response.payment_amount).toBe(estimatedFee.fee_in_token);
+      expect(response.payment_token).toBe(usdcMint);
+
+      // sign if paid - this should only work if instruction is properly appended
+      const signResult = await client.signTransactionIfPaid({
+        transaction: response.transaction,
+      });
+
+      expect(signResult).toBeDefined();
+      expect(signResult.transaction).toBeDefined();
+      expect(signResult.signed_transaction).toBeDefined();
+    });
   });
 
   describe("Error Handling", () => {
@@ -235,7 +283,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? "with auth" : "without 
         destination: destinationAddress,
       };
 
-      // TODO: API has an error. this endpoint should verify the provided fee token is supported
       const { transaction } = await client.transferTransaction(transferRequest);
       const fee = await client.estimateTransactionFee({ transaction, fee_token: usdcMint });
       expect(fee).toBeDefined();
@@ -273,4 +320,5 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? "with auth" : "without 
       await expect(client.transferTransaction(request)).rejects.toThrow();
     });
   });
+
 });
