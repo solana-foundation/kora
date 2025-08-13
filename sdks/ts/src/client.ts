@@ -16,8 +16,13 @@ import {
   RpcRequest,
   AuthenticationHeaders,
   KoraClientOptions,
+  GeneratePaymentInstructionRequest,
+  GeneratePaymentInstructionResponse,
 } from "./types/index.js";
 import crypto from "crypto";
+import { getTransferCheckedInstruction, findAssociatedTokenPda } from "@solana-program/token-2022";
+import { Address, address, assertIsAddress } from "@solana/addresses";
+import { appendTransactionMessageInstruction, getBase64EncodedWireTransaction, createNoopSigner, getBase64Codec, getTransactionCodec, getCompiledTransactionMessageCodec, TransactionMessage, decompileTransactionMessage, compileTransactionMessage, partiallySignTransaction, partiallySignTransactionMessageWithSigners, pipe } from "@solana/kit";
 
 /**
  * Kora RPC client for interacting with the Kora paymaster service.
@@ -300,4 +305,88 @@ export class KoraClient {
       TransferTransactionRequest
     >("transferTransaction", request);
   }
+
+
+  private requiresPayment(config: Config): boolean {
+    return config.validation_config.price.type === "fixed" || config.validation_config.price.type === "margin";
+  }
+  private supportsToken(config: Config, token: string): boolean {
+    return config.validation_config.allowed_spl_paid_tokens.includes(token);
+  }
+
+  async generatePaymentInstruction(
+    { transaction, fee_token, source_wallet, token_program_id }: GeneratePaymentInstructionRequest
+  ): Promise<GeneratePaymentInstructionResponse> {
+    assertIsAddress(source_wallet);
+    assertIsAddress(fee_token);
+    assertIsAddress(token_program_id);
+    // first make sure token is supported
+    const config = await this.getConfig();
+    if (!this.supportsToken(config, fee_token)) {
+      throw new Error(`Token ${fee_token} is not supported`);
+    }
+    // get the dude's fee payer address
+    const feePayer = config.fee_payer;
+    if (!this.requiresPayment(config)) {
+      throw new Error("This transaction does not require payment");
+    }
+
+    const koraPayer = address(config.fee_payer);
+
+    // then estimate the fee
+    const fee = await this.estimateTransactionFee({ transaction, fee_token });
+
+    // get associated token accounts
+    const [sourceTokenAccount] = await findAssociatedTokenPda({
+      owner: source_wallet,
+      tokenProgram: token_program_id,
+      mint: fee_token,
+    }, { programAddress: token_program_id });
+    const [destinationTokenAccount] = await findAssociatedTokenPda({
+      owner: config.fee_payer as Address,
+      tokenProgram: token_program_id,
+      mint: fee_token,
+    }, { programAddress: token_program_id });
+
+    const paymentInstruction = await getTransferCheckedInstruction({
+      source: sourceTokenAccount,
+      mint: fee_token,
+      destination: destinationTokenAccount,
+      authority: createNoopSigner(koraPayer),
+      amount: fee.fee_in_token,
+      decimals: 6,
+    }, { programAddress: token_program_id });
+
+    const transactionBytes = getBase64Codec().encode(transaction);
+    const originalTransaction = getTransactionCodec().decode(transactionBytes);
+    const originalMessage = getCompiledTransactionMessageCodec().decode(originalTransaction.messageBytes);
+    const newMessage = appendTransactionMessageInstruction(paymentInstruction, decompileTransactionMessage(originalMessage));
+
+    const altMessage = await pipe(
+      originalMessage,
+      (msg) =
+      (msg) => appendTransactionMessageInstruction(paymentInstruction, msg),
+      (msg) => compileTransactionMessage(msg),
+      (msg) => partiallySignTransactionMessageWithSigners(msg),
+    );
+
+    // only edit below.
+    const compiledMessage = compileTransactionMessage(newMessage as any);
+    const signedTransaction = await partiallySignTransactionMessageWithSigners(compiledMessage);
+
+    const newTransaction = {
+      ...originalTransaction,
+      messageBytes: getCompiledTransactionMessageCodec().encode(compiledMessage)
+    };
+
+    const base64 = getBase64EncodedWireTransaction(newTransaction);
+    return {
+      transaction: base64,
+      payment_amount: fee.fee_in_token,
+      payment_token: fee_token,
+    };
+
+    // then sign the transaction
+  }
+
 }

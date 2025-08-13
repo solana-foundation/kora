@@ -274,3 +274,20 @@ export interface KoraClientOptions {
   /** Optional HMAC secret for signature-based authentication */
   hmacSecret?: string;
 }
+
+/**
+ * Request for generating a payment instruction.
+ */
+export interface GeneratePaymentInstructionRequest {
+  transaction: string;
+  fee_token: string;
+  source_wallet: string;
+  token_program_id: string;
+}
+
+/**
+ * Response for generating a payment instruction.
+ */
+export interface GeneratePaymentInstructionResponse {
+  transaction: string;
+}
