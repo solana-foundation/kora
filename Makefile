@@ -138,13 +138,29 @@ test-integration-coverage:
 
 
 # Run TypeScript SDK tests with local validator and Kora node
-test-ts:
+test-ts-unit:
+	@printf "Running TypeScript SDK tests (unit tests)...\n"
+	-@cd sdks/ts && pnpm test:unit
+
+test-ts-integration-basic:
 	@$(call start_solana_validator)
 	@$(call start_kora_server,node for TS tests,,,,)
-	@printf "Running TypeScript SDK tests...\n"
-	-@cd sdks/ts && pnpm test
+	@printf "Running TypeScript SDK tests (basic config)...\n"
+	-@cd sdks/ts && pnpm test:integration
 	@$(call stop_kora_server)
 	@$(call stop_solana_validator)
+
+# Run TypeScript auth tests specifically (using integration tests with auth enabled)
+test-ts-integration-auth:
+	@$(call start_solana_validator)
+	@$(call start_kora_server,node for TS auth tests,cargo run,,$(AUTH_CONFIG),)
+	@printf "Running TypeScript SDK auth tests...\n"
+	-@cd sdks/ts && pnpm test:integration:auth
+	@$(call stop_kora_server)
+	@$(call stop_solana_validator)
+
+# Run all TypeScript SDK tests
+test-ts: test-ts-unit test-ts-integration-basic test-ts-integration-auth
 
 test-all: test test-integration test-ts
 

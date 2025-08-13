@@ -90,6 +90,24 @@ jobs:
           # The test script handles starting/stopping its own validator
           pnpm test:ci:integration
 
+      - name: Stop Kora RPC server
+        run: |
+          if [ ! -z "$KORA_PID" ]; then
+            kill $KORA_PID || true
+          fi
+          sleep 2
+
+      - name: Setup Kora RPC server (auth config)
+        uses: ./.github/actions/setup-kora-rpc
+        with:
+          config-file: "tests/testing-utils/fixtures/auth-test.toml"
+
+      - name: Run TypeScript auth integration tests
+        working-directory: sdks/ts
+        run: |
+          echo "🧪 Running TypeScript SDK auth integration tests..."
+          pnpm test:ci:integration:auth
+
       - name: Cleanup test environment
         uses: ./.github/actions/cleanup-test-env
 
