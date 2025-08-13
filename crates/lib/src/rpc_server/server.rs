@@ -1,5 +1,7 @@
 use crate::{
+    config::MetricsConfig,
     constant::{X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP},
+    metrics::run_metrics_server_if_required,
     rpc_server::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
         rpc::KoraRpc,
@@ -14,12 +16,21 @@ use std::{net::SocketAddr, time::Duration};
 use tower::limit::RateLimitLayer;
 use tower_http::cors::CorsLayer;
 
+pub struct ServerHandles {
+    pub rpc_handle: ServerHandle,
+    pub metrics_handle: Option<ServerHandle>,
+}
+
 // We'll always prioritize the environment variable over the config value
 fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<String> {
     std::env::var(env_var).ok().or(config_value)
 }
 
-pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, anyhow::Error> {
+pub async fn run_rpc_server(
+    rpc: KoraRpc,
+    port: u16,
+    metrics_config: &MetricsConfig,
+) -> Result<ServerHandles, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log::info!("RPC server started on {addr}, port {port}");
 
@@ -35,10 +46,20 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
         ])
         .max_age(Duration::from_secs(3600));
 
+    let (metrics_handle, metrics_layers) =
+        run_metrics_server_if_required(metrics_config, port).await?;
+
     let middleware = tower::ServiceBuilder::new()
+        // Add metrics handler first (before other layers) so it can intercept /metrics
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
         .layer(RateLimitLayer::new(rpc.config.rate_limit, Duration::from_secs(1)))
+        // Add metrics handler layer for Prometheus metrics
+        .option_layer(
+            metrics_layers.as_ref().and_then(|layers| layers.metrics_handler_layer.clone()),
+        )
         .layer(cors)
+        // Add metrics collection layer
+        .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
         // Add authentication layer for API key if configured
         .option_layer(
             (get_value_by_priority("KORA_API_KEY", rpc.config.auth.api_key.clone()))
@@ -60,8 +81,12 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandle, any
 
     let rpc_module = build_rpc_module(rpc)?;
 
-    // Start the server and return the handle
-    server.start(rpc_module).map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))
+    // Start the RPC server
+    let rpc_handle = server
+        .start(rpc_module)
+        .map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))?;
+
+    Ok(ServerHandles { rpc_handle, metrics_handle })
 }
 
 macro_rules! register_method_if_enabled {

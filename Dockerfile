@@ -1,12 +1,12 @@
-FROM rust:1.70 as builder
+FROM rust:1.80 as builder
 
 WORKDIR /usr/src/app
 COPY . .
-RUN cargo build --release
+RUN cargo build --release --bin kora-rpc
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /usr/src/app/target/release/json_rpc_server /usr/local/bin/
+COPY --from=builder /usr/src/app/target/release/kora-rpc /usr/local/bin/
 
-EXPOSE 3030
-CMD ["json_rpc_server"]
+EXPOSE 8080
+CMD ["kora-rpc"]

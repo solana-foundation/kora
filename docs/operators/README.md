@@ -36,6 +36,9 @@ Configure your node to accept only transactions that meet your business requirem
 - **Payment tokens**: Specify which type of tokens you will accept as payment 
 - **Feepayer policies**: Specify which types of instructions your feepayer can sign
 
+**[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)**
+**[→ Sample kora.toml](./deploy/sample/kora.toml)**
+
 ### 2. Sign Transactions  
 Your node needs a Solana keypair to sign transactions as the fee payer. Consider implementing key rotation, access controls, backups, and other strategies for signer security. At present, Kora enables you to sign with:
 - **Environment Variables**: Store private key directly in server environment (as base58, .json file, or u8 array)
@@ -53,6 +56,10 @@ Continuously track your node's security, performance, and business metrics:
 - **Security monitoring**: Unusual patterns, failed validations, and rate limit breaches
 - **Operational alerts**: System health, balance warnings, and security events
 - **Financial tracking**: SOL costs vs. token revenue, profitability analysis
+
+Kora provides an optional `/metrics` endpoint that provides real-time performance data in Prometheus format.
+
+**[→ Kora Monitoring Reference Guide](./MONITORING.md)**
 
 ## Kora CLI
 
@@ -105,76 +112,14 @@ Every Kora RPC node must be configured with at least:
 
 **kora.toml**
 
-Before deploying, you'll need to create and configure a `kora.toml` to specify: payment tokens, security rules, rate limits, fee payer protections, and pricing oracle. Begin with tight limits, then gradually expand based on your application's needs.
-Your `kora.toml` should live in the same directory as your deployment or be specified via the `--config` flag when starting the server.
+Before deploying, you'll need to create and configure a `kora.toml` to specify: Add a comment on line R115Add diff commentMarkdown input: edit mode selected.WritePreviewAdd a suggestionHeadingBoldItalicQuoteCodeLinkUnordered listNumbered listTask listMentionReferenceSaved repliesAdd FilesPaste, drop, or click to add filesCancelCommentStart a reviewReturn to code
 
-**[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)**
-**[→ Sample kora.toml](./deploy/sample/kora.toml)**
-
-
-
-### 1. Rate Limiting
-
-Implement global, per-second rate limiting for the server:
-
-```toml
-[kora]
-rate_limit = 100
-```
-
-### 2. Payment Tokens
-
-Specify the types of tokens you will accept as payment (e.g., USDC and Bonk):
-
-```toml
-[validation]
-allowed_spl_paid_tokens = [
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
-    "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"   # BONK
-]
-```
-
-### 3. Security Rules
-
-Specify the maximum amount you are willing to pay, whitelist programs, or blacklist specific wallets
-
-```toml
-# [validation] (continued)
-max_allowed_lamports = 1000000    # Max 0.001 SOL per transaction
-max_signatures = 10               # Prevent complex transactions
-allowed_programs = [              # Whitelist programs
-    "11111111111111111111111111111111",  # System Program
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"  # Token Program
-]
-disallowed_accounts = []
-```
-
-### 4. Price Source (Oracle)
-
-At present, you can choose 'Jupiter' for production applications or 'Mock' for testing. 
-
-```toml
-# [validation] (continued)
-price_source = 'Jupiter'
-```
-
-### 5. Fee Payer Protections
-
-Restrict your fee payer wallet from signing transactions that include certain types of instructions where the fee payer is the signer (e.g., Prevent transfers of SPL tokens that the fee payer is owner/authority of)
-
-```toml
-[validation.fee_payer_policy]
-allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
-allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
-allow_token2022_transfers = true # Allow fee payer to be source in Token2022 transfers
-allow_assign = true             # Allow fee payer to use Assign instruction
-```
-
-### 6. User Authentication
-
-Kora supports two optional authentication methods for securing your RPC endpoint: a global API key for all users or [HMAC authentication](https://en.wikipedia.org/wiki/HMAC) with replay protection. If neither is configured, no authentication is required to use the RPC endpoint. You can use both methods simultaneously for maximum security. Authentication is configured in the `kora.toml` file in the `[kora.auth]` section.
-
-For more information on authentication, see [Kora Authentication](./AUTHENTICATION.md)
+- Rate limiting and authentication
+- RPC method availability
+- Transaction validation rules
+- Security policies
+- Fee pricing models
+- Metrics collection
 
 ## Deployment 
 
@@ -199,7 +144,7 @@ Use the sample Dockerfile to deploy on any container platform:
 
 - **[Solana Stack Exchange](https://solana.stackexchange.com/)** - Ask questions/share learnings (make sure to use the `kora` tag)
 - **[GitHub Issues](https://github.com/solana-foundation/kora/issues)** - Report bugs or get help
-
+- Run `kora-rpc --help` to see all available flags and configuration options
 
 
 

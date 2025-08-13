@@ -1,6 +1,7 @@
 pub mod args;
 pub mod auth;
 pub mod method;
+pub mod middleware_utils;
 #[cfg(feature = "docs")]
 pub mod openapi;
 pub mod rpc;

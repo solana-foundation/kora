@@ -25,7 +25,9 @@ allowed_programs = [
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
 ]
-allowed_tokens = []
+allowed_tokens = [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
+]
 allowed_spl_paid_tokens = []
 disallowed_accounts = []
 
@@ -46,3 +48,9 @@ allow_approve = true            # Allow fee payer to approve tokens
 [validation.price]
 type = "margin" # free / margin / fixed
 margin = 0.1  # Default margin (10%) for paid transaction validation
+
+[metrics]
+enabled = true
+endpoint = "/metrics"
+port = 8080  # Same port as main server, or separate port like 9090
+scrape_interval = 60

@@ -284,7 +284,7 @@ impl ValidationConfig {
 mod tests {
 
     use crate::{
-        config::{AuthConfig, EnabledMethods, KoraConfig},
+        config::{AuthConfig, EnabledMethods, KoraConfig, MetricsConfig},
         fee::price::PriceConfig,
         tests::common::{
             create_mock_non_executable_account, create_mock_program_account,
@@ -314,6 +314,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         // Test empty tokens list
@@ -348,6 +349,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -386,6 +388,7 @@ mod tests {
                 },
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -421,6 +424,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -453,6 +457,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -492,6 +497,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -528,6 +534,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -572,6 +579,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -603,6 +611,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -640,6 +649,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -671,6 +681,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         }
     }
 
@@ -693,6 +704,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         }
     }
 
@@ -750,6 +762,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let mock_account = create_mock_non_executable_account(); // Non-executable
@@ -781,6 +794,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         let rpc_client = create_mock_rpc_client_account_not_found();
@@ -811,6 +825,7 @@ mod tests {
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
             },
+            metrics: MetricsConfig::default(),
         };
 
         // Use account not found RPC client - should not matter when skipping RPC validation

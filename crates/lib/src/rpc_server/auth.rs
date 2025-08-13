@@ -1,30 +1,11 @@
-use crate::constant::{X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP};
-use futures_util::TryStreamExt;
+use crate::{
+    constant::{X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP},
+    rpc_server::middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method},
+};
 use hmac::{Hmac, Mac};
 use http::{Request, Response, StatusCode};
 use jsonrpsee::server::logger::Body;
 use sha2::Sha256;
-
-pub async fn extract_parts_and_body_bytes(
-    request: Request<Body>,
-) -> (http::request::Parts, Vec<u8>) {
-    let (parts, body) = request.into_parts();
-    let body_bytes = body
-        .try_fold(Vec::new(), |mut acc, chunk| async move {
-            acc.extend_from_slice(&chunk);
-            Ok(acc)
-        })
-        .await
-        .unwrap_or_default();
-    (parts, body_bytes)
-}
-
-pub fn is_liveness_jsonrpc_call(body_bytes: &[u8]) -> bool {
-    match serde_json::from_slice::<serde_json::Value>(body_bytes) {
-        Ok(val) => val.get("method").and_then(|m| m.as_str()) == Some("liveness"),
-        Err(_) => false,
-    }
-}
 
 #[derive(Clone)]
 pub struct ApiKeyAuthLayer {
@@ -77,7 +58,7 @@ where
                 Response::builder().status(StatusCode::UNAUTHORIZED).body(Body::empty()).unwrap();
 
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
-            if is_liveness_jsonrpc_call(&body_bytes) {
+            if get_jsonrpc_method(&body_bytes) == Some("liveness".to_string()) {
                 let new_body = Body::from(body_bytes);
                 let new_request = Request::from_parts(parts, new_body);
                 return inner.call(new_request).await;
@@ -158,7 +139,7 @@ where
 
             // Since our proxy for get /liveness transforms the request in a POST, we need to check the liveness via the method in the body
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
-            if is_liveness_jsonrpc_call(&body_bytes) {
+            if get_jsonrpc_method(&body_bytes) == Some("liveness".to_string()) {
                 let new_body = Body::from(body_bytes);
                 let new_request = Request::from_parts(parts, new_body);
                 return inner.call(new_request).await;

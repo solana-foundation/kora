@@ -6,7 +6,7 @@ use kora_lib::{
     error::KoraError,
     log::LoggingFormat,
     rpc::get_rpc_client,
-    rpc_server::{run_rpc_server, KoraRpc, RpcArgs},
+    rpc_server::{run_rpc_server, server::ServerHandles, KoraRpc, RpcArgs},
     signer::init::init_signer_type,
     state::init_signer,
     validator::config_validator::ConfigValidator,
@@ -105,12 +105,21 @@ async fn main() -> Result<(), KoraError> {
 
             let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
 
-            let kora_rpc = KoraRpc::new(rpc_client, config.validation, config.kora);
-
-            let _server_handle = run_rpc_server(kora_rpc, rpc_args.port).await?;
+            let rpc_server =
+                KoraRpc::new(rpc_client, config.validation.clone(), config.kora.clone());
+            let ServerHandles { rpc_handle, metrics_handle } =
+                run_rpc_server(rpc_server, rpc_args.port, &config.metrics).await.unwrap_or_else(
+                    |e| {
+                        log::error!("Server start failed: {e}");
+                        std::process::exit(1);
+                    },
+                );
 
             tokio::signal::ctrl_c().await.unwrap();
-            println!("Shutting down server...");
+            rpc_handle.stop().unwrap();
+            if let Some(handle) = metrics_handle {
+                handle.stop().unwrap();
+            }
         }
         #[cfg(feature = "docs")]
         Some(Commands::Openapi { output }) => {

@@ -1,4 +1,4 @@
-.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-integration-coverage test-all test-ts coverage coverage-clean build-bin build-lib build-cli run-presigned openapi gen-ts-client
+.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-integration-coverage test-all test-ts coverage coverage-clean build-bin build-lib build-cli run-presigned openapi gen-ts-client run-metrics
 
 # Common configuration
 TEST_PORT := 8080
@@ -186,7 +186,7 @@ run-presigned:
 
 # Run with default configuration
 run:
-	cargo run -p kora-cli --bin kora -- --config tests/testing-utils/fixtures/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
+	cargo run -p kora-cli --bin kora -- --config kora.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
 
 
 # Clean build artifacts
@@ -236,6 +236,22 @@ coverage-clean:
 	rm -rf coverage/
 	cargo llvm-cov clean --workspace
 	@echo "✅ Coverage artifacts cleaned"
+
+# Run Kora in Docker (no metrics)
+run-docker:
+	docker compose down
+	docker compose build --no-cache kora
+	docker compose up
+
+# Update metrics configuration from kora.toml
+update-metrics-config:
+	@echo "Updating metrics configuration from kora.toml..."
+	@cargo run -p kora-lib --bin update-config
+
+# Run metrics (Prometheus + Grafana) - automatically updates config first
+run-metrics: update-metrics-config
+	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml down
+	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml up
 
 # install ts sdk
 install-ts-sdk:

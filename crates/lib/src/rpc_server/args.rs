@@ -12,10 +12,6 @@ pub struct RpcArgs {
     #[arg(long, default_value = "standard")]
     pub logging_format: LoggingFormat,
 
-    /// Prometheus metrics endpoint URL for monitoring
-    #[arg(long)]
-    pub metrics_endpoint: Option<String>,
-
     // Signing Options
     /// Private key for transaction signing (base58, u8 array, or path to JSON keypair file).
     /// Required unless `skip_signer`, `turnkey_signer`, `vault_signer`, or `privy_signer` is set
