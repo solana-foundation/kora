@@ -21,6 +21,15 @@ const config: Config = {
       },
     ],
   },
+  collectCoverage: false, // Set to true when running with --coverage flag
+  coverageDirectory: 'coverage',
+  coverageReporters: ['lcov', 'text', 'html'],
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/**/*.d.ts',
+    '!src/**/*.test.ts',
+    '!src/**/index.ts',
+  ],
 };
 
 export default config; 
