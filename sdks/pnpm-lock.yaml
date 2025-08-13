@@ -23,6 +23,9 @@ importers:
       '@solana/addresses':
         specifier: ^2.3.0
         version: 2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)
+      '@solana/kit':
+        specifier: ^2.3.0
+        version: 2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(ws@8.18.3)
     devDependencies:
       '@solana-program/compute-budget':
         specifier: ^0.8.0

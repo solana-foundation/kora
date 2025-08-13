@@ -42,7 +42,6 @@
     "@solana-program/compute-budget": "^0.8.0",
     "@solana-program/system": "^0.7.0",
     "@solana-program/token": "^0.5.1",
-    "@solana/kit": "^2.3.0",
     "@solana/prettier-config-solana": "^0.0.5",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.17.27",
@@ -60,6 +59,6 @@
   },
   "dependencies": {
     "@solana-program/token-2022": "^0.4.2",
-    "@solana/addresses": "^2.3.0"
+    "@solana/kit": "^2.3.0"
   }
 }
