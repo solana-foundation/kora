@@ -3,6 +3,7 @@ pub mod constant;
 pub mod error;
 pub mod fee;
 pub mod log;
+pub mod metrics;
 pub mod oracle;
 pub mod rpc;
 pub mod rpc_server;
