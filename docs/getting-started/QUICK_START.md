@@ -50,8 +50,6 @@ The demo contains three main components:
 
 **Client Directory (`client/src/`)**
 - `setup.ts` - Local environment setup (creates keypairs & writes them to .env, airdrops SOL, initializes test token)
-- `types.ts` - TypeScript definitions for Kora RPC request/response types
-- `client.ts` - Kora client factory using Solana Kit
 - `main.ts` - Main demonstration script showing Kora integration
 
 **Server Directory (`server/`)**
@@ -68,13 +66,24 @@ First, create .env for your environment :
 touch .env
 ```
 
+### Build Kora SDK
+
+The client uses the local Kora TypeScript SDK. Build it first:
+
+```bash
+# From project root (kora/)
+make install-ts-sdk
+make build-ts-sdk
+```
+
 ### Setup Client
 
 Install client dependencies:
 
 ```bash
-cd client
-pnpm install  # or npm install
+# From project root (kora/)
+cd docs/getting-started/demo/client
+pnpm install --ignore-workspace # use --ignore-workspace to avoid pnpm workspace conflicts
 ```
 ### Setup Kora RPC Server
 
@@ -88,7 +97,7 @@ The Kora server requires configuration to specify which tokens can be used for f
 - `allowed_spl_paid_tokens`: array of mint addresses your program accepts as payment
 - `disallowed_accounts`: blacklist of accounts not allowed to interact with your kora RPC
 
-For now, let's leave the default values--you can come back here and change these later. 
+For now, let's leave the default values--you can come back here and change these later (for more information on the configuration options, see the [Kora Configuration](../operators/CONFIGURATION.md) documentation). 
 
 ## Test Server
 
@@ -157,8 +166,12 @@ Kora Config: {
       'usdCAEFbouFGxdkbHCRtMTcN7DJHd3aCmP9vqjLgmAp' 
     ],
     disallowed_accounts: [],
-    price_source: 'Mock'
-  }
+    price_source: 'Mock',
+    fee_payer_policy: {...},
+    price: { type: 'margin', margin: 0 }
+  },
+  enabled_methods: { ... }
+ }
 }
 Blockhash:  C8W8d5w2H4jKXyFg5CEBoiaPvEpJ1am7xLxZ3fym4a2g
 ```

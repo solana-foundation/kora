@@ -236,3 +236,11 @@ coverage-clean:
 	rm -rf coverage/
 	cargo llvm-cov clean --workspace
 	@echo "✅ Coverage artifacts cleaned"
+
+# install ts sdk
+install-ts-sdk:
+	cd sdks/ts && pnpm install
+
+# Build ts sdk
+build-ts-sdk:
+	cd sdks/ts && pnpm build
