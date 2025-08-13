@@ -53,12 +53,12 @@
                   "params": {
                     "type": "object",
                     "required": [
-                      "transaction",
-                      "fee_token"
+                      "transaction"
                     ],
                     "properties": {
                       "fee_token": {
-                        "type": "string"
+                        "type": "string",
+                        "nullable": true
                       },
                       "transaction": {
                         "type": "string"
@@ -86,6 +86,11 @@
                       "type": "integer",
                       "format": "int64",
                       "minimum": 0
+                    },
+                    "fee_in_token": {
+                      "type": "number",
+                      "format": "double",
+                      "nullable": true
                     }
                   }
                 }
@@ -268,9 +273,13 @@
                   "type": "object",
                   "required": [
                     "fee_payer",
-                    "validation_config"
+                    "validation_config",
+                    "enabled_methods"
                   ],
                   "properties": {
+                    "enabled_methods": {
+                      "$ref": "#/components/schemas/EnabledMethods"
+                    },
                     "fee_payer": {
                       "type": "string"
                     },
@@ -671,11 +680,6 @@
                       "transaction"
                     ],
                     "properties": {
-                      "margin": {
-                        "type": "number",
-                        "format": "double",
-                        "nullable": true
-                      },
                       "transaction": {
                         "type": "string"
                       }
@@ -873,6 +877,84 @@
   },
   "components": {
     "schemas": {
+      "EnabledMethods": {
+        "type": "object",
+        "required": [
+          "liveness",
+          "estimate_transaction_fee",
+          "get_supported_tokens",
+          "sign_transaction",
+          "sign_and_send_transaction",
+          "transfer_transaction",
+          "get_blockhash",
+          "get_config",
+          "sign_transaction_if_paid"
+        ],
+        "properties": {
+          "estimate_transaction_fee": {
+            "type": "boolean"
+          },
+          "get_blockhash": {
+            "type": "boolean"
+          },
+          "get_config": {
+            "type": "boolean"
+          },
+          "get_supported_tokens": {
+            "type": "boolean"
+          },
+          "liveness": {
+            "type": "boolean"
+          },
+          "sign_and_send_transaction": {
+            "type": "boolean"
+          },
+          "sign_transaction": {
+            "type": "boolean"
+          },
+          "sign_transaction_if_paid": {
+            "type": "boolean"
+          },
+          "transfer_transaction": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FeePayerPolicy": {
+        "type": "object",
+        "required": [
+          "allow_sol_transfers",
+          "allow_spl_transfers",
+          "allow_token2022_transfers",
+          "allow_assign",
+          "allow_burn",
+          "allow_close_account",
+          "allow_approve"
+        ],
+        "properties": {
+          "allow_approve": {
+            "type": "boolean"
+          },
+          "allow_assign": {
+            "type": "boolean"
+          },
+          "allow_burn": {
+            "type": "boolean"
+          },
+          "allow_close_account": {
+            "type": "boolean"
+          },
+          "allow_sol_transfers": {
+            "type": "boolean"
+          },
+          "allow_spl_transfers": {
+            "type": "boolean"
+          },
+          "allow_token2022_transfers": {
+            "type": "boolean"
+          }
+        }
+      },
       "GetBlockhashResponse": {
         "type": "object",
         "required": [
@@ -888,9 +970,13 @@
         "type": "object",
         "required": [
           "fee_payer",
-          "validation_config"
+          "validation_config",
+          "enabled_methods"
         ],
         "properties": {
+          "enabled_methods": {
+            "$ref": "#/components/schemas/EnabledMethods"
+          },
           "fee_payer": {
             "type": "string"
           },
@@ -912,6 +998,87 @@
             }
           }
         }
+      },
+      "PriceConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PriceModel"
+          },
+          {
+            "type": "object"
+          }
+        ]
+      },
+      "PriceModel": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "margin",
+              "type"
+            ],
+            "properties": {
+              "margin": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "margin"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "amount",
+              "token",
+              "type"
+            ],
+            "properties": {
+              "amount": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "token": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "fixed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "free"
+                ]
+              }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type"
+        }
+      },
+      "PriceSource": {
+        "type": "string",
+        "enum": [
+          "Jupiter",
+          "Mock"
+        ]
       },
       "SignAndSendTransactionRequest": {
         "type": "object",
@@ -945,11 +1112,6 @@
           "transaction"
         ],
         "properties": {
-          "margin": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
           "transaction": {
             "type": "string"
           }
@@ -996,15 +1158,24 @@
           }
         }
       },
-      "TokenPriceInfo": {
+      "TokenPrice": {
         "type": "object",
         "required": [
-          "price"
+          "price",
+          "confidence",
+          "source"
         ],
         "properties": {
+          "confidence": {
+            "type": "number",
+            "format": "double"
+          },
           "price": {
             "type": "number",
             "format": "double"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PriceSource"
           }
         }
       },
@@ -1088,6 +1259,9 @@
               "type": "string"
             }
           },
+          "fee_payer_policy": {
+            "$ref": "#/components/schemas/FeePayerPolicy"
+          },
           "max_allowed_lamports": {
             "type": "integer",
             "format": "int64",
@@ -1097,6 +1271,9 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "price": {
+            "$ref": "#/components/schemas/PriceConfig"
           },
           "price_source": {
             "$ref": "#/components/schemas/PriceSource"

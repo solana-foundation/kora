@@ -1,0 +1,419 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "kora-rpc",
+    "description": "RPC server for Kora gasless relayer",
+    "license": {
+      "name": "MIT"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "EnabledMethods": {
+        "type": "object",
+        "required": [
+          "liveness",
+          "estimate_transaction_fee",
+          "get_supported_tokens",
+          "sign_transaction",
+          "sign_and_send_transaction",
+          "transfer_transaction",
+          "get_blockhash",
+          "get_config",
+          "sign_transaction_if_paid"
+        ],
+        "properties": {
+          "estimate_transaction_fee": {
+            "type": "boolean"
+          },
+          "get_blockhash": {
+            "type": "boolean"
+          },
+          "get_config": {
+            "type": "boolean"
+          },
+          "get_supported_tokens": {
+            "type": "boolean"
+          },
+          "liveness": {
+            "type": "boolean"
+          },
+          "sign_and_send_transaction": {
+            "type": "boolean"
+          },
+          "sign_transaction": {
+            "type": "boolean"
+          },
+          "sign_transaction_if_paid": {
+            "type": "boolean"
+          },
+          "transfer_transaction": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FeePayerPolicy": {
+        "type": "object",
+        "required": [
+          "allow_sol_transfers",
+          "allow_spl_transfers",
+          "allow_token2022_transfers",
+          "allow_assign",
+          "allow_burn",
+          "allow_close_account",
+          "allow_approve"
+        ],
+        "properties": {
+          "allow_approve": {
+            "type": "boolean"
+          },
+          "allow_assign": {
+            "type": "boolean"
+          },
+          "allow_burn": {
+            "type": "boolean"
+          },
+          "allow_close_account": {
+            "type": "boolean"
+          },
+          "allow_sol_transfers": {
+            "type": "boolean"
+          },
+          "allow_spl_transfers": {
+            "type": "boolean"
+          },
+          "allow_token2022_transfers": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GetBlockhashResponse": {
+        "type": "object",
+        "required": [
+          "blockhash"
+        ],
+        "properties": {
+          "blockhash": {
+            "type": "string"
+          }
+        }
+      },
+      "GetConfigResponse": {
+        "type": "object",
+        "required": [
+          "fee_payer",
+          "validation_config",
+          "enabled_methods"
+        ],
+        "properties": {
+          "enabled_methods": {
+            "$ref": "#/components/schemas/EnabledMethods"
+          },
+          "fee_payer": {
+            "type": "string"
+          },
+          "validation_config": {
+            "$ref": "#/components/schemas/ValidationConfig"
+          }
+        }
+      },
+      "GetSupportedTokensResponse": {
+        "type": "object",
+        "required": [
+          "tokens"
+        ],
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PriceConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PriceModel"
+          },
+          {
+            "type": "object"
+          }
+        ]
+      },
+      "PriceModel": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "margin",
+              "type"
+            ],
+            "properties": {
+              "margin": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "margin"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "amount",
+              "token",
+              "type"
+            ],
+            "properties": {
+              "amount": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "token": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "fixed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "free"
+                ]
+              }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type"
+        }
+      },
+      "PriceSource": {
+        "type": "string",
+        "enum": [
+          "Jupiter",
+          "Mock"
+        ]
+      },
+      "SignAndSendTransactionRequest": {
+        "type": "object",
+        "required": [
+          "transaction"
+        ],
+        "properties": {
+          "transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "SignAndSendTransactionResponse": {
+        "type": "object",
+        "required": [
+          "signature",
+          "signed_transaction"
+        ],
+        "properties": {
+          "signature": {
+            "type": "string"
+          },
+          "signed_transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionIfPaidRequest": {
+        "type": "object",
+        "required": [
+          "transaction"
+        ],
+        "properties": {
+          "transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionIfPaidResponse": {
+        "type": "object",
+        "required": [
+          "transaction",
+          "signed_transaction"
+        ],
+        "properties": {
+          "signed_transaction": {
+            "type": "string"
+          },
+          "transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionRequest": {
+        "type": "object",
+        "required": [
+          "transaction"
+        ],
+        "properties": {
+          "transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionResponse": {
+        "type": "object",
+        "required": [
+          "signature",
+          "signed_transaction"
+        ],
+        "properties": {
+          "signature": {
+            "type": "string"
+          },
+          "signed_transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "TokenPrice": {
+        "type": "object",
+        "required": [
+          "price",
+          "confidence",
+          "source"
+        ],
+        "properties": {
+          "confidence": {
+            "type": "number",
+            "format": "double"
+          },
+          "price": {
+            "type": "number",
+            "format": "double"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PriceSource"
+          }
+        }
+      },
+      "TransferTransactionRequest": {
+        "type": "object",
+        "required": [
+          "amount",
+          "token",
+          "source",
+          "destination"
+        ],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "destination": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "TransferTransactionResponse": {
+        "type": "object",
+        "required": [
+          "transaction",
+          "message",
+          "blockhash"
+        ],
+        "properties": {
+          "blockhash": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "transaction": {
+            "type": "string"
+          }
+        }
+      },
+      "ValidationConfig": {
+        "type": "object",
+        "required": [
+          "max_allowed_lamports",
+          "max_signatures",
+          "allowed_programs",
+          "allowed_tokens",
+          "allowed_spl_paid_tokens",
+          "disallowed_accounts",
+          "price_source"
+        ],
+        "properties": {
+          "allowed_programs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_spl_paid_tokens": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tokens": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disallowed_accounts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fee_payer_policy": {
+            "$ref": "#/components/schemas/FeePayerPolicy"
+          },
+          "max_allowed_lamports": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_signatures": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "price": {
+            "$ref": "#/components/schemas/PriceConfig"
+          },
+          "price_source": {
+            "$ref": "#/components/schemas/PriceSource"
+          }
+        }
+      }
+    }
+  }
+}

@@ -114,6 +114,8 @@ async fn main() -> Result<(), KoraError> {
         }
         #[cfg(feature = "docs")]
         Some(Commands::Openapi { output }) => {
+            docs::update_docs();
+
             let openapi_spec = docs::ApiDoc::openapi();
             let json = serde_json::to_string_pretty(&openapi_spec).unwrap_or_else(|e| {
                 print_error(&format!("Failed to serialize OpenAPI spec: {e}"));

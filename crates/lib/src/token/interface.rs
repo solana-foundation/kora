@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use mockall::automock;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     instruction::{CompiledInstruction, Instruction},
     pubkey::Pubkey,
@@ -8,7 +9,7 @@ use std::any::Any;
 
 use crate::validator::transaction_validator::TransactionValidator;
 
-pub trait TokenState: Any {
+pub trait TokenState: Any + Send + Sync {
     fn mint(&self) -> Pubkey;
     fn owner(&self) -> Pubkey;
     fn amount(&self) -> u64;
@@ -18,7 +19,7 @@ pub trait TokenState: Any {
     fn as_any(&self) -> &dyn Any;
 }
 
-pub trait TokenMint: Any {
+pub trait TokenMint: Any + Send + Sync {
     fn address(&self) -> Pubkey;
     fn mint_authority(&self) -> Option<Pubkey>;
     fn supply(&self) -> u64;
@@ -81,10 +82,11 @@ pub trait TokenInterface: Send + Sync {
         mint_data: &[u8],
     ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>>;
 
+    /// Returns the amount of the transfer as well as the mint index if available (transfer checked)
     fn decode_transfer_instruction(
         &self,
         data: &[u8],
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>>;
+    ) -> Result<(u64, Option<usize>), Box<dyn std::error::Error + Send + Sync>>;
 
     fn process_spl_instruction(
         &self,
@@ -95,9 +97,11 @@ pub trait TokenInterface: Send + Sync {
         command: SplInstructionCommand,
     ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>;
 
-    fn get_and_validate_amount_for_payment(
+    async fn get_and_validate_amount_for_payment<'a>(
         &self,
-        token_account: &dyn TokenState,
+        rpc_client: &'a RpcClient,
+        token_account: Option<&'a dyn TokenState>,
+        mint_account: Option<&'a dyn TokenMint>,
         amount: u64,
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>>;
 }

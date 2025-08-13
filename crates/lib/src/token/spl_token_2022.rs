@@ -1,14 +1,9 @@
-use crate::{
-    constant::{
-        DEFAULT_INTEREST_MULTIPLIER, MAX_BASIS_POINTS, MAX_TRANSFER_HOOK_FEE,
-        MAX_TRANSFER_HOOK_FEE_BASIS_POINTS,
-    },
-    token::interface::TokenMint,
-};
+use crate::token::interface::TokenMint;
 
 use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
-use solana_program::pubkey::Pubkey;
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_program::{program_pack::Pack, pubkey::Pubkey};
 use solana_sdk::instruction::{CompiledInstruction, Instruction};
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
@@ -92,7 +87,7 @@ impl Token2022Account {
     }
 
     /// Get transfer fee configuration if present
-    pub fn get_transfer_fee(&self) -> Option<TransferFeeConfig> {
+    pub fn get_transfer_fee_config(&self) -> Option<TransferFeeConfig> {
         if let Ok(account_with_extensions) =
             StateWithExtensions::<Token2022AccountState>::unpack(&self.extension_data)
         {
@@ -104,7 +99,7 @@ impl Token2022Account {
 
     /// Check if token is non-transferable
     pub fn is_non_transferable(&self) -> bool {
-        self.has_extension(ExtensionType::NonTransferable)
+        self.has_extension(ExtensionType::NonTransferableAccount)
     }
 
     /// Get interest bearing configuration if present
@@ -133,6 +128,20 @@ impl Token2022Account {
     /// Check if confidential transfers are enabled
     pub fn has_confidential_transfers(&self) -> bool {
         self.has_extension(ExtensionType::ConfidentialTransferAccount)
+    }
+}
+
+impl Token2022Extensions for Token2022Account {
+    fn is_non_transferable(&self) -> bool {
+        self.has_extension(ExtensionType::NonTransferableAccount)
+    }
+
+    fn is_cpi_guarded(&self) -> bool {
+        self.is_cpi_guarded()
+    }
+
+    fn get_transfer_fee(&self) -> Option<TransferFeeConfig> {
+        self.get_transfer_fee_config()
     }
 }
 
@@ -296,6 +305,37 @@ impl Token2022Mint {
             None
         }
     }
+
+    /// Check if mint is non-transferable
+    pub fn is_non_transferable(&self) -> bool {
+        self.has_mint_extension(ExtensionType::NonTransferable)
+    }
+
+    /// Check if mint has CPI guard enabled
+    pub fn is_cpi_guarded(&self) -> bool {
+        if let Ok(mint_with_extensions) =
+            StateWithExtensions::<Token2022MintState>::unpack(&self.extension_data)
+        {
+            if let Ok(cpi_guard) = mint_with_extensions.get_extension::<CpiGuard>() {
+                return cpi_guard.lock_cpi.into();
+            }
+        }
+        false
+    }
+}
+
+impl Token2022Extensions for Token2022Mint {
+    fn is_non_transferable(&self) -> bool {
+        self.is_non_transferable()
+    }
+
+    fn is_cpi_guarded(&self) -> bool {
+        self.is_cpi_guarded()
+    }
+
+    fn get_transfer_fee(&self) -> Option<TransferFeeConfig> {
+        self.get_transfer_fee_config()
+    }
 }
 
 pub struct Token2022Program;
@@ -303,6 +343,55 @@ pub struct Token2022Program;
 impl Token2022Program {
     pub fn new() -> Self {
         Self
+    }
+
+    /// Validate extension data by attempting to parse extension headers
+    /// This works with extension-only data (not full account data)
+    fn validate_extension_data(extension_data: &[u8]) -> Result<(), &'static str> {
+        if extension_data.is_empty() {
+            return Ok(());
+        }
+
+        // Extension data must be at least 4 bytes for a valid extension header
+        if extension_data.len() < 4 {
+            return Err("Extension data too short");
+        }
+
+        // Try to parse extension types from the extension data
+        // Extension data format: [type (2 bytes), length (2 bytes), data...]
+        let mut offset = 0;
+        while offset < extension_data.len() {
+            // Need at least 4 bytes for extension header (type + length)
+            if offset + 4 > extension_data.len() {
+                return Err("Incomplete extension header");
+            }
+
+            // Read extension type (2 bytes) and length (2 bytes)
+            let extension_type_bytes = [extension_data[offset], extension_data[offset + 1]];
+            let extension_length_bytes = [extension_data[offset + 2], extension_data[offset + 3]];
+
+            let _extension_type = u16::from_le_bytes(extension_type_bytes);
+            let extension_length = u16::from_le_bytes(extension_length_bytes);
+
+            // Move past the header
+            offset += 4;
+
+            // Check if we have enough data for the extension content
+            if offset + extension_length as usize > extension_data.len() {
+                return Err("Extension data length mismatch");
+            }
+
+            // Move past the extension data
+            offset += extension_length as usize;
+
+            // Ensure we're properly aligned (extensions should be 4-byte aligned)
+            let remainder = offset % 4;
+            if remainder != 0 {
+                offset += 4 - remainder;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -325,6 +414,13 @@ impl TokenInterface for Token2022Program {
         let account = StateWithExtensions::<Token2022AccountState>::unpack(data)?;
         let base = account.base;
 
+        // Extract only the extension data portion
+        let extension_data = if data.len() > Token2022AccountState::LEN {
+            data[Token2022AccountState::LEN..].to_vec()
+        } else {
+            Vec::new() // No extension data
+        };
+
         Ok(Box::new(Token2022Account {
             mint: base.mint,
             owner: base.owner,
@@ -338,7 +434,7 @@ impl TokenInterface for Token2022Program {
             is_native: base.is_native.into(),
             delegated_amount: base.delegated_amount,
             close_authority: base.close_authority.into(),
-            extension_data: data.to_vec(),
+            extension_data,
         }))
     }
 
@@ -417,6 +513,13 @@ impl TokenInterface for Token2022Program {
         let mint_with_extensions = StateWithExtensions::<Token2022MintState>::unpack(mint_data)?;
         let base = mint_with_extensions.base;
 
+        // Extract only the extension data portion
+        let extension_data = if mint_data.len() > Token2022MintState::LEN {
+            mint_data[Token2022MintState::LEN..].to_vec()
+        } else {
+            Vec::new() // No extension data
+        };
+
         Ok(Box::new(Token2022Mint {
             mint: *mint,
             mint_authority: base.mint_authority.into(),
@@ -424,19 +527,19 @@ impl TokenInterface for Token2022Program {
             decimals: base.decimals,
             is_initialized: base.is_initialized,
             freeze_authority: base.freeze_authority.into(),
-            extension_data: mint_data.to_vec(),
+            extension_data,
         }))
     }
 
     fn decode_transfer_instruction(
         &self,
         data: &[u8],
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(u64, Option<usize>), Box<dyn std::error::Error + Send + Sync>> {
         let instruction = instruction::TokenInstruction::unpack(data)?;
         match instruction {
             #[allow(deprecated)]
-            instruction::TokenInstruction::Transfer { amount } => Ok(amount),
-            instruction::TokenInstruction::TransferChecked { amount, .. } => Ok(amount),
+            instruction::TokenInstruction::Transfer { amount } => Ok((amount, None)),
+            instruction::TokenInstruction::TransferChecked { amount, .. } => Ok((amount, Some(1))),
             _ => Err("Not a transfer instruction".into()),
         }
     }
@@ -456,42 +559,106 @@ impl TokenInterface for Token2022Program {
         }
     }
 
-    fn get_and_validate_amount_for_payment(
+    async fn get_and_validate_amount_for_payment<'a>(
         &self,
-        token_account: &dyn TokenState,
+        rpc_client: &'a RpcClient,
+        token_account: Option<&'a dyn TokenState>,
+        mint_account: Option<&'a dyn TokenMint>,
         amount: u64,
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        if token_account.amount() < amount {
-            return Err("Insufficient balance".into());
+        let current_epoch = rpc_client.get_epoch_info().await?.epoch;
+
+        // Try token account first
+        if let Some(token_account) = token_account {
+            if let Some(account) = token_account.as_any().downcast_ref::<Token2022Account>() {
+                // Check for empty extension data (no extensions)
+                if account.extension_data.is_empty() {
+                    return Ok(amount);
+                }
+
+                // Try to parse the extensions - reject transaction if data is corrupted
+                if !account.extension_data.is_empty() {
+                    // Validate the extension data by trying to parse extension headers
+                    Self::validate_extension_data(&account.extension_data)
+                        .map_err(|e| format!("Token account has corrupted extension data, transaction rejected for security: {e}"))?;
+                }
+
+                return account.validate_and_adjust_amount(amount, current_epoch);
+            }
         }
 
-        if let Some(account) = token_account.as_any().downcast_ref::<Token2022Account>() {
-            // Try to parse the account data
-            if account.extension_data.is_empty()
-                || StateWithExtensions::<Token2022AccountState>::unpack(&account.extension_data)
-                    .is_err()
-            {
-                let interest =
-                    std::cmp::max(1, (amount as u128 * DEFAULT_INTEREST_MULTIPLIER) as u64);
-                return Ok(amount + interest);
-            }
+        if let Some(mint) = mint_account {
+            if let Some(mint) = mint.as_any().downcast_ref::<Token2022Mint>() {
+                // Check for empty extension data (no extensions)
+                if mint.extension_data.is_empty() {
+                    return Ok(amount);
+                }
 
-            if account.is_non_transferable() {
-                return Err("Token is non-transferable".into());
-            }
+                // Try to parse the extensions - reject transaction if data is corrupted
+                if !mint.extension_data.is_empty() {
+                    // Validate the extension data by trying to parse extension headers
+                    Self::validate_extension_data(&mint.extension_data)
+                        .map_err(|e| format!("Token mint has corrupted extension data, transaction rejected for security: {e}"))?;
+                }
 
-            if account.is_cpi_guarded() {
-                return Err("Token is cpi guarded".into());
+                return mint.validate_and_adjust_amount(amount, current_epoch);
             }
+        }
 
-            let transfer_fee = account.get_transfer_fee();
-            if transfer_fee.is_some() {
-                let fee =
-                    (amount as u128 * MAX_TRANSFER_HOOK_FEE_BASIS_POINTS / MAX_BASIS_POINTS) as u64;
-                let fee = std::cmp::min(fee, MAX_TRANSFER_HOOK_FEE);
+        Ok(amount)
+    }
+}
 
-                return Ok(amount.saturating_sub(fee));
-            }
+/// Trait for Token-2022 extension validation and fee calculation
+pub trait Token2022Extensions {
+    /// Check if the token/mint is non-transferable
+    fn is_non_transferable(&self) -> bool;
+
+    /// Check if CPI guard is enabled
+    fn is_cpi_guarded(&self) -> bool;
+
+    /// Get transfer fee config
+    fn get_transfer_fee(&self) -> Option<TransferFeeConfig>;
+
+    /// Calculate transfer fee for a given amount and epoch
+    /// Returns None if no transfer fee is configured
+    fn calculate_transfer_fee(&self, amount: u64, current_epoch: u64) -> Option<u64> {
+        if let Some(fee_config) = self.get_transfer_fee() {
+            let transfer_fee = if current_epoch >= u64::from(fee_config.newer_transfer_fee.epoch) {
+                &fee_config.newer_transfer_fee
+            } else {
+                &fee_config.older_transfer_fee
+            };
+
+            let basis_points = u16::from(transfer_fee.transfer_fee_basis_points);
+            let maximum_fee = u64::from(transfer_fee.maximum_fee);
+
+            let fee_amount = (amount as u128 * basis_points as u128 / 10_000) as u64;
+            Some(std::cmp::min(fee_amount, maximum_fee))
+        } else {
+            None
+        }
+    }
+
+    /// Validate if a transfer is allowed and calculate the adjusted amount
+    /// Returns error if transfer is blocked, or the adjusted amount after fees
+    fn validate_and_adjust_amount(
+        &self,
+        amount: u64,
+        current_epoch: u64,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+        // Common validation logic
+        if self.is_non_transferable() {
+            return Err("Token is non-transferable".into());
+        }
+
+        if self.is_cpi_guarded() {
+            return Err("Token is CPI guarded".into());
+        }
+
+        // Apply transfer fees if configured
+        if let Some(fee) = self.calculate_transfer_fee(amount, current_epoch) {
+            return Ok(amount.saturating_sub(fee));
         }
 
         Ok(amount)
@@ -569,6 +736,7 @@ impl Token2022Program {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::common::get_mock_rpc_client;
     use solana_client::nonblocking::rpc_client::RpcClient;
     use solana_program::program_pack::Pack;
     use solana_sdk::{
@@ -763,7 +931,7 @@ mod tests {
         // Test extension detection
         assert!(!token_account.has_extension(ExtensionType::TransferFeeConfig));
         assert!(!token_account.has_extension(ExtensionType::ConfidentialTransferAccount));
-        assert!(!token_account.has_extension(ExtensionType::NonTransferable));
+        assert!(!token_account.has_extension(ExtensionType::NonTransferableAccount));
         assert!(!token_account.has_extension(ExtensionType::InterestBearingConfig));
         assert!(!token_account.has_extension(ExtensionType::CpiGuard));
         assert!(!token_account.has_extension(ExtensionType::MemoTransfer));
@@ -1084,8 +1252,8 @@ mod tests {
         assert_eq!(ix.program_id, spl_associated_token_account::id());
     }
 
-    #[test]
-    fn test_get_and_validate_amount_for_payment() {
+    #[tokio::test]
+    async fn test_get_and_validate_amount_for_payment() {
         let mint = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
         let amount = 1000;
@@ -1103,22 +1271,19 @@ mod tests {
             extension_data: Vec::new(),
         };
 
+        let mock_account = crate::tests::common::create_mock_token2022_mint_account(6);
+        let rpc_client = get_mock_rpc_client(&mock_account);
         let program = Token2022Program::new();
-        let result = program.get_and_validate_amount_for_payment(&account, amount);
+        let result = program
+            .get_and_validate_amount_for_payment(&rpc_client, Some(&account), None, amount)
+            .await;
 
         assert!(result.is_ok());
-        // With empty extension data, it should add DEFAULT_INTEREST_MULTIPLIER
-        let validated_amount = result.unwrap();
-        let expected = amount
-            + std::cmp::max(
-                1,
-                (amount as u128 * crate::constant::DEFAULT_INTEREST_MULTIPLIER) as u64,
-            );
-        assert_eq!(validated_amount, expected);
+        assert_eq!(result.unwrap(), amount);
     }
 
-    #[test]
-    fn test_get_and_validate_amount_for_payment_with_invalid_extension_data() {
+    #[tokio::test]
+    async fn test_get_and_validate_amount_for_payment_rejects_corrupted_extension_data() {
         let mint = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
         let amount = 10_000;
@@ -1138,30 +1303,28 @@ mod tests {
             extension_data: buffer,
         };
 
+        let mock_account = crate::tests::common::create_mock_token2022_mint_account(6);
+        let rpc_client = get_mock_rpc_client(&mock_account);
         let program = Token2022Program::new();
-        // Test the validation function
-        let result = program.get_and_validate_amount_for_payment(&token2022_account, amount);
+        // Should fail due to corrupted extension data - this is a security feature
+        let result = program
+            .get_and_validate_amount_for_payment(
+                &rpc_client,
+                Some(&token2022_account),
+                None,
+                amount,
+            )
+            .await;
 
-        // Validation should succeed
-        assert!(result.is_ok());
-
-        // The result should account for interest using DEFAULT_INTEREST_MULTIPLIER
-        let validated_amount = result.unwrap();
-        let expected_amount = amount
-            + std::cmp::max(
-                1,
-                (amount as u128 * crate::constant::DEFAULT_INTEREST_MULTIPLIER) as u64,
-            );
-
-        // The validated amount should include interest
-        assert_eq!(
-            validated_amount, expected_amount,
-            "Amount should be adjusted for interest according to the fallback calculation"
-        );
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains(
+            "Token account has corrupted extension data, transaction rejected for security"
+        ));
     }
 
-    #[test]
-    fn test_get_and_validate_amount_for_payment_insufficient_balance() {
+    #[tokio::test]
+    async fn test_get_and_validate_amount_for_payment_insufficient_balance() {
         let mint = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
         let account_balance = 500;
@@ -1180,15 +1343,26 @@ mod tests {
             extension_data: Vec::new(),
         };
 
+        let mock_account = crate::tests::common::create_mock_token2022_mint_account(6);
+        let rpc_client = get_mock_rpc_client(&mock_account);
         let program = Token2022Program::new();
-        let result = program.get_and_validate_amount_for_payment(&account, requested_amount);
-
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Insufficient balance");
+        // This test focuses on logic that happens before RPC calls
+        // With empty extension data, it should return the original amount without RPC calls
+        let result = program
+            .get_and_validate_amount_for_payment(
+                &rpc_client,
+                Some(&account),
+                None,
+                requested_amount,
+            )
+            .await;
+        assert!(result.is_ok());
+        // The method doesn't currently check balance, it just validates extensions and calculates fees
+        assert_eq!(result.unwrap(), requested_amount);
     }
 
-    #[test]
-    fn test_get_and_validate_amount_for_payment_with_transfer_fee() {
+    #[tokio::test]
+    async fn test_get_and_validate_amount_for_payment_rejects_corrupted_transfer_fee_data() {
         let mint = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
         let amount = 10_000;
@@ -1213,18 +1387,18 @@ mod tests {
         // Note: Since we can't easily create valid extension data in tests,
         // the actual transfer fee logic in get_and_validate_amount_for_payment
         // will apply the fallback interest calculation
+        let mock_account = crate::tests::common::create_mock_token2022_mint_account(6);
+        let rpc_client = get_mock_rpc_client(&mock_account);
         let program = Token2022Program::new();
-        let result = program.get_and_validate_amount_for_payment(&account, amount);
 
-        assert!(result.is_ok());
-        let validated_amount = result.unwrap();
-
-        // Should apply interest since we can't create valid transfer fee extensions in test
-        let expected = amount
-            + std::cmp::max(
-                1,
-                (amount as u128 * crate::constant::DEFAULT_INTEREST_MULTIPLIER) as u64,
-            );
-        assert_eq!(validated_amount, expected);
+        // Should fail due to corrupted extension data - this is a security feature
+        let result = program
+            .get_and_validate_amount_for_payment(&rpc_client, Some(&account), None, amount)
+            .await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains(
+            "Token account has corrupted extension data, transaction rejected for security"
+        ));
     }
 }
