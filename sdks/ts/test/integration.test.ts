@@ -1,5 +1,6 @@
 import { KoraClient } from "../src/index.js";
-import setupTestSuit from "./setup.js";
+import setupTestSuite from "./setup.js";
+import { runAuthenticationTests } from "./auth-setup.js";
 
 import {
   Address,
@@ -18,7 +19,9 @@ function transactionFromBase64(base64: string): Transaction {
   return decoder.decode(messageBytes);
 }
 
-describe("KoraClient Integration Tests", () => {
+const AUTH_ENABLED = process.env.ENABLE_AUTH === 'true';
+
+describe(`KoraClient Integration Tests (${AUTH_ENABLED ? "with auth" : "without auth"})`, () => {
   let client: KoraClient;
   let testWallet: KeyPairSigner;
   let testWalletAddress: Address;
@@ -27,7 +30,7 @@ describe("KoraClient Integration Tests", () => {
   let koraAddress: Address;
 
   beforeAll(async () => {
-    const testSuite = await setupTestSuit();
+    const testSuite = await setupTestSuite();
     client = testSuite.koraClient;
     testWallet = testSuite.testWallet;
     testWalletAddress = testWallet.address;
@@ -35,6 +38,11 @@ describe("KoraClient Integration Tests", () => {
     usdcMint = testSuite.usdcMint;
     koraAddress = testSuite.koraAddress;
   }, 30000); // allow adequte time for airdrops and token initialization
+
+  // Run authentication tests only when auth is enabled
+  if (AUTH_ENABLED) {
+    runAuthenticationTests("http://localhost:8080/");
+  }
 
   describe("Configuration and Setup", () => {
     it("should get config", async () => {
