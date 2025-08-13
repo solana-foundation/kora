@@ -289,7 +289,7 @@ async function initializeToken({
   );
 }
 
-async function setupTestSuit(): Promise<TestSuite> {
+async function setupTestSuite(): Promise<TestSuite> {
   const {
     koraAddress,
     koraRpcUrl,
@@ -300,6 +300,12 @@ async function setupTestSuit(): Promise<TestSuite> {
     solanaRpcUrl,
     solanaWsUrl,
   } = await loadEnvironmentVariables();
+
+  // Load auth config from environment if not provided
+  const authConfig = (process.env.ENABLE_AUTH === 'true' ? {
+    apiKey: process.env.KORA_API_KEY || 'test-api-key-123',
+    hmacSecret: process.env.KORA_HMAC_SECRET || 'test-hmac-secret-456'
+  } : undefined);
 
   // Create Solana client
   const rpc = createSolanaRpc(solanaRpcUrl);
@@ -339,7 +345,7 @@ async function setupTestSuit(): Promise<TestSuite> {
   });
 
   return {
-    koraClient: new KoraClient({rpcUrl: koraRpcUrl}),
+    koraClient: new KoraClient({rpcUrl: koraRpcUrl, ...authConfig}),
     testWallet,
     usdcMint: usdcMint.address,
     destinationAddress,
@@ -347,4 +353,4 @@ async function setupTestSuit(): Promise<TestSuite> {
   };
 }
 
-export default setupTestSuit;
+export default setupTestSuite;
