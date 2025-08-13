@@ -116,8 +116,10 @@ pub fn update_docs() {
 
     std::fs::write(&path, json).unwrap();
 
-    let validate_result = std::process::Command::new("swagger-cli")
-        .arg("validate")
+    let validate_result = std::process::Command::new("npx")
+        .arg("@redocly/cli@latest")
+        .arg("lint")
+        .arg("--extends=minimal")
         .arg(path.to_str().unwrap())
         .output()
         .unwrap();
