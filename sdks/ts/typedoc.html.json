@@ -1,0 +1,31 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["./src/index.ts"],
+  "out": "./docs-html",
+  "name": "Kora TypeScript SDK",
+  "readme": "./README.md",
+  "includeVersion": true,
+  "hideGenerator": false,
+  "theme": "default",
+  "navigationLinks": {
+    "GitHub": "https://github.com/your-org/kora",
+    "NPM": "https://www.npmjs.com/package/@kora/sdk"
+  },
+  "categorizeByGroup": true,
+  "cleanOutputDir": true,
+  "gitRevision": "main",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "disableSources": false,
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": false
+  },
+  "visibilityFilters": {
+    "protected": false,
+    "private": false,
+    "inherited": true,
+    "external": false
+  }
+}
