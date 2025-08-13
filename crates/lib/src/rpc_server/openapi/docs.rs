@@ -1,5 +1,6 @@
 use crate::{
-    config::ValidationConfig,
+    config::{EnabledMethods, FeePayerPolicy, ValidationConfig},
+    fee::price::{PriceConfig, PriceModel},
     oracle::oracle::{PriceSource, TokenPrice},
 };
 use std::path::PathBuf;
@@ -40,6 +41,10 @@ const JSON_CONTENT_TYPE: &str = "application/json";
     ),
     components(schemas(
         ValidationConfig,
+        FeePayerPolicy,
+        EnabledMethods,
+        PriceConfig,
+        PriceModel,
         TokenPrice,
         PriceSource,
         GetBlockhashResponse,
@@ -101,7 +106,13 @@ pub fn update_docs() {
     combined_doc.components = Some(components);
 
     let json = serde_json::to_string_pretty(&combined_doc).unwrap();
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/openapi/spec/combined_api.json");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src/rpc_server/openapi/spec/combined_api.json");
+
+    // Create parent directory if it doesn't exist
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
 
     std::fs::write(&path, json).unwrap();
 

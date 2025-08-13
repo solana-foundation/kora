@@ -4,6 +4,7 @@ use super::interface::{
     ParsedSplInstruction, SplInstructionCommand, SplInstructionType, TokenInterface, TokenState,
 };
 use async_trait::async_trait;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::{program_pack::Pack, pubkey::Pubkey};
 use solana_sdk::instruction::{CompiledInstruction, Instruction};
 use spl_associated_token_account::{
@@ -210,11 +211,13 @@ impl TokenInterface for TokenProgram {
     fn decode_transfer_instruction(
         &self,
         data: &[u8],
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(u64, Option<usize>), Box<dyn std::error::Error + Send + Sync>> {
         let instruction = spl_token::instruction::TokenInstruction::unpack(data)?;
         match instruction {
-            spl_token::instruction::TokenInstruction::Transfer { amount } => Ok(amount),
-            spl_token::instruction::TokenInstruction::TransferChecked { amount, .. } => Ok(amount),
+            spl_token::instruction::TokenInstruction::Transfer { amount } => Ok((amount, None)),
+            spl_token::instruction::TokenInstruction::TransferChecked { amount, .. } => {
+                Ok((amount, Some(1)))
+            }
             _ => Err("Not a transfer instruction".into()),
         }
     }
@@ -234,15 +237,13 @@ impl TokenInterface for TokenProgram {
         }
     }
 
-    fn get_and_validate_amount_for_payment(
+    async fn get_and_validate_amount_for_payment<'a>(
         &self,
-        token_account: &dyn TokenState,
+        _rpc_client: &'a RpcClient,
+        _token_account: Option<&'a dyn TokenState>,
+        _mint_account: Option<&'a dyn TokenMint>,
         amount: u64,
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        if token_account.amount() < amount {
-            return Err("Insufficient balance".into());
-        }
-
         Ok(amount)
     }
 }

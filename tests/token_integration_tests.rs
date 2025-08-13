@@ -114,7 +114,13 @@ async fn test_pyusd_token_e2e_with_kora() {
             {
                 // Validate token extensions using the interface method
                 let validation_result = original_token_program
-                    .get_and_validate_amount_for_payment(token2022_account, transfer_amount);
+                    .get_and_validate_amount_for_payment(
+                        &rpc_client,
+                        Some(token2022_account),
+                        None,
+                        transfer_amount,
+                    )
+                    .await;
                 assert!(
                     validation_result.is_ok(),
                     "Token2022Account validation failed: {validation_result:?}"
