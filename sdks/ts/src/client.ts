@@ -357,24 +357,22 @@ export class KoraClient {
       decimals: 6,
     }, { programAddress: token_program_id });
 
-    const transactionBytes = getBase64Codec().encode(transaction);
-    const originalTransaction = getTransactionCodec().decode(transactionBytes);
-    const originalMessage = getCompiledTransactionMessageCodec().decode(originalTransaction.messageBytes);
-    const decompiledMessage = decompileTransactionMessage(originalMessage);
-    const newMessage = appendTransactionMessageInstruction(paymentInstruction, decompiledMessage);
+    const base64 = await pipe(
+      transaction,
+      (tx) => getBase64Codec().encode(tx),
+      (bytes) => getTransactionCodec().decode(bytes),
+      (tx) => getCompiledTransactionMessageCodec().decode(tx.messageBytes),
+      (msg) => decompileTransactionMessage(msg),
+      (msg) => appendTransactionMessageInstruction(paymentInstruction, msg),
+      (msg) => compileTransactionMessage(msg as any),
+      (compiled) => getCompiledTransactionMessageCodec().encode(compiled),
+      (encoded) => ({
+        ...getTransactionCodec().decode(getBase64Codec().encode(transaction)),
+        messageBytes: encoded as TransactionMessageBytes
+      }),
+      (tx) => getBase64EncodedWireTransaction(tx)
+    );
 
-    // Create the new transaction with payment instruction appended
-    // We need to cast here because the returned type from appendTransactionMessageInstruction
-    // is more specific than what compileTransactionMessage expects, but they are compatible
-    const compiledMessage = compileTransactionMessage(newMessage as any);
-    const encodedMessage = getCompiledTransactionMessageCodec().encode(compiledMessage);
-    
-    const newTransaction = {
-      ...originalTransaction,
-      messageBytes: encodedMessage as TransactionMessageBytes
-    };
-
-    const base64 = getBase64EncodedWireTransaction(newTransaction);
     return {
       transaction: base64,
     };
