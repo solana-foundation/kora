@@ -276,3 +276,7 @@ install-ts-sdk:
 # Build ts sdk
 build-ts-sdk:
 	cd sdks/ts && pnpm build
+
+# format ts sdk
+format-ts-sdk:
+	cd sdks/ts && pnpm format
