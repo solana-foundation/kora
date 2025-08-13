@@ -364,13 +364,6 @@ export class KoraClient {
     // Create the new transaction with payment instruction appended
     // We need to cast here because the returned type from appendTransactionMessageInstruction
     // is more specific than what compileTransactionMessage expects, but they are compatible
-    // safe stringify for bigint
-    console.log("NEW MESSAGE ACCOUNTS", JSON.stringify(newMessage.instructions[1].accounts, (key, value) => {
-      if (typeof value === 'bigint') {
-        return value.toString();
-      }
-      return value;
-    }, 2));
     const compiledMessage = compileTransactionMessage(newMessage as any);
     const encodedMessage = getCompiledTransactionMessageCodec().encode(compiledMessage);
     
