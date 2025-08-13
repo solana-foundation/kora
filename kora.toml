@@ -1,6 +1,8 @@
 [kora]
 rate_limit = 100
 
+[kora.auth]
+
 # Enable/disable specific RPC methods
 [kora.enabled_methods]
 liveness = true

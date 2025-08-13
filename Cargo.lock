@@ -1611,19 +1611,6 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd405aab171cb85d6735e5c8d9db038c17d3ca007a4d2c25f337935c3d90580"
-dependencies = [
- "humantime",
- "is-terminal",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.11.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c863f0904021b108aa8b2f55046443e6b1ebde8fd4a15c399893aae4fa069f"
@@ -2631,17 +2618,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "is-terminal"
-version = "0.4.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
-dependencies = [
- "hermit-abi 0.5.2",
- "libc",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2959,8 +2935,12 @@ dependencies = [
  "dotenv",
  "env_logger 0.11.8",
  "kora-lib",
+ "serde_json",
  "solana-client",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "utoipa",
 ]
 
 [[package]]
@@ -2973,69 +2953,7 @@ dependencies = [
  "bincode",
  "borsh 1.5.7",
  "bs58 0.5.1",
- "clap",
- "deadpool-redis",
- "dirs",
- "jsonrpsee",
- "jup-ag",
- "kora-privy",
- "kora-turnkey",
- "log",
- "mockall",
- "mockito",
- "once_cell",
- "parking_lot",
- "redis",
- "reqwest 0.12.22",
- "serde",
- "serde_json",
- "solana-address-lookup-table-interface",
- "solana-client",
- "solana-commitment-config",
- "solana-message",
- "solana-program 2.3.0",
- "solana-sdk 2.3.1",
- "solana-system-interface",
- "spl-associated-token-account",
- "spl-pod",
- "spl-token 7.0.0",
- "spl-token-2022 8.0.1",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "toml 0.8.23",
- "tracing",
- "utoipa",
- "vaultrs",
-]
-
-[[package]]
-name = "kora-privy"
-version = "1.0.3"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.21.7",
- "bincode",
- "clap",
- "dotenv",
- "env_logger 0.10.2",
- "reqwest 0.11.27",
- "serde",
- "serde_json",
- "solana-sdk 2.3.1",
- "thiserror 1.0.69",
- "tokio",
-]
-
-[[package]]
-name = "kora-rpc"
-version = "1.0.3"
-dependencies = [
- "anyhow",
- "async-trait",
- "bincode",
- "bs58 0.5.1",
+ "chrono",
  "clap",
  "config",
  "deadpool-redis",
@@ -3052,14 +2970,19 @@ dependencies = [
  "hyper 1.6.0",
  "jsonrpsee",
  "jsonrpsee-core",
- "kora-lib",
- "kora-privy",
- "kora-turnkey",
+ "jup-ag",
  "log",
+ "mockall",
+ "mockito",
+ "once_cell",
+ "p256",
+ "parking_lot",
  "redis",
+ "reqwest 0.12.22",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solana-address-lookup-table-interface",
  "solana-client",
  "solana-commitment-config",
  "solana-message",
@@ -3067,30 +2990,19 @@ dependencies = [
  "solana-sdk 2.3.1",
  "solana-system-interface",
  "spl-associated-token-account",
+ "spl-pod",
  "spl-token 7.0.0",
+ "spl-token-2022 8.0.1",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "toml 0.8.23",
  "tower 0.4.13",
  "tower-http 0.3.5",
  "tracing",
  "tracing-subscriber",
  "utoipa",
-]
-
-[[package]]
-name = "kora-turnkey"
-version = "1.0.2"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "chrono",
- "hex",
- "p256",
- "reqwest 0.12.22",
- "serde",
- "serde_json",
- "solana-program 2.3.0",
- "solana-sdk 2.3.1",
+ "vaultrs",
 ]
 
 [[package]]
@@ -7992,9 +7904,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dotenv",
+ "hex",
+ "hmac 0.12.1",
  "jsonrpsee",
  "kora-lib",
+ "once_cell",
+ "reqwest 0.12.22",
  "serde_json",
+ "sha2 0.10.9",
  "solana-address-lookup-table-interface",
  "solana-client",
  "solana-message",
