@@ -22,7 +22,7 @@ import {
 import crypto from "crypto";
 import { getTransferCheckedInstruction, findAssociatedTokenPda } from "@solana-program/token-2022";
 import { Address, address, assertIsAddress } from "@solana/addresses";
-import { appendTransactionMessageInstruction, getBase64EncodedWireTransaction, createNoopSigner, getBase64Codec, getTransactionCodec, getCompiledTransactionMessageCodec, TransactionMessage, decompileTransactionMessage, compileTransactionMessage, partiallySignTransaction, partiallySignTransactionMessageWithSigners, pipe } from "@solana/kit";
+import { appendTransactionMessageInstruction, getBase64EncodedWireTransaction, createNoopSigner, getBase64Codec, getTransactionCodec, getCompiledTransactionMessageCodec, TransactionMessage, decompileTransactionMessage, compileTransactionMessage, partiallySignTransaction, partiallySignTransactionMessageWithSigners, pipe, type TransactionMessageBytes } from "@solana/kit";
 
 /**
  * Kora RPC client for interacting with the Kora paymaster service.
@@ -360,30 +360,23 @@ export class KoraClient {
     const transactionBytes = getBase64Codec().encode(transaction);
     const originalTransaction = getTransactionCodec().decode(transactionBytes);
     const originalMessage = getCompiledTransactionMessageCodec().decode(originalTransaction.messageBytes);
-    const newMessage = appendTransactionMessageInstruction(paymentInstruction, decompileTransactionMessage(originalMessage));
+    const decompiledMessage = decompileTransactionMessage(originalMessage);
+    const newMessage = appendTransactionMessageInstruction(paymentInstruction, decompiledMessage);
 
-    const altMessage = await pipe(
-      originalMessage,
-      (msg) =
-      (msg) => appendTransactionMessageInstruction(paymentInstruction, msg),
-      (msg) => compileTransactionMessage(msg),
-      (msg) => partiallySignTransactionMessageWithSigners(msg),
-    );
-
-    // only edit below.
+    // Create the new transaction with payment instruction appended
+    // We need to cast here because the returned type from appendTransactionMessageInstruction
+    // is more specific than what compileTransactionMessage expects, but they are compatible
     const compiledMessage = compileTransactionMessage(newMessage as any);
-    const signedTransaction = await partiallySignTransactionMessageWithSigners(compiledMessage);
-
+    const encodedMessage = getCompiledTransactionMessageCodec().encode(compiledMessage);
+    
     const newTransaction = {
       ...originalTransaction,
-      messageBytes: getCompiledTransactionMessageCodec().encode(compiledMessage)
+      messageBytes: encodedMessage as TransactionMessageBytes
     };
 
     const base64 = getBase64EncodedWireTransaction(newTransaction);
     return {
       transaction: base64,
-      payment_amount: fee.fee_in_token,
-      payment_token: fee_token,
     };
 
     // then sign the transaction
