@@ -9,3 +9,13 @@ repos:
         language: system
         types: [rust]
         pass_filenames: false
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.0.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [
+          "--optional-scope",
+          "--types", "feat,fix,chore,docs,style,refactor,perf,test,build,ci"
+        ]
