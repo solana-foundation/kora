@@ -278,7 +278,7 @@ export interface KoraClientOptions {
 /**
  * Request for generating a payment instruction.
  */
-export interface GeneratePaymentInstructionRequest {
+export interface AppendPaymentInstructionRequest {
   transaction: string;
   fee_token: string;
   source_wallet: string;
@@ -288,6 +288,8 @@ export interface GeneratePaymentInstructionRequest {
 /**
  * Response for generating a payment instruction.
  */
-export interface GeneratePaymentInstructionResponse {
+export interface AppendPaymentInstructionResponse {
   transaction: string;
+  payment_amount: number;
+  payment_token: string;
 }

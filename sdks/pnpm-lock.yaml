@@ -20,9 +20,9 @@ importers:
       '@solana-program/token-2022':
         specifier: ^0.4.2
         version: 0.4.2(@solana/kit@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(ws@8.18.3))(@solana/sysvars@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3))
-      '@solana/addresses':
+      '@solana/kit':
         specifier: ^2.3.0
-        version: 2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)
+        version: 2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(ws@8.18.3)
     devDependencies:
       '@solana-program/compute-budget':
         specifier: ^0.8.0
@@ -33,9 +33,6 @@ importers:
       '@solana-program/token':
         specifier: ^0.5.1
         version: 0.5.1(@solana/kit@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(ws@8.18.3))
-      '@solana/kit':
-        specifier: ^2.3.0
-        version: 2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(ws@8.18.3)
       '@types/jest':
         specifier: ^29.5.12
         version: 29.5.14

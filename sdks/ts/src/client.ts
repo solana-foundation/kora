@@ -16,13 +16,12 @@ import {
   RpcRequest,
   AuthenticationHeaders,
   KoraClientOptions,
-  GeneratePaymentInstructionRequest,
-  GeneratePaymentInstructionResponse,
+  AppendPaymentInstructionRequest,
+  AppendPaymentInstructionResponse,
 } from "./types/index.js";
 import crypto from "crypto";
 import { getTransferCheckedInstruction, findAssociatedTokenPda } from "@solana-program/token-2022";
-import { Address, address, assertIsAddress } from "@solana/addresses";
-import { appendTransactionMessageInstruction, getBase64EncodedWireTransaction, createNoopSigner, getBase64Codec, getTransactionCodec, getCompiledTransactionMessageCodec, TransactionMessage, decompileTransactionMessage, compileTransactionMessage, partiallySignTransaction, partiallySignTransactionMessageWithSigners, pipe, type TransactionMessageBytes } from "@solana/kit";
+import { appendTransactionMessageInstruction, getBase64EncodedWireTransaction, createNoopSigner, getBase64Codec, getTransactionCodec, getCompiledTransactionMessageCodec, decompileTransactionMessage, compileTransactionMessage, type TransactionMessageBytes, Address, address, assertIsAddress } from "@solana/kit";
 
 /**
  * Kora RPC client for interacting with the Kora paymaster service.
@@ -314,9 +313,9 @@ export class KoraClient {
     return config.validation_config.allowed_spl_paid_tokens.includes(token);
   }
 
-  async generatePaymentInstruction(
-    { transaction, fee_token, source_wallet, token_program_id }: GeneratePaymentInstructionRequest
-  ): Promise<GeneratePaymentInstructionResponse> {
+  async appendPaymentInstruction(
+    { transaction, fee_token, source_wallet, token_program_id }: AppendPaymentInstructionRequest
+  ): Promise<AppendPaymentInstructionResponse> {
     assertIsAddress(source_wallet);
     assertIsAddress(fee_token);
     assertIsAddress(token_program_id);
@@ -341,40 +340,50 @@ export class KoraClient {
       owner: source_wallet,
       tokenProgram: token_program_id,
       mint: fee_token,
-    }, { programAddress: token_program_id });
+    });
     const [destinationTokenAccount] = await findAssociatedTokenPda({
       owner: config.fee_payer as Address,
       tokenProgram: token_program_id,
       mint: fee_token,
-    }, { programAddress: token_program_id });
+    });
 
     const paymentInstruction = await getTransferCheckedInstruction({
       source: sourceTokenAccount,
       mint: fee_token,
       destination: destinationTokenAccount,
-      authority: createNoopSigner(koraPayer),
+      authority: createNoopSigner(source_wallet),
       amount: fee.fee_in_token,
       decimals: 6,
     }, { programAddress: token_program_id });
 
-    const base64 = await pipe(
-      transaction,
-      (tx) => getBase64Codec().encode(tx),
-      (bytes) => getTransactionCodec().decode(bytes),
-      (tx) => getCompiledTransactionMessageCodec().decode(tx.messageBytes),
-      (msg) => decompileTransactionMessage(msg),
-      (msg) => appendTransactionMessageInstruction(paymentInstruction, msg),
-      (msg) => compileTransactionMessage(msg as any),
-      (compiled) => getCompiledTransactionMessageCodec().encode(compiled),
-      (encoded) => ({
-        ...getTransactionCodec().decode(getBase64Codec().encode(transaction)),
-        messageBytes: encoded as TransactionMessageBytes
-      }),
-      (tx) => getBase64EncodedWireTransaction(tx)
-    );
+    const transactionBytes = getBase64Codec().encode(transaction);
+    const originalTransaction = getTransactionCodec().decode(transactionBytes);
+    const originalMessage = getCompiledTransactionMessageCodec().decode(originalTransaction.messageBytes);
+    const decompiledMessage = decompileTransactionMessage(originalMessage);
+    const newMessage = appendTransactionMessageInstruction(paymentInstruction, decompiledMessage);
+    // Create the new transaction with payment instruction appended
+    // We need to cast here because the returned type from appendTransactionMessageInstruction
+    // is more specific than what compileTransactionMessage expects, but they are compatible
+    // safe stringify for bigint
+    console.log("NEW MESSAGE ACCOUNTS", JSON.stringify(newMessage.instructions[1].accounts, (key, value) => {
+      if (typeof value === 'bigint') {
+        return value.toString();
+      }
+      return value;
+    }, 2));
+    const compiledMessage = compileTransactionMessage(newMessage as any);
+    const encodedMessage = getCompiledTransactionMessageCodec().encode(compiledMessage);
+    
+    const newTransaction = {
+      ...originalTransaction,
+      messageBytes: encodedMessage as TransactionMessageBytes
+    };
 
+    const base64 = getBase64EncodedWireTransaction(newTransaction);
     return {
       transaction: base64,
+      payment_amount: fee.fee_in_token,
+      payment_token: fee_token,
     };
 
     // then sign the transaction
