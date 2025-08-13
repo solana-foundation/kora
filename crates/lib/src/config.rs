@@ -12,6 +12,22 @@ use crate::{
 pub struct Config {
     pub validation: ValidationConfig,
     pub kora: KoraConfig,
+    #[serde(default)]
+    pub metrics: MetricsConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct MetricsConfig {
+    pub enabled: bool,
+    pub endpoint: String,
+    pub port: u16,
+    pub scrape_interval: u64,
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self { enabled: false, endpoint: "/metrics".to_string(), port: 8080, scrape_interval: 60 }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

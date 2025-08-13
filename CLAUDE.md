@@ -159,8 +159,7 @@ RUST_LOG=debug cargo run -p kora-cli --bin kora -- rpc
 # Run RPC server with all parameters
 cargo run -p kora-cli --bin kora -- --config kora.toml --rpc-url https://api.devnet.solana.com rpc \
   --port 8080 \
-  --logging-format standard \
-  --metrics-endpoint http://localhost:9090
+  --logging-format standard
 
 # Run with Turnkey signer
 cargo run -p kora-cli --bin kora -- rpc \

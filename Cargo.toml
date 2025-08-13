@@ -80,3 +80,5 @@ vaultrs = "0.7.3"
 utoipa = { version = "4.2.0", features = ["yaml", "chrono"] }
 hmac = "0.12.1"
 sha2 = "0.10.9"
+prometheus = "0.14.0"
+http-body-util = "0.1.3"
