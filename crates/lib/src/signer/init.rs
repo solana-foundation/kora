@@ -108,7 +108,6 @@ async fn init_privy_signer(config: &PrivyArgs) -> Result<KoraSigner, KoraError> 
     let mut privy_signer = PrivySigner::new(app_id, app_secret, wallet_id);
 
     // Initialize the signer to fetch the public key from Privy
-    // This is a blocking call in an async context, but init_signer_type is sync
     privy_signer
         .init()
         .await
