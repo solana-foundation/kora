@@ -29,6 +29,9 @@ importers:
       '@solana/kit':
         specifier: ^2.3.0
         version: 2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(ws@8.18.3)
+      '@solana/prettier-config-solana':
+        specifier: ^0.0.5
+        version: 0.0.5(prettier@3.6.2)
       '@types/jest':
         specifier: ^29.5.12
         version: 29.5.14
@@ -614,6 +617,11 @@ packages:
     engines: {node: '>=20.18.0'}
     peerDependencies:
       typescript: '>=5.3.3'
+
+  '@solana/prettier-config-solana@0.0.5':
+    resolution: {integrity: sha512-igtLH1QaX5xzSLlqteexRIg9X1QKA03xKYQc2qY1TrMDDhxKXoRZOStQPWdita2FVJzxTGz/tdMGC1vS0biRcg==}
+    peerDependencies:
+      prettier: ^3.2.0
 
   '@solana/programs@2.3.0':
     resolution: {integrity: sha512-UXKujV71VCI5uPs+cFdwxybtHZAIZyQkqDiDnmK+DawtOO9mBn4Nimdb/6RjR2CXT78mzO9ZCZ3qfyX+ydcB7w==}
@@ -3012,6 +3020,10 @@ snapshots:
       typescript: 5.8.3
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
+
+  '@solana/prettier-config-solana@0.0.5(prettier@3.6.2)':
+    dependencies:
+      prettier: 3.6.2
 
   '@solana/programs@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)':
     dependencies:
