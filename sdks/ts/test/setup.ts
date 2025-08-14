@@ -63,6 +63,7 @@ const DEFAULTS = {
     SENDER_SECRET: '3Tdt5TrRGJYPbTo8zZAscNTvgRGnCLM854tCpxapggUazqdYn6VQRQ9DqNz1UkEfoPCYKj6PwSwCNtckGGvAKugb',
     TEST_USDC_MINT_SECRET: '59kKmXphL5UJANqpFFjtH17emEq3oRNmYsx6a3P3vSGJRmhMgVdzH77bkNEi9bArRViT45e8L2TsuPxKNFoc3Qfg', // Make sure this matches the USDC mint in kora.toml (9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ)
     DESTINATION_ADDRESS: 'AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM',
+    KORA_SIGNER_TYPE: 'memory', // Default signer type
 };
 
 interface TestSuite {
@@ -85,7 +86,30 @@ const createKeyPairSignerFromB58Secret = async (b58Secret: string) => {
 };
 
 function loadEnvironmentVariables() {
-    const koraAddress = process.env.KORA_ADDRESS || DEFAULTS.KORA_ADDRESS;
+    const koraSignerType = process.env.KORA_SIGNER_TYPE || DEFAULTS.KORA_SIGNER_TYPE;
+
+    let koraAddress = process.env.KORA_ADDRESS;
+    if (!koraAddress) {
+        switch (koraSignerType) {
+            case 'turnkey':
+                koraAddress = process.env.TURNKEY_PUBLIC_KEY;
+                if (!koraAddress) {
+                    throw new Error('TURNKEY_PUBLIC_KEY must be set when using Turnkey signer');
+                }
+                break;
+            case 'privy':
+                koraAddress = process.env.PRIVY_PUBLIC_KEY;
+                if (!koraAddress) {
+                    throw new Error('PRIVY_PUBLIC_KEY must be set when using Privy signer');
+                }
+                break;
+            case 'memory':
+            default:
+                koraAddress = DEFAULTS.KORA_ADDRESS;
+                break;
+        }
+    }
+
     const koraRpcUrl = process.env.KORA_RPC_URL || DEFAULTS.KORA_RPC_URL;
     const solanaRpcUrl = process.env.SOLANA_RPC_URL || DEFAULTS.SOLANA_RPC_URL;
     const solanaWsUrl = process.env.SOLANA_WS_URL || DEFAULTS.SOLANA_WS_URL;
@@ -98,9 +122,11 @@ function loadEnvironmentVariables() {
     const destinationAddress = process.env.DESTINATION_ADDRESS || DEFAULTS.DESTINATION_ADDRESS;
     assertIsAddress(destinationAddress);
     assertIsAddress(koraAddress);
+
     return {
         koraRpcUrl,
         koraAddress,
+        koraSignerType,
         commitment,
         tokenDecimals,
         tokenDropAmount,
