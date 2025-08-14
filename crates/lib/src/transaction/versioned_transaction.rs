@@ -185,7 +185,10 @@ impl VersionedTransactionUtilExt for VersionedTransaction {
 
         // Sign transaction
         let signature = signer.sign_solana(&transaction).await?;
-        transaction.signatures[0] = signature;
+
+        // Find the fee payer position - don't assume it's at position 0
+        let fee_payer_position = transaction.find_signer_position(&signer.solana_pubkey())?;
+        transaction.signatures[fee_payer_position] = signature;
 
         // Serialize signed transaction
         let serialized = bincode::serialize(&transaction)?;

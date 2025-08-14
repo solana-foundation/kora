@@ -10,13 +10,13 @@ use crate::{
     },
 };
 
-pub fn init_signer_type(args: &RpcArgs) -> Result<KoraSigner, KoraError> {
+pub async fn init_signer_type(args: &RpcArgs) -> Result<KoraSigner, KoraError> {
     if args.turnkey_args.turnkey_signer {
         init_turnkey_signer(&args.turnkey_args)
     } else if args.vault_args.vault_signer {
         init_vault_signer(&args.vault_args)
     } else if args.privy_args.privy_signer {
-        init_privy_signer(&args.privy_args)
+        init_privy_signer(&args.privy_args).await
     } else {
         init_memory_signer(args.private_key.as_ref())
     }
@@ -86,7 +86,7 @@ fn init_turnkey_signer(config: &TurnkeyArgs) -> Result<KoraSigner, KoraError> {
     Ok(KoraSigner::Turnkey(signer))
 }
 
-fn init_privy_signer(config: &PrivyArgs) -> Result<KoraSigner, KoraError> {
+async fn init_privy_signer(config: &PrivyArgs) -> Result<KoraSigner, KoraError> {
     let app_id = config
         .privy_app_id
         .clone()
@@ -105,7 +105,13 @@ fn init_privy_signer(config: &PrivyArgs) -> Result<KoraSigner, KoraError> {
         .or_else(|| std::env::var("PRIVY_WALLET_ID").ok())
         .ok_or_else(|| KoraError::SigningError("Privy wallet ID required".to_string()))?;
 
-    let privy_signer = PrivySigner::new(app_id, app_secret, wallet_id);
+    let mut privy_signer = PrivySigner::new(app_id, app_secret, wallet_id);
+
+    // Initialize the signer to fetch the public key from Privy
+    privy_signer
+        .init()
+        .await
+        .map_err(|e| KoraError::SigningError(format!("Failed to initialize Privy signer: {e}")))?;
 
     Ok(KoraSigner::Privy(privy_signer))
 }
