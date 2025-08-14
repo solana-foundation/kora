@@ -144,7 +144,7 @@ test-ts-unit:
 
 test-ts-integration-basic:
 	@$(call start_solana_validator)
-	@$(call start_kora_server,node for TS tests,,,,)
+	@$(call start_kora_server,node for TS tests,cargo run,,$(REGULAR_CONFIG),)
 	@printf "Running TypeScript SDK tests (basic config)...\n"
 	-@cd sdks/ts && pnpm test:integration
 	@$(call stop_kora_server)
@@ -276,3 +276,7 @@ install-ts-sdk:
 # Build ts sdk
 build-ts-sdk:
 	cd sdks/ts && pnpm build
+
+# format ts sdk
+format-ts-sdk:
+	cd sdks/ts && pnpm format
