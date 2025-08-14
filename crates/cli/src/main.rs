@@ -96,7 +96,7 @@ async fn main() -> Result<(), KoraError> {
 
             // Initialize the signer
             if !rpc_args.skip_signer {
-                let signer = init_signer_type(&rpc_args).unwrap();
+                let signer = init_signer_type(&rpc_args).await.unwrap();
                 init_signer(signer).unwrap_or_else(|e| {
                     print_error(&format!("Failed to initialize signer: {e}"));
                     std::process::exit(1);
