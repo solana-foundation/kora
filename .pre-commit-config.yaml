@@ -9,6 +9,16 @@ repos:
         language: system
         types: [rust]
         pass_filenames: false
+        
+  - repo: local
+    hooks:
+      - id: make-format-ts-sdk
+        name: make format-ts-sdk
+        description: Format TypeScript SDK code
+        entry: make format-ts-sdk
+        language: system
+        types: [ts]
+        pass_filenames: false
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v3.0.0
