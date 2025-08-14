@@ -105,7 +105,14 @@ fn init_privy_signer(config: &PrivyArgs) -> Result<KoraSigner, KoraError> {
         .or_else(|| std::env::var("PRIVY_WALLET_ID").ok())
         .ok_or_else(|| KoraError::SigningError("Privy wallet ID required".to_string()))?;
 
-    let privy_signer = PrivySigner::new(app_id, app_secret, wallet_id);
+    let mut privy_signer = PrivySigner::new(app_id, app_secret, wallet_id);
+
+    // Initialize the signer to fetch the public key from Privy
+    // This is a blocking call in an async context, but init_signer_type is sync
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async { privy_signer.init().await })
+    })
+    .map_err(|e| KoraError::SigningError(format!("Failed to initialize Privy signer: {e}")))?;
 
     Ok(KoraSigner::Privy(privy_signer))
 }
