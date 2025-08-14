@@ -7,6 +7,7 @@ import {
     getBase64EncodedWireTransaction,
     getBase64Encoder,
     getTransactionDecoder,
+    partiallySignTransaction,
     signTransaction,
     type KeyPairSigner,
     type Transaction,
@@ -20,8 +21,8 @@ function transactionFromBase64(base64: string): Transaction {
 }
 
 const AUTH_ENABLED = process.env.ENABLE_AUTH === 'true';
-
-describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without auth'})`, () => {
+const KORA_SIGNER_TYPE = process.env.KORA_SIGNER_TYPE || 'memory';
+describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without auth'} | signer type: ${KORA_SIGNER_TYPE})`, () => {
     let client: KoraClient;
     let testWallet: KeyPairSigner;
     let testWalletAddress: Address;
@@ -152,7 +153,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
             const { transaction: transactionString } = await client.transferTransaction(transferRequest);
             const transaction = transactionFromBase64(transactionString);
-
             // Sign transaction with test wallet before sending
             const signedTransaction = await signTransaction([testWallet.keyPair], transaction);
             const base64SignedTransaction = getBase64EncodedWireTransaction(signedTransaction);
