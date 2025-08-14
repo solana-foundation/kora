@@ -297,8 +297,13 @@ update-metrics-config:
 
 # Run metrics (Prometheus + Grafana) - automatically updates config first
 run-metrics: update-metrics-config
-	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml down
-	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml up
+	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml down --remove-orphans
+	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml up --force-recreate
+
+run-metrics-clean:
+	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml down -v --remove-orphans
+	-docker volume rm -f metrics_grafana-data metrics_prometheus-data 2>/dev/null || true
+	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml up --force-recreate
 
 # install ts sdk
 install-ts-sdk:
