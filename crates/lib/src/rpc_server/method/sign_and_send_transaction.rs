@@ -22,12 +22,10 @@ pub struct SignAndSendTransactionResponse {
 
 pub async fn sign_and_send_transaction(
     rpc_client: &Arc<RpcClient>,
-    validation: &ValidationConfig,
     request: SignAndSendTransactionRequest,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
-    let (signature, signed_transaction) =
-        transaction.sign_and_send_transaction(rpc_client, validation).await?;
+    let (signature, signed_transaction) = transaction.sign_and_send_transaction(rpc_client).await?;
 
     Ok(SignAndSendTransactionResponse { signature, signed_transaction })
 }

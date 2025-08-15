@@ -2,10 +2,10 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 
 use crate::{
-    config::ValidationConfig,
     error::KoraError,
     fee::fee::FeeConfigUtil,
     get_signer,
+    state::get_config,
     token::token::TokenUtil,
     transaction::{TransactionUtil, VersionedTransactionResolved},
 };
@@ -30,12 +30,12 @@ pub struct EstimateTransactionFeeResponse {
 
 pub async fn estimate_transaction_fee(
     rpc_client: &Arc<RpcClient>,
-    validation: &ValidationConfig,
     request: EstimateTransactionFeeRequest,
 ) -> Result<EstimateTransactionFeeResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
     let signer = get_signer()?;
+    let validation_config = &get_config()?.validation;
     let fee_payer = signer.solana_pubkey();
 
     // Resolve lookup tables for V0 transactions to ensure accurate fee calculation
@@ -60,7 +60,7 @@ pub async fn estimate_transaction_fee(
         let fee_value_in_token = TokenUtil::calculate_lamports_value_in_token(
             fee_in_lamports,
             &token_mint,
-            &validation.price_source,
+            &validation_config.price_source,
             rpc_client,
         )
         .await?;

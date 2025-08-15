@@ -9,7 +9,7 @@ use kora_lib::{
     rpc::get_rpc_client,
     rpc_server::{run_rpc_server, server::ServerHandles, KoraRpc, RpcArgs},
     signer::init::init_signer_type,
-    state::init_signer,
+    state::{init_config, init_signer},
     validator::config_validator::ConfigValidator,
     Config,
 };
@@ -82,6 +82,11 @@ async fn main() -> Result<(), KoraError> {
         std::process::exit(1);
     });
 
+    init_config(config).unwrap_or_else(|e| {
+        print_error(&format!("Failed to initialize config: {e}"));
+        std::process::exit(1);
+    });
+
     let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
 
     match cli.command {
@@ -122,10 +127,10 @@ async fn main() -> Result<(), KoraError> {
 
                     let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
 
-                    let kora_rpc = KoraRpc::new(rpc_client, config.validation, config.kora);
+                    let kora_rpc = KoraRpc::new(rpc_client);
 
                     let ServerHandles { rpc_handle, metrics_handle } =
-                        run_rpc_server(kora_rpc, rpc_args.port, &config.metrics).await?;
+                        run_rpc_server(kora_rpc, rpc_args.port).await?;
 
                     tokio::signal::ctrl_c().await.unwrap();
                     println!("Shutting down server...");

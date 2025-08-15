@@ -7,10 +7,10 @@ use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 use std::ops::Deref;
 
 use crate::{
-    config::{KoraConfig, ValidationConfig},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
     get_signer,
+    state::get_config,
     validator::transaction_validator::TransactionValidator,
     Signer,
 };
@@ -25,21 +25,21 @@ pub trait VersionedTransactionExt: Sized {
         // Should have resolved addresses for lookup tables
         &self,
         rpc_client: &RpcClient,
-        validation: &ValidationConfig,
-        kora_config: &KoraConfig,
     ) -> Result<(VersionedTransaction, String), KoraError> {
         let signer = get_signer()?;
         let fee_payer = signer.solana_pubkey();
+        let config = &get_config()?;
 
         // Get the simulation result for fee calculation
         let min_transaction_fee =
             FeeConfigUtil::estimate_transaction_fee(rpc_client, self, Some(&fee_payer)).await?;
 
-        let required_lamports = validation
+        let required_lamports = config
+            .validation
             .price
             .get_required_lamports(
                 Some(rpc_client),
-                Some(validation.price_source.clone()),
+                Some(config.validation.price_source.clone()),
                 min_transaction_fee,
             )
             .await?;
@@ -47,13 +47,13 @@ pub trait VersionedTransactionExt: Sized {
         // Only validate payment if not free
         if required_lamports > 0 {
             // Get the expected payment destination
-            let payment_destination = kora_config.get_payment_address()?;
+            let payment_destination = config.kora.get_payment_address()?;
 
             // Validate token payment
             TransactionValidator::validate_token_payment(
                 self,
                 required_lamports,
-                validation,
+                &config.validation,
                 rpc_client,
                 &payment_destination,
             )
@@ -63,7 +63,7 @@ pub trait VersionedTransactionExt: Sized {
         let transaction = self.get_transaction().clone();
 
         // Sign the transaction
-        transaction.sign_transaction(rpc_client, validation).await
+        transaction.sign_transaction(rpc_client).await
     }
 }
 
@@ -137,13 +137,11 @@ pub trait VersionedTransactionUtilExt {
     async fn sign_transaction(
         &self,
         rpc_client: &RpcClient,
-        validation: &ValidationConfig,
     ) -> Result<(VersionedTransaction, String), KoraError>;
 
     async fn sign_and_send_transaction(
         &self,
         rpc_client: &RpcClient,
-        validation: &ValidationConfig,
     ) -> Result<(String, String), KoraError>;
 
     fn find_signer_position(&self, signer_pubkey: &Pubkey) -> Result<usize, KoraError>;
@@ -161,10 +159,10 @@ impl VersionedTransactionUtilExt for VersionedTransaction {
     async fn sign_transaction(
         &self,
         rpc_client: &RpcClient,
-        validation: &ValidationConfig,
     ) -> Result<(VersionedTransaction, String), KoraError> {
         let signer = get_signer()?;
-        let validator = TransactionValidator::new(signer.solana_pubkey(), validation)?;
+
+        let validator = TransactionValidator::new(signer.solana_pubkey())?;
 
         let mut resolved_transaction = VersionedTransactionResolved::new(self);
         resolved_transaction.resolve_addresses(rpc_client).await?;
@@ -204,9 +202,8 @@ impl VersionedTransactionUtilExt for VersionedTransaction {
     async fn sign_and_send_transaction(
         &self,
         rpc_client: &RpcClient,
-        validation: &ValidationConfig,
     ) -> Result<(String, String), KoraError> {
-        let (transaction, encoded) = self.sign_transaction(rpc_client, validation).await?;
+        let (transaction, encoded) = self.sign_transaction(rpc_client).await?;
 
         // Send and confirm transaction
         let signature = rpc_client

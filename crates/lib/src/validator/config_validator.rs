@@ -3,9 +3,10 @@ use std::str::FromStr;
 use crate::{
     fee::price::PriceModel,
     oracle::PriceSource,
+    state::get_config,
     token::token::TokenUtil,
     validator::account_validator::{validate_account, AccountType},
-    Config, KoraError,
+    KoraError,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, system_program::ID as SYSTEM_PROGRAM_ID};
@@ -20,7 +21,9 @@ use crate::fee::price::PriceConfig;
 pub struct ConfigValidator {}
 
 impl ConfigValidator {
-    pub async fn validate(config: &Config, _rpc_client: &RpcClient) -> Result<(), KoraError> {
+    pub async fn validate(_rpc_client: &RpcClient) -> Result<(), KoraError> {
+        let config = &get_config()?;
+
         if config.validation.allowed_tokens.is_empty() {
             return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
         }
@@ -39,12 +42,13 @@ impl ConfigValidator {
     }
 
     pub async fn validate_with_result(
-        config: &Config,
         rpc_client: &RpcClient,
         skip_rpc_validation: bool,
     ) -> Result<Vec<String>, Vec<String>> {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
+
+        let config = &get_config()?;
 
         // Validate rate limit (warn if 0)
         if config.kora.rate_limit == 0 {
@@ -332,7 +336,7 @@ mod tests {
         // Test empty tokens list
         config.validation.allowed_tokens.clear();
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate(&config, &rpc_client).await;
+        let result = ConfigValidator::validate(&rpc_client).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), KoraError::InternalServerError(_)));
     }
@@ -361,7 +365,7 @@ mod tests {
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
         assert!(warnings.is_empty());

@@ -1,5 +1,8 @@
 use crate::{
-    config::Config, error::KoraError, signer::Signer, state::get_signer, token::token::TokenType,
+    error::KoraError,
+    signer::Signer,
+    state::{get_config, get_signer},
+    token::token::TokenType,
     transaction::TransactionUtil,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -13,11 +16,10 @@ use std::{str::FromStr, sync::Arc};
 
 /// Initialize ATAs for all allowed payment tokens for the paymaster
 /// This function does not use cache and directly checks on-chain
-pub async fn initialize_paymaster_atas(
-    rpc_client: &Arc<RpcClient>,
-    config: &Config,
-) -> Result<(), KoraError> {
+pub async fn initialize_paymaster_atas(rpc_client: &Arc<RpcClient>) -> Result<(), KoraError> {
     let signer = get_signer()?;
+
+    let config = get_config()?;
 
     // Determine the payment address
     let payment_address = config.kora.get_payment_address()?;

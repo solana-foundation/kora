@@ -1,7 +1,7 @@
 use crate::{
-    config::ValidationConfig,
     error::KoraError,
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
+    state::get_config,
     token::{
         interface::{DecodedTransfer, TokenMint},
         Token2022Program, TokenInterface, TokenProgram,
@@ -136,11 +136,12 @@ impl TokenUtil {
         token_program: &dyn TokenInterface,
         account_keys: &[Pubkey],
         rpc_client: &RpcClient,
-        validation: &ValidationConfig,
         total_lamport_value: &mut u64,
         required_lamports: u64,
         expected_destination: &Pubkey,
     ) -> Result<bool, KoraError> {
+        let config = get_config()?;
+
         if let Ok(DecodedTransfer { amount, destination_index, mint_index }) =
             token_program.decode_transfer_instruction(&ix.data)
         {
@@ -236,14 +237,14 @@ impl TokenUtil {
                 (token_state.mint(), actual_amount)
             };
 
-            if !validation.allowed_spl_paid_tokens.contains(&mint_address.to_string()) {
+            if !config.validation.allowed_spl_paid_tokens.contains(&mint_address.to_string()) {
                 return Ok(false);
             }
 
             let lamport_value = TokenUtil::calculate_token_value_in_lamports(
                 actual_amount,
                 &mint_address,
-                validation.price_source.clone(),
+                config.validation.price_source.clone(),
                 rpc_client,
             )
             .await?;

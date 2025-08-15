@@ -3,6 +3,7 @@ use crate::{
     error::KoraError,
     fee::fee::FeeConfigUtil,
     oracle::PriceSource,
+    state::get_config,
     token::{
         interface::{SplInstructionCommand, TokenMint},
         token::{TokenType, TokenUtil},
@@ -46,7 +47,9 @@ pub struct TransactionValidator {
 }
 
 impl TransactionValidator {
-    pub fn new(fee_payer_pubkey: Pubkey, config: &ValidationConfig) -> Result<Self, KoraError> {
+    pub fn new(fee_payer_pubkey: Pubkey) -> Result<Self, KoraError> {
+        let config = &get_config()?.validation;
+
         // Convert string program IDs to Pubkeys
         let allowed_programs = config
             .allowed_programs
@@ -378,7 +381,6 @@ impl TransactionValidator {
                     &*token_program,
                     &all_account_keys,
                     rpc_client,
-                    validation,
                     &mut total_lamport_value,
                     required_lamports,
                     expected_payment_destination,
@@ -415,7 +417,7 @@ mod tests {
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let recipient = Pubkey::new_unique();
         let sender = Pubkey::new_unique();
@@ -435,7 +437,7 @@ mod tests {
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
         let rpc_client = get_mock_rpc_client(&Account::default());
@@ -464,7 +466,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
@@ -499,7 +501,7 @@ mod tests {
             .with_max_signatures(2)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
@@ -525,7 +527,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
@@ -553,7 +555,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         // Create an empty message using Message::new with empty instructions
         let message = VersionedMessage::Legacy(Message::new(&[], Some(&fee_payer)));
@@ -574,7 +576,7 @@ mod tests {
             ])
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = transfer(
             &Pubkey::from_str("hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek").unwrap(),
             &fee_payer,
@@ -598,7 +600,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
 
@@ -618,7 +620,7 @@ mod tests {
                 ..Default::default()
             });
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
@@ -640,7 +642,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
@@ -656,7 +658,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy { allow_assign: false, ..Default::default() });
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
@@ -680,7 +682,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let transfer_ix = spl_token::instruction::transfer(
             &spl_token::id(),
@@ -708,7 +710,7 @@ mod tests {
                 ..Default::default()
             });
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let transfer_ix = spl_token::instruction::transfer(
             &spl_token::id(),
@@ -760,7 +762,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let transfer_ix = spl_token_2022::instruction::transfer_checked(
             &spl_token_2022::id(),
@@ -790,7 +792,7 @@ mod tests {
                 ..Default::default()
             });
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let transfer_ix = spl_token_2022::instruction::transfer_checked(
             &spl_token_2022::id(),
@@ -842,7 +844,7 @@ mod tests {
             .with_max_allowed_lamports(10_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
         let rpc_client = get_mock_rpc_client(&Account::default());
 
         // Test 1: Fee payer as sender in Transfer - should add to outflow
@@ -980,7 +982,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let burn_ix = spl_token::instruction::burn(
             &spl_token::id(),
@@ -1005,7 +1007,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy { allow_burn: false, ..Default::default() });
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let burn_ix = spl_token::instruction::burn(
             &spl_token::id(),
@@ -1055,7 +1057,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let close_ix = spl_token::instruction::close_account(
             &spl_token::id(),
@@ -1082,7 +1084,7 @@ mod tests {
                 ..Default::default()
             });
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let close_ix = spl_token::instruction::close_account(
             &spl_token::id(),
@@ -1113,7 +1115,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let approve_ix = spl_token::instruction::approve(
             &spl_token::id(),
@@ -1138,7 +1140,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy { allow_approve: false, ..Default::default() });
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let approve_ix = spl_token::instruction::approve(
             &spl_token::id(),
@@ -1191,7 +1193,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy { allow_burn: false, ..Default::default() });
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let burn_ix = spl_token_2022::instruction::burn(
             &spl_token_2022::id(),
@@ -1226,7 +1228,7 @@ mod tests {
                 ..Default::default()
             });
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let close_ix = spl_token_2022::instruction::close_account(
             &spl_token_2022::id(),
@@ -1257,7 +1259,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default());
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let approve_ix = spl_token_2022::instruction::approve(
             &spl_token_2022::id(),
@@ -1282,7 +1284,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy { allow_approve: false, ..Default::default() });
 
-        let validator = TransactionValidator::new(fee_payer, &config).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
         let approve_ix = spl_token_2022::instruction::approve(
             &spl_token_2022::id(),
