@@ -33,16 +33,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Metrics directory is always relative to project root
     let metrics_dir = project_root.join("crates/lib/src/metrics");
 
+    let mut updated_files = 0;
+
     // Update prometheus.yml
-    update_prometheus_yml(&metrics_dir, metrics.port, &metrics.endpoint, metrics.scrape_interval)?;
+    if update_prometheus_yml(
+        &metrics_dir,
+        metrics.port,
+        &metrics.endpoint,
+        metrics.scrape_interval,
+    )? {
+        updated_files += 1;
+    }
 
-    // Update docker-compose.metrics.yml
-    update_docker_compose(&metrics_dir, metrics.port, &metrics.endpoint)?;
+    // Update docker-compose.metrics.yml (Grafana port only)
+    if update_docker_compose(&metrics_dir)? {
+        updated_files += 1;
+    }
 
-    println!("✅ Configuration files updated successfully!");
-    println!();
-    println!("To start the metrics stack, run:");
-    println!("  docker compose -f docker-compose.metrics.yml up -d");
+    // Update Grafana datasources.yml (Prometheus port)
+    if update_grafana_datasources(&metrics_dir)? {
+        updated_files += 1;
+    }
+
+    if updated_files > 0 {
+        println!("✅ Updated {updated_files} configuration file(s)");
+    } else {
+        println!("ℹ️  All configuration files are already up to date");
+    }
 
     Ok(())
 }
@@ -75,114 +92,121 @@ fn find_project_root(start_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Er
     }
 }
 
+/// Update prometheus.yml with Kora server configuration
 fn update_prometheus_yml(
     metrics_dir: &Path,
     port: u16,
     endpoint: &str,
     scrape_interval: u64,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn std::error::Error>> {
     let file_path = metrics_dir.join("prometheus.yml");
 
-    if file_path.exists() {
-        println!("Updating prometheus.yml (preserving custom modifications)...");
-
-        let content = fs::read_to_string(&file_path)?;
-        let mut updated_content = content;
-
-        // Update scrape intervals
-        updated_content = regex::Regex::new(r"scrape_interval: \d+s")?
-            .replace_all(&updated_content, &format!("scrape_interval: {scrape_interval}s"))
-            .to_string();
-
-        // Update evaluation interval
-        updated_content = regex::Regex::new(r"evaluation_interval: \d+s")?
-            .replace_all(&updated_content, &format!("evaluation_interval: {scrape_interval}s"))
-            .to_string();
-
-        // Update kora target port - use host.docker.internal for Docker containers to access host
-        updated_content = regex::Regex::new(r#""(kora|host\.docker\.internal):\d+""#)?
-            .replace_all(&updated_content, &format!("\"host.docker.internal:{port}\""))
-            .to_string();
-
-        // Update metrics_path
-        updated_content = regex::Regex::new(r#"metrics_path: "[^"]*""#)?
-            .replace_all(&updated_content, &format!("metrics_path: \"{endpoint}\""))
-            .to_string();
-
-        fs::write(&file_path, updated_content)?;
-        println!("  ✓ Updated port: {port}");
-        println!("  ✓ Updated endpoint: {endpoint}");
-        println!("  ✓ Updated scrape interval: {scrape_interval}s");
-    } else {
-        println!("⚠ prometheus.yml not found, creating default...");
-        let default_config = format!(
-            r#"global:
-  scrape_interval: {scrape_interval}s
-  evaluation_interval: {scrape_interval}s
-
-scrape_configs:
-  - job_name: "prometheus"
-    static_configs:
-      - targets: ["localhost:9090"]
-
-  - job_name: "kora"
-    static_configs:
-      - targets: ["host.docker.internal:{port}"]
-    metrics_path: "{endpoint}"
-    scrape_interval: {scrape_interval}s
-    scrape_timeout: {scrape_interval}s
-"#
-        );
-        fs::write(&file_path, default_config)?;
+    if !file_path.exists() {
+        println!("⚠️  prometheus.yml not found at {}", file_path.display());
+        return Ok(false);
     }
 
-    Ok(())
+    println!("Updating prometheus.yml...");
+    let content = fs::read_to_string(&file_path)?;
+    let mut updated_content = content.clone();
+    let mut changes_made = false;
+
+    // Update global scrape intervals
+    if let Ok(regex) = regex::Regex::new(r"scrape_interval:\s*\d+s") {
+        let new_content =
+            regex.replace_all(&updated_content, &format!("scrape_interval: {scrape_interval}s"));
+        if new_content != updated_content {
+            updated_content = new_content.to_string();
+            changes_made = true;
+        }
+    }
+
+    // Update evaluation interval
+    if let Ok(regex) = regex::Regex::new(r"evaluation_interval:\s*\d+s") {
+        let new_content = regex
+            .replace_all(&updated_content, &format!("evaluation_interval: {scrape_interval}s"));
+        if new_content != updated_content {
+            updated_content = new_content.to_string();
+            changes_made = true;
+        }
+    }
+
+    // Update kora target port - use host.docker.internal for Docker containers to access host
+    if let Ok(regex) = regex::Regex::new(r#""(kora|host\.docker\.internal):\d+""#) {
+        let new_content =
+            regex.replace_all(&updated_content, &format!("\"host.docker.internal:{port}\""));
+        if new_content != updated_content {
+            updated_content = new_content.to_string();
+            changes_made = true;
+        }
+    }
+
+    // Update metrics_path for kora job
+    if let Ok(regex) = regex::Regex::new(r#"metrics_path:\s*"[^"]*""#) {
+        let new_content =
+            regex.replace_all(&updated_content, &format!("metrics_path: \"{endpoint}\""));
+        if new_content != updated_content {
+            updated_content = new_content.to_string();
+            changes_made = true;
+        }
+    }
+
+    if changes_made {
+        fs::write(&file_path, updated_content)?;
+        println!("  ✓ Updated Kora target: host.docker.internal:{port}");
+        println!("  ✓ Updated endpoint: {endpoint}");
+        println!("  ✓ Updated intervals: {scrape_interval}s");
+    } else {
+        println!("  ℹ️  Already up to date");
+    }
+
+    Ok(changes_made)
 }
 
-fn update_docker_compose(
-    metrics_dir: &Path,
-    _port: u16,
-    _endpoint: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+/// Update docker-compose.metrics.yml (currently no dynamic updates needed)
+fn update_docker_compose(metrics_dir: &Path) -> Result<bool, Box<dyn std::error::Error>> {
     let file_path = metrics_dir.join("docker-compose.metrics.yml");
 
-    if file_path.exists() {
-        println!("docker-compose.metrics.yml exists (no updates needed)...");
-    } else {
-        println!("⚠ docker-compose.metrics.yml not found, creating default...");
-        let default_config = r#"services:
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    restart: unless-stopped
-    networks:
-      - metrics
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    env_file:
-      - ../../.env
-    volumes:
-      - grafana-storage:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-    restart: unless-stopped
-    networks:
-      - metrics
-
-networks:
-  metrics:
-    driver: bridge
-
-volumes:
-  grafana-storage:
-"#;
-        fs::write(&file_path, default_config)?;
+    if !file_path.exists() {
+        println!("⚠️  docker-compose.metrics.yml not found at {}", file_path.display());
+        return Ok(false);
     }
 
-    Ok(())
+    // For now, docker-compose doesn't need dynamic updates
+    // Ports are hardcoded in the compose file (9090 for Prometheus, 3000 for Grafana)
+    println!("docker-compose.metrics.yml exists (no updates needed)");
+    Ok(false)
+}
+
+/// Update Grafana datasources.yml to ensure correct Prometheus URL
+fn update_grafana_datasources(metrics_dir: &Path) -> Result<bool, Box<dyn std::error::Error>> {
+    let file_path = metrics_dir.join("grafana/provisioning/datasources/datasources.yml");
+
+    if !file_path.exists() {
+        println!("⚠️  Grafana datasources.yml not found at {}", file_path.display());
+        return Ok(false);
+    }
+
+    println!("Updating Grafana datasources.yml...");
+    let content = fs::read_to_string(&file_path)?;
+    let mut updated_content = content.clone();
+    let mut changes_made = false;
+
+    // Ensure Prometheus URL uses the correct container name and port
+    if let Ok(regex) = regex::Regex::new(r"url:\s*http://[^:\s]+:9090") {
+        let new_content = regex.replace_all(&updated_content, "url: http://prometheus:9090");
+        if new_content != updated_content {
+            updated_content = new_content.to_string();
+            changes_made = true;
+        }
+    }
+
+    if changes_made {
+        fs::write(&file_path, updated_content)?;
+        println!("  ✓ Updated Prometheus URL to http://prometheus:9090");
+    } else {
+        println!("  ℹ️  Already up to date");
+    }
+
+    Ok(changes_made)
 }
