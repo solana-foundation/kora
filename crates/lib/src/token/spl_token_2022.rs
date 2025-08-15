@@ -1,4 +1,4 @@
-use crate::token::interface::TokenMint;
+use crate::token::interface::{DecodedTransfer, TokenMint};
 
 use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
@@ -534,12 +534,16 @@ impl TokenInterface for Token2022Program {
     fn decode_transfer_instruction(
         &self,
         data: &[u8],
-    ) -> Result<(u64, Option<usize>), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<DecodedTransfer, Box<dyn std::error::Error + Send + Sync>> {
         let instruction = instruction::TokenInstruction::unpack(data)?;
         match instruction {
             #[allow(deprecated)]
-            instruction::TokenInstruction::Transfer { amount } => Ok((amount, None)),
-            instruction::TokenInstruction::TransferChecked { amount, .. } => Ok((amount, Some(1))),
+            instruction::TokenInstruction::Transfer { amount } => {
+                Ok(DecodedTransfer { amount, mint_index: None, destination_index: 1 })
+            }
+            instruction::TokenInstruction::TransferChecked { amount, .. } => {
+                Ok(DecodedTransfer { amount, mint_index: Some(1), destination_index: 2 })
+            }
             _ => Err("Not a transfer instruction".into()),
         }
     }

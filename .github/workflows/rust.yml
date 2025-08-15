@@ -83,13 +83,12 @@ jobs:
       - name: Setup Kora RPC server (regular config)
         uses: ./.github/actions/setup-kora-rpc
         with:
-          config-file: "tests/testing-utils/fixtures/kora-test.toml"
+          config-file: "tests/src/common/fixtures/kora-test.toml"
 
       - name: Run all tests with coverage
         run: |
-          echo "🧪 Running all tests with coverage..."
-          # Run lib tests and integration tests together with coverage
-          cargo llvm-cov test --no-report --lib --tests -- --skip auth_integration_tests
+          echo "🧪 Running regular integration tests..."
+          cargo llvm-cov test --no-report -p tests --test integration
 
       - name: Stop Kora RPC server
         run: |
@@ -101,12 +100,29 @@ jobs:
       - name: Setup Kora RPC server (auth config)
         uses: ./.github/actions/setup-kora-rpc
         with:
-          config-file: "tests/testing-utils/fixtures/auth-test.toml"
+          config-file: "tests/src/common/fixtures/auth-test.toml"
 
       - name: Run auth integration tests with coverage
         run: |
           echo "🧪 Running auth integration tests..."
-          cargo llvm-cov test --no-report --test integration auth_integration_tests
+          cargo llvm-cov test --no-report -p tests --test auth
+
+      - name: Stop Kora RPC server
+        run: |
+          if [ ! -z "$KORA_PID" ]; then
+            kill $KORA_PID || true
+          fi
+          sleep 2
+
+      - name: Setup Kora RPC server (payment address config)
+        uses: ./.github/actions/setup-kora-rpc
+        with:
+          config-file: "tests/src/common/fixtures/paymaster-address-test.toml"
+
+      - name: Run payment address integration tests with coverage
+        run: |
+          echo "🧪 Running payment address integration tests..."
+          cargo llvm-cov test --no-report -p tests --test payment-address
 
       - name: Generate coverage reports
         run: |
@@ -130,7 +146,7 @@ jobs:
             // Extract coverage percentage from lcov.info
             const fs = require('fs');
             let coverage = '0';
-            
+
             try {
               const lcov = fs.readFileSync('coverage/lcov.info', 'utf8');
               const linesFound = lcov.match(/^LF:(\d+)$/gm)?.reduce((sum, line) => sum + parseInt(line.split(':')[1]), 0) || 0;
@@ -139,31 +155,31 @@ jobs:
             } catch (error) {
               console.log('Error reading coverage:', error);
             }
-            
+
             const comment = `## 📊 Rust Coverage Report
-            
+
             **Coverage:** ${coverage}%
-            
+
             <details>
             <summary>View detailed report</summary>
-            
+
             Coverage artifacts have been uploaded to this workflow run.
             [View Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            
+
             </details>`;
-            
+
             // Find existing comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
+
             const botComment = comments.find(comment => 
               comment.user.type === 'Bot' && 
               comment.body.includes('## 📊 Rust Coverage Report')
             );
-            
+
             if (botComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,

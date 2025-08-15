@@ -1,10 +1,10 @@
 use hmac::{Hmac, Mac};
 use kora_lib::constant::{X_HMAC_SIGNATURE, X_TIMESTAMP};
 use once_cell::sync::Lazy;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::helpers::get_test_server_url;
+use crate::common::helpers::ClientTestHelper;
 
 pub const TEST_API_KEY: &str = "test-api-key-123";
 pub const TEST_HMAC_SECRET: &str = "test-hmac-secret-456";
@@ -35,7 +35,7 @@ pub async fn make_auth_request(headers: Option<Vec<(&str, &str)>>) -> reqwest::R
     let client = reqwest::Client::new();
 
     let mut request = client
-        .post(get_test_server_url())
+        .post(ClientTestHelper::get_test_server_url())
         .header("Content-Type", "application/json")
         .json(&JSON_TEST_BODY.clone());
 
@@ -55,8 +55,10 @@ pub async fn make_auth_request_with_body(
 ) -> reqwest::Response {
     let client = reqwest::Client::new();
 
-    let mut request =
-        client.post(get_test_server_url()).header("Content-Type", "application/json").json(body);
+    let mut request = client
+        .post(ClientTestHelper::get_test_server_url())
+        .header("Content-Type", "application/json")
+        .json(body);
 
     if let Some(custom_headers) = headers {
         for (key, value) in custom_headers {
