@@ -6,10 +6,13 @@ Your Kora node will be signing transactions for your users, so it is important t
 
 The `kora.toml` file controls all aspects of your Kora node's behavior including:
 - Rate limiting and authentication
+- RPC method availability
 - Transaction validation rules
 - Fee pricing models
 - Security policies
 - RPC method availability
+- Fee pricing models
+- Performance monitoring
 
 Your configuration file should be placed in your deployment directory or specified via the `--config` flag when starting the server.
 
@@ -18,10 +21,13 @@ Your configuration file should be placed in your deployment directory or specifi
 The `kora.toml` file is organized into sections, each with its own set of options. This guide walks through each section and explains the options available:
 
 - [Kora Core Policies](#kora-core-policies) - Core server settings
+- [Kora Enabled Methods](#kora-enabled-methods-optional) - Kora RPC methods to enable
+- [Kora Authentication](#kora-authentication) - Authentication settings
 - [Kora Enabled Methods](#kora-enabled-methods) - Kora RPC methods to enable
 - [Validation Policies](#validation-policies) - Transaction validation and security
 - [Fee Payer Policy](#fee-payer-policy) - Restrictions on fee payer wallet
 - [Price Configuration](#price-configuration) - Transaction fee pricing models
+- [Performance Monitoring](#performance-monitoring-optional) - Metrics collection and monitoring
 - [Complete Example](#complete-example) - Full production-ready configuration
 
 Sample `kora.toml` file sections:
@@ -29,6 +35,9 @@ Sample `kora.toml` file sections:
 ```toml
 [kora]
 # Core server settings
+
+[kora.auth]
+# Authentication settings
 
 [kora.enabled_methods]
 # Kora RPC methods to enable
@@ -54,6 +63,19 @@ The `[kora]` section configures core server behavior:
 ```toml
 [kora]
 rate_limit = 100
+```
+
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `rate_limit` | Global rate limit (requests per second) across all clients | ✅ | number |
+
+## Kora Authentication
+
+The `[kora.auth]` section configures authentication for the Kora server:
+
+```toml
+[kora.auth]
 api_key = "kora_live_sk_1234567890abcdef"
 hmac_secret = "kora_hmac_your-strong-hmac-secret-key-here"
 max_timestamp_age = 300
@@ -62,7 +84,6 @@ max_timestamp_age = 300
 
 | Option | Description | Required | Type |
 |--------|-------------|---------|---------|
-| `rate_limit` | Global rate limit (requests per second) across all clients | ✅ | number |
 | `api_key` | API key for simple authentication | ❌ | string |
 | `hmac_secret` | HMAC secret for signature-based authentication (min 32 chars) | ❌ | string |
 | `max_timestamp_age` | Maximum age of an HMAC timestamp in seconds | ❌ (default: 300) | number |
@@ -209,6 +230,29 @@ Sponsor all transaction fees (no charge to users):
 type = "free"
 ```
 
+## Performance Monitoring (optional)
+
+The `[metrics]` section configures metrics collection and monitoring. This section is optional and by default, metrics are disabled.
+
+```toml
+[metrics]
+enabled = true
+metrics-endpoint = "/metrics"
+port = 8080
+scrape-interval = 60
+```
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `enabled` | Enable metrics collection | ✅ | boolean |
+| `metrics-endpoint` | Custom metrics endpoint path | ✅ | string |
+| `port` | Metrics endpoint port | ✅ | number |
+| `scrape-interval` | Frequency of Prometheus scrape (seconds) | ✅ | number |
+
+> *Note: Metrics are served at `http://localhost:{port}/{metrics-endpoint}` (Metrics can be served on the same port as the RPC server).*
+
+**[→ Kora Monitoring Reference Guide](./MONITORING.md)**
+
 ## Complete Example
 
 Here's a production-ready configuration with security best practices:
@@ -283,14 +327,21 @@ allow_assign = false
 [validation.price]
 type = "margin"
 margin = 0.15  # 15% margin on network fees
+
+# Metrics collection
+[metrics]
+enabled = true
+metrics-endpoint = "/metrics"
+port = 8080
+scrape-interval = 60
 ```
 
 ## Configuration Validation
 
-Kora validates your configuration on startup. If you would like to validate your configuration without starting the server, you can use the `--validate-config` flag:
+Kora validates your configuration on startup. If you would like to validate your configuration without starting the server, you can use the config validation command:
 
 ```bash
-kora-rpc --config kora.toml --validate-config
+kora --config kora.toml config validate
 ```
 
 ## Starting the Server
@@ -298,7 +349,7 @@ kora-rpc --config kora.toml --validate-config
 Once you have configured your `kora.toml` file, you can start the Kora server:
 
 ```bash
-kora-rpc --config path/to/kora.toml # --other-flags-here
+kora --config path/to/kora.toml rpc # --other-rpc-flags-here
 ```
 
 ## Best Practices

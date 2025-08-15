@@ -1,0 +1,40 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["./src/index.ts"],
+  "out": "./docs",
+  "name": "Kora TypeScript SDK",
+  "includeVersion": true,
+  "hideGenerator": true,
+  "plugin": ["typedoc-plugin-markdown"],
+  "theme": "default",
+  "cleanOutputDir": true,
+  "gitRevision": "main",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "disableSources": true,
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": false
+  },
+  "visibilityFilters": {
+    "protected": false,
+    "private": false,
+    "inherited": true,
+    "external": false
+  },
+  "outputFileStrategy": "modules",
+  "mergeReadme": false,
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true,
+  "hidePageTitle": false,
+  "useCodeBlocks": true,
+  "expandParameters": true,
+  "expandObjects": true,
+  "parametersFormat": "table",
+  "interfacePropertiesFormat": "table",
+  "classPropertiesFormat": "table",
+  "enumMembersFormat": "table",
+  "typeDeclarationFormat": "table",
+  "propertyMembersFormat": "table"
+}

@@ -1,2 +1,2 @@
-mod token_tests;
-mod transaction_tests;
+#[cfg(test)]
+pub mod common;

@@ -1,0 +1,64 @@
+name: Update Coverage Badge
+
+on:
+  workflow_run:
+    workflows: ["Rust CI"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  update-badge:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Generate coverage badge
+        run: |
+          # Extract Rust coverage from lcov.info
+          if [ -f "rust-coverage-report/lcov.info" ]; then
+            # Calculate line coverage from lcov.info
+            LINES_FOUND=$(grep -E "^LF:" rust-coverage-report/lcov.info | awk -F: '{sum += $2} END {print sum}')
+            LINES_HIT=$(grep -E "^LH:" rust-coverage-report/lcov.info | awk -F: '{sum += $2} END {print sum}')
+            if [ "$LINES_FOUND" -gt 0 ]; then
+              COVERAGE=$(echo "scale=1; $LINES_HIT * 100 / $LINES_FOUND" | bc)
+            else
+              COVERAGE="0"
+            fi
+          else
+            COVERAGE="0"
+          fi
+          
+          echo "Coverage: $COVERAGE%"
+          
+          # Determine color based on coverage
+          if (( $(echo "$COVERAGE >= 80" | bc -l) )); then
+            COLOR="green"
+          elif (( $(echo "$COVERAGE >= 60" | bc -l) )); then
+            COLOR="yellow"
+          else
+            COLOR="red"
+          fi
+          
+          # Create badge JSON
+          mkdir -p .github/badges
+          echo "{\"schemaVersion\": 1, \"label\": \"coverage\", \"message\": \"${COVERAGE}%\", \"color\": \"$COLOR\"}" > .github/badges/coverage.json
+          
+          # Commit and push the badge file
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add .github/badges/coverage.json
+          git diff --staged --quiet || (git commit -m "Update coverage badge [skip ci]" && git push)

@@ -2,22 +2,32 @@
   "name": "@kora/sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for Kora RPC",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "type": "module",
-  "types": "dist/index.d.ts",
+  "types": "dist/src/index.d.ts",
   "scripts": {
     "build": "tsc",
     "test": "jest",
+    "test:auth": "ENABLE_AUTH=true pnpm test integration.test.ts",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:integration": "pnpm run build && node scripts/test-with-validator.js",
-    "test:unit": "pnpm run build && jest test/unit.test.ts",
+    "test:integration": "pnpm test integration.test.ts",
+    "test:integration:auth": "ENABLE_AUTH=true pnpm test integration.test.ts",
+    "test:integration:privy": "KORA_SIGNER_TYPE=privy pnpm test integration.test.ts",
+    "test:integration:turnkey": "KORA_SIGNER_TYPE=turnkey pnpm test integration.test.ts",
+    "test:unit": "pnpm test unit.test.ts",
     "test:ci:integration": "node scripts/test-with-validator.js",
+    "test:ci:integration:auth": "ENABLE_AUTH=true node scripts/test-with-validator.js",
     "test:ci:unit": "jest test/unit.test.ts",
     "lint": "eslint src --ext .ts",
-    "format": "prettier --write \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "prepare": "pnpm run build",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "docs": "typedoc --readme none && node scripts/add-toc.js",
+    "docs:html": "typedoc --options typedoc.html.json",
+    "docs:watch": "typedoc --watch",
+    "docs:serve": "pnpm run docs:html && npx serve docs-html"
   },
   "files": [
     "dist"
@@ -35,6 +45,7 @@
     "@solana-program/system": "^0.7.0",
     "@solana-program/token": "^0.5.1",
     "@solana/kit": "^2.3.0",
+    "@solana/prettier-config-solana": "^0.0.5",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.17.27",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
@@ -45,6 +56,8 @@
     "prettier": "^3.2.5",
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",
+    "typedoc": "^0.28.9",
+    "typedoc-plugin-markdown": "^4.8.0",
     "typescript": "^5.3.3"
   }
 }

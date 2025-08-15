@@ -1,11 +1,11 @@
-.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-integration-coverage test-all test-ts coverage coverage-clean build-bin build-lib build-rpc build-tk run-presigned openapi gen-ts-client
+.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-integration-coverage test-all test-ts coverage coverage-clean build-bin build-lib build-cli run-presigned openapi gen-ts-client run-metrics
 
 # Common configuration
 TEST_PORT := 8080
 TEST_PRIVATE_KEY := ./tests/testing-utils/local-keys/fee-payer-local.json
 TEST_RPC_URL := http://127.0.0.1:8899
-REGULAR_CONFIG := tests/kora-test.toml
-AUTH_CONFIG := tests/fixtures/auth-test.toml
+REGULAR_CONFIG := tests/testing-utils/fixtures/kora-test.toml
+AUTH_CONFIG := tests/testing-utils/fixtures/auth-test.toml
 
 # Output control patterns
 QUIET_OUTPUT := >/dev/null 2>&1
@@ -19,7 +19,6 @@ all: check test build
 # install
 install:
 	cargo install --path crates/cli
-	cargo install --path crates/rpc
 
 # Check code formatting
 check:
@@ -41,8 +40,8 @@ generate-key:
 
 # Server lifecycle management functions
 define stop_kora_server
-	echo "🛑 Stopping Kora server..."
-	if [ -f .kora.pid ]; then \
+	@printf "Stopping Kora server...\n"
+	@if [ -f .kora.pid ]; then \
 		PID=$$(cat .kora.pid); \
 		if kill -0 $$PID 2>/dev/null; then \
 			kill $$PID 2>/dev/null || true; \
@@ -51,22 +50,22 @@ define stop_kora_server
 		fi; \
 		rm -f .kora.pid; \
 	fi; \
-	pkill -f "kora-rpc" 2>/dev/null || true; \
+	pkill -f "kora" 2>/dev/null || true; \
 	sleep 2
 endef
 
 # Solana validator lifecycle management functions
 define start_solana_validator
-	echo "🚀 Starting local Solana test validator..."
-	solana-test-validator --reset --quiet >/dev/null 2>&1 &
-	echo $$! > .validator.pid
-	echo "⏳ Waiting for validator to start..."
-	sleep 5
+	@echo "🚀 Starting local Solana test validator..."
+	@solana-test-validator --reset --quiet >/dev/null 2>&1 &
+	@echo $$! > .validator.pid
+	@echo "⏳ Waiting for validator to start..."
+	@sleep 5
 endef
 
 define stop_solana_validator
-	echo "🛑 Stopping Solana validator..."
-	if [ -f .validator.pid ]; then \
+	@printf "Stopping Solana validator...\n"
+	@if [ -f .validator.pid ]; then \
 		PID=$$(cat .validator.pid); \
 		if kill -0 $$PID 2>/dev/null; then \
 			kill $$PID 2>/dev/null || true; \
@@ -83,17 +82,17 @@ endef
 # Start Kora server with flexible configuration
 # Usage: $(call start_kora_server,description,cargo_cmd,cargo_flags,config_file,setup_env)
 define start_kora_server
-	$(call stop_kora_server)
-	$(if $(5),\
-		echo "🔧 Setting up test environment..."; \
-		cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT);)
-	echo "🚀 Starting Kora $(1)..."
-	$(if $(2),\
-		$(2) -p kora-rpc --bin kora-rpc $(3) -- --private-key $(TEST_PRIVATE_KEY) --config $(4) --rpc-url $(TEST_RPC_URL) --port $(TEST_PORT) $(QUIET_OUTPUT) &,\
+	@$(call stop_kora_server)
+	@$(if $(5),\
+		printf "🔧 Setting up test environment...\n"; \
+		cargo run -p tests --bin setup_test_env $(SETUP_OUTPUT);)
+	@echo "🚀 Starting Kora $(1)..."
+	@$(if $(2),\
+		$(2) -p kora-cli --bin kora $(3) -- --config $(4) --rpc-url $(TEST_RPC_URL) rpc --private-key $(TEST_PRIVATE_KEY) --port $(TEST_PORT) $(QUIET_OUTPUT) &,\
 		make run >/dev/null 2>&1 &)
-	echo $$! > .kora.pid
-	echo "⏳ Waiting for server to start..."
-	sleep 5
+	@echo $$! > .kora.pid
+	@echo "⏳ Waiting for server to start..."
+	@sleep 5
 endef
 
 define run_regular_tests
@@ -115,14 +114,14 @@ endef
 
 # Setup test environment
 setup-test-env:
-	cargo run -p tests --bin setup-test-env
+	cargo run -p tests --bin setup_test_env
 
 # Run all integration tests (regular + auth)
 test-integration:
 	@$(call start_solana_validator)
 	@echo "🧪 Running all integration tests..."
 	@echo "🔧 Setting up test environment..."
-	@cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT)
+	@cargo run -p tests --bin setup_test_env $(SETUP_OUTPUT)
 	$(call run_integration_phase,1,regular tests,cargo run,,$(REGULAR_CONFIG),$(call run_regular_tests,cargo test,))
 	$(call run_integration_phase,2,auth tests,cargo run,,$(AUTH_CONFIG),$(call run_auth_tests,cargo test,))
 	@echo "✅ All integration tests completed"
@@ -132,22 +131,67 @@ test-integration:
 test-integration-coverage:
 	@echo "🧪 Running all integration tests with coverage..."
 	@echo "🔧 Setting up test environment..."
-	@cargo run -p tests --bin setup-test-env $(SETUP_OUTPUT)
+	@cargo run -p tests --bin setup_test_env $(SETUP_OUTPUT)
 	$(call run_integration_phase,1,regular tests,cargo llvm-cov run,--no-report,$(REGULAR_CONFIG),$(call run_regular_tests,cargo llvm-cov test,--no-report))
 	$(call run_integration_phase,2,auth tests,cargo llvm-cov run,--no-report,$(AUTH_CONFIG),$(call run_auth_tests,cargo llvm-cov test,--no-report))
 	@echo "✅ All integration tests completed"
 
 
 # Run TypeScript SDK tests with local validator and Kora node
-test-ts:
+test-ts-unit:
+	@printf "Running TypeScript SDK tests (unit tests)...\n"
+	-@cd sdks/ts && pnpm test:unit
+
+test-ts-integration-basic:
 	@$(call start_solana_validator)
-	@$(call start_kora_server,node for TS tests,,,,)
-	@echo "🧪 Running TypeScript SDK tests..."
-	@cd sdks/ts && pnpm test; \
-	TEST_EXIT_CODE=$$?; \
-	$(call stop_kora_server); \
-	$(call stop_solana_validator); \
-	exit $$TEST_EXIT_CODE
+	@$(call start_kora_server,node for TS tests,cargo run,,$(REGULAR_CONFIG),)
+	@printf "Running TypeScript SDK tests (basic config)...\n"
+	-@cd sdks/ts && pnpm test:integration
+	@$(call stop_kora_server)
+	@$(call stop_solana_validator)
+
+# Run TypeScript auth tests specifically (using integration tests with auth enabled)
+test-ts-integration-auth:
+	@$(call start_solana_validator)
+	@$(call start_kora_server,node for TS auth tests,cargo run,,$(AUTH_CONFIG),)
+	@printf "Running TypeScript SDK auth tests...\n"
+	-@cd sdks/ts && pnpm test:integration:auth
+	@$(call stop_kora_server)
+	@$(call stop_solana_validator)
+
+# Run TypeScript tests with Turnkey signer
+test-ts-integration-turnkey:
+	@$(call start_solana_validator)
+	@echo "🚀 Starting Kora node with Turnkey signer..."
+	@$(call stop_kora_server)
+	@cargo run -p kora-cli --bin kora -- --config $(REGULAR_CONFIG) --rpc-url $(TEST_RPC_URL) rpc --with-turnkey-signer --port $(TEST_PORT) $(QUIET_OUTPUT) &
+	@echo $$! > .kora.pid
+	@echo "⏳ Waiting for server to start..."
+	@sleep 5
+	@printf "Running TypeScript SDK tests with Turnkey signer...\n"
+	-@cd sdks/ts && pnpm test:integration:turnkey
+	@$(call stop_kora_server)
+	@$(call stop_solana_validator)
+
+# Run TypeScript tests with Privy signer  
+test-ts-integration-privy:
+	@$(call start_solana_validator)
+	@echo "🚀 Starting Kora node with Privy signer..."
+	@$(call stop_kora_server)
+	@cargo run -p kora-cli --bin kora -- --config $(REGULAR_CONFIG) --rpc-url $(TEST_RPC_URL) rpc --with-privy-signer --port $(TEST_PORT) $(QUIET_OUTPUT) &
+	@echo $$! > .kora.pid
+	@echo "⏳ Waiting for server to start..."
+	@sleep 5
+	@printf "Running TypeScript SDK tests with Privy signer...\n"
+	-@cd sdks/ts && pnpm test:integration:privy
+	@$(call stop_kora_server)
+	@$(call stop_solana_validator)
+
+# Run all signer tests
+test-ts-signers: test-ts-integration-turnkey test-ts-integration-privy
+
+# Run all TypeScript SDK tests (no signers b/c api rate limits)
+test-ts: test-ts-unit test-ts-integration-basic test-ts-integration-auth # test-ts-signers
 
 test-all: test test-integration test-ts
 
@@ -175,9 +219,9 @@ build-bin:
 build-lib:
 	cargo build -p kora-lib
 
-# Build rpc
-build-rpc:
-	cargo build -p kora-rpc
+# Build cli
+build-cli:
+	cargo build -p kora-cli
 
 # Build tk-rs
 build-tk:
@@ -189,21 +233,24 @@ run-presigned:
 
 # Run with default configuration
 run:
-	cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
+	cargo run -p kora-cli --bin kora -- --config kora.toml --rpc-url http://127.0.0.1:8899 rpc --private-key ./tests/testing-utils/local-keys/fee-payer-local.json
 
 
 # Clean build artifacts
 clean:
 	cargo clean
 
-# Gen openapi docs
+# Generate OpenAPI documentation
 openapi:
-	cargo run -p kora-rpc --bin kora-openapi --features docs
+	cargo run -p kora-cli --bin kora --features docs -- openapi -o openapi.json
 
 # Generate TypeScript client
 gen-ts-client:
+	@echo "🔧 Generating OpenAPI spec with docs feature..."
+	cargo run -p kora-cli --bin kora --features docs -- openapi -o openapi.json
+	@echo "🚀 Generating TypeScript client..."
 	docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate \
-		-i /local/crates/rpc/src/openapi/spec/combined_api.json \
+		-i /local/crates/lib/src/rpc_server/openapi/spec/combined_api.json \
 		-g typescript-fetch \
 		-o /local/generated/typescript-client \
 		--additional-properties=supportsES6=true,npmName=kora-client,npmVersion=0.1.0
@@ -236,3 +283,36 @@ coverage-clean:
 	rm -rf coverage/
 	cargo llvm-cov clean --workspace
 	@echo "✅ Coverage artifacts cleaned"
+
+# Run Kora in Docker (no metrics)
+run-docker:
+	docker compose down
+	docker compose build --no-cache kora
+	docker compose up
+
+# Update metrics configuration from kora.toml
+update-metrics-config:
+	@echo "Updating metrics configuration from kora.toml..."
+	@cargo run -p kora-lib --bin update-config
+
+# Run metrics (Prometheus + Grafana) - automatically updates config first
+run-metrics: update-metrics-config
+	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml down --remove-orphans
+	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml up --force-recreate
+
+run-metrics-clean:
+	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml down -v --remove-orphans
+	-docker volume rm -f metrics_grafana-data metrics_prometheus-data 2>/dev/null || true
+	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml up --force-recreate
+
+# install ts sdk
+install-ts-sdk:
+	cd sdks/ts && pnpm install
+
+# Build ts sdk
+build-ts-sdk:
+	cd sdks/ts && pnpm build
+
+# format ts sdk
+format-ts-sdk:
+	cd sdks/ts && pnpm format
