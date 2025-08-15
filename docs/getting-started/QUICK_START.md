@@ -132,15 +132,29 @@ allowed_spl_paid_tokens = [
 ] 
 ```
 
-### Terminal 3: Start Kora RPC Server
+### Terminal 3: Initialize Payment ATAs (Optional)
+
+If you've configured a custom payment address in your `kora.toml`, you'll need to initialize Associated Token Accounts (ATAs) for your payment tokens:
+
 ```bash
 # From ./server directory
-kora rpc
+kora rpc initialize-atas
+```
+
+This command will:
+- Read your payment address from `kora.toml` (or use the signer address if not configured)
+- Create ATAs for all tokens listed in `allowed_spl_paid_tokens`
+- Skip any ATAs that already exist
+
+### Terminal 4: Start Kora RPC Server
+```bash
+# From ./server directory
+kora rpc start
 ```
 
 The server reads configuration from `kora.toml` and uses environment variables from the shared `.env` file. If you are using a different folder structure than specified here, you may need to use the `--config` to specify the location of `kora.toml` and `--private-key` to specify the directory of your private key. You can access `kora rpc -h` for help on the RPC server options.
 
-### Terminal 4: Run Client Demo
+### Terminal 5: Run Client Demo
 ```bash
 # From ./client directory
 pnpm start

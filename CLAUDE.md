@@ -127,13 +127,16 @@ tests/
 │   │   │   ├── auth-test.toml           # Auth tests config  
 │   │   │   └── paymaster-address-test.toml  # Payment address config
 │   │   ├── local-keys/
-│   │   │   └── fee-payer-local.json     # Test keypair
+│   │   │   ├── fee-payer-local.json     # Fee payer keypair
+│   │   │   ├── payment-local.json       # Payment address keypair
+│   │   │   ├── sender-local.json        # Sender keypair
+│   │   │   └── usdc-mint-local.json     # USDC mint keypair
 │   │   └── setup_test_env.rs            # Test environment setup
 │   └── bin/
 │       └── setup_test_env.rs            # Binary wrapper for setup
 ├── integration/                         # Regular integration tests
-├── auth/                               # Authentication tests
-└── payment-address/                    # Payment address tests
+├── auth/                                # Authentication tests
+└── payment-address/                     # Payment address tests
 ```
 
 **Manual Test Commands (if needed):**
