@@ -93,14 +93,10 @@ async fn main() -> Result<(), KoraError> {
         Some(Commands::Config { config_command }) => {
             match config_command {
                 ConfigCommands::Validate => {
-                    let _ =
-                        ConfigValidator::validate_with_result(&config, rpc_client.as_ref(), true)
-                            .await;
+                    let _ = ConfigValidator::validate_with_result(rpc_client.as_ref(), true).await;
                 }
                 ConfigCommands::ValidateWithRpc => {
-                    let _ =
-                        ConfigValidator::validate_with_result(&config, rpc_client.as_ref(), false)
-                            .await;
+                    let _ = ConfigValidator::validate_with_result(rpc_client.as_ref(), false).await;
                 }
             }
             std::process::exit(0);
@@ -109,7 +105,7 @@ async fn main() -> Result<(), KoraError> {
             match rpc_command {
                 RpcCommands::Start { rpc_args } => {
                     // Validate config before starting server
-                    if let Err(e) = ConfigValidator::validate(&config, rpc_client.as_ref()).await {
+                    if let Err(e) = ConfigValidator::validate(rpc_client.as_ref()).await {
                         print_error(&format!("Config validation failed: {e}"));
                         std::process::exit(1);
                     }
@@ -152,7 +148,7 @@ async fn main() -> Result<(), KoraError> {
                     }
 
                     // Initialize ATAs
-                    if let Err(e) = initialize_paymaster_atas(&rpc_client, &config).await {
+                    if let Err(e) = initialize_paymaster_atas(&rpc_client).await {
                         print_error(&format!("Failed to initialize ATAs: {e}"));
                         std::process::exit(1);
                     }

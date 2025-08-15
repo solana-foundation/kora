@@ -175,17 +175,5 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         with_params
     );
 
-    // Dev-only method for hot config reloading
-    #[cfg(feature = "tests")]
-    {
-        let _ =
-            module.register_async_method("updateConfig", |rpc_params, _rpc_context| async move {
-                use crate::{config::Config, rpc_server::method::update_config};
-                let config: Config = rpc_params.parse()?;
-                update_config::update_config(config).await.map_err(Into::into)
-            });
-        log::info!("✓ updateConfig method registered (dev mode)");
-    }
-
     Ok(module)
 }

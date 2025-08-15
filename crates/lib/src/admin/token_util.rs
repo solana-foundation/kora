@@ -14,6 +14,10 @@ use spl_associated_token_account::{
 };
 use std::{str::FromStr, sync::Arc};
 
+/*
+This funciton is tested via the makefile, as it's a CLI command and requires a validator running.
+*/
+
 /// Initialize ATAs for all allowed payment tokens for the paymaster
 /// This function does not use cache and directly checks on-chain
 pub async fn initialize_paymaster_atas(rpc_client: &Arc<RpcClient>) -> Result<(), KoraError> {

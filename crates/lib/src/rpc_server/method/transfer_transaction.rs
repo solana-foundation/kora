@@ -10,7 +10,6 @@ use utoipa::ToSchema;
 use crate::{
     constant::NATIVE_SOL,
     get_signer,
-    state::get_config,
     transaction::{TransactionUtil, VersionedMessageExt, VersionedTransactionUtilExt},
     validator::transaction_validator::TransactionValidator,
     KoraError, Signer as _,

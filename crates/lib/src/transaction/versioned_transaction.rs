@@ -53,7 +53,6 @@ pub trait VersionedTransactionExt: Sized {
             TransactionValidator::validate_token_payment(
                 self,
                 required_lamports,
-                &config.validation,
                 rpc_client,
                 &payment_destination,
             )

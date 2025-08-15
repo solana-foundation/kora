@@ -4,7 +4,6 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 
 use crate::{
-    config::ValidationConfig,
     transaction::{TransactionUtil, VersionedTransactionUtilExt},
     KoraError,
 };

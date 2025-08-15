@@ -1,7 +1,9 @@
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use std::sync::{atomic::AtomicPtr, Arc};
-use std::sync::atomic::Ordering;
+use std::sync::{
+    atomic::{AtomicPtr, Ordering},
+    Arc,
+};
 
 use crate::{config::Config, error::KoraError, signer::KoraSigner};
 
@@ -49,25 +51,25 @@ pub fn get_config() -> Result<&'static Config, KoraError> {
     if config_ptr.is_null() {
         return Err(KoraError::InternalServerError("Config not initialized".to_string()));
     }
-    
+
     // SAFETY: We ensure the pointer is valid and the config lives for the duration of the program
     Ok(unsafe { &*config_ptr })
 }
 
-/// Update the global config (dev/test only)
-#[cfg(feature = "tests")]
+/// Update the global config with a new full config (test only)
+#[cfg(test)]
 pub fn update_config(new_config: Config) -> Result<(), KoraError> {
     let old_ptr = GLOBAL_CONFIG.load(Ordering::Acquire);
     let new_ptr = Box::into_raw(Box::new(new_config));
-    
+
     GLOBAL_CONFIG.store(new_ptr, Ordering::Release);
-    
+
     // Clean up old config if it exists
     if !old_ptr.is_null() {
         unsafe {
             let _ = Box::from_raw(old_ptr);
         }
     }
-    
+
     Ok(())
 }
