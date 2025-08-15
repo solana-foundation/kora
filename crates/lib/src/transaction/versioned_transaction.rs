@@ -7,7 +7,7 @@ use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 use std::ops::Deref;
 
 use crate::{
-    config::ValidationConfig,
+    config::{KoraConfig, ValidationConfig},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
     get_signer,
@@ -26,6 +26,7 @@ pub trait VersionedTransactionExt: Sized {
         &self,
         rpc_client: &RpcClient,
         validation: &ValidationConfig,
+        kora_config: &KoraConfig,
     ) -> Result<(VersionedTransaction, String), KoraError> {
         let signer = get_signer()?;
         let fee_payer = signer.solana_pubkey();
@@ -45,13 +46,16 @@ pub trait VersionedTransactionExt: Sized {
 
         // Only validate payment if not free
         if required_lamports > 0 {
+            // Get the expected payment destination
+            let payment_destination = kora_config.get_payment_address()?;
+
             // Validate token payment
             TransactionValidator::validate_token_payment(
                 self,
                 required_lamports,
                 validation,
                 rpc_client,
-                signer.solana_pubkey(),
+                &payment_destination,
             )
             .await?;
         }

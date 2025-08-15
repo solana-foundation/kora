@@ -9,6 +9,12 @@ use std::any::Any;
 
 use crate::validator::transaction_validator::TransactionValidator;
 
+pub struct DecodedTransfer {
+    pub amount: u64,
+    pub mint_index: Option<usize>,
+    pub destination_index: usize,
+}
+
 pub trait TokenState: Any + Send + Sync {
     fn mint(&self) -> Pubkey;
     fn owner(&self) -> Pubkey;
@@ -86,7 +92,7 @@ pub trait TokenInterface: Send + Sync {
     fn decode_transfer_instruction(
         &self,
         data: &[u8],
-    ) -> Result<(u64, Option<usize>), Box<dyn std::error::Error + Send + Sync>>;
+    ) -> Result<DecodedTransfer, Box<dyn std::error::Error + Send + Sync>>;
 
     fn process_spl_instruction(
         &self,

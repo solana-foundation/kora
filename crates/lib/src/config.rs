@@ -1,14 +1,15 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use solana_sdk::pubkey::Pubkey;
+use std::{fs, path::Path, str::FromStr};
 use toml;
 use utoipa::ToSchema;
 
 use crate::{
-    constant::DEFAULT_MAX_TIMESTAMP_AGE, error::KoraError, fee::price::PriceConfig,
+    constant::DEFAULT_MAX_TIMESTAMP_AGE, error::KoraError, fee::price::PriceConfig, get_signer,
     oracle::PriceSource,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub validation: ValidationConfig,
     pub kora: KoraConfig,
@@ -147,6 +148,19 @@ pub struct KoraConfig {
     pub enabled_methods: EnabledMethods,
     #[serde(default)]
     pub auth: AuthConfig,
+    /// Optional payment address to receive payments (defaults to signer address)
+    pub payment_address: Option<String>,
+}
+
+impl Default for KoraConfig {
+    fn default() -> Self {
+        Self {
+            rate_limit: 100,
+            enabled_methods: EnabledMethods::default(),
+            auth: AuthConfig::default(),
+            payment_address: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -172,6 +186,23 @@ impl Config {
         toml::from_str(&contents).map_err(|e| {
             KoraError::InternalServerError(format!("Failed to parse config file: {e}"))
         })
+    }
+}
+
+impl KoraConfig {
+    /// Get the payment address from config or fallback to signer address
+    pub fn get_payment_address(&self) -> Result<Pubkey, KoraError> {
+        if let Some(payment_address_str) = &self.payment_address {
+            let payment_address = Pubkey::from_str(payment_address_str).map_err(|_| {
+                KoraError::InternalServerError(format!(
+                    "Invalid payment_address: {payment_address_str}"
+                ))
+            })?;
+            Ok(payment_address)
+        } else {
+            let signer = get_signer()?;
+            Ok(signer.solana_pubkey())
+        }
     }
 }
 

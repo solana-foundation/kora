@@ -1,4 +1,4 @@
-use crate::token::interface::TokenMint;
+use crate::token::interface::{DecodedTransfer, TokenMint};
 
 use super::interface::{
     ParsedSplInstruction, SplInstructionCommand, SplInstructionType, TokenInterface, TokenState,
@@ -211,12 +211,14 @@ impl TokenInterface for TokenProgram {
     fn decode_transfer_instruction(
         &self,
         data: &[u8],
-    ) -> Result<(u64, Option<usize>), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<DecodedTransfer, Box<dyn std::error::Error + Send + Sync>> {
         let instruction = spl_token::instruction::TokenInstruction::unpack(data)?;
         match instruction {
-            spl_token::instruction::TokenInstruction::Transfer { amount } => Ok((amount, None)),
+            spl_token::instruction::TokenInstruction::Transfer { amount } => {
+                Ok(DecodedTransfer { amount, mint_index: None, destination_index: 1 })
+            }
             spl_token::instruction::TokenInstruction::TransferChecked { amount, .. } => {
-                Ok((amount, Some(1)))
+                Ok(DecodedTransfer { amount, mint_index: Some(1), destination_index: 2 })
             }
             _ => Err("Not a transfer instruction".into()),
         }

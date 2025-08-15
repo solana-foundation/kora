@@ -26,6 +26,15 @@ impl ConfigValidator {
         }
 
         TokenUtil::check_valid_tokens(&config.validation.allowed_tokens)?;
+
+        if let Some(payment_address) = &config.kora.payment_address {
+            if let Err(e) = Pubkey::from_str(payment_address) {
+                return Err(KoraError::InternalServerError(format!(
+                    "Invalid payment address: {e}"
+                )));
+            }
+        }
+
         Ok(())
     }
 
@@ -40,6 +49,13 @@ impl ConfigValidator {
         // Validate rate limit (warn if 0)
         if config.kora.rate_limit == 0 {
             warnings.push("Rate limit is set to 0 - this will block all requests".to_string());
+        }
+
+        // Validate payment address
+        if let Some(payment_address) = &config.kora.payment_address {
+            if let Err(e) = Pubkey::from_str(payment_address) {
+                errors.push(format!("Invalid payment address: {e}"));
+            }
         }
 
         // Validate enabled methods (warn if all false)
@@ -309,11 +325,7 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
+            kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
         };
 
@@ -344,11 +356,7 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
+            kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
         };
 
@@ -387,6 +395,7 @@ mod tests {
                     sign_transaction_if_paid: false, // All false - should warn
                 },
                 auth: AuthConfig::default(),
+                payment_address: None,
             },
             metrics: MetricsConfig::default(),
         };
@@ -419,11 +428,7 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
+            kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
         };
 
@@ -452,12 +457,8 @@ mod tests {
                     model: PriceModel::Margin { margin: -0.1 }, // Error - negative margin
                 },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -492,12 +493,8 @@ mod tests {
                     },
                 },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -529,12 +526,8 @@ mod tests {
                     },
                 },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -574,12 +567,8 @@ mod tests {
                     },
                 },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -606,12 +595,8 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -644,12 +629,8 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
@@ -676,12 +657,8 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         }
     }
 
@@ -699,12 +676,8 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         }
     }
 
@@ -757,12 +730,8 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
         let mock_account = create_mock_non_executable_account(); // Non-executable
@@ -789,12 +758,8 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
         let rpc_client = create_mock_rpc_client_account_not_found();
@@ -820,12 +785,8 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
         // Use account not found RPC client - should not matter when skipping RPC validation

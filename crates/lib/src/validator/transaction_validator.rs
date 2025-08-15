@@ -357,7 +357,7 @@ impl TransactionValidator {
         required_lamports: u64,
         validation: &ValidationConfig,
         rpc_client: &RpcClient,
-        _signer_pubkey: Pubkey,
+        expected_payment_destination: &Pubkey,
     ) -> Result<(), KoraError> {
         let mut total_lamport_value = 0;
 
@@ -381,6 +381,7 @@ impl TransactionValidator {
                     validation,
                     &mut total_lamport_value,
                     required_lamports,
+                    expected_payment_destination,
                 )
                 .await?
                 {
