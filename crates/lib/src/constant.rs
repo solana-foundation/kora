@@ -13,3 +13,8 @@ pub const DEFAULT_MAX_TIMESTAMP_AGE: i64 = 300;
 // External Services
 pub const JUPITER_API_LITE_URL: &str = "https://lite-api.jup.ag";
 pub const JUPITER_API_PRO_URL: &str = "https://api.jup.ag";
+
+// Metrics
+pub const DEFAULT_METRICS_ENDPOINT: &str = "/metrics";
+pub const DEFAULT_METRICS_PORT: u16 = 8080;
+pub const DEFAULT_METRICS_SCRAPE_INTERVAL: u64 = 60;

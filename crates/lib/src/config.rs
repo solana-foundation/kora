@@ -4,7 +4,12 @@ use toml;
 use utoipa::ToSchema;
 
 use crate::{
-    constant::DEFAULT_MAX_TIMESTAMP_AGE, error::KoraError, fee::price::PriceConfig,
+    constant::{
+        DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
+        DEFAULT_METRICS_SCRAPE_INTERVAL,
+    },
+    error::KoraError,
+    fee::price::PriceConfig,
     oracle::PriceSource,
 };
 
@@ -26,7 +31,12 @@ pub struct MetricsConfig {
 
 impl Default for MetricsConfig {
     fn default() -> Self {
-        Self { enabled: false, endpoint: "/metrics".to_string(), port: 8080, scrape_interval: 60 }
+        Self {
+            enabled: false,
+            endpoint: DEFAULT_METRICS_ENDPOINT.to_string(),
+            port: DEFAULT_METRICS_PORT,
+            scrape_interval: DEFAULT_METRICS_SCRAPE_INTERVAL,
+        }
     }
 }
 

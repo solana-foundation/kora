@@ -24,6 +24,20 @@ kora_http_requests_total{method="signTransaction",status="400"} 3
 kora_http_request_duration_seconds{method="signTransaction"} 0.045
 ```
 
+If you haven't called the RPC server yet, you will not see any metrics. You can run a simple test by calling the `getConfig` method:
+
+```bash
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "method": "getConfig", "id": 1}'
+```
+
+and then check the metrics:
+
+```bash
+curl http://localhost:8080/metrics
+```
+
 ## Key Metrics Explained
 
 1. **`kora_http_requests_total`** - How many requests you've handled
@@ -50,8 +64,8 @@ curl http://localhost:8080/metrics | grep signTransaction
 For graphs and alerts, run the full monitoring stack:
 
 ```bash
-cd crates/metrics
-docker-compose -f docker-compose.metrics.yml up
+# from kora root directory
+make run-metrics
 ```
 
 Then visit:
