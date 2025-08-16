@@ -9,7 +9,9 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
 };
-use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account::{
+    get_associated_token_address, instruction::create_associated_token_account_idempotent,
+};
 use std::str::FromStr;
 
 #[tokio::test]
@@ -68,6 +70,7 @@ async fn test_sign_transaction_if_paid_with_payment_address() {
 async fn test_sign_transaction_if_paid_with_wrong_destination() {
     let client = ClientTestHelper::get_test_client().await;
     let rpc_client = RPCTestHelper::get_rpc_client().await;
+    let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let wrong_destination = Keypair::new(); // Random wrong destination
     let test_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
@@ -75,6 +78,14 @@ async fn test_sign_transaction_if_paid_with_wrong_destination() {
     // Create a transfer to the WRONG destination (not the payment address)
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &test_mint);
     let wrong_dest_ata = get_associated_token_address(&wrong_destination.pubkey(), &test_mint);
+
+    let create_wrong_ata_idempotent_ix = create_associated_token_account_idempotent(
+        &fee_payer.pubkey(),
+        &wrong_destination.pubkey(),
+        &test_mint,
+        &spl_token::id(),
+    );
+
     let fee_amount = 10000;
 
     let token_interface = TokenProgram::new();
@@ -90,7 +101,7 @@ async fn test_sign_transaction_if_paid_with_wrong_destination() {
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
     let message = VersionedMessage::Legacy(Message::new_with_blockhash(
-        &[fee_payer_instruction],
+        &[create_wrong_ata_idempotent_ix, fee_payer_instruction],
         Some(&fee_payer),
         &recent_blockhash,
     ));

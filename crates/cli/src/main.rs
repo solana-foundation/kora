@@ -51,14 +51,34 @@ enum ConfigCommands {
 #[derive(Subcommand)]
 enum RpcCommands {
     /// Start the RPC server
+    #[command(
+        about = "Start the RPC server",
+        long_about = "Start the Kora RPC server to handle gasless transactions.\n\nThe server will validate the configuration and initialize the specified signer before starting."
+    )]
     Start {
         #[command(flatten)]
         rpc_args: Box<RpcArgs>,
     },
     /// Initialize ATAs for all allowed payment tokens
+    #[command(
+        about = "Initialize ATAs for all allowed payment tokens",
+        long_about = "Initialize Associated Token Accounts (ATAs) for all payment tokens configured in the system.\n\nThis command creates ATAs for the configured payment address (or fee payer if no payment address is set) for all allowed payment tokens."
+    )]
     InitializeAtas {
         #[command(flatten)]
         rpc_args: Box<RpcArgs>,
+
+        /// Compute unit price for priority fees (in micro-lamports)
+        #[arg(long, help_heading = "Transaction Options")]
+        compute_unit_price: Option<u64>,
+
+        /// Compute unit limit for transactions
+        #[arg(long, help_heading = "Transaction Options")]
+        compute_unit_limit: Option<u32>,
+
+        /// Number of ATAs to create per transaction
+        #[arg(long, help_heading = "Transaction Options")]
+        chunk_size: Option<usize>,
     },
 }
 
@@ -135,7 +155,12 @@ async fn main() -> Result<(), KoraError> {
                         handle.stop().unwrap();
                     }
                 }
-                RpcCommands::InitializeAtas { rpc_args } => {
+                RpcCommands::InitializeAtas {
+                    rpc_args,
+                    compute_unit_price,
+                    compute_unit_limit,
+                    chunk_size,
+                } => {
                     if !rpc_args.skip_signer {
                         let signer = init_signer_type(&rpc_args).await.unwrap();
                         init_signer(signer).unwrap_or_else(|e| {
@@ -148,7 +173,14 @@ async fn main() -> Result<(), KoraError> {
                     }
 
                     // Initialize ATAs
-                    if let Err(e) = initialize_paymaster_atas(&rpc_client).await {
+                    if let Err(e) = initialize_paymaster_atas(
+                        rpc_client.as_ref(),
+                        compute_unit_price,
+                        compute_unit_limit,
+                        chunk_size,
+                    )
+                    .await
+                    {
                         print_error(&format!("Failed to initialize ATAs: {e}"));
                         std::process::exit(1);
                     }

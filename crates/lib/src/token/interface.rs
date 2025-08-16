@@ -9,10 +9,12 @@ use std::any::Any;
 
 use crate::validator::transaction_validator::TransactionValidator;
 
+// All options in case there's an issue with the provided accounts, caller should validate.
 pub struct DecodedTransfer {
     pub amount: u64,
-    pub mint_index: Option<usize>,
-    pub destination_index: usize,
+    pub mint_address: Option<Pubkey>,
+    pub source_address: Option<Pubkey>,
+    pub destination_address: Option<Pubkey>,
 }
 
 pub trait TokenState: Any + Send + Sync {
@@ -88,10 +90,11 @@ pub trait TokenInterface: Send + Sync {
         mint_data: &[u8],
     ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>>;
 
-    /// Returns the amount of the transfer as well as the mint index if available (transfer checked)
+    /// Returns the amount of the transfer as well as the addresses of mint and destination if available (transfer checked)
     fn decode_transfer_instruction(
         &self,
-        data: &[u8],
+        ix: &CompiledInstruction,
+        account_keys: &[Pubkey],
     ) -> Result<DecodedTransfer, Box<dyn std::error::Error + Send + Sync>>;
 
     fn process_spl_instruction(

@@ -138,34 +138,28 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         total_lamport_value: &mut u64,
         required_lamports: u64,
-        expected_destination: &Pubkey,
+        // Wallet address of the owner of the destination token account
+        expected_destination_owner: &Pubkey,
     ) -> Result<bool, KoraError> {
         let config = get_config()?;
 
-        if let Ok(DecodedTransfer { amount, destination_index, mint_index }) =
-            token_program.decode_transfer_instruction(&ix.data)
+        if ix.accounts.is_empty() {
+            return Ok(false);
+        }
+
+        if let Ok(DecodedTransfer { amount, destination_address, mint_address, source_address }) =
+            token_program.decode_transfer_instruction(ix, account_keys)
         {
-            if ix.accounts.is_empty() {
+            if source_address.is_none() || destination_address.is_none() {
                 return Ok(false);
             }
 
-            if destination_index >= ix.accounts.len() {
-                return Ok(false);
-            }
-
-            let source_idx = ix.accounts[0] as usize;
-            let dest_idx = ix.accounts[destination_index] as usize;
-
-            if source_idx >= account_keys.len() || dest_idx >= account_keys.len() {
-                return Ok(false);
-            }
-
-            let source_key = account_keys[source_idx];
-            let dest_key = account_keys[dest_idx];
+            let source_address = source_address.unwrap();
+            let destination_address = destination_address.unwrap();
 
             // Validate the destination account is that of the payment address (or signer if none provided)
             let destination_account = rpc_client
-                .get_account(&dest_key)
+                .get_account(&destination_address)
                 .await
                 .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
@@ -174,7 +168,7 @@ impl TokenUtil {
                     KoraError::InvalidTransaction(format!("Invalid token account: {e}"))
                 })?;
 
-            if token_state.owner() != *expected_destination {
+            if token_state.owner() != *expected_destination_owner {
                 return Ok(false);
             }
 
@@ -182,13 +176,9 @@ impl TokenUtil {
             // since we already know the instruction is with the system program,so if the source account is invalid, the instruction with the
             // token program will fail. Same with the balance of the source account, if too low the instruction will fail.
             // This might be useful if the token account is being created within the same transaction, since the source account is not yet created.
-            let (mint_address, actual_amount) = if let Some(mint_index) = mint_index {
-                if mint_index >= ix.accounts.len() {
-                    return Ok(false);
-                }
-                let mint_key = account_keys[ix.accounts[mint_index] as usize];
-                let mint_account = rpc_client.get_account(&mint_key).await?;
-                let mint_state = token_program.unpack_mint(&mint_key, &mint_account.data)?;
+            let (mint_address, actual_amount) = if let Some(mint_address) = mint_address {
+                let mint_account = rpc_client.get_account(&mint_address).await?;
+                let mint_state = token_program.unpack_mint(&mint_address, &mint_account.data)?;
 
                 let actual_amount = token_program
                     .get_and_validate_amount_for_payment(
@@ -204,10 +194,10 @@ impl TokenUtil {
                         ))
                     })?;
 
-                (mint_key, actual_amount)
+                (mint_address, actual_amount)
             } else {
                 let source_account = rpc_client
-                    .get_account(&source_key)
+                    .get_account(&source_address)
                     .await
                     .map_err(|e| KoraError::RpcError(e.to_string()))?;
 

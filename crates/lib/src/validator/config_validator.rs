@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use crate::{
+    admin::token_util::find_missing_atas,
     fee::price::PriceModel,
     oracle::PriceSource,
     state::get_config,
@@ -215,6 +216,19 @@ impl ConfigValidator {
                     {
                         errors.push(format!("SPL paid token {token_str} validation failed: {e}"));
                     }
+                }
+            }
+
+            // Validate missing ATAs for payment address
+            if let Some(payment_address) = &config.kora.payment_address {
+                let payment_address = Pubkey::from_str(payment_address).unwrap();
+
+                let atas_to_create = find_missing_atas(rpc_client, &payment_address).await;
+
+                if let Err(e) = atas_to_create {
+                    errors.push(format!("Failed to find missing ATAs: {e}"));
+                } else if !atas_to_create.unwrap().is_empty() {
+                    errors.push(format!("Missing ATAs for payment address: {payment_address}"));
                 }
             }
         }

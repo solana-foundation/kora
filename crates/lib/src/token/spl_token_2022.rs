@@ -1,4 +1,7 @@
-use crate::token::interface::{DecodedTransfer, TokenMint};
+use crate::{
+    token::interface::{DecodedTransfer, TokenMint},
+    transaction::IxUtils,
+};
 
 use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
@@ -533,17 +536,27 @@ impl TokenInterface for Token2022Program {
 
     fn decode_transfer_instruction(
         &self,
-        data: &[u8],
+        ix: &CompiledInstruction,
+        account_keys: &[Pubkey],
     ) -> Result<DecodedTransfer, Box<dyn std::error::Error + Send + Sync>> {
-        let instruction = instruction::TokenInstruction::unpack(data)?;
+        let instruction = instruction::TokenInstruction::unpack(&ix.data)?;
+
+        let source_address = IxUtils::get_account_key_if_present(ix, 0, account_keys);
+
         match instruction {
             #[allow(deprecated)]
-            instruction::TokenInstruction::Transfer { amount } => {
-                Ok(DecodedTransfer { amount, mint_index: None, destination_index: 1 })
-            }
-            instruction::TokenInstruction::TransferChecked { amount, .. } => {
-                Ok(DecodedTransfer { amount, mint_index: Some(1), destination_index: 2 })
-            }
+            instruction::TokenInstruction::Transfer { amount } => Ok(DecodedTransfer {
+                amount,
+                mint_address: None,
+                source_address,
+                destination_address: IxUtils::get_account_key_if_present(ix, 1, account_keys),
+            }),
+            instruction::TokenInstruction::TransferChecked { amount, .. } => Ok(DecodedTransfer {
+                amount,
+                mint_address: IxUtils::get_account_key_if_present(ix, 1, account_keys),
+                source_address,
+                destination_address: IxUtils::get_account_key_if_present(ix, 2, account_keys),
+            }),
             _ => Err("Not a transfer instruction".into()),
         }
     }
