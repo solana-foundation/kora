@@ -12,6 +12,7 @@ The `kora.toml` file controls all aspects of your Kora node's behavior including
 - Security policies
 - RPC method availability
 - Fee pricing models
+- Payment address configuration
 - Performance monitoring
 
 Your configuration file should be placed in your deployment directory or specified via the `--config` flag when starting the server.
@@ -63,12 +64,14 @@ The `[kora]` section configures core server behavior:
 ```toml
 [kora]
 rate_limit = 100
+payment_address = "YourPaymentAddressPubkey11111111111111111111"  # Optional
 ```
 
 
 | Option | Description | Required | Type |
 |--------|-------------|---------|---------|
 | `rate_limit` | Global rate limit (requests per second) across all clients | ✅ | number |
+| `payment_address` | Optional payment address to receive payment tokens (defaults to signer address) | ❌ | b58-encoded string |
 
 ## Kora Authentication
 
@@ -264,6 +267,9 @@ Here's a production-ready configuration with security best practices:
 [kora]
 # Rate limiting: 100 requests per second globally
 rate_limit = 100
+
+# Optional payment address (defaults to signer address if not specified)
+# payment_address = "YourPaymentAddressPubkey11111111111111111111"
 
 # Authentication (choose based on security needs)
 # api_key = "kora_live_sk_generate_secure_key_here"

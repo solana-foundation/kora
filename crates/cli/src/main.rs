@@ -3,12 +3,13 @@ mod args;
 use args::GlobalArgs;
 use clap::{Parser, Subcommand};
 use kora_lib::{
+    admin::token_util::initialize_paymaster_atas,
     error::KoraError,
     log::LoggingFormat,
     rpc::get_rpc_client,
     rpc_server::{run_rpc_server, server::ServerHandles, KoraRpc, RpcArgs},
     signer::init::init_signer_type,
-    state::init_signer,
+    state::{init_config, init_signer},
     validator::config_validator::ConfigValidator,
     Config,
 };
@@ -25,10 +26,10 @@ enum Commands {
         #[command(subcommand)]
         config_command: ConfigCommands,
     },
-    /// Start the RPC server
+    /// RPC server operations
     Rpc {
-        #[command(flatten)]
-        rpc_args: Box<RpcArgs>,
+        #[command(subcommand)]
+        rpc_command: RpcCommands,
     },
     /// Generate OpenAPI documentation
     #[cfg(feature = "docs")]
@@ -45,6 +46,40 @@ enum ConfigCommands {
     Validate,
     /// Validate configuration file with RPC validation (slower but more thorough)
     ValidateWithRpc,
+}
+
+#[derive(Subcommand)]
+enum RpcCommands {
+    /// Start the RPC server
+    #[command(
+        about = "Start the RPC server",
+        long_about = "Start the Kora RPC server to handle gasless transactions.\n\nThe server will validate the configuration and initialize the specified signer before starting."
+    )]
+    Start {
+        #[command(flatten)]
+        rpc_args: Box<RpcArgs>,
+    },
+    /// Initialize ATAs for all allowed payment tokens
+    #[command(
+        about = "Initialize ATAs for all allowed payment tokens",
+        long_about = "Initialize Associated Token Accounts (ATAs) for all payment tokens configured in the system.\n\nThis command creates ATAs for the configured payment address (or fee payer if no payment address is set) for all allowed payment tokens."
+    )]
+    InitializeAtas {
+        #[command(flatten)]
+        rpc_args: Box<RpcArgs>,
+
+        /// Compute unit price for priority fees (in micro-lamports)
+        #[arg(long, help_heading = "Transaction Options")]
+        compute_unit_price: Option<u64>,
+
+        /// Compute unit limit for transactions
+        #[arg(long, help_heading = "Transaction Options")]
+        compute_unit_limit: Option<u32>,
+
+        /// Number of ATAs to create per transaction
+        #[arg(long, help_heading = "Transaction Options")]
+        chunk_size: Option<usize>,
+    },
 }
 
 #[derive(Parser)]
@@ -67,60 +102,93 @@ async fn main() -> Result<(), KoraError> {
         std::process::exit(1);
     });
 
+    init_config(config).unwrap_or_else(|e| {
+        print_error(&format!("Failed to initialize config: {e}"));
+        std::process::exit(1);
+    });
+
     let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
 
     match cli.command {
         Some(Commands::Config { config_command }) => {
             match config_command {
                 ConfigCommands::Validate => {
-                    let _ =
-                        ConfigValidator::validate_with_result(&config, rpc_client.as_ref(), true)
-                            .await;
+                    let _ = ConfigValidator::validate_with_result(rpc_client.as_ref(), true).await;
                 }
                 ConfigCommands::ValidateWithRpc => {
-                    let _ =
-                        ConfigValidator::validate_with_result(&config, rpc_client.as_ref(), false)
-                            .await;
+                    let _ = ConfigValidator::validate_with_result(rpc_client.as_ref(), false).await;
                 }
             }
             std::process::exit(0);
         }
-        Some(Commands::Rpc { rpc_args }) => {
-            // Validate config before starting server
-            if let Err(e) = ConfigValidator::validate(&config, rpc_client.as_ref()).await {
-                print_error(&format!("Config validation failed: {e}"));
-                std::process::exit(1);
-            }
-
-            setup_logging(&rpc_args.logging_format);
-
-            // Initialize the signer
-            if !rpc_args.skip_signer {
-                let signer = init_signer_type(&rpc_args).await.unwrap();
-                init_signer(signer).unwrap_or_else(|e| {
-                    print_error(&format!("Failed to initialize signer: {e}"));
-                    std::process::exit(1);
-                });
-            }
-
-            let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
-
-            let rpc_server =
-                KoraRpc::new(rpc_client, config.validation.clone(), config.kora.clone());
-            let ServerHandles { rpc_handle, metrics_handle } =
-                run_rpc_server(rpc_server, rpc_args.port, &config.metrics).await.unwrap_or_else(
-                    |e| {
-                        log::error!("Server start failed: {e}");
+        Some(Commands::Rpc { rpc_command }) => {
+            match rpc_command {
+                RpcCommands::Start { rpc_args } => {
+                    // Validate config before starting server
+                    if let Err(e) = ConfigValidator::validate(rpc_client.as_ref()).await {
+                        print_error(&format!("Config validation failed: {e}"));
                         std::process::exit(1);
-                    },
-                );
+                    }
 
-            tokio::signal::ctrl_c().await.unwrap();
-            rpc_handle.stop().unwrap();
-            if let Some(handle) = metrics_handle {
-                handle.stop().unwrap();
+                    setup_logging(&rpc_args.logging_format);
+
+                    // Initialize the signer
+                    if !rpc_args.skip_signer {
+                        let signer = init_signer_type(&rpc_args).await.unwrap();
+                        init_signer(signer).unwrap_or_else(|e| {
+                            print_error(&format!("Failed to initialize signer: {e}"));
+                            std::process::exit(1);
+                        });
+                    }
+
+                    let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
+
+                    let kora_rpc = KoraRpc::new(rpc_client);
+
+                    let ServerHandles { rpc_handle, metrics_handle } =
+                        run_rpc_server(kora_rpc, rpc_args.port).await?;
+
+                    tokio::signal::ctrl_c().await.unwrap();
+                    println!("Shutting down server...");
+                    rpc_handle.stop().unwrap();
+                    if let Some(handle) = metrics_handle {
+                        handle.stop().unwrap();
+                    }
+                }
+                RpcCommands::InitializeAtas {
+                    rpc_args,
+                    compute_unit_price,
+                    compute_unit_limit,
+                    chunk_size,
+                } => {
+                    if !rpc_args.skip_signer {
+                        let signer = init_signer_type(&rpc_args).await.unwrap();
+                        init_signer(signer).unwrap_or_else(|e| {
+                            print_error(&format!("Failed to initialize signer: {e}"));
+                            std::process::exit(1);
+                        });
+                    } else {
+                        print_error("Cannot initialize ATAs without a signer.");
+                        std::process::exit(1);
+                    }
+
+                    // Initialize ATAs
+                    if let Err(e) = initialize_paymaster_atas(
+                        rpc_client.as_ref(),
+                        compute_unit_price,
+                        compute_unit_limit,
+                        chunk_size,
+                    )
+                    .await
+                    {
+                        print_error(&format!("Failed to initialize ATAs: {e}"));
+                        std::process::exit(1);
+                    }
+                    println!("Successfully initialized all payment ATAs");
+                }
             }
         }
+
         #[cfg(feature = "docs")]
         Some(Commands::Openapi { output }) => {
             docs::update_docs();
@@ -141,11 +209,12 @@ async fn main() -> Result<(), KoraError> {
         None => {
             println!("No command specified. Use --help for usage information.");
             println!("Available commands:");
-            println!("  config validate         - Validate configuration");
+            println!("  config validate          - Validate configuration");
             println!("  config validate-with-rpc - Validate configuration with RPC calls");
-            println!("  rpc                     - Start RPC server");
+            println!("  rpc start                - Start RPC server");
+            println!("  rpc initialize-atas      - Initialize ATAs for payment tokens");
             #[cfg(feature = "docs")]
-            println!("  openapi                 - Generate OpenAPI documentation");
+            println!("  openapi                  - Generate OpenAPI documentation");
         }
     }
 

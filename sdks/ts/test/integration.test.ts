@@ -166,11 +166,13 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
 
         it('should sign transaction if paid', async () => {
+            const config = await client.getConfig();
+            const paymentAddress = config.fee_payer;
             const transferRequest = {
                 amount: 1000000,
                 token: usdcMint,
                 source: testWalletAddress,
-                destination: destinationAddress,
+                destination: paymentAddress,
             };
 
             const { transaction } = await client.transferTransaction(transferRequest);

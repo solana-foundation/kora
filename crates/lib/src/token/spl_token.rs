@@ -1,4 +1,7 @@
-use crate::token::interface::TokenMint;
+use crate::{
+    token::interface::{DecodedTransfer, TokenMint},
+    transaction::IxUtils,
+};
 
 use super::interface::{
     ParsedSplInstruction, SplInstructionCommand, SplInstructionType, TokenInterface, TokenState,
@@ -210,13 +213,27 @@ impl TokenInterface for TokenProgram {
 
     fn decode_transfer_instruction(
         &self,
-        data: &[u8],
-    ) -> Result<(u64, Option<usize>), Box<dyn std::error::Error + Send + Sync>> {
-        let instruction = spl_token::instruction::TokenInstruction::unpack(data)?;
+        ix: &CompiledInstruction,
+        account_keys: &[Pubkey],
+    ) -> Result<DecodedTransfer, Box<dyn std::error::Error + Send + Sync>> {
+        let instruction = spl_token::instruction::TokenInstruction::unpack(&ix.data)?;
+
+        let source_address = IxUtils::get_account_key_if_present(ix, 0, account_keys);
+
         match instruction {
-            spl_token::instruction::TokenInstruction::Transfer { amount } => Ok((amount, None)),
+            spl_token::instruction::TokenInstruction::Transfer { amount } => Ok(DecodedTransfer {
+                amount,
+                mint_address: None,
+                source_address,
+                destination_address: IxUtils::get_account_key_if_present(ix, 1, account_keys),
+            }),
             spl_token::instruction::TokenInstruction::TransferChecked { amount, .. } => {
-                Ok((amount, Some(1)))
+                Ok(DecodedTransfer {
+                    amount,
+                    mint_address: IxUtils::get_account_key_if_present(ix, 1, account_keys),
+                    source_address,
+                    destination_address: IxUtils::get_account_key_if_present(ix, 2, account_keys),
+                })
             }
             _ => Err("Not a transfer instruction".into()),
         }

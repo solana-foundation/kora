@@ -5,11 +5,11 @@ inputs:
   private-key:
     description: "Kora private key"
     required: false
-    default: "./tests/testing-utils/local-keys/fee-payer-local.json"
+    default: "./tests/src/common/local-keys/fee-payer-local.json"
   config-file:
     description: "Kora config file path"
     required: false
-    default: "tests/testing-utils/fixtures/kora-test.toml"
+    default: "tests/src/common/fixtures/kora-test.toml"
   rpc-url:
     description: "Solana RPC URL"
     required: false
@@ -47,7 +47,7 @@ runs:
         cargo run -p kora-cli --bin kora -- \
           --config ${{ inputs.config-file }} \
           --rpc-url ${{ inputs.rpc-url }} \
-          rpc \
+          rpc start \
           --private-key ${{ inputs.private-key }} \
           --port ${{ inputs.port }} \
           &

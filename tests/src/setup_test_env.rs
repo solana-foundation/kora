@@ -1,4 +1,19 @@
-use crate::helpers::{check_test_validator, setup_test_accounts};
+use solana_client::nonblocking::rpc_client::RpcClient;
+
+use crate::common::{
+    helpers::{TestAccountInfo, DEFAULT_RPC_URL},
+    setup::TestAccountSetup,
+};
+
+pub async fn check_test_validator() -> bool {
+    let client = RpcClient::new(DEFAULT_RPC_URL.to_string());
+    client.get_health().await.is_ok()
+}
+
+pub async fn setup_test_accounts() -> Result<TestAccountInfo, anyhow::Error> {
+    let mut setup = TestAccountSetup::new().await;
+    setup.setup_all_accounts().await
+}
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔧 Setting up test environment...");

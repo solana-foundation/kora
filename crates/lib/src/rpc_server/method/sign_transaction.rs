@@ -1,5 +1,4 @@
 use crate::{
-    config::ValidationConfig,
     transaction::{TransactionUtil, VersionedTransactionUtilExt},
     KoraError,
 };
@@ -21,11 +20,10 @@ pub struct SignTransactionResponse {
 
 pub async fn sign_transaction(
     rpc_client: &Arc<RpcClient>,
-    validation: &ValidationConfig,
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
-    let _signed_transaction = transaction.sign_transaction(rpc_client, validation).await?;
+    let _signed_transaction = transaction.sign_transaction(rpc_client).await?;
 
     let encoded = transaction.encode_b64_transaction()?;
 

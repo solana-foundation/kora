@@ -1,3 +1,4 @@
+use crate::common::*;
 use kora_lib::{
     token::{Token2022Account, Token2022Program, TokenInterface},
     transaction::TransactionUtil,
@@ -10,12 +11,10 @@ use solana_sdk::{
 };
 use std::str::FromStr;
 
-use testing_utils::{helpers::get_rpc_client, PYUSD_MINT};
-
 #[tokio::test]
 async fn test_pyusd_token_e2e_with_kora() {
     // Get RPC client
-    let rpc_client = get_rpc_client().await;
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
 
     // Create a token program interface for Token2022
     let token_program = Token2022Program::new();
@@ -25,12 +24,10 @@ async fn test_pyusd_token_e2e_with_kora() {
 
     // Create a test wallet
     let wallet = Keypair::new();
-    println!("Test wallet address: {}", wallet.pubkey());
 
     // Get associated token address for this wallet and PYUSD using the TokenInterface
     let token_account_address =
         token_program.get_associated_token_address(&wallet.pubkey(), &pyusd_mint);
-    println!("Token account address: {token_account_address}");
 
     // Create a simulated transfer instruction
     let transfer_amount = 1_000_000; // 1 PYUSD with 6 decimals
@@ -70,37 +67,6 @@ async fn test_pyusd_token_e2e_with_kora() {
         Some(&wallet.pubkey()),
         &recent_blockhash,
     ));
-    let transfer_tx = VersionedTransaction::try_new(message, &[&wallet]).unwrap();
-
-    // Validate the transaction using Kora's validator
-    let validation_config = kora_lib::config::ValidationConfig {
-        max_allowed_lamports: 1000000000,
-        max_signatures: 10,
-        allowed_programs: vec![
-            spl_token_2022::id().to_string(),
-            spl_associated_token_account::id().to_string(),
-        ],
-        allowed_tokens: vec![pyusd_mint.to_string()],
-        allowed_spl_paid_tokens: vec![],
-        disallowed_accounts: vec![],
-        price_source: kora_lib::oracle::PriceSource::Jupiter,
-        fee_payer_policy: kora_lib::config::FeePayerPolicy::default(),
-        price: kora_lib::fee::price::PriceConfig::default(),
-    };
-
-    let validation_result = kora_lib::validator::transaction_validator::TransactionValidator::new(
-        wallet.pubkey(),
-        &validation_config,
-    )
-    .unwrap()
-    .validate_transaction(&rpc_client, &transfer_tx)
-    .await;
-
-    // Assert the transaction is valid according to Kora rules
-    assert!(
-        validation_result.is_ok(),
-        "Expected transfer transaction to be valid: {validation_result:?}"
-    );
 
     // For a real token account, we'd need to query the account data
     if let Ok(account) = rpc_client.get_account(&token_account_address).await {
@@ -128,8 +94,6 @@ async fn test_pyusd_token_e2e_with_kora() {
             }
         }
     }
-
-    println!("PYUSD token e2e test transaction validation successful!");
 }
 
 // The basic test for token operations

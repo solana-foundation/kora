@@ -3,13 +3,22 @@ name = "tests"
 version = { workspace = true }
 edition = { workspace = true }
 
-[[test]]
-name = "integration"
-path = "integration_tests.rs"
-
 [[bin]]
 name = "setup_test_env"
-path = "testing-utils/src/bin/setup_test_env.rs"
+path = "src/bin/setup_test_env.rs"
+
+
+[[test]]
+name = "integration"
+path = "integration/main.rs"
+
+[[test]]
+name = "auth"
+path = "auth/main.rs"
+
+[[test]]
+name = "payment-address"
+path = "payment-address/main.rs"
 
 [dependencies]
 kora-lib = { path = "../crates/lib" }
@@ -29,10 +38,14 @@ jsonrpsee = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 hex = { workspace = true }
-testing-utils = { path = "testing-utils" }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 reqwest = { workspace = true }
 futures = { workspace = true }
 anyhow = { workspace = true }
 once_cell = "1.21.3"
+clap = { workspace = true }
+toml = { workspace = true }
+solana-address-lookup-table-interface = { workspace = true }
+colored = "3.0"
+serde = { workspace = true }

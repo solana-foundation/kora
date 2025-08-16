@@ -1,3 +1,4 @@
+use crate::common::*;
 use jsonrpsee::{core::client::ClientT, rpc_params};
 use kora_lib::{
     token::{TokenInterface, TokenProgram},
@@ -10,14 +11,13 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
 };
-use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
+use solana_system_interface::{instruction::transfer, program::ID as SYSTEM_PROGRAM_ID};
 use spl_associated_token_account::get_associated_token_address;
 use std::str::FromStr;
-use testing_utils::*;
 
 #[tokio::test]
 async fn test_get_supported_tokens() {
-    let client = get_test_client().await;
+    let client = ClientTestHelper::get_test_client().await;
 
     let response: serde_json::Value = client
         .request("getSupportedTokens", rpc_params![])
@@ -28,7 +28,7 @@ async fn test_get_supported_tokens() {
     assert!(!tokens.is_empty(), "Tokens list should not be empty");
 
     // Check for specific known tokens
-    let expected_tokens = [&get_test_usdc_mint_pubkey().to_string()];
+    let expected_tokens = [&USDCMintTestHelper::get_test_usdc_mint_pubkey().to_string()];
 
     for token in expected_tokens.iter() {
         assert!(tokens.contains(&json!(token)), "Expected token {token} not found");
@@ -37,13 +37,15 @@ async fn test_get_supported_tokens() {
 
 #[tokio::test]
 async fn test_estimate_transaction_fee() {
-    let client = get_test_client().await;
-    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
+    let client = ClientTestHelper::get_test_client().await;
+    let test_tx = TransactionTestHelper::create_test_transaction()
+        .await
+        .expect("Failed to create test transaction");
 
     let response: serde_json::Value = client
         .request(
             "estimateTransactionFee",
-            rpc_params![test_tx, get_test_usdc_mint_pubkey().to_string()],
+            rpc_params![test_tx, USDCMintTestHelper::get_test_usdc_mint_pubkey().to_string()],
         )
         .await
         .expect("Failed to estimate transaction fee");
@@ -53,9 +55,11 @@ async fn test_estimate_transaction_fee() {
 
 #[tokio::test]
 async fn test_sign_transaction() {
-    let client = get_test_client().await;
-    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
-    let rpc_client = get_rpc_client().await;
+    let client = ClientTestHelper::get_test_client().await;
+    let test_tx = TransactionTestHelper::create_test_transaction()
+        .await
+        .expect("Failed to create test transaction");
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
 
     let response: serde_json::Value = client
         .request("signTransaction", rpc_params![test_tx])
@@ -82,11 +86,12 @@ async fn test_sign_transaction() {
 
 #[tokio::test]
 async fn test_sign_spl_transaction() {
-    let client = get_test_client().await;
-    let test_tx =
-        create_test_spl_transaction().await.expect("Failed to create test SPL transaction");
-    let rpc_client = get_rpc_client().await;
-    let sender = get_test_sender_keypair();
+    let client = ClientTestHelper::get_test_client().await;
+    let test_tx = TransactionTestHelper::create_test_spl_transaction()
+        .await
+        .expect("Failed to create test SPL transaction");
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
+    let sender = SenderTestHelper::get_test_sender_keypair();
 
     let response: serde_json::Value = client
         .request("signTransaction", rpc_params![test_tx])
@@ -122,33 +127,55 @@ async fn test_sign_spl_transaction() {
 
 #[tokio::test]
 async fn test_sign_and_send_transaction() {
-    let client = get_test_client().await;
-    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
+    let client = ClientTestHelper::get_test_client().await;
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let amount = 10;
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
+
+    let instruction = transfer(&sender.pubkey(), &recipient, amount);
+
+    let blockhash = rpc_client
+        .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        .await
+        .unwrap();
+
+    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[instruction],
+        Some(&fee_payer),
+        &blockhash.0,
+    ));
+
+    // Create transaction and partially sign it with sender
+    let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+
+    let sender_position = transaction
+        .find_signer_position(&sender.pubkey())
+        .expect("Sender not found in account keys");
+
+    let signature = sender.sign_message(&transaction.message.serialize());
+    transaction.signatures[sender_position] = signature;
+
+    // Encode transaction as base64 to send to backend
+    let test_tx = transaction.encode_b64_transaction().unwrap();
 
     let result = client
         .request::<serde_json::Value, _>("signAndSendTransaction", rpc_params![test_tx])
         .await;
 
-    // This might fail if we're not on devnet/testnet with funded accounts
-    match result {
-        Ok(response) => {
-            assert!(response["signature"].as_str().is_some(), "Expected signature in response");
-            assert!(
-                response["signed_transaction"].as_str().is_some(),
-                "Expected signed_transaction in response"
-            );
-        }
-        Err(e) => {
-            println!(
-                "Note: signAndSendTransaction failed as expected without funded accounts: {e}"
-            );
-        }
-    }
+    assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
+    let response = result.unwrap();
+    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+    assert!(
+        response["signed_transaction"].as_str().is_some(),
+        "Expected signed_transaction in response"
+    );
 }
 
 #[tokio::test]
 async fn test_invalid_transaction() {
-    let client = get_test_client().await;
+    let client = ClientTestHelper::get_test_client().await;
     let invalid_tx = "invalid_base64_transaction";
 
     let result =
@@ -159,11 +186,11 @@ async fn test_invalid_transaction() {
 
 #[tokio::test]
 async fn test_transfer_transaction() {
-    let client = get_test_client().await;
-    let rpc_client = get_rpc_client().await;
+    let client = ClientTestHelper::get_test_client().await;
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
 
-    let sender = get_test_sender_keypair();
-    let recipient = get_recipient_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
 
     let response: serde_json::Value = client
         .request(
@@ -196,18 +223,18 @@ async fn test_transfer_transaction() {
 
 #[tokio::test]
 async fn test_transfer_transaction_with_ata() {
-    let client = get_test_client().await;
-    let rpc_client = get_rpc_client().await;
+    let client = ClientTestHelper::get_test_client().await;
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
     let random_keypair = Keypair::new();
     let random_pubkey = random_keypair.pubkey();
 
-    let sender = get_test_sender_keypair();
+    let sender = SenderTestHelper::get_test_sender_keypair();
     let response: serde_json::Value = client
         .request(
             "transferTransaction",
             rpc_params![
                 10,
-                &get_test_usdc_mint_pubkey().to_string(),
+                &USDCMintTestHelper::get_test_usdc_mint_pubkey().to_string(),
                 sender.pubkey().to_string(),
                 random_pubkey.to_string()
             ],
@@ -233,7 +260,7 @@ async fn test_transfer_transaction_with_ata() {
 
 #[tokio::test]
 async fn test_liveness_is_disabled() {
-    let client = get_test_client().await;
+    let client = ClientTestHelper::get_test_client().await;
 
     let response = client.request::<serde_json::Value, _>("liveness", rpc_params![]).await;
     assert!(response.is_err());
@@ -242,7 +269,7 @@ async fn test_liveness_is_disabled() {
 
 #[tokio::test]
 async fn test_get_blockhash() {
-    let client = get_test_client().await;
+    let client = ClientTestHelper::get_test_client().await;
 
     let response: serde_json::Value =
         client.request("getBlockhash", rpc_params![]).await.expect("Failed to get blockhash");
@@ -251,7 +278,7 @@ async fn test_get_blockhash() {
 
 #[tokio::test]
 async fn test_get_config() {
-    let client = get_test_client().await;
+    let client = ClientTestHelper::get_test_client().await;
 
     let response: serde_json::Value =
         client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
@@ -264,19 +291,19 @@ async fn test_get_config() {
 
 #[tokio::test]
 async fn test_sign_transaction_if_paid() {
-    let client = get_test_client().await;
-    let rpc_client = get_rpc_client().await;
+    let client = ClientTestHelper::get_test_client().await;
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
 
     // get fee payer from config
     let response: serde_json::Value =
         client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
     let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap()).unwrap();
 
-    let sender = get_test_sender_keypair();
-    let recipient = get_recipient_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
 
     // Setup token accounts using deterministic test USDC mint
-    let token_mint = get_test_usdc_mint_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &token_mint);
     let recipient_token_account = get_associated_token_address(&recipient, &token_mint);
     let fee_payer_token_account = get_associated_token_address(&fee_payer, &token_mint);
@@ -356,7 +383,7 @@ async fn test_sign_transaction_if_paid() {
 
 #[tokio::test]
 async fn test_fee_payer_policy_is_present() {
-    let client = get_test_client().await;
+    let client = ClientTestHelper::get_test_client().await;
 
     let config_response: serde_json::Value =
         client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
@@ -378,22 +405,23 @@ async fn test_fee_payer_policy_is_present() {
     assert_eq!(fee_payer_policy["allow_spl_transfers"], true);
     assert_eq!(fee_payer_policy["allow_token2022_transfers"], true);
     assert_eq!(fee_payer_policy["allow_assign"], true);
-
-    println!("Fee payer policy API integration tests passed!");
 }
 
 #[tokio::test]
 async fn test_sign_v0_transaction_with_valid_lookup_table() {
-    let client = get_test_client().await;
-    let rpc_client = get_rpc_client().await;
+    let client = ClientTestHelper::get_test_client().await;
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
 
-    let allowed_lookup_table_address = get_allowed_lookup_table_address().await.unwrap();
+    let allowed_lookup_table_address =
+        LookupTableTestHelper::get_allowed_lookup_table_address().await.unwrap();
 
     // Create a V0 transaction using the allowed lookup table (index 0)
-    let v0_transaction =
-        create_v0_transaction_with_lookup(&allowed_lookup_table_address, &get_recipient_pubkey())
-            .await
-            .expect("Failed to create V0 transaction with allowed lookup table");
+    let v0_transaction = TransactionTestHelper::create_v0_transaction_with_lookup(
+        &allowed_lookup_table_address,
+        &RecipientTestHelper::get_recipient_pubkey(),
+    )
+    .await
+    .expect("Failed to create V0 transaction with allowed lookup table");
 
     // Test signing the V0 transaction through Kora RPC - this should succeed
     let response: serde_json::Value = client
@@ -422,13 +450,14 @@ async fn test_sign_v0_transaction_with_valid_lookup_table() {
 
 #[tokio::test]
 async fn test_sign_v0_transaction_with_invalid_lookup_table() {
-    let client = get_test_client().await;
+    let client = ClientTestHelper::get_test_client().await;
 
     // Create a V0 transaction using the disallowed lookup table (index 1)
-    let disallowed_lookup_table_address = get_disallowed_lookup_table_address().await.unwrap();
-    let v0_transaction = create_v0_transaction_with_lookup(
+    let disallowed_lookup_table_address =
+        LookupTableTestHelper::get_disallowed_lookup_table_address().await.unwrap();
+    let v0_transaction = TransactionTestHelper::create_v0_transaction_with_lookup(
         &disallowed_lookup_table_address,
-        &get_test_disallowed_address(),
+        &LookupTableTestHelper::get_test_disallowed_address(),
     )
     .await
     .expect("Failed to create V0 transaction with disallowed lookup table");
@@ -444,8 +473,10 @@ async fn test_sign_v0_transaction_with_invalid_lookup_table() {
 #[tokio::test]
 
 async fn test_estimate_transaction_fee_without_fee_token() {
-    let client = get_test_client().await;
-    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
+    let client = ClientTestHelper::get_test_client().await;
+    let test_tx = TransactionTestHelper::create_test_transaction()
+        .await
+        .expect("Failed to create test transaction");
 
     let response: serde_json::Value = client
         .request("estimateTransactionFee", rpc_params![test_tx])
@@ -461,18 +492,18 @@ async fn test_estimate_transaction_fee_without_fee_token() {
 
 #[tokio::test]
 async fn test_estimate_fee_with_all_outflow_costs() {
-    let client = get_test_client().await;
-    let rpc_client = get_rpc_client().await;
+    let client = ClientTestHelper::get_test_client().await;
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
 
     let response: serde_json::Value =
         client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
     let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap()).unwrap();
 
-    let sender = get_test_sender_keypair();
-    let recipient = get_recipient_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
     let new_account = Keypair::new();
     let nonce_account = Keypair::new();
-    let authority = get_test_sender_keypair(); // Use sender as authority for simplicity
+    let authority = SenderTestHelper::get_test_sender_keypair(); // Use sender as authority for simplicity
 
     // Create instructions that exercise all outflow calculation paths:
 
@@ -527,7 +558,10 @@ async fn test_estimate_fee_with_all_outflow_costs() {
     let response: serde_json::Value = client
         .request(
             "estimateTransactionFee",
-            rpc_params![encoded_transaction, &get_test_usdc_mint_pubkey().to_string()],
+            rpc_params![
+                encoded_transaction,
+                &USDCMintTestHelper::get_test_usdc_mint_pubkey().to_string()
+            ],
         )
         .await
         .expect("Failed to estimate transaction fee");
@@ -585,10 +619,12 @@ async fn test_estimate_fee_with_all_outflow_costs() {
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_fee_token() {
-    let client = get_test_client().await;
-    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
+    let client = ClientTestHelper::get_test_client().await;
+    let test_tx = TransactionTestHelper::create_test_transaction()
+        .await
+        .expect("Failed to create test transaction");
 
-    let usdc_mint = get_test_usdc_mint_pubkey().to_string();
+    let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey().to_string();
 
     let response: serde_json::Value = client
         .request("estimateTransactionFee", rpc_params![test_tx, usdc_mint])
@@ -615,8 +651,10 @@ async fn test_estimate_transaction_fee_with_fee_token() {
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_invalid_mint() {
-    let client = get_test_client().await;
-    let test_tx = create_test_transaction().await.expect("Failed to create test transaction");
+    let client = ClientTestHelper::get_test_client().await;
+    let test_tx = TransactionTestHelper::create_test_transaction()
+        .await
+        .expect("Failed to create test transaction");
 
     let result = client
         .request::<serde_json::Value, _>(

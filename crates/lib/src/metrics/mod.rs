@@ -5,7 +5,7 @@ pub use handler::{MetricsHandlerLayer, MetricsHandlerService};
 pub use middleware::{HttpMetricsLayer, HttpMetricsService};
 pub use prometheus;
 
-use crate::config::MetricsConfig;
+use crate::{config::MetricsConfig, state::get_config};
 use jsonrpsee::{
     server::{ServerBuilder, ServerHandle},
     RpcModule,
@@ -30,9 +30,10 @@ fn get_metrics_layers(metrics_config: &MetricsConfig) -> Option<MetricsLayers> {
 }
 
 pub async fn run_metrics_server_if_required(
-    metrics_config: &MetricsConfig,
     rpc_port: u16,
 ) -> Result<(Option<ServerHandle>, Option<MetricsLayers>), anyhow::Error> {
+    let metrics_config = get_config()?.metrics.clone();
+
     if !metrics_config.enabled {
         return Ok((None, None));
     }
@@ -40,7 +41,7 @@ pub async fn run_metrics_server_if_required(
     // If running on the same port as the RPC server, we don't need to run a separate metrics server
     if metrics_config.port == rpc_port {
         log::info!("Metrics endpoint enabled at {} on RPC server", metrics_config.endpoint);
-        return Ok((None, get_metrics_layers(metrics_config)));
+        return Ok((None, get_metrics_layers(&metrics_config)));
     }
 
     let addr = SocketAddr::from(([0, 0, 0, 0], metrics_config.port));

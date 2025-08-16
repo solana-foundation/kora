@@ -8,7 +8,6 @@ use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;
 
 use crate::{
-    config::ValidationConfig,
     constant::NATIVE_SOL,
     get_signer,
     transaction::{TransactionUtil, VersionedMessageExt, VersionedTransactionUtilExt},
@@ -33,13 +32,12 @@ pub struct TransferTransactionResponse {
 
 pub async fn transfer_transaction(
     rpc_client: &Arc<RpcClient>,
-    validation: &ValidationConfig,
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
     let signer = get_signer()?;
     let fee_payer = signer.solana_pubkey();
 
-    let validator = TransactionValidator::new(fee_payer, validation)?;
+    let validator = TransactionValidator::new(fee_payer)?;
 
     let source = Pubkey::from_str(&request.source)
         .map_err(|e| KoraError::ValidationError(format!("Invalid source address: {e}")))?;
