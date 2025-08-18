@@ -37,6 +37,7 @@ allowed_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
 ]
 allowed_spl_paid_tokens = []
+allow_any_spl_paid_token = false  # Allow any token to be used for payment, takes precedence over `allowed_spl_paid_tokens`
 disallowed_accounts = []
 
 # Fee payer policy controls what actions the fee payer can perform

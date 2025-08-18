@@ -31,6 +31,7 @@ allowed_tokens = [
 allowed_spl_paid_tokens = [
     "usdCAEFbouFGxdkbHCRtMTcN7DJHd3aCmP9vqjLgmAp", # Update this based on the USDC_LOCAL_KEY public key comment in your .env
 ]
+allow_any_spl_paid_token = false  # Allow any token to be used for payment, takes precedence over `allowed_spl_paid_tokens`
 
 disallowed_accounts = [
     "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek", # Test disallowed account for lookup table
