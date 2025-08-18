@@ -7,8 +7,8 @@ AUTH_CONFIG := tests/src/common/fixtures/auth-test.toml
 PAYMENT_ADDRESS_CONFIG := tests/src/common/fixtures/paymaster-address-test.toml
 
 # Output control patterns
+QUIET_OUTPUT := >/dev/null 2>&1
 TEST_OUTPUT_FILTER := 2>&1 | grep -E "(test |running |ok$$|FAILED|failed|error:|Error:|ERROR)" || true
-SETUP_OUTPUT := >/dev/null 2>&1
 
 
 # Solana validator lifecycle management functions
@@ -45,7 +45,7 @@ define start_kora_server
 		cargo run -p tests --bin setup_test_env;)
 	@echo "🚀 Starting Kora $(1)..."
 	@$(if $(2),\
-		$(2) -p kora-cli --bin kora $(3) -- --config $(4) --rpc-url $(TEST_RPC_URL) rpc start --private-key $(TEST_PRIVATE_KEY) --port $(TEST_PORT) &,\
+		$(2) -p kora-cli --bin kora $(3) -- --config $(4) --rpc-url $(TEST_RPC_URL) rpc start --private-key $(TEST_PRIVATE_KEY) --port $(TEST_PORT) $(QUIET_OUTPUT) &,\
 		make run &)
 	@echo $$! > .kora.pid
 	@echo "⏳ Waiting for server to start..."
