@@ -65,6 +65,7 @@ pub struct ValidationConfig {
     pub allowed_programs: Vec<String>,
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: Vec<String>,
+    pub allow_any_spl_paid_token: bool,
     pub disallowed_accounts: Vec<String>,
     pub price_source: PriceSource,
     #[serde(default)] // Default for backward compatibility
@@ -380,6 +381,7 @@ mod tests {
             allowed_programs = ["program1", "program2"]
             allowed_tokens = ["token1", "token2"]
             allowed_spl_paid_tokens = ["token3"]
+            allow_any_spl_paid_token = false
             disallowed_accounts = ["account1"]
             price_source = "Jupiter"
             [kora]
@@ -396,6 +398,7 @@ mod tests {
         assert_eq!(config.validation.allowed_programs, vec!["program1", "program2"]);
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
         assert_eq!(config.validation.allowed_spl_paid_tokens, vec!["token3"]);
+        assert_eq!(config.validation.allow_any_spl_paid_token, false);
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
         assert_eq!(config.validation.price_source, PriceSource::Jupiter);
         assert_eq!(config.kora.rate_limit, 100);
@@ -413,6 +416,7 @@ mod tests {
             allowed_programs = ["program1", "program2"]
             allowed_tokens = ["token1", "token2"]
             allowed_spl_paid_tokens = ["token3"]
+            allow_any_spl_paid_token = false
             disallowed_accounts = ["account1"]
             price_source = "Jupiter"
             [kora]
@@ -472,6 +476,7 @@ mod tests {
             allowed_programs = ["program1"]
             allowed_tokens = ["token1"]
             allowed_spl_paid_tokens = ["token2"]
+            allow_any_spl_paid_token = false
             disallowed_accounts = []
             price_source = "Jupiter"
 
@@ -505,6 +510,7 @@ mod tests {
             allowed_programs = ["program1"]
             allowed_tokens = ["token1"]
             allowed_spl_paid_tokens = ["token2"]
+            allow_any_spl_paid_token = false
             disallowed_accounts = []
             price_source = "Jupiter"
 
@@ -540,6 +546,7 @@ mod tests {
             allowed_programs = ["program1"]
             allowed_tokens = ["token1"]
             allowed_spl_paid_tokens = ["token2"]
+            allow_any_spl_paid_token = false
             disallowed_accounts = []
             price_source = "Jupiter"
 
@@ -572,6 +579,7 @@ mod tests {
             allowed_programs = ["program1"]
             allowed_tokens = ["token1"]
             allowed_spl_paid_tokens = ["token2"]
+            allow_any_spl_paid_token = false
             disallowed_accounts = []
             price_source = "Jupiter"
 
@@ -602,6 +610,7 @@ mod tests {
             allowed_programs = ["program1"]
             allowed_tokens = ["token1"]
             allowed_spl_paid_tokens = ["token2"]
+            allow_any_spl_paid_token = false
             disallowed_accounts = []
             price_source = "Jupiter"
 
