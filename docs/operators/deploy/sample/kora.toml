@@ -1,5 +1,7 @@
 [kora]
 rate_limit = 100
+# Optional: Payment address to receive payment tokens (defaults to signer address)
+# payment_address = "YourPaymentAddressPubkey11111111111111111111"
 
 [kora.auth]
 # Optional: API key for simple authentication

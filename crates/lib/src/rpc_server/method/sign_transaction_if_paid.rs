@@ -1,5 +1,4 @@
 use crate::{
-    config::ValidationConfig,
     transaction::{
         TransactionUtil, VersionedTransactionExt, VersionedTransactionResolved,
         VersionedTransactionUtilExt,
@@ -24,7 +23,6 @@ pub struct SignTransactionIfPaidResponse {
 
 pub async fn sign_transaction_if_paid(
     rpc_client: &Arc<RpcClient>,
-    validation: &ValidationConfig,
     request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
     let transaction_requested = TransactionUtil::decode_b64_transaction(&request.transaction)?;
@@ -33,7 +31,7 @@ pub async fn sign_transaction_if_paid(
     resolved_transaction.resolve_addresses(rpc_client).await?;
 
     let (transaction, signed_transaction) = resolved_transaction
-        .sign_transaction_if_paid(rpc_client, validation)
+        .sign_transaction_if_paid(rpc_client)
         .await
         .map_err(|e| KoraError::TokenOperationError(e.to_string()))?;
 

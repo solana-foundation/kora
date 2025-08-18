@@ -2,13 +2,17 @@ name: Publish kora-rpc
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'crates/**'
-      - 'Cargo.toml'
-      - 'rust-toolchain.toml'
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
 
 jobs:
   publish-kora-rpc:
@@ -45,13 +49,19 @@ jobs:
           LAST_TAG=$(git tag -l "kora-rpc-v*" --sort=-version:refname | head -1)
           
           if [ -z "$LAST_TAG" ]; then
-            echo "No previous release found, using patch bump"
-            echo "bump_type=patch" >> $GITHUB_OUTPUT
+            echo "No previous release found"
             COMMITS=$(git log --oneline --pretty=format:"- %s" -- crates/rpc/ | head -10)
           else
             echo "Last release: $LAST_TAG"
             COMMITS=$(git log --oneline "$LAST_TAG"..HEAD --pretty=format:"- %s" -- crates/rpc/)
-            
+          fi
+          
+          # Use manual input if provided, otherwise auto-detect
+          if [ "${{ github.event.inputs.version_bump }}" != "auto" ]; then
+            echo "Using manual version bump: ${{ github.event.inputs.version_bump }}"
+            echo "bump_type=${{ github.event.inputs.version_bump }}" >> $GITHUB_OUTPUT
+          else
+            echo "Auto-detecting version bump from commits"
             # Determine bump type from conventional commits
             if echo "$COMMITS" | grep -q "BREAKING CHANGE\|!:"; then
               echo "bump_type=major" >> $GITHUB_OUTPUT

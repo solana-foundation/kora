@@ -4,6 +4,8 @@
 
 A **signer** is the cryptographic keypair that your Kora node uses to sign Solana transactions as the fee payer. When users send transactions to your Kora node, it validates them and co-signs them with your signer's private key to cover the SOL transaction fees.
 
+**Note**: By default, token payment fees are sent to the signer's address. However, you can configure a separate `payment_address` in your `kora.toml` to receive payments at a different address while keeping your signer separate. See [Configuration Guide](./CONFIGURATION.md) for details.
+
 Your signer keypair has direct access to your SOL funds used for paying transaction fees. If compromised, an attacker could:
 - Drain your SOL balance
 - Sign unauthorized transactions
