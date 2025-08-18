@@ -18,7 +18,8 @@ use crate::{
     get_signer,
     state::get_config,
     transaction::{
-        instruction_util::IxUtils, ParsedSystemInstructionData, ParsedSystemInstructionType,
+        instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
+        ParsedSystemInstructionData, ParsedSystemInstructionType,
     },
     validator::transaction_validator::TransactionValidator,
     Signer,
@@ -38,6 +39,10 @@ pub struct VersionedTransactionResolved {
     // Parsed instructions by type (None if not parsed yet)
     parsed_system_instructions:
         Option<HashMap<ParsedSystemInstructionType, Vec<ParsedSystemInstructionData>>>,
+
+    // Parsed SPL instructions by type (None if not parsed yet)
+    parsed_spl_instructions:
+        Option<HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>>,
 }
 
 impl Deref for VersionedTransactionResolved {
@@ -77,6 +82,7 @@ impl VersionedTransactionResolved {
             all_account_keys: vec![],
             all_instructions: vec![],
             parsed_system_instructions: None,
+            parsed_spl_instructions: None,
         };
 
         // 1. Resolve lookup table addresses based on transaction type
@@ -122,6 +128,7 @@ impl VersionedTransactionResolved {
                 transaction.message.static_account_keys(),
             ),
             parsed_system_instructions: None,
+            parsed_spl_instructions: None,
         }
     }
 
@@ -173,6 +180,15 @@ impl VersionedTransactionResolved {
             self.parsed_system_instructions = Some(IxUtils::parse_system_instructions(self));
         }
         self.parsed_system_instructions.as_ref().unwrap()
+    }
+
+    pub fn get_or_parse_spl_instructions(
+        &mut self,
+    ) -> &HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>> {
+        if self.parsed_spl_instructions.is_none() {
+            self.parsed_spl_instructions = Some(IxUtils::parse_token_instructions(self));
+        }
+        self.parsed_spl_instructions.as_ref().unwrap()
     }
 }
 

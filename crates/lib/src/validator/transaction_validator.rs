@@ -4,12 +4,10 @@ use crate::{
     fee::fee::FeeConfigUtil,
     oracle::PriceSource,
     state::get_config,
-    token::{
-        interface::{SplInstructionCommand, TokenMint},
-        token::{TokenType, TokenUtil},
-    },
+    token::{interface::TokenMint, token::TokenUtil},
     transaction::{
-        ParsedSystemInstructionData, ParsedSystemInstructionType, VersionedTransactionResolved,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
+        ParsedSystemInstructionType, VersionedTransactionResolved,
     },
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -200,33 +198,42 @@ impl TransactionValidator {
             }
         }
 
-        // TODO when doing revamp of spl token, move this to follow the pattern of system instructions
-        for instruction in &transaction_resolved.all_instructions {
-            match instruction.program_id {
-                spl_token::ID | spl_token_2022::ID => {
-                    let command = SplInstructionCommand::ValidateFeePayerPolicy {
-                        fee_payer_policy: self.fee_payer_policy.clone(),
-                    };
+        // Validate SPL instructions
+        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions();
 
-                    let token_interface =
-                        TokenType::get_token_program_from_owner(&instruction.program_id)?;
-
-                    let result = token_interface.process_spl_instruction(
-                        &instruction.data,
-                        instruction,
-                        &transaction_resolved.all_account_keys,
-                        &self.fee_payer_pubkey,
-                        command,
-                    )?;
-
-                    if !result {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "Fee payer policy not allowed for instruction {}",
-                            instruction.program_id
-                        )));
-                    }
+        for instruction in
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer).unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenTransfer { owner, is_2022, .. } = instruction {
+                if *is_2022 {
+                    check_if_allowed(owner, self.fee_payer_policy.allow_token2022_transfers)?;
+                } else {
+                    check_if_allowed(owner, self.fee_payer_policy.allow_spl_transfers)?;
                 }
-                _ => {}
+            }
+        }
+
+        for instruction in
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenApprove).unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenApprove { owner, .. } = instruction {
+                check_if_allowed(owner, self.fee_payer_policy.allow_approve)?;
+            }
+        }
+
+        for instruction in
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenBurn).unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenBurn { owner, .. } = instruction {
+                check_if_allowed(owner, self.fee_payer_policy.allow_burn)?;
+            }
+        }
+
+        for instruction in
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenCloseAccount).unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenCloseAccount { owner, .. } = instruction {
+                check_if_allowed(owner, self.fee_payer_policy.allow_close_account)?;
             }
         }
 
@@ -293,21 +300,16 @@ impl TransactionValidator {
     ) -> Result<(), KoraError> {
         let mut total_lamport_value = 0;
 
-        for ix in &transaction_resolved.all_instructions {
-            if let Ok(token_program) = TokenType::get_token_program_from_owner(&ix.program_id) {
-                if TokenUtil::process_token_transfer(
-                    ix,
-                    &*token_program,
-                    rpc_client,
-                    &mut total_lamport_value,
-                    required_lamports,
-                    expected_payment_destination,
-                )
-                .await?
-                {
-                    return Ok(());
-                }
-            }
+        if TokenUtil::process_token_transfer(
+            transaction_resolved,
+            rpc_client,
+            &mut total_lamport_value,
+            required_lamports,
+            expected_payment_destination,
+        )
+        .await?
+        {
+            return Ok(());
         }
 
         Err(KoraError::InvalidTransaction(format!(
@@ -665,194 +667,192 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
-    // TODO
-    // #[tokio::test]
-    // #[serial]
-    // async fn test_fee_payer_policy_spl_transfers() {
-    //     let fee_payer = Pubkey::new_unique();
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_spl_transfers() {
+        let fee_payer = Pubkey::new_unique();
 
-    //     let fee_payer_token_account = Pubkey::new_unique();
-    //     let recipient_token_account = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let recipient_token_account = Pubkey::new_unique();
 
-    //     // Test with allow_spl_transfers = true (default)
-    //     let validation_config = ValidationConfig::test_default()
-    //         .with_price_source(PriceSource::Mock)
-    //         .with_allowed_programs(vec![spl_token::id().to_string()])
-    //         .with_max_allowed_lamports(1_000_000)
-    //         .with_fee_payer_policy(FeePayerPolicy::default());
+        // Test with allow_spl_transfers = true (default)
+        let validation_config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
 
-    //     let config = Config {
-    //         validation: validation_config,
-    //         kora: KoraConfig::default(),
-    //         metrics: MetricsConfig::default(),
-    //     };
-    //     update_config(config).unwrap();
+        let config = Config {
+            validation: validation_config,
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+        update_config(config).unwrap();
 
-    //     let validator = TransactionValidator::new(fee_payer).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
-    //     let transfer_ix = spl_token::instruction::transfer(
-    //         &spl_token::id(),
-    //         &fee_payer_token_account,
-    //         &recipient_token_account,
-    //         &fee_payer, // fee payer is the signer
-    //         &[],
-    //         1000,
-    //     )
-    //     .unwrap();
+        let transfer_ix = spl_token::instruction::transfer(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &recipient_token_account,
+            &fee_payer, // fee payer is the signer
+            &[],
+            1000,
+        )
+        .unwrap();
 
-    //     let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-    //     let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-    //     assert!(validator.validate_transaction(&mut transaction).await.is_ok());
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
-    //     // Test with allow_spl_transfers = false
-    //     let validation_config = ValidationConfig::test_default()
-    //         .with_price_source(PriceSource::Mock)
-    //         .with_allowed_programs(vec![spl_token::id().to_string()])
-    //         .with_max_allowed_lamports(1_000_000)
-    //         .with_fee_payer_policy(FeePayerPolicy {
-    //             allow_spl_transfers: false,
-    //             ..Default::default()
-    //         });
+        // Test with allow_spl_transfers = false
+        let validation_config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy {
+                allow_spl_transfers: false,
+                ..Default::default()
+            });
 
-    //     let config = Config {
-    //         validation: validation_config,
-    //         kora: KoraConfig::default(),
-    //         metrics: MetricsConfig::default(),
-    //     };
-    //     update_config(config).unwrap();
+        let config = Config {
+            validation: validation_config,
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+        update_config(config).unwrap();
 
-    //     let validator = TransactionValidator::new(fee_payer).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
-    //     let transfer_ix = spl_token::instruction::transfer(
-    //         &spl_token::id(),
-    //         &fee_payer_token_account,
-    //         &recipient_token_account,
-    //         &fee_payer, // fee payer is the signer
-    //         &[],
-    //         1000,
-    //     )
-    //     .unwrap();
+        let transfer_ix = spl_token::instruction::transfer(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &recipient_token_account,
+            &fee_payer, // fee payer is the signer
+            &[],
+            1000,
+        )
+        .unwrap();
 
-    //     let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-    //     let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-    //     assert!(validator.validate_transaction(&mut transaction).await.is_err());
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
 
-    //     // Test with other account as source - should always pass
-    //     let other_signer = Pubkey::new_unique();
-    //     let transfer_ix = spl_token::instruction::transfer(
-    //         &spl_token::id(),
-    //         &fee_payer_token_account,
-    //         &recipient_token_account,
-    //         &other_signer, // other account is the signer
-    //         &[],
-    //         1000,
-    //     )
-    //     .unwrap();
+        // Test with other account as source - should always pass
+        let other_signer = Pubkey::new_unique();
+        let transfer_ix = spl_token::instruction::transfer(
+            &spl_token::id(),
+            &fee_payer_token_account,
+            &recipient_token_account,
+            &other_signer, // other account is the signer
+            &[],
+            1000,
+        )
+        .unwrap();
 
-    //     let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-    //     let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-    //     assert!(validator.validate_transaction(&mut transaction).await.is_ok());
-    // }
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
+    }
 
-    // TODO
-    // #[tokio::test]
-    // #[serial]
-    // async fn test_fee_payer_policy_token2022_transfers() {
-    //     let fee_payer = Pubkey::new_unique();
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_transfers() {
+        let fee_payer = Pubkey::new_unique();
 
-    //     let fee_payer_token_account = Pubkey::new_unique();
-    //     let recipient_token_account = Pubkey::new_unique();
-    //     let mint = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let recipient_token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
 
-    //     // Test with allow_token2022_transfers = true (default)
-    //     let validation_config = ValidationConfig::test_default()
-    //         .with_price_source(PriceSource::Mock)
-    //         .with_allowed_programs(vec![spl_token_2022::id().to_string()])
-    //         .with_max_allowed_lamports(1_000_000)
-    //         .with_fee_payer_policy(FeePayerPolicy::default());
+        // Test with allow_token2022_transfers = true (default)
+        let validation_config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default());
 
-    //     let config = Config {
-    //         validation: validation_config,
-    //         kora: KoraConfig::default(),
-    //         metrics: MetricsConfig::default(),
-    //     };
-    //     update_config(config).unwrap();
+        let config = Config {
+            validation: validation_config,
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+        update_config(config).unwrap();
 
-    //     let validator = TransactionValidator::new(fee_payer).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
-    //     let transfer_ix = spl_token_2022::instruction::transfer_checked(
-    //         &spl_token_2022::id(),
-    //         &fee_payer_token_account,
-    //         &mint,
-    //         &recipient_token_account,
-    //         &fee_payer, // fee payer is the signer
-    //         &[],
-    //         1000,
-    //         2,
-    //     )
-    //     .unwrap();
+        let transfer_ix = spl_token_2022::instruction::transfer_checked(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &mint,
+            &recipient_token_account,
+            &fee_payer, // fee payer is the signer
+            &[],
+            1000,
+            2,
+        )
+        .unwrap();
 
-    //     let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-    //     let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-    //     assert!(validator.validate_transaction(&mut transaction).await.is_ok());
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
-    //     // Test with allow_token2022_transfers = false
-    //     let validation_config = ValidationConfig::test_default()
-    //         .with_price_source(PriceSource::Mock)
-    //         .with_allowed_programs(vec![spl_token_2022::id().to_string()])
-    //         .with_max_allowed_lamports(1_000_000)
-    //         .with_fee_payer_policy(FeePayerPolicy {
-    //             allow_token2022_transfers: false,
-    //             ..Default::default()
-    //         });
+        // Test with allow_token2022_transfers = false
+        let validation_config = ValidationConfig::test_default()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy {
+                allow_token2022_transfers: false,
+                ..Default::default()
+            });
 
-    //     let config = Config {
-    //         validation: validation_config,
-    //         kora: KoraConfig::default(),
-    //         metrics: MetricsConfig::default(),
-    //     };
-    //     update_config(config).unwrap();
+        let config = Config {
+            validation: validation_config,
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+        update_config(config).unwrap();
 
-    //     let validator = TransactionValidator::new(fee_payer).unwrap();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
 
-    //     let transfer_ix = spl_token_2022::instruction::transfer_checked(
-    //         &spl_token_2022::id(),
-    //         &fee_payer_token_account,
-    //         &mint,
-    //         &recipient_token_account,
-    //         &fee_payer, // fee payer is the signer
-    //         &[],
-    //         1000,
-    //         2,
-    //     )
-    //     .unwrap();
+        let transfer_ix = spl_token_2022::instruction::transfer_checked(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &mint,
+            &recipient_token_account,
+            &fee_payer, // fee payer is the signer
+            &[],
+            1000,
+            2,
+        )
+        .unwrap();
 
-    //     let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-    //     let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-    //     // Should fail because fee payer is not allowed to be source
-    //     assert!(validator.validate_transaction(&mut transaction).await.is_err());
+        // Should fail because fee payer is not allowed to be source
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
 
-    //     // Test with other account as source - should always pass
-    //     let other_signer = Pubkey::new_unique();
-    //     let transfer_ix = spl_token_2022::instruction::transfer_checked(
-    //         &spl_token_2022::id(),
-    //         &fee_payer_token_account,
-    //         &mint,
-    //         &recipient_token_account,
-    //         &other_signer, // other account is the signer
-    //         &[],
-    //         1000,
-    //         2,
-    //     )
-    //     .unwrap();
+        // Test with other account as source - should always pass
+        let other_signer = Pubkey::new_unique();
+        let transfer_ix = spl_token_2022::instruction::transfer_checked(
+            &spl_token_2022::id(),
+            &fee_payer_token_account,
+            &mint,
+            &recipient_token_account,
+            &other_signer, // other account is the signer
+            &[],
+            1000,
+            2,
+        )
+        .unwrap();
 
-    //     let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-    //     let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-    //     // Should pass because fee payer is not the source
-    //     assert!(validator.validate_transaction(&mut transaction).await.is_ok());
-    // }
+        // Should pass because fee payer is not the source
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
+    }
 
     #[tokio::test]
     #[serial]

@@ -31,6 +31,42 @@ pub enum ParsedSystemInstructionData {
     SystemAssign { authority: Pubkey },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParsedSPLInstructionType {
+    SplTokenTransfer,
+    SplTokenBurn,
+    SplTokenCloseAccount,
+    SplTokenApprove,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParsedSPLInstructionData {
+    // Includes transfer and transfer with seed (both spl and spl 2022)
+    SplTokenTransfer {
+        amount: u64,
+        owner: Pubkey,
+        mint: Option<Pubkey>,
+        source_address: Pubkey,
+        destination_address: Pubkey,
+        is_2022: bool,
+    },
+    // Includes burn and burn with seed
+    SplTokenBurn {
+        owner: Pubkey,
+        is_2022: bool,
+    },
+    // Includes close account
+    SplTokenCloseAccount {
+        owner: Pubkey,
+        is_2022: bool,
+    },
+    // Includes approve and approve with seed
+    SplTokenApprove {
+        owner: Pubkey,
+        is_2022: bool,
+    },
+}
+
 pub struct IxUtils;
 
 impl IxUtils {
@@ -143,6 +179,173 @@ impl IxUtils {
                             });
                     }
                     _ => {}
+                }
+            }
+        }
+        parsed_instructions
+    }
+
+    pub fn parse_token_instructions(
+        transaction: &VersionedTransactionResolved,
+    ) -> HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>> {
+        let mut parsed_instructions: HashMap<
+            ParsedSPLInstructionType,
+            Vec<ParsedSPLInstructionData>,
+        > = HashMap::new();
+
+        for instruction in &transaction.all_instructions {
+            let program_id = instruction.program_id;
+
+            if program_id == spl_token::ID {
+                if let Ok(spl_ix) =
+                    spl_token::instruction::TokenInstruction::unpack(&instruction.data)
+                {
+                    match spl_ix {
+                        spl_token::instruction::TokenInstruction::Transfer { amount } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenTransfer)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenTransfer {
+                                    owner: instruction.accounts[2].pubkey,
+                                    amount,
+                                    mint: None,
+                                    source_address: instruction.accounts[0].pubkey,
+                                    destination_address: instruction.accounts[1].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::TransferChecked {
+                            amount,
+                            ..
+                        } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenTransfer)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenTransfer {
+                                    owner: instruction.accounts[3].pubkey,
+                                    amount,
+                                    mint: Some(instruction.accounts[1].pubkey),
+                                    source_address: instruction.accounts[0].pubkey,
+                                    destination_address: instruction.accounts[2].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::Burn { .. }
+                        | spl_token::instruction::TokenInstruction::BurnChecked { .. } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenBurn)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenBurn {
+                                    owner: instruction.accounts[2].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::CloseAccount { .. } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenCloseAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenCloseAccount {
+                                    owner: instruction.accounts[2].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::Approve { .. } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenApprove)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenApprove {
+                                    owner: instruction.accounts[2].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::ApproveChecked { .. } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenApprove)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenApprove {
+                                    owner: instruction.accounts[3].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        _ => {}
+                    };
+                }
+            } else if program_id == spl_token_2022::ID {
+                if let Ok(spl_ix) =
+                    spl_token_2022::instruction::TokenInstruction::unpack(&instruction.data)
+                {
+                    match spl_ix {
+                        #[allow(deprecated)]
+                        spl_token_2022::instruction::TokenInstruction::Transfer { amount } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenTransfer)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenTransfer {
+                                    owner: instruction.accounts[2].pubkey,
+                                    amount,
+                                    mint: None,
+                                    source_address: instruction.accounts[0].pubkey,
+                                    destination_address: instruction.accounts[1].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::TransferChecked {
+                            amount,
+                            ..
+                        } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenTransfer)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenTransfer {
+                                    owner: instruction.accounts[3].pubkey,
+                                    amount,
+                                    mint: Some(instruction.accounts[1].pubkey),
+                                    source_address: instruction.accounts[0].pubkey,
+                                    destination_address: instruction.accounts[2].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::Burn { .. }
+                        | spl_token_2022::instruction::TokenInstruction::BurnChecked { .. } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenBurn)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenBurn {
+                                    owner: instruction.accounts[2].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::CloseAccount { .. } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenCloseAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenCloseAccount {
+                                    owner: instruction.accounts[2].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::Approve { .. } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenApprove)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenApprove {
+                                    owner: instruction.accounts[2].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::ApproveChecked {
+                            ..
+                        } => {
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenApprove)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenApprove {
+                                    owner: instruction.accounts[3].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        _ => {}
+                    };
                 }
             }
         }
