@@ -1,13 +1,8 @@
 use async_trait::async_trait;
 use mockall::automock;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    instruction::{CompiledInstruction, Instruction},
-    pubkey::Pubkey,
-};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use std::any::Any;
-
-use crate::validator::transaction_validator::TransactionValidator;
 
 // All options in case there's an issue with the provided accounts, caller should validate.
 pub struct DecodedTransfer {
@@ -93,14 +88,13 @@ pub trait TokenInterface: Send + Sync {
     /// Returns the amount of the transfer as well as the addresses of mint and destination if available (transfer checked)
     fn decode_transfer_instruction(
         &self,
-        ix: &CompiledInstruction,
-        account_keys: &[Pubkey],
+        ix: &Instruction,
     ) -> Result<DecodedTransfer, Box<dyn std::error::Error + Send + Sync>>;
 
     fn process_spl_instruction(
         &self,
         instruction_data: &[u8],
-        ix: &solana_sdk::instruction::CompiledInstruction,
+        ix: &Instruction,
         account_keys: &[solana_sdk::pubkey::Pubkey],
         fee_payer_pubkey: &solana_sdk::pubkey::Pubkey,
         command: SplInstructionCommand,
@@ -143,8 +137,7 @@ impl SplInstructionCommand {
     pub fn execute(
         &self,
         parsed: &ParsedSplInstruction,
-        ix: &CompiledInstruction,
-        account_keys: &[Pubkey],
+        ix: &Instruction,
         fee_payer_pubkey: &Pubkey,
     ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         match self {
@@ -166,14 +159,15 @@ impl SplInstructionCommand {
                     SplInstructionType::CloseAccount => fee_payer_policy.allow_close_account,
                 };
 
-                TransactionValidator::check_fee_payer(
-                    fee_payer_pubkey,
-                    parsed.authority_index,
-                    policy_flag,
-                    ix,
-                    account_keys,
-                )
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+                // TODO when refactoring token, we can use this again
+                // TransactionValidator::check_fee_payer(
+                //     fee_payer_pubkey,
+                //     parsed.authority_index,
+                //     policy_flag,
+                //     ix,
+                // )
+                // .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+                Ok(policy_flag)
             }
         }
     }

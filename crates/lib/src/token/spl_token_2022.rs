@@ -7,7 +7,7 @@ use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::{program_pack::Pack, pubkey::Pubkey};
-use solana_sdk::instruction::{CompiledInstruction, Instruction};
+use solana_sdk::instruction::Instruction;
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
@@ -536,12 +536,11 @@ impl TokenInterface for Token2022Program {
 
     fn decode_transfer_instruction(
         &self,
-        ix: &CompiledInstruction,
-        account_keys: &[Pubkey],
+        ix: &Instruction,
     ) -> Result<DecodedTransfer, Box<dyn std::error::Error + Send + Sync>> {
         let instruction = instruction::TokenInstruction::unpack(&ix.data)?;
 
-        let source_address = IxUtils::get_account_key_if_present(ix, 0, account_keys);
+        let source_address = IxUtils::get_account_key_if_present(ix, 0);
 
         match instruction {
             #[allow(deprecated)]
@@ -549,13 +548,13 @@ impl TokenInterface for Token2022Program {
                 amount,
                 mint_address: None,
                 source_address,
-                destination_address: IxUtils::get_account_key_if_present(ix, 1, account_keys),
+                destination_address: IxUtils::get_account_key_if_present(ix, 1),
             }),
             instruction::TokenInstruction::TransferChecked { amount, .. } => Ok(DecodedTransfer {
                 amount,
-                mint_address: IxUtils::get_account_key_if_present(ix, 1, account_keys),
+                mint_address: IxUtils::get_account_key_if_present(ix, 1),
                 source_address,
-                destination_address: IxUtils::get_account_key_if_present(ix, 2, account_keys),
+                destination_address: IxUtils::get_account_key_if_present(ix, 2),
             }),
             _ => Err("Not a transfer instruction".into()),
         }
@@ -564,13 +563,13 @@ impl TokenInterface for Token2022Program {
     fn process_spl_instruction(
         &self,
         instruction_data: &[u8],
-        ix: &CompiledInstruction,
+        ix: &Instruction,
         account_keys: &[Pubkey],
         fee_payer_pubkey: &Pubkey,
         command: super::interface::SplInstructionCommand,
     ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         if let Some(parsed) = self.parse_spl_instruction(instruction_data)? {
-            command.execute(&parsed, ix, account_keys, fee_payer_pubkey)
+            command.execute(&parsed, ix, fee_payer_pubkey)
         } else {
             Ok(false)
         }

@@ -38,13 +38,12 @@ pub async fn estimate_transaction_fee(
     let validation_config = &get_config()?.validation;
     let fee_payer = signer.solana_pubkey();
 
-    // Resolve lookup tables for V0 transactions to ensure accurate fee calculation
-    let mut resolved_transaction = VersionedTransactionResolved::new(&transaction);
-    resolved_transaction.resolve_addresses(rpc_client).await?;
+    let mut resolved_transaction =
+        VersionedTransactionResolved::from_transaction(&transaction, rpc_client).await?;
 
     let fee_in_lamports = FeeConfigUtil::estimate_transaction_fee(
         rpc_client,
-        &resolved_transaction,
+        &mut resolved_transaction,
         Some(&fee_payer),
     )
     .await?;

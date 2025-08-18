@@ -10,7 +10,9 @@ use utoipa::ToSchema;
 use crate::{
     constant::NATIVE_SOL,
     get_signer,
-    transaction::{TransactionUtil, VersionedMessageExt, VersionedTransactionUtilExt},
+    transaction::{
+        TransactionUtil, VersionedMessageExt, VersionedTransactionOps, VersionedTransactionResolved,
+    },
     validator::transaction_validator::TransactionValidator,
     KoraError, Signer as _,
 };
@@ -113,18 +115,22 @@ pub async fn transfer_transaction(
         Some(&fee_payer),
         &blockhash.0,
     ));
-    let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+    let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+
+    let mut simple_resolved_transaction =
+        VersionedTransactionResolved::from_transaction_only(&transaction);
 
     // validate transaction before signing
-    validator.validate_transaction(rpc_client, &transaction).await?;
+    validator.validate_transaction(&mut simple_resolved_transaction).await?;
 
     // Find the fee payer position in the account keys
-    let fee_payer_position = transaction.find_signer_position(&fee_payer)?;
+    let fee_payer_position = simple_resolved_transaction.find_signer_position(&fee_payer)?;
 
-    let signature = signer.sign_solana(&transaction).await?;
-    transaction.signatures[fee_payer_position] = signature;
+    let signature = signer.sign_solana(&simple_resolved_transaction).await?;
 
-    let encoded = transaction.encode_b64_transaction()?;
+    simple_resolved_transaction.transaction.signatures[fee_payer_position] = signature;
+
+    let encoded = simple_resolved_transaction.encode_b64_transaction()?;
     let message_encoded = transaction.message.encode_b64_message()?;
 
     Ok(TransferTransactionResponse {

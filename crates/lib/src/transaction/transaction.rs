@@ -1,12 +1,10 @@
 use solana_message::VersionedMessage;
 use solana_sdk::{
-    instruction::{AccountMeta, CompiledInstruction, Instruction},
-    pubkey::Pubkey,
     signature::Signature,
     transaction::{Transaction, VersionedTransaction},
 };
 
-use crate::error::KoraError;
+use crate::{error::KoraError, transaction::VersionedTransactionResolved};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 pub struct TransactionUtil {}
@@ -42,27 +40,11 @@ impl TransactionUtil {
         }
     }
 
-    pub fn uncompile_instructions(
-        instructions: &[CompiledInstruction],
-        account_keys: &[Pubkey],
-    ) -> Vec<Instruction> {
-        instructions
-            .iter()
-            .map(|ix| {
-                let program_id = account_keys[ix.program_id_index as usize];
-                let accounts = ix
-                    .accounts
-                    .iter()
-                    .map(|idx| AccountMeta {
-                        pubkey: account_keys[*idx as usize],
-                        is_signer: false,
-                        is_writable: true,
-                    })
-                    .collect();
-
-                Instruction { program_id, accounts, data: ix.data.clone() }
-            })
-            .collect()
+    pub fn new_unsigned_versioned_transaction_resolved(
+        message: VersionedMessage,
+    ) -> VersionedTransactionResolved {
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        VersionedTransactionResolved::from_transaction_only(&transaction)
     }
 }
 
@@ -71,7 +53,13 @@ mod tests {
     use super::*;
     use crate::error::KoraError;
     use solana_message::{v0, Message};
-    use solana_sdk::{hash::Hash, signature::Keypair, signer::Signer as _};
+    use solana_sdk::{
+        hash::Hash,
+        instruction::{AccountMeta, CompiledInstruction, Instruction},
+        pubkey::Pubkey,
+        signature::Keypair,
+        signer::Signer as _,
+    };
 
     #[test]
     fn test_decode_b64_transaction_invalid_input() {
@@ -80,30 +68,6 @@ mod tests {
 
         let result = TransactionUtil::decode_b64_transaction("AQID"); // base64 of [1,2,3]
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
-    }
-
-    #[test]
-    fn test_uncompile_instructions() {
-        let program_id = Pubkey::new_unique();
-        let account1 = Pubkey::new_unique();
-        let account2 = Pubkey::new_unique();
-
-        let account_keys = vec![program_id, account1, account2];
-        let compiled_ix = CompiledInstruction {
-            program_id_index: 0,
-            accounts: vec![1, 2], // indices into account_keys
-            data: vec![1, 2, 3],
-        };
-
-        let instructions = TransactionUtil::uncompile_instructions(&[compiled_ix], &account_keys);
-
-        assert_eq!(instructions.len(), 1);
-        let uncompiled = &instructions[0];
-        assert_eq!(uncompiled.program_id, program_id);
-        assert_eq!(uncompiled.accounts.len(), 2);
-        assert_eq!(uncompiled.accounts[0].pubkey, account1);
-        assert_eq!(uncompiled.accounts[1].pubkey, account2);
-        assert_eq!(uncompiled.data, vec![1, 2, 3]);
     }
 
     #[test]

@@ -1,8 +1,5 @@
 use crate::{
-    transaction::{
-        TransactionUtil, VersionedTransactionExt, VersionedTransactionResolved,
-        VersionedTransactionUtilExt,
-    },
+    transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
 use serde::{Deserialize, Serialize};
@@ -27,8 +24,8 @@ pub async fn sign_transaction_if_paid(
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
     let transaction_requested = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
-    let mut resolved_transaction = VersionedTransactionResolved::new(&transaction_requested);
-    resolved_transaction.resolve_addresses(rpc_client).await?;
+    let mut resolved_transaction =
+        VersionedTransactionResolved::from_transaction(&transaction_requested, rpc_client).await?;
 
     let (transaction, signed_transaction) = resolved_transaction
         .sign_transaction_if_paid(rpc_client)

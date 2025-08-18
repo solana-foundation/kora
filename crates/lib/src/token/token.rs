@@ -8,9 +8,7 @@ use crate::{
     },
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    instruction::CompiledInstruction, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey,
-};
+use solana_sdk::{instruction::Instruction, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 use std::{str::FromStr, time::Duration};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -132,9 +130,8 @@ impl TokenUtil {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn process_token_transfer(
-        ix: &CompiledInstruction,
+        ix: &Instruction,
         token_program: &dyn TokenInterface,
-        account_keys: &[Pubkey],
         rpc_client: &RpcClient,
         total_lamport_value: &mut u64,
         required_lamports: u64,
@@ -148,7 +145,7 @@ impl TokenUtil {
         }
 
         if let Ok(DecodedTransfer { amount, destination_address, mint_address, source_address }) =
-            token_program.decode_transfer_instruction(ix, account_keys)
+            token_program.decode_transfer_instruction(ix)
         {
             if source_address.is_none() || destination_address.is_none() {
                 return Ok(false);

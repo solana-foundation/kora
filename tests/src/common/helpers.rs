@@ -3,7 +3,7 @@ use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_param
 use kora_lib::{
     signer::KeypairUtil,
     token::{TokenInterface, TokenProgram},
-    transaction::{TransactionUtil, VersionedTransactionUtilExt},
+    transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
 };
 use solana_address_lookup_table_interface::state::AddressLookupTable;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -233,7 +233,10 @@ impl TransactionTestHelper {
         ));
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-        Ok(transaction.encode_b64_transaction()?)
+        let resolved_transaction =
+            VersionedTransactionResolved::from_transaction_only(&transaction);
+
+        Ok(resolved_transaction.encode_b64_transaction()?)
     }
 
     pub async fn create_test_spl_transaction() -> Result<String> {
@@ -279,7 +282,10 @@ impl TransactionTestHelper {
         ));
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-        Ok(transaction.encode_b64_transaction()?)
+        let resolved_transaction =
+            VersionedTransactionResolved::from_transaction_only(&transaction);
+
+        Ok(resolved_transaction.encode_b64_transaction()?)
     }
 
     pub async fn create_v0_transaction_with_lookup(
@@ -311,6 +317,9 @@ impl TransactionTestHelper {
         )?);
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(versioned_message);
 
-        Ok(transaction.encode_b64_transaction()?)
+        let resolved_transaction =
+            VersionedTransactionResolved::from_transaction_only(&transaction);
+
+        Ok(resolved_transaction.encode_b64_transaction()?)
     }
 }
