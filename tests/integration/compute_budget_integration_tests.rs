@@ -1,3 +1,4 @@
+use crate::common::*;
 use jsonrpsee::{core::client::ClientT, rpc_params};
 use kora_lib::transaction::VersionedTransactionUtilExt;
 use solana_commitment_config::CommitmentConfig;
@@ -5,14 +6,13 @@ use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::{v0, Message, VersionedMessage};
 use solana_sdk::{signature::Signer, transaction::VersionedTransaction};
 use solana_system_interface::instruction::transfer;
-use testing_utils::*;
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
-    let rpc_client = get_rpc_client().await;
-    let client = get_test_client().await;
-    let sender = get_test_sender_keypair();
-    let recipient = get_recipient_pubkey();
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
+    let client = ClientTestHelper::get_test_client().await;
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
 
     let instructions = vec![
         ComputeBudgetInstruction::set_compute_unit_limit(300_000),
@@ -37,7 +37,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
     let response: serde_json::Value = client
         .request(
             "estimateTransactionFee",
-            rpc_params![encoded_tx, get_test_usdc_mint_pubkey().to_string()],
+            rpc_params![encoded_tx, USDCMintTestHelper::get_test_usdc_mint_pubkey().to_string()],
         )
         .await
         .expect("Failed to estimate transaction fee");
@@ -50,17 +50,15 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
     // Plus base transaction fee (5000 for this transaction) = 20_000 lamports total
     // Plus Kora signature fee (5000 for this transaction) = 25_000 lamports total
     assert!(fee == 25_000, "Fee should include compute budget priority fee, got {fee}");
-
-    println!("Successfully calculated fee with compute budget instructions: {fee} lamports");
 }
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_compute_budget_v0() {
-    let rpc_client = get_rpc_client().await;
-    let client = get_test_client().await;
-    let fee_payer = get_fee_payer_keypair();
-    let sender = get_test_sender_keypair();
-    let recipient = get_recipient_pubkey();
+    let rpc_client = RPCTestHelper::get_rpc_client().await;
+    let client = ClientTestHelper::get_test_client().await;
+    let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
 
     let compute_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
     let compute_price_ix = ComputeBudgetInstruction::set_compute_unit_price(25_000);
@@ -87,7 +85,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
     let response: serde_json::Value = client
         .request(
             "estimateTransactionFee",
-            rpc_params![encoded_tx, get_test_usdc_mint_pubkey().to_string()],
+            rpc_params![encoded_tx, USDCMintTestHelper::get_test_usdc_mint_pubkey().to_string()],
         )
         .await
         .expect("Failed to estimate transaction fee with V0 transaction");
@@ -99,6 +97,4 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
     // Plus base transaction fee (2 signatures) (10000 for this transaction) = 35_000 lamports total
     // We don't include the Kora signature EXTRA fee because the fee payer is already Kora and added as a signer
     assert!(fee == 35_000, "Fee should include V0 compute budget priority fee, got {fee}");
-
-    println!("Successfully calculated fee with V0 compute budget instructions: {fee} lamports");
 }

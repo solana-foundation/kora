@@ -1,8 +1,11 @@
 use crate::{
-    config::ValidationConfig,
     error::KoraError,
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
-    token::{interface::TokenMint, Token2022Program, TokenInterface, TokenProgram},
+    state::get_config,
+    token::{
+        interface::{DecodedTransfer, TokenMint},
+        Token2022Program, TokenInterface, TokenProgram,
+    },
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -127,37 +130,55 @@ impl TokenUtil {
         Ok(fee_in_token)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_token_transfer(
         ix: &CompiledInstruction,
         token_program: &dyn TokenInterface,
         account_keys: &[Pubkey],
         rpc_client: &RpcClient,
-        validation: &ValidationConfig,
         total_lamport_value: &mut u64,
         required_lamports: u64,
+        // Wallet address of the owner of the destination token account
+        expected_destination_owner: &Pubkey,
     ) -> Result<bool, KoraError> {
-        if let Ok((amount, mint_index)) = token_program.decode_transfer_instruction(&ix.data) {
-            if ix.accounts.is_empty() {
+        let config = get_config()?;
+
+        if ix.accounts.is_empty() {
+            return Ok(false);
+        }
+
+        if let Ok(DecodedTransfer { amount, destination_address, mint_address, source_address }) =
+            token_program.decode_transfer_instruction(ix, account_keys)
+        {
+            if source_address.is_none() || destination_address.is_none() {
                 return Ok(false);
             }
 
-            let source_idx = ix.accounts[0] as usize;
-            if source_idx >= account_keys.len() {
+            let source_address = source_address.unwrap();
+            let destination_address = destination_address.unwrap();
+
+            // Validate the destination account is that of the payment address (or signer if none provided)
+            let destination_account = rpc_client
+                .get_account(&destination_address)
+                .await
+                .map_err(|e| KoraError::RpcError(e.to_string()))?;
+
+            let token_state =
+                token_program.unpack_token_account(&destination_account.data).map_err(|e| {
+                    KoraError::InvalidTransaction(format!("Invalid token account: {e}"))
+                })?;
+
+            if token_state.owner() != *expected_destination_owner {
                 return Ok(false);
             }
-            let source_key = account_keys[source_idx];
 
             // If we have a transfer checked and therefore the mint account, we don't need to check the source's account owner as TokenProgram,
             // since we already know the instruction is with the system program,so if the source account is invalid, the instruction with the
             // token program will fail. Same with the balance of the source account, if too low the instruction will fail.
             // This might be useful if the token account is being created within the same transaction, since the source account is not yet created.
-            let (mint_address, actual_amount) = if let Some(mint_index) = mint_index {
-                if mint_index >= ix.accounts.len() {
-                    return Ok(false);
-                }
-                let mint_key = account_keys[ix.accounts[mint_index] as usize];
-                let mint_account = rpc_client.get_account(&mint_key).await?;
-                let mint_state = token_program.unpack_mint(&mint_key, &mint_account.data)?;
+            let (mint_address, actual_amount) = if let Some(mint_address) = mint_address {
+                let mint_account = rpc_client.get_account(&mint_address).await?;
+                let mint_state = token_program.unpack_mint(&mint_address, &mint_account.data)?;
 
                 let actual_amount = token_program
                     .get_and_validate_amount_for_payment(
@@ -173,10 +194,10 @@ impl TokenUtil {
                         ))
                     })?;
 
-                (mint_key, actual_amount)
+                (mint_address, actual_amount)
             } else {
                 let source_account = rpc_client
-                    .get_account(&source_key)
+                    .get_account(&source_address)
                     .await
                     .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
@@ -206,14 +227,14 @@ impl TokenUtil {
                 (token_state.mint(), actual_amount)
             };
 
-            if !validation.allowed_spl_paid_tokens.contains(&mint_address.to_string()) {
+            if !config.validation.allowed_spl_paid_tokens.contains(&mint_address.to_string()) {
                 return Ok(false);
             }
 
             let lamport_value = TokenUtil::calculate_token_value_in_lamports(
                 actual_amount,
                 &mint_address,
-                validation.price_source.clone(),
+                config.validation.price_source.clone(),
                 rpc_client,
             )
             .await?;

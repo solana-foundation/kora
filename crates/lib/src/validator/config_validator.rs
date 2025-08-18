@@ -1,11 +1,13 @@
 use std::str::FromStr;
 
 use crate::{
+    admin::token_util::find_missing_atas,
     fee::price::PriceModel,
     oracle::PriceSource,
+    state::get_config,
     token::token::TokenUtil,
     validator::account_validator::{validate_account, AccountType},
-    Config, KoraError,
+    KoraError,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, system_program::ID as SYSTEM_PROGRAM_ID};
@@ -20,26 +22,51 @@ use crate::fee::price::PriceConfig;
 pub struct ConfigValidator {}
 
 impl ConfigValidator {
-    pub async fn validate(config: &Config, _rpc_client: &RpcClient) -> Result<(), KoraError> {
+    pub async fn validate(_rpc_client: &RpcClient) -> Result<(), KoraError> {
+        let config = &get_config()?;
+
         if config.validation.allowed_tokens.is_empty() {
             return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
         }
 
         TokenUtil::check_valid_tokens(&config.validation.allowed_tokens)?;
+
+        if let Some(payment_address) = &config.kora.payment_address {
+            if let Err(e) = Pubkey::from_str(payment_address) {
+                return Err(KoraError::InternalServerError(format!(
+                    "Invalid payment address: {e}"
+                )));
+            }
+        }
+
         Ok(())
     }
 
     pub async fn validate_with_result(
-        config: &Config,
         rpc_client: &RpcClient,
         skip_rpc_validation: bool,
     ) -> Result<Vec<String>, Vec<String>> {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
 
+        let config = match get_config() {
+            Ok(c) => c,
+            Err(e) => {
+                errors.push(format!("Failed to get config: {e}"));
+                return Err(errors);
+            }
+        };
+
         // Validate rate limit (warn if 0)
         if config.kora.rate_limit == 0 {
             warnings.push("Rate limit is set to 0 - this will block all requests".to_string());
+        }
+
+        // Validate payment address
+        if let Some(payment_address) = &config.kora.payment_address {
+            if let Err(e) = Pubkey::from_str(payment_address) {
+                errors.push(format!("Invalid payment address: {e}"));
+            }
         }
 
         // Validate enabled methods (warn if all false)
@@ -191,6 +218,19 @@ impl ConfigValidator {
                     }
                 }
             }
+
+            // Validate missing ATAs for payment address
+            if let Some(payment_address) = &config.kora.payment_address {
+                let payment_address = Pubkey::from_str(payment_address).unwrap();
+
+                let atas_to_create = find_missing_atas(rpc_client, &payment_address).await;
+
+                if let Err(e) = atas_to_create {
+                    errors.push(format!("Failed to find missing ATAs: {e}"));
+                } else if !atas_to_create.unwrap().is_empty() {
+                    errors.push(format!("Missing ATAs for payment address: {payment_address}"));
+                }
+            }
         }
 
         // Output results
@@ -284,18 +324,21 @@ impl ValidationConfig {
 mod tests {
 
     use crate::{
-        config::{AuthConfig, EnabledMethods, KoraConfig, MetricsConfig},
+        config::{AuthConfig, Config, EnabledMethods, KoraConfig, MetricsConfig},
         fee::price::PriceConfig,
+        state::update_config,
         tests::common::{
             create_mock_non_executable_account, create_mock_program_account,
             create_mock_rpc_client_account_not_found, create_mock_spl_mint_account,
             get_mock_rpc_client,
         },
     };
+    use serial_test::serial;
 
     use super::*;
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_config() {
         let mut config = Config {
             validation: ValidationConfig {
@@ -309,23 +352,25 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
+            kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
         };
 
+        // Initialize global config
+        let _ = update_config(config.clone());
+
         // Test empty tokens list
-        config.validation.allowed_tokens.clear();
+        config.validation.allowed_tokens = vec![];
+        let _ = update_config(config);
+
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate(&config, &rpc_client).await;
+        let result = ConfigValidator::validate(&rpc_client).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), KoraError::InternalServerError(_)));
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_successful_config() {
         let config = Config {
             validation: ValidationConfig {
@@ -344,22 +389,22 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
+            kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
         };
 
+        // Initialize global config
+        let _ = update_config(config);
+
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
         assert!(warnings.is_empty());
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_warnings() {
         let config = Config {
             validation: ValidationConfig {
@@ -387,12 +432,16 @@ mod tests {
                     sign_transaction_if_paid: false, // All false - should warn
                 },
                 auth: AuthConfig::default(),
+                payment_address: None,
             },
             metrics: MetricsConfig::default(),
         };
 
+        // Initialize global config
+        let _ = update_config(config);
+
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
 
@@ -406,6 +455,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_missing_system_program_warning() {
         let config = Config {
             validation: ValidationConfig {
@@ -419,16 +469,15 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
+            kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
         };
 
+        // Initialize global config
+        let _ = update_config(config);
+
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
 
@@ -437,6 +486,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_errors() {
         let config = Config {
             validation: ValidationConfig {
@@ -452,16 +502,14 @@ mod tests {
                     model: PriceModel::Margin { margin: -0.1 }, // Error - negative margin
                 },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
+        let _ = update_config(config);
+
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
 
@@ -472,6 +520,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_fixed_price_errors() {
         let config = Config {
             validation: ValidationConfig {
@@ -492,16 +541,14 @@ mod tests {
                     },
                 },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
+        let _ = update_config(config);
+
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
 
@@ -509,6 +556,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_fixed_price_not_in_allowed_tokens() {
         let config = Config {
             validation: ValidationConfig {
@@ -529,16 +577,14 @@ mod tests {
                     },
                 },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
+        let _ = update_config(config);
+
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
 
@@ -551,6 +597,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_fixed_price_zero_amount_warning() {
         let config = Config {
             validation: ValidationConfig {
@@ -574,16 +621,14 @@ mod tests {
                     },
                 },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
+        let _ = update_config(config);
+
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
 
@@ -593,6 +638,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_fee_validation_errors() {
         let config = Config {
             validation: ValidationConfig {
@@ -606,16 +652,14 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
+        let _ = update_config(config);
+
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
 
@@ -626,6 +670,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_paid_tokens_not_in_allowed_tokens() {
         let config = Config {
             validation: ValidationConfig {
@@ -644,16 +689,14 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
 
+        let _ = update_config(config);
+
         let rpc_client = RpcClient::new("http://localhost:8899".to_string());
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
 
@@ -676,12 +719,8 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         }
     }
 
@@ -699,25 +738,25 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         }
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_rpc_validation_valid_program() {
         let config = create_program_only_config();
+
+        // Initialize global config
+        let _ = update_config(config);
 
         let mock_account = create_mock_program_account();
         let rpc_client = get_mock_rpc_client(&mock_account);
 
         // Test with RPC validation enabled (skip_rpc_validation = false)
         // The program validation should pass, but token validation will fail (AccountNotFound)
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, false).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, false).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
         // Should have token validation errors (account not found), but no program validation errors
@@ -728,15 +767,19 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_rpc_validation_valid_token_mint() {
         let config = create_token_only_config();
+
+        // Initialize global config
+        let _ = update_config(config);
 
         let mock_account = create_mock_spl_mint_account(6);
         let rpc_client = get_mock_rpc_client(&mock_account);
 
         // Test with RPC validation enabled (skip_rpc_validation = false)
         // Token validation should pass (mock returns token mint) since we have no programs
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, false).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, false).await;
         assert!(result.is_ok());
         // Should have warnings about no programs but no errors
         let warnings = result.unwrap();
@@ -744,6 +787,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_rpc_validation_non_executable_program_fails() {
         let config = Config {
             validation: ValidationConfig {
@@ -757,25 +801,25 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
+
+        // Initialize global config
+        let _ = update_config(config);
 
         let mock_account = create_mock_non_executable_account(); // Non-executable
         let rpc_client = get_mock_rpc_client(&mock_account);
 
         // Test with RPC validation enabled (skip_rpc_validation = false)
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, false).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, false).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(errors.iter().any(|e| e.contains("Program") && e.contains("validation failed")));
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_rpc_validation_account_not_found_fails() {
         let config = Config {
             validation: ValidationConfig {
@@ -789,24 +833,23 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
+
+        let _ = update_config(config);
 
         let rpc_client = create_mock_rpc_client_account_not_found();
 
         // Test with RPC validation enabled (skip_rpc_validation = false)
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, false).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, false).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(errors.iter().any(|e| e.contains("Failed to get account")));
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_skip_rpc_validation() {
         let config = Config {
             validation: ValidationConfig {
@@ -820,19 +863,17 @@ mod tests {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
             },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: EnabledMethods::default(),
-                auth: AuthConfig::default(),
-            },
             metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
         };
+
+        let _ = update_config(config);
 
         // Use account not found RPC client - should not matter when skipping RPC validation
         let rpc_client = create_mock_rpc_client_account_not_found();
 
         // Test with RPC validation disabled (skip_rpc_validation = true)
-        let result = ConfigValidator::validate_with_result(&config, &rpc_client, true).await;
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok()); // Should pass because RPC validation is skipped
     }
 }

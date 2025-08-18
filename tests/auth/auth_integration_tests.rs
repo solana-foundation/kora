@@ -1,5 +1,5 @@
+use crate::common::{auth_helpers::create_valid_hmac_signature_headers, *};
 use kora_lib::constant::{X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP};
-use testing_utils::*;
 
 /// Test API key authentication
 #[tokio::test]
@@ -89,7 +89,7 @@ async fn test_hmac_authentication() {
 async fn test_liveness_bypass() {
     let client = reqwest::Client::new();
     let liveness_response = client
-        .get(format!("{}/liveness", get_test_server_url()))
+        .get(format!("{}/liveness", ClientTestHelper::get_test_server_url()))
         .send()
         .await
         .expect("Liveness request should succeed");

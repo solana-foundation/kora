@@ -367,7 +367,7 @@ Setup:
 - `sdks/ts/test/setup.ts`: You will need to add an environment variable to `loadEnvironmentVariables`  to set the signer type to your service.
 - `sdks/ts/package.json`: You will need to add a new test script that uses the signer type you added to the setup script: `"test:integration:your-service": "KORA_SIGNER_TYPE=your-service pnpm test integration.test.ts"`. When executed, the test will run with the signer type set to your service.
 
-Integration testing requires a local Solana test validator and a local Kora node. We can use the [Makefile](/Makefile) to start a local Solana test validator and a local Kora node by adding a new script for your signer:
+Integration testing requires a local Solana test validator and a local Kora node. We can use the [TypeScript Test Makefile](/makefiles/tests_ts.mk) to start a local Solana test validator and a local Kora node by adding a new script for your signer:
 
 ```makefile
 # Run TypeScript tests with YourService signer  
