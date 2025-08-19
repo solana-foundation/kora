@@ -61,11 +61,11 @@ pub trait VersionedTransactionOps {
     async fn sign_transaction(
         &mut self,
         rpc_client: &RpcClient,
-    ) -> Result<(VersionedTransactionResolved, String), KoraError>;
+    ) -> Result<(VersionedTransaction, String), KoraError>;
     async fn sign_transaction_if_paid(
         &mut self,
         rpc_client: &RpcClient,
-    ) -> Result<(VersionedTransactionResolved, String), KoraError>;
+    ) -> Result<(VersionedTransaction, String), KoraError>;
     async fn sign_and_send_transaction(
         &mut self,
         rpc_client: &RpcClient,
@@ -107,19 +107,19 @@ impl VersionedTransactionResolved {
         resolved.all_account_keys = all_account_keys.clone();
 
         // 2. Fetch all instructions
-        let mut all_instructions =
+        let outer_instructions =
             IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys);
 
         let inner_instructions = resolved.fetch_inner_instructions(rpc_client).await?;
 
-        all_instructions.extend(inner_instructions);
-        resolved.all_instructions = all_instructions;
+        resolved.all_instructions.extend(outer_instructions);
+        resolved.all_instructions.extend(inner_instructions);
 
         Ok(resolved)
     }
 
     /// Only use this is we built the transaction ourselves, because it won't do any checks for resolving LUT, etc.
-    pub fn from_transaction_only(transaction: &VersionedTransaction) -> Self {
+    pub fn from_kora_built_transaction(transaction: &VersionedTransaction) -> Self {
         Self {
             transaction: transaction.clone(),
             all_account_keys: transaction.message.static_account_keys().to_vec(),
@@ -146,7 +146,9 @@ impl VersionedTransactionResolved {
             log::warn!(
                 "Transaction simulation failed: {err}, continuing without inner instructions",
             );
-            return Ok(vec![]);
+            return Err(KoraError::InvalidTransaction(
+                "Transaction inner instructions fetching failed.".to_string(),
+            ));
         }
 
         if let Some(inner_instructions) = simulation_result.value.inner_instructions {
@@ -175,20 +177,21 @@ impl VersionedTransactionResolved {
 
     pub fn get_or_parse_system_instructions(
         &mut self,
-    ) -> &HashMap<ParsedSystemInstructionType, Vec<ParsedSystemInstructionData>> {
+    ) -> Result<&HashMap<ParsedSystemInstructionType, Vec<ParsedSystemInstructionData>>, KoraError>
+    {
         if self.parsed_system_instructions.is_none() {
-            self.parsed_system_instructions = Some(IxUtils::parse_system_instructions(self));
+            self.parsed_system_instructions = Some(IxUtils::parse_system_instructions(self)?);
         }
-        self.parsed_system_instructions.as_ref().unwrap()
+        Ok(self.parsed_system_instructions.as_ref().unwrap())
     }
 
     pub fn get_or_parse_spl_instructions(
         &mut self,
-    ) -> &HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>> {
+    ) -> Result<&HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>, KoraError> {
         if self.parsed_spl_instructions.is_none() {
-            self.parsed_spl_instructions = Some(IxUtils::parse_token_instructions(self));
+            self.parsed_spl_instructions = Some(IxUtils::parse_token_instructions(self)?);
         }
-        self.parsed_spl_instructions.as_ref().unwrap()
+        Ok(self.parsed_spl_instructions.as_ref().unwrap())
     }
 }
 
@@ -218,7 +221,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
     async fn sign_transaction(
         &mut self,
         rpc_client: &RpcClient,
-    ) -> Result<(VersionedTransactionResolved, String), KoraError> {
+    ) -> Result<(VersionedTransaction, String), KoraError> {
         let signer = get_signer()?;
         let validator = TransactionValidator::new(signer.solana_pubkey())?;
 
@@ -251,22 +254,25 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let serialized = bincode::serialize(&transaction)?;
         let encoded = STANDARD.encode(serialized);
 
-        let resolved = VersionedTransactionResolved::from_transaction_only(&transaction.clone());
-
-        Ok((resolved, encoded))
+        Ok((transaction, encoded))
     }
 
     async fn sign_transaction_if_paid(
         &mut self,
         rpc_client: &RpcClient,
-    ) -> Result<(VersionedTransactionResolved, String), KoraError> {
+    ) -> Result<(VersionedTransaction, String), KoraError> {
         let signer = get_signer()?;
         let fee_payer = signer.solana_pubkey();
         let config = &get_config()?;
 
         // Get the simulation result for fee calculation
-        let min_transaction_fee =
-            FeeConfigUtil::estimate_transaction_fee(rpc_client, self, Some(&fee_payer)).await?;
+        let min_transaction_fee = FeeConfigUtil::estimate_transaction_fee(
+            rpc_client,
+            self,
+            Some(&fee_payer),
+            config.validation.is_payment_required(),
+        )
+        .await?;
 
         let required_lamports = config
             .validation
@@ -301,9 +307,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         &mut self,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError> {
-        let (resolved_transaction, encoded) = self.sign_transaction(rpc_client).await?;
-
-        let transaction = resolved_transaction.transaction;
+        let (transaction, encoded) = self.sign_transaction(rpc_client).await?;
 
         // Send and confirm transaction
         let signature = rpc_client
@@ -394,7 +398,7 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        let resolved = VersionedTransactionResolved::from_transaction_only(&tx);
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx);
         let encoded = resolved.encode_b64_transaction().unwrap();
         assert!(!encoded.is_empty());
         assert!(encoded
@@ -414,7 +418,7 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        let resolved = VersionedTransactionResolved::from_transaction_only(&tx);
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx);
         let encoded = resolved.encode_b64_transaction().unwrap();
         let decoded = TransactionUtil::decode_b64_transaction(&encoded).unwrap();
 

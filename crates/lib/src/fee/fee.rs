@@ -1,9 +1,12 @@
 use crate::{
-    constant::LAMPORTS_PER_SIGNATURE,
+    constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
     get_signer,
+    state::get_config,
+    token::token::TokenType,
     transaction::{
-        ParsedSystemInstructionData, ParsedSystemInstructionType, VersionedTransactionResolved,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
+        ParsedSystemInstructionType, VersionedTransactionResolved,
     },
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -69,10 +72,43 @@ impl FeeConfigUtil {
         Ok(exempt_min * ata_count)
     }
 
+    async fn has_payment_instruction(
+        resolved_transaction: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+    ) -> Result<u64, KoraError> {
+        let payment_destination = &get_config()?.kora.get_payment_address()?;
+
+        for instruction in resolved_transaction
+            .get_or_parse_spl_instructions()?
+            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenTransfer { destination_address, .. } =
+                instruction
+            {
+                let destination_account = rpc_client.get_account(destination_address).await?;
+
+                let token_program =
+                    TokenType::get_token_program_from_owner(&destination_account.owner)?;
+
+                let token_account =
+                    token_program.unpack_token_account(&destination_account.data)?;
+
+                if token_account.owner() == *payment_destination {
+                    return Ok(0);
+                }
+            }
+        }
+
+        // For now we estimate the fee for a payment instruction to be hardcoded, simulation / estimation isn't support yet
+        Ok(ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION)
+    }
+
     pub async fn estimate_transaction_fee(
         rpc_client: &RpcClient,
         transaction: &mut VersionedTransactionResolved,
         fee_payer: Option<&Pubkey>,
+        is_payment_required: bool,
     ) -> Result<u64, KoraError> {
         let inner_transaction = &transaction.transaction;
 
@@ -101,7 +137,19 @@ impl FeeConfigUtil {
             0
         };
 
-        Ok(base_fee + account_creation_fee + kora_signature_fee + fee_payer_outflow)
+        // If the transaction for paying the gasless relayer is not included, but we expect a payment, we need to add the fee for the payment instruction
+        // for a better approximation of the fee
+        let fee_for_payment_instruction = if is_payment_required {
+            FeeConfigUtil::has_payment_instruction(transaction, rpc_client).await?
+        } else {
+            0
+        };
+
+        Ok(base_fee
+            + account_creation_fee
+            + kora_signature_fee
+            + fee_payer_outflow
+            + fee_for_payment_instruction)
     }
 
     /// Calculate the total outflow (SOL spending) that could occur for a fee payer account in a transaction.
@@ -112,7 +160,7 @@ impl FeeConfigUtil {
     ) -> Result<u64, KoraError> {
         let mut total = 0u64;
 
-        let parsed_system_instructions = transaction.get_or_parse_system_instructions();
+        let parsed_system_instructions = transaction.get_or_parse_system_instructions()?;
 
         for instruction in parsed_system_instructions
             .get(&ParsedSystemInstructionType::SystemTransfer)
@@ -184,11 +232,19 @@ impl TransactionFeeUtil {
 #[cfg(test)]
 mod tests {
     use crate::{
-        fee::fee::FeeConfigUtil, tests::common::setup_or_get_test_signer,
+        constant::ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
+        fee::fee::FeeConfigUtil,
+        tests::common::{
+            create_mock_token_account, get_mock_rpc_client, setup_or_get_test_config,
+            setup_or_get_test_signer,
+        },
+        token::{interface::TokenInterface, TokenProgram},
         transaction::TransactionUtil,
     };
     use solana_message::{v0, Message, VersionedMessage};
+
     use solana_sdk::{
+        account::Account,
         hash::Hash,
         instruction::Instruction,
         pubkey::Pubkey,
@@ -201,6 +257,7 @@ mod tests {
         },
         program::ID as SYSTEM_PROGRAM_ID,
     };
+    use spl_associated_token_account::get_associated_token_address;
 
     #[test]
     fn test_is_fee_payer_in_signers_legacy_fee_payer_is_signer() {
@@ -517,5 +574,110 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(outflow, 0, "Non-system program should not affect outflow");
+    }
+
+    #[tokio::test]
+    async fn test_has_payment_instruction_with_payment() {
+        setup_or_get_test_config();
+        let signer = setup_or_get_test_signer();
+        let mint = Pubkey::new_unique();
+
+        let mocked_account = create_mock_token_account(&signer, &mint);
+        let mocked_rpc_client = get_mock_rpc_client(&mocked_account);
+
+        let sender = Keypair::new();
+
+        let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
+        let payment_token_account = get_associated_token_address(&signer, &mint);
+
+        let transfer_instruction = TokenProgram::new()
+            .create_transfer_instruction(
+                &sender_token_account,
+                &payment_token_account,
+                &sender.pubkey(),
+                1000,
+            )
+            .unwrap();
+
+        // Create message with the payment instruction
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_instruction], None));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        // Test: Should return 0 because payment instruction exists
+        let result =
+            FeeConfigUtil::has_payment_instruction(&mut resolved_transaction, &mocked_rpc_client)
+                .await
+                .unwrap();
+
+        assert_eq!(result, 0, "Should return 0 when payment instruction exists");
+    }
+
+    #[tokio::test]
+    async fn test_has_payment_instruction_without_payment() {
+        setup_or_get_test_config();
+        let mocked_rpc_client = get_mock_rpc_client(&Account::default());
+
+        let sender = Keypair::new();
+        let recipient = Pubkey::new_unique();
+
+        // Create SOL transfer instruction (no SPL transfer to payment destination)
+        let sol_transfer = transfer(&sender.pubkey(), &recipient, 100_000);
+
+        // Create message without payment instruction
+        let message = VersionedMessage::Legacy(Message::new(&[sol_transfer], None));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        // Test: Should return fee estimate because no payment instruction exists
+        let result =
+            FeeConfigUtil::has_payment_instruction(&mut resolved_transaction, &mocked_rpc_client)
+                .await
+                .unwrap();
+
+        assert_eq!(
+            result, ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
+            "Should return fee estimate when no payment instruction exists"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_has_payment_instruction_with_spl_transfer_to_different_destination() {
+        setup_or_get_test_config();
+        let sender = Keypair::new();
+        let mint = Pubkey::new_unique();
+
+        let mocked_account = create_mock_token_account(&sender.pubkey(), &mint);
+        let mocked_rpc_client = get_mock_rpc_client(&mocked_account);
+
+        // Create token accounts
+        let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
+        let recipient_token_account = get_associated_token_address(&sender.pubkey(), &mint);
+
+        // Create SPL transfer instruction to DIFFERENT destination (not payment)
+        let transfer_instruction = TokenProgram::new()
+            .create_transfer_instruction(
+                &sender_token_account,
+                &recipient_token_account,
+                &sender.pubkey(),
+                1000,
+            )
+            .unwrap();
+
+        // Create message with non-payment transfer
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_instruction], None));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        // Test: Should return fee estimate because SPL transfer is to different destination
+        let result =
+            FeeConfigUtil::has_payment_instruction(&mut resolved_transaction, &mocked_rpc_client)
+                .await
+                .unwrap();
+
+        assert_eq!(
+            result, ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
+            "Should return fee estimate when SPL transfer is to different destination"
+        );
     }
 }

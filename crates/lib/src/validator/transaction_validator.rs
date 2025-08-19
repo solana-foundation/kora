@@ -170,7 +170,7 @@ impl TransactionValidator {
         &self,
         transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
-        let system_instructions = transaction_resolved.get_or_parse_system_instructions();
+        let system_instructions = transaction_resolved.get_or_parse_system_instructions()?;
 
         let check_if_allowed = |address: &Pubkey, policy_allowed: bool| {
             if *address == self.fee_payer_pubkey && !policy_allowed {
@@ -199,7 +199,7 @@ impl TransactionValidator {
         }
 
         // Validate SPL instructions
-        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions();
+        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
 
         for instruction in
             spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer).unwrap_or(&vec![])

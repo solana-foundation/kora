@@ -1,6 +1,6 @@
 use crate::common::*;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use jsonrpsee::{core::client::ClientT, rpc_params};
-use kora_lib::transaction::{VersionedTransactionOps, VersionedTransactionResolved};
 use solana_commitment_config::CommitmentConfig;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::{v0, Message, VersionedMessage};
@@ -31,10 +31,8 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
         &blockhash.0,
     ));
     let transaction = VersionedTransaction::try_new(message, &[&sender]).unwrap();
-    let resolved_transaction = VersionedTransactionResolved::from_transaction_only(&transaction);
-
-    let encoded_tx =
-        resolved_transaction.encode_b64_transaction().expect("Failed to encode transaction");
+    let serialized = bincode::serialize(&transaction).unwrap();
+    let encoded_tx = STANDARD.encode(serialized);
 
     let response: serde_json::Value = client
         .request(
@@ -51,7 +49,8 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
     // Priority fee calculation: 300_000 * 50_000 / 1_000_000 = 15_000 lamports
     // Plus base transaction fee (5000 for this transaction) = 20_000 lamports total
     // Plus Kora signature fee (5000 for this transaction) = 25_000 lamports total
-    assert!(fee == 25_000, "Fee should include compute budget priority fee, got {fee}");
+    // Plus payment instruction fee (50 lamports) = 25_050 lamports total
+    assert!(fee == 25_050, "Fee should include compute budget priority fee, got {fee}");
 }
 
 #[tokio::test]
@@ -81,10 +80,8 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
 
     let message = VersionedMessage::V0(v0_message);
     let transaction = VersionedTransaction::try_new(message, &[&fee_payer, &sender]).unwrap();
-    let resolved_transaction = VersionedTransactionResolved::from_transaction_only(&transaction);
-
-    let encoded_tx =
-        resolved_transaction.encode_b64_transaction().expect("Failed to encode transaction");
+    let serialized = bincode::serialize(&transaction).unwrap();
+    let encoded_tx = STANDARD.encode(serialized);
 
     let response: serde_json::Value = client
         .request(
@@ -99,6 +96,7 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
 
     // Priority fee calculation: 1_000_000 * 25_000 / 1_000_000 = 25_000 lamports
     // Plus base transaction fee (2 signatures) (10000 for this transaction) = 35_000 lamports total
+    // Plus payment instruction fee (50 lamports) = 35_050 lamports total
     // We don't include the Kora signature EXTRA fee because the fee payer is already Kora and added as a signer
-    assert!(fee == 35_000, "Fee should include V0 compute budget priority fee, got {fee}");
+    assert!(fee == 35_050, "Fee should include V0 compute budget priority fee, got {fee}");
 }
