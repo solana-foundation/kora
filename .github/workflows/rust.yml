@@ -118,6 +118,7 @@ jobs:
         uses: ./.github/actions/setup-kora-rpc
         with:
           config-file: "tests/src/common/fixtures/paymaster-address-test.toml"
+          initialize-atas: "true"
 
       - name: Run payment address integration tests with coverage
         run: |

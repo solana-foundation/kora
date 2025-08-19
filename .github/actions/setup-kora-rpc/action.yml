@@ -26,6 +26,10 @@ inputs:
     description: "Test server URL for health checks"
     required: false
     default: "http://127.0.0.1:8080"
+  initialize-atas:
+    description: "Whether to initialize payment ATAs after starting server"
+    required: false
+    default: "false"
 
 outputs:
   kora-pid:
@@ -73,3 +77,14 @@ runs:
           jobs
           exit 1
         fi
+
+    - name: Initialize payment ATAs
+      if: ${{ inputs.initialize-atas == 'true' }}
+      shell: bash
+      run: |
+        echo "🔧 Initializing payment ATAs..."
+        cargo run -p kora-cli --bin kora -- \
+          --config ${{ inputs.config-file }} \
+          --rpc-url ${{ inputs.rpc-url }} \
+          rpc initialize-atas \
+          --private-key ${{ inputs.private-key }}
