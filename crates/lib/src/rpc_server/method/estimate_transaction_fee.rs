@@ -45,6 +45,7 @@ pub async fn estimate_transaction_fee(
         rpc_client,
         &mut resolved_transaction,
         Some(&fee_payer),
+        validation_config.is_payment_required(),
     )
     .await?;
 

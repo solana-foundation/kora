@@ -44,7 +44,12 @@ impl TransactionUtil {
         message: VersionedMessage,
     ) -> VersionedTransactionResolved {
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        VersionedTransactionResolved::from_transaction_only(&transaction)
+        VersionedTransactionResolved::from_kora_built_transaction(&transaction)
+    }
+
+    pub fn encode_versioned_transaction(transaction: &VersionedTransaction) -> String {
+        let serialized = bincode::serialize(transaction).unwrap();
+        STANDARD.encode(serialized)
     }
 }
 

@@ -117,20 +117,20 @@ pub async fn transfer_transaction(
     ));
     let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-    let mut simple_resolved_transaction =
-        VersionedTransactionResolved::from_transaction_only(&transaction);
+    let mut resolved_transaction =
+        VersionedTransactionResolved::from_kora_built_transaction(&transaction);
 
     // validate transaction before signing
-    validator.validate_transaction(&mut simple_resolved_transaction).await?;
+    validator.validate_transaction(&mut resolved_transaction).await?;
 
     // Find the fee payer position in the account keys
-    let fee_payer_position = simple_resolved_transaction.find_signer_position(&fee_payer)?;
+    let fee_payer_position = resolved_transaction.find_signer_position(&fee_payer)?;
 
-    let signature = signer.sign_solana(&simple_resolved_transaction).await?;
+    let signature = signer.sign_solana(&resolved_transaction).await?;
 
-    simple_resolved_transaction.transaction.signatures[fee_payer_position] = signature;
+    resolved_transaction.transaction.signatures[fee_payer_position] = signature;
 
-    let encoded = simple_resolved_transaction.encode_b64_transaction()?;
+    let encoded = resolved_transaction.encode_b64_transaction()?;
     let message_encoded = transaction.message.encode_b64_message()?;
 
     Ok(TransferTransactionResponse {

@@ -7,7 +7,9 @@ use solana_sdk::{
     system_program::ID as SYSTEM_PROGRAM_ID,
 };
 
-use crate::transaction::VersionedTransactionResolved;
+use crate::{
+    constant::instruction_indexes, error::KoraError, transaction::VersionedTransactionResolved,
+};
 
 // Instruction type that we support to parse from the transaction
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -67,6 +69,19 @@ pub enum ParsedSPLInstructionData {
     },
 }
 
+/// Macro to validate that an instruction has the required number of accounts
+/// Usage: validate_accounts!(instruction, min_count)
+macro_rules! validate_number_accounts {
+    ($instruction:expr, $min_count:expr) => {
+        if $instruction.accounts.len() < $min_count {
+            log::error!("Instruction {:?} has less than {} accounts", $instruction, $min_count);
+            return Err(KoraError::InvalidTransaction(format!(
+                "Instruction doesn't have the required number of accounts",
+            )));
+        }
+    };
+}
+
 pub struct IxUtils;
 
 impl IxUtils {
@@ -107,7 +122,8 @@ impl IxUtils {
 
     pub fn parse_system_instructions(
         transaction: &VersionedTransactionResolved,
-    ) -> HashMap<ParsedSystemInstructionType, Vec<ParsedSystemInstructionData>> {
+    ) -> Result<HashMap<ParsedSystemInstructionType, Vec<ParsedSystemInstructionData>>, KoraError>
+    {
         let mut parsed_instructions: HashMap<
             ParsedSystemInstructionType,
             Vec<ParsedSystemInstructionData>,
@@ -122,72 +138,103 @@ impl IxUtils {
                     // Account creation instructions - funding account pays lamports
                     Ok(SystemInstruction::CreateAccount { lamports, .. })
                     | Ok(SystemInstruction::CreateAccountWithSeed { lamports, .. }) => {
+                        validate_number_accounts!(
+                            instruction,
+                            instruction_indexes::system_create_account::REQUIRED_NUMBER_OF_ACCOUNTS
+                        );
+
                         parsed_instructions
                             .entry(ParsedSystemInstructionType::SystemCreateAccount)
                             .or_default()
                             .push(ParsedSystemInstructionData::SystemCreateAccount {
                                 lamports,
-                                payer: instruction.accounts[0].pubkey,
+                                payer: instruction.accounts
+                                    [instruction_indexes::system_create_account::PAYER_INDEX]
+                                    .pubkey,
                             });
                     }
                     // Transfer instructions
                     Ok(SystemInstruction::Transfer { lamports }) => {
+                        validate_number_accounts!(
+                            instruction,
+                            instruction_indexes::system_transfer::REQUIRED_NUMBER_OF_ACCOUNTS
+                        );
+
                         parsed_instructions
                             .entry(ParsedSystemInstructionType::SystemTransfer)
                             .or_default()
                             .push(ParsedSystemInstructionData::SystemTransfer {
                                 lamports,
-                                sender: instruction.accounts[0].pubkey,
-                                receiver: instruction.accounts[1].pubkey,
+                                sender: instruction.accounts
+                                    [instruction_indexes::system_transfer::SENDER_INDEX]
+                                    .pubkey,
+                                receiver: instruction.accounts
+                                    [instruction_indexes::system_transfer::RECEIVER_INDEX]
+                                    .pubkey,
                             });
                     }
                     Ok(SystemInstruction::TransferWithSeed { lamports, .. }) => {
+                        validate_number_accounts!(instruction, instruction_indexes::system_transfer_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                         parsed_instructions
                             .entry(ParsedSystemInstructionType::SystemTransfer)
                             .or_default()
                             .push(ParsedSystemInstructionData::SystemTransfer {
                                 lamports,
-                                sender: instruction.accounts[1].pubkey,
-                                receiver: instruction.accounts[2].pubkey,
+                                sender: instruction.accounts[instruction_indexes::system_transfer_with_seed::SENDER_INDEX].pubkey,
+                                receiver: instruction.accounts[instruction_indexes::system_transfer_with_seed::RECEIVER_INDEX].pubkey,
                             });
                     }
                     // Nonce account withdrawal
                     Ok(SystemInstruction::WithdrawNonceAccount(lamports)) => {
+                        validate_number_accounts!(instruction, instruction_indexes::system_withdraw_nonce_account::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                         parsed_instructions
                             .entry(ParsedSystemInstructionType::SystemWithdrawNonceAccount)
                             .or_default()
                             .push(ParsedSystemInstructionData::SystemWithdrawNonceAccount {
                                 lamports,
-                                nonce_authority: instruction.accounts[4].pubkey,
-                                recipient: instruction.accounts[1].pubkey,
+                                nonce_authority: instruction.accounts[instruction_indexes::system_withdraw_nonce_account::NONCE_AUTHORITY_INDEX].pubkey,
+                                recipient: instruction.accounts[instruction_indexes::system_withdraw_nonce_account::RECIPIENT_INDEX].pubkey,
                             });
                     }
                     Ok(SystemInstruction::Assign { .. }) => {
+                        validate_number_accounts!(
+                            instruction,
+                            instruction_indexes::system_assign::REQUIRED_NUMBER_OF_ACCOUNTS
+                        );
+
                         parsed_instructions
                             .entry(ParsedSystemInstructionType::SystemAssign)
                             .or_default()
                             .push(ParsedSystemInstructionData::SystemAssign {
-                                authority: instruction.accounts[0].pubkey,
+                                authority: instruction.accounts
+                                    [instruction_indexes::system_assign::AUTHORITY_INDEX]
+                                    .pubkey,
                             });
                     }
                     Ok(SystemInstruction::AssignWithSeed { .. }) => {
+                        validate_number_accounts!(instruction, instruction_indexes::system_assign_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                         parsed_instructions
                             .entry(ParsedSystemInstructionType::SystemAssign)
                             .or_default()
                             .push(ParsedSystemInstructionData::SystemAssign {
-                                authority: instruction.accounts[1].pubkey,
+                                authority: instruction.accounts
+                                    [instruction_indexes::system_assign_with_seed::AUTHORITY_INDEX]
+                                    .pubkey,
                             });
                     }
                     _ => {}
                 }
             }
         }
-        parsed_instructions
+        Ok(parsed_instructions)
     }
 
     pub fn parse_token_instructions(
         transaction: &VersionedTransactionResolved,
-    ) -> HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>> {
+    ) -> Result<HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>, KoraError> {
         let mut parsed_instructions: HashMap<
             ParsedSPLInstructionType,
             Vec<ParsedSPLInstructionData>,
@@ -202,15 +249,17 @@ impl IxUtils {
                 {
                     match spl_ix {
                         spl_token::instruction::TokenInstruction::Transfer { amount } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenTransfer)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenTransfer {
-                                    owner: instruction.accounts[2].pubkey,
+                                    owner: instruction.accounts[instruction_indexes::spl_token_transfer::OWNER_INDEX].pubkey,
                                     amount,
                                     mint: None,
-                                    source_address: instruction.accounts[0].pubkey,
-                                    destination_address: instruction.accounts[1].pubkey,
+                                    source_address: instruction.accounts[instruction_indexes::spl_token_transfer::SOURCE_ADDRESS_INDEX].pubkey,
+                                    destination_address: instruction.accounts[instruction_indexes::spl_token_transfer::DESTINATION_ADDRESS_INDEX].pubkey,
                                     is_2022: false,
                                 });
                         }
@@ -218,52 +267,74 @@ impl IxUtils {
                             amount,
                             ..
                         } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenTransfer)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenTransfer {
-                                    owner: instruction.accounts[3].pubkey,
+                                    owner: instruction.accounts[instruction_indexes::spl_token_transfer_checked::OWNER_INDEX].pubkey,
                                     amount,
-                                    mint: Some(instruction.accounts[1].pubkey),
-                                    source_address: instruction.accounts[0].pubkey,
-                                    destination_address: instruction.accounts[2].pubkey,
+                                    mint: Some(instruction.accounts[instruction_indexes::spl_token_transfer_checked::MINT_INDEX].pubkey),
+                                    source_address: instruction.accounts[instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX].pubkey,
+                                    destination_address: instruction.accounts[instruction_indexes::spl_token_transfer_checked::DESTINATION_ADDRESS_INDEX].pubkey,
                                     is_2022: false,
                                 });
                         }
                         spl_token::instruction::TokenInstruction::Burn { .. }
                         | spl_token::instruction::TokenInstruction::BurnChecked { .. } => {
+                            validate_number_accounts!(
+                                instruction,
+                                instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
+                            );
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenBurn)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenBurn {
-                                    owner: instruction.accounts[2].pubkey,
+                                    owner: instruction.accounts
+                                        [instruction_indexes::spl_token_burn::OWNER_INDEX]
+                                        .pubkey,
                                     is_2022: false,
                                 });
                         }
                         spl_token::instruction::TokenInstruction::CloseAccount { .. } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_close_account::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenCloseAccount)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenCloseAccount {
-                                    owner: instruction.accounts[2].pubkey,
+                                    owner: instruction.accounts
+                                        [instruction_indexes::spl_token_close_account::OWNER_INDEX]
+                                        .pubkey,
                                     is_2022: false,
                                 });
                         }
                         spl_token::instruction::TokenInstruction::Approve { .. } => {
+                            validate_number_accounts!(
+                                instruction,
+                                instruction_indexes::spl_token_approve::REQUIRED_NUMBER_OF_ACCOUNTS
+                            );
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenApprove)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenApprove {
-                                    owner: instruction.accounts[2].pubkey,
+                                    owner: instruction.accounts
+                                        [instruction_indexes::spl_token_approve::OWNER_INDEX]
+                                        .pubkey,
                                     is_2022: false,
                                 });
                         }
                         spl_token::instruction::TokenInstruction::ApproveChecked { .. } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_approve_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenApprove)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenApprove {
-                                    owner: instruction.accounts[3].pubkey,
+                                    owner: instruction.accounts[instruction_indexes::spl_token_approve_checked::OWNER_INDEX].pubkey,
                                     is_2022: false,
                                 });
                         }
@@ -277,15 +348,17 @@ impl IxUtils {
                     match spl_ix {
                         #[allow(deprecated)]
                         spl_token_2022::instruction::TokenInstruction::Transfer { amount } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenTransfer)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenTransfer {
-                                    owner: instruction.accounts[2].pubkey,
+                                    owner: instruction.accounts[instruction_indexes::spl_token_transfer::OWNER_INDEX].pubkey,
                                     amount,
                                     mint: None,
-                                    source_address: instruction.accounts[0].pubkey,
-                                    destination_address: instruction.accounts[1].pubkey,
+                                    source_address: instruction.accounts[instruction_indexes::spl_token_transfer::SOURCE_ADDRESS_INDEX].pubkey,
+                                    destination_address: instruction.accounts[instruction_indexes::spl_token_transfer::DESTINATION_ADDRESS_INDEX].pubkey,
                                     is_2022: true,
                                 });
                         }
@@ -293,54 +366,76 @@ impl IxUtils {
                             amount,
                             ..
                         } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenTransfer)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenTransfer {
-                                    owner: instruction.accounts[3].pubkey,
+                                    owner: instruction.accounts[instruction_indexes::spl_token_transfer_checked::OWNER_INDEX].pubkey,
                                     amount,
-                                    mint: Some(instruction.accounts[1].pubkey),
-                                    source_address: instruction.accounts[0].pubkey,
-                                    destination_address: instruction.accounts[2].pubkey,
+                                    mint: Some(instruction.accounts[instruction_indexes::spl_token_transfer_checked::MINT_INDEX].pubkey),
+                                    source_address: instruction.accounts[instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX].pubkey,
+                                    destination_address: instruction.accounts[instruction_indexes::spl_token_transfer_checked::DESTINATION_ADDRESS_INDEX].pubkey,
                                     is_2022: true,
                                 });
                         }
                         spl_token_2022::instruction::TokenInstruction::Burn { .. }
                         | spl_token_2022::instruction::TokenInstruction::BurnChecked { .. } => {
+                            validate_number_accounts!(
+                                instruction,
+                                instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
+                            );
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenBurn)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenBurn {
-                                    owner: instruction.accounts[2].pubkey,
+                                    owner: instruction.accounts
+                                        [instruction_indexes::spl_token_burn::OWNER_INDEX]
+                                        .pubkey,
                                     is_2022: true,
                                 });
                         }
                         spl_token_2022::instruction::TokenInstruction::CloseAccount { .. } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_close_account::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenCloseAccount)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenCloseAccount {
-                                    owner: instruction.accounts[2].pubkey,
+                                    owner: instruction.accounts
+                                        [instruction_indexes::spl_token_close_account::OWNER_INDEX]
+                                        .pubkey,
                                     is_2022: true,
                                 });
                         }
                         spl_token_2022::instruction::TokenInstruction::Approve { .. } => {
+                            validate_number_accounts!(
+                                instruction,
+                                instruction_indexes::spl_token_approve::REQUIRED_NUMBER_OF_ACCOUNTS
+                            );
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenApprove)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenApprove {
-                                    owner: instruction.accounts[2].pubkey,
+                                    owner: instruction.accounts
+                                        [instruction_indexes::spl_token_approve::OWNER_INDEX]
+                                        .pubkey,
                                     is_2022: true,
                                 });
                         }
                         spl_token_2022::instruction::TokenInstruction::ApproveChecked {
                             ..
                         } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_approve_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
+
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenApprove)
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenApprove {
-                                    owner: instruction.accounts[3].pubkey,
+                                    owner: instruction.accounts[instruction_indexes::spl_token_approve_checked::OWNER_INDEX].pubkey,
                                     is_2022: true,
                                 });
                         }
@@ -349,7 +444,7 @@ impl IxUtils {
                 }
             }
         }
-        parsed_instructions
+        Ok(parsed_instructions)
     }
 }
 
