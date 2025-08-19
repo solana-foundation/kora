@@ -4,7 +4,7 @@ use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::{program_pack::Pack, pubkey::Pubkey};
-use solana_sdk::instruction::Instruction;
+use solana_sdk::{account::Account, instruction::Instruction};
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
@@ -214,6 +214,15 @@ impl TokenInterface for TokenProgram {
         amount: u64,
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         Ok(amount)
+    }
+
+    async fn get_ata_account_size(
+        &self,
+        _mint_pubkey: &Pubkey,
+        _mint: &Account,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        // SPL Token accounts always have the same size
+        Ok(TokenAccountState::LEN)
     }
 }
 

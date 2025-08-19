@@ -11,8 +11,10 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
+use solana_program::program_pack::Pack;
 use solana_sdk::{pubkey::Pubkey, rent::Rent};
 use spl_associated_token_account::get_associated_token_address;
+use spl_token::state::Account as SplTokenAccountState;
 
 pub struct FeeConfigUtil {}
 
@@ -44,8 +46,7 @@ impl FeeConfigUtil {
         rpc_client: &RpcClient,
         transaction: &VersionedTransactionResolved,
     ) -> Result<u64, KoraError> {
-        const ATA_ACCOUNT_SIZE: usize = 165; // Standard ATA size
-        let mut ata_count = 0u64;
+        let mut total_lamports = 0u64;
 
         // Check each instruction in the transaction for ATA creation
         for instruction in &transaction.all_instructions {
@@ -61,15 +62,36 @@ impl FeeConfigUtil {
             let expected_ata = get_associated_token_address(&owner, &mint);
 
             if ata == expected_ata && rpc_client.get_account(&ata).await.is_err() {
-                ata_count += 1;
+                // Determine the appropriate token program and get account size
+                let account_size = match rpc_client.get_account(&mint).await {
+                    Ok(mint_account) => {
+                        match TokenType::get_token_program_from_owner(&mint_account.owner) {
+                            Ok(token_program) => token_program
+                                .get_ata_account_size(&mint, &mint_account)
+                                .await
+                                .unwrap_or(SplTokenAccountState::LEN),
+                            Err(_) => {
+                                return Err(KoraError::InternalServerError(
+                                    "Unknown token program".to_string(),
+                                ));
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        return Err(KoraError::InternalServerError(
+                            "Failed to fetch mint account".to_string(),
+                        ));
+                    }
+                };
+
+                // Get rent cost in lamports for ATA creation with the determined size
+                let rent = Rent::default();
+                let exempt_min = rent.minimum_balance(account_size);
+                total_lamports += exempt_min;
             }
         }
 
-        // Get rent cost in lamports for ATA creation
-        let rent = Rent::default();
-        let exempt_min = rent.minimum_balance(ATA_ACCOUNT_SIZE);
-
-        Ok(exempt_min * ata_count)
+        Ok(total_lamports)
     }
 
     async fn has_payment_instruction(
