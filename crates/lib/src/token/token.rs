@@ -10,6 +10,7 @@ use crate::{
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
     },
+    CacheUtil,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
@@ -60,7 +61,7 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         mint_pubkey: &Pubkey,
     ) -> Result<Box<dyn TokenMint + Send + Sync>, KoraError> {
-        let mint_account = rpc_client.get_account(mint_pubkey).await?;
+        let mint_account = CacheUtil::get_account(rpc_client, mint_pubkey, false).await?;
 
         let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
 
@@ -140,13 +141,13 @@ impl TokenUtil {
         destination_address: &Pubkey,
         mint: &Option<Pubkey>,
     ) -> Result<(), KoraError> {
-        let config = &get_config()?.validation.token2022;
+        let config = &get_config()?.validation.token_2022;
 
         let token_program = Token2022Program::new();
 
-        // Get mint account data and validate mint extensions
+        // Get mint account data and validate mint extensions (force refresh in case extensions are added)
         if let Some(mint) = mint {
-            let mint_account = rpc_client.get_account(mint).await?;
+            let mint_account = CacheUtil::get_account(rpc_client, mint, true).await?;
             let mint_data = mint_account.data;
 
             // Unpack the mint state with extensions
@@ -164,8 +165,8 @@ impl TokenUtil {
             }
         }
 
-        // Check source account extensions
-        let source_account = rpc_client.get_account(source_address).await?;
+        // Check source account extensions (force refresh in case extensions are added)
+        let source_account = CacheUtil::get_account(rpc_client, source_address, true).await?;
         let source_data = source_account.data;
 
         let source_state = token_program.unpack_token_account(&source_data)?;
@@ -181,8 +182,9 @@ impl TokenUtil {
             }
         }
 
-        // Check destination account extensions
-        let destination_account = rpc_client.get_account(destination_address).await?;
+        // Check destination account extensions (force refresh in case extensions are added)
+        let destination_account =
+            CacheUtil::get_account(rpc_client, destination_address, true).await?;
         let destination_data = destination_account.data;
 
         let destination_state = token_program.unpack_token_account(&destination_data)?;
@@ -244,10 +246,10 @@ impl TokenUtil {
                 }
 
                 // Validate the destination account is that of the payment address (or signer if none provided)
-                let destination_account = rpc_client
-                    .get_account(destination_address)
-                    .await
-                    .map_err(|e| KoraError::RpcError(e.to_string()))?;
+                let destination_account =
+                    CacheUtil::get_account(rpc_client, destination_address, false)
+                        .await
+                        .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
                 let token_state =
                     token_program.unpack_token_account(&destination_account.data).map_err(|e| {
@@ -264,7 +266,9 @@ impl TokenUtil {
                 // token program will fail. Same with the balance of the source account, if too low the instruction will fail.
                 // This might be useful if the token account is being created within the same transaction, since the source account is not yet created.
                 let (mint_address, actual_amount) = if let Some(mint_address) = *mint {
-                    let mint_account = rpc_client.get_account(&mint_address).await?;
+                    // Force refresh in case extensions are modified
+                    let mint_account =
+                        CacheUtil::get_account(rpc_client, &mint_address, true).await?;
                     let mint_state =
                         token_program.unpack_mint(&mint_address, &mint_account.data)?;
 
@@ -284,8 +288,8 @@ impl TokenUtil {
 
                     (mint_address, actual_amount)
                 } else {
-                    let source_account = rpc_client
-                        .get_account(source_address)
+                    // Force refresh in case extensions are modified
+                    let source_account = CacheUtil::get_account(rpc_client, source_address, true)
                         .await
                         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 

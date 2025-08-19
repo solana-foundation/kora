@@ -63,7 +63,7 @@ pub fn setup_or_get_test_config() -> Config {
             price_source: PriceSource::Mock,
             fee_payer_policy: FeePayerPolicy::default(),
             price: PriceConfig::default(),
-            token2022: Token2022Config::default(),
+            token_2022: Token2022Config::default(),
         },
         kora: KoraConfig::default(),
         metrics: MetricsConfig::default(),

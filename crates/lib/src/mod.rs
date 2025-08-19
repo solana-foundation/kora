@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod cache;
 pub mod config;
 pub mod constant;
 pub mod error;
@@ -13,6 +14,7 @@ pub mod state;
 pub mod token;
 pub mod transaction;
 pub mod validator;
+pub use cache::CacheUtil;
 pub use config::Config;
 pub use error::KoraError;
 pub use signer::{Signature, Signer};

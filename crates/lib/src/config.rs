@@ -7,8 +7,8 @@ use utoipa::ToSchema;
 
 use crate::{
     constant::{
-        DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
-        DEFAULT_METRICS_SCRAPE_INTERVAL,
+        DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL, DEFAULT_MAX_TIMESTAMP_AGE,
+        DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT, DEFAULT_METRICS_SCRAPE_INTERVAL,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
@@ -57,7 +57,7 @@ pub struct ValidationConfig {
     #[serde(default)]
     pub price: PriceConfig,
     #[serde(default)]
-    pub token2022: Token2022Config,
+    pub token_2022: Token2022Config,
 }
 
 impl ValidationConfig {
@@ -245,6 +245,29 @@ fn default_max_timestamp_age() -> i64 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct CacheConfig {
+    /// Redis URL for caching (e.g., "redis://localhost:6379")
+    pub url: Option<String>,
+    /// Enable caching for RPC calls
+    pub enabled: bool,
+    /// Default TTL for cached entries in seconds
+    pub default_ttl: u64,
+    /// TTL for account data cache in seconds
+    pub account_ttl: u64,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            url: None,
+            enabled: false,
+            default_ttl: DEFAULT_CACHE_DEFAULT_TTL,
+            account_ttl: DEFAULT_CACHE_ACCOUNT_TTL,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct KoraConfig {
     pub rate_limit: u64,
     #[serde(default)]
@@ -253,6 +276,8 @@ pub struct KoraConfig {
     pub auth: AuthConfig,
     /// Optional payment address to receive payments (defaults to signer address)
     pub payment_address: Option<String>,
+    #[serde(default)]
+    pub cache: CacheConfig,
 }
 
 impl Default for KoraConfig {
@@ -262,6 +287,7 @@ impl Default for KoraConfig {
             enabled_methods: EnabledMethods::default(),
             auth: AuthConfig::default(),
             payment_address: None,
+            cache: CacheConfig::default(),
         }
     }
 }
@@ -291,7 +317,7 @@ impl Config {
         })?;
 
         // Initialize Token2022Config to parse and cache extensions
-        config.validation.token2022.initialize().map_err(|e| {
+        config.validation.token_2022.initialize().map_err(|e| {
             KoraError::InternalServerError(format!("Failed to initialize Token2022 config: {e}"))
         })?;
 
@@ -590,7 +616,7 @@ mod tests {
             disallowed_accounts = []
             price_source = "Jupiter"
 
-            [validation.token2022]
+            [validation.token_2022]
             blocked_mint_extensions = ["transfer_fee_config", "pausable"]
             blocked_account_extensions = ["memo_transfer", "cpi_guard"]
 
@@ -604,19 +630,19 @@ mod tests {
         let config = Config::load_config(temp_file.path()).unwrap();
 
         assert_eq!(
-            config.validation.token2022.blocked_mint_extensions,
+            config.validation.token_2022.blocked_mint_extensions,
             vec!["transfer_fee_config", "pausable"]
         );
         assert_eq!(
-            config.validation.token2022.blocked_account_extensions,
+            config.validation.token_2022.blocked_account_extensions,
             vec!["memo_transfer", "cpi_guard"]
         );
 
         // Test that the extensions can be parsed correctly
-        let mint_extensions = config.validation.token2022.get_blocked_mint_extensions();
+        let mint_extensions = config.validation.token_2022.get_blocked_mint_extensions();
         assert_eq!(mint_extensions.len(), 2);
 
-        let account_extensions = config.validation.token2022.get_blocked_account_extensions();
+        let account_extensions = config.validation.token_2022.get_blocked_account_extensions();
         assert_eq!(account_extensions.len(), 2);
     }
 
@@ -632,7 +658,7 @@ mod tests {
             disallowed_accounts = []
             price_source = "Jupiter"
 
-            [validation.token2022]
+            [validation.token_2022]
             blocked_mint_extensions = ["invalid_extension"]
             blocked_account_extensions = []
 
@@ -675,12 +701,12 @@ mod tests {
         let config = Config::load_config(temp_file.path()).unwrap();
 
         // Should default to empty lists
-        assert!(config.validation.token2022.blocked_mint_extensions.is_empty());
-        assert!(config.validation.token2022.blocked_account_extensions.is_empty());
+        assert!(config.validation.token_2022.blocked_mint_extensions.is_empty());
+        assert!(config.validation.token_2022.blocked_account_extensions.is_empty());
 
         // Should have empty cached extensions
-        assert!(config.validation.token2022.get_blocked_mint_extensions().is_empty());
-        assert!(config.validation.token2022.get_blocked_account_extensions().is_empty());
+        assert!(config.validation.token_2022.get_blocked_mint_extensions().is_empty());
+        assert!(config.validation.token_2022.get_blocked_account_extensions().is_empty());
     }
 
     #[test]
@@ -695,7 +721,7 @@ mod tests {
             disallowed_accounts = []
             price_source = "Jupiter"
 
-            [validation.token2022]
+            [validation.token_2022]
             blocked_mint_extensions = ["transfer_fee_config", "pausable"]
             blocked_account_extensions = ["memo_transfer"]
 
@@ -711,19 +737,83 @@ mod tests {
         // Test mint extension blocking
         assert!(config
             .validation
-            .token2022
+            .token_2022
             .is_mint_extension_blocked(ExtensionType::TransferFeeConfig));
-        assert!(config.validation.token2022.is_mint_extension_blocked(ExtensionType::Pausable));
+        assert!(config.validation.token_2022.is_mint_extension_blocked(ExtensionType::Pausable));
         assert!(!config
             .validation
-            .token2022
+            .token_2022
             .is_mint_extension_blocked(ExtensionType::NonTransferable));
 
         // Test account extension blocking
         assert!(config
             .validation
-            .token2022
+            .token_2022
             .is_account_extension_blocked(ExtensionType::MemoTransfer));
-        assert!(!config.validation.token2022.is_account_extension_blocked(ExtensionType::CpiGuard));
+        assert!(!config
+            .validation
+            .token_2022
+            .is_account_extension_blocked(ExtensionType::CpiGuard));
+    }
+
+    #[test]
+    fn test_cache_config_parsing() {
+        let config_content = r#"
+            [validation]
+            max_allowed_lamports = 1000000000
+            max_signatures = 10
+            allowed_programs = ["program1"]
+            allowed_tokens = ["token1"]
+            allowed_spl_paid_tokens = ["token2"]
+            disallowed_accounts = []
+            price_source = "Jupiter"
+
+            [kora]
+            rate_limit = 100
+
+            [kora.cache]
+            url = "redis://localhost:6379"
+            enabled = true
+            default_ttl = 600
+            account_ttl = 120
+        "#;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        fs::write(&temp_file, config_content).unwrap();
+
+        let config = Config::load_config(temp_file.path()).unwrap();
+
+        assert_eq!(config.kora.cache.url, Some("redis://localhost:6379".to_string()));
+        assert!(config.kora.cache.enabled);
+        assert_eq!(config.kora.cache.default_ttl, 600);
+        assert_eq!(config.kora.cache.account_ttl, 120);
+    }
+
+    #[test]
+    fn test_cache_config_default() {
+        let config_content = r#"
+            [validation]
+            max_allowed_lamports = 1000000000
+            max_signatures = 10
+            allowed_programs = ["program1"]
+            allowed_tokens = ["token1"]
+            allowed_spl_paid_tokens = ["token2"]
+            disallowed_accounts = []
+            price_source = "Jupiter"
+
+            [kora]
+            rate_limit = 100
+        "#;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        fs::write(&temp_file, config_content).unwrap();
+
+        let config = Config::load_config(temp_file.path()).unwrap();
+
+        // Should use default cache config
+        assert_eq!(config.kora.cache.url, None);
+        assert!(!config.kora.cache.enabled);
+        assert_eq!(config.kora.cache.default_ttl, 300);
+        assert_eq!(config.kora.cache.account_ttl, 60);
     }
 }

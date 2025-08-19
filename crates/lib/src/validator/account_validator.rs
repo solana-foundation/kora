@@ -11,7 +11,7 @@ use spl_token_2022::{
     ID as TOKEN_2022_PROGRAM_ID,
 };
 
-use crate::KoraError;
+use crate::{CacheUtil, KoraError};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AccountType {
@@ -115,7 +115,7 @@ pub async fn validate_account(
     account_pubkey: &Pubkey,
     expected_account_type: Option<AccountType>,
 ) -> Result<(), KoraError> {
-    let account = rpc_client.get_account(account_pubkey).await.map_err(|e| {
+    let account = CacheUtil::get_account(rpc_client, account_pubkey, false).await.map_err(|e| {
         KoraError::InternalServerError(format!("Failed to get account {account_pubkey}: {e}"))
     })?;
 

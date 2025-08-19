@@ -20,6 +20,10 @@ pub const DEFAULT_METRICS_ENDPOINT: &str = "/metrics";
 pub const DEFAULT_METRICS_PORT: u16 = 8080;
 pub const DEFAULT_METRICS_SCRAPE_INTERVAL: u64 = 60;
 
+// Cache
+pub const DEFAULT_CACHE_DEFAULT_TTL: u64 = 300; // 5 minutes
+pub const DEFAULT_CACHE_ACCOUNT_TTL: u64 = 60; // 1 minute for account data
+
 // Account Indexes within instructions
 // Instruction indexes for the instructions that we support to parse from the transaction
 pub mod instruction_indexes {

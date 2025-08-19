@@ -6,6 +6,12 @@ rate_limit = 100
 api_key = "test-api-key-123"
 hmac_secret = "test-hmac-secret-456"
 
+# Cache configuration - disabled for testing
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60
+
 [kora.enabled_methods]
 liveness = true
 estimate_transaction_fee = true
