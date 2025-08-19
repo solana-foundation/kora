@@ -27,11 +27,13 @@
 ### Features
 
 - Configurable validation rules and allowlists
-- Rate limiting protection
+- Full Token-2022 support with extension filtering
+- Redis caching for improved performance
+- Rate limiting and spend protection
 - Secure key management (Turnkey, Privy, Vault)
-- HMAC and API key request authentication
-- Transaction spend limits
-
+- HMAC and API key authentication
+- Prometheus metrics and monitoring
+- Enhanced fee payer protection policies
 
 ## Quick Start
 
