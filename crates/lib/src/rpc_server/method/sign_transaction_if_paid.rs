@@ -1,4 +1,5 @@
 use crate::{
+    state::get_request_signer,
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
@@ -23,12 +24,13 @@ pub async fn sign_transaction_if_paid(
     request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
     let transaction_requested = TransactionUtil::decode_b64_transaction(&request.transaction)?;
+    let signer = get_request_signer()?;
 
     let mut resolved_transaction =
         VersionedTransactionResolved::from_transaction(&transaction_requested, rpc_client).await?;
 
     let (transaction, signed_transaction) = resolved_transaction
-        .sign_transaction_if_paid(rpc_client)
+        .sign_transaction_if_paid(&signer, rpc_client)
         .await
         .map_err(|e| KoraError::TokenOperationError(e.to_string()))?;
 

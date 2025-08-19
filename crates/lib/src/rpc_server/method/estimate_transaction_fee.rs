@@ -4,8 +4,7 @@ use utoipa::ToSchema;
 use crate::{
     error::KoraError,
     fee::fee::FeeConfigUtil,
-    get_signer,
-    state::get_config,
+    state::{get_config, get_request_signer},
     token::token::TokenUtil,
     transaction::{TransactionUtil, VersionedTransactionResolved},
 };
@@ -34,7 +33,7 @@ pub async fn estimate_transaction_fee(
 ) -> Result<EstimateTransactionFeeResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
-    let signer = get_signer()?;
+    let signer = get_request_signer()?;
     let validation_config = &get_config()?.validation;
     let fee_payer = signer.solana_pubkey();
 
@@ -44,7 +43,7 @@ pub async fn estimate_transaction_fee(
     let fee_in_lamports = FeeConfigUtil::estimate_transaction_fee(
         rpc_client,
         &mut resolved_transaction,
-        Some(&fee_payer),
+        &fee_payer,
         validation_config.is_payment_required(),
     )
     .await?;

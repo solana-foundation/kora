@@ -5,32 +5,90 @@ use std::sync::{
     Arc,
 };
 
-use crate::{config::Config, error::KoraError, signer::KoraSigner};
+use crate::{
+    config::Config,
+    error::KoraError,
+    signer::{KoraSigner, SignerPool},
+};
 
-static GLOBAL_SIGNER: Lazy<Arc<RwLock<Option<KoraSigner>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
+// Global signer pool (for multi-signer support)
+static GLOBAL_SIGNER_POOL: Lazy<RwLock<Option<Arc<SignerPool>>>> = Lazy::new(|| RwLock::new(None));
 
 // Global config with zero-cost reads and hot-reload capability
 static GLOBAL_CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
 
-/// Initialize the global signer with a KoraSigner instance
-pub fn init_signer(signer: KoraSigner) -> Result<(), KoraError> {
-    let mut signer_guard = GLOBAL_SIGNER.write();
-    if signer_guard.is_some() {
-        return Err(KoraError::InternalServerError("Signer already initialized".to_string()));
+/// Get a request-scoped signer that should be used consistently throughout a single RPC request
+/// This advances the round-robin counter once per request for consistent signer usage
+pub fn get_request_signer() -> Result<Arc<KoraSigner>, KoraError> {
+    let pool = get_signer_pool()?;
+    let signer_meta = pool.get_next_signer().map_err(|e| {
+        KoraError::InternalServerError(format!("Failed to get signer from pool: {e}"))
+    })?;
+    Ok(Arc::new(signer_meta.signer.clone()))
+}
+
+/// Initialize the global signer pool with a SignerPool instance
+pub fn init_signer_pool(pool: SignerPool) -> Result<(), KoraError> {
+    let mut pool_guard = GLOBAL_SIGNER_POOL.write();
+    if pool_guard.is_some() {
+        return Err(KoraError::InternalServerError("Signer pool already initialized".to_string()));
     }
 
-    *signer_guard = Some(signer);
+    log::info!(
+        "Initializing global signer pool with {} signers using {:?} strategy",
+        pool.len(),
+        pool.strategy()
+    );
+
+    *pool_guard = Some(Arc::new(pool));
     Ok(())
 }
 
-/// Get a reference to the global signer
-pub fn get_signer() -> Result<Arc<KoraSigner>, KoraError> {
-    let signer_guard = GLOBAL_SIGNER.read();
-    match &*signer_guard {
-        Some(signer) => Ok(Arc::new(signer.clone())),
-        None => Err(KoraError::InternalServerError("Signer not initialized".to_string())),
+/// Get a reference to the global signer pool
+pub fn get_signer_pool() -> Result<Arc<SignerPool>, KoraError> {
+    let pool_guard = GLOBAL_SIGNER_POOL.read();
+    match &*pool_guard {
+        Some(pool) => Ok(Arc::clone(pool)),
+        None => Err(KoraError::InternalServerError("Signer pool not initialized".to_string())),
     }
+}
+
+/// Get the next signer from the pool with error handling and metrics tracking
+pub fn get_next_signer_with_tracking() -> Result<(Arc<KoraSigner>, String), KoraError> {
+    let pool = get_signer_pool()?;
+    let signer_meta = pool.get_next_signer()?;
+    let signer_name = signer_meta.name.clone();
+    Ok((Arc::new(signer_meta.signer.clone()), signer_name))
+}
+
+/// Mark a signer operation as successful (for metrics tracking)
+pub fn mark_signer_success(signer_name: &str) {
+    if let Ok(pool) = get_signer_pool() {
+        pool.mark_signer_success(signer_name);
+    }
+}
+
+/// Mark a signer operation as failed (for metrics tracking)
+pub fn mark_signer_error(signer_name: &str) {
+    if let Ok(pool) = get_signer_pool() {
+        pool.mark_signer_error(signer_name);
+    }
+}
+
+/// Get information about all signers (for monitoring/debugging)
+pub fn get_signers_info() -> Result<Vec<crate::signer::SignerInfo>, KoraError> {
+    let pool = get_signer_pool()?;
+    Ok(pool.get_signers_info())
+}
+
+/// Update the global signer configs with a new config (test only)
+#[cfg(test)]
+pub fn update_signer_pool(new_pool: SignerPool) -> Result<(), KoraError> {
+    let mut pool_guard = GLOBAL_SIGNER_POOL.write();
+
+    *pool_guard = Some(Arc::new(new_pool));
+
+    Ok(())
 }
 
 /// Initialize the global config with a Config instance

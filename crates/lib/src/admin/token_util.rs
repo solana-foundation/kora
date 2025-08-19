@@ -1,7 +1,7 @@
 use crate::{
     error::KoraError,
     signer::Signer,
-    state::{get_config, get_signer},
+    state::{get_config, get_request_signer},
     token::token::TokenType,
     transaction::TransactionUtil,
     CacheUtil,
@@ -55,11 +55,11 @@ pub async fn initialize_paymaster_atas_with_chunk_size(
     compute_unit_limit: Option<u32>,
     chunk_size: usize,
 ) -> Result<(), KoraError> {
-    let signer = get_signer()?;
+    let signer = get_request_signer()?;
     let config = get_config()?;
 
     // Determine the payment address
-    let payment_address = config.kora.get_payment_address()?;
+    let payment_address = config.kora.get_payment_address(&signer.solana_pubkey())?;
 
     println!("Initializing ATAs for payment address: {payment_address}");
 

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 
 use crate::{
+    state::get_request_signer,
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
@@ -24,12 +25,13 @@ pub async fn sign_and_send_transaction(
     request: SignAndSendTransactionRequest,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
+    let signer = get_request_signer()?;
 
     let mut resolved_transaction =
         VersionedTransactionResolved::from_transaction(&transaction, rpc_client).await?;
 
     let (signature, signed_transaction) =
-        resolved_transaction.sign_and_send_transaction(rpc_client).await?;
+        resolved_transaction.sign_and_send_transaction(&signer, rpc_client).await?;
 
     Ok(SignAndSendTransactionResponse { signature, signed_transaction })
 }

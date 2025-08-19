@@ -1,6 +1,7 @@
 use crate::{
     config::{EnabledMethods, ValidationConfig},
-    get_signer, state, KoraError,
+    state::{self, get_request_signer},
+    KoraError,
 };
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -13,8 +14,8 @@ pub struct GetConfigResponse {
 }
 
 pub async fn get_config() -> Result<GetConfigResponse, KoraError> {
-    let signer =
-        get_signer().map_err(|e| KoraError::SigningError(format!("Failed to get signer: {e}")))?;
+    let signer = get_request_signer()
+        .map_err(|e| KoraError::SigningError(format!("Failed to get signer: {e}")))?;
 
     let config = state::get_config()?;
 

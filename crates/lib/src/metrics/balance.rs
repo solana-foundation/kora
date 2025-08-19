@@ -1,4 +1,4 @@
-use crate::{cache::CacheUtil, error::KoraError, get_signer, state::get_config};
+use crate::{cache::CacheUtil, error::KoraError, get_request_signer, state::get_config};
 use prometheus::{register_gauge, Gauge};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
@@ -43,8 +43,9 @@ impl BalanceTracker {
             return Ok(());
         }
 
+        // TODO
         // Get the signer and extract pubkey
-        let signer = get_signer()?;
+        let signer = get_request_signer()?;
         let signer_pubkey = signer.solana_pubkey();
 
         // Get account balance using cache with configured expiry

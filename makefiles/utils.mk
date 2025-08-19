@@ -1,7 +1,9 @@
 # Common configuration
 TEST_PORT := 8080
 TEST_RPC_URL := http://127.0.0.1:8899
-TEST_PRIVATE_KEY := ./tests/src/common/local-keys/fee-payer-local.json
+TEST_SIGNERS_CONFIG := tests/src/common/fixtures/signers.toml
+TEST_SIGNERS_TURNKEY_CONFIG := tests/src/common/fixtures/signers-turnkey.toml
+TEST_SIGNERS_PRIVY_CONFIG := tests/src/common/fixtures/signers-privy.toml
 REGULAR_CONFIG := tests/src/common/fixtures/kora-test.toml
 AUTH_CONFIG := tests/src/common/fixtures/auth-test.toml
 PAYMENT_ADDRESS_CONFIG := tests/src/common/fixtures/paymaster-address-test.toml
@@ -42,10 +44,10 @@ define start_kora_server
 	@$(call stop_kora_server)
 	@$(if $(5),\
 		printf "🔧 Setting up test environment...\n"; \
-		cargo run -p tests --bin setup_test_env;)
+		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p tests --bin setup_test_env;)
 	@echo "🚀 Starting Kora $(1)..."
 	@$(if $(2),\
-		$(2) -p kora-cli --bin kora $(3) -- --config $(4) --rpc-url $(TEST_RPC_URL) rpc start --private-key $(TEST_PRIVATE_KEY) --port $(TEST_PORT) $(QUIET_OUTPUT) &,\
+		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" $(2) -p kora-cli --bin kora $(3) -- --config $(4) --rpc-url $(TEST_RPC_URL) rpc start --signers-config $(TEST_SIGNERS_CONFIG) --port $(TEST_PORT) $(QUIET_OUTPUT) &,\
 		make run &)
 	@echo $$! > .kora.pid
 	@echo "⏳ Waiting for server to start..."
@@ -74,7 +76,7 @@ define run_integration_phase
 	@$(call start_kora_server,$(2),cargo run,,$(3),$(4))
 	@$(if $(6),\
 		echo "🔧 Initializing payment ATAs..."; \
-		cargo run -p kora-cli --bin kora -- --config $(3) --rpc-url $(TEST_RPC_URL) rpc initialize-atas --private-key $(TEST_PRIVATE_KEY);)
+		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p kora-cli --bin kora -- --config $(3) --rpc-url $(TEST_RPC_URL) rpc initialize-atas --signers-config $(TEST_SIGNERS_CONFIG);)
 	@echo "🧪 Running $(1) integration tests..."
 	@cargo test -p tests --quiet $(5) -- --nocapture $(TEST_OUTPUT_FILTER)
 	@$(call stop_kora_server)
@@ -82,7 +84,7 @@ endef
 
 # Setup test environment
 setup-test-env:
-	cargo run -p tests --bin setup_test_env
+	KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p tests --bin setup_test_env
 
 # Clean up any running validators
 clean-validator:

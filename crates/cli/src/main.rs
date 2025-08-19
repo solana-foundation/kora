@@ -8,8 +8,8 @@ use kora_lib::{
     log::LoggingFormat,
     rpc::get_rpc_client,
     rpc_server::{run_rpc_server, server::ServerHandles, KoraRpc, RpcArgs},
-    signer::init::init_signer_type,
-    state::{init_config, init_signer},
+    signer::init::init_signers,
+    state::init_config,
     validator::config_validator::ConfigValidator,
     CacheUtil, Config,
 };
@@ -132,11 +132,10 @@ async fn main() -> Result<(), KoraError> {
 
                     setup_logging(&rpc_args.logging_format);
 
-                    // Initialize the signer
+                    // Initialize signer(s) - supports both single and multi-signer modes
                     if !rpc_args.skip_signer {
-                        let signer = init_signer_type(&rpc_args).await.unwrap();
-                        init_signer(signer).unwrap_or_else(|e| {
-                            print_error(&format!("Failed to initialize signer: {e}"));
+                        init_signers(&rpc_args).await.unwrap_or_else(|e| {
+                            print_error(&format!("Failed to initialize signer(s): {e}"));
                             std::process::exit(1);
                         });
                     }
@@ -178,9 +177,8 @@ async fn main() -> Result<(), KoraError> {
                     chunk_size,
                 } => {
                     if !rpc_args.skip_signer {
-                        let signer = init_signer_type(&rpc_args).await.unwrap();
-                        init_signer(signer).unwrap_or_else(|e| {
-                            print_error(&format!("Failed to initialize signer: {e}"));
+                        init_signers(&rpc_args).await.unwrap_or_else(|e| {
+                            print_error(&format!("Failed to initialize signer(s): {e}"));
                             std::process::exit(1);
                         });
                     } else {

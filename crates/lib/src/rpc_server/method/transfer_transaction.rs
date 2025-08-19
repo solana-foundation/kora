@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 use crate::{
     constant::NATIVE_SOL,
-    get_signer,
+    state::get_request_signer,
     transaction::{
         TransactionUtil, VersionedMessageExt, VersionedTransactionOps, VersionedTransactionResolved,
     },
@@ -36,7 +36,7 @@ pub async fn transfer_transaction(
     rpc_client: &Arc<RpcClient>,
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
-    let signer = get_signer()?;
+    let signer = get_request_signer()?;
     let fee_payer = signer.solana_pubkey();
 
     let validator = TransactionValidator::new(fee_payer)?;
