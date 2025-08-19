@@ -100,7 +100,7 @@ jobs:
       - name: Setup Kora RPC server (auth config)
         uses: ./.github/actions/setup-kora-rpc
         with:
-          config-file: "tests/testing-utils/fixtures/auth-test.toml"
+          config-file: "tests/src/common/fixtures/auth-test.toml"
 
       - name: Run TypeScript auth integration tests
         working-directory: sdks/ts
