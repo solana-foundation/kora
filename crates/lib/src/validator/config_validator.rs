@@ -2,10 +2,11 @@ use std::str::FromStr;
 
 use crate::{
     admin::token_util::find_missing_atas,
+    config::Token2022Config,
     fee::price::PriceModel,
     oracle::PriceSource,
     state::get_config,
-    token::token::TokenUtil,
+    token::{spl_token_2022_util, token::TokenUtil},
     validator::account_validator::{validate_account, AccountType},
     KoraError,
 };
@@ -15,7 +16,7 @@ use spl_token::ID as SPL_TOKEN_PROGRAM_ID;
 use spl_token_2022::ID as TOKEN_2022_PROGRAM_ID;
 
 #[cfg(test)]
-use crate::config::{FeePayerPolicy, Token2022Config, ValidationConfig};
+use crate::config::{FeePayerPolicy, ValidationConfig};
 #[cfg(test)]
 use crate::fee::price::PriceConfig;
 
@@ -124,6 +125,11 @@ impl ConfigValidator {
         // Validate disallowed accounts
         if let Err(e) = TokenUtil::check_valid_tokens(&config.validation.disallowed_accounts) {
             errors.push(format!("Invalid disallowed account address: {e}"));
+        }
+
+        // Validate Token2022 extensions
+        if let Err(e) = validate_token2022_extensions(&config.validation.token2022) {
+            errors.push(format!("Token2022 extension validation failed: {e}"));
         }
 
         // Check if fees are enabled (not Free pricing)
@@ -261,6 +267,31 @@ impl ConfigValidator {
             Err(errors)
         }
     }
+}
+
+/// Validate Token2022 extension configuration
+fn validate_token2022_extensions(config: &Token2022Config) -> Result<(), String> {
+    // Validate blocked mint extensions
+    for ext_name in &config.blocked_mint_extensions {
+        if spl_token_2022_util::parse_mint_extension_string(ext_name).is_none() {
+            return Err(format!(
+                "Invalid mint extension name: '{ext_name}'. Valid names are: {:?}",
+                spl_token_2022_util::get_all_mint_extension_names()
+            ));
+        }
+    }
+
+    // Validate blocked account extensions
+    for ext_name in &config.blocked_account_extensions {
+        if spl_token_2022_util::parse_account_extension_string(ext_name).is_none() {
+            return Err(format!(
+                "Invalid account extension name: '{ext_name}'. Valid names are: {:?}",
+                spl_token_2022_util::get_all_account_extension_names()
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -891,5 +922,150 @@ mod tests {
         // Test with RPC validation disabled (skip_rpc_validation = true)
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok()); // Should pass because RPC validation is skipped
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_valid_token2022_extensions() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+                token2022: {
+                    let mut config = Token2022Config::default();
+                    config.blocked_mint_extensions =
+                        vec!["transfer_fee_config".to_string(), "pausable".to_string()];
+                    config.blocked_account_extensions =
+                        vec!["memo_transfer".to_string(), "cpi_guard".to_string()];
+                    config
+                },
+            },
+            metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_invalid_token2022_mint_extension() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+                token2022: {
+                    let mut config = Token2022Config::default();
+                    config.blocked_mint_extensions = vec!["invalid_mint_extension".to_string()];
+                    config
+                },
+            },
+            metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("Token2022 extension validation failed")
+            && e.contains("Invalid mint extension name: 'invalid_mint_extension'")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_invalid_token2022_account_extension() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: vec![],
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+                token2022: {
+                    let mut config = Token2022Config::default();
+                    config.blocked_account_extensions =
+                        vec!["invalid_account_extension".to_string()];
+                    config
+                },
+            },
+            metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("Token2022 extension validation failed")
+            && e.contains("Invalid account extension name: 'invalid_account_extension'")));
+    }
+
+    #[test]
+    fn test_validate_token2022_extensions_valid() {
+        let mut config = Token2022Config::default();
+        config.blocked_mint_extensions =
+            vec!["transfer_fee_config".to_string(), "pausable".to_string()];
+        config.blocked_account_extensions =
+            vec!["memo_transfer".to_string(), "cpi_guard".to_string()];
+
+        let result = validate_token2022_extensions(&config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_token2022_extensions_invalid_mint_extension() {
+        let mut config = Token2022Config::default();
+        config.blocked_mint_extensions = vec!["invalid_extension".to_string()];
+
+        let result = validate_token2022_extensions(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid mint extension name: 'invalid_extension'"));
+    }
+
+    #[test]
+    fn test_validate_token2022_extensions_invalid_account_extension() {
+        let mut config = Token2022Config::default();
+        config.blocked_account_extensions = vec!["invalid_extension".to_string()];
+
+        let result = validate_token2022_extensions(&config);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Invalid account extension name: 'invalid_extension'"));
+    }
+
+    #[test]
+    fn test_validate_token2022_extensions_empty() {
+        let config = Token2022Config::default();
+
+        let result = validate_token2022_extensions(&config);
+        assert!(result.is_ok());
     }
 }

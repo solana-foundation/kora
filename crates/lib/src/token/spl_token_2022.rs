@@ -221,7 +221,8 @@ impl Token2022Mint {
             return Err("Token is non-transferable".into());
         }
 
-        // Apply transfer fees if configured
+        // Apply transfer fees if configured (so we remove the transfer fee from the amount paid by the user,
+        // so we get the actual amount the user is paying Kora)
         if let Some(fee) = self.calculate_transfer_fee(amount, current_epoch) {
             return Ok(amount.saturating_sub(fee));
         }
