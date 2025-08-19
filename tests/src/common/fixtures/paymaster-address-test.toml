@@ -3,6 +3,12 @@
 rate_limit = 100
 payment_address = "CWvWnVwqAb9HzqwCGkn4purGEUuu27aNsPQM252uLerV"
 
+# Cache configuration - disabled for testing
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60
+
 [kora.enabled_methods]
 liveness = false
 estimate_transaction_fee = true

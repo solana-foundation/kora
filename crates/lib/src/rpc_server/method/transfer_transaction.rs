@@ -14,7 +14,7 @@ use crate::{
         TransactionUtil, VersionedMessageExt, VersionedTransactionOps, VersionedTransactionResolved,
     },
     validator::transaction_validator::TransactionValidator,
-    KoraError, Signer as _,
+    CacheUtil, KoraError, Signer as _,
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -76,12 +76,11 @@ pub async fn transfer_transaction(
         let dest_ata =
             token_program.get_associated_token_address(&destination, &token_mint.address());
 
-        let _ = rpc_client
-            .get_account(&source_ata)
+        CacheUtil::get_account_from_cache(rpc_client, &source_ata, false)
             .await
             .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
 
-        if rpc_client.get_account(&dest_ata).await.is_err() {
+        if CacheUtil::get_account_from_cache(rpc_client, &dest_ata, false).await.is_err() {
             instructions.push(token_program.create_associated_token_account_instruction(
                 &fee_payer,
                 &destination,

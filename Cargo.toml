@@ -75,8 +75,8 @@ spl-associated-token-account = { version = "6.0.0", features = [
 chrono = "0.4.39"
 hex = "0.4.3"
 p256 = "0.13.3"
-redis = { version = "0.24.0", features = ["tokio-comp", "connection-manager"] }
-deadpool-redis = "0.14.0"
+redis = { version = "0.32.5", features = ["tokio-comp", "connection-manager"] }
+deadpool-redis = "0.22.0"
 vaultrs = "0.7.3"
 utoipa = { version = "4.2.0", features = ["yaml", "chrono"] }
 hmac = "0.12.1"

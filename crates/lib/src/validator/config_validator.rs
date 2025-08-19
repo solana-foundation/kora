@@ -16,7 +16,7 @@ use spl_token::ID as SPL_TOKEN_PROGRAM_ID;
 use spl_token_2022::ID as TOKEN_2022_PROGRAM_ID;
 
 #[cfg(test)]
-use crate::config::{FeePayerPolicy, ValidationConfig};
+use crate::config::{CacheConfig, FeePayerPolicy, ValidationConfig};
 #[cfg(test)]
 use crate::fee::price::PriceConfig;
 
@@ -128,7 +128,7 @@ impl ConfigValidator {
         }
 
         // Validate Token2022 extensions
-        if let Err(e) = validate_token2022_extensions(&config.validation.token2022) {
+        if let Err(e) = validate_token2022_extensions(&config.validation.token_2022) {
             errors.push(format!("Token2022 extension validation failed: {e}"));
         }
 
@@ -307,7 +307,7 @@ impl ValidationConfig {
             price_source: PriceSource::Mock,
             fee_payer_policy: FeePayerPolicy::default(),
             price: PriceConfig::default(),
-            token2022: Token2022Config::default(),
+            token_2022: Token2022Config::default(),
         }
     }
 
@@ -383,7 +383,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -421,7 +421,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -451,7 +451,7 @@ mod tests {
                 price_source: PriceSource::Mock, // Should warn
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             kora: KoraConfig {
                 rate_limit: 0, // Should warn
@@ -468,6 +468,7 @@ mod tests {
                 },
                 auth: AuthConfig::default(),
                 payment_address: None,
+                cache: CacheConfig::default(),
             },
             metrics: MetricsConfig::default(),
         };
@@ -503,7 +504,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -537,7 +538,7 @@ mod tests {
                 price: PriceConfig {
                     model: PriceModel::Margin { margin: -0.1 }, // Error - negative margin
                 },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -577,7 +578,7 @@ mod tests {
                         token: "invalid_token_address".to_string(), // Should error
                     },
                 },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -614,7 +615,7 @@ mod tests {
                         token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(), // Valid but not in allowed
                     },
                 },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -659,7 +660,7 @@ mod tests {
                         token: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
                     },
                 },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -691,7 +692,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -729,7 +730,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -760,7 +761,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -780,7 +781,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -844,7 +845,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -877,7 +878,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -908,7 +909,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: Token2022Config::default(),
+                token_2022: Token2022Config::default(),
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -938,7 +939,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: {
+                token_2022: {
                     let mut config = Token2022Config::default();
                     config.blocked_mint_extensions =
                         vec!["transfer_fee_config".to_string(), "pausable".to_string()];
@@ -972,7 +973,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: {
+                token_2022: {
                     let mut config = Token2022Config::default();
                     config.blocked_mint_extensions = vec!["invalid_mint_extension".to_string()];
                     config
@@ -1006,7 +1007,7 @@ mod tests {
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig { model: PriceModel::Free },
-                token2022: {
+                token_2022: {
                     let mut config = Token2022Config::default();
                     config.blocked_account_extensions =
                         vec!["invalid_account_extension".to_string()];

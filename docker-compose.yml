@@ -1,4 +1,13 @@
 services:
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
   kora:
     build:
       context: .
@@ -12,8 +21,13 @@ services:
       - RUST_LOG=info
     env_file:
       - .env
-    command: 
+    command:
       - sh
       - -c
       - 'kora-rpc --config /app/kora.toml --private-key "$$KORA_PRIVATE_KEY"'
     restart: unless-stopped
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:
