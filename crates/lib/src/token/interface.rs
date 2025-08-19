@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use mockall::automock;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
 use std::any::Any;
 
 pub trait TokenState: Any + Send + Sync {
@@ -84,4 +84,13 @@ pub trait TokenInterface: Send + Sync {
         mint_account: Option<&'a dyn TokenMint>,
         amount: u64,
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>>;
+
+    /// Get the account size required for creating an ATA for this token program
+    /// For SPL Token, this returns the standard size
+    /// For Token-2022, this query the mint to determine size requirements
+    async fn get_ata_account_size(
+        &self,
+        mint_pubkey: &Pubkey,
+        mint: &Account,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>>;
 }

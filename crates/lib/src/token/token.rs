@@ -2,7 +2,11 @@ use crate::{
     error::KoraError,
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
     state::get_config,
-    token::{interface::TokenMint, Token2022Program, TokenInterface, TokenProgram},
+    token::{
+        interface::TokenMint,
+        spl_token_2022::{Token2022Extensions, Token2022Mint},
+        Token2022Account, Token2022Program, TokenInterface, TokenProgram,
+    },
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
     },
@@ -128,6 +132,75 @@ impl TokenUtil {
         Ok(fee_in_token)
     }
 
+    /// Validate Token2022 extensions for payment instructions
+    /// This checks if any blocked extensions are present on the payment accounts
+    pub async fn validate_token2022_extensions_for_payment(
+        rpc_client: &RpcClient,
+        source_address: &Pubkey,
+        destination_address: &Pubkey,
+        mint: &Option<Pubkey>,
+    ) -> Result<(), KoraError> {
+        let config = &get_config()?.validation.token2022;
+
+        let token_program = Token2022Program::new();
+
+        // Get mint account data and validate mint extensions
+        if let Some(mint) = mint {
+            let mint_account = rpc_client.get_account(mint).await?;
+            let mint_data = mint_account.data;
+
+            // Unpack the mint state with extensions
+            let mint_state = token_program.unpack_mint(mint, &mint_data)?;
+
+            let mint_with_extensions = mint_state.as_any().downcast_ref::<Token2022Mint>().unwrap();
+
+            // Check each extension type present on the mint
+            for extension_type in mint_with_extensions.get_extension_types() {
+                if config.is_mint_extension_blocked(*extension_type) {
+                    return Err(KoraError::ValidationError(format!(
+                        "Blocked mint extension found on mint account {mint}",
+                    )));
+                }
+            }
+        }
+
+        // Check source account extensions
+        let source_account = rpc_client.get_account(source_address).await?;
+        let source_data = source_account.data;
+
+        let source_state = token_program.unpack_token_account(&source_data)?;
+
+        let source_with_extensions =
+            source_state.as_any().downcast_ref::<Token2022Account>().unwrap();
+
+        for extension_type in source_with_extensions.get_extension_types() {
+            if config.is_account_extension_blocked(*extension_type) {
+                return Err(KoraError::ValidationError(format!(
+                    "Blocked account extension found on source account {source_address}",
+                )));
+            }
+        }
+
+        // Check destination account extensions
+        let destination_account = rpc_client.get_account(destination_address).await?;
+        let destination_data = destination_account.data;
+
+        let destination_state = token_program.unpack_token_account(&destination_data)?;
+
+        let destination_with_extensions =
+            destination_state.as_any().downcast_ref::<Token2022Account>().unwrap();
+
+        for extension_type in destination_with_extensions.get_extension_types() {
+            if config.is_account_extension_blocked(*extension_type) {
+                return Err(KoraError::ValidationError(format!(
+                    "Blocked account extension found on destination account {destination_address}",
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn process_token_transfer(
         transaction_resolved: &mut VersionedTransactionResolved,
@@ -158,6 +231,17 @@ impl TokenUtil {
                 } else {
                     Box::new(TokenProgram::new())
                 };
+
+                // For Token2022 payments, validate that blocked extensions are not used
+                if *is_2022 {
+                    TokenUtil::validate_token2022_extensions_for_payment(
+                        rpc_client,
+                        source_address,
+                        destination_address,
+                        mint,
+                    )
+                    .await?;
+                }
 
                 // Validate the destination account is that of the payment address (or signer if none provided)
                 let destination_account = rpc_client

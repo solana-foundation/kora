@@ -1,5 +1,5 @@
 use crate::{
-    config::{FeePayerPolicy, KoraConfig, MetricsConfig, ValidationConfig},
+    config::{FeePayerPolicy, KoraConfig, MetricsConfig, Token2022Config, ValidationConfig},
     fee::price::PriceConfig,
     get_signer,
     oracle::PriceSource,
@@ -63,6 +63,7 @@ pub fn setup_or_get_test_config() -> Config {
             price_source: PriceSource::Mock,
             fee_payer_policy: FeePayerPolicy::default(),
             price: PriceConfig::default(),
+            token2022: Token2022Config::default(),
         },
         kora: KoraConfig::default(),
         metrics: MetricsConfig::default(),

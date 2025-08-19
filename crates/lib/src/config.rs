@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
+use spl_token_2022::extension::ExtensionType;
 use std::{fs, path::Path, str::FromStr};
 use toml;
 use utoipa::ToSchema;
@@ -55,6 +56,8 @@ pub struct ValidationConfig {
     pub fee_payer_policy: FeePayerPolicy,
     #[serde(default)]
     pub price: PriceConfig,
+    #[serde(default)]
+    pub token2022: Token2022Config,
 }
 
 impl ValidationConfig {
@@ -85,6 +88,89 @@ impl Default for FeePayerPolicy {
             allow_close_account: true,
             allow_approve: true,
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct Token2022Config {
+    pub blocked_mint_extensions: Vec<String>,
+    pub blocked_account_extensions: Vec<String>,
+    #[serde(skip)]
+    parsed_blocked_mint_extensions: Option<Vec<ExtensionType>>,
+    #[serde(skip)]
+    parsed_blocked_account_extensions: Option<Vec<ExtensionType>>,
+}
+
+impl Default for Token2022Config {
+    fn default() -> Self {
+        Self {
+            blocked_mint_extensions: Vec::new(),
+            blocked_account_extensions: Vec::new(),
+            parsed_blocked_mint_extensions: Some(Vec::new()),
+            parsed_blocked_account_extensions: Some(Vec::new()),
+        }
+    }
+}
+
+impl Token2022Config {
+    /// Initialize and parse extension strings into ExtensionTypes
+    /// This should be called after deserialization to populate the cached fields
+    pub fn initialize(&mut self) -> Result<(), String> {
+        let mut mint_extensions = Vec::new();
+        for name in &self.blocked_mint_extensions {
+            match crate::token::spl_token_2022_util::parse_mint_extension_string(name) {
+                Some(ext) => {
+                    mint_extensions.push(ext);
+                }
+                None => {
+                    return Err(format!(
+                        "Invalid mint extension name: '{}'. Valid names are: {:?}",
+                        name,
+                        crate::token::spl_token_2022_util::get_all_mint_extension_names()
+                    ));
+                }
+            }
+        }
+        self.parsed_blocked_mint_extensions = Some(mint_extensions);
+
+        let mut account_extensions = Vec::new();
+        for name in &self.blocked_account_extensions {
+            match crate::token::spl_token_2022_util::parse_account_extension_string(name) {
+                Some(ext) => {
+                    account_extensions.push(ext);
+                }
+                None => {
+                    return Err(format!(
+                        "Invalid account extension name: '{}'. Valid names are: {:?}",
+                        name,
+                        crate::token::spl_token_2022_util::get_all_account_extension_names()
+                    ));
+                }
+            }
+        }
+        self.parsed_blocked_account_extensions = Some(account_extensions);
+
+        Ok(())
+    }
+
+    /// Get all blocked mint extensions as ExtensionType
+    pub fn get_blocked_mint_extensions(&self) -> &[ExtensionType] {
+        self.parsed_blocked_mint_extensions.as_deref().unwrap_or(&[])
+    }
+
+    /// Get all blocked account extensions as ExtensionType
+    pub fn get_blocked_account_extensions(&self) -> &[ExtensionType] {
+        self.parsed_blocked_account_extensions.as_deref().unwrap_or(&[])
+    }
+
+    /// Check if a mint extension is blocked
+    pub fn is_mint_extension_blocked(&self, ext: ExtensionType) -> bool {
+        self.get_blocked_mint_extensions().contains(&ext)
+    }
+
+    /// Check if an account extension is blocked
+    pub fn is_account_extension_blocked(&self, ext: ExtensionType) -> bool {
+        self.get_blocked_account_extensions().contains(&ext)
     }
 }
 
@@ -200,9 +286,16 @@ impl Config {
             KoraError::InternalServerError(format!("Failed to read config file: {e}"))
         })?;
 
-        toml::from_str(&contents).map_err(|e| {
+        let mut config: Config = toml::from_str(&contents).map_err(|e| {
             KoraError::InternalServerError(format!("Failed to parse config file: {e}"))
-        })
+        })?;
+
+        // Initialize Token2022Config to parse and cache extensions
+        config.validation.token2022.initialize().map_err(|e| {
+            KoraError::InternalServerError(format!("Failed to initialize Token2022 config: {e}"))
+        })?;
+
+        Ok(config)
     }
 }
 
@@ -483,5 +576,154 @@ mod tests {
         } else {
             panic!("Expected InternalServerError with parsing failure message");
         }
+    }
+
+    #[test]
+    fn test_token2022_config_parsing() {
+        let config_content = r#"
+            [validation]
+            max_allowed_lamports = 1000000000
+            max_signatures = 10
+            allowed_programs = ["program1"]
+            allowed_tokens = ["token1"]
+            allowed_spl_paid_tokens = ["token2"]
+            disallowed_accounts = []
+            price_source = "Jupiter"
+
+            [validation.token2022]
+            blocked_mint_extensions = ["transfer_fee_config", "pausable"]
+            blocked_account_extensions = ["memo_transfer", "cpi_guard"]
+
+            [kora]
+            rate_limit = 100
+        "#;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        fs::write(&temp_file, config_content).unwrap();
+
+        let config = Config::load_config(temp_file.path()).unwrap();
+
+        assert_eq!(
+            config.validation.token2022.blocked_mint_extensions,
+            vec!["transfer_fee_config", "pausable"]
+        );
+        assert_eq!(
+            config.validation.token2022.blocked_account_extensions,
+            vec!["memo_transfer", "cpi_guard"]
+        );
+
+        // Test that the extensions can be parsed correctly
+        let mint_extensions = config.validation.token2022.get_blocked_mint_extensions();
+        assert_eq!(mint_extensions.len(), 2);
+
+        let account_extensions = config.validation.token2022.get_blocked_account_extensions();
+        assert_eq!(account_extensions.len(), 2);
+    }
+
+    #[test]
+    fn test_token2022_config_invalid_extension() {
+        let config_content = r#"
+            [validation]
+            max_allowed_lamports = 1000000000
+            max_signatures = 10
+            allowed_programs = ["program1"]
+            allowed_tokens = ["token1"]
+            allowed_spl_paid_tokens = ["token2"]
+            disallowed_accounts = []
+            price_source = "Jupiter"
+
+            [validation.token2022]
+            blocked_mint_extensions = ["invalid_extension"]
+            blocked_account_extensions = []
+
+            [kora]
+            rate_limit = 100
+        "#;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        fs::write(&temp_file, config_content).unwrap();
+
+        let result = Config::load_config(temp_file.path());
+        assert!(result.is_err());
+        if let Err(KoraError::InternalServerError(msg)) = result {
+            assert!(msg.contains("Failed to initialize Token2022 config"));
+            assert!(msg.contains("Invalid mint extension name: 'invalid_extension'"));
+        } else {
+            panic!("Expected InternalServerError with Token2022 initialization failure");
+        }
+    }
+
+    #[test]
+    fn test_token2022_config_default() {
+        let config_content = r#"
+            [validation]
+            max_allowed_lamports = 1000000000
+            max_signatures = 10
+            allowed_programs = ["program1"]
+            allowed_tokens = ["token1"]
+            allowed_spl_paid_tokens = ["token2"]
+            disallowed_accounts = []
+            price_source = "Jupiter"
+
+            [kora]
+            rate_limit = 100
+        "#;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        fs::write(&temp_file, config_content).unwrap();
+
+        let config = Config::load_config(temp_file.path()).unwrap();
+
+        // Should default to empty lists
+        assert!(config.validation.token2022.blocked_mint_extensions.is_empty());
+        assert!(config.validation.token2022.blocked_account_extensions.is_empty());
+
+        // Should have empty cached extensions
+        assert!(config.validation.token2022.get_blocked_mint_extensions().is_empty());
+        assert!(config.validation.token2022.get_blocked_account_extensions().is_empty());
+    }
+
+    #[test]
+    fn test_token2022_extension_blocking_check() {
+        let config_content = r#"
+            [validation]
+            max_allowed_lamports = 1000000000
+            max_signatures = 10
+            allowed_programs = ["program1"]
+            allowed_tokens = ["token1"]
+            allowed_spl_paid_tokens = ["token2"]
+            disallowed_accounts = []
+            price_source = "Jupiter"
+
+            [validation.token2022]
+            blocked_mint_extensions = ["transfer_fee_config", "pausable"]
+            blocked_account_extensions = ["memo_transfer"]
+
+            [kora]
+            rate_limit = 100
+        "#;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        fs::write(&temp_file, config_content).unwrap();
+
+        let config = Config::load_config(temp_file.path()).unwrap();
+
+        // Test mint extension blocking
+        assert!(config
+            .validation
+            .token2022
+            .is_mint_extension_blocked(ExtensionType::TransferFeeConfig));
+        assert!(config.validation.token2022.is_mint_extension_blocked(ExtensionType::Pausable));
+        assert!(!config
+            .validation
+            .token2022
+            .is_mint_extension_blocked(ExtensionType::NonTransferable));
+
+        // Test account extension blocking
+        assert!(config
+            .validation
+            .token2022
+            .is_account_extension_blocked(ExtensionType::MemoTransfer));
+        assert!(!config.validation.token2022.is_account_extension_blocked(ExtensionType::CpiGuard));
     }
 }
