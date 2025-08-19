@@ -192,15 +192,14 @@ pub async fn find_missing_atas(
     for mint in &token_mints {
         let ata = get_associated_token_address(payment_address, mint);
 
-        match CacheUtil::get_account_from_cache(rpc_client, &ata, false).await {
+        match CacheUtil::get_account(rpc_client, &ata, false).await {
             Ok(_) => {
                 println!("✓ ATA already exists for token {mint}: {ata}");
             }
             Err(_) => {
                 // Fetch mint account to determine if it's SPL or Token2022
-                let mint_account = CacheUtil::get_account_from_cache(rpc_client, mint, false)
-                    .await
-                    .map_err(|e| {
+                let mint_account =
+                    CacheUtil::get_account(rpc_client, mint, false).await.map_err(|e| {
                         KoraError::RpcError(format!("Failed to fetch mint account for {mint}: {e}"))
                     })?;
 

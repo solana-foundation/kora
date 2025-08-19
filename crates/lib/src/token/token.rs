@@ -61,8 +61,7 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         mint_pubkey: &Pubkey,
     ) -> Result<Box<dyn TokenMint + Send + Sync>, KoraError> {
-        let mint_account =
-            CacheUtil::get_account_from_cache(rpc_client, mint_pubkey, false).await?;
+        let mint_account = CacheUtil::get_account(rpc_client, mint_pubkey, false).await?;
 
         let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
 
@@ -148,7 +147,7 @@ impl TokenUtil {
 
         // Get mint account data and validate mint extensions (force refresh in case extensions are added)
         if let Some(mint) = mint {
-            let mint_account = CacheUtil::get_account_from_cache(rpc_client, mint, true).await?;
+            let mint_account = CacheUtil::get_account(rpc_client, mint, true).await?;
             let mint_data = mint_account.data;
 
             // Unpack the mint state with extensions
@@ -167,8 +166,7 @@ impl TokenUtil {
         }
 
         // Check source account extensions (force refresh in case extensions are added)
-        let source_account =
-            CacheUtil::get_account_from_cache(rpc_client, source_address, true).await?;
+        let source_account = CacheUtil::get_account(rpc_client, source_address, true).await?;
         let source_data = source_account.data;
 
         let source_state = token_program.unpack_token_account(&source_data)?;
@@ -186,7 +184,7 @@ impl TokenUtil {
 
         // Check destination account extensions (force refresh in case extensions are added)
         let destination_account =
-            CacheUtil::get_account_from_cache(rpc_client, destination_address, true).await?;
+            CacheUtil::get_account(rpc_client, destination_address, true).await?;
         let destination_data = destination_account.data;
 
         let destination_state = token_program.unpack_token_account(&destination_data)?;
@@ -249,7 +247,7 @@ impl TokenUtil {
 
                 // Validate the destination account is that of the payment address (or signer if none provided)
                 let destination_account =
-                    CacheUtil::get_account_from_cache(rpc_client, destination_address, false)
+                    CacheUtil::get_account(rpc_client, destination_address, false)
                         .await
                         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
@@ -270,7 +268,7 @@ impl TokenUtil {
                 let (mint_address, actual_amount) = if let Some(mint_address) = *mint {
                     // Force refresh in case extensions are modified
                     let mint_account =
-                        CacheUtil::get_account_from_cache(rpc_client, &mint_address, true).await?;
+                        CacheUtil::get_account(rpc_client, &mint_address, true).await?;
                     let mint_state =
                         token_program.unpack_mint(&mint_address, &mint_account.data)?;
 
@@ -291,10 +289,9 @@ impl TokenUtil {
                     (mint_address, actual_amount)
                 } else {
                     // Force refresh in case extensions are modified
-                    let source_account =
-                        CacheUtil::get_account_from_cache(rpc_client, source_address, true)
-                            .await
-                            .map_err(|e| KoraError::RpcError(e.to_string()))?;
+                    let source_account = CacheUtil::get_account(rpc_client, source_address, true)
+                        .await
+                        .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
                     let token_state =
                         token_program.unpack_token_account(&source_account.data).map_err(|e| {

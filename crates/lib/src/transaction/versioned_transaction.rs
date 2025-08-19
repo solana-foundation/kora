@@ -332,11 +332,9 @@ impl LookupTableUtil {
         // Maybe we can use caching here, there's a chance the lookup tables get updated though, so tbd
         for lookup in lookup_table_lookups {
             let lookup_table_account =
-                CacheUtil::get_account_from_cache(rpc_client, &lookup.account_key, false)
-                    .await
-                    .map_err(|e| {
-                        KoraError::RpcError(format!("Failed to fetch lookup table: {e}"))
-                    })?;
+                CacheUtil::get_account(rpc_client, &lookup.account_key, false).await.map_err(
+                    |e| KoraError::RpcError(format!("Failed to fetch lookup table: {e}")),
+                )?;
 
             // Parse the lookup table account data to get the actual addresses
             let address_lookup_table = AddressLookupTable::deserialize(&lookup_table_account.data)
