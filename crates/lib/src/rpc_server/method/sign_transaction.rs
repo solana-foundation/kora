@@ -1,5 +1,5 @@
 use crate::{
-    transaction::{TransactionUtil, VersionedTransactionUtilExt},
+    transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
 use serde::{Deserialize, Serialize};
@@ -23,9 +23,13 @@ pub async fn sign_transaction(
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
-    let _signed_transaction = transaction.sign_transaction(rpc_client).await?;
 
-    let encoded = transaction.encode_b64_transaction()?;
+    let mut resolved_transaction =
+        VersionedTransactionResolved::from_transaction(&transaction, rpc_client).await?;
+
+    let (signed_transaction, _) = resolved_transaction.sign_transaction(rpc_client).await?;
+
+    let encoded = signed_transaction.encode_b64_transaction()?;
 
     Ok(SignTransactionResponse {
         signature: transaction.signatures[0].to_string(),

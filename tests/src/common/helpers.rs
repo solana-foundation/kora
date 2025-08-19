@@ -1,9 +1,10 @@
 use anyhow::Result;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use jsonrpsee::{core::client::ClientT, http_client::HttpClientBuilder, rpc_params};
 use kora_lib::{
     signer::KeypairUtil,
     token::{TokenInterface, TokenProgram},
-    transaction::{TransactionUtil, VersionedTransactionUtilExt},
+    transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
 };
 use solana_address_lookup_table_interface::state::AddressLookupTable;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -13,7 +14,8 @@ use solana_message::{
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     pubkey::Pubkey,
-    signature::{Keypair, Signer},
+    signature::{Keypair, Signature, Signer},
+    transaction::VersionedTransaction,
 };
 use solana_system_interface::instruction::transfer;
 use spl_associated_token_account::get_associated_token_address;
@@ -233,7 +235,10 @@ impl TransactionTestHelper {
         ));
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-        Ok(transaction.encode_b64_transaction()?)
+        let resolved_transaction =
+            VersionedTransactionResolved::from_transaction_only(&transaction);
+
+        Ok(resolved_transaction.encode_b64_transaction()?)
     }
 
     pub async fn create_test_spl_transaction() -> Result<String> {
@@ -279,7 +284,10 @@ impl TransactionTestHelper {
         ));
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-        Ok(transaction.encode_b64_transaction()?)
+        let resolved_transaction =
+            VersionedTransactionResolved::from_transaction_only(&transaction);
+
+        Ok(resolved_transaction.encode_b64_transaction()?)
     }
 
     pub async fn create_v0_transaction_with_lookup(
@@ -309,8 +317,14 @@ impl TransactionTestHelper {
             &[address_lookup_table_account],
             blockhash.0,
         )?);
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(versioned_message);
 
-        Ok(transaction.encode_b64_transaction()?)
+        let num_required_signatures = versioned_message.header().num_required_signatures as usize;
+        let transaction = VersionedTransaction {
+            signatures: vec![Signature::default(); num_required_signatures],
+            message: versioned_message,
+        };
+
+        let serialized = bincode::serialize(&transaction).unwrap();
+        Ok(STANDARD.encode(serialized))
     }
 }

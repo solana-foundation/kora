@@ -7,7 +7,6 @@ use solana_message::{Message, VersionedMessage};
 use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    transaction::VersionedTransaction,
 };
 use std::str::FromStr;
 

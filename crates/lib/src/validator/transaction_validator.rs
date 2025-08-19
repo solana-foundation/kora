@@ -4,18 +4,14 @@ use crate::{
     fee::fee::FeeConfigUtil,
     oracle::PriceSource,
     state::get_config,
-    token::{
-        interface::{SplInstructionCommand, TokenMint},
-        token::{TokenType, TokenUtil},
+    token::{interface::TokenMint, token::TokenUtil},
+    transaction::{
+        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
+        ParsedSystemInstructionType, VersionedTransactionResolved,
     },
-    transaction::VersionedTransactionExt,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_message::VersionedMessage;
-use solana_sdk::{
-    instruction::CompiledInstruction, pubkey::Pubkey, transaction::VersionedTransaction,
-};
-use solana_system_interface::{instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID};
+use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 
 #[allow(unused_imports)]
 use spl_token_2022::{
@@ -100,53 +96,31 @@ impl TransactionValidator {
         Ok(mint)
     }
 
-    /// Safe account key resolution for both Legacy and V0 transactions
-    fn get_account_key(
-        account_keys: &[Pubkey],
-        index: u8,
-        context: &str,
-    ) -> Result<Pubkey, KoraError> {
-        let idx = index as usize;
-        if idx >= account_keys.len() {
-            return Err(KoraError::InvalidTransaction(format!(
-                "Account index {idx} out of bounds for {context}. Available accounts: {}",
-                account_keys.len()
-            )));
-        }
-        Ok(account_keys[idx])
-    }
-
     /*
     This function is used to validate a transaction.
-    It takes a VersionedTransactionResolved or VersionedTransaction.
-    The caller is responsible for resolving the addresses before calling this function if needed.
      */
     pub async fn validate_transaction(
         &self,
-        rpc_client: &RpcClient,
-        transaction_resolved: &impl VersionedTransactionExt,
+        transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
-        let transaction = transaction_resolved.get_transaction();
-        let all_account_keys = transaction_resolved.get_all_account_keys();
-
-        if transaction.message.instructions().is_empty() {
+        if transaction_resolved.all_instructions.is_empty() {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no instructions".to_string(),
             ));
         }
 
-        if transaction.message.static_account_keys().is_empty() {
+        if transaction_resolved.all_account_keys.is_empty() {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no account keys".to_string(),
             ));
         }
 
-        self.validate_signatures(transaction)?;
+        self.validate_signatures(&transaction_resolved.transaction)?;
 
-        self.validate_programs(&transaction.message, &all_account_keys)?;
-        self.validate_transfer_amounts(rpc_client, &transaction.message, &all_account_keys).await?;
-        self.validate_disallowed_accounts(&transaction.message, &all_account_keys)?;
-        self.validate_fee_payer_usage(&transaction.message, &all_account_keys)?;
+        self.validate_programs(transaction_resolved)?;
+        self.validate_transfer_amounts(transaction_resolved).await?;
+        self.validate_disallowed_accounts(transaction_resolved)?;
+        self.validate_fee_payer_usage(transaction_resolved)?;
 
         Ok(())
     }
@@ -179,15 +153,13 @@ impl TransactionValidator {
 
     fn validate_programs(
         &self,
-        message: &VersionedMessage,
-        account_keys: &[Pubkey],
+        transaction_resolved: &VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
-        for instruction in message.instructions() {
-            let program_id =
-                Self::get_account_key(account_keys, instruction.program_id_index, "program ID")?;
-            if !self.allowed_programs.contains(&program_id) {
+        for instruction in &transaction_resolved.all_instructions {
+            if !self.allowed_programs.contains(&instruction.program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
-                    "Program {program_id} is not in the allowed list"
+                    "Program {} is not in the allowed list",
+                    instruction.program_id
                 )));
             }
         }
@@ -196,100 +168,83 @@ impl TransactionValidator {
 
     fn validate_fee_payer_usage(
         &self,
-        message: &VersionedMessage,
-        account_keys: &[Pubkey],
+        transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
-        // Ensure fee payer is not being used as a source of funds
-        for instruction in message.instructions() {
-            if self.is_fee_payer_source(instruction, account_keys)? {
+        let system_instructions = transaction_resolved.get_or_parse_system_instructions();
+
+        let check_if_allowed = |address: &Pubkey, policy_allowed: bool| {
+            if *address == self.fee_payer_pubkey && !policy_allowed {
                 return Err(KoraError::InvalidTransaction(
                     "Fee payer cannot be used as source account".to_string(),
                 ));
             }
-        }
-        Ok(())
-    }
+            Ok(())
+        };
 
-    pub fn check_fee_payer(
-        fee_payer_pubkey: &Pubkey,
-        account_index: usize,
-        policy_allowed: bool,
-        ix: &CompiledInstruction,
-        account_keys: &[Pubkey],
-    ) -> Result<bool, KoraError> {
-        if account_index >= ix.accounts.len() {
-            return Ok(false); // If account index is invalid, fee payer can't be the source
+        // Validate system program instructions
+        for instruction in
+            system_instructions.get(&ParsedSystemInstructionType::SystemTransfer).unwrap_or(&vec![])
+        {
+            if let ParsedSystemInstructionData::SystemTransfer { sender, .. } = instruction {
+                check_if_allowed(sender, self.fee_payer_policy.allow_sol_transfers)?;
+            }
         }
-        let account_key_index = ix.accounts[account_index];
-        match Self::get_account_key(account_keys, account_key_index, "fee payer source check") {
-            Ok(account_pubkey) => Ok(!policy_allowed && account_pubkey == *fee_payer_pubkey),
-            Err(_) => Ok(false), // If account index is invalid, fee payer can't be the source
+
+        for instruction in
+            system_instructions.get(&ParsedSystemInstructionType::SystemAssign).unwrap_or(&vec![])
+        {
+            if let ParsedSystemInstructionData::SystemAssign { authority } = instruction {
+                check_if_allowed(authority, self.fee_payer_policy.allow_assign)?;
+            }
         }
-    }
 
-    fn is_fee_payer_source(
-        &self,
-        ix: &CompiledInstruction,
-        account_keys: &[Pubkey],
-    ) -> Result<bool, KoraError> {
-        let program_id =
-            Self::get_account_key(account_keys, ix.program_id_index, "fee payer check")?;
+        // Validate SPL instructions
+        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions();
 
-        match program_id {
-            SYSTEM_PROGRAM_ID => {
-                if let Ok(sys_ix) = bincode::deserialize::<SystemInstruction>(&ix.data) {
-                    let (index, policy_allowed) = match sys_ix {
-                        SystemInstruction::Transfer { .. } => {
-                            (0, self.fee_payer_policy.allow_sol_transfers)
-                        }
-                        SystemInstruction::TransferWithSeed { .. } => {
-                            (1, self.fee_payer_policy.allow_sol_transfers)
-                        }
-                        SystemInstruction::Assign { .. } => (0, self.fee_payer_policy.allow_assign),
-                        SystemInstruction::AssignWithSeed { .. } => {
-                            (1, self.fee_payer_policy.allow_assign)
-                        }
-                        _ => (0, false),
-                    };
-                    Self::check_fee_payer(
-                        &self.fee_payer_pubkey,
-                        index,
-                        policy_allowed,
-                        ix,
-                        account_keys,
-                    )
+        for instruction in
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer).unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenTransfer { owner, is_2022, .. } = instruction {
+                if *is_2022 {
+                    check_if_allowed(owner, self.fee_payer_policy.allow_token2022_transfers)?;
                 } else {
-                    Ok(false)
+                    check_if_allowed(owner, self.fee_payer_policy.allow_spl_transfers)?;
                 }
             }
-            spl_token::ID | spl_token_2022::ID => {
-                let command = SplInstructionCommand::ValidateFeePayerPolicy {
-                    fee_payer_policy: self.fee_payer_policy.clone(),
-                };
-
-                let token_interface = TokenType::get_token_program_from_owner(&program_id)?;
-
-                let result = token_interface.process_spl_instruction(
-                    &ix.data,
-                    ix,
-                    account_keys,
-                    &self.fee_payer_pubkey,
-                    command,
-                )?;
-
-                Ok(result)
-            }
-            _ => Ok(false),
         }
+
+        for instruction in
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenApprove).unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenApprove { owner, .. } = instruction {
+                check_if_allowed(owner, self.fee_payer_policy.allow_approve)?;
+            }
+        }
+
+        for instruction in
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenBurn).unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenBurn { owner, .. } = instruction {
+                check_if_allowed(owner, self.fee_payer_policy.allow_burn)?;
+            }
+        }
+
+        for instruction in
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenCloseAccount).unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenCloseAccount { owner, .. } = instruction {
+                check_if_allowed(owner, self.fee_payer_policy.allow_close_account)?;
+            }
+        }
+
+        Ok(())
     }
 
     async fn validate_transfer_amounts(
         &self,
-        rpc_client: &RpcClient,
-        message: &VersionedMessage,
-        account_keys: &[Pubkey],
+        transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
-        let total_outflow = self.calculate_total_outflow(rpc_client, message, account_keys).await?;
+        let total_outflow = self.calculate_total_outflow(transaction_resolved).await?;
 
         if total_outflow > self.max_allowed_lamports {
             return Err(KoraError::InvalidTransaction(format!(
@@ -303,30 +258,21 @@ impl TransactionValidator {
 
     fn validate_disallowed_accounts(
         &self,
-        message: &VersionedMessage,
-        account_keys: &[Pubkey],
+        transaction_resolved: &VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
-        for instruction in message.instructions() {
-            let program_id = Self::get_account_key(
-                account_keys,
-                instruction.program_id_index,
-                "disallowed account check (program)",
-            )?;
-            if self.disallowed_accounts.contains(&program_id) {
+        for instruction in &transaction_resolved.all_instructions {
+            if self.disallowed_accounts.contains(&instruction.program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
-                    "Program {program_id} is disallowed"
+                    "Program {} is disallowed",
+                    instruction.program_id
                 )));
             }
 
             for account_index in instruction.accounts.iter() {
-                let account_pubkey = Self::get_account_key(
-                    account_keys,
-                    *account_index,
-                    "disallowed account check",
-                )?;
-                if self.disallowed_accounts.contains(&account_pubkey) {
+                if self.disallowed_accounts.contains(&account_index.pubkey) {
                     return Err(KoraError::InvalidTransaction(format!(
-                        "Account {account_pubkey} is disallowed"
+                        "Account {} is disallowed",
+                        account_index.pubkey
                     )));
                 }
             }
@@ -340,55 +286,30 @@ impl TransactionValidator {
 
     async fn calculate_total_outflow(
         &self,
-        rpc_client: &RpcClient,
-        message: &VersionedMessage,
-        account_keys: &[Pubkey],
+        transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<u64, KoraError> {
-        // Use the shared outflow calculation from fees module
-        FeeConfigUtil::calculate_fee_payer_outflow(
-            rpc_client,
-            &self.fee_payer_pubkey,
-            message,
-            account_keys,
-        )
-        .await
+        FeeConfigUtil::calculate_fee_payer_outflow(&self.fee_payer_pubkey, transaction_resolved)
+            .await
     }
 
     pub async fn validate_token_payment(
-        // Should have resolved addresses for lookup tables
-        resolved_transaction: &impl VersionedTransactionExt,
+        transaction_resolved: &mut VersionedTransactionResolved,
         required_lamports: u64,
         rpc_client: &RpcClient,
         expected_payment_destination: &Pubkey,
     ) -> Result<(), KoraError> {
         let mut total_lamport_value = 0;
 
-        let transaction = resolved_transaction.get_transaction();
-        let all_account_keys = resolved_transaction.get_all_account_keys();
-
-        for ix in transaction.message.instructions() {
-            // Safe program ID resolution
-            let program_idx = ix.program_id_index as usize;
-            if program_idx >= all_account_keys.len() {
-                continue; // Skip invalid program ID index
-            }
-            let program_id = all_account_keys[program_idx];
-
-            if let Ok(token_program) = TokenType::get_token_program_from_owner(&program_id) {
-                if TokenUtil::process_token_transfer(
-                    ix,
-                    &*token_program,
-                    &all_account_keys,
-                    rpc_client,
-                    &mut total_lamport_value,
-                    required_lamports,
-                    expected_payment_destination,
-                )
-                .await?
-                {
-                    return Ok(());
-                }
-            }
+        if TokenUtil::process_token_transfer(
+            transaction_resolved,
+            rpc_client,
+            &mut total_lamport_value,
+            required_lamports,
+            expected_payment_destination,
+        )
+        .await?
+        {
+            return Ok(());
         }
 
         Err(KoraError::InvalidTransaction(format!(
@@ -402,16 +323,18 @@ mod tests {
     use crate::{
         config::{Config, KoraConfig, MetricsConfig, ValidationConfig},
         state::update_config,
-        tests::common::get_mock_rpc_client,
         transaction::TransactionUtil,
     };
     use serial_test::serial;
 
     use super::*;
-    use solana_message::Message;
-    use solana_sdk::{account::Account, instruction::Instruction};
-    use solana_system_interface::instruction::{
-        assign, create_account, create_account_with_seed, transfer, transfer_with_seed,
+    use solana_message::{Message, VersionedMessage};
+    use solana_sdk::instruction::Instruction;
+    use solana_system_interface::{
+        instruction::{
+            assign, create_account, create_account_with_seed, transfer, transfer_with_seed,
+        },
+        program::ID as SYSTEM_PROGRAM_ID,
     };
 
     #[tokio::test]
@@ -437,10 +360,9 @@ mod tests {
         let sender = Pubkey::new_unique();
         let instruction = transfer(&sender, &recipient, 100_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -463,21 +385,20 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
-        let rpc_client = get_mock_rpc_client(&Account::default());
 
         // Test transaction with amount over limit
         let instruction = transfer(&sender, &recipient, 2_000_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok()); // Should pass because sender is not fee payer
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test multiple transfers
         let instructions =
             vec![transfer(&sender, &recipient, 500_000), transfer(&sender, &recipient, 500_000)];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -504,9 +425,8 @@ mod tests {
         // Test allowed program (system program)
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test disallowed program
         let fake_program = Pubkey::new_unique();
@@ -517,9 +437,8 @@ mod tests {
             vec![], // no accounts needed for this test
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -551,10 +470,9 @@ mod tests {
             transfer(&sender, &recipient, 1000),
         ];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        transaction.signatures = vec![Default::default(); 3]; // Add 3 dummy signatures
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        transaction.transaction.signatures = vec![Default::default(); 3]; // Add 3 dummy signatures
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -581,16 +499,14 @@ mod tests {
         // Test SignAndSend mode with fee payer already set should not error
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test SignAndSend mode without fee payer (should succeed)
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], None)); // No fee payer specified
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -614,9 +530,8 @@ mod tests {
 
         // Create an empty message using Message::new with empty instructions
         let message = VersionedMessage::Legacy(Message::new(&[], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -646,9 +561,8 @@ mod tests {
             1000,
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -676,10 +590,8 @@ mod tests {
         let instruction = transfer(&fee_payer, &recipient, 1000);
 
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_sol_transfers = false
         let validation_config = ValidationConfig::test_default()
@@ -702,10 +614,8 @@ mod tests {
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -732,10 +642,8 @@ mod tests {
 
         let instruction = assign(&fee_payer, &new_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_assign = false
         let validation_config = ValidationConfig::test_default()
@@ -755,10 +663,8 @@ mod tests {
 
         let instruction = assign(&fee_payer, &new_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -796,10 +702,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_spl_transfers = false
         let validation_config = ValidationConfig::test_default()
@@ -831,10 +735,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
 
         // Test with other account as source - should always pass
         let other_signer = Pubkey::new_unique();
@@ -849,10 +751,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -893,10 +793,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_token2022_transfers = false
         let validation_config = ValidationConfig::test_default()
@@ -930,11 +828,10 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Should fail because fee payer is not allowed to be source
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
 
         // Test with other account as source - should always pass
         let other_signer = Pubkey::new_unique();
@@ -951,11 +848,10 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Should pass because fee payer is not the source
-        let rpc_client = get_mock_rpc_client(&Account::default());
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
     }
 
     #[tokio::test]
@@ -976,17 +872,14 @@ mod tests {
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
-        let rpc_client = get_mock_rpc_client(&Account::default());
 
         // Test 1: Fee payer as sender in Transfer - should add to outflow
         let recipient = Pubkey::new_unique();
         let transfer_instruction = transfer(&fee_payer, &recipient, 100_000);
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
-        let outflow = validator
-            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
-            .await
-            .unwrap();
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let outflow = validator.calculate_total_outflow(&mut transaction).await.unwrap();
         assert_eq!(outflow, 100_000, "Transfer from fee payer should add to outflow");
 
         // Test 2: Fee payer as recipient in Transfer - should subtract from outflow (account closure)
@@ -994,11 +887,9 @@ mod tests {
         let transfer_instruction = transfer(&sender, &fee_payer, 50_000);
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        let outflow = validator
-            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
-            .await
-            .unwrap();
+        let outflow = validator.calculate_total_outflow(&mut transaction).await.unwrap();
         assert_eq!(outflow, 0, "Transfer to fee payer should subtract from outflow"); // 0 - 50_000 = 0 (saturating_sub)
 
         // Test 3: Fee payer as funding account in CreateAccount - should add to outflow
@@ -1012,10 +903,8 @@ mod tests {
         );
         let message =
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
-        let outflow = validator
-            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
-            .await
-            .unwrap();
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let outflow = validator.calculate_total_outflow(&mut transaction).await.unwrap();
         assert_eq!(outflow, 200_000, "CreateAccount funded by fee payer should add to outflow");
 
         // Test 4: Fee payer as funding account in CreateAccountWithSeed - should add to outflow
@@ -1032,10 +921,8 @@ mod tests {
             &[create_with_seed_instruction],
             Some(&fee_payer),
         ));
-        let outflow = validator
-            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
-            .await
-            .unwrap();
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let outflow = validator.calculate_total_outflow(&mut transaction).await.unwrap();
         assert_eq!(
             outflow, 300_000,
             "CreateAccountWithSeed funded by fee payer should add to outflow"
@@ -1054,10 +941,8 @@ mod tests {
             &[transfer_with_seed_instruction],
             Some(&fee_payer),
         ));
-        let outflow = validator
-            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
-            .await
-            .unwrap();
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let outflow = validator.calculate_total_outflow(&mut transaction).await.unwrap();
         assert_eq!(outflow, 150_000, "TransferWithSeed from fee payer should add to outflow");
 
         // Test 6: Multiple instructions - should sum correctly
@@ -1067,10 +952,8 @@ mod tests {
             create_account(&fee_payer, &new_account, 50_000, 100, &SYSTEM_PROGRAM_ID), // +50_000
         ];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
-        let outflow = validator
-            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
-            .await
-            .unwrap();
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let outflow = validator.calculate_total_outflow(&mut transaction).await.unwrap();
         assert_eq!(
             outflow, 120_000,
             "Multiple instructions should sum correctly: 100000 - 30000 + 50000 = 120000"
@@ -1081,10 +964,8 @@ mod tests {
         let transfer_instruction = transfer(&other_sender, &recipient, 500_000);
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
-        let outflow = validator
-            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
-            .await
-            .unwrap();
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let outflow = validator.calculate_total_outflow(&mut transaction).await.unwrap();
         assert_eq!(outflow, 0, "Transfer from other account should not affect outflow");
 
         // Test 8: Other account funding CreateAccount - should not affect outflow
@@ -1093,10 +974,8 @@ mod tests {
             create_account(&other_funder, &new_account, 1_000_000, 100, &SYSTEM_PROGRAM_ID);
         let message =
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
-        let outflow = validator
-            .calculate_total_outflow(&rpc_client, &message, message.static_account_keys())
-            .await
-            .unwrap();
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let outflow = validator.calculate_total_outflow(&mut transaction).await.unwrap();
         assert_eq!(outflow, 0, "CreateAccount funded by other account should not affect outflow");
     }
 
@@ -1134,10 +1013,9 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
         // Should pass because allow_burn is true by default
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_burn = false
         let validation_config = ValidationConfig::test_default()
@@ -1166,10 +1044,10 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Should fail because fee payer cannot burn tokens when allow_burn is false
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
 
         // Test burn_checked instruction
         let burn_checked_ix = spl_token::instruction::burn_checked(
@@ -1184,10 +1062,10 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_checked_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Should also fail for burn_checked
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1223,10 +1101,9 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
         // Should pass because allow_close_account is true by default
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_close_account = false
         let validation_config = ValidationConfig::test_default()
@@ -1257,10 +1134,10 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Should fail because fee payer cannot close accounts when allow_close_account is false
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1297,10 +1174,9 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
         // Should pass because allow_approve is true by default
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_approve = false
         let validation_config = ValidationConfig::test_default()
@@ -1329,10 +1205,10 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Should fail because fee payer cannot approve when allow_approve is false
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
 
         // Test approve_checked instruction
         let mint = Pubkey::new_unique();
@@ -1350,10 +1226,10 @@ mod tests {
 
         let message =
             VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Should also fail for approve_checked
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1390,10 +1266,9 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
         // Should fail for Token2022 burn
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1432,10 +1307,9 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
         // Should fail for Token2022 close account
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 
     #[tokio::test]
@@ -1472,10 +1346,9 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let rpc_client = get_mock_rpc_client(&Account::default());
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
         // Should pass because allow_approve is true by default
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_ok());
+        assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_approve = false
         let validation_config = ValidationConfig::test_default()
@@ -1504,10 +1377,10 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Should fail because fee payer cannot approve when allow_approve is false
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
 
         // Test approve_checked instruction
         let mint = Pubkey::new_unique();
@@ -1525,9 +1398,9 @@ mod tests {
 
         let message =
             VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Should also fail for approve_checked
-        assert!(validator.validate_transaction(&rpc_client, &transaction).await.is_err());
+        assert!(validator.validate_transaction(&mut transaction).await.is_err());
     }
 }
