@@ -2,7 +2,7 @@ use crate::common::*;
 use jsonrpsee::{core::client::ClientT, rpc_params};
 use kora_lib::{
     token::{TokenInterface, TokenProgram},
-    transaction::{TransactionUtil, VersionedTransactionUtilExt},
+    transaction::{TransactionUtil, VersionedTransactionOps},
 };
 use solana_message::{Message, VersionedMessage};
 use solana_sdk::{
@@ -45,14 +45,15 @@ async fn test_sign_transaction_if_paid_with_payment_address() {
     ));
 
     // Create transaction and sign with sender
-    let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-    let sender_position = transaction
+    let mut resolved_transaction =
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+    let sender_position = resolved_transaction
         .find_signer_position(&sender.pubkey())
         .expect("Sender not found in account keys");
-    let signature = sender.sign_message(&transaction.message.serialize());
-    transaction.signatures[sender_position] = signature;
+    let signature = sender.sign_message(&resolved_transaction.transaction.message.serialize());
+    resolved_transaction.transaction.signatures[sender_position] = signature;
 
-    let encoded_tx = transaction.encode_b64_transaction().unwrap();
+    let encoded_tx = resolved_transaction.encode_b64_transaction().unwrap();
 
     // Call signTransactionIfPaid endpoint - should succeed when payment goes to correct address
     let response: serde_json::Value = client
@@ -107,14 +108,16 @@ async fn test_sign_transaction_if_paid_with_wrong_destination() {
     ));
 
     // Create transaction and sign with sender
-    let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
-    let sender_position = transaction
+    let mut resolved_transaction =
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+    let sender_position = resolved_transaction
         .find_signer_position(&sender.pubkey())
         .expect("Sender not found in account keys");
-    let signature = sender.sign_message(&transaction.message.serialize());
-    transaction.signatures[sender_position] = signature;
+    let signature = sender.sign_message(&resolved_transaction.transaction.message.serialize());
+    resolved_transaction.transaction.signatures[sender_position] = signature;
 
-    let encoded_tx = transaction.encode_b64_transaction().unwrap();
+    let encoded_tx = resolved_transaction.encode_b64_transaction().unwrap();
 
     // Call signTransactionIfPaid endpoint - should fail when payment goes to wrong address
     let response: Result<serde_json::Value, _> =

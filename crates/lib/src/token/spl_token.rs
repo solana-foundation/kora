@@ -1,15 +1,10 @@
-use crate::{
-    token::interface::{DecodedTransfer, TokenMint},
-    transaction::IxUtils,
-};
+use crate::token::interface::TokenMint;
 
-use super::interface::{
-    ParsedSplInstruction, SplInstructionCommand, SplInstructionType, TokenInterface, TokenState,
-};
+use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::{program_pack::Pack, pubkey::Pubkey};
-use solana_sdk::instruction::{CompiledInstruction, Instruction};
+use solana_sdk::instruction::Instruction;
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
@@ -211,49 +206,6 @@ impl TokenInterface for TokenProgram {
         }))
     }
 
-    fn decode_transfer_instruction(
-        &self,
-        ix: &CompiledInstruction,
-        account_keys: &[Pubkey],
-    ) -> Result<DecodedTransfer, Box<dyn std::error::Error + Send + Sync>> {
-        let instruction = spl_token::instruction::TokenInstruction::unpack(&ix.data)?;
-
-        let source_address = IxUtils::get_account_key_if_present(ix, 0, account_keys);
-
-        match instruction {
-            spl_token::instruction::TokenInstruction::Transfer { amount } => Ok(DecodedTransfer {
-                amount,
-                mint_address: None,
-                source_address,
-                destination_address: IxUtils::get_account_key_if_present(ix, 1, account_keys),
-            }),
-            spl_token::instruction::TokenInstruction::TransferChecked { amount, .. } => {
-                Ok(DecodedTransfer {
-                    amount,
-                    mint_address: IxUtils::get_account_key_if_present(ix, 1, account_keys),
-                    source_address,
-                    destination_address: IxUtils::get_account_key_if_present(ix, 2, account_keys),
-                })
-            }
-            _ => Err("Not a transfer instruction".into()),
-        }
-    }
-
-    fn process_spl_instruction(
-        &self,
-        instruction_data: &[u8],
-        ix: &CompiledInstruction,
-        account_keys: &[Pubkey],
-        fee_payer_pubkey: &Pubkey,
-        command: SplInstructionCommand,
-    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-        if let Some(parsed) = self.parse_spl_instruction(instruction_data)? {
-            command.execute(&parsed, ix, account_keys, fee_payer_pubkey)
-        } else {
-            Ok(false)
-        }
-    }
-
     async fn get_and_validate_amount_for_payment<'a>(
         &self,
         _rpc_client: &'a RpcClient,
@@ -262,76 +214,6 @@ impl TokenInterface for TokenProgram {
         amount: u64,
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         Ok(amount)
-    }
-}
-
-impl TokenProgram {
-    fn parse_spl_instruction(
-        &self,
-        instruction_data: &[u8],
-    ) -> Result<Option<ParsedSplInstruction>, Box<dyn std::error::Error + Send + Sync>> {
-        if let Ok(spl_ix) = spl_token::instruction::TokenInstruction::unpack(instruction_data) {
-            let parsed = match spl_ix {
-                spl_token::instruction::TokenInstruction::Transfer { amount } => {
-                    ParsedSplInstruction {
-                        instruction_type: SplInstructionType::Transfer,
-                        authority_index: 2,
-                        amount: Some(amount),
-                        program_id: self.program_id(),
-                    }
-                }
-                spl_token::instruction::TokenInstruction::TransferChecked { amount, .. } => {
-                    ParsedSplInstruction {
-                        instruction_type: SplInstructionType::TransferChecked,
-                        authority_index: 3,
-                        amount: Some(amount),
-                        program_id: self.program_id(),
-                    }
-                }
-                spl_token::instruction::TokenInstruction::Burn { amount } => ParsedSplInstruction {
-                    instruction_type: SplInstructionType::Burn,
-                    authority_index: 2,
-                    amount: Some(amount),
-                    program_id: self.program_id(),
-                },
-                spl_token::instruction::TokenInstruction::BurnChecked { amount, .. } => {
-                    ParsedSplInstruction {
-                        instruction_type: SplInstructionType::BurnChecked,
-                        authority_index: 2,
-                        amount: Some(amount),
-                        program_id: self.program_id(),
-                    }
-                }
-                spl_token::instruction::TokenInstruction::CloseAccount { .. } => {
-                    ParsedSplInstruction {
-                        instruction_type: SplInstructionType::CloseAccount,
-                        authority_index: 2,
-                        amount: None,
-                        program_id: self.program_id(),
-                    }
-                }
-                spl_token::instruction::TokenInstruction::Approve { amount } => {
-                    ParsedSplInstruction {
-                        instruction_type: SplInstructionType::Approve,
-                        authority_index: 2,
-                        amount: Some(amount),
-                        program_id: self.program_id(),
-                    }
-                }
-                spl_token::instruction::TokenInstruction::ApproveChecked { amount, .. } => {
-                    ParsedSplInstruction {
-                        instruction_type: SplInstructionType::ApproveChecked,
-                        authority_index: 3,
-                        amount: Some(amount),
-                        program_id: self.program_id(),
-                    }
-                }
-                _ => return Ok(None), // Unknown instruction
-            };
-            Ok(Some(parsed))
-        } else {
-            Ok(None)
-        }
     }
 }
 

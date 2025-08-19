@@ -2,7 +2,7 @@ use crate::common::*;
 use jsonrpsee::{core::client::ClientT, rpc_params};
 use kora_lib::{
     token::{TokenInterface, TokenProgram},
-    transaction::{TransactionUtil, VersionedTransactionUtilExt},
+    transaction::{TransactionUtil, VersionedTransactionOps},
 };
 use serde_json::json;
 use solana_commitment_config::CommitmentConfig;
@@ -108,17 +108,18 @@ async fn test_sign_spl_transaction() {
     let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
 
-    let mut transaction = transaction;
+    let mut resolved_transaction =
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(transaction.message);
 
-    let sender_position = transaction
+    let sender_position = resolved_transaction
         .find_signer_position(&sender.pubkey())
         .expect("Sender not found in account keys");
 
-    let signature = sender.sign_message(&transaction.message.serialize());
-    transaction.signatures[sender_position] = signature;
+    let signature = sender.sign_message(&resolved_transaction.transaction.message.serialize());
+    resolved_transaction.transaction.signatures[sender_position] = signature;
 
     let simulated_tx = rpc_client
-        .simulate_transaction(&transaction)
+        .simulate_transaction(&resolved_transaction.transaction)
         .await
         .expect("Failed to simulate transaction");
 
@@ -148,17 +149,18 @@ async fn test_sign_and_send_transaction() {
     ));
 
     // Create transaction and partially sign it with sender
-    let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+    let mut resolved_transaction =
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-    let sender_position = transaction
+    let sender_position = resolved_transaction
         .find_signer_position(&sender.pubkey())
         .expect("Sender not found in account keys");
 
-    let signature = sender.sign_message(&transaction.message.serialize());
-    transaction.signatures[sender_position] = signature;
+    let signature = sender.sign_message(&resolved_transaction.transaction.message.serialize());
+    resolved_transaction.transaction.signatures[sender_position] = signature;
 
     // Encode transaction as base64 to send to backend
-    let test_tx = transaction.encode_b64_transaction().unwrap();
+    let test_tx = resolved_transaction.encode_b64_transaction().unwrap();
 
     let result = client
         .request::<serde_json::Value, _>("signAndSendTransaction", rpc_params![test_tx])
@@ -343,18 +345,19 @@ async fn test_sign_transaction_if_paid() {
     ));
 
     // Initialize transaction with correct number of signatures
-    let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+    let mut resolved_transaction =
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-    let sender_position = transaction
+    let sender_position = resolved_transaction
         .find_signer_position(&sender.pubkey())
         .expect("Sender not found in account keys");
 
-    let signature = sender.sign_message(&transaction.message.serialize());
-    transaction.signatures[sender_position] = signature;
+    let signature = sender.sign_message(&resolved_transaction.transaction.message.serialize());
+    resolved_transaction.transaction.signatures[sender_position] = signature;
 
     // At this point, fee payer's signature slot should be empty (first position)
     // and sender's signature should be in the correct position
-    let base64_transaction = transaction.encode_b64_transaction().unwrap();
+    let base64_transaction = resolved_transaction.encode_b64_transaction().unwrap();
 
     // Rest of the test remains the same...
     let response: serde_json::Value = client
@@ -552,7 +555,7 @@ async fn test_estimate_fee_with_all_outflow_costs() {
         &blockhash.0,
     ));
 
-    let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+    let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
     let encoded_transaction = transaction.encode_b64_transaction().unwrap();
 
     let response: serde_json::Value = client

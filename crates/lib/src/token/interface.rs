@@ -1,21 +1,8 @@
 use async_trait::async_trait;
 use mockall::automock;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    instruction::{CompiledInstruction, Instruction},
-    pubkey::Pubkey,
-};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use std::any::Any;
-
-use crate::validator::transaction_validator::TransactionValidator;
-
-// All options in case there's an issue with the provided accounts, caller should validate.
-pub struct DecodedTransfer {
-    pub amount: u64,
-    pub mint_address: Option<Pubkey>,
-    pub source_address: Option<Pubkey>,
-    pub destination_address: Option<Pubkey>,
-}
 
 pub trait TokenState: Any + Send + Sync {
     fn mint(&self) -> Pubkey;
@@ -90,22 +77,6 @@ pub trait TokenInterface: Send + Sync {
         mint_data: &[u8],
     ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>>;
 
-    /// Returns the amount of the transfer as well as the addresses of mint and destination if available (transfer checked)
-    fn decode_transfer_instruction(
-        &self,
-        ix: &CompiledInstruction,
-        account_keys: &[Pubkey],
-    ) -> Result<DecodedTransfer, Box<dyn std::error::Error + Send + Sync>>;
-
-    fn process_spl_instruction(
-        &self,
-        instruction_data: &[u8],
-        ix: &solana_sdk::instruction::CompiledInstruction,
-        account_keys: &[solana_sdk::pubkey::Pubkey],
-        fee_payer_pubkey: &solana_sdk::pubkey::Pubkey,
-        command: SplInstructionCommand,
-    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>;
-
     async fn get_and_validate_amount_for_payment<'a>(
         &self,
         rpc_client: &'a RpcClient,
@@ -113,68 +84,4 @@ pub trait TokenInterface: Send + Sync {
         mint_account: Option<&'a dyn TokenMint>,
         amount: u64,
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>>;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SplInstructionType {
-    Transfer,
-    TransferChecked,
-    Burn,
-    BurnChecked,
-    CloseAccount,
-    Approve,
-    ApproveChecked,
-}
-
-#[derive(Debug, Clone)]
-pub struct ParsedSplInstruction {
-    pub instruction_type: SplInstructionType,
-    pub authority_index: usize,
-    pub amount: Option<u64>,
-    pub program_id: solana_sdk::pubkey::Pubkey,
-}
-
-#[derive(Debug, Clone)]
-pub enum SplInstructionCommand {
-    ValidateFeePayerPolicy { fee_payer_policy: crate::config::FeePayerPolicy },
-}
-
-impl SplInstructionCommand {
-    pub fn execute(
-        &self,
-        parsed: &ParsedSplInstruction,
-        ix: &CompiledInstruction,
-        account_keys: &[Pubkey],
-        fee_payer_pubkey: &Pubkey,
-    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-        match self {
-            SplInstructionCommand::ValidateFeePayerPolicy { fee_payer_policy } => {
-                let policy_flag = match parsed.instruction_type {
-                    SplInstructionType::Transfer | SplInstructionType::TransferChecked => {
-                        if parsed.program_id == spl_token_2022::id() {
-                            fee_payer_policy.allow_token2022_transfers
-                        } else {
-                            fee_payer_policy.allow_spl_transfers
-                        }
-                    }
-                    SplInstructionType::Burn | SplInstructionType::BurnChecked => {
-                        fee_payer_policy.allow_burn
-                    }
-                    SplInstructionType::Approve | SplInstructionType::ApproveChecked => {
-                        fee_payer_policy.allow_approve
-                    }
-                    SplInstructionType::CloseAccount => fee_payer_policy.allow_close_account,
-                };
-
-                TransactionValidator::check_fee_payer(
-                    fee_payer_pubkey,
-                    parsed.authority_index,
-                    policy_flag,
-                    ix,
-                    account_keys,
-                )
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-            }
-        }
-    }
 }
