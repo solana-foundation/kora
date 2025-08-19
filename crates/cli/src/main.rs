@@ -11,7 +11,7 @@ use kora_lib::{
     signer::init::init_signer_type,
     state::{init_config, init_signer},
     validator::config_validator::ConfigValidator,
-    Config,
+    CacheUtil, Config,
 };
 
 #[cfg(feature = "docs")]
@@ -141,6 +141,12 @@ async fn main() -> Result<(), KoraError> {
                         });
                     }
 
+                    // Initialize cache
+                    if let Err(e) = CacheUtil::init().await {
+                        print_error(&format!("Failed to initialize cache: {e}"));
+                        std::process::exit(1);
+                    }
+
                     let rpc_client = get_rpc_client(&cli.global_args.rpc_url);
 
                     let kora_rpc = KoraRpc::new(rpc_client);
@@ -169,6 +175,12 @@ async fn main() -> Result<(), KoraError> {
                         });
                     } else {
                         print_error("Cannot initialize ATAs without a signer.");
+                        std::process::exit(1);
+                    }
+
+                    // Initialize cache
+                    if let Err(e) = CacheUtil::init().await {
+                        print_error(&format!("Failed to initialize cache: {e}"));
                         std::process::exit(1);
                     }
 

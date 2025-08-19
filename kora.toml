@@ -3,6 +3,13 @@ rate_limit = 100
 
 [kora.auth]
 
+# Cache configuration for Redis-based caching
+[kora.cache]
+enabled = false                    # Enable/disable caching (set to true with url to enable)
+url = "redis://localhost:6379"    # Redis connection URL (uncomment and set when enabling cache)
+default_ttl = 300                  # Default TTL in seconds (5 minutes)
+account_ttl = 60                   # Account data TTL in seconds (1 minute)
+
 # Enable/disable specific RPC methods
 [kora.enabled_methods]
 liveness = true

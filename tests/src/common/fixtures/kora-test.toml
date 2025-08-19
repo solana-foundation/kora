@@ -4,6 +4,12 @@ rate_limit = 100
 
 [kora.auth]
 
+# Cache configuration - disabled for testing
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60
+
 [kora.enabled_methods]
 liveness = false                 # Just to be able to test the false flag
 estimate_transaction_fee = true
