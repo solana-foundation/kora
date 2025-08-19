@@ -125,7 +125,7 @@ impl CacheUtil {
     }
 
     /// Get account from cache with optional force refresh
-    pub async fn get_account_from_cache(
+    pub async fn get_account(
         rpc_client: &RpcClient,
         pubkey: &Pubkey,
         force_refresh: bool,

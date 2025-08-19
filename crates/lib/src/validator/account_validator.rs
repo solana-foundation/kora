@@ -115,11 +115,9 @@ pub async fn validate_account(
     account_pubkey: &Pubkey,
     expected_account_type: Option<AccountType>,
 ) -> Result<(), KoraError> {
-    let account = CacheUtil::get_account_from_cache(rpc_client, account_pubkey, false)
-        .await
-        .map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to get account {account_pubkey}: {e}"))
-        })?;
+    let account = CacheUtil::get_account(rpc_client, account_pubkey, false).await.map_err(|e| {
+        KoraError::InternalServerError(format!("Failed to get account {account_pubkey}: {e}"))
+    })?;
 
     if let Some(expected_type) = expected_account_type {
         expected_type.validate_account_type(&account, account_pubkey)?;

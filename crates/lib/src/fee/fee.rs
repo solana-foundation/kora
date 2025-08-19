@@ -63,31 +63,29 @@ impl FeeConfigUtil {
             let expected_ata = get_associated_token_address(&owner, &mint);
 
             // Force refresh in case extensions are modified
-            if ata == expected_ata
-                && CacheUtil::get_account_from_cache(rpc_client, &ata, true).await.is_err()
+            if ata == expected_ata && CacheUtil::get_account(rpc_client, &ata, true).await.is_err()
             {
                 // Determine the appropriate token program and get account size
-                let account_size =
-                    match CacheUtil::get_account_from_cache(rpc_client, &mint, true).await {
-                        Ok(mint_account) => {
-                            match TokenType::get_token_program_from_owner(&mint_account.owner) {
-                                Ok(token_program) => token_program
-                                    .get_ata_account_size(&mint, &mint_account)
-                                    .await
-                                    .unwrap_or(SplTokenAccountState::LEN),
-                                Err(_) => {
-                                    return Err(KoraError::InternalServerError(
-                                        "Unknown token program".to_string(),
-                                    ));
-                                }
+                let account_size = match CacheUtil::get_account(rpc_client, &mint, true).await {
+                    Ok(mint_account) => {
+                        match TokenType::get_token_program_from_owner(&mint_account.owner) {
+                            Ok(token_program) => token_program
+                                .get_ata_account_size(&mint, &mint_account)
+                                .await
+                                .unwrap_or(SplTokenAccountState::LEN),
+                            Err(_) => {
+                                return Err(KoraError::InternalServerError(
+                                    "Unknown token program".to_string(),
+                                ));
                             }
                         }
-                        Err(_) => {
-                            return Err(KoraError::InternalServerError(
-                                "Failed to fetch mint account".to_string(),
-                            ));
-                        }
-                    };
+                    }
+                    Err(_) => {
+                        return Err(KoraError::InternalServerError(
+                            "Failed to fetch mint account".to_string(),
+                        ));
+                    }
+                };
 
                 // Get rent cost in lamports for ATA creation with the determined size
                 let rent = Rent::default();
@@ -114,8 +112,7 @@ impl FeeConfigUtil {
                 instruction
             {
                 let destination_account =
-                    CacheUtil::get_account_from_cache(rpc_client, destination_address, false)
-                        .await?;
+                    CacheUtil::get_account(rpc_client, destination_address, false).await?;
 
                 let token_program =
                     TokenType::get_token_program_from_owner(&destination_account.owner)?;
