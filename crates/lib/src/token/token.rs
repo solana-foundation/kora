@@ -140,7 +140,7 @@ impl TokenUtil {
         let config = get_config()?;
 
         for instruction in transaction_resolved
-            .get_or_parse_spl_instructions()
+            .get_or_parse_spl_instructions()?
             .get(&ParsedSPLInstructionType::SplTokenTransfer)
             .unwrap_or(&vec![])
         {

@@ -29,7 +29,7 @@ pub async fn sign_transaction(
 
     let (signed_transaction, _) = resolved_transaction.sign_transaction(rpc_client).await?;
 
-    let encoded = signed_transaction.encode_b64_transaction()?;
+    let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction);
 
     Ok(SignTransactionResponse {
         signature: transaction.signatures[0].to_string(),

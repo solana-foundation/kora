@@ -33,7 +33,7 @@ pub async fn sign_transaction_if_paid(
         .map_err(|e| KoraError::TokenOperationError(e.to_string()))?;
 
     Ok(SignTransactionIfPaidResponse {
-        transaction: transaction.encode_b64_transaction()?,
+        transaction: TransactionUtil::encode_versioned_transaction(&transaction),
         signed_transaction,
     })
 }

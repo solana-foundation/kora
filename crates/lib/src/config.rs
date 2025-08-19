@@ -10,7 +10,7 @@ use crate::{
         DEFAULT_METRICS_SCRAPE_INTERVAL,
     },
     error::KoraError,
-    fee::price::PriceConfig,
+    fee::price::{PriceConfig, PriceModel},
     get_signer,
     oracle::PriceSource,
 };
@@ -55,6 +55,12 @@ pub struct ValidationConfig {
     pub fee_payer_policy: FeePayerPolicy,
     #[serde(default)]
     pub price: PriceConfig,
+}
+
+impl ValidationConfig {
+    pub fn is_payment_required(&self) -> bool {
+        !matches!(&self.price.model, PriceModel::Free)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
