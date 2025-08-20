@@ -319,17 +319,32 @@ The `[metrics]` section configures metrics collection and monitoring. This secti
 ```toml
 [metrics]
 enabled = true
-metrics-endpoint = "/metrics"
+endpoint = "/metrics"
 port = 8080
-scrape-interval = 60
+scrape_interval = 60
+
+[metrics.fee_payer_balance]
+enabled = true
+expiry_seconds = 30
 ```
 
 | Option | Description | Required | Type |
 |--------|-------------|---------|---------|
 | `enabled` | Enable metrics collection | ✅ | boolean |
-| `metrics-endpoint` | Custom metrics endpoint path | ✅ | string |
+| `endpoint` | Custom metrics endpoint path | ✅ | string |
 | `port` | Metrics endpoint port | ✅ | number |
-| `scrape-interval` | Frequency of Prometheus scrape (seconds) | ✅ | number |
+| `scrape_interval` | Frequency of Prometheus scrape (seconds) | ✅ | number |
+
+### Fee Payer Balance Tracking
+
+The `[metrics.fee_payer_balance]` section configures automatic monitoring of your fee payer's SOL balance:
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `enabled` | Enable fee payer balance tracking | ❌ (default: false) | boolean |
+| `expiry_seconds` | Background tracking interval in seconds | ❌ (default: 30) | number |
+
+When enabled, Kora automatically tracks your fee payer's SOL balance and exposes it via the `fee_payer_balance_lamports` Prometheus gauge. This helps with capacity planning and low-balance alerting.
 
 > *Note: Metrics are served at `http://localhost:{port}/{metrics-endpoint}` (Metrics can be served on the same port as the RPC server).*
 
@@ -442,9 +457,14 @@ margin = 0.15  # 15% margin on network fees
 # Metrics collection
 [metrics]
 enabled = true
-metrics-endpoint = "/metrics"
+endpoint = "/metrics"
 port = 8080
-scrape-interval = 60
+scrape_interval = 60
+
+# Fee payer balance monitoring
+[metrics.fee_payer_balance]
+enabled = true
+expiry_seconds = 30
 ```
 
 ## Configuration Validation

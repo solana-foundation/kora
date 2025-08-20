@@ -1,9 +1,13 @@
+pub mod balance;
 pub mod handler;
 pub mod middleware;
 
+pub use balance::BalanceTracker;
 pub use handler::{MetricsHandlerLayer, MetricsHandlerService};
 pub use middleware::{HttpMetricsLayer, HttpMetricsService};
 pub use prometheus;
+use solana_client::nonblocking::rpc_client::RpcClient;
+use tokio::task::JoinHandle;
 
 use crate::{config::MetricsConfig, state::get_config};
 use jsonrpsee::{
@@ -11,7 +15,7 @@ use jsonrpsee::{
     RpcModule,
 };
 use prometheus::{Encoder, TextEncoder};
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 pub struct MetricsLayers {
     pub http_metrics_layer: Option<HttpMetricsLayer>,
@@ -31,17 +35,28 @@ fn get_metrics_layers(metrics_config: &MetricsConfig) -> Option<MetricsLayers> {
 
 pub async fn run_metrics_server_if_required(
     rpc_port: u16,
-) -> Result<(Option<ServerHandle>, Option<MetricsLayers>), anyhow::Error> {
+    rpc_client: Arc<RpcClient>,
+) -> Result<(Option<ServerHandle>, Option<MetricsLayers>, Option<JoinHandle<()>>), anyhow::Error> {
     let metrics_config = get_config()?.metrics.clone();
 
     if !metrics_config.enabled {
-        return Ok((None, None));
+        return Ok((None, None, None));
     }
+
+    // Initialize balance tracker if metrics are enabled and start background tracking
+    let balance_tracker_handle = if let Err(e) = BalanceTracker::init().await {
+        log::warn!("Failed to initialize balance tracker: {e}");
+        // Don't fail metrics server startup if balance tracker fails to initialize
+        None
+    } else {
+        // Start background balance tracking (only if initialized worked)
+        BalanceTracker::start_background_tracking(rpc_client).await
+    };
 
     // If running on the same port as the RPC server, we don't need to run a separate metrics server
     if metrics_config.port == rpc_port {
         log::info!("Metrics endpoint enabled at {} on RPC server", metrics_config.endpoint);
-        return Ok((None, get_metrics_layers(&metrics_config)));
+        return Ok((None, get_metrics_layers(&metrics_config), balance_tracker_handle));
     }
 
     let addr = SocketAddr::from(([0, 0, 0, 0], metrics_config.port));
@@ -70,7 +85,7 @@ pub async fn run_metrics_server_if_required(
         metrics_handler_layer: None, // Don't serve metrics on RPC server (separate server handles this)
     };
 
-    Ok((Some(metrics_server_handle), Some(metrics_layers)))
+    Ok((Some(metrics_server_handle), Some(metrics_layers), balance_tracker_handle))
 }
 
 /// Gather all Prometheus metrics and encode them in text format

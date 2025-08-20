@@ -151,12 +151,22 @@ async fn main() -> Result<(), KoraError> {
 
                     let kora_rpc = KoraRpc::new(rpc_client);
 
-                    let ServerHandles { rpc_handle, metrics_handle } =
+                    let ServerHandles { rpc_handle, metrics_handle, balance_tracker_handle } =
                         run_rpc_server(kora_rpc, rpc_args.port).await?;
 
                     tokio::signal::ctrl_c().await.unwrap();
                     println!("Shutting down server...");
+
+                    // Stop the balance tracker task
+                    if let Some(handle) = balance_tracker_handle {
+                        log::info!("Stopping balance tracker background task...");
+                        handle.abort();
+                    }
+
+                    // Stop the RPC server
                     rpc_handle.stop().unwrap();
+
+                    // Stop the metrics server if running
                     if let Some(handle) = metrics_handle {
                         handle.stop().unwrap();
                     }

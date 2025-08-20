@@ -44,6 +44,10 @@ impl KoraRpc {
         Self { rpc_client }
     }
 
+    pub fn get_rpc_client(&self) -> &Arc<RpcClient> {
+        &self.rpc_client
+    }
+
     pub async fn liveness(&self) -> Result<(), KoraError> {
         info!("Liveness request received");
         let result = Ok(());
