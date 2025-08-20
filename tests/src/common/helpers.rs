@@ -243,12 +243,15 @@ impl TransactionTestHelper {
         let rpc_client = RPCTestHelper::get_rpc_client().await;
         let client = ClientTestHelper::get_test_client().await;
 
-        // Get fee payer from config
+        // Get fee payer from config (use first one from the pool)
         let response: serde_json::Value = client
             .request("getConfig", rpc_params![])
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get config: {}", e))?;
-        let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap())?;
+        let fee_payers = response["fee_payers"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("Expected fee_payers array in response"))?;
+        let fee_payer = Pubkey::from_str(fee_payers[0].as_str().unwrap())?;
 
         let sender = SenderTestHelper::get_test_sender_keypair();
         let recipient = RecipientTestHelper::get_recipient_pubkey();

@@ -1,66 +1,101 @@
-use crate::{cache::CacheUtil, error::KoraError, get_request_signer, state::get_config};
-use prometheus::{register_gauge, Gauge};
+use crate::{
+    cache::CacheUtil,
+    error::KoraError,
+    state::{get_config, get_signers_info},
+};
+use prometheus::{register_gauge_vec, GaugeVec};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use std::sync::Arc;
+use solana_sdk::pubkey::Pubkey;
+use std::{str::FromStr, sync::Arc};
 use tokio::{
     sync::OnceCell,
     task::JoinHandle,
     time::{interval, Duration},
 };
 
-/// Global Prometheus gauge for tracking fee payer balance
-static FEE_PAYER_BALANCE_GAUGE: OnceCell<Gauge> = OnceCell::const_new();
+/// Global Prometheus gauge vector for tracking all signer balances
+static SIGNER_BALANCE_GAUGES: OnceCell<GaugeVec> = OnceCell::const_new();
 
 /// Balance tracker for monitoring signer SOL balance
 pub struct BalanceTracker;
 
 impl BalanceTracker {
-    /// Initialize the Prometheus gauge for balance tracking
+    /// Initialize the Prometheus gauge vector for multi-signer balance tracking
     pub async fn init() -> Result<(), KoraError> {
         if !BalanceTracker::is_enabled() {
             return Ok(());
         }
 
-        let gauge = register_gauge!(
-            "fee_payer_balance_lamports",
-            "Current SOL balance of the fee payer/signer in lamports"
+        let gauge_vec = register_gauge_vec!(
+            "signer_balance_lamports",
+            "Current SOL balance of each signer in lamports",
+            &["signer_name", "signer_pubkey"]
         )
         .map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to register balance gauge: {e}"))
+            KoraError::InternalServerError(format!("Failed to register balance gauge vector: {e}"))
         })?;
 
-        FEE_PAYER_BALANCE_GAUGE.set(gauge).map_err(|_| {
-            KoraError::InternalServerError("Balance gauge already initialized".to_string())
+        SIGNER_BALANCE_GAUGES.set(gauge_vec).map_err(|_| {
+            KoraError::InternalServerError("Balance gauge vector already initialized".to_string())
         })?;
 
-        log::info!("Balance tracking metrics initialized");
+        log::info!("Multi-signer balance tracking metrics initialized");
         Ok(())
     }
 
-    /// Track the current signer balance and update Prometheus metrics
-    pub async fn track_signer_balance(rpc_client: &Arc<RpcClient>) -> Result<(), KoraError> {
+    /// Track all signers' balances and update Prometheus metrics
+    pub async fn track_all_signer_balances(rpc_client: &Arc<RpcClient>) -> Result<(), KoraError> {
         if !BalanceTracker::is_enabled() {
             return Ok(());
         }
 
-        // TODO
-        // Get the signer and extract pubkey
-        let signer = get_request_signer()?;
-        let signer_pubkey = signer.solana_pubkey();
+        // Get all signers in the pool
+        let signers_info = get_signers_info()?;
 
-        // Get account balance using cache with configured expiry
-        let account = CacheUtil::get_account(rpc_client, &signer_pubkey, false).await?;
-        let balance_lamports = account.lamports;
+        if let Some(gauge_vec) = SIGNER_BALANCE_GAUGES.get() {
+            let mut balance_results = Vec::new();
 
-        // Update Prometheus gauge
-        if let Some(gauge) = FEE_PAYER_BALANCE_GAUGE.get() {
-            gauge.set(balance_lamports as f64);
+            // Batch fetch all signer balances
+            for signer_info in &signers_info {
+                let pubkey = Pubkey::from_str(&signer_info.public_key).map_err(|e| {
+                    KoraError::InternalServerError(format!(
+                        "Invalid signer pubkey {}: {e}",
+                        signer_info.public_key
+                    ))
+                })?;
 
-            log::debug!(
-                "Updated fee payer balance metrics: {balance_lamports} lamports for signer {signer_pubkey}"
-            );
+                match CacheUtil::get_account(rpc_client, &pubkey, false).await {
+                    Ok(account) => {
+                        balance_results.push((signer_info, account.lamports));
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to get balance for signer {} ({}): {e}",
+                            signer_info.name,
+                            signer_info.public_key
+                        );
+                        // Set balance to 0 on error to indicate issue
+                        balance_results.push((signer_info, 0));
+                    }
+                }
+            }
+
+            // Update all gauge metrics
+            for (signer_info, balance_lamports) in balance_results {
+                let gauge =
+                    gauge_vec.with_label_values(&[&signer_info.name, &signer_info.public_key]);
+
+                gauge.set(balance_lamports as f64);
+
+                log::debug!(
+                    "Updated balance metrics: {} lamports for signer {} ({})",
+                    balance_lamports,
+                    signer_info.name,
+                    signer_info.public_key
+                );
+            }
         } else {
-            log::warn!("Balance gauge not initialized, skipping metrics update");
+            log::warn!("Balance gauge vector not initialized, skipping metrics update");
         }
 
         Ok(())
@@ -83,7 +118,7 @@ impl BalanceTracker {
         };
 
         let interval_seconds = config.metrics.fee_payer_balance.expiry_seconds;
-        log::info!("Starting balance tracking background task with {interval_seconds}s interval");
+        log::info!("Starting multi-signer balance tracking background task with {interval_seconds}s interval");
 
         // Spawn a background task that runs forever
         let handle = tokio::spawn(async move {
@@ -92,9 +127,9 @@ impl BalanceTracker {
             loop {
                 interval.tick().await;
 
-                // Track balance, but don't let errors crash the loop
-                if let Err(e) = BalanceTracker::track_signer_balance(&rpc_client).await {
-                    log::warn!("Failed to track signer balance in background task: {e}");
+                // Track all signer balances, but don't let errors crash the loop
+                if let Err(e) = BalanceTracker::track_all_signer_balances(&rpc_client).await {
+                    log::warn!("Failed to track signer balances in background task: {e}");
                 }
             }
         });
@@ -119,9 +154,14 @@ mod tests {
         },
         fee::price::PriceConfig,
         oracle::PriceSource,
-        state::update_config,
+        signer::{
+            memory_signer::solana_signer::SolanaMemorySigner, KoraSigner, SignerPool,
+            SignerWithMetadata,
+        },
+        state::{update_config, update_signer_pool},
     };
     use serial_test::serial;
+    use solana_sdk::signature::Keypair;
 
     fn create_test_config(balance_metrics_enabled: bool) -> Config {
         Config {
@@ -162,6 +202,16 @@ mod tests {
         }
     }
 
+    fn create_test_signer_pool() -> SignerPool {
+        let signer1 = SolanaMemorySigner::new(Keypair::new());
+        let signer2 = SolanaMemorySigner::new(Keypair::new());
+
+        SignerPool::new(vec![
+            SignerWithMetadata::new("test_signer_1".to_string(), KoraSigner::Memory(signer1), 1),
+            SignerWithMetadata::new("test_signer_2".to_string(), KoraSigner::Memory(signer2), 1),
+        ])
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_balance_tracking_disabled() {
@@ -180,5 +230,27 @@ mod tests {
 
         // Balance tracking should report as enabled
         assert!(BalanceTracker::is_enabled());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_multi_signer_balance_tracking() {
+        let config = create_test_config(true);
+        let _ = update_config(config);
+
+        // Set up test signer pool
+        let pool = create_test_signer_pool();
+        let _ = update_signer_pool(pool);
+
+        // Verify we can get signers info
+        let signers_info = get_signers_info().expect("Should get signers info");
+        assert_eq!(signers_info.len(), 2);
+        assert_eq!(signers_info[0].name, "test_signer_1");
+        assert_eq!(signers_info[1].name, "test_signer_2");
+
+        // Verify public keys are valid Solana pubkeys
+        for signer_info in signers_info {
+            assert!(Pubkey::from_str(&signer_info.public_key).is_ok());
+        }
     }
 }

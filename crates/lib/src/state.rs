@@ -20,7 +20,22 @@ static GLOBAL_CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
 /// Get a request-scoped signer that should be used consistently throughout a single RPC request
 /// This advances the round-robin counter once per request for consistent signer usage
 pub fn get_request_signer() -> Result<Arc<KoraSigner>, KoraError> {
+    get_request_signer_with_hint(None)
+}
+
+/// Get a request-scoped signer with optional hint for consistency across related calls
+pub fn get_request_signer_with_hint(
+    signer_hint: Option<&str>,
+) -> Result<Arc<KoraSigner>, KoraError> {
     let pool = get_signer_pool()?;
+
+    // If client provided a signer hint, try to use that specific signer
+    if let Some(hint) = signer_hint {
+        let signer_meta = pool.get_signer_by_pubkey(hint)?;
+        return Ok(Arc::new(signer_meta.signer.clone()));
+    }
+
+    // Default behavior: use next signer from round-robin
     let signer_meta = pool.get_next_signer().map_err(|e| {
         KoraError::InternalServerError(format!("Failed to get signer from pool: {e}"))
     })?;

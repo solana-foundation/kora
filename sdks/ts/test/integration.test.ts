@@ -49,7 +49,9 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         it('should get config', async () => {
             const config = await client.getConfig();
             expect(config).toBeDefined();
-            expect(config.fee_payer).toBeDefined();
+            expect(config.fee_payers).toBeDefined();
+            expect(Array.isArray(config.fee_payers)).toBe(true);
+            expect(config.fee_payers.length).toBeGreaterThan(0);
             expect(config.validation_config).toBeDefined();
             expect(config.validation_config.allowed_programs).toBeDefined();
             expect(config.validation_config.allowed_tokens).toBeDefined();
@@ -167,7 +169,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
         it('should sign transaction if paid', async () => {
             const config = await client.getConfig();
-            const paymentAddress = config.fee_payer;
+            const paymentAddress = config.fee_payers[0];
             const transferRequest = {
                 amount: 1000000,
                 token: usdcMint,

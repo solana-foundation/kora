@@ -4,7 +4,7 @@ use utoipa::ToSchema;
 use crate::{
     error::KoraError,
     fee::fee::FeeConfigUtil,
-    state::{get_config, get_request_signer},
+    state::{get_config, get_request_signer_with_hint},
     token::token::TokenUtil,
     transaction::{TransactionUtil, VersionedTransactionResolved},
 };
@@ -19,12 +19,17 @@ pub struct EstimateTransactionFeeRequest {
     pub transaction: String, // Base64 encoded serialized transaction
     #[serde(default)]
     pub fee_token: Option<String>,
+    /// Optional signer hint to ensure consistency across related RPC calls
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signer_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EstimateTransactionFeeResponse {
     pub fee_in_lamports: u64,
     pub fee_in_token: Option<f64>,
+    /// Public key of the signer used for fee estimation (for client consistency)
+    pub signer_pubkey: String,
 }
 
 pub async fn estimate_transaction_fee(
@@ -33,7 +38,7 @@ pub async fn estimate_transaction_fee(
 ) -> Result<EstimateTransactionFeeResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
-    let signer = get_request_signer()?;
+    let signer = get_request_signer_with_hint(request.signer_hint.as_deref())?;
     let validation_config = &get_config()?.validation;
     let fee_payer = signer.solana_pubkey();
 
@@ -67,5 +72,9 @@ pub async fn estimate_transaction_fee(
         fee_in_token = Some(fee_value_in_token);
     }
 
-    Ok(EstimateTransactionFeeResponse { fee_in_lamports, fee_in_token })
+    Ok(EstimateTransactionFeeResponse {
+        fee_in_lamports,
+        fee_in_token,
+        signer_pubkey: fee_payer.to_string(),
+    })
 }

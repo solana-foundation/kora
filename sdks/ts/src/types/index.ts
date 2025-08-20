@@ -194,8 +194,8 @@ export interface EnabledMethods {
  * Kora server configuration.
  */
 export interface Config {
-    /** Public key of the fee payer account */
-    fee_payer: string;
+    /** Array of public keys of the fee payer accounts (signer pool) */
+    fee_payers: string[];
     /** Validation rules and constraints */
     validation_config: ValidationConfig;
     /** Enabled methods */

@@ -42,7 +42,9 @@ export function runAuthenticationTests(rpcUrl: string = 'http://localhost:8080/'
 
             const config = await client.getConfig();
             expect(config).toBeDefined();
-            expect(config.fee_payer).toBeDefined();
+            expect(config.fee_payers).toBeDefined();
+            expect(Array.isArray(config.fee_payers)).toBe(true);
+            expect(config.fee_payers.length).toBeGreaterThan(0);
         });
 
         it('should fail when no credentials provided but auth is required', async () => {

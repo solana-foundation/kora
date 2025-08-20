@@ -95,6 +95,7 @@ pub struct SignerPool {
 /// Information about a signer for monitoring/debugging
 #[derive(Debug, Clone)]
 pub struct SignerInfo {
+    pub public_key: String,
     pub name: String,
     pub weight: u32,
     pub success_count: u64,
@@ -205,6 +206,7 @@ impl SignerPool {
         self.signers
             .iter()
             .map(|s| SignerInfo {
+                public_key: s.signer.solana_pubkey().to_string(),
                 name: s.name.clone(),
                 weight: s.weight,
                 success_count: s.success_count.load(Ordering::Relaxed),
@@ -242,6 +244,22 @@ impl SignerPool {
         if let Some(signer) = self.signers.iter().find(|s| s.name == signer_name) {
             signer.mark_error();
         }
+    }
+
+    /// Get a signer by public key (for client consistency hints)
+    pub fn get_signer_by_pubkey(&self, pubkey: &str) -> Result<&SignerWithMetadata, KoraError> {
+        // Try to parse as Pubkey to validate format
+        use solana_sdk::pubkey::Pubkey;
+        use std::str::FromStr;
+
+        let target_pubkey = Pubkey::from_str(pubkey).map_err(|_| {
+            KoraError::ValidationError(format!("Invalid signer hint pubkey: {pubkey}"))
+        })?;
+
+        // Find signer with matching public key
+        self.signers.iter().find(|s| s.signer.solana_pubkey() == target_pubkey).ok_or_else(|| {
+            KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
+        })
     }
 }
 

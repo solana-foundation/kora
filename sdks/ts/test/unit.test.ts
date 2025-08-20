@@ -109,7 +109,7 @@ describe('KoraClient Unit Tests', () => {
     describe('getConfig', () => {
         it('should return configuration', async () => {
             const mockConfig: Config = {
-                fee_payer: 'test_fee_payer_address',
+                fee_payers: ['test_fee_payer_address'],
                 validation_config: {
                     max_allowed_lamports: 1000000,
                     max_signatures: 10,
