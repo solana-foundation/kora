@@ -755,7 +755,9 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new_mock("http://localhost:8899".to_string());
+        let mock_account = create_mock_program_account();
+        let rpc_client = get_mock_rpc_client(&mock_account);
+
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
     }
