@@ -3,13 +3,13 @@ name: TypeScript Unit Tests
 on:
   workflow_call:
   push:
-    branches: [main]
+    branches: [main, "release/*"]
     paths:
       - 'sdks/ts/**'
       - '.github/workflows/typescript-unit.yml'
 
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
     paths:
       - 'sdks/ts/**'
       - '.github/workflows/typescript-unit.yml'

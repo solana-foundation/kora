@@ -2,14 +2,14 @@ name: Rust CI
 
 on:
   push:
-    branches: [main, release/pre-release-main-branch]
+    branches: [main, "release/*"]
     paths:
       - "crates/**"
       - "Cargo.*"
       - "Makefile"
       - ".github/workflows/rust.yml"
   pull_request:
-    branches: [main, release/pre-release-main-branch]
+    branches: [main, "release/*"]
     paths:
       - "crates/**"
       - "Cargo.*"
