@@ -92,6 +92,15 @@ runs:
       shell: bash
       run: |
         echo "🔧 Initializing payment ATAs..."
+        
+        # Set environment variables for signers
+        export KORA_PRIVATE_KEY="$(cat tests/src/common/local-keys/fee-payer-local.json)"
+        
+        # Set second signer if it exists (for multi-signer configs)
+        if [ -f "tests/src/common/local-keys/signer2-local.json" ]; then
+          export KORA_PRIVATE_KEY_2="$(cat tests/src/common/local-keys/signer2-local.json)"
+        fi
+        
         cargo run -p kora-cli --bin kora -- \
           --config ${{ inputs.config-file }} \
           --rpc-url ${{ inputs.rpc-url }} \
