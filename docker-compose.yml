@@ -19,6 +19,7 @@ services:
       - ./.env:/app/.env:ro
     environment:
       - RUST_LOG=info
+      - REDIS_URL=redis://redis:6379
     env_file:
       - .env
     command:

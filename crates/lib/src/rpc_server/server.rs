@@ -13,12 +13,14 @@ use jsonrpsee::{
     RpcModule,
 };
 use std::{net::SocketAddr, time::Duration};
+use tokio::task::JoinHandle;
 use tower::limit::RateLimitLayer;
 use tower_http::cors::CorsLayer;
 
 pub struct ServerHandles {
     pub rpc_handle: ServerHandle,
     pub metrics_handle: Option<ServerHandle>,
+    pub balance_tracker_handle: Option<JoinHandle<()>>,
 }
 
 // We'll always prioritize the environment variable over the config value
@@ -44,7 +46,11 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
     let config = get_config()?;
 
-    let (metrics_handle, metrics_layers) = run_metrics_server_if_required(port).await?;
+    // Get the RPC client from KoraRpc to pass to metrics initialization
+    let rpc_client = rpc.get_rpc_client().clone();
+
+    let (metrics_handle, metrics_layers, balance_tracker_handle) =
+        run_metrics_server_if_required(port, rpc_client).await?;
 
     let middleware = tower::ServiceBuilder::new()
         // Add metrics handler first (before other layers) so it can intercept /metrics
@@ -83,7 +89,7 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         .start(rpc_module)
         .map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))?;
 
-    Ok(ServerHandles { rpc_handle, metrics_handle })
+    Ok(ServerHandles { rpc_handle, metrics_handle, balance_tracker_handle })
 }
 
 macro_rules! register_method_if_enabled {

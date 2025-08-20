@@ -61,3 +61,7 @@ enabled = true
 endpoint = "/metrics"
 port = 8080  # Same port as main server, or separate port like 9090
 scrape_interval = 60
+
+[metrics.fee_payer_balance]
+enabled = true
+expiry_seconds = 30  # 30 seconds
