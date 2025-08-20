@@ -326,9 +326,7 @@ impl TokenUtil {
                     (token_state.mint(), actual_amount)
                 };
 
-                if !config.validation.allow_any_spl_paid_token
-                && !config.validation.allowed_spl_paid_tokens.contains(&mint_address.to_string())
-            {
+                if !config.validation.is_spl_token_paid_valid(&mint_address.to_string()) {
                     return Ok(false);
                 }
 
