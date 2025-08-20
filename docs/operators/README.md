@@ -28,13 +28,15 @@ As a Kora node operator, you're responsible for running a secure paymaster servi
 
 ### 1. Validate Transactions
 Configure your node to accept only transactions that meet your business requirements via `kora.toml`:
-- **Token allowlists**: Define which SPL tokens you accept as payment
+- **Token allowlists**: Define which SPL tokens you accept as payment (supports both SPL and Token-2022)
 - **Program allowlists**: Whitelist which Solana programs users can interact with
 - **Transaction limits**: Set maximum fees you're willing to pay and signature limits
 - **Account blocklists**: Prevent interactions with problematic addresses
 - **Pricing oracles**: Configure Jupiter or mock pricing for fee calculations
 - **Payment tokens**: Specify which type of tokens you will accept as payment 
-- **Feepayer policies**: Specify which types of instructions your feepayer can sign
+- **Feepayer policies**: Control what operations your feepayer can perform (transfers, burns, approvals, etc.)
+- **Token-2022 extensions**: Block specific Token-2022 extensions for enhanced security
+- **Caching**: Enable Redis caching to improve performance by reducing RPC calls
 
 **[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)**
 **[→ Sample kora.toml](./deploy/sample/kora.toml)**
@@ -60,6 +62,12 @@ Continuously track your node's security, performance, and business metrics:
 Kora provides an optional `/metrics` endpoint that provides real-time performance data in Prometheus format.
 
 **[→ Kora Monitoring Reference Guide](./MONITORING.md)**
+
+### 5. Optimize Performance (Optional)
+For high-traffic deployments, enable Redis caching to reduce RPC calls and improve response times:
+- **Account caching**: Cache Solana account data with configurable time to live (TTL)
+- **Automatic fallback**: Gracefully falls back to direct RPC calls if Redis is unavailable
+- **Cache management**: Automatic expiration and force-refresh capabilities for critical operations
 
 ## Kora CLI
 
@@ -112,14 +120,16 @@ Every Kora RPC node must be configured with at least:
 
 **kora.toml**
 
-Before deploying, you'll need to create and configure a `kora.toml` to specify: Add a comment on line R115Add diff commentMarkdown input: edit mode selected.WritePreviewAdd a suggestionHeadingBoldItalicQuoteCodeLinkUnordered listNumbered listTask listMentionReferenceSaved repliesAdd FilesPaste, drop, or click to add filesCancelCommentStart a reviewReturn to code
+Before deploying, you'll need to create and configure a `kora.toml` to specify:
 
 - Rate limiting and authentication
 - RPC method availability
 - Transaction validation rules
-- Security policies
+- Security policies (whitelist or blacklist of SPL tokens, programs, accounts, token extensions, etc.)
 - Fee pricing models
+- Enhanced fee payer policies (protect against unwanted signer behavior)
 - Metrics collection
+- Redis caching configuration (optional)
 
 ## Deployment 
 
@@ -129,9 +139,10 @@ Start up and test a local Kora Server in minutes: [Quick Start Guide](../getting
 
 ### Docker
 
-Use the sample Dockerfile to deploy on any container platform:
+Use the sample Dockerfile to deploy on any container platform. The docker-compose.yml file includes Redis for caching support:
 
 **[→ Sample Dockerfile](./deploy/sample/Dockerfile)**
+**[→ Docker Compose with Redis](../../docker-compose.yml)**
 
 ### Platform-Specific Guides
 

@@ -22,10 +22,11 @@ Your configuration file should be placed in your deployment directory or specifi
 The `kora.toml` file is organized into sections, each with its own set of options. This guide walks through each section and explains the options available:
 
 - [Kora Core Policies](#kora-core-policies) - Core server settings
-- [Kora Enabled Methods](#kora-enabled-methods-optional) - Kora RPC methods to enable
 - [Kora Authentication](#kora-authentication) - Authentication settings
-- [Kora Enabled Methods](#kora-enabled-methods) - Kora RPC methods to enable
+- [Kora Caching](#kora-caching-optional) - Redis caching for RPC calls
+- [Kora Enabled Methods](#kora-enabled-methods-optional) - Kora RPC methods to enable
 - [Validation Policies](#validation-policies) - Transaction validation and security
+- [Token-2022 Extension Blocking](#token-2022-extension-blocking) - Block risky Token-2022 extensions
 - [Fee Payer Policy](#fee-payer-policy) - Restrictions on fee payer wallet
 - [Price Configuration](#price-configuration) - Transaction fee pricing models
 - [Performance Monitoring](#performance-monitoring-optional) - Metrics collection and monitoring
@@ -40,20 +41,26 @@ Sample `kora.toml` file sections:
 [kora.auth]
 # Authentication settings
 
+[kora.cache]
+# Redis caching configuration
+
 [kora.enabled_methods]
 # Kora RPC methods to enable
 
-[kora.rate_limit]
-# Rate limiting settings
-
 [validation]
 # Transaction validation rules
+
+[validation.token2022]
+# Token-2022 extension blocking
 
 [validation.fee_payer_policy]
 # Restrictions on fee payer wallet
 
 [validation.price]
 # Transaction fee pricing models
+
+[metrics]
+# Performance monitoring
 ```
 
 
@@ -93,6 +100,26 @@ max_timestamp_age = 300
 
 > *Note: `api_key` and `hmac_secret` set a global authentication policy for all clients. For detailed authentication setup, see [Authentication Guide](./AUTHENTICATION.md).*
 
+## Kora Caching (optional)
+
+The `[kora.cache]` section configures Redis-based caching for Solana RPC calls. This can significantly improve performance by reducing redundant account data fetches:
+
+```toml
+[kora.cache]
+enabled = true                      # Enable/disable caching
+url = "redis://localhost:6379"      # Redis connection URL
+default_ttl = 300                   # Default TTL in seconds (5 minutes)
+account_ttl = 60                    # Account data TTL in seconds (1 minute)
+```
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `enabled` | Enable Redis caching for RPC calls | ❌ (default: false) | boolean |
+| `url` | Redis connection URL (required when enabled) | ✅ | string |
+| `default_ttl` | Default TTL for cached entries in seconds | ❌ (default: 300) | number |
+| `account_ttl` | TTL for account data cache in seconds | ❌ (default: 60) | number |
+
+> *Note: When caching is enabled, a Redis instance must be available at the specified URL. The cache gracefully falls back to direct RPC calls if Redis is unavailable.*
 
 ### Kora Enabled Methods (optional)
 The `[kora.enabled_methods]` section controls which RPC methods are enabled. This section is optional and by default, all methods are enabled. Each method can be enabled or disabled by setting the value to `true` or `false`:
@@ -166,6 +193,52 @@ disallowed_accounts = [
 
 > *Note: Empty arrays are allowed, but you will need to specify at least one whitelisted `allowed_programs`, `allowed_tokens`, `allowed_spl_paid_tokens` for the Kora node to be able to process transactions. You need to specify the System Program or Token Program for the Kora node to be able to process transactions.*
 
+## Token-2022 Extension Blocking
+
+The `[validation.token2022]` section allows you to block specific Token-2022 extensions for enhanced security. All extensions are enabled by default. You can block specific extensions by adding them to the `blocked_mint_extensions` or `blocked_account_extensions` arrays:
+
+```toml
+[validation.token2022]
+blocked_mint_extensions = [
+    "transfer_hook",           # Block tokens with transfer hooks
+    "pausable",                # Block pausable tokens
+    "permanent_delegate",      # Block tokens with permanent delegates
+]
+blocked_account_extensions = [
+    "cpi_guard",              # Block accounts with CPI guard
+    "memo_transfer",          # Block accounts requiring memos
+]
+```
+
+### Available Mint Extensions
+
+| Extension Name | Description |
+|----------------|-------------|
+| `confidential_transfer_mint` | Confidential transfer configuration for the mint |
+| `confidential_mint_burn` | Confidential mint and burn configuration |
+| `transfer_fee_config` | Transfer fee configuration |
+| `mint_close_authority` | Authority allowed to close the mint |
+| `interest_bearing_config` | Interest-bearing token configuration |
+| `non_transferable` | Makes tokens non-transferable |
+| `permanent_delegate` | Permanent delegate for the mint |
+| `transfer_hook` | Custom transfer hook program |
+| `pausable` | Pausable token configuration |
+
+### Available Account Extensions
+
+| Extension Name | Description |
+|----------------|-------------|
+| `confidential_transfer_account` | Confidential transfer state for the account |
+| `non_transferable_account` | Non-transferable token account |
+| `transfer_hook_account` | Transfer hook state for the account |
+| `pausable_account` | Pausable token account state |
+| `memo_transfer` | Requires memo for transfers |
+| `cpi_guard` | Prevents certain CPI calls |
+| `immutable_owner` | Account owner cannot be changed |
+| `default_account_state` | Default state for new accounts |
+
+> *Note: Blocking extensions helps prevent interactions with tokens that have complex or potentially risky behaviors. For example, blocking `transfer_hook` prevents signing transactions for tokens with custom transfer logic.*
+
 
 ## Fee Payer Policy
 
@@ -178,6 +251,9 @@ allow_sol_transfers = false
 allow_spl_transfers = false
 allow_token2022_transfers = false
 allow_assign = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
 ``` 
 
 | Option | Description | Required | Type |
@@ -186,6 +262,9 @@ allow_assign = false
 | `allow_spl_transfers` | Allow SPL token transfers where the Kora node's fee payer is the signer/authority | ✅ | boolean |
 | `allow_token2022_transfers` | Allow Token-2022 transfers where the Kora node's fee payer is the signer/authority | ✅ | boolean |
 | `allow_assign` | Allow account ownership changes where the Kora node's fee payer is the signer/authority | ✅ | boolean |
+| `allow_burn` | Allow token burn operations where the Kora node's fee payer is the signer/authority | ✅ | boolean |
+| `allow_close_account` | Allow closing token accounts where the Kora node's fee payer is the signer/authority | ✅ | boolean |
+| `allow_approve` | Allow token delegation/approval where the Kora node's fee payer is the signer/authority | ✅ | boolean |
 
 > *Note: For security reasons, it is recommended to set all of these to `false` and only enable as needed.*
 
@@ -271,9 +350,18 @@ rate_limit = 100
 # Optional payment address (defaults to signer address if not specified)
 # payment_address = "YourPaymentAddressPubkey11111111111111111111"
 
+[kora.auth]
 # Authentication (choose based on security needs)
 # api_key = "kora_live_sk_generate_secure_key_here"
 hmac_secret = "kora_hmac_minimum_32_character_secret_here"
+max_timestamp_age = 300
+
+# Caching configuration (optional but recommended for production)
+[kora.cache]
+enabled = true
+url = "redis://localhost:6379"
+default_ttl = 300  # 5 minutes
+account_ttl = 60   # 1 minute
 
 # Disable unnecessary RPC methods for security
 [kora.enabled_methods]
@@ -328,6 +416,23 @@ allow_sol_transfers = false
 allow_spl_transfers = false
 allow_token2022_transfers = false
 allow_assign = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+
+# Token-2022 extension blocking
+[validation.token2022]
+# Block potentially risky mint extensions
+blocked_mint_extensions = [
+    "transfer_hook",       # Custom transfer logic
+    "pausable",           # Can freeze transfers
+    "permanent_delegate", # Permanent control
+]
+# Block complex account extensions
+blocked_account_extensions = [
+    "cpi_guard",      # Restricts composability
+    "memo_transfer",  # Requires additional data
+]
 
 # Sustainable pricing with 15% margin
 [validation.price]
