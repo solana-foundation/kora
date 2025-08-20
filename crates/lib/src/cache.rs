@@ -260,6 +260,7 @@ mod tests {
                 allowed_programs: vec![],
                 allowed_tokens: vec![],
                 allowed_spl_paid_tokens: vec![],
+                allow_any_spl_paid_token: false,
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Mock,
                 fee_payer_policy: crate::config::FeePayerPolicy::default(),
