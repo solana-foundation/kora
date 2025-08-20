@@ -49,6 +49,11 @@ curl http://localhost:8080/metrics
    - Shows percentiles (p50, p95, p99) for response times
    - Use this to identify slow endpoints
 
+3. **`fee_payer_balance_lamports`** - Your fee payer's current SOL balance
+   - Shows balance in lamports (1 SOL = 1,000,000,000 lamports)
+   - Updated automatically in the background when enabled
+   - Use this for capacity planning and low-balance alerts
+
 ## Using the Data
 
 ### Option 1: Quick Health Check
@@ -91,6 +96,12 @@ histogram_quantile(0.95, kora_http_request_duration_seconds_bucket)
 
 # Error rate
 rate(kora_http_requests_total{status!="200"}[5m])
+
+# Fee payer balance in SOL (convert from lamports)
+fee_payer_balance_lamports / 1000000000
+
+# Low balance alert (less than 0.1 SOL)
+fee_payer_balance_lamports < 100000000
 ```
 
 ## Security Note

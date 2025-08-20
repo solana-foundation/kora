@@ -7,7 +7,8 @@ use utoipa::ToSchema;
 
 use crate::{
     constant::{
-        DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL, DEFAULT_MAX_TIMESTAMP_AGE,
+        DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL,
+        DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_TIMESTAMP_AGE,
         DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT, DEFAULT_METRICS_SCRAPE_INTERVAL,
     },
     error::KoraError,
@@ -30,6 +31,8 @@ pub struct MetricsConfig {
     pub endpoint: String,
     pub port: u16,
     pub scrape_interval: u64,
+    #[serde(default)]
+    pub fee_payer_balance: FeePayerBalanceMetricsConfig,
 }
 
 impl Default for MetricsConfig {
@@ -39,7 +42,20 @@ impl Default for MetricsConfig {
             endpoint: DEFAULT_METRICS_ENDPOINT.to_string(),
             port: DEFAULT_METRICS_PORT,
             scrape_interval: DEFAULT_METRICS_SCRAPE_INTERVAL,
+            fee_payer_balance: FeePayerBalanceMetricsConfig::default(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct FeePayerBalanceMetricsConfig {
+    pub enabled: bool,
+    pub expiry_seconds: u64,
+}
+
+impl Default for FeePayerBalanceMetricsConfig {
+    fn default() -> Self {
+        Self { enabled: false, expiry_seconds: DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS }
     }
 }
 

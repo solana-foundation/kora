@@ -49,7 +49,7 @@ Your node needs a Solana keypair to sign transactions as the fee payer. Consider
 
 ### 3. Pay Transaction Fees
 Maintain sufficient SOL to cover network fees for your expected transaction volume:
-- **Balance monitoring**: Track SOL balance and set up low-balance alerts
+- **Balance monitoring**: Track SOL balance and set up low-balance alerts (Kora provides built-in Prometheus metrics - see [Monitoring](./MONITORING.md))
 - **Automation**: Implement automatic SOL top-up procedures for production environments
 - **Capacity planning**: Plan for expected use case, user volume, etc.
 
@@ -58,6 +58,7 @@ Continuously track your node's security, performance, and business metrics:
 - **Security monitoring**: Unusual patterns, failed validations, and rate limit breaches
 - **Operational alerts**: System health, balance warnings, and security events
 - **Financial tracking**: SOL costs vs. token revenue, profitability analysis
+- **Signer balance monitoring**: Track signer balance and set up low-balance alerts
 
 Kora provides an optional `/metrics` endpoint that provides real-time performance data in Prometheus format.
 

@@ -83,6 +83,27 @@ impl CacheUtil {
         }
     }
 
+    /// Get account from RPC and cache it
+    pub async fn get_account_from_rpc_and_cache(
+        rpc_client: &RpcClient,
+        pubkey: &Pubkey,
+        pool: &Pool,
+        ttl: u64,
+    ) -> Result<Account, KoraError> {
+        let account = Self::get_account_from_rpc(rpc_client, pubkey).await?;
+
+        let cache_key = Self::get_account_key(pubkey);
+        let cached_account =
+            CachedAccount { account: account.clone(), cached_at: chrono::Utc::now().timestamp() };
+
+        if let Err(e) = Self::set_in_cache(pool, &cache_key, &cached_account, ttl).await {
+            log::warn!("Failed to cache account {pubkey}: {e}");
+            // Don't fail the request if caching fails
+        }
+
+        Ok(account)
+    }
+
     /// Get data from cache
     async fn get_from_cache(pool: &Pool, key: &str) -> Result<Option<CachedAccount>, KoraError> {
         let mut conn = Self::get_connection(pool).await?;
@@ -133,7 +154,7 @@ impl CacheUtil {
         let config = get_config()?;
 
         // If cache is disabled or force refresh is requested, go directly to RPC
-        if !CacheUtil::is_cache_enabled() || force_refresh {
+        if !CacheUtil::is_cache_enabled() {
             return Self::get_account_from_rpc(rpc_client, pubkey).await;
         }
 
@@ -154,6 +175,16 @@ impl CacheUtil {
             }
         };
 
+        if force_refresh {
+            return Self::get_account_from_rpc_and_cache(
+                rpc_client,
+                pubkey,
+                pool,
+                config.kora.cache.account_ttl,
+            )
+            .await;
+        }
+
         let cache_key = Self::get_account_key(pubkey);
 
         // Try to get from cache first
@@ -168,19 +199,13 @@ impl CacheUtil {
         }
 
         // Cache miss or expired, fetch from RPC
-        let account = Self::get_account_from_rpc(rpc_client, pubkey).await?;
-
-        // Cache the result if we got an account
-        let cached_account =
-            CachedAccount { account: account.clone(), cached_at: chrono::Utc::now().timestamp() };
-
-        if let Err(e) =
-            Self::set_in_cache(pool, &cache_key, &cached_account, config.kora.cache.account_ttl)
-                .await
-        {
-            log::warn!("Failed to cache account {pubkey}: {e}");
-            // Don't fail the request if caching fails
-        }
+        let account = Self::get_account_from_rpc_and_cache(
+            rpc_client,
+            pubkey,
+            pool,
+            config.kora.cache.account_ttl,
+        )
+        .await?;
 
         Ok(account)
     }
