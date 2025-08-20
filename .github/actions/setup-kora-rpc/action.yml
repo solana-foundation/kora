@@ -2,14 +2,14 @@ name: "Setup Kora RPC Server"
 description: "Build and start the Kora RPC server with health check"
 
 inputs:
-  private-key:
-    description: "Kora private key"
-    required: false
-    default: "./tests/src/common/local-keys/fee-payer-local.json"
   config-file:
     description: "Kora config file path"
     required: false
     default: "tests/src/common/fixtures/kora-test.toml"
+  signers-config:
+    description: "Signers config file path"
+    required: false
+    default: "tests/src/common/fixtures/signers.toml"
   rpc-url:
     description: "Solana RPC URL"
     required: false
@@ -48,11 +48,20 @@ runs:
       shell: bash
       run: |
         echo "🚀 Starting Kora RPC server..."
+        
+        # Set environment variables for signers (always required now)
+        export KORA_PRIVATE_KEY="$(cat tests/src/common/local-keys/fee-payer-local.json)"
+        
+        # Set second signer if it exists (for multi-signer configs)
+        if [ -f "tests/src/common/local-keys/signer2-local.json" ]; then
+          export KORA_PRIVATE_KEY_2="$(cat tests/src/common/local-keys/signer2-local.json)"
+        fi
+        
         cargo run -p kora-cli --bin kora -- \
           --config ${{ inputs.config-file }} \
           --rpc-url ${{ inputs.rpc-url }} \
           rpc start \
-          --private-key ${{ inputs.private-key }} \
+          --signers-config ${{ inputs.signers-config }} \
           --port ${{ inputs.port }} \
           &
         KORA_PID=$!
@@ -87,7 +96,7 @@ runs:
           --config ${{ inputs.config-file }} \
           --rpc-url ${{ inputs.rpc-url }} \
           rpc initialize-atas \
-          --private-key ${{ inputs.private-key }}
+          --signers-config ${{ inputs.signers-config }}
 
         # Additional wait to ensure server is fully initialized
         echo "⏳ Ensuring RPC server is fully initialized..."
