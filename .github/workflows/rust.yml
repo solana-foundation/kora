@@ -2,14 +2,14 @@ name: Rust CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "release/*"]
     paths:
       - "crates/**"
       - "Cargo.*"
       - "Makefile"
       - ".github/workflows/rust.yml"
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
     paths:
       - "crates/**"
       - "Cargo.*"
@@ -118,6 +118,7 @@ jobs:
         uses: ./.github/actions/setup-kora-rpc
         with:
           config-file: "tests/src/common/fixtures/paymaster-address-test.toml"
+          initialize-atas: "true"
 
       - name: Run payment address integration tests with coverage
         run: |
