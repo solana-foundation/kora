@@ -16,6 +16,15 @@ pub struct VaultSigner {
     pubkey: Pubkey,
 }
 
+impl std::fmt::Debug for VaultSigner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VaultSigner")
+            .field("key_name", &self.key_name)
+            .field("pubkey", &self.pubkey)
+            .finish()
+    }
+}
+
 impl VaultSigner {
     pub fn new(
         vault_addr: String,

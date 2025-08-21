@@ -118,3 +118,54 @@ impl PrivySigner {
         Ok(signature.as_ref().to_vec())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use solana_sdk::pubkey::Pubkey;
+
+    #[test]
+    fn test_new_privy_signer() {
+        let app_id = "test_app_id".to_string();
+        let app_secret = "test_app_secret".to_string();
+        let wallet_id = "test_wallet_id".to_string();
+
+        let signer = PrivySigner::new(app_id.clone(), app_secret.clone(), wallet_id.clone());
+
+        assert_eq!(signer.app_id, app_id);
+        assert_eq!(signer.app_secret, app_secret);
+        assert_eq!(signer.wallet_id, wallet_id);
+        assert_eq!(signer.api_base_url, "https://api.privy.io/v1");
+        assert_eq!(signer.public_key, Pubkey::default());
+    }
+
+    #[test]
+    fn test_solana_pubkey() {
+        let mut signer = PrivySigner::new(
+            "app_id".to_string(),
+            "app_secret".to_string(),
+            "wallet_id".to_string(),
+        );
+
+        let test_pubkey = Pubkey::new_unique();
+        signer.public_key = test_pubkey;
+
+        assert_eq!(signer.solana_pubkey(), test_pubkey);
+    }
+
+    #[test]
+    fn test_get_auth_header() {
+        let signer = PrivySigner::new(
+            "test_app".to_string(),
+            "test_secret".to_string(),
+            "wallet123".to_string(),
+        );
+
+        let auth_header = signer.get_auth_header();
+        let expected_credentials = "test_app:test_secret";
+        let expected_encoded = STANDARD.encode(expected_credentials);
+        let expected_header = format!("Basic {expected_encoded}");
+
+        assert_eq!(auth_header, expected_header);
+    }
+}

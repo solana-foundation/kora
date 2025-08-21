@@ -133,3 +133,48 @@ impl TurnkeySigner {
         Pubkey::from_str(&self.public_key).unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_turnkey_signer() {
+        let api_public_key = "test_api_public_key".to_string();
+        let api_private_key = "test_api_private_key".to_string();
+        let organization_id = "test_org_id".to_string();
+        let private_key_id = "test_private_key_id".to_string();
+        let public_key = "11111111111111111111111111111111".to_string();
+
+        let result = TurnkeySigner::new(
+            api_public_key.clone(),
+            api_private_key.clone(),
+            organization_id.clone(),
+            private_key_id.clone(),
+            public_key.clone(),
+        );
+
+        assert!(result.is_ok());
+        let signer = result.unwrap();
+        assert_eq!(signer.api_public_key, api_public_key);
+        assert_eq!(signer.api_private_key, api_private_key);
+        assert_eq!(signer.organization_id, organization_id);
+        assert_eq!(signer.private_key_id, private_key_id);
+        assert_eq!(signer.public_key, public_key);
+    }
+
+    #[test]
+    fn test_solana_pubkey_valid() {
+        let signer = TurnkeySigner::new(
+            "api_pub".to_string(),
+            "api_priv".to_string(),
+            "org".to_string(),
+            "key_id".to_string(),
+            "11111111111111111111111111111111".to_string(),
+        )
+        .unwrap();
+
+        let pubkey = signer.solana_pubkey();
+        assert_eq!(pubkey.to_string(), "11111111111111111111111111111111");
+    }
+}

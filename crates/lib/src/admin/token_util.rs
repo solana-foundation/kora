@@ -385,15 +385,14 @@ mod tests {
                 panic!("Expected signature validation error, but got success");
             }
             Err(e) => {
-                let error_msg = format!("{:?}", e);
+                let error_msg = format!("{e:?}");
                 // Check if it's a signature validation error (the mocked signature doesn't match the real transaction signature)
                 assert!(
                     error_msg.contains("signature")
                         || error_msg.contains("Signature")
                         || error_msg.contains("invalid")
                         || error_msg.contains("mismatch"),
-                    "Expected signature validation error, got: {}",
-                    error_msg
+                    "Expected signature validation error, got: {error_msg}"
                 );
             }
         }

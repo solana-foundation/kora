@@ -84,7 +84,7 @@ mod tests {
     use super::*;
     use crate::tests::{
         common::{setup_or_get_test_config, setup_or_get_test_signer, RpcMockBuilder},
-        transaction_mock::create_mock_transaction,
+        transaction_mock::create_mock_encoded_transaction,
     };
 
     #[tokio::test]
@@ -113,7 +113,7 @@ mod tests {
         let rpc_client = Arc::new(RpcMockBuilder::new().build());
 
         let request = EstimateTransactionFeeRequest {
-            transaction: create_mock_transaction(),
+            transaction: create_mock_encoded_transaction(),
             fee_token: None,
             signer_key: Some("invalid_pubkey".to_string()),
         };
@@ -133,7 +133,7 @@ mod tests {
         let rpc_client = Arc::new(RpcMockBuilder::new().build());
 
         let request = EstimateTransactionFeeRequest {
-            transaction: create_mock_transaction(),
+            transaction: create_mock_encoded_transaction(),
             fee_token: Some("invalid_mint_address".to_string()),
             signer_key: None,
         };

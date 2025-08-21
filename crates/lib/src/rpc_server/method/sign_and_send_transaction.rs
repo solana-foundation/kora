@@ -51,7 +51,7 @@ mod tests {
     use crate::tests::{
         common::{setup_or_get_test_signer, RpcMockBuilder},
         config_mock::ConfigMockBuilder,
-        transaction_mock::create_mock_transaction,
+        transaction_mock::create_mock_encoded_transaction,
     };
 
     #[tokio::test]
@@ -79,7 +79,7 @@ mod tests {
         let rpc_client = Arc::new(RpcMockBuilder::new().build());
 
         let request = SignAndSendTransactionRequest {
-            transaction: create_mock_transaction(),
+            transaction: create_mock_encoded_transaction(),
             signer_key: Some("invalid_pubkey".to_string()),
         };
 
