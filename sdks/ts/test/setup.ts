@@ -84,7 +84,7 @@ const createKeyPairSignerFromB58Secret = async (b58Secret: string) => {
     const b58SecretEncoded = base58Encoder.encode(b58Secret);
     return await createKeyPairSignerFromBytes(b58SecretEncoded);
 };
-
+// TODO Add KORA_PRIVATE_KEY_2= support for multi-signer configs
 function loadEnvironmentVariables() {
     const koraSignerType = process.env.KORA_SIGNER_TYPE || DEFAULTS.KORA_SIGNER_TYPE;
 
@@ -175,6 +175,7 @@ const signAndSendTransaction = async (
     const signature = getSignatureFromTransaction(signedTransaction);
     await sendAndConfirmTransactionFactory(client)(signedTransaction, {
         commitment,
+        skipPreflight: true,
     });
     return signature;
 };
@@ -199,15 +200,15 @@ async function sendAndConfirmInstructions(
     description: string,
 ): Promise<Signature> {
     try {
-        const simulationTx = await pipe(await createDefaultTransaction(client, payer), tx =>
-            appendTransactionMessageInstructions(instructions, tx),
-        );
-        const estimateCompute = estimateComputeUnitLimitFactory({
-            rpc: client.rpc,
-        });
-        const computeUnitLimit = await estimateCompute(simulationTx);
+        // const simulationTx = await pipe(await createDefaultTransaction(client, payer), tx =>
+        //     appendTransactionMessageInstructions(instructions, tx),
+        // );
+        // const estimateCompute = estimateComputeUnitLimitFactory({
+        //     rpc: client.rpc,
+        // });
+        // const computeUnitLimit = await estimateCompute(simulationTx);
         const signature = await pipe(
-            await createDefaultTransaction(client, payer, computeUnitLimit),
+            await createDefaultTransaction(client, payer, 200_000),
             tx => appendTransactionMessageInstructions(instructions, tx),
             tx => signAndSendTransaction(client, tx),
         );
