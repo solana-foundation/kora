@@ -16,6 +16,7 @@ use crate::rpc_server::{
     method::{
         get_blockhash::GetBlockhashResponse,
         get_config::GetConfigResponse,
+        get_payer_signer::GetPayerSignerResponse,
         get_supported_tokens::GetSupportedTokensResponse,
         sign_and_send_transaction::{
             SignAndSendTransactionRequest, SignAndSendTransactionResponse,
@@ -49,6 +50,7 @@ const JSON_CONTENT_TYPE: &str = "application/json";
         PriceSource,
         GetBlockhashResponse,
         GetConfigResponse,
+        GetPayerSignerResponse,
         GetSupportedTokensResponse,
         SignAndSendTransactionRequest,
         SignAndSendTransactionResponse,

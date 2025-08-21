@@ -194,6 +194,7 @@ pub struct EnabledMethods {
     pub liveness: bool,
     pub estimate_transaction_fee: bool,
     pub get_supported_tokens: bool,
+    pub get_payer_signer: bool,
     pub sign_transaction: bool,
     pub sign_and_send_transaction: bool,
     pub transfer_transaction: bool,
@@ -208,6 +209,7 @@ impl EnabledMethods {
             self.liveness,
             self.estimate_transaction_fee,
             self.get_supported_tokens,
+            self.get_payer_signer,
             self.sign_transaction,
             self.sign_and_send_transaction,
             self.transfer_transaction,
@@ -221,13 +223,14 @@ impl EnabledMethods {
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 9>;
+    type IntoIter = std::array::IntoIter<bool, 10>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
             self.liveness,
             self.estimate_transaction_fee,
             self.get_supported_tokens,
+            self.get_payer_signer,
             self.sign_transaction,
             self.sign_and_send_transaction,
             self.transfer_transaction,
@@ -245,6 +248,7 @@ impl Default for EnabledMethods {
             liveness: true,
             estimate_transaction_fee: true,
             get_supported_tokens: true,
+            get_payer_signer: true,
             sign_transaction: true,
             sign_and_send_transaction: true,
             transfer_transaction: true,
