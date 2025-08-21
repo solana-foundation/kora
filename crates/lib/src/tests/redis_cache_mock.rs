@@ -1,7 +1,7 @@
-use crate::{
-    cache::CachedAccount,
-};
+use crate::{cache::CachedAccount, error::KoraError};
+use mockall::mock;
 use redis_test::MockRedisConnection;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::Account, pubkey::Pubkey};
 
 /// Minimal Redis cache mock focused on testing cache.rs functions
@@ -52,5 +52,16 @@ pub fn create_expired_cached_account(pubkey: &Pubkey, lamports: u64) -> CachedAc
             rent_epoch: 0,
         },
         cached_at: chrono::Utc::now().timestamp() - 3600, // 1 hour ago
+    }
+}
+
+mock! {
+    pub CacheUtil {
+        pub async fn init() -> Result<(), KoraError>;
+        pub async fn get_account(
+            rpc_client: &RpcClient,
+            pubkey: &Pubkey,
+            force_refresh: bool,
+        ) -> Result<Account, KoraError>;
     }
 }

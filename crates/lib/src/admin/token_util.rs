@@ -21,7 +21,10 @@ use std::{str::FromStr, sync::Arc};
 use {crate::cache::CacheUtil, crate::state::get_config};
 
 #[cfg(test)]
-use {crate::cache::MockCacheUtil as CacheUtil, crate::tests::config_mock::mock_state::get_config};
+use {
+    crate::tests::config_mock::mock_state::get_config,
+    crate::tests::redis_cache_mock::MockCacheUtil as CacheUtil,
+};
 
 /*
 This funciton is tested via the makefile, as it's a CLI command and requires a validator running.
