@@ -297,6 +297,19 @@ async fn test_get_config() {
 }
 
 #[tokio::test]
+async fn test_get_payer_signer() {
+    let client = ClientTestHelper::get_test_client().await;
+
+    let response: serde_json::Value =
+        client.request("getPayerSigner", rpc_params![]).await.expect("Failed to get payer signer");
+    assert!(response["signer"].as_str().is_some(), "Expected signer in response");
+    assert!(
+        response["payment_destination"].as_str().is_some(),
+        "Expected payment_destination in response"
+    );
+}
+
+#[tokio::test]
 async fn test_sign_transaction_if_paid() {
     let client = ClientTestHelper::get_test_client().await;
     let rpc_client = RPCTestHelper::get_rpc_client().await;
