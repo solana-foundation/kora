@@ -1,22 +1,17 @@
 use crate::{
     config::{FeePayerPolicy, KoraConfig, MetricsConfig, Token2022Config, ValidationConfig},
     fee::price::PriceConfig,
-    get_signer,
+    get_request_signer_with_signer_key,
     oracle::PriceSource,
-    signer::{KoraSigner, SolanaMemorySigner},
-    state::{get_config, init_signer, update_config},
+    signer::{KoraSigner, SignerPool, SignerWithMetadata, SolanaMemorySigner},
+    state::{get_config, update_config, update_signer_pool},
     Config,
 };
 use base64::{self, Engine};
 use serde_json::{json, Value};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_request::RpcRequest};
 use solana_program::program_pack::Pack;
-use solana_sdk::{
-    account::Account,
-    program_option::COption,
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-};
+use solana_sdk::{account::Account, program_option::COption, pubkey::Pubkey, signature::Keypair};
 use spl_token::state::Mint;
 use spl_token_2022::state::Mint as Mint2022;
 use std::{collections::HashMap, sync::Arc};
@@ -27,7 +22,7 @@ pub const DEFAULT_LOCAL_RPC_URL: &str = "http://localhost:8899";
 Signer Mocks
 */
 pub fn setup_or_get_test_signer() -> Pubkey {
-    if let Ok(signer) = get_signer() {
+    if let Ok(signer) = get_request_signer_with_signer_key(None) {
         return signer.solana_pubkey();
     }
 
@@ -35,13 +30,20 @@ pub fn setup_or_get_test_signer() -> Pubkey {
 
     let signer = SolanaMemorySigner::new(test_keypair.insecure_clone());
 
-    match init_signer(KoraSigner::Memory(signer)) {
-        Ok(_) => test_keypair.pubkey(),
-        Err(_) => {
-            // Signer already initialized, get it
-            get_signer().expect("Signer should be available").solana_pubkey()
+    let pool = SignerPool::new(vec![SignerWithMetadata::new(
+        "test_signer".to_string(),
+        KoraSigner::Memory(signer.clone()),
+        1,
+    )]);
+
+    match update_signer_pool(pool) {
+        Ok(_) => {}
+        Err(e) => {
+            panic!("Failed to update signer pool: {e}");
         }
     }
+
+    signer.solana_pubkey()
 }
 
 /*

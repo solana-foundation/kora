@@ -1,0 +1,8 @@
+[signer_pool]
+strategy = "round_robin"
+
+[[signers]]
+name = "test_signer"
+type = "memory"
+private_key_env = "KORA_PRIVATE_KEY"
+weight = 1

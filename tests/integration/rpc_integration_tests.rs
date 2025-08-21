@@ -285,7 +285,11 @@ async fn test_get_config() {
 
     let response: serde_json::Value =
         client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
-    assert!(response["fee_payer"].as_str().is_some(), "Expected fee_payer in response");
+    assert!(response["fee_payers"].as_array().is_some(), "Expected fee_payers array in response");
+    assert!(
+        !response["fee_payers"].as_array().unwrap().is_empty(),
+        "Expected at least one fee payer"
+    );
     assert!(
         response["validation_config"].as_object().is_some(),
         "Expected validation_config in response"
@@ -297,10 +301,11 @@ async fn test_sign_transaction_if_paid() {
     let client = ClientTestHelper::get_test_client().await;
     let rpc_client = RPCTestHelper::get_rpc_client().await;
 
-    // get fee payer from config
+    // get fee payer from config (use first one from the pool)
     let response: serde_json::Value =
         client.request("getConfig", rpc_params![]).await.expect("Failed to get config");
-    let fee_payer = Pubkey::from_str(response["fee_payer"].as_str().unwrap()).unwrap();
+    let fee_payers = response["fee_payers"].as_array().unwrap();
+    let fee_payer = Pubkey::from_str(fee_payers[0].as_str().unwrap()).unwrap();
 
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();

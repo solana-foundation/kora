@@ -16,6 +16,7 @@ services:
       - "8080:8080"
     volumes:
       - ./kora.toml:/app/kora.toml
+      - ./signers.toml:/app/signers.toml
       - ./.env:/app/.env:ro
     environment:
       - RUST_LOG=info
@@ -25,7 +26,7 @@ services:
     command:
       - sh
       - -c
-      - 'kora-rpc --config /app/kora.toml --private-key "$$KORA_PRIVATE_KEY"'
+      - "kora-rpc --config /app/kora.toml --signers-config /app/signers.toml"
     restart: unless-stopped
     depends_on:
       - redis

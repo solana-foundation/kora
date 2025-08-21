@@ -109,7 +109,7 @@ describe('KoraClient Unit Tests', () => {
     describe('getConfig', () => {
         it('should return configuration', async () => {
             const mockConfig: Config = {
-                fee_payer: 'test_fee_payer_address',
+                fee_payers: ['test_fee_payer_address'],
                 validation_config: {
                     max_allowed_lamports: 1000000,
                     max_signatures: 10,
@@ -130,6 +130,10 @@ describe('KoraClient Unit Tests', () => {
                     price: {
                         type: 'margin',
                         margin: 0.1,
+                    },
+                    token2022: {
+                        blocked_mint_extensions: ['extension1', 'extension2'],
+                        blocked_account_extensions: ['account_extension1', 'account_extension2'],
                     },
                 },
                 enabled_methods: {
@@ -178,6 +182,7 @@ describe('KoraClient Unit Tests', () => {
             const mockResponse: EstimateTransactionFeeResponse = {
                 fee_in_lamports: 5000,
                 fee_in_token: 25,
+                signer_pubkey: 'test_signer_pubkey',
             };
 
             await testSuccessfulRpcMethod(
@@ -197,6 +202,7 @@ describe('KoraClient Unit Tests', () => {
             const mockResponse: SignTransactionResponse = {
                 signature: 'test_signature',
                 signed_transaction: 'base64_signed_transaction',
+                signer_pubkey: 'test_signer_pubkey',
             };
 
             await testSuccessfulRpcMethod(
@@ -216,6 +222,7 @@ describe('KoraClient Unit Tests', () => {
             const mockResponse: SignAndSendTransactionResponse = {
                 signature: 'test_signature',
                 signed_transaction: 'base64_signed_transaction',
+                signer_pubkey: 'test_signer_pubkey',
             };
 
             await testSuccessfulRpcMethod(
@@ -236,6 +243,7 @@ describe('KoraClient Unit Tests', () => {
             const mockResponse: SignTransactionIfPaidResponse = {
                 transaction: 'base64_encoded_transaction',
                 signed_transaction: 'base64_signed_transaction',
+                signer_pubkey: 'test_signer_pubkey',
             };
 
             await testSuccessfulRpcMethod(
@@ -262,6 +270,7 @@ describe('KoraClient Unit Tests', () => {
                 transaction: 'base64_encoded_transaction',
                 message: 'Transfer transaction created',
                 blockhash: 'test_blockhash',
+                signer_pubkey: 'test_signer_pubkey',
             };
 
             await testSuccessfulRpcMethod(

@@ -78,6 +78,11 @@ jobs:
       - name: Setup test environment
         run: |
           echo "🔧 Setting up test environment..."
+          # Create second signer key for multi-signer tests
+          if [ ! -f "tests/src/common/local-keys/signer2-local.json" ]; then
+            echo "Creating second signer key..."
+            solana-keygen new --outfile tests/src/common/local-keys/signer2-local.json --no-bip39-passphrase --silent
+          fi
           cargo run -p tests --bin setup_test_env
 
       - name: Setup Kora RPC server (regular config)
@@ -124,6 +129,31 @@ jobs:
         run: |
           echo "🧪 Running payment address integration tests..."
           cargo llvm-cov test --no-report -p tests --test payment-address
+
+      - name: Stop Kora RPC server
+        run: |
+          if [ ! -z "$KORA_PID" ]; then
+            kill $KORA_PID || true
+          fi
+          sleep 2
+
+      - name: Setup multi-signer test environment
+        run: |
+          echo "🔧 Setting up multi-signer test environment..."
+          export KORA_PRIVATE_KEY="$(cat tests/src/common/local-keys/fee-payer-local.json)"
+          export KORA_PRIVATE_KEY_2="$(cat tests/src/common/local-keys/signer2-local.json)"
+          cargo run -p tests --bin setup_test_env
+
+      - name: Setup Kora RPC server (multi-signer config)
+        uses: ./.github/actions/setup-kora-rpc
+        with:
+          config-file: "tests/src/common/fixtures/kora-test.toml"
+          signers-config: "tests/src/common/fixtures/multi-signers.toml"
+
+      - name: Run multi-signer integration tests with coverage
+        run: |
+          echo "🧪 Running multi-signer integration tests..."
+          cargo llvm-cov test --no-report -p tests --test multi-signers
 
       - name: Generate coverage reports
         run: |

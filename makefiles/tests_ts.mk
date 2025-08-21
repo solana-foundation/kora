@@ -26,7 +26,7 @@ test-ts-integration-turnkey:
 	@$(call start_solana_validator)
 	@echo "🚀 Starting Kora node with Turnkey signer..."
 	@$(call stop_kora_server)
-	@cargo run -p kora-cli --bin kora -- --config $(REGULAR_CONFIG) --rpc-url $(TEST_RPC_URL) rpc --with-turnkey-signer --port $(TEST_PORT) $(QUIET_OUTPUT) &
+	@cargo run -p kora-cli --bin kora -- --config $(REGULAR_CONFIG) --rpc-url $(TEST_RPC_URL) rpc start --signers-config $(TEST_SIGNERS_TURNKEY_CONFIG) --port $(TEST_PORT) $(QUIET_OUTPUT) &
 	@echo $$! > .kora.pid
 	@echo "⏳ Waiting for server to start..."
 	@sleep 5
@@ -40,7 +40,7 @@ test-ts-integration-privy:
 	@$(call start_solana_validator)
 	@echo "🚀 Starting Kora node with Privy signer..."
 	@$(call stop_kora_server)
-	@cargo run -p kora-cli --bin kora -- --config $(REGULAR_CONFIG) --rpc-url $(TEST_RPC_URL) rpc --with-privy-signer --port $(TEST_PORT) $(QUIET_OUTPUT) &
+	@cargo run -p kora-cli --bin kora -- --config $(REGULAR_CONFIG) --rpc-url $(TEST_RPC_URL) rpc start --signers-config $(TEST_SIGNERS_PRIVY_CONFIG) --port $(TEST_PORT) $(QUIET_OUTPUT) &
 	@echo $$! > .kora.pid
 	@echo "⏳ Waiting for server to start..."
 	@sleep 5

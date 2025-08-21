@@ -11,13 +11,98 @@ Your signer keypair has direct access to your SOL funds used for paying transact
 - Sign unauthorized transactions
 - Disrupt your paymaster service
 
+## Signer Configuration
+
+The Kora RPC CLI requires a `signer.toml` to be specified via the `--signers-config` flag. The `singer.toml` file allows you to configure the signer(s) and signer configuration for your node. `signer.toml` has two sections:
+
+1. `[signer_pool]` - Configuration for the signer pool
+2. `[[signers]]` - Configuration for each signer (at least one signer is required unless using `--no-load-signer` flag which has limited functionality)
+
+#### `[signer_pool]`
+The signer pool configuration specifies attributes specific to the signer pool as a whole:
+
+- `strategy` - The selection strategy for choosing signers. Available strategies are:
+  - `round_robin` (default)- Cycle through signers in order.
+  - `random` - Select signers randomly.
+  - `weighted` - Select signers based on weight.
+
+#### `[[signers]]`
+
+Each signer is configured with:
+-  a `name`: a human-readable identifier for the signer and must be unique within the signer pool
+- an optional `weight`: a number that specifies the weight of the signer if `strategy` is `weighted`
+- a `type` and type-specific configuration (see [Signer Types](#signer-types))
+
+One signer is required unless using the `--no-load-signer` flag which has limited functionality. For production deployments, it is recommended to configure multiple signers for improved reliability and performance.
+
+### Example
+
+Here's an example `signers.toml` file to defines a round-robin signer pool with three signers (*note: we'll cover the different signer types/configurations in the next section*):
+
+```toml
+[signer_pool]
+# Selection strategy: round_robin, random, weighted
+strategy = "round_robin"
+
+# Primary memory signer
+[[signers]]
+name = "signer_1"
+type = "memory"
+private_key_env = "SIGNER_1_PRIVATE_KEY"
+# weight = 1 # Not required if strategy is not weighted
+
+# Backup memory signer
+[[signers]]
+name = "signer_2"
+type = "memory"
+private_key_env = "SIGNER_2_PRIVATE_KEY"
+# weight = 1 # Not required if strategy is not weighted
+
+# Turnkey signer for high-value operations
+[[signers]]
+name = "signer_3_turnkey"
+type = "turnkey"
+api_public_key_env = "TURNKEY_API_PUBLIC_KEY"
+api_private_key_env = "TURNKEY_API_PRIVATE_KEY"
+organization_id_env = "TURNKEY_ORG_ID"
+private_key_id_env = "TURNKEY_PRIVATE_KEY_ID"
+public_key_env = "TURNKEY_PUBLIC_KEY"
+# weight = 2  # Higher weight = selected more often
+```
+
+
+### Environment Variables
+
+Set environment variables for all configured signers:
+
+```bash
+# Memory signers
+SIGNER_1_PRIVATE_KEY="your_base58_private_key_1"
+SIGNER_2_PRIVATE_KEY="your_base58_private_key_2"
+
+# Turnkey signer
+TURNKEY_API_PUBLIC_KEY="your_turnkey_api_public_key"
+TURNKEY_API_PRIVATE_KEY="your_turnkey_api_private_key"
+TURNKEY_ORG_ID="your_turnkey_organization_id"
+TURNKEY_PRIVATE_KEY_ID="your_turnkey_private_key_id"
+TURNKEY_PUBLIC_KEY="your_turnkey_public_key"
+```
+
+### Start Kora with Signers Configuration
+
+```bash
+kora rpc --config kora.toml start --signers-config signers.toml
+```
+
+
 ## Signer Types
 
-Kora supports three main signer types, each with different security and operational characteristics:
+Kora supports four main signer types, each with different security and operational characteristics (and a no-signer option for limited testing):
 
 - [Private Key](#private-key-signer) - simple, self-managed
 - [Turnkey](#turnkey-signer) - key management service
 - [Privy](#privy-signer) - key management service
+- Vault - HashiCorp Vault integration
 - [No Signer](#no-signer) - no signer (for limited testing)
 
 ## Private Key Signer
@@ -65,31 +150,21 @@ solana-keygen pubkey ~/.config/solana/kora-keypair.json
 solana transfer --from <your-funding-wallet> <kora-public-key> 0.1
 ```
 
-### Setup Methods
+### Signer.toml Configuration
 
-#### Method 1: Environment Variables
+Required variables:
 
-The Kora RPC CLI accepts the `KORA_PRIVATE_KEY` environment variable by default.
+- `name` - The name of the signer
+- `type` - The type of signer (must be `memory`)
+- `private_key_env` - The environment variable containing the private key
 
-Create a `.env` file and set the `KORA_PRIVATE_KEY` environment variable:
-
-```bash
-# .env file
-KORA_PRIVATE_KEY="your_private_key_here"
+```toml
+[[signers]]
+name = "my_memory_signer"
+type = "memory"
+private_key_env = "KORA_PRIVATE_KEY" # (or your environment variable name)
 ```
 
-Start Kora:
-```bash
-kora rpc
-```
-
-#### Method 2: CLI Flags
-
-Pass the private key directly via command line:
-
-```bash
-kora rpc --private-key "your_private_key_here"
-```
 
 ## Turnkey Signer
 
@@ -174,30 +249,33 @@ TURNKEY_PUBLIC_KEY="your_solana_public_key"
 
 See [.env.example](../../.env.example) for a complete example.
 
-### Start Kora with Turnkey
 
-To start Kora with the Turnkey signer, you just use the `--with-turnkey-signer` flag:
-
-```bash
-kora rpc --with-turnkey-signer
-```
-
-### CLI Alternative
-
-When deploying on a server, you may want to pass Turnkey secrets via CLI flags:
-
-```bash
-kora rpc \
-    --with-turnkey-signer \
-    --turnkey-api-public-key "your_api_public_key" \
-    --turnkey-api-private-key "your_api_private_key" \
-    --turnkey-organization-id "your_org_id" \
-    --turnkey-private-key-id "your_key_id" \
-    --turnkey-public-key "your_public_key"
-```
 
 For support with Turnkey, see the [Turnkey documentation](https://docs.turnkey.com/embedded-wallets/overview).
 
+
+### Signer.toml Configuration
+
+Required variables:
+
+- `name` - The name of the signer
+- `type` - The type of signer (must be `turnkey`)
+- `api_public_key_env` - The environment variable containing the Turnkey API public key
+- `api_private_key_env` - The environment variable containing the Turnkey API private key
+- `organization_id_env` - The environment variable containing the Turnkey organization ID
+- `private_key_id_env` - The environment variable containing the Turnkey private key ID
+- `public_key_env` - The environment variable containing the Turnkey public key
+
+```toml
+[[signers]]
+name = "my_turnkey_signer"
+type = "turnkey"
+api_public_key_env = "TURNKEY_API_PUBLIC_KEY"
+api_private_key_env = "TURNKEY_API_PRIVATE_KEY"
+organization_id_env = "TURNKEY_ORG_ID"
+private_key_id_env = "TURNKEY_PRIVATE_KEY_ID"
+public_key_env = "TURNKEY_PUBLIC_KEY"
+```
 
 ## Privy Signer
 
@@ -263,34 +341,34 @@ PRIVY_WALLET_ID="your_wallet_id"
 
 See [.env.example](../../.env.example) for a complete example.
 
-### Start Kora with Privy
-
-To start Kora with the Privy signer, you just use the `--with-privy-signer` flag:
-
-```bash
-kora rpc --with-privy-signer
-```
-
-### CLI Alternative
-
-Pass Privy credentials via CLI flags:
-
-```bash
-kora rpc \
-    --with-privy-signer \
-    --privy-app-id "your_app_id" \
-    --privy-app-secret "your_app_secret" \
-    --privy-wallet-id "your_wallet_id"
-```
 
 For support with Privy, see the [Privy documentation](https://docs.privy.io/wallets/overview).
+
+### Signer.toml Configuration
+
+Required variables:
+
+- `name` - The name of the signer
+- `type` - The type of signer (must be `privy`)
+- `app_id_env` - The environment variable containing the Privy app ID
+- `app_secret_env` - The environment variable containing the Privy app secret
+- `wallet_id_env` - The environment variable containing the Privy wallet ID
+
+```toml
+[[signers]]
+name = "my_privy_signer"
+type = "privy"
+app_id_env = "PRIVY_APP_ID"
+app_secret_env = "PRIVY_APP_SECRET"
+wallet_id_env = "PRIVY_WALLET_ID"
+```
 
 ## No Signer
 
 If no signer is configured, Kora will throw an error. If you want to run Kora without a signer, you run it with the `--no-signer` flag:
 
 ```bash
-kora rpc --no-signer
+kora rpc start --no-signer
 ```
 
 Note that this will limit your node to only processing requests that do not require a signer.
@@ -301,12 +379,21 @@ Note that this will limit your node to only processing requests that do not requ
 
 | Error Message | Signer Type | Quick Fix |
 | ---- | ---- | ---- |
-| "Private key required for memory signer" | Private Key | Set `KORA_PRIVATE_KEY` env var |
+| "At least one signer must be configured" | Any | Add at least one signer to config |
+| "Failed to read config file" | Any | Check file path and contents |
+| "Failed to parse signers config TOML" | Any | Check file format and signer contents |
+| "Duplicate signer name" | Any | Ensure each signer is uniquely named in the configuration |
 | "Invalid base58 string" | Private Key | Check key format, no extra spaces |
 | "Invalid private key length" | Private Key | Use complete 64-byte Solana key |
 | "Turnkey {key} required" | Turnkey | Set `TURNKEY_{key}` |
 | "Privy {key} required" | Privy | Set `PRIVY_{key}` |
-| "Failed to sign with \[service\]" | Any | Check service status & credentials |
+| "Vault {key} required" | Vault | Set `VAULT_{key}` |
+| "Failed to create Vault client" | Vault | Verify Vault credentials|
+| "Failed to sign with \[service\]" | Any | Check service status & credentials & rate limits |
+| "Signer pool not initialized" | Multi-Signer | Check `signers.toml` path and format |
+| "Cannot create empty signer pool" | Multi-Signer | Add at least one signer to config |
+| "Signer with pubkey ... not found" | Multi-Signer | Check signer hint matches configured signers |
+| "Signers configuration is required unless using --no-load-signer" | Any | Add a signers configuration file |
 
 ### General Debugging Tips
 
@@ -316,20 +403,36 @@ Add detailed logging to diagnose issues:
 RUST_LOG=debug kora rpc --with-turnkey-signer
 ```
 
-#### Minimal Working Configuration
-Start with the simplest setup and add complexity:
-```bash
-# Generate and test with a new local keypair first
-solana-keygen new --outfile test-keypair.json
-# Test with the new keypair
-kora rpc --private-key "test-keypair.json"
-```
-
 ## Security & Best Practices
 
+### General Security
 - Use dedicated keypairs for Kora (don't reuse personal wallets)
 - Only fund with SOL you're willing to spend on fees
 - Maintain minimal operational balance with automated monitoring and top-offs
 - Implement monitoring and alerting for unusual activity
-- Consider key management services (see [Privy](#privy-signer) and [Turnkey](#turnkey-signer))
 - All private keys and API keys should be stored in environment variables or secrets management systems (Railway secrets, AWS Secrets Manager, etc.)
+
+
+## Client Signer Hints
+
+Clients can specify a preferred signer for consistency across related operations:
+
+```typescript
+// Fetch the signers by calling getConfig
+const config = await client.getConfig();
+console.log(config.fee_payers);
+
+// Estimate with specific signer
+const estimate = await client.estimateTransactionFee({
+  transaction: tx,
+  signer_hint: "4gBe...xyz"  // Public key of preferred signer (one of the signers in the signer pool)
+});
+
+// Sign with same signer
+const signed = await client.signTransaction({
+  transaction: tx,
+  signer_hint: "4gBe...xyz"  // Same signer for consistency
+});
+```
+
+Without signer hints, the configured strategy determines signer selection.

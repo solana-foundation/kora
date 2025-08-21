@@ -15,7 +15,7 @@ use solana_transaction_status_client_types::UiInstruction;
 use crate::{
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
-    get_signer,
+    signer::KoraSigner,
     state::get_config,
     transaction::{
         instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
@@ -60,14 +60,17 @@ pub trait VersionedTransactionOps {
 
     async fn sign_transaction(
         &mut self,
+        signer: &std::sync::Arc<KoraSigner>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError>;
     async fn sign_transaction_if_paid(
         &mut self,
+        signer: &std::sync::Arc<KoraSigner>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError>;
     async fn sign_and_send_transaction(
         &mut self,
+        signer: &std::sync::Arc<KoraSigner>,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError>;
 }
@@ -220,9 +223,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
     async fn sign_transaction(
         &mut self,
+        signer: &std::sync::Arc<KoraSigner>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError> {
-        let signer = get_signer()?;
         let validator = TransactionValidator::new(signer.solana_pubkey())?;
 
         // Validate transaction and accounts (already resolved)
@@ -259,9 +262,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
     async fn sign_transaction_if_paid(
         &mut self,
+        signer: &std::sync::Arc<KoraSigner>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError> {
-        let signer = get_signer()?;
         let fee_payer = signer.solana_pubkey();
         let config = &get_config()?;
 
@@ -269,7 +272,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let min_transaction_fee = FeeConfigUtil::estimate_transaction_fee(
             rpc_client,
             self,
-            Some(&fee_payer),
+            &fee_payer,
             config.validation.is_payment_required(),
         )
         .await?;
@@ -287,7 +290,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         // Only validate payment if not free
         if required_lamports > 0 {
             // Get the expected payment destination
-            let payment_destination = config.kora.get_payment_address()?;
+            let payment_destination = config.kora.get_payment_address(&signer.solana_pubkey())?;
 
             // Validate token payment using the resolved transaction
             TransactionValidator::validate_token_payment(
@@ -300,14 +303,15 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         }
 
         // Sign the transaction
-        self.sign_transaction(rpc_client).await
+        self.sign_transaction(signer, rpc_client).await
     }
 
     async fn sign_and_send_transaction(
         &mut self,
+        signer: &std::sync::Arc<KoraSigner>,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError> {
-        let (transaction, encoded) = self.sign_transaction(rpc_client).await?;
+        let (transaction, encoded) = self.sign_transaction(signer, rpc_client).await?;
 
         // Send and confirm transaction
         let signature = rpc_client

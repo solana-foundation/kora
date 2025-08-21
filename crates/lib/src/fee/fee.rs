@@ -1,7 +1,6 @@
 use crate::{
     constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
-    get_signer,
     state::get_config,
     token::token::TokenType,
     transaction::{
@@ -22,11 +21,8 @@ pub struct FeeConfigUtil {}
 impl FeeConfigUtil {
     fn is_fee_payer_in_signers(
         transaction: &VersionedTransactionResolved,
+        fee_payer: &Pubkey,
     ) -> Result<bool, KoraError> {
-        let fee_payer = get_signer()
-            .map(|signer| signer.solana_pubkey())
-            .map_err(|e| KoraError::InternalServerError(format!("Failed to get signer: {e}")))?;
-
         let all_account_keys = &transaction.all_account_keys;
         let transaction_inner = &transaction.transaction;
 
@@ -34,11 +30,11 @@ impl FeeConfigUtil {
         Ok(match &transaction_inner.message {
             VersionedMessage::Legacy(legacy_message) => {
                 let num_signers = legacy_message.header.num_required_signatures as usize;
-                all_account_keys.iter().take(num_signers).any(|key| *key == fee_payer)
+                all_account_keys.iter().take(num_signers).any(|key| *key == *fee_payer)
             }
             VersionedMessage::V0(v0_message) => {
                 let num_signers = v0_message.header.num_required_signatures as usize;
-                all_account_keys.iter().take(num_signers).any(|key| *key == fee_payer)
+                all_account_keys.iter().take(num_signers).any(|key| *key == *fee_payer)
             }
         })
     }
@@ -100,8 +96,9 @@ impl FeeConfigUtil {
     async fn has_payment_instruction(
         resolved_transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
+        fee_payer: &Pubkey,
     ) -> Result<u64, KoraError> {
-        let payment_destination = &get_config()?.kora.get_payment_address()?;
+        let payment_destination = &get_config()?.kora.get_payment_address(fee_payer)?;
 
         for instruction in resolved_transaction
             .get_or_parse_spl_instructions()?
@@ -133,7 +130,7 @@ impl FeeConfigUtil {
     pub async fn estimate_transaction_fee(
         rpc_client: &RpcClient,
         transaction: &mut VersionedTransactionResolved,
-        fee_payer: Option<&Pubkey>,
+        fee_payer: &Pubkey,
         is_payment_required: bool,
     ) -> Result<u64, KoraError> {
         let inner_transaction = &transaction.transaction;
@@ -152,21 +149,18 @@ impl FeeConfigUtil {
 
         // If the Kora signer is not inclded in the signers, we add another base fee, since each transaction will be 5000 lamports
         let mut kora_signature_fee = 0u64;
-        if !FeeConfigUtil::is_fee_payer_in_signers(transaction)? {
+        if !FeeConfigUtil::is_fee_payer_in_signers(transaction, fee_payer)? {
             kora_signature_fee = LAMPORTS_PER_SIGNATURE;
         }
 
         // Calculate fee payer outflow if fee payer is provided, to better estimate the potential fee
-        let fee_payer_outflow = if let Some(fee_payer_pubkey) = fee_payer {
-            FeeConfigUtil::calculate_fee_payer_outflow(fee_payer_pubkey, transaction).await?
-        } else {
-            0
-        };
+        let fee_payer_outflow =
+            FeeConfigUtil::calculate_fee_payer_outflow(fee_payer, transaction).await?;
 
         // If the transaction for paying the gasless relayer is not included, but we expect a payment, we need to add the fee for the payment instruction
         // for a better approximation of the fee
         let fee_for_payment_instruction = if is_payment_required {
-            FeeConfigUtil::has_payment_instruction(transaction, rpc_client).await?
+            FeeConfigUtil::has_payment_instruction(transaction, rpc_client, fee_payer).await?
         } else {
             0
         };
@@ -298,12 +292,12 @@ mod tests {
         let resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        assert!(FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction).unwrap());
+        assert!(FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction, &fee_payer).unwrap());
     }
 
     #[test]
     fn test_is_fee_payer_in_signers_legacy_fee_payer_not_signer() {
-        setup_or_get_test_signer();
+        let fee_payer_pubkey = setup_or_get_test_signer();
         let sender = Keypair::new();
         let recipient = Keypair::new();
 
@@ -315,7 +309,8 @@ mod tests {
         let resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        assert!(!FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction).unwrap());
+        assert!(!FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction, &fee_payer_pubkey)
+            .unwrap());
     }
 
     #[test]
@@ -336,12 +331,12 @@ mod tests {
         let resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        assert!(FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction).unwrap());
+        assert!(FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction, &fee_payer).unwrap());
     }
 
     #[test]
     fn test_is_fee_payer_in_signers_v0_fee_payer_not_signer() {
-        setup_or_get_test_signer();
+        let fee_payer_pubkey = setup_or_get_test_signer();
         let sender = Keypair::new();
         let recipient = Keypair::new();
 
@@ -357,7 +352,8 @@ mod tests {
         let resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        assert!(!FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction).unwrap());
+        assert!(!FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction, &fee_payer_pubkey)
+            .unwrap());
     }
 
     #[tokio::test]
@@ -631,16 +627,20 @@ mod tests {
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Test: Should return 0 because payment instruction exists
-        let result =
-            FeeConfigUtil::has_payment_instruction(&mut resolved_transaction, &mocked_rpc_client)
-                .await
-                .unwrap();
+        let result = FeeConfigUtil::has_payment_instruction(
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &signer,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(result, 0, "Should return 0 when payment instruction exists");
     }
 
     #[tokio::test]
     async fn test_has_payment_instruction_without_payment() {
+        let signer = setup_or_get_test_signer();
         setup_or_get_test_config();
         let mocked_rpc_client = get_mock_rpc_client(&Account::default());
 
@@ -656,10 +656,13 @@ mod tests {
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Test: Should return fee estimate because no payment instruction exists
-        let result =
-            FeeConfigUtil::has_payment_instruction(&mut resolved_transaction, &mocked_rpc_client)
-                .await
-                .unwrap();
+        let result = FeeConfigUtil::has_payment_instruction(
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &signer,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             result, ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
@@ -670,6 +673,7 @@ mod tests {
     #[tokio::test]
     async fn test_has_payment_instruction_with_spl_transfer_to_different_destination() {
         setup_or_get_test_config();
+        let signer = setup_or_get_test_signer();
         let sender = Keypair::new();
         let mint = Pubkey::new_unique();
 
@@ -696,10 +700,13 @@ mod tests {
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Test: Should return fee estimate because SPL transfer is to different destination
-        let result =
-            FeeConfigUtil::has_payment_instruction(&mut resolved_transaction, &mocked_rpc_client)
-                .await
-                .unwrap();
+        let result = FeeConfigUtil::has_payment_instruction(
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &signer,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             result, ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
