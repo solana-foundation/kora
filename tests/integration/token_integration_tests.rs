@@ -57,16 +57,6 @@ async fn test_pyusd_token_e2e_with_kora() {
         )
         .unwrap();
 
-    // Get a new recent blockhash
-    let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
-
-    // Create a transaction for the transfer that includes creating the destination account
-    let message = VersionedMessage::Legacy(Message::new_with_blockhash(
-        &[destination_ata_ix, transfer_ix],
-        Some(&wallet.pubkey()),
-        &recent_blockhash,
-    ));
-
     // For a real token account, we'd need to query the account data
     if let Ok(account) = rpc_client.get_account(&token_account_address).await {
         if !account.data.is_empty() {

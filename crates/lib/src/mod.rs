@@ -18,7 +18,7 @@ pub use cache::CacheUtil;
 pub use config::Config;
 pub use error::KoraError;
 pub use signer::{Signature, Signer};
-pub use state::{get_signer, init_signer};
+pub use state::{get_all_signers, get_request_signer_with_signer_key};
 
 #[cfg(test)]
 pub mod tests;

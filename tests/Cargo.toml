@@ -20,6 +20,10 @@ path = "auth/main.rs"
 name = "payment-address"
 path = "payment-address/main.rs"
 
+[[test]]
+name = "multi-signers"
+path = "multi-signers/main.rs"
+
 [dependencies]
 kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }

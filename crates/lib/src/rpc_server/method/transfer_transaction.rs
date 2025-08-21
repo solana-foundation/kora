@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 use crate::{
     constant::NATIVE_SOL,
-    get_signer,
+    state::get_request_signer_with_signer_key,
     transaction::{
         TransactionUtil, VersionedMessageExt, VersionedTransactionOps, VersionedTransactionResolved,
     },
@@ -23,6 +23,9 @@ pub struct TransferTransactionRequest {
     pub token: String,
     pub source: String,
     pub destination: String,
+    /// Optional signer signer_key to ensure consistency across related RPC calls
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signer_key: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -30,13 +33,15 @@ pub struct TransferTransactionResponse {
     pub transaction: String,
     pub message: String,
     pub blockhash: String,
+    /// Public key of the signer used (for client consistency)
+    pub signer_pubkey: String,
 }
 
 pub async fn transfer_transaction(
     rpc_client: &Arc<RpcClient>,
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
-    let signer = get_signer()?;
+    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.solana_pubkey();
 
     let validator = TransactionValidator::new(fee_payer)?;
@@ -136,5 +141,6 @@ pub async fn transfer_transaction(
         transaction: encoded,
         message: message_encoded,
         blockhash: blockhash.0.to_string(),
+        signer_pubkey: fee_payer.to_string(),
     })
 }

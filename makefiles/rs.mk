@@ -38,7 +38,7 @@ run-presigned:
 
 # Run with default configuration
 run:
-	cargo run -p kora-cli --bin kora -- --config kora.toml --rpc-url http://127.0.0.1:8899 rpc start --private-key ./tests/src/common/local-keys/fee-payer-local.json
+	cargo run -p kora-cli --bin kora -- --config kora.toml --rpc-url http://127.0.0.1:8899 rpc start --signers-config $(TEST_SIGNERS_CONFIG)
 
 # Clean build artifacts
 clean:

@@ -42,10 +42,20 @@ Configure your node to accept only transactions that meet your business requirem
 **[→ Sample kora.toml](./deploy/sample/kora.toml)**
 
 ### 2. Sign Transactions  
-Your node needs a Solana keypair to sign transactions as the fee payer. Consider implementing key rotation, access controls, backups, and other strategies for signer security. At present, Kora enables you to sign with:
+Your node needs Solana keypair(s) to sign transactions as the fee payer. For production deployments, Kora supports **multi-signer configurations** for improved reliability and account-lock distribution. Consider implementing key rotation, access controls, backups, and other strategies for signer security.
+
+**Single Signer (Simple Setup)**:
 - **Environment Variables**: Store private key directly in server environment (as base58, .json file, or u8 array)
-- [**Turnkey**](https://www.turnkey.com/): Turnkey is private key management made simple. Create wallets, sign transactions, and automate onchain actions — all with one elegant API.
-- [**Privy**](https://www.privy.io/): Privy makes it easy to build on crypto rails. Securely spin up whitelabel wallets, sign transactions, and integrate onchain infrastructure—all through one simple API.
+- [**Turnkey**](https://www.turnkey.com/): Private key management made simple. Create wallets, sign transactions, and automate onchain actions.
+- [**Privy**](https://www.privy.io/): Easy crypto infrastructure. Securely spin up whitelabel wallets and sign transactions.
+- [**HashiCorp Vault**](https://developer.hashicorp.com/vault): Manage Secrets & Protect Sensitive Data
+
+**Multi-Signer (Production Recommended)**:
+- **Load/Account-Lock Distribution**: Spread signing across multiple keypairs
+- **Flexible Strategies**: Round-robin, random, or weighted selection
+- **Mixed Signer Types**: Combine local keys with remote key management services
+
+**[→ Complete Signers Configuration Guide](SIGNERS.md)**
 
 ### 3. Pay Transaction Fees
 Maintain sufficient SOL to cover network fees for your expected transaction volume:
@@ -100,8 +110,11 @@ kora rpc
 # Specify custom configuration path
 kora --config /path/to/kora.toml rpc
 
-# Specify private key location
+# Single signer setup
 kora rpc --private-key /path/to/keypair.json
+
+# Multi-signer setup (production recommended)
+kora rpc --signers-config signers.toml
 
 # Set custom port
 kora rpc --port 3000
@@ -116,7 +129,7 @@ Applications can access the Kora RPC Server via the [Kora CLI](../../crates/cli/
 
 Every Kora RPC node must be configured with at least:
 - a Solana RPC endpoint (specified via the `--rpc-url` flag or `RPC_URL` environment variable) [default: http://127.0.0.1:8899]
-- a Solana signer (specified via the `--private-key` or `KORA_PRIVATE_KEY=` environment variable) (Check out the **[Signers Documentation](./SIGNERS.md)** for signing with a key management provider)
+- Solana signer(s) configuration (specified via the `--signers-config signers.toml` flag) 
 - a config file, `kora.toml` (specified via the `--config path/to/kora.toml` flag)
 
 **kora.toml**
@@ -124,6 +137,7 @@ Every Kora RPC node must be configured with at least:
 Before deploying, you'll need to create and configure a `kora.toml` to specify:
 
 - Rate limiting and authentication
+- Payment destination address
 - RPC method availability
 - Transaction validation rules
 - Security policies (whitelist or blacklist of SPL tokens, programs, accounts, token extensions, etc.)
@@ -131,6 +145,14 @@ Before deploying, you'll need to create and configure a `kora.toml` to specify:
 - Enhanced fee payer policies (protect against unwanted signer behavior)
 - Metrics collection
 - Redis caching configuration (optional)
+
+**signers.toml**
+
+You will also need to create a `signers.toml` file to specify:
+
+- Signer(s) for your node
+- Signer selection strategy
+- Each signer's configuration and applicable keys
 
 ## Deployment 
 

@@ -1,7 +1,7 @@
 use crate::{
     error::KoraError,
-    signer::Signer,
-    state::{get_config, get_signer},
+    signer::{KoraSigner, Signer},
+    state::{get_all_signers, get_config, get_request_signer_with_signer_key},
     token::token::TokenType,
     transaction::TransactionUtil,
     CacheUtil,
@@ -16,7 +16,7 @@ use solana_sdk::{
 use spl_associated_token_account::{
     get_associated_token_address, instruction::create_associated_token_account,
 };
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 /*
 This funciton is tested via the makefile, as it's a CLI command and requires a validator running.
@@ -31,15 +31,36 @@ pub struct ATAToCreate {
 }
 
 /// Initialize ATAs for all allowed payment tokens for the paymaster
-/// This function does not use cache and directly checks on-chain
-pub async fn initialize_paymaster_atas(
+/// This function initializes ATAs for ALL signers in the pool
+///
+/// Order of priority is:
+/// 1. Payment address provided in config
+/// 2. All signers in pool
+pub async fn initialize_atas(
     rpc_client: &RpcClient,
     compute_unit_price: Option<u64>,
     compute_unit_limit: Option<u32>,
     chunk_size: Option<usize>,
+    fee_payer_key: Option<String>,
 ) -> Result<(), KoraError> {
-    initialize_paymaster_atas_with_chunk_size(
+    let config = get_config()?;
+
+    let fee_payer = get_request_signer_with_signer_key(fee_payer_key.as_deref())?;
+
+    let addresses_to_initialize_atas = if let Some(payment_address) = &config.kora.payment_address {
+        vec![Pubkey::from_str(payment_address)
+            .map_err(|e| KoraError::InternalServerError(format!("Invalid payment address: {e}")))?]
+    } else {
+        get_all_signers()?
+            .iter()
+            .map(|signer| signer.signer.solana_pubkey())
+            .collect::<Vec<Pubkey>>()
+    };
+
+    initialize_atas_with_chunk_size(
         rpc_client,
+        &fee_payer,
+        &addresses_to_initialize_atas,
         compute_unit_price,
         compute_unit_limit,
         chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE),
@@ -47,35 +68,59 @@ pub async fn initialize_paymaster_atas(
     .await
 }
 
-/// Initialize ATAs for all allowed payment tokens for the paymaster with configurable chunk size
+/// Initialize ATAs for all allowed payment tokens for the provided addresses with configurable chunk size
 /// This function does not use cache and directly checks on-chain
-pub async fn initialize_paymaster_atas_with_chunk_size(
+pub async fn initialize_atas_with_chunk_size(
     rpc_client: &RpcClient,
+    fee_payer: &Arc<KoraSigner>,
+    addresses_to_initialize_atas: &Vec<Pubkey>,
     compute_unit_price: Option<u64>,
     compute_unit_limit: Option<u32>,
     chunk_size: usize,
 ) -> Result<(), KoraError> {
-    let signer = get_signer()?;
-    let config = get_config()?;
+    for address in addresses_to_initialize_atas {
+        println!("Initializing ATAs for address: {address}");
 
-    // Determine the payment address
-    let payment_address = config.kora.get_payment_address()?;
+        let atas_to_create = find_missing_atas(rpc_client, address).await?;
 
-    println!("Initializing ATAs for payment address: {payment_address}");
+        if atas_to_create.is_empty() {
+            println!("✓ All required ATAs already exist for address: {address}");
+            return Ok(());
+        }
 
-    let atas_to_create = find_missing_atas(rpc_client, &payment_address).await?;
-
-    if atas_to_create.is_empty() {
-        println!("✓ All required ATAs already exist");
-        return Ok(());
+        create_atas_for_signer(
+            rpc_client,
+            fee_payer,
+            address,
+            &atas_to_create,
+            compute_unit_price,
+            compute_unit_limit,
+            chunk_size,
+        )
+        .await?;
     }
 
+    println!("✓ Successfully created all ATAs");
+
+    Ok(())
+}
+
+/// Helper function to create ATAs for a single signer
+async fn create_atas_for_signer(
+    rpc_client: &RpcClient,
+    fee_payer: &Arc<KoraSigner>,
+    address: &Pubkey,
+    atas_to_create: &[ATAToCreate],
+    compute_unit_price: Option<u64>,
+    compute_unit_limit: Option<u32>,
+    chunk_size: usize,
+) -> Result<usize, KoraError> {
     let instructions = atas_to_create
         .iter()
         .map(|ata| {
             create_associated_token_account(
-                &signer.solana_pubkey(),
-                &payment_address,
+                &fee_payer.solana_pubkey(),
+                address,
                 &ata.mint,
                 &ata.token_program,
             )
@@ -120,12 +165,12 @@ pub async fn initialize_paymaster_atas_with_chunk_size(
 
         let message = VersionedMessage::Legacy(Message::new_with_blockhash(
             &chunk_instructions,
-            Some(&signer.solana_pubkey()),
+            Some(&fee_payer.solana_pubkey()),
             &blockhash,
         ));
 
         let mut tx = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let signature = signer.sign(&tx).await?;
+        let signature = fee_payer.sign(&tx).await?;
 
         let sig_bytes: [u8; 64] = signature
             .bytes
@@ -158,9 +203,7 @@ pub async fn initialize_paymaster_atas_with_chunk_size(
         }
     }
 
-    println!("✓ Successfully created all {total_atas} ATAs");
-
-    Ok(())
+    Ok(total_atas)
 }
 
 pub async fn find_missing_atas(

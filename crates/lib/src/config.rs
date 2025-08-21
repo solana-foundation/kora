@@ -13,7 +13,6 @@ use crate::{
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
-    get_signer,
     oracle::PriceSource,
 };
 
@@ -343,7 +342,7 @@ impl Config {
 
 impl KoraConfig {
     /// Get the payment address from config or fallback to signer address
-    pub fn get_payment_address(&self) -> Result<Pubkey, KoraError> {
+    pub fn get_payment_address(&self, signer_pubkey: &Pubkey) -> Result<Pubkey, KoraError> {
         if let Some(payment_address_str) = &self.payment_address {
             let payment_address = Pubkey::from_str(payment_address_str).map_err(|_| {
                 KoraError::InternalServerError(format!(
@@ -352,8 +351,7 @@ impl KoraConfig {
             })?;
             Ok(payment_address)
         } else {
-            let signer = get_signer()?;
-            Ok(signer.solana_pubkey())
+            Ok(*signer_pubkey)
         }
     }
 }
