@@ -12,7 +12,7 @@ on Solana as specified by the Kora paymaster operator.
 #### Example
 
 ```typescript
-const client = new KoraClient({ 
+const client = new KoraClient({
   rpcUrl: 'http://localhost:8080',
   // apiKey may be required by some operators
   // apiKey: 'your-api-key',
@@ -29,6 +29,7 @@ const config = await client.getConfig();
 - [estimateTransactionFee()](#estimatetransactionfee)
 - [getBlockhash()](#getblockhash)
 - [getConfig()](#getconfig)
+- [getPayerSigner()](#getpayersigner)
 - [getSupportedTokens()](#getsupportedtokens)
 - [signAndSendTransaction()](#signandsendtransaction)
 - [signTransaction()](#signtransaction)
@@ -141,6 +142,30 @@ When the RPC call fails
 const config = await client.getConfig();
 console.log('Fee payer:', config.fee_payer);
 console.log('Validation config:', JSON.stringify(config.validation_config, null, 2));
+```
+
+##### getPayerSigner()
+
+```ts
+getPayerSigner(): Promise<GetPayerSignerResponse>;
+```
+
+Retrieves the payer signer and payment destination from the Kora server.
+
+###### Returns
+
+`Promise`\<[`GetPayerSignerResponse`](#getpayersignerresponse)\>
+
+Object containing the payer signer and payment destination
+
+###### Throws
+
+When the RPC call fails
+
+###### Example
+
+```ts
+
 ```
 
 ##### getSupportedTokens()
@@ -331,7 +356,7 @@ Kora server configuration.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="enabled_methods"></a> `enabled_methods` | [`EnabledMethods`](#enabledmethods) | Enabled methods |
-| <a id="fee_payer"></a> `fee_payer` | `string` | Public key of the fee payer account |
+| <a id="fee_payers"></a> `fee_payers` | `string`[] | Array of public keys of the fee payer accounts (signer pool) |
 | <a id="validation_config"></a> `validation_config` | [`ValidationConfig`](#validationconfig) | Validation rules and constraints |
 
 ***
@@ -365,6 +390,7 @@ Parameters for estimating transaction fees.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="fee_token"></a> `fee_token` | `string` | Mint address of the token to calculate fees in |
+| <a id="signer_key"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="transaction"></a> `transaction` | `string` | Base64-encoded transaction to estimate fees for |
 
 ***
@@ -379,6 +405,7 @@ Response containing estimated transaction fees.
 | ------ | ------ | ------ |
 | <a id="fee_in_lamports"></a> `fee_in_lamports` | `number` | Transaction fee in lamports |
 | <a id="fee_in_token"></a> `fee_in_token` | `number` | Transaction fee in the requested token (in decimals value of the token, e.g. 10^6 for USDC) |
+| <a id="signer_pubkey"></a> `signer_pubkey` | `string` | Public key of the signer used to estimate the fee |
 
 ***
 
@@ -409,6 +436,19 @@ Response containing the latest blockhash.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="blockhash"></a> `blockhash` | `string` | Base58-encoded blockhash |
+
+***
+
+### GetPayerSignerResponse
+
+Response containing the payer signer and payment destination.
+
+#### Properties
+
+| Property | Type | Description |
+| ------ | ------ | ------ |
+| <a id="payment_address"></a> `payment_address` | `string` | Public key of the payment destination |
+| <a id="signer_address"></a> `signer_address` | `string` | Public key of the payer signer |
 
 ***
 
@@ -480,6 +520,7 @@ Parameters for signing and sending a transaction.
 
 | Property | Type | Description |
 | ------ | ------ | ------ |
+| <a id="signer_key-1"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="transaction-1"></a> `transaction` | `string` | Base64-encoded transaction to sign and send |
 
 ***
@@ -494,6 +535,7 @@ Response from signing and sending a transaction.
 | ------ | ------ | ------ |
 | <a id="signature"></a> `signature` | `string` | Base58-encoded transaction signature |
 | <a id="signed_transaction"></a> `signed_transaction` | `string` | Base64-encoded signed transaction |
+| <a id="signer_pubkey-1"></a> `signer_pubkey` | `string` | Public key of the signer used to send the transaction |
 
 ***
 
@@ -505,6 +547,7 @@ Parameters for conditionally signing a transaction based on payment.
 
 | Property | Type | Description |
 | ------ | ------ | ------ |
+| <a id="signer_key-2"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="transaction-2"></a> `transaction` | `string` | Base64-encoded transaction |
 
 ***
@@ -518,6 +561,7 @@ Response from conditionally signing a transaction.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="signed_transaction-1"></a> `signed_transaction` | `string` | Base64-encoded signed transaction |
+| <a id="signer_pubkey-2"></a> `signer_pubkey` | `string` | Public key of the signer used to sign the transaction |
 | <a id="transaction-3"></a> `transaction` | `string` | Base64-encoded original transaction |
 
 ***
@@ -530,6 +574,7 @@ Parameters for signing a transaction.
 
 | Property | Type | Description |
 | ------ | ------ | ------ |
+| <a id="signer_key-3"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="transaction-4"></a> `transaction` | `string` | Base64-encoded transaction to sign |
 
 ***
@@ -544,6 +589,20 @@ Response from signing a transaction.
 | ------ | ------ | ------ |
 | <a id="signature-1"></a> `signature` | `string` | Base58-encoded signature |
 | <a id="signed_transaction-2"></a> `signed_transaction` | `string` | Base64-encoded signed transaction |
+| <a id="signer_pubkey-3"></a> `signer_pubkey` | `string` | Public key of the signer used to sign the transaction |
+
+***
+
+### Token2022Config
+
+Blocked extensions for Token2022.
+
+#### Properties
+
+| Property | Type | Description |
+| ------ | ------ | ------ |
+| <a id="blocked_account_extensions"></a> `blocked_account_extensions` | `string`[] | List of blocked account extensions |
+| <a id="blocked_mint_extensions"></a> `blocked_mint_extensions` | `string`[] | List of blocked mint extensions |
 
 ***
 
@@ -557,6 +616,7 @@ Parameters for creating a token transfer transaction.
 | ------ | ------ | ------ |
 | <a id="amount"></a> `amount` | `number` | Amount to transfer in the token's smallest unit (e.g., lamports for SOL) |
 | <a id="destination"></a> `destination` | `string` | Public key of the destination wallet (not token account) |
+| <a id="signer_key-4"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="source"></a> `source` | `string` | Public key of the source wallet (not token account) |
 | <a id="token"></a> `token` | `string` | Mint address of the token to transfer |
 
@@ -572,6 +632,7 @@ Response from creating a transfer transaction.
 | ------ | ------ | ------ |
 | <a id="blockhash-1"></a> `blockhash` | `string` | Recent blockhash used in the transaction |
 | <a id="message-1"></a> `message` | `string` | Base64-encoded message |
+| <a id="signer_pubkey-4"></a> `signer_pubkey` | `string` | Public key of the signer used to send the transaction |
 | <a id="transaction-5"></a> `transaction` | `string` | Base64-encoded signed transaction |
 
 ***
@@ -592,7 +653,8 @@ Validation configuration for the Kora server.
 | <a id="max_allowed_lamports"></a> `max_allowed_lamports` | `number` | Maximum allowed transaction value in lamports |
 | <a id="max_signatures"></a> `max_signatures` | `number` | Maximum number of signatures allowed per transaction |
 | <a id="price"></a> `price` | [`PriceModel`](#pricemodel) | Pricing model configuration |
-| <a id="price_source"></a> `price_source` | `"Jupiter"` \| `"Mock"` | Price oracle source for token conversions |
+| <a id="price_source"></a> `price_source` | [`PriceSource`](#pricesource) | Price oracle source for token conversions |
+| <a id="token2022"></a> `token2022` | [`Token2022Config`](#token2022config) | Token2022 configuration |
 
 ## Type Aliases
 
@@ -629,3 +691,13 @@ Pricing model for transaction fees.
 - `margin`: Adds a percentage margin to base fees
 - `fixed`: Charges a fixed amount in a specific token
 - `free`: No additional fees charged
+
+***
+
+### PriceSource
+
+```ts
+type PriceSource = "Jupiter" | "Mock";
+```
+
+Configuration Types
