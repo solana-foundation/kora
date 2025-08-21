@@ -78,3 +78,74 @@ pub async fn estimate_transaction_fee(
         signer_pubkey: fee_payer.to_string(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{
+        common::{setup_or_get_test_config, setup_or_get_test_signer, RpcMockBuilder},
+        transaction_mock::create_mock_transaction,
+    };
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_decode_error() {
+        let _ = setup_or_get_test_config();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+
+        let request = EstimateTransactionFeeRequest {
+            transaction: "invalid_base64!@#$".to_string(),
+            fee_token: None,
+            signer_key: None,
+        };
+
+        let result = estimate_transaction_fee(&rpc_client, request).await;
+
+        assert!(result.is_err(), "Should fail with decode error");
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_invalid_signer_key() {
+        let _ = setup_or_get_test_config();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+
+        let request = EstimateTransactionFeeRequest {
+            transaction: create_mock_transaction(),
+            fee_token: None,
+            signer_key: Some("invalid_pubkey".to_string()),
+        };
+
+        let result = estimate_transaction_fee(&rpc_client, request).await;
+
+        assert!(result.is_err(), "Should fail with invalid signer key");
+        let error = result.unwrap_err();
+        assert!(matches!(error, KoraError::ValidationError(_)), "Should return ValidationError");
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_invalid_token_mint() {
+        let _ = setup_or_get_test_config();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+
+        let request = EstimateTransactionFeeRequest {
+            transaction: create_mock_transaction(),
+            fee_token: Some("invalid_mint_address".to_string()),
+            signer_key: None,
+        };
+
+        let result = estimate_transaction_fee(&rpc_client, request).await;
+
+        assert!(result.is_err(), "Should fail with invalid token mint");
+        let error = result.unwrap_err();
+
+        assert!(
+            matches!(error, KoraError::InvalidTransaction(_)),
+            "Should return InvalidTransaction error due to invalid mint parsing"
+        );
+    }
+}

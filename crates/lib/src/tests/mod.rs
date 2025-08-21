@@ -15,3 +15,6 @@ pub mod rpc_mock;
 
 #[cfg(test)]
 pub mod toml_mock;
+
+#[cfg(test)]
+pub mod transaction_mock;
