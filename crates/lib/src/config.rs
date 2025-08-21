@@ -58,14 +58,61 @@ impl Default for FeePayerBalanceMetricsConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SplTokenPaymentConfig {
+    All,
+    #[serde(untagged)]
+    Allowlist(Vec<String>),
+}
+
+impl Default for SplTokenPaymentConfig {
+    fn default() -> Self {
+        SplTokenPaymentConfig::Allowlist(vec![])
+    }
+}
+
+impl<'a> IntoIterator for &'a SplTokenPaymentConfig {
+    type Item = &'a String;
+    type IntoIter = std::slice::Iter<'a, String>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            SplTokenPaymentConfig::All => [].iter(),
+            SplTokenPaymentConfig::Allowlist(tokens) => tokens.iter(),
+        }
+    }
+}
+
+impl SplTokenPaymentConfig {
+    pub fn has_token(&self, token: &String) -> bool {
+        match self {
+            SplTokenPaymentConfig::All => true,
+            SplTokenPaymentConfig::Allowlist(tokens) => tokens.contains(token),
+        }
+    }
+
+    pub fn has_tokens(&self) -> bool {
+        match self {
+            SplTokenPaymentConfig::All => true,
+            SplTokenPaymentConfig::Allowlist(tokens) => !tokens.is_empty(),
+        }
+    }
+
+    pub fn as_slice(&self) -> &[String] {
+        match self {
+            SplTokenPaymentConfig::All => &[],
+            SplTokenPaymentConfig::Allowlist(v) => v.as_slice(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ValidationConfig {
     pub max_allowed_lamports: u64,
     pub max_signatures: u64,
     pub allowed_programs: Vec<String>,
     pub allowed_tokens: Vec<String>,
-    pub allowed_spl_paid_tokens: Vec<String>,
-    pub allow_any_spl_paid_token: bool,
+    pub allowed_spl_paid_tokens: SplTokenPaymentConfig,
     pub disallowed_accounts: Vec<String>,
     pub price_source: PriceSource,
     #[serde(default)] // Default for backward compatibility
@@ -82,7 +129,7 @@ impl ValidationConfig {
     }
 
     pub fn supports_token(&self, token: &str) -> bool {
-        self.allowed_spl_paid_tokens.iter().any(|s| s == token)
+        self.allowed_spl_paid_tokens.has_token(token)
     }
 }
 
@@ -381,7 +428,6 @@ mod tests {
             allowed_programs = ["program1", "program2"]
             allowed_tokens = ["token1", "token2"]
             allowed_spl_paid_tokens = ["token3"]
-            allow_any_spl_paid_token = false
             disallowed_accounts = ["account1"]
             price_source = "Jupiter"
             [kora]
@@ -397,8 +443,10 @@ mod tests {
         assert_eq!(config.validation.max_signatures, 10);
         assert_eq!(config.validation.allowed_programs, vec!["program1", "program2"]);
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
-        assert_eq!(config.validation.allowed_spl_paid_tokens, vec!["token3"]);
-        assert_eq!(config.validation.allow_any_spl_paid_token, false);
+        assert_eq!(
+            config.validation.allowed_spl_paid_tokens,
+            SplTokenPaymentConfig::Allowlist(vec!["token3".to_string()])
+        );
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
         assert_eq!(config.validation.price_source, PriceSource::Jupiter);
         assert_eq!(config.kora.rate_limit, 100);
@@ -416,7 +464,6 @@ mod tests {
             allowed_programs = ["program1", "program2"]
             allowed_tokens = ["token1", "token2"]
             allowed_spl_paid_tokens = ["token3"]
-            allow_any_spl_paid_token = false
             disallowed_accounts = ["account1"]
             price_source = "Jupiter"
             [kora]
@@ -468,6 +515,29 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_spl_payment_config() {
+        let config_content = r#"
+            [validation]
+            max_allowed_lamports = 1000000000
+            max_signatures = 10
+            allowed_programs = ["program1", "program2"]
+            allowed_tokens = ["token1", "token2"]
+            allowed_spl_paid_tokens = "All"
+            disallowed_accounts = ["account1"]
+            price_source = "Jupiter"
+            [kora]
+            rate_limit = 100
+        "#;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        fs::write(&temp_file, config_content).unwrap();
+
+        let config = Config::load_config(temp_file.path()).unwrap();
+
+        assert_eq!(config.validation.allowed_spl_paid_tokens, SplTokenPaymentConfig::All);
+    }
+
+    #[test]
     fn test_parse_margin_price_config() {
         let config_content = r#"
             [validation]
@@ -476,7 +546,6 @@ mod tests {
             allowed_programs = ["program1"]
             allowed_tokens = ["token1"]
             allowed_spl_paid_tokens = ["token2"]
-            allow_any_spl_paid_token = false
             disallowed_accounts = []
             price_source = "Jupiter"
 
@@ -510,7 +579,6 @@ mod tests {
             allowed_programs = ["program1"]
             allowed_tokens = ["token1"]
             allowed_spl_paid_tokens = ["token2"]
-            allow_any_spl_paid_token = false
             disallowed_accounts = []
             price_source = "Jupiter"
 
@@ -546,7 +614,6 @@ mod tests {
             allowed_programs = ["program1"]
             allowed_tokens = ["token1"]
             allowed_spl_paid_tokens = ["token2"]
-            allow_any_spl_paid_token = false
             disallowed_accounts = []
             price_source = "Jupiter"
 
@@ -579,7 +646,6 @@ mod tests {
             allowed_programs = ["program1"]
             allowed_tokens = ["token1"]
             allowed_spl_paid_tokens = ["token2"]
-            allow_any_spl_paid_token = false
             disallowed_accounts = []
             price_source = "Jupiter"
 
@@ -610,7 +676,6 @@ mod tests {
             allowed_programs = ["program1"]
             allowed_tokens = ["token1"]
             allowed_spl_paid_tokens = ["token2"]
-            allow_any_spl_paid_token = false
             disallowed_accounts = []
             price_source = "Jupiter"
 

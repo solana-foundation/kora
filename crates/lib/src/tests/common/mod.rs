@@ -1,5 +1,8 @@
 use crate::{
-    config::{FeePayerPolicy, KoraConfig, MetricsConfig, Token2022Config, ValidationConfig},
+    config::{
+        FeePayerPolicy, KoraConfig, MetricsConfig, SplTokenPaymentConfig, Token2022Config,
+        ValidationConfig,
+    },
     fee::price::PriceConfig,
     get_request_signer_with_signer_key,
     oracle::PriceSource,
@@ -60,8 +63,7 @@ pub fn setup_or_get_test_config() -> Config {
             max_signatures: 1000000000000000000,
             allowed_programs: vec![],
             allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            allow_any_spl_paid_token: false,
+            allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
             disallowed_accounts: vec![],
             price_source: PriceSource::Mock,
             fee_payer_policy: FeePayerPolicy::default(),
