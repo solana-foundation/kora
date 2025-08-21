@@ -465,6 +465,7 @@ mod tests {
                     get_blockhash: false,
                     get_config: false,
                     sign_transaction_if_paid: false, // All false - should warn
+                    get_payer_signer: false,
                 },
                 auth: AuthConfig::default(),
                 payment_address: None,

@@ -18,6 +18,7 @@ sign_and_send_transaction = true
 transfer_transaction = true
 get_blockhash = true
 get_config = true
+get_payer_signer = true
 sign_transaction_if_paid = true
 
 [validation]

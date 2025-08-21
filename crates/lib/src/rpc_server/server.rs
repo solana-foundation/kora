@@ -143,6 +143,13 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
     register_method_if_enabled!(
         module,
         enabled_methods,
+        get_payer_signer,
+        "getPayerSigner",
+        get_payer_signer
+    );
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
         sign_transaction,
         "signTransaction",
         sign_transaction,
