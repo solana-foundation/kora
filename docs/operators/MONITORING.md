@@ -22,6 +22,10 @@ kora_http_requests_total{method="signTransaction",status="400"} 3
 
 # Request duration (in seconds) by method  
 kora_http_request_duration_seconds{method="signTransaction"} 0.045
+
+# Signer balances (for multi-signer setups)
+signer_balance_lamports{signer_name="primary_signer",signer_pubkey="4gBe...xyz"} 500000000
+signer_balance_lamports{signer_name="backup_signer",signer_pubkey="7XyZ...abc"} 300000000
 ```
 
 If you haven't called the RPC server yet, you will not see any metrics. You can run a simple test by calling the `getConfig` method:
@@ -49,10 +53,11 @@ curl http://localhost:8080/metrics
    - Shows percentiles (p50, p95, p99) for response times
    - Use this to identify slow endpoints
 
-3. **`fee_payer_balance_lamports`** - Your fee payer's current SOL balance
-   - Shows balance in lamports (1 SOL = 1,000,000,000 lamports)
+3. **`signer_balance_lamports`** - Current SOL balance of each signer
+   - Shows balance in lamports (1 SOL = 1,000,000,000 lamports) for each signer
+   - Labels: `signer_name` (human-readable name) and `signer_pubkey` (public key)
    - Updated automatically in the background when enabled
-   - Use this for capacity planning and low-balance alerts
+   - Use this for capacity planning and low-balance alerts across all signers
 
 ## Using the Data
 
@@ -97,11 +102,48 @@ histogram_quantile(0.95, kora_http_request_duration_seconds_bucket)
 # Error rate
 rate(kora_http_requests_total{status!="200"}[5m])
 
-# Fee payer balance in SOL (convert from lamports)
-fee_payer_balance_lamports / 1000000000
+# Balance of specific signer by name
+signer_balance_lamports{signer_name="primary_signer"} / 1000000000
 
-# Low balance alert (less than 0.1 SOL)
-fee_payer_balance_lamports < 100000000
+# Balance of specific signer by public key
+signer_balance_lamports{signer_pubkey="4gBe...xyz"} / 1000000000
+
+# Total balance across all signers
+sum(signer_balance_lamports) / 1000000000
+
+# Minimum balance across all signers (useful for alerts)
+min(signer_balance_lamports) / 1000000000
+```
+
+## Multi-Signer Monitoring
+
+When using multiple signers, you can monitor each signer individually or track aggregate metrics:
+
+### Individual Signer Metrics
+```bash
+# Check balance of specific signer
+curl http://localhost:8080/metrics | grep 'signer_balance_lamports{signer_name="primary_signer"}'
+
+# View all signer balances
+curl http://localhost:8080/metrics | grep signer_balance_lamports
+```
+
+### Prometheus Queries for Multi-Signer Setups
+```promql
+# Alert if any signer has low balance (< 0.05 SOL)
+min(signer_balance_lamports) < 50000000
+
+# Monitor balance distribution across signers
+signer_balance_lamports / on() group_left() sum(signer_balance_lamports)
+
+# Track signer with lowest balance
+min_over_time(signer_balance_lamports[1h])
+
+# Count number of healthy signers (> 0.01 SOL)
+count(signer_balance_lamports > 10000000)
+
+# Average balance across all signers
+avg(signer_balance_lamports) / 1000000000
 ```
 
 ## Security Note
