@@ -50,6 +50,9 @@ jobs:
       - name: Setup Solana CLI
         uses: ./.github/actions/setup-solana
 
+      - name: Setup Kora RPC server
+        uses: ./.github/actions/setup-kora-rpc
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -80,11 +83,33 @@ jobs:
         working-directory: sdks/ts
         run: pnpm build
 
-      - name: Run TypeScript integration tests (basic setup)
-        run: make test-ts-integration-basic
+      - name: Run TypeScript integration tests
+        working-directory: sdks/ts
+        run: |
+          echo "🧪 Running TypeScript SDK integration tests..."
+          # The test script handles starting/stopping its own validator
+          pnpm test:ci:integration
 
-      - name: Run TypeScript integration tests (auth setup)
-        run: make test-ts-integration-auth
+      - name: Stop Kora RPC server
+        run: |
+          if [ ! -z "$KORA_PID" ]; then
+            kill $KORA_PID || true
+          fi
+          sleep 2
+
+      - name: Setup Kora RPC server (auth config)
+        uses: ./.github/actions/setup-kora-rpc
+        with:
+          config-file: "tests/src/common/fixtures/auth-test.toml"
+
+      - name: Run TypeScript auth integration tests
+        working-directory: sdks/ts
+        run: |
+          echo "🧪 Running TypeScript SDK auth integration tests..."
+          pnpm test:ci:integration:auth
+
+      - name: Cleanup test environment
+        uses: ./.github/actions/cleanup-test-env
 
       - name: Show failure logs
         uses: ./.github/actions/show-failure-logs
