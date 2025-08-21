@@ -173,10 +173,7 @@ const signAndSendTransaction = async (
 ) => {
     const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
     const signature = getSignatureFromTransaction(signedTransaction);
-    await sendAndConfirmTransactionFactory(client)(signedTransaction, {
-        commitment,
-        skipPreflight: true,
-    });
+    await sendAndConfirmTransactionFactory(client)(signedTransaction, { commitment, skipPreflight: true });
     return signature;
 };
 
@@ -200,13 +197,6 @@ async function sendAndConfirmInstructions(
     description: string,
 ): Promise<Signature> {
     try {
-        // const simulationTx = await pipe(await createDefaultTransaction(client, payer), tx =>
-        //     appendTransactionMessageInstructions(instructions, tx),
-        // );
-        // const estimateCompute = estimateComputeUnitLimitFactory({
-        //     rpc: client.rpc,
-        // });
-        // const computeUnitLimit = await estimateCompute(simulationTx);
         const signature = await pipe(
             await createDefaultTransaction(client, payer, 200_000),
             tx => appendTransactionMessageInstructions(instructions, tx),
@@ -330,12 +320,12 @@ async function setupTestSuite(): Promise<TestSuite> {
     // Airdrop SOL to test sender and kora wallets
     await Promise.all([
         airdrop({
-            commitment,
+            commitment: 'finalized',
             lamports: lamports(solDropAmount),
             recipientAddress: koraAddress,
         }),
         airdrop({
-            commitment,
+            commitment: 'finalized',
             lamports: lamports(solDropAmount),
             recipientAddress: testWallet.address,
         }),
