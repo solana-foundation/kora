@@ -133,7 +133,7 @@ allowed_spl_paid_tokens = [
 ```
 
 ### Terminal 3: Initialize Payment ATAs (Optional)
-
+<!-- TODO UPDATE LANGUAGE AFTER DETERMINING INITIALIZE-ATAS FOR ALL SIGNERS-->
 If you've configured a custom payment address in your `kora.toml`, you'll need to initialize Associated Token Accounts (ATAs) for your payment tokens:
 
 ```bash
