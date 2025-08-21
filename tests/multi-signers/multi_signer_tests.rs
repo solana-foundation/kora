@@ -14,6 +14,17 @@ async fn test_multi_signer_get_config() {
     assert!(response["fee_payers"].is_array());
     assert!(response["fee_payers"].as_array().unwrap().len() == 2);
 }
+
+#[tokio::test]
+async fn test_multi_signer_get_payer_signer() {
+    let client = ClientTestHelper::get_test_client().await;
+
+    let response: serde_json::Value =
+        client.request("getPayerSigner", rpc_params![]).await.expect("Failed to get payer signer");
+    assert!(response["signer_address"].as_str().is_some(), "Expected signer_address in response");
+    assert!(response["payment_address"].as_str().is_some(), "Expected payment_address in response");
+}
+
 #[tokio::test]
 async fn test_multi_signer_round_robin_behavior() {
     let client = ClientTestHelper::get_test_client().await;

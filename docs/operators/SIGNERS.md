@@ -418,20 +418,20 @@ RUST_LOG=debug kora rpc --with-turnkey-signer
 Clients can specify a preferred signer for consistency across related operations:
 
 ```typescript
-// Fetch the signers by calling getConfig
-const config = await client.getConfig();
-console.log(config.fee_payers);
+// Fetch the signers by calling getPayerSigner
+const { signer, payment_destination } = await client.getPayerSigner();
+console.log(signer, payment_destination);
 
 // Estimate with specific signer
 const estimate = await client.estimateTransactionFee({
   transaction: tx,
-  signer_key: "4gBe...xyz"  // Public key of preferred signer (one of the signers in the signer pool)
+  signer_key: signer  // Public key of preferred signer (one of the signers in the signer pool)
 });
 
 // Sign with same signer
 const signed = await client.signTransaction({
   transaction: tx,
-  signer_key: "4gBe...xyz"  // Same signer for consistency
+  signer_key: signer  // Same signer for consistency
 });
 ```
 

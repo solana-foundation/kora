@@ -16,6 +16,7 @@ import {
     RpcRequest,
     AuthenticationHeaders,
     KoraClientOptions,
+    GetPayerSignerResponse,
 } from './types/index.js';
 import crypto from 'crypto';
 
@@ -122,6 +123,17 @@ export class KoraClient {
      */
     async getConfig(): Promise<Config> {
         return this.rpcRequest<Config, undefined>('getConfig', undefined);
+    }
+
+    /**
+     * Retrieves the payer signer and payment destination from the Kora server.
+     * @returns Object containing the payer signer and payment destination
+     * @throws {Error} When the RPC call fails
+     *
+     * @example
+     */
+    async getPayerSigner(): Promise<GetPayerSignerResponse> {
+        return this.rpcRequest<GetPayerSignerResponse, undefined>('getPayerSigner', undefined);
     }
 
     /**
