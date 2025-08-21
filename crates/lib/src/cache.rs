@@ -232,10 +232,8 @@ mod tests {
         common::{create_mock_token_account, RpcMockBuilder},
         config_mock::ConfigMockBuilder,
     };
-    use serial_test::serial;
 
     #[tokio::test]
-    #[serial]
     async fn test_is_cache_enabled_disabled() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
@@ -243,7 +241,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_is_cache_enabled_no_url() {
         let _m = ConfigMockBuilder::new()
             .with_cache_enabled(true)
@@ -255,7 +252,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_is_cache_enabled_with_url() {
         let _m = ConfigMockBuilder::new()
             .with_cache_enabled(true)
@@ -307,7 +303,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_account_cache_disabled_fallback_to_rpc() {
-        #[allow(clippy::await_holding_lock)]
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
         let pubkey = Pubkey::new_unique();
@@ -324,7 +319,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_account_force_refresh_bypasses_cache() {
-        #[allow(clippy::await_holding_lock)]
         let _m = ConfigMockBuilder::new()
             .with_cache_enabled(false) // Force RPC fallback for simplicity
             .build_and_setup();
