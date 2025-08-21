@@ -15,6 +15,7 @@ use crate::rpc_server::method::{
     },
     get_blockhash::{get_blockhash, GetBlockhashResponse},
     get_config::{get_config, GetConfigResponse},
+    get_payer_signer::{get_payer_signer, GetPayerSignerResponse},
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
     sign_and_send_transaction::{
         sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResponse,
@@ -69,6 +70,13 @@ impl KoraRpc {
         info!("Get supported tokens request received");
         let result = get_supported_tokens().await;
         info!("Get supported tokens response: {result:?}");
+        result
+    }
+
+    pub async fn get_payer_signer(&self) -> Result<GetPayerSignerResponse, KoraError> {
+        info!("Get payer signer request received");
+        let result = get_payer_signer().await;
+        info!("Get payer signer response: {result:?}");
         result
     }
 
@@ -148,6 +156,11 @@ impl KoraRpc {
                 name: "getSupportedTokens".to_string(),
                 request: None,
                 response: GetSupportedTokensResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "getPayerSigner".to_string(),
+                request: None,
+                response: GetPayerSignerResponse::schema().1,
             },
             OpenApiSpec {
                 name: "signTransaction".to_string(),

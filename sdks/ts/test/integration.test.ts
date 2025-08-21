@@ -78,6 +78,12 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.enabled_methods.sign_transaction_if_paid).toBeDefined();
         });
 
+        it('should get payer signer', async () => {
+            const { signer_address, payment_address } = await client.getPayerSigner();
+            expect(signer_address).toBeDefined();
+            expect(payment_address).toBeDefined();
+        });
+
         it('should get supported tokens', async () => {
             const { tokens } = await client.getSupportedTokens();
             expect(Array.isArray(tokens)).toBe(true);
