@@ -177,8 +177,8 @@ describe('KoraClient Unit Tests', () => {
     describe('getPayerSigner', () => {
         it('should return payer signer and payment destination', async () => {
             const mockResponse: GetPayerSignerResponse = {
-                signer: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                payment_destination: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             };
 
             await testSuccessfulRpcMethod('getPayerSigner', () => client.getPayerSigner(), mockResponse);
@@ -186,12 +186,12 @@ describe('KoraClient Unit Tests', () => {
 
         it('should return same address for signer and payment_destination when no separate paymaster', async () => {
             const mockResponse: GetPayerSignerResponse = {
-                signer: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                payment_destination: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                payment_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             };
 
             await testSuccessfulRpcMethod('getPayerSigner', () => client.getPayerSigner(), mockResponse);
-            expect(mockResponse.signer).toBe(mockResponse.payment_destination);
+            expect(mockResponse.signer_address).toBe(mockResponse.payment_address);
         });
     });
 

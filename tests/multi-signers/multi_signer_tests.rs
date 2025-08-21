@@ -21,11 +21,8 @@ async fn test_multi_signer_get_payer_signer() {
 
     let response: serde_json::Value =
         client.request("getPayerSigner", rpc_params![]).await.expect("Failed to get payer signer");
-    assert!(response["signer"].as_str().is_some(), "Expected signer in response");
-    assert!(
-        response["payment_destination"].as_str().is_some(),
-        "Expected payment_destination in response"
-    );
+    assert!(response["signer_address"].as_str().is_some(), "Expected signer_address in response");
+    assert!(response["payment_address"].as_str().is_some(), "Expected payment_address in response");
 }
 
 #[tokio::test]

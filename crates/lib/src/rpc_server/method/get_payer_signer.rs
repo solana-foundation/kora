@@ -8,9 +8,9 @@ use utoipa::ToSchema;
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GetPayerSignerResponse {
     /// The recommended signer's public key
-    pub signer: String,
-    /// The payment destination address (same as signer if no separate paymaster is configured)
-    pub payment_destination: String,
+    pub signer_address: String,
+    /// The payment destination owner address (same as signer if no separate paymaster is configured)
+    pub payment_address: String,
 }
 
 pub async fn get_payer_signer() -> Result<GetPayerSignerResponse, KoraError> {
@@ -19,12 +19,12 @@ pub async fn get_payer_signer() -> Result<GetPayerSignerResponse, KoraError> {
 
     // Get the next signer according to the configured strategy
     let signer_meta = pool.get_next_signer()?;
-    let signer_pubkey = signer_meta.signer.solana_pubkey().to_string();
+    let signer_pubkey = signer_meta.signer.solana_pubkey();
+    // Get the payment destination address (falls back to signer if no payment address is configured)
+    let payment_destination = config.kora.get_payment_address(&signer_pubkey)?;
 
-    // Determine payment destination
-    // If a payment address is configured, use it; otherwise use the signer address
-    let payment_destination =
-        config.kora.payment_address.as_ref().cloned().unwrap_or_else(|| signer_pubkey.clone());
-
-    Ok(GetPayerSignerResponse { signer: signer_pubkey, payment_destination })
+    Ok(GetPayerSignerResponse {
+        signer_address: signer_pubkey.to_string(),
+        payment_address: payment_destination.to_string(),
+    })
 }

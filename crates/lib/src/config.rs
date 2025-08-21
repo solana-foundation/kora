@@ -418,6 +418,7 @@ mod tests {
             estimate_transaction_fee = false
             get_supported_tokens = true
             sign_transaction = true
+            get_payer_signer = true
             sign_and_send_transaction = false
             transfer_transaction = true
             get_blockhash = true

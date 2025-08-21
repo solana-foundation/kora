@@ -149,9 +149,9 @@ export interface EstimateTransactionFeeResponse {
  */
 export interface GetPayerSignerResponse {
     /** Public key of the payer signer */
-    signer: string;
+    signer_address: string;
     /** Public key of the payment destination */
-    payment_destination: string;
+    payment_address: string;
 }
 
 /**
