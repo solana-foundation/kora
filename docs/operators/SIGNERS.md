@@ -413,7 +413,7 @@ RUST_LOG=debug kora rpc --with-turnkey-signer
 - All private keys and API keys should be stored in environment variables or secrets management systems (Railway secrets, AWS Secrets Manager, etc.)
 
 
-## Client Signer Hints
+## Specifying a Signer (Client-Side)
 
 Clients can specify a preferred signer for consistency across related operations:
 
@@ -425,14 +425,14 @@ console.log(config.fee_payers);
 // Estimate with specific signer
 const estimate = await client.estimateTransactionFee({
   transaction: tx,
-  signer_hint: "4gBe...xyz"  // Public key of preferred signer (one of the signers in the signer pool)
+  signer_key: "4gBe...xyz"  // Public key of preferred signer (one of the signers in the signer pool)
 });
 
 // Sign with same signer
 const signed = await client.signTransaction({
   transaction: tx,
-  signer_hint: "4gBe...xyz"  // Same signer for consistency
+  signer_key: "4gBe...xyz"  // Same signer for consistency
 });
 ```
 
-Without signer hints, the configured strategy determines signer selection.
+Without signer keys, the configured strategy determines signer selection. It is important to note that keys must be consistent across calls related to the same transaction (e.g., if you generate a transaction with a specified signer key, you must use the same signer key for all related calls).
