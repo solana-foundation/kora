@@ -169,7 +169,7 @@ const createDefaultTransaction = async (
 const signAndSendTransaction = async (
     client: Client,
     transactionMessage: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime,
-    commitment: Commitment = loadEnvironmentVariables().commitment,
+    commitment: Commitment,
 ) => {
     const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
     const signature = getSignatureFromTransaction(signedTransaction);
@@ -195,12 +195,13 @@ async function sendAndConfirmInstructions(
     payer: TransactionSigner,
     instructions: Instruction[],
     description: string,
+    commitment: Commitment = loadEnvironmentVariables().commitment,
 ): Promise<Signature> {
     try {
         const signature = await pipe(
             await createDefaultTransaction(client, payer, 200_000),
             tx => appendTransactionMessageInstructions(instructions, tx),
-            tx => signAndSendTransaction(client, tx),
+            tx => signAndSendTransaction(client, tx, commitment),
         );
         return signature;
     } catch (error) {
@@ -283,7 +284,7 @@ async function initializeToken({
           )
         : [];
     const instructions = [...baseInstructions, ...otherAtaInstructions];
-    await sendAndConfirmInstructions(client, payer, instructions, 'Initialize token and ATAs');
+    await sendAndConfirmInstructions(client, payer, instructions, 'Initialize token and ATAs', 'finalized');
 }
 
 async function setupTestSuite(): Promise<TestSuite> {
