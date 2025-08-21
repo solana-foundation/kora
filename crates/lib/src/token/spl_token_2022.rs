@@ -549,8 +549,9 @@ pub trait Token2022Extensions {
 
 #[cfg(test)]
 mod tests {
+    use crate::tests::common::create_mock_rpc_client_with_mint;
+
     use super::*;
-    use crate::tests::common::get_mock_rpc_client;
     use solana_client::nonblocking::rpc_client::RpcClient;
     use solana_program::program_pack::Pack;
     use solana_sdk::{
@@ -1068,8 +1069,7 @@ mod tests {
             extensions: HashMap::new(),
         };
 
-        let mock_account = crate::tests::common::create_mock_token2022_mint_account(6);
-        let rpc_client = get_mock_rpc_client(&mock_account);
+        let rpc_client = create_mock_rpc_client_with_mint(6);
         let program = Token2022Program::new();
         let result = program
             .get_and_validate_amount_for_payment(&rpc_client, Some(&account), None, amount)
@@ -1100,8 +1100,7 @@ mod tests {
             extensions: HashMap::new(),
         };
 
-        let mock_account = crate::tests::common::create_mock_token2022_mint_account(6);
-        let rpc_client = get_mock_rpc_client(&mock_account);
+        let rpc_client = create_mock_rpc_client_with_mint(6);
         let program = Token2022Program::new();
         // This test focuses on logic that happens before RPC calls
         // With empty extension data, it should return the original amount without RPC calls

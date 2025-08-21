@@ -15,11 +15,6 @@ use solana_sdk::{pubkey::Pubkey, system_program::ID as SYSTEM_PROGRAM_ID};
 use spl_token::ID as SPL_TOKEN_PROGRAM_ID;
 use spl_token_2022::ID as TOKEN_2022_PROGRAM_ID;
 
-#[cfg(test)]
-use crate::config::{CacheConfig, FeePayerPolicy, ValidationConfig};
-#[cfg(test)]
-use crate::fee::price::PriceConfig;
-
 pub struct ConfigValidator {}
 
 impl ConfigValidator {
@@ -295,74 +290,18 @@ fn validate_token2022_extensions(config: &Token2022Config) -> Result<(), String>
 }
 
 #[cfg(test)]
-impl ValidationConfig {
-    pub fn test_default() -> Self {
-        Self {
-            max_allowed_lamports: 1_000_000,
-            max_signatures: 10,
-            allowed_programs: vec![],
-            allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
-            disallowed_accounts: vec![],
-            price_source: PriceSource::Mock,
-            fee_payer_policy: FeePayerPolicy::default(),
-            price: PriceConfig::default(),
-            token_2022: Token2022Config::default(),
-        }
-    }
-
-    pub fn with_price_source(mut self, price_source: PriceSource) -> Self {
-        self.price_source = price_source;
-        self
-    }
-
-    pub fn with_allowed_programs(mut self, programs: Vec<String>) -> Self {
-        self.allowed_programs = programs;
-        self
-    }
-
-    pub fn with_fee_payer_policy(mut self, policy: FeePayerPolicy) -> Self {
-        self.fee_payer_policy = policy;
-        self
-    }
-
-    pub fn with_max_allowed_lamports(mut self, lamports: u64) -> Self {
-        self.max_allowed_lamports = lamports;
-        self
-    }
-
-    pub fn with_max_signatures(mut self, signatures: u64) -> Self {
-        self.max_signatures = signatures;
-        self
-    }
-
-    pub fn with_allowed_tokens(mut self, tokens: Vec<String>) -> Self {
-        self.allowed_tokens = tokens;
-        self
-    }
-
-    pub fn with_allowed_spl_paid_tokens(mut self, tokens: Vec<String>) -> Self {
-        self.allowed_spl_paid_tokens = tokens;
-        self
-    }
-
-    pub fn with_disallowed_accounts(mut self, accounts: Vec<String>) -> Self {
-        self.disallowed_accounts = accounts;
-        self
-    }
-}
-
-#[cfg(test)]
 mod tests {
-
     use crate::{
-        config::{AuthConfig, Config, EnabledMethods, KoraConfig, MetricsConfig},
+        config::{
+            AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy, KoraConfig,
+            MetricsConfig, ValidationConfig,
+        },
         fee::price::PriceConfig,
         state::update_config,
         tests::common::{
             create_mock_non_executable_account, create_mock_program_account,
-            create_mock_rpc_client_account_not_found, create_mock_spl_mint_account,
-            get_mock_rpc_client,
+            create_mock_rpc_client_account_not_found, create_mock_rpc_client_with_account,
+            create_mock_rpc_client_with_mint,
         },
     };
     use serial_test::serial;
@@ -796,8 +735,7 @@ mod tests {
         // Initialize global config
         let _ = update_config(config);
 
-        let mock_account = create_mock_program_account();
-        let rpc_client = get_mock_rpc_client(&mock_account);
+        let rpc_client = create_mock_rpc_client_with_account(&create_mock_program_account());
 
         // Test with RPC validation enabled (skip_rpc_validation = false)
         // The program validation should pass, but token validation will fail (AccountNotFound)
@@ -819,8 +757,7 @@ mod tests {
         // Initialize global config
         let _ = update_config(config);
 
-        let mock_account = create_mock_spl_mint_account(6);
-        let rpc_client = get_mock_rpc_client(&mock_account);
+        let rpc_client = create_mock_rpc_client_with_mint(6);
 
         // Test with RPC validation enabled (skip_rpc_validation = false)
         // Token validation should pass (mock returns token mint) since we have no programs
@@ -854,8 +791,7 @@ mod tests {
         // Initialize global config
         let _ = update_config(config);
 
-        let mock_account = create_mock_non_executable_account(); // Non-executable
-        let rpc_client = get_mock_rpc_client(&mock_account);
+        let rpc_client = create_mock_rpc_client_with_account(&create_mock_non_executable_account());
 
         // Test with RPC validation enabled (skip_rpc_validation = false)
         let result = ConfigValidator::validate_with_result(&rpc_client, false).await;

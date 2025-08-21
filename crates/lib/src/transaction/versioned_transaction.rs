@@ -377,7 +377,7 @@ impl LookupTableUtil {
 
 #[cfg(test)]
 mod tests {
-    use crate::{tests::common::get_mock_rpc_client, transaction::TransactionUtil};
+    use crate::{tests::common::create_mock_rpc_client_with_account, transaction::TransactionUtil};
 
     use super::*;
     use solana_address_lookup_table_interface::state::LookupTableMeta;
@@ -541,7 +541,7 @@ mod tests {
 
         let serialized_data = lookup_table.serialize_for_tests().unwrap();
 
-        let rpc_client = get_mock_rpc_client(&Account {
+        let rpc_client = create_mock_rpc_client_with_account(&Account {
             data: serialized_data,
             executable: false,
             lamports: 0,

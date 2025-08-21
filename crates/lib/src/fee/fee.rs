@@ -255,8 +255,8 @@ mod tests {
         constant::ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
         fee::fee::FeeConfigUtil,
         tests::common::{
-            create_mock_token_account, get_mock_rpc_client, setup_or_get_test_config,
-            setup_or_get_test_signer,
+            create_mock_rpc_client_with_account, create_mock_token_account,
+            setup_or_get_test_config, setup_or_get_test_signer,
         },
         token::{interface::TokenInterface, TokenProgram},
         transaction::TransactionUtil,
@@ -605,7 +605,7 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         let mocked_account = create_mock_token_account(&signer, &mint);
-        let mocked_rpc_client = get_mock_rpc_client(&mocked_account);
+        let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
 
         let sender = Keypair::new();
 
@@ -642,7 +642,7 @@ mod tests {
     async fn test_has_payment_instruction_without_payment() {
         let signer = setup_or_get_test_signer();
         setup_or_get_test_config();
-        let mocked_rpc_client = get_mock_rpc_client(&Account::default());
+        let mocked_rpc_client = create_mock_rpc_client_with_account(&Account::default());
 
         let sender = Keypair::new();
         let recipient = Pubkey::new_unique();
@@ -678,7 +678,7 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         let mocked_account = create_mock_token_account(&sender.pubkey(), &mint);
-        let mocked_rpc_client = get_mock_rpc_client(&mocked_account);
+        let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
 
         // Create token accounts
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);

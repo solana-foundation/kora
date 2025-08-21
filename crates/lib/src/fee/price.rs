@@ -56,7 +56,8 @@ impl PriceConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::common::get_mock_rpc_client_with_mint;
+
+    use crate::tests::common::create_mock_rpc_client_with_mint;
 
     use super::*;
 
@@ -89,7 +90,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_with_oracle() {
-        let rpc_client = get_mock_rpc_client_with_mint(6); // USDC has 6 decimals
+        let rpc_client = create_mock_rpc_client_with_mint(6); // USDC has 6 decimals
 
         let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
         let price_config = PriceConfig {
@@ -117,7 +118,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_with_custom_price() {
-        let rpc_client = get_mock_rpc_client_with_mint(9); // 9 decimals token
+        let rpc_client = create_mock_rpc_client_with_mint(9); // 9 decimals token
 
         let custom_token = "So11111111111111111111111111111111111111112"; // SOL mint
         let price_config = PriceConfig {
@@ -145,7 +146,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_without_oracle() {
-        let rpc_client = get_mock_rpc_client_with_mint(6);
+        let rpc_client = create_mock_rpc_client_with_mint(6);
 
         let price_config = PriceConfig {
             model: PriceModel::Fixed {
@@ -168,7 +169,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_small_amount() {
-        let rpc_client = get_mock_rpc_client_with_mint(6); // USDC has 6 decimals
+        let rpc_client = create_mock_rpc_client_with_mint(6); // USDC has 6 decimals
 
         let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
         let price_config = PriceConfig {
@@ -195,7 +196,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_free_model_get_required_lamports() {
-        let rpc_client = get_mock_rpc_client_with_mint(6);
+        let rpc_client = create_mock_rpc_client_with_mint(6);
 
         let price_config = PriceConfig { model: PriceModel::Free };
 
@@ -211,7 +212,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_free_model_get_required_lamports_with_high_base_fee() {
-        let rpc_client = get_mock_rpc_client_with_mint(6);
+        let rpc_client = create_mock_rpc_client_with_mint(6);
 
         let price_config = PriceConfig { model: PriceModel::Free };
 

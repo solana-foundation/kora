@@ -321,8 +321,7 @@ impl TransactionValidator {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{Config, KoraConfig, MetricsConfig, ValidationConfig},
-        state::update_config,
+        config::FeePayerPolicy, state::update_config, tests::config_mock::ConfigMockBuilder,
         transaction::TransactionUtil,
     };
     use serial_test::serial;
@@ -341,17 +340,12 @@ mod tests {
     #[serial]
     async fn test_validate_transaction() {
         let fee_payer = Pubkey::new_unique();
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -369,17 +363,12 @@ mod tests {
     #[serial]
     async fn test_transfer_amount_limits() {
         let fee_payer = Pubkey::new_unique();
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -405,17 +394,12 @@ mod tests {
     #[serial]
     async fn test_validate_programs() {
         let fee_payer = Pubkey::new_unique();
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()]) // System program
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -445,18 +429,13 @@ mod tests {
     #[serial]
     async fn test_validate_signatures() {
         let fee_payer = Pubkey::new_unique();
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_max_signatures(2)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -479,17 +458,12 @@ mod tests {
     #[serial]
     async fn test_sign_and_send_transaction_mode() {
         let fee_payer = Pubkey::new_unique();
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -513,17 +487,12 @@ mod tests {
     #[serial]
     async fn test_empty_transaction() {
         let fee_payer = Pubkey::new_unique();
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -538,20 +507,15 @@ mod tests {
     #[serial]
     async fn test_disallowed_accounts() {
         let fee_payer = Pubkey::new_unique();
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_disallowed_accounts(vec![
                 "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek".to_string()
             ])
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -572,17 +536,12 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         // Test with allow_sol_transfers = true (default)
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -594,20 +553,15 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_sol_transfers = false
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy {
                 allow_sol_transfers: false,
                 ..Default::default()
-            });
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            })
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -625,17 +579,12 @@ mod tests {
         let new_owner = Pubkey::new_unique();
 
         // Test with allow_assign = true (default)
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -646,17 +595,12 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_assign = false
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy { allow_assign: false, ..Default::default() });
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy { allow_assign: false, ..Default::default() })
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -676,17 +620,12 @@ mod tests {
         let recipient_token_account = Pubkey::new_unique();
 
         // Test with allow_spl_transfers = true (default)
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -706,20 +645,15 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_spl_transfers = false
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy {
                 allow_spl_transfers: false,
                 ..Default::default()
-            });
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            })
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -765,17 +699,12 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         // Test with allow_token2022_transfers = true (default)
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -797,20 +726,15 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_token2022_transfers = false
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy {
                 allow_token2022_transfers: false,
                 ..Default::default()
-            });
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            })
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -858,17 +782,12 @@ mod tests {
     #[serial]
     async fn test_calculate_total_outflow() {
         let fee_payer = Pubkey::new_unique();
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(10_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -987,17 +906,12 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         // Test with allow_burn = true (default)
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1018,17 +932,12 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_burn = false
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy { allow_burn: false, ..Default::default() });
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy { allow_burn: false, ..Default::default() })
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1076,17 +985,12 @@ mod tests {
         let destination = Pubkey::new_unique();
 
         // Test with allow_close_account = true (default)
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1106,20 +1010,15 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_close_account = false
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy {
                 allow_close_account: false,
                 ..Default::default()
-            });
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            })
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1148,17 +1047,12 @@ mod tests {
         let delegate = Pubkey::new_unique();
 
         // Test with allow_approve = true (default)
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1179,17 +1073,12 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_approve = false
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy { allow_approve: false, ..Default::default() });
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy { allow_approve: false, ..Default::default() })
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1240,17 +1129,12 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         // Test with allow_burn = false for Token2022
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy { allow_burn: false, ..Default::default() });
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy { allow_burn: false, ..Default::default() })
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1279,20 +1163,15 @@ mod tests {
         let destination = Pubkey::new_unique();
 
         // Test with allow_close_account = false for Token2022
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy {
                 allow_close_account: false,
                 ..Default::default()
-            });
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            })
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1320,17 +1199,12 @@ mod tests {
         let delegate = Pubkey::new_unique();
 
         // Test with allow_approve = true (default)
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default());
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1351,17 +1225,12 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_approve = false
-        let validation_config = ValidationConfig::test_default()
+        let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy { allow_approve: false, ..Default::default() });
-
-        let config = Config {
-            validation: validation_config,
-            kora: KoraConfig::default(),
-            metrics: MetricsConfig::default(),
-        };
+            .with_fee_payer_policy(FeePayerPolicy { allow_approve: false, ..Default::default() })
+            .build();
         update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();

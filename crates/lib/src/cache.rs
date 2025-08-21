@@ -83,27 +83,6 @@ impl CacheUtil {
         }
     }
 
-    /// Get account from RPC and cache it
-    pub async fn get_account_from_rpc_and_cache(
-        rpc_client: &RpcClient,
-        pubkey: &Pubkey,
-        pool: &Pool,
-        ttl: u64,
-    ) -> Result<Account, KoraError> {
-        let account = Self::get_account_from_rpc(rpc_client, pubkey).await?;
-
-        let cache_key = Self::get_account_key(pubkey);
-        let cached_account =
-            CachedAccount { account: account.clone(), cached_at: chrono::Utc::now().timestamp() };
-
-        if let Err(e) = Self::set_in_cache(pool, &cache_key, &cached_account, ttl).await {
-            log::warn!("Failed to cache account {pubkey}: {e}");
-            // Don't fail the request if caching fails
-        }
-
-        Ok(account)
-    }
-
     /// Get data from cache
     async fn get_from_cache(pool: &Pool, key: &str) -> Result<Option<CachedAccount>, KoraError> {
         let mut conn = Self::get_connection(pool).await?;
@@ -125,6 +104,27 @@ impl CacheUtil {
         }
     }
 
+    /// Get account from RPC and cache it
+    async fn get_account_from_rpc_and_cache(
+        rpc_client: &RpcClient,
+        pubkey: &Pubkey,
+        pool: &Pool,
+        ttl: u64,
+    ) -> Result<Account, KoraError> {
+        let account = Self::get_account_from_rpc(rpc_client, pubkey).await?;
+
+        let cache_key = Self::get_account_key(pubkey);
+        let cached_account =
+            CachedAccount { account: account.clone(), cached_at: chrono::Utc::now().timestamp() };
+
+        if let Err(e) = Self::set_in_cache(pool, &cache_key, &cached_account, ttl).await {
+            log::warn!("Failed to cache account {pubkey}: {e}");
+            // Don't fail the request if caching fails
+        }
+
+        Ok(account)
+    }
+
     /// Set data in cache with TTL
     async fn set_in_cache(
         pool: &Pool,
@@ -143,6 +143,14 @@ impl CacheUtil {
         })?;
 
         Ok(())
+    }
+
+    /// Check if cache is enabled and available
+    fn is_cache_enabled() -> bool {
+        match get_config() {
+            Ok(config) => config.kora.cache.enabled && config.kora.cache.url.is_some(),
+            Err(_) => false,
+        }
     }
 
     /// Get account from cache with optional force refresh
@@ -209,35 +217,17 @@ impl CacheUtil {
 
         Ok(account)
     }
+}
 
-    /// Clear cache for a specific account
-    pub async fn invalidate_account_cache(pubkey: &Pubkey) -> Result<(), KoraError> {
-        let pool = match CACHE_POOL.get() {
-            Some(pool) => pool,
-            None => return Ok(()), // Cache not initialized, nothing to invalidate
-        };
-
-        let pool = match pool {
-            Some(pool) => pool,
-            None => return Ok(()), // Cache disabled, nothing to invalidate
-        };
-
-        let mut conn = Self::get_connection(pool).await?;
-
-        let cache_key = Self::get_account_key(pubkey);
-        let _: u32 = conn.del(&cache_key).await.map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to invalidate cache: {e}"))
-        })?;
-
-        Ok(())
-    }
-
-    /// Check if cache is enabled and available
-    pub fn is_cache_enabled() -> bool {
-        match get_config() {
-            Ok(config) => config.kora.cache.enabled && config.kora.cache.url.is_some(),
-            Err(_) => false,
-        }
+#[cfg(test)]
+mockall::mock! {
+    pub CacheUtil {
+        pub async fn init() -> Result<(), KoraError>;
+        pub async fn get_account(
+            rpc_client: &RpcClient,
+            pubkey: &Pubkey,
+            force_refresh: bool,
+        ) -> Result<Account, KoraError>;
     }
 }
 
@@ -295,7 +285,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_enabled_no_url() {
-        let config = create_test_config(true, None);
+        let config = create_test_config(false, None);
         let _ = update_config(config);
 
         // Cache should report as disabled when no URL is provided

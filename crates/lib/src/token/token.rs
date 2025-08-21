@@ -344,9 +344,7 @@ impl TokenUtil {
 
 #[cfg(test)]
 mod tests_token {
-    use crate::tests::common::{
-        create_mock_spl_mint_account, create_mock_token2022_mint_account, get_mock_rpc_client,
-    };
+    use crate::tests::common::create_mock_rpc_client_with_mint;
 
     use super::*;
 
@@ -394,8 +392,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_get_token_price_and_decimals_spl() {
         let mint = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
-        let account = create_mock_spl_mint_account(9);
-        let rpc_client = get_mock_rpc_client(&account);
+        let rpc_client = create_mock_rpc_client_with_mint(9);
 
         let (token_price, decimals) =
             TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client)
@@ -410,8 +407,7 @@ mod tests_token {
     async fn test_get_token_price_and_decimals_token2022() {
         let mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
 
-        let account = create_mock_token2022_mint_account(6);
-        let rpc_client = get_mock_rpc_client(&account);
+        let rpc_client = create_mock_rpc_client_with_mint(6);
 
         let (token_price, decimals) =
             TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client)
@@ -425,8 +421,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports() {
         let mint = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
-        let account = create_mock_spl_mint_account(9);
-        let rpc_client = get_mock_rpc_client(&account);
+        let rpc_client = create_mock_rpc_client_with_mint(9);
 
         let amount = 1_000_000_000; // 1 SOL in lamports
         let result = TokenUtil::calculate_token_value_in_lamports(
@@ -444,8 +439,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_usdc() {
         let mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
-        let account = create_mock_spl_mint_account(6);
-        let rpc_client = get_mock_rpc_client(&account);
+        let rpc_client = create_mock_rpc_client_with_mint(6);
 
         let amount = 1_000_000; // 1 USDC (6 decimals)
         let result = TokenUtil::calculate_token_value_in_lamports(
@@ -464,8 +458,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token() {
         let mint = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
-        let account = create_mock_spl_mint_account(9);
-        let rpc_client = get_mock_rpc_client(&account);
+        let rpc_client = create_mock_rpc_client_with_mint(9);
 
         let lamports = 1_000_000_000; // 1 SOL
         let result = TokenUtil::calculate_lamports_value_in_token(
@@ -483,8 +476,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_usdc() {
         let mint = Pubkey::from_str("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
-        let account = create_mock_spl_mint_account(6);
-        let rpc_client = get_mock_rpc_client(&account);
+        let rpc_client = create_mock_rpc_client_with_mint(6);
 
         let lamports = 100_000; // 0.0001 SOL
         let result = TokenUtil::calculate_lamports_value_in_token(
