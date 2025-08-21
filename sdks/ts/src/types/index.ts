@@ -14,6 +14,8 @@ export interface TransferTransactionRequest {
     source: string;
     /** Public key of the destination wallet (not token account) */
     destination: string;
+    /** Optional signer address for the transaction */
+    signer_hint?: string;
 }
 
 /**
@@ -22,6 +24,8 @@ export interface TransferTransactionRequest {
 export interface SignTransactionRequest {
     /** Base64-encoded transaction to sign */
     transaction: string;
+    /** Optional signer address for the transaction */
+    signer_hint?: string;
 }
 
 /**
@@ -30,6 +34,8 @@ export interface SignTransactionRequest {
 export interface SignAndSendTransactionRequest {
     /** Base64-encoded transaction to sign and send */
     transaction: string;
+    /** Optional signer address for the transaction */
+    signer_hint?: string;
 }
 
 /**
@@ -38,6 +44,8 @@ export interface SignAndSendTransactionRequest {
 export interface SignTransactionIfPaidRequest {
     /** Base64-encoded transaction */
     transaction: string;
+    /** Optional signer address for the transaction */
+    signer_hint?: string;
 }
 
 /**
@@ -48,6 +56,8 @@ export interface EstimateTransactionFeeRequest {
     transaction: string;
     /** Mint address of the token to calculate fees in */
     fee_token: string;
+    /** Optional signer address for the transaction */
+    signer_hint?: string;
 }
 
 /**
@@ -64,6 +74,8 @@ export interface TransferTransactionResponse {
     message: string;
     /** Recent blockhash used in the transaction */
     blockhash: string;
+    /** Public key of the signer used to send the transaction */
+    signer_pubkey: string;
 }
 
 /**
@@ -74,6 +86,8 @@ export interface SignTransactionResponse {
     signature: string;
     /** Base64-encoded signed transaction */
     signed_transaction: string;
+    /** Public key of the signer used to sign the transaction */
+    signer_pubkey: string;
 }
 
 /**
@@ -84,6 +98,8 @@ export interface SignAndSendTransactionResponse {
     signature: string;
     /** Base64-encoded signed transaction */
     signed_transaction: string;
+    /** Public key of the signer used to send the transaction */
+    signer_pubkey: string;
 }
 
 /**
@@ -94,6 +110,8 @@ export interface SignTransactionIfPaidResponse {
     transaction: string;
     /** Base64-encoded signed transaction */
     signed_transaction: string;
+    /** Public key of the signer used to sign the transaction */
+    signer_pubkey: string;
 }
 
 /**
@@ -122,11 +140,15 @@ export interface EstimateTransactionFeeResponse {
      * Transaction fee in the requested token (in decimals value of the token, e.g. 10^6 for USDC)
      */
     fee_in_token: number;
+    /** Public key of the signer used to estimate the fee */
+    signer_pubkey: string;
 }
 
 /**
  * Configuration Types
  */
+
+export type PriceSource = 'Jupiter' | 'Mock';
 
 /**
  * Validation configuration for the Kora server.
@@ -137,7 +159,7 @@ export interface ValidationConfig {
     /** Maximum number of signatures allowed per transaction */
     max_signatures: number;
     /** Price oracle source for token conversions */
-    price_source: 'Jupiter' | 'Mock';
+    price_source: PriceSource;
     /** List of allowed Solana program IDs */
     allowed_programs: string[];
     /** List of allowed token mint addresses for fee payment */
@@ -150,6 +172,18 @@ export interface ValidationConfig {
     fee_payer_policy: FeePayerPolicy;
     /** Pricing model configuration */
     price: PriceConfig;
+    /** Token2022 configuration */
+    token2022: Token2022Config;
+}
+
+/**
+ * Blocked extensions for Token2022.
+ */
+export interface Token2022Config {
+    /** List of blocked mint extensions */
+    blocked_mint_extensions: string[];
+    /** List of blocked account extensions */
+    blocked_account_extensions: string[];
 }
 
 /**
