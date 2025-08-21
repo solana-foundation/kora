@@ -4,6 +4,7 @@ import {
     EstimateTransactionFeeRequest,
     GetBlockhashResponse,
     GetSupportedTokensResponse,
+    GetPayerSignerResponse,
     SignTransactionRequest,
     SignTransactionResponse,
     SignAndSendTransactionRequest,
@@ -170,6 +171,27 @@ describe('KoraClient Unit Tests', () => {
             };
 
             await testSuccessfulRpcMethod('getSupportedTokens', () => client.getSupportedTokens(), mockResponse);
+        });
+    });
+
+    describe('getPayerSigner', () => {
+        it('should return payer signer and payment destination', async () => {
+            const mockResponse: GetPayerSignerResponse = {
+                signer: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                payment_destination: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+            };
+
+            await testSuccessfulRpcMethod('getPayerSigner', () => client.getPayerSigner(), mockResponse);
+        });
+
+        it('should return same address for signer and payment_destination when no separate paymaster', async () => {
+            const mockResponse: GetPayerSignerResponse = {
+                signer: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                payment_destination: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+            };
+
+            await testSuccessfulRpcMethod('getPayerSigner', () => client.getPayerSigner(), mockResponse);
+            expect(mockResponse.signer).toBe(mockResponse.payment_destination);
         });
     });
 
