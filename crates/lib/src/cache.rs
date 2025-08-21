@@ -306,7 +306,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_get_account_cache_disabled_fallback_to_rpc() {
         #[allow(clippy::await_holding_lock)]
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -324,7 +323,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_get_account_force_refresh_bypasses_cache() {
         #[allow(clippy::await_holding_lock)]
         let _m = ConfigMockBuilder::new()

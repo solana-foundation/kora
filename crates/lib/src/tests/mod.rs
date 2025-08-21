@@ -12,3 +12,6 @@ pub mod redis_cache_mock;
 
 #[cfg(test)]
 pub mod rpc_mock;
+
+#[cfg(test)]
+pub mod toml_mock;
