@@ -15,7 +15,7 @@ export interface TransferTransactionRequest {
     /** Public key of the destination wallet (not token account) */
     destination: string;
     /** Optional signer address for the transaction */
-    signer_hint?: string;
+    signer_key?: string;
 }
 
 /**
@@ -25,7 +25,7 @@ export interface SignTransactionRequest {
     /** Base64-encoded transaction to sign */
     transaction: string;
     /** Optional signer address for the transaction */
-    signer_hint?: string;
+    signer_key?: string;
 }
 
 /**
@@ -35,7 +35,7 @@ export interface SignAndSendTransactionRequest {
     /** Base64-encoded transaction to sign and send */
     transaction: string;
     /** Optional signer address for the transaction */
-    signer_hint?: string;
+    signer_key?: string;
 }
 
 /**
@@ -45,7 +45,7 @@ export interface SignTransactionIfPaidRequest {
     /** Base64-encoded transaction */
     transaction: string;
     /** Optional signer address for the transaction */
-    signer_hint?: string;
+    signer_key?: string;
 }
 
 /**
@@ -57,7 +57,7 @@ export interface EstimateTransactionFeeRequest {
     /** Mint address of the token to calculate fees in */
     fee_token: string;
     /** Optional signer address for the transaction */
-    signer_hint?: string;
+    signer_key?: string;
 }
 
 /**

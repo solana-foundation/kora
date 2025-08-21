@@ -42,18 +42,12 @@ Configure your node to accept only transactions that meet your business requirem
 **[→ Sample kora.toml](./deploy/sample/kora.toml)**
 
 ### 2. Sign Transactions  
-Your node needs Solana keypair(s) to sign transactions as the fee payer. For production deployments, Kora supports **multi-signer configurations** for improved reliability and account-lock distribution. Consider implementing key rotation, access controls, backups, and other strategies for signer security.
+Your node needs Solana keypair(s) to sign transactions as the fee payer. For production deployments, Kora supports **multi-signer configurations** for improved reliability and account-lock distribution. Consider implementing key rotation, access controls, backups, and other strategies for signer security. Signing options available:
 
-**Single Signer (Simple Setup)**:
-- **Environment Variables**: Store private key directly in server environment (as base58, .json file, or u8 array)
+- **Local Private Key**: Store private key directly in server environment (as base58, .json file, or u8 array)
 - [**Turnkey**](https://www.turnkey.com/): Private key management made simple. Create wallets, sign transactions, and automate onchain actions.
 - [**Privy**](https://www.privy.io/): Easy crypto infrastructure. Securely spin up whitelabel wallets and sign transactions.
 - [**HashiCorp Vault**](https://developer.hashicorp.com/vault): Manage Secrets & Protect Sensitive Data
-
-**Multi-Signer (Production Recommended)**:
-- **Load/Account-Lock Distribution**: Spread signing across multiple keypairs
-- **Flexible Strategies**: Round-robin, random, or weighted selection
-- **Mixed Signer Types**: Combine local keys with remote key management services
 
 **[→ Complete Signers Configuration Guide](SIGNERS.md)**
 

@@ -133,8 +133,7 @@ allowed_spl_paid_tokens = [
 ```
 
 ### Terminal 3: Initialize Payment ATAs (Optional)
-<!-- TODO UPDATE LANGUAGE AFTER DETERMINING INITIALIZE-ATAS FOR ALL SIGNERS-->
-If you've configured a custom payment address in your `kora.toml`, you'll need to initialize Associated Token Accounts (ATAs) for your payment tokens:
+In order to receive payments, you'll need to initialize Associated Token Accounts (ATAs) for your payment tokens. You can do this by running the following command:
 
 ```bash
 # From ./server directory
@@ -142,9 +141,10 @@ kora rpc initialize-atas
 ```
 
 This command will:
-- Read your payment address from `kora.toml` (or use the signer address if not configured)
+- Read your payment address from `kora.toml` (or if you have not specified a payment address, all of the signers listed in `signers.toml`)
 - Create ATAs for all tokens listed in `allowed_spl_paid_tokens`
 - Skip any ATAs that already exist
+- You can optionally specify a customer fee payer for ATA generation by using the `fee_payer_key` flag.
 
 ### Terminal 4: Start Kora RPC Server
 ```bash
@@ -152,7 +152,13 @@ This command will:
 kora rpc start
 ```
 
-The server reads configuration from `kora.toml` and uses environment variables from the shared `.env` file. If you are using a different folder structure than specified here, you may need to use the `--config` to specify the location of `kora.toml` and `--private-key` to specify the directory of your private key. You can access `kora rpc -h` for help on the RPC server options.
+The server reads configuration from `kora.toml` and `signers.toml` and uses environment variables from the shared `.env` file. If you are using a different folder structure than specified here, you may need to use the `--config` to specify the location of `kora.toml` and `--signers-config` to specify the directory of your signers configuration: 
+
+```bash
+kora rpc --config path/to/kora.toml start --signers-config path/to/signers.toml
+```
+
+You can access `kora rpc -h` for help on the RPC server options.
 
 ### Terminal 5: Run Client Demo
 ```bash
