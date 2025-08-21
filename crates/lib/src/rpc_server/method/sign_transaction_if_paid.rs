@@ -1,5 +1,5 @@
 use crate::{
-    state::get_request_signer_with_hint,
+    state::get_request_signer_with_signer_key,
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
@@ -11,9 +11,9 @@ use utoipa::ToSchema;
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SignTransactionIfPaidRequest {
     pub transaction: String,
-    /// Optional signer hint to ensure consistency across related RPC calls
+    /// Optional signer signer_key to ensure consistency across related RPC calls
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signer_hint: Option<String>,
+    pub signer_key: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -29,7 +29,7 @@ pub async fn sign_transaction_if_paid(
     request: SignTransactionIfPaidRequest,
 ) -> Result<SignTransactionIfPaidResponse, KoraError> {
     let transaction_requested = TransactionUtil::decode_b64_transaction(&request.transaction)?;
-    let signer = get_request_signer_with_hint(request.signer_hint.as_deref())?;
+    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
 
     let mut resolved_transaction =
         VersionedTransactionResolved::from_transaction(&transaction_requested, rpc_client).await?;

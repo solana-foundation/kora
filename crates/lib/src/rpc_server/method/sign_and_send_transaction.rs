@@ -4,7 +4,7 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 
 use crate::{
-    state::get_request_signer_with_hint,
+    state::get_request_signer_with_signer_key,
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
@@ -12,9 +12,9 @@ use crate::{
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SignAndSendTransactionRequest {
     pub transaction: String,
-    /// Optional signer hint to ensure consistency across related RPC calls
+    /// Optional signer signer_key to ensure consistency across related RPC calls
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signer_hint: Option<String>,
+    pub signer_key: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -30,7 +30,7 @@ pub async fn sign_and_send_transaction(
     request: SignAndSendTransactionRequest,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
-    let signer = get_request_signer_with_hint(request.signer_hint.as_deref())?;
+    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
 
     let mut resolved_transaction =
         VersionedTransactionResolved::from_transaction(&transaction, rpc_client).await?;

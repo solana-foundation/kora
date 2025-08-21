@@ -1,7 +1,7 @@
 use crate::{
     config::{FeePayerPolicy, KoraConfig, MetricsConfig, Token2022Config, ValidationConfig},
     fee::price::PriceConfig,
-    get_request_signer,
+    get_request_signer_with_signer_key,
     oracle::PriceSource,
     signer::{KoraSigner, SignerPool, SignerWithMetadata, SolanaMemorySigner},
     state::{get_config, update_config, update_signer_pool},
@@ -22,7 +22,7 @@ pub const DEFAULT_LOCAL_RPC_URL: &str = "http://localhost:8899";
 Signer Mocks
 */
 pub fn setup_or_get_test_signer() -> Pubkey {
-    if let Ok(signer) = get_request_signer() {
+    if let Ok(signer) = get_request_signer_with_signer_key(None) {
         return signer.solana_pubkey();
     }
 

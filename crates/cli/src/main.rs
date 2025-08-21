@@ -3,7 +3,7 @@ mod args;
 use args::GlobalArgs;
 use clap::{Parser, Subcommand};
 use kora_lib::{
-    admin::token_util::initialize_paymaster_atas,
+    admin::token_util::initialize_atas,
     error::KoraError,
     log::LoggingFormat,
     rpc::get_rpc_client,
@@ -62,11 +62,15 @@ enum RpcCommands {
     /// Initialize ATAs for all allowed payment tokens
     #[command(
         about = "Initialize ATAs for all allowed payment tokens",
-        long_about = "Initialize Associated Token Accounts (ATAs) for all payment tokens configured in the system.\n\nThis command creates ATAs for the configured payment address (or fee payer if no payment address is set) for all allowed payment tokens."
+        long_about = "Initialize Associated Token Accounts (ATAs) for all payment tokens configured in the system.\n\nThis command creates ATAs in the following priority order:\n1. If a payment address is configured, creates ATAs for that address only\n2. Otherwise, creates ATAs for ALL signers in the pool\n\nYou can specify which signer to use as the fee payer for the ATA creation transactions.\nIf no fee payer is specified, the first signer in the pool will be used."
     )]
     InitializeAtas {
         #[command(flatten)]
         rpc_args: Box<RpcArgs>,
+
+        /// Signer key to use as fee payer (defaults to first signer if not specified)
+        #[arg(long, help_heading = "Signer Options")]
+        fee_payer_key: Option<String>,
 
         /// Compute unit price for priority fees (in micro-lamports)
         #[arg(long, help_heading = "Transaction Options")]
@@ -172,6 +176,7 @@ async fn main() -> Result<(), KoraError> {
                 }
                 RpcCommands::InitializeAtas {
                     rpc_args,
+                    fee_payer_key,
                     compute_unit_price,
                     compute_unit_limit,
                     chunk_size,
@@ -193,11 +198,12 @@ async fn main() -> Result<(), KoraError> {
                     }
 
                     // Initialize ATAs
-                    if let Err(e) = initialize_paymaster_atas(
+                    if let Err(e) = initialize_atas(
                         rpc_client.as_ref(),
                         compute_unit_price,
                         compute_unit_limit,
                         chunk_size,
+                        fee_payer_key,
                     )
                     .await
                     {

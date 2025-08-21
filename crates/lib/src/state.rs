@@ -17,21 +17,15 @@ static GLOBAL_SIGNER_POOL: Lazy<RwLock<Option<Arc<SignerPool>>>> = Lazy::new(|| 
 // Global config with zero-cost reads and hot-reload capability
 static GLOBAL_CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
 
-/// Get a request-scoped signer that should be used consistently throughout a single RPC request
-/// This advances the round-robin counter once per request for consistent signer usage
-pub fn get_request_signer() -> Result<Arc<KoraSigner>, KoraError> {
-    get_request_signer_with_hint(None)
-}
-
-/// Get a request-scoped signer with optional hint for consistency across related calls
-pub fn get_request_signer_with_hint(
-    signer_hint: Option<&str>,
+/// Get a request-scoped signer with optional signer_key for consistency across related calls
+pub fn get_request_signer_with_signer_key(
+    signer_key: Option<&str>,
 ) -> Result<Arc<KoraSigner>, KoraError> {
     let pool = get_signer_pool()?;
 
-    // If client provided a signer hint, try to use that specific signer
-    if let Some(hint) = signer_hint {
-        let signer_meta = pool.get_signer_by_pubkey(hint)?;
+    // If client provided a signer signer_key, try to use that specific signer
+    if let Some(signer_key) = signer_key {
+        let signer_meta = pool.get_signer_by_pubkey(signer_key)?;
         return Ok(Arc::new(signer_meta.signer.clone()));
     }
 
@@ -68,32 +62,16 @@ pub fn get_signer_pool() -> Result<Arc<SignerPool>, KoraError> {
     }
 }
 
-/// Get the next signer from the pool with error handling and metrics tracking
-pub fn get_next_signer_with_tracking() -> Result<(Arc<KoraSigner>, String), KoraError> {
-    let pool = get_signer_pool()?;
-    let signer_meta = pool.get_next_signer()?;
-    let signer_name = signer_meta.name.clone();
-    Ok((Arc::new(signer_meta.signer.clone()), signer_name))
-}
-
-/// Mark a signer operation as successful (for metrics tracking)
-pub fn mark_signer_success(signer_name: &str) {
-    if let Ok(pool) = get_signer_pool() {
-        pool.mark_signer_success(signer_name);
-    }
-}
-
-/// Mark a signer operation as failed (for metrics tracking)
-pub fn mark_signer_error(signer_name: &str) {
-    if let Ok(pool) = get_signer_pool() {
-        pool.mark_signer_error(signer_name);
-    }
-}
-
 /// Get information about all signers (for monitoring/debugging)
 pub fn get_signers_info() -> Result<Vec<crate::signer::SignerInfo>, KoraError> {
     let pool = get_signer_pool()?;
     Ok(pool.get_signers_info())
+}
+
+/// Get all signers from the pool (for operations that need to iterate over all signers)
+pub fn get_all_signers() -> Result<Vec<crate::signer::SignerWithMetadata>, KoraError> {
+    let pool = get_signer_pool()?;
+    Ok(pool.get_all_signers().to_vec())
 }
 
 /// Update the global signer configs with a new config (test only)

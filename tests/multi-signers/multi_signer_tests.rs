@@ -29,9 +29,9 @@ async fn test_multi_signer_round_robin_behavior() {
     }
 }
 
-/// Test that signer hints work correctly for maintaining consistency across RPC calls
+/// Test that signer signer keys work correctly for maintaining consistency across RPC calls
 #[tokio::test]
-async fn test_signer_hint_consistency() {
+async fn test_signer_key_consistency() {
     let client = ClientTestHelper::get_test_client().await;
 
     // First get list of available signers from config
@@ -45,7 +45,7 @@ async fn test_signer_hint_consistency() {
         .await
         .expect("Failed to create test transaction");
 
-    // Call estimateTransactionFee with signer hint
+    // Call estimateTransactionFee with signer signer key
     let estimate_response: serde_json::Value = client
         .request(
             "estimateTransactionFee",
@@ -61,9 +61,9 @@ async fn test_signer_hint_consistency() {
     let estimate_signer = estimate_response["signer_pubkey"].as_str().unwrap();
 
     // Verify the same signer was used
-    assert_eq!(estimate_signer, first_signer_pubkey, "Estimate should use hinted signer");
+    assert_eq!(estimate_signer, first_signer_pubkey, "Estimate should use signer keyed signer");
 
-    // Call transferTransaction with the same signer hint
+    // Call transferTransaction with the same signer signer key
     let transfer_response: serde_json::Value = client
         .request(
             "transferTransaction",
@@ -81,10 +81,13 @@ async fn test_signer_hint_consistency() {
     let transfer_signer = transfer_response["signer_pubkey"].as_str().unwrap();
 
     // Verify the same signer was used consistently
-    assert_eq!(transfer_signer, first_signer_pubkey, "Transfer should use same hinted signer");
+    assert_eq!(
+        transfer_signer, first_signer_pubkey,
+        "Transfer should use same signer keyed signer"
+    );
     assert_eq!(estimate_signer, transfer_signer, "Both calls should use same signer");
 
-    // Now call signTransaction with the same hint using the built transaction
+    // Now call signTransaction with the same signer key using the built transaction
     let built_tx = transfer_response["transaction"].as_str().unwrap();
     let sign_response: serde_json::Value = client
         .request("signTransaction", rpc_params![built_tx, &first_signer_pubkey])
@@ -94,14 +97,14 @@ async fn test_signer_hint_consistency() {
     let sign_signer = sign_response["signer_pubkey"].as_str().unwrap();
 
     // Verify all three calls used the same signer
-    assert_eq!(sign_signer, first_signer_pubkey, "Sign should use same hinted signer");
+    assert_eq!(sign_signer, first_signer_pubkey, "Sign should use same signer keyed signer");
     assert_eq!(estimate_signer, sign_signer, "All calls should use same signer");
     assert_eq!(transfer_signer, sign_signer, "All calls should use same signer");
 }
 
-/// Test that without signer hints, multiple estimate calls might get different signers (round-robin)
+/// Test that without signer signer keys, multiple estimate calls might get different signers (round-robin)
 #[tokio::test]
-async fn test_round_robin_without_hints() {
+async fn test_round_robin_without_signer_keys() {
     let client = ClientTestHelper::get_test_client().await;
     let mut signers_used = std::collections::HashSet::new();
 
@@ -109,7 +112,7 @@ async fn test_round_robin_without_hints() {
         .await
         .expect("Failed to create test transaction");
 
-    // Make multiple calls without signer hints to see round-robin behavior
+    // Make multiple calls without signer signer keys to see round-robin behavior
     for _ in 0..6 {
         let estimate_response: serde_json::Value = client
             .request(
@@ -128,9 +131,9 @@ async fn test_round_robin_without_hints() {
     assert!(signers_used.len() >= 2, "Should see at least 2 signers");
 }
 
-/// Test invalid signer hint handling
+/// Test invalid signer signer key handling
 #[tokio::test]
-async fn test_invalid_signer_hint() {
+async fn test_invalid_signer_key() {
     let client = ClientTestHelper::get_test_client().await;
     let invalid_pubkey = "InvalidPubkey123";
 
@@ -138,23 +141,23 @@ async fn test_invalid_signer_hint() {
         .await
         .expect("Failed to create test transaction");
 
-    // Call with invalid signer hint should fail
+    // Call with invalid signer signer key should fail
     let result = client
         .request::<serde_json::Value, _>(
             "estimateTransactionFee",
             rpc_params![json!({
                 "transaction": test_tx,
-                "signer_hint": invalid_pubkey
+                "signer_key": invalid_pubkey
             })],
         )
         .await;
 
-    assert!(result.is_err(), "Should fail with invalid signer hint");
+    assert!(result.is_err(), "Should fail with invalid signer signer key");
 }
 
-/// Test nonexistent signer hint handling
+/// Test nonexistent signer signer key handling
 #[tokio::test]
-async fn test_nonexistent_signer_hint() {
+async fn test_nonexistent_signer_key() {
     let client = ClientTestHelper::get_test_client().await;
     let nonexistent_pubkey = "11111111111111111111111111111112"; // Valid format but not in pool
 
@@ -162,16 +165,16 @@ async fn test_nonexistent_signer_hint() {
         .await
         .expect("Failed to create test transaction");
 
-    // Call with nonexistent signer hint should fail
+    // Call with nonexistent signer signer key should fail
     let result = client
         .request::<serde_json::Value, _>(
             "estimateTransactionFee",
             rpc_params![json!({
                 "transaction": test_tx,
-                "signer_hint": nonexistent_pubkey
+                "signer_key": nonexistent_pubkey
             })],
         )
         .await;
 
-    assert!(result.is_err(), "Should fail with nonexistent signer hint");
+    assert!(result.is_err(), "Should fail with nonexistent signer signer key");
 }

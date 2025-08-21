@@ -1,4 +1,5 @@
 pub mod config;
+pub mod config_trait;
 pub mod init;
 pub mod keypair_util;
 pub mod memory_signer;
@@ -11,7 +12,9 @@ pub mod vault;
 
 pub use config::{SelectionStrategy, SignerConfig, SignerPoolConfig, SignerTypeConfig};
 pub use keypair_util::KeypairUtil;
-pub use memory_signer::solana_signer::SolanaMemorySigner;
+pub use memory_signer::{config::MemorySignerConfig, solana_signer::SolanaMemorySigner};
 pub use pool::{SignerInfo, SignerPool, SignerWithMetadata};
+pub use privy::config::PrivySignerConfig;
 pub use signer::{KoraSigner, Signature, Signer};
-pub use vault::vault_signer::VaultSigner;
+pub use turnkey::config::TurnkeySignerConfig;
+pub use vault::{config::VaultSignerConfig, vault_signer::VaultSigner};
