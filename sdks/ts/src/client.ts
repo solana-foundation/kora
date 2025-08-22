@@ -348,26 +348,19 @@ export class KoraClient {
         assertIsAddress(source_wallet);
         assertIsAddress(fee_token);
         assertIsAddress(token_program_id);
-        // first make sure token is supported
-        const config = await this.getConfig();
-        if (!this.supportsToken(config, fee_token)) {
-            throw new Error(`Token ${fee_token} is not supported`);
-        }
-        if (!this.requiresPayment(config)) {
-            throw new Error('This transaction does not require payment');
-        }
 
-        const { signer_address, payment_address } = await this.getPayerSigner();
-        assertIsAddress(signer_address);
+        const { fee_in_token, payment_address, signer_pubkey } = await this.estimateTransactionFee({
+            transaction,
+            fee_token,
+        });
         assertIsAddress(payment_address);
-
-        const fee = await this.estimateTransactionFee({ transaction, fee_token });
 
         const [sourceTokenAccount] = await findAssociatedTokenPda({
             owner: source_wallet,
             tokenProgram: token_program_id,
             mint: fee_token,
         });
+
         const [destinationTokenAccount] = await findAssociatedTokenPda({
             owner: payment_address,
             tokenProgram: token_program_id,
@@ -378,16 +371,16 @@ export class KoraClient {
             source: sourceTokenAccount,
             destination: destinationTokenAccount,
             authority: createNoopSigner(source_wallet),
-            amount: fee.fee_in_token,
+            amount: fee_in_token,
         });
 
         return {
             original_transaction: transaction,
             payment_instruction: paymentInstruction,
-            payment_amount: fee.fee_in_token,
+            payment_amount: fee_in_token,
             payment_token: fee_token,
             payment_address,
-            signer_address,
+            signer_address: signer_pubkey,
         };
     }
 }

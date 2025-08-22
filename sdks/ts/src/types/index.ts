@@ -158,6 +158,8 @@ export interface EstimateTransactionFeeResponse {
     fee_in_token: number;
     /** Public key of the signer used to estimate the fee */
     signer_pubkey: string;
+    /** Public key of the payment destination */
+    payment_address: string;
 }
 
 /**

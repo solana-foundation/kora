@@ -15,6 +15,7 @@ import {
     TransferTransactionResponse,
     EstimateTransactionFeeResponse,
 } from '../src/types/index.js';
+import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 
 // Mock fetch globally
 const mockFetch = jest.fn();
@@ -204,7 +205,8 @@ describe('KoraClient Unit Tests', () => {
             const mockResponse: EstimateTransactionFeeResponse = {
                 fee_in_lamports: 5000,
                 fee_in_token: 25,
-                signer_pubkey: 'test_signer_pubkey',
+                signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             };
 
             await testSuccessfulRpcMethod(
@@ -348,7 +350,8 @@ describe('KoraClient Unit Tests', () => {
         const mockFeeEstimate: EstimateTransactionFeeResponse = {
             fee_in_lamports: 5000,
             fee_in_token: 50000,
-            signer_pubkey: 'test_signer_pubkey',
+            signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+            payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
         };
 
         // Create a mock base64-encoded transaction
@@ -373,29 +376,6 @@ describe('KoraClient Unit Tests', () => {
         });
 
         it('should successfully append payment instruction', async () => {
-            const mockPayerSigner: GetPayerSignerResponse = {
-                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-            };
-
-            // Mock getConfig call
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: mockConfig,
-                }),
-            });
-
-            // Mock getPayerSigner call
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: mockPayerSigner,
-                }),
-            });
-
             // Mock estimateTransactionFee call
             mockFetch.mockResolvedValueOnce({
                 json: jest.fn().mockResolvedValueOnce({
@@ -409,43 +389,34 @@ describe('KoraClient Unit Tests', () => {
 
             expect(result).toEqual({
                 original_transaction: validRequest.transaction,
-                payment_instruction: expect.any(Object),
+                payment_instruction: expect.objectContaining({
+                    programAddress: TOKEN_PROGRAM_ADDRESS,
+                    accounts: [
+                        expect.objectContaining({
+                            role: 1, // writable
+                        }), // Source token account
+                        expect.objectContaining({
+                            role: 1, // writable
+                        }), // Destination token account
+                        expect.objectContaining({
+                            role: 2, // readonly-signer
+                            address: validRequest.source_wallet,
+                            signer: expect.objectContaining({
+                                address: validRequest.source_wallet,
+                            }),
+                        }), // Authority
+                    ],
+                    data: expect.any(Uint8Array),
+                }),
                 payment_amount: mockFeeEstimate.fee_in_token,
                 payment_token: validRequest.fee_token,
-                payment_address: mockPayerSigner.payment_address,
-                signer_address: mockPayerSigner.signer_address,
+                payment_address: mockFeeEstimate.payment_address,
+                signer_address: mockFeeEstimate.signer_pubkey,
             });
 
-            // Verify getConfig was called
-            expect(mockFetch).toHaveBeenNthCalledWith(1, mockRpcUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    method: 'getConfig',
-                    params: undefined,
-                }),
-            });
-
-            // Verify getPayerSigner was called
-            expect(mockFetch).toHaveBeenNthCalledWith(2, mockRpcUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    method: 'getPayerSigner',
-                    params: undefined,
-                }),
-            });
-
-            // Verify estimateTransactionFee was called
-            expect(mockFetch).toHaveBeenNthCalledWith(3, mockRpcUrl, {
+            // Verify only estimateTransactionFee was called
+            expect(mockFetch).toHaveBeenCalledTimes(1);
+            expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -462,85 +433,8 @@ describe('KoraClient Unit Tests', () => {
             });
         });
 
-        it('should throw error when token is not supported', async () => {
-            const unsupportedTokenConfig = {
-                ...mockConfig,
-                validation_config: {
-                    ...mockConfig.validation_config,
-                    allowed_spl_paid_tokens: ['other_token'],
-                },
-            };
-
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: unsupportedTokenConfig,
-                }),
-            });
-
-            await expect(client.getPaymentInstruction(validRequest)).rejects.toThrow(
-                `Token ${validRequest.fee_token} is not supported`,
-            );
-        });
-
-        it('should throw error when payment is not required (free pricing)', async () => {
-            const freeConfig = {
-                ...mockConfig,
-                validation_config: {
-                    ...mockConfig.validation_config,
-                    price: {
-                        type: 'free',
-                    },
-                },
-            };
-
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: freeConfig,
-                }),
-            });
-
-            await expect(client.getPaymentInstruction(validRequest)).rejects.toThrow(
-                'This transaction does not require payment',
-            );
-        });
-
         it('should handle fixed pricing configuration', async () => {
-            const fixedPriceConfig = {
-                ...mockConfig,
-                validation_config: {
-                    ...mockConfig.validation_config,
-                    price: {
-                        type: 'fixed',
-                        fixed: 100,
-                    },
-                },
-            };
-
-            const mockPayerSigner: GetPayerSignerResponse = {
-                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-            };
-
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: fixedPriceConfig,
-                }),
-            });
-
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: mockPayerSigner,
-                }),
-            });
-
+            // Mock estimateTransactionFee call
             mockFetch.mockResolvedValueOnce({
                 json: jest.fn().mockResolvedValueOnce({
                     jsonrpc: '2.0',
@@ -567,45 +461,7 @@ describe('KoraClient Unit Tests', () => {
             }
         });
 
-        it('should handle getConfig RPC error', async () => {
-            const mockError = { code: -32601, message: 'Method not found' };
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    error: mockError,
-                }),
-            });
-
-            await expect(client.getPaymentInstruction(validRequest)).rejects.toThrow(
-                'RPC Error -32601: Method not found',
-            );
-        });
-
         it('should handle estimateTransactionFee RPC error', async () => {
-            const mockPayerSigner: GetPayerSignerResponse = {
-                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-            };
-
-            // Mock successful getConfig
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: mockConfig,
-                }),
-            });
-
-            // Mock successful getPayerSigner
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: mockPayerSigner,
-                }),
-            });
-
             // Mock failed estimateTransactionFee
             const mockError = { code: -32602, message: 'Invalid transaction' };
             mockFetch.mockResolvedValueOnce({
@@ -621,64 +477,13 @@ describe('KoraClient Unit Tests', () => {
             );
         });
 
-        it('should handle network errors during config fetch', async () => {
+        it('should handle network errors', async () => {
             mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
             await expect(client.getPaymentInstruction(validRequest)).rejects.toThrow('Network error');
         });
 
-        it('should handle network errors during fee estimation', async () => {
-            const mockPayerSigner: GetPayerSignerResponse = {
-                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-            };
-
-            // Mock successful getConfig
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: mockConfig,
-                }),
-            });
-
-            // Mock successful getPayerSigner
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: mockPayerSigner,
-                }),
-            });
-
-            // Mock network error for estimateTransactionFee
-            mockFetch.mockRejectedValueOnce(new Error('Fee estimation failed'));
-
-            await expect(client.getPaymentInstruction(validRequest)).rejects.toThrow('Fee estimation failed');
-        });
-
         it('should return correct payment details in response', async () => {
-            const mockPayerSigner: GetPayerSignerResponse = {
-                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-            };
-
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: mockConfig,
-                }),
-            });
-
-            mockFetch.mockResolvedValueOnce({
-                json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    result: mockPayerSigner,
-                }),
-            });
-
             mockFetch.mockResolvedValueOnce({
                 json: jest.fn().mockResolvedValueOnce({
                     jsonrpc: '2.0',
@@ -694,8 +499,8 @@ describe('KoraClient Unit Tests', () => {
                 payment_instruction: expect.any(Object),
                 payment_amount: mockFeeEstimate.fee_in_token,
                 payment_token: validRequest.fee_token,
-                payment_address: mockPayerSigner.payment_address,
-                signer_address: mockPayerSigner.signer_address,
+                payment_address: mockFeeEstimate.payment_address,
+                signer_address: mockFeeEstimate.signer_pubkey,
             });
         });
     });
