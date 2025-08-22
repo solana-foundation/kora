@@ -1,4 +1,5 @@
 # Kora Configuration Reference
+*Last Updated: 2025-08-22*
 
 Your Kora node will be signing transactions for your users, so it is important to configure it to only sign transactions that meet your business requirements. Kora gives you a lot of flexibility in how you configure your node, but it is important to understand the implications of your configuration. `kora.toml` is the control center for your Kora configuration. This document provides a comprehensive reference for configuring your Kora paymaster node through the `kora.toml` configuration file.
 
@@ -74,11 +75,11 @@ rate_limit = 100
 payment_address = "YourPaymentAddressPubkey11111111111111111111"  # Optional
 ```
 
-
 | Option | Description | Required | Type |
 |--------|-------------|---------|---------|
 | `rate_limit` | Global rate limit (requests per second) across all clients | ✅ | number |
-| `payment_address` | Optional payment address to receive payment tokens (defaults to signer address) | ❌ | b58-encoded string |
+| `payment_address` | Optional payment address to receive payment tokens (defaults to signer address(es) if not specified) | ❌ | b58-encoded string |
+
 
 ## Kora Authentication
 
@@ -191,7 +192,7 @@ disallowed_accounts = [
 | `allowed_spl_paid_tokens` | SPL tokens accepted as payment for transaction fees | ✅ | Array of b58-encoded string |
 | `disallowed_accounts` | Accounts that are explicitly blocked from transactions | ✅ | Array of b58-encoded string |
 
-> *Note: Empty arrays are allowed, but you will need to specify at least one whitelisted `allowed_programs`, `allowed_tokens`, `allowed_spl_paid_tokens` for the Kora node to be able to process transactions. You need to specify the System Program or Token Program for the Kora node to be able to process transactions.*
+> *Note: Empty arrays are allowed, but you will need to specify at least one whitelisted `allowed_programs`, `allowed_tokens`, `allowed_spl_paid_tokens` for the Kora node to be able to process transactions. You need to specify the System Program or Token Program for the Kora node to be able to process transfers.*
 
 ## Token-2022 Extension Blocking
 
@@ -356,13 +357,13 @@ Here's a production-ready configuration with security best practices:
 
 ```toml
 # Kora Paymaster Configuration
-# Last Updated: 2024-01-15
+# Last Updated: 2025-08-22
 
 [kora]
 # Rate limiting: 100 requests per second globally
 rate_limit = 100
 
-# Optional payment address (defaults to signer address if not specified)
+# Optional payment address (defaults to signer address(es) if not specified)
 # payment_address = "YourPaymentAddressPubkey11111111111111111111"
 
 [kora.auth]
@@ -440,8 +441,8 @@ allow_approve = false
 # Block potentially risky mint extensions
 blocked_mint_extensions = [
     "transfer_hook",       # Custom transfer logic
-    "pausable",           # Can freeze transfers
-    "permanent_delegate", # Permanent control
+    "pausable",            # Can freeze transfers
+    "permanent_delegate",  # Permanent control
 ]
 # Block complex account extensions
 blocked_account_extensions = [
@@ -472,16 +473,40 @@ expiry_seconds = 30
 Kora validates your configuration on startup. If you would like to validate your configuration without starting the server, you can use the config validation command:
 
 ```bash
-kora --config kora.toml config validate
+kora --config kora.toml config validate # or validate-with-rpc
 ```
+
+You can also run the `validate-with-rpc` command to validate your configuration with the RPC server (this validation check is a little bit slower but does more thorough account checks)
 
 ## Starting the Server
 
 Once you have configured your `kora.toml` file, you can start the Kora server:
 
 ```bash
-kora --config path/to/kora.toml rpc # --other-rpc-flags-here
+kora --config path/to/kora.toml rpc start --no-load-signer # --other-rpc-flags-here
 ```
+
+The `--no-load-signer` flag will initialize the server without loading any signers. This is useful for testing your configuration. In order to load signers, you will need to configure the `signers.toml` file. A minimum configuration with a single signer would look like this:
+
+```toml
+[signer_pool]
+# Selection strategy: round_robin, random, weighted
+strategy = "round_robin"
+
+# Primary memory signer
+[[signers]]
+name = "my-signer"
+type = "memory"
+private_key_env = "MY_SIGNER_PRIVATE_KEY"
+```
+
+This will load a single signer from the `MY_SIGNER_PRIVATE_KEY` environment variable. Then you can start your server with:
+
+```bash
+kora --config path/to/kora.toml rpc start --signers-config path/to/signers.toml
+```
+
+For more information and advanced signer configuration, see the [Signers Guide](./SIGNERS.md).
 
 ## Best Practices
 
@@ -494,6 +519,7 @@ kora --config path/to/kora.toml rpc # --other-rpc-flags-here
 ## Need Help?
 
 - Check [Authentication Guide](./AUTHENTICATION.md) for auth setup
+- Check [Signers Guide](./SIGNERS.md) for signer configuration
 - Check [Operator Guide](./README.md) for more information on how to run a Kora node
 - Visit [Solana Stack Exchange](https://solana.stackexchange.com/) with the `kora` tag
 - Report issues on [GitHub](https://github.com/solana-foundation/kora/issues)
