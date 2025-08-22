@@ -1,13 +1,19 @@
 use crate::{
     constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
-    state::get_config,
     token::token::TokenType,
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
         ParsedSystemInstructionType, VersionedTransactionResolved,
     },
-    CacheUtil,
+};
+
+#[cfg(not(test))]
+use {crate::cache::CacheUtil, crate::state::get_config};
+
+#[cfg(test)]
+use crate::tests::{
+    config_mock::mock_state::get_config, redis_cache_mock::MockCacheUtil as CacheUtil,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
@@ -251,18 +257,22 @@ impl TransactionFeeUtil {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{
-        constant::ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
-        fee::fee::FeeConfigUtil,
-        tests::common::{
-            create_mock_token_account, get_mock_rpc_client, setup_or_get_test_config,
-            setup_or_get_test_signer,
+        constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
+        fee::fee::{FeeConfigUtil, TransactionFeeUtil},
+        tests::{
+            common::{
+                create_mock_rpc_client_with_account, create_mock_token_account,
+                setup_or_get_test_config, setup_or_get_test_signer,
+            },
+            config_mock::ConfigMockBuilder,
+            rpc_mock::{create_mock_rpc_client_account_not_found, RpcMockBuilder},
         },
         token::{interface::TokenInterface, TokenProgram},
         transaction::TransactionUtil,
     };
     use solana_message::{v0, Message, VersionedMessage};
-
     use solana_sdk::{
         account::Account,
         hash::Hash,
@@ -277,7 +287,14 @@ mod tests {
         },
         program::ID as SYSTEM_PROGRAM_ID,
     };
-    use spl_associated_token_account::get_associated_token_address;
+    use spl_associated_token_account::{
+        get_associated_token_address, instruction::create_associated_token_account,
+    };
+    use spl_token::state::Account as SplTokenAccountState;
+    use std::{
+        collections::VecDeque,
+        sync::{Arc, Mutex},
+    };
 
     #[test]
     fn test_is_fee_payer_in_signers_legacy_fee_payer_is_signer() {
@@ -600,12 +617,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_has_payment_instruction_with_payment() {
-        setup_or_get_test_config();
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
         let signer = setup_or_get_test_signer();
         let mint = Pubkey::new_unique();
 
         let mocked_account = create_mock_token_account(&signer, &mint);
-        let mocked_rpc_client = get_mock_rpc_client(&mocked_account);
+        let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
+
+        // Set up cache expectation for token account lookup
+        cache_ctx.expect().times(1).returning(move |_, _, _| Ok(mocked_account.clone()));
 
         let sender = Keypair::new();
 
@@ -642,7 +664,7 @@ mod tests {
     async fn test_has_payment_instruction_without_payment() {
         let signer = setup_or_get_test_signer();
         setup_or_get_test_config();
-        let mocked_rpc_client = get_mock_rpc_client(&Account::default());
+        let mocked_rpc_client = create_mock_rpc_client_with_account(&Account::default());
 
         let sender = Keypair::new();
         let recipient = Pubkey::new_unique();
@@ -672,13 +694,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_has_payment_instruction_with_spl_transfer_to_different_destination() {
-        setup_or_get_test_config();
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
         let signer = setup_or_get_test_signer();
         let sender = Keypair::new();
         let mint = Pubkey::new_unique();
 
         let mocked_account = create_mock_token_account(&sender.pubkey(), &mint);
-        let mocked_rpc_client = get_mock_rpc_client(&mocked_account);
+        let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
+
+        // Set up cache expectation for token account lookup
+        cache_ctx.expect().times(1).returning(move |_, _, _| Ok(mocked_account.clone()));
 
         // Create token accounts
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
@@ -712,5 +739,316 @@ mod tests {
             result, ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
             "Should return fee estimate when SPL transfer is to different destination"
         );
+    }
+
+    #[tokio::test]
+    async fn test_get_associated_token_account_creation_fees_no_ata_creation() {
+        let mocked_rpc_client = create_mock_rpc_client_with_account(&Account::default());
+
+        // Create a transaction with no ATA creation instructions
+        let sender = Keypair::new();
+        let recipient = Pubkey::new_unique();
+        let transfer_instruction = transfer(&sender.pubkey(), &recipient, 100_000);
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&sender.pubkey())));
+        let resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        let result = FeeConfigUtil::get_associated_token_account_creation_fees(
+            &mocked_rpc_client,
+            &resolved_transaction,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result, 0, "Should return 0 when no ATA creation instructions");
+    }
+
+    #[tokio::test]
+    async fn test_get_associated_token_account_creation_fees_ata_exists() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+
+        let owner = Keypair::new();
+        let mint = Pubkey::new_unique();
+
+        // Mock existing ATA account
+        let existing_ata_account = create_mock_token_account(&owner.pubkey(), &mint);
+
+        let mocked_rpc_client = create_mock_rpc_client_with_account(&existing_ata_account);
+
+        // Set up cache mock to return existing ATA account
+        cache_ctx.expect().times(1).returning(move |_, _, _| Ok(existing_ata_account.clone()));
+
+        // Create ATA creation instruction
+        let ata_instruction = create_associated_token_account(
+            &owner.pubkey(),
+            &owner.pubkey(),
+            &mint,
+            &spl_token::id(),
+        );
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[ata_instruction], Some(&owner.pubkey())));
+        let resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        let result = FeeConfigUtil::get_associated_token_account_creation_fees(
+            &mocked_rpc_client,
+            &resolved_transaction,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result, 0, "Should return 0 when ATA already exists");
+    }
+
+    #[tokio::test]
+    async fn test_get_associated_token_account_creation_fees_with_proper_cache_mock() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+
+        // Test success case: ATA doesn't exist but mint account exists, should calculate rent
+        let owner = Keypair::new();
+        let mint = Pubkey::new_unique();
+
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint(); // Clear any previous expectations
+
+        let mocked_rpc_client = create_mock_rpc_client_with_account(&Account::default());
+
+        // Call 1: ATA doesn't exist (Err)
+        // Call 2: Mint exists (Ok)
+        let responses = Arc::new(Mutex::new(VecDeque::from([
+            Err(KoraError::RpcError("ATA not found".to_string())),
+            Ok(create_mock_token_account(&owner.pubkey(), &mint)),
+        ])));
+
+        let responses_clone = responses.clone();
+        cache_ctx
+            .expect()
+            .times(2)
+            .returning(move |_, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
+
+        // Create ATA creation instruction
+        let ata_instruction = create_associated_token_account(
+            &owner.pubkey(),
+            &owner.pubkey(),
+            &mint,
+            &spl_token::id(),
+        );
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[ata_instruction], Some(&owner.pubkey())));
+        let resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        let result = FeeConfigUtil::get_associated_token_account_creation_fees(
+            &mocked_rpc_client,
+            &resolved_transaction,
+        )
+        .await
+        .unwrap();
+
+        // Should calculate rent cost for new ATA (using standard token account size)
+        let rent = solana_sdk::rent::Rent::default();
+        let expected_rent = rent.minimum_balance(SplTokenAccountState::LEN);
+        assert_eq!(result, expected_rent, "Should return rent cost for new ATA");
+    }
+
+    #[tokio::test]
+    async fn test_get_associated_token_account_creation_fees_mint_not_found() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+
+        // Test error case: ATA doesn't exist AND mint account is also missing
+        let owner = Keypair::new();
+        let mint = Pubkey::new_unique();
+
+        // Use account not found mock for both ATA and mint calls
+        let mocked_rpc_client = create_mock_rpc_client_account_not_found();
+
+        // Set up sequential cache responses: ATA not found, mint not found
+        let responses = Arc::new(Mutex::new(VecDeque::from([
+            Err(KoraError::RpcError("ATA not found".to_string())),
+            Err(KoraError::RpcError("Mint not found".to_string())),
+        ])));
+
+        let responses_clone = responses.clone();
+        cache_ctx
+            .expect()
+            .times(2)
+            .returning(move |_, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
+
+        // Create ATA creation instruction
+        let ata_instruction = create_associated_token_account(
+            &owner.pubkey(),
+            &owner.pubkey(),
+            &mint,
+            &spl_token::id(),
+        );
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[ata_instruction], Some(&owner.pubkey())));
+        let resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        let result = FeeConfigUtil::get_associated_token_account_creation_fees(
+            &mocked_rpc_client,
+            &resolved_transaction,
+        )
+        .await;
+
+        assert!(result.is_err(), "Should return error when mint account not found");
+        match result {
+            Err(KoraError::InternalServerError(msg)) => {
+                assert_eq!(
+                    msg, "Failed to fetch mint account",
+                    "Should get mint account fetch error"
+                );
+            }
+            _ => panic!("Expected InternalServerError about mint account"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_basic() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+
+        let fee_payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+
+        // Mock RPC client that returns base fee
+        let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(5000).build();
+
+        // Create simple SOL transfer
+        let transfer_instruction = transfer(&fee_payer.pubkey(), &recipient, 100_000);
+        let message = VersionedMessage::Legacy(Message::new(
+            &[transfer_instruction],
+            Some(&fee_payer.pubkey()),
+        ));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        let result = FeeConfigUtil::estimate_transaction_fee(
+            &mocked_rpc_client,
+            &mut resolved_transaction,
+            &fee_payer.pubkey(),
+            false,
+        )
+        .await
+        .unwrap();
+
+        // Should include base fee (5000) + fee payer outflow (100_000)
+        assert_eq!(result, 105_000, "Should return base fee + outflow");
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_kora_signer_not_in_signers() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+
+        let sender = Keypair::new();
+        let kora_fee_payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+
+        let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(5000).build();
+
+        // Create transaction where sender pays, but kora_fee_payer is different
+        let transfer_instruction = transfer(&sender.pubkey(), &recipient, 100_000);
+        let message =
+            VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&sender.pubkey())));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        let result = FeeConfigUtil::estimate_transaction_fee(
+            &mocked_rpc_client,
+            &mut resolved_transaction,
+            &kora_fee_payer.pubkey(),
+            false,
+        )
+        .await
+        .unwrap();
+
+        // Should include base fee + kora signature fee since kora signer not in transaction signers
+        assert_eq!(result, 5000 + LAMPORTS_PER_SIGNATURE, "Should add Kora signature fee");
+    }
+
+    #[tokio::test]
+    async fn test_estimate_transaction_fee_with_payment_required() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+
+        let fee_payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+
+        let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(5000).build();
+
+        // Create transaction with no payment instruction
+        let transfer_instruction = transfer(&fee_payer.pubkey(), &recipient, 100_000);
+        let message = VersionedMessage::Legacy(Message::new(
+            &[transfer_instruction],
+            Some(&fee_payer.pubkey()),
+        ));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        let result = FeeConfigUtil::estimate_transaction_fee(
+            &mocked_rpc_client,
+            &mut resolved_transaction,
+            &fee_payer.pubkey(),
+            true, // payment required
+        )
+        .await
+        .unwrap();
+
+        // Should include base fee + fee payer outflow + payment instruction fee
+        let expected = 5000 + 100_000 + ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION;
+        assert_eq!(result, expected, "Should include payment instruction fee when required");
+    }
+
+    #[tokio::test]
+    async fn test_transaction_fee_util_get_estimate_fee_legacy() {
+        let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(7500).build();
+
+        let fee_payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+        let transfer_instruction = transfer(&fee_payer.pubkey(), &recipient, 50_000);
+
+        let legacy_message = Message::new(&[transfer_instruction], Some(&fee_payer.pubkey()));
+        let versioned_message = VersionedMessage::Legacy(legacy_message);
+
+        let result = TransactionFeeUtil::get_estimate_fee(&mocked_rpc_client, &versioned_message)
+            .await
+            .unwrap();
+
+        assert_eq!(result, 7500, "Should return mocked base fee for legacy message");
+    }
+
+    #[tokio::test]
+    async fn test_transaction_fee_util_get_estimate_fee_v0() {
+        let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(12500).build();
+
+        let fee_payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+        let transfer_instruction = transfer(&fee_payer.pubkey(), &recipient, 50_000);
+
+        let v0_message = v0::Message::try_compile(
+            &fee_payer.pubkey(),
+            &[transfer_instruction],
+            &[],
+            Hash::default(),
+        )
+        .expect("Failed to compile V0 message");
+
+        let versioned_message = VersionedMessage::V0(v0_message);
+
+        let result = TransactionFeeUtil::get_estimate_fee(&mocked_rpc_client, &versioned_message)
+            .await
+            .unwrap();
+
+        assert_eq!(result, 12500, "Should return mocked base fee for V0 message");
     }
 }

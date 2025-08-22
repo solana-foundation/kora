@@ -144,3 +144,93 @@ pub async fn transfer_transaction(
         signer_pubkey: fee_payer.to_string(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::common::{
+        setup_or_get_test_config, setup_or_get_test_signer, RpcMockBuilder,
+    };
+
+    #[tokio::test]
+    async fn test_transfer_transaction_invalid_source() {
+        let _ = setup_or_get_test_config();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+
+        let request = TransferTransactionRequest {
+            amount: 1000,
+            token: Pubkey::new_unique().to_string(),
+            source: "invalid_pubkey".to_string(),
+            destination: Pubkey::new_unique().to_string(),
+            signer_key: None,
+        };
+
+        let result = transfer_transaction(&rpc_client, request).await;
+
+        assert!(result.is_err(), "Should fail with invalid source address");
+        let error = result.unwrap_err();
+        assert!(matches!(error, KoraError::ValidationError(_)), "Should return ValidationError");
+        match error {
+            KoraError::ValidationError(error_message) => {
+                assert!(error_message.contains("Invalid source address"));
+            }
+            _ => panic!("Should return ValidationError"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_transfer_transaction_invalid_destination() {
+        let _ = setup_or_get_test_config();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+
+        let request = TransferTransactionRequest {
+            amount: 1000,
+            token: Pubkey::new_unique().to_string(),
+            source: Pubkey::new_unique().to_string(),
+            destination: "invalid_pubkey".to_string(),
+            signer_key: None,
+        };
+
+        let result = transfer_transaction(&rpc_client, request).await;
+
+        assert!(result.is_err(), "Should fail with invalid destination address");
+        let error = result.unwrap_err();
+        match error {
+            KoraError::ValidationError(error_message) => {
+                assert!(error_message.contains("Invalid destination address"));
+            }
+            _ => panic!("Should return ValidationError"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_transfer_transaction_invalid_token() {
+        let _ = setup_or_get_test_config();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+
+        let request = TransferTransactionRequest {
+            amount: 1000,
+            token: "invalid_token_address".to_string(),
+            source: Pubkey::new_unique().to_string(),
+            destination: Pubkey::new_unique().to_string(),
+            signer_key: None,
+        };
+
+        let result = transfer_transaction(&rpc_client, request).await;
+
+        assert!(result.is_err(), "Should fail with invalid token address");
+        let error = result.unwrap_err();
+        match error {
+            KoraError::ValidationError(error_message) => {
+                assert!(error_message.contains("Invalid token address"));
+            }
+            _ => panic!("Should return ValidationError"),
+        }
+    }
+}

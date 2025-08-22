@@ -1,10 +1,9 @@
 use crate::{
     error::KoraError,
     signer::{KoraSigner, Signer},
-    state::{get_all_signers, get_config, get_request_signer_with_signer_key},
+    state::{get_all_signers, get_request_signer_with_signer_key},
     token::token::TokenType,
     transaction::TransactionUtil,
-    CacheUtil,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::{Message, VersionedMessage};
@@ -17,6 +16,15 @@ use spl_associated_token_account::{
     get_associated_token_address, instruction::create_associated_token_account,
 };
 use std::{str::FromStr, sync::Arc};
+
+#[cfg(not(test))]
+use {crate::cache::CacheUtil, crate::state::get_config};
+
+#[cfg(test)]
+use {
+    crate::tests::config_mock::mock_state::get_config,
+    crate::tests::redis_cache_mock::MockCacheUtil as CacheUtil,
+};
 
 /*
 This funciton is tested via the makefile, as it's a CLI command and requires a validator running.
@@ -260,4 +268,133 @@ pub async fn find_missing_atas(
     }
 
     Ok(atas_to_create)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{
+        common::{
+            create_mock_rpc_client_account_not_found, create_mock_spl_mint_account,
+            create_mock_token_account, setup_or_get_test_signer, RpcMockBuilder,
+        },
+        config_mock::{ConfigMockBuilder, ValidationConfigBuilder},
+    };
+    use std::{
+        collections::VecDeque,
+        sync::{Arc, Mutex},
+    };
+
+    #[tokio::test]
+    async fn test_find_missing_atas_no_spl_tokens() {
+        let _m = ConfigMockBuilder::new()
+            .with_validation(
+                ValidationConfigBuilder::new().with_allowed_spl_paid_tokens(vec![]).build(),
+            )
+            .build_and_setup();
+
+        let rpc_client = create_mock_rpc_client_account_not_found();
+        let payment_address = Pubkey::new_unique();
+
+        let result = find_missing_atas(&rpc_client, &payment_address).await.unwrap();
+
+        assert!(result.is_empty(), "Should return empty vec when no SPL tokens configured");
+    }
+
+    #[tokio::test]
+    async fn test_find_missing_atas_with_spl_tokens() {
+        let allowed_spl_tokens = [Pubkey::new_unique(), Pubkey::new_unique()];
+
+        let _m = ConfigMockBuilder::new()
+            .with_validation(
+                ValidationConfigBuilder::new()
+                    .with_allowed_spl_paid_tokens(
+                        allowed_spl_tokens.iter().map(|p| p.to_string()).collect(),
+                    )
+                    .build(),
+            )
+            .build_and_setup();
+
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint(); // Clear any previous expectations
+
+        let payment_address = Pubkey::new_unique();
+        let rpc_client = create_mock_rpc_client_account_not_found();
+
+        // First call: Found in cache (Ok)
+        // Second call: ATA account not found (Err)
+        // Third call: mint account found (Ok)
+        let responses = Arc::new(Mutex::new(VecDeque::from([
+            Ok(create_mock_token_account(&Pubkey::new_unique(), &Pubkey::new_unique())),
+            Err(KoraError::RpcError("ATA not found".to_string())),
+            Ok(create_mock_spl_mint_account(6)),
+        ])));
+
+        let responses_clone = responses.clone();
+        cache_ctx
+            .expect()
+            .times(3)
+            .returning(move |_, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
+
+        let result = find_missing_atas(&rpc_client, &payment_address).await;
+
+        assert!(result.is_ok(), "Should handle SPL tokens with proper mocking");
+        let atas = result.unwrap();
+        assert_eq!(atas.len(), 1, "Should return 1 missing ATAs");
+    }
+
+    #[tokio::test]
+    async fn test_create_atas_for_signer_calls_rpc_correctly() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+
+        let _ = setup_or_get_test_signer();
+
+        let address = Pubkey::new_unique();
+        let mint1 = Pubkey::new_unique();
+        let mint2 = Pubkey::new_unique();
+
+        let atas_to_create = vec![
+            ATAToCreate {
+                mint: mint1,
+                ata: spl_associated_token_account::get_associated_token_address(&address, &mint1),
+                token_program: spl_token::id(),
+            },
+            ATAToCreate {
+                mint: mint2,
+                ata: spl_associated_token_account::get_associated_token_address(&address, &mint2),
+                token_program: spl_token::id(),
+            },
+        ];
+
+        let rpc_client = RpcMockBuilder::new().with_blockhash().with_send_transaction().build();
+
+        let result = create_atas_for_signer(
+            &rpc_client,
+            &get_request_signer_with_signer_key(None).unwrap(),
+            &address,
+            &atas_to_create,
+            Some(1000),
+            Some(100_000),
+            2,
+        )
+        .await;
+
+        // Should fail with signature validation error since mock signature doesn't match real transaction
+        match result {
+            Ok(_) => {
+                panic!("Expected signature validation error, but got success");
+            }
+            Err(e) => {
+                let error_msg = format!("{e:?}");
+                // Check if it's a signature validation error (the mocked signature doesn't match the real transaction signature)
+                assert!(
+                    error_msg.contains("signature")
+                        || error_msg.contains("Signature")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("mismatch"),
+                    "Expected signature validation error, got: {error_msg}"
+                );
+            }
+        }
+    }
 }

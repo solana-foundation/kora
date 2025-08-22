@@ -26,3 +26,6 @@ test-ledger/
 # Docs
 sdks/ts/docs-html/
 sdks/ts/docs-md/
+
+# AI
+.claude/helpers/

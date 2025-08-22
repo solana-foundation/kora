@@ -1,3 +1,7 @@
+// Using mutex for global state like config, when we test we don't want to release the lock
+// until the test is finished.
+#![cfg_attr(test, allow(clippy::await_holding_lock))]
+
 pub mod admin;
 pub mod cache;
 pub mod config;
