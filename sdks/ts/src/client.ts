@@ -356,7 +356,7 @@ export class KoraClient {
         if (!this.requiresPayment(config)) {
             throw new Error('This transaction does not require payment');
         }
-        // get the dude's fee payer address
+
         const { signer_address, payment_address } = await this.getPayerSigner();
         assertIsAddress(signer_address);
         assertIsAddress(payment_address);
