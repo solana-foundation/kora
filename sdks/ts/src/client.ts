@@ -294,27 +294,6 @@ export class KoraClient {
     }
 
     /**
-     * Determines if the Kora server requires payment for transactions.
-     * @param config - The server configuration
-     * @returns True if payment is required (fixed or margin pricing), false otherwise
-     * @private
-     */
-    private requiresPayment(config: Config): boolean {
-        return config.validation_config.price.type === 'fixed' || config.validation_config.price.type === 'margin';
-    }
-
-    /**
-     * Checks if a specific token is supported for fee payment.
-     * @param config - The server configuration
-     * @param token - The mint address of the token to check
-     * @returns True if the token is in the allowed SPL paid tokens list
-     * @private
-     */
-    private supportsToken(config: Config, token: string): boolean {
-        return config.validation_config.allowed_spl_paid_tokens.includes(token);
-    }
-
-    /**
      * Creates a payment instruction to append to a transaction for fee payment to the Kora paymaster.
      *
      * This method estimates the required fee and generates a token transfer instruction
