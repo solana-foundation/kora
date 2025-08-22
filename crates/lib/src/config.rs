@@ -81,7 +81,7 @@ impl ValidationConfig {
     }
 
     pub fn supports_token(&self, token: &str) -> bool {
-        self.allowed_spl_paid_tokens.contains(&token.to_string())
+        self.allowed_spl_paid_tokens.iter().any(|s| s == token)
     }
 }
 
