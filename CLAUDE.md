@@ -6,6 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Branches & Commits
 - **Main branch**: `main` (protected, requires PRs)
+- **Release branch**: `release/{id}` (requires PRs)
 - **Commit format**: Use conventional commits for automatic releases
   - `feat:` → minor version bump (1.0.3 → 1.1.0)
   - `fix:` → patch version bump (1.0.3 → 1.0.4)
@@ -187,47 +188,32 @@ make test-integration
 make run
 
 # Run with test configuration (for integration testing)
-cargo run -p kora-cli --bin kora -- --config tests/common/fixtures/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc start --private-key ./tests/common/local-keys/fee-payer-local.json
+cargo run -p kora --bin kora -- --config tests/common/fixtures/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --signers-config tests/common/fixtures/signers.toml
 
 # Run with debug logging
-RUST_LOG=debug cargo run -p kora-cli --bin kora -- rpc start
+RUST_LOG=debug cargo run -p kora --bin kora -- rpc start
 
 # Run RPC server with all parameters
-cargo run -p kora-cli --bin kora -- --config kora.toml --rpc-url https://api.devnet.solana.com rpc start \
+cargo run -p kora --bin kora -- --config kora.toml --rpc-url https://api.devnet.solana.com rpc start \
   --port 8080 \
   --logging-format standard
 
 # Run with Turnkey signer
-cargo run -p kora-cli --bin kora -- rpc start \
-  --with-turnkey-signer \
-  --turnkey-api-public-key $TURNKEY_API_PUBLIC_KEY \
-  --turnkey-api-private-key $TURNKEY_API_PRIVATE_KEY \
-  --turnkey-organization-id $TURNKEY_ORGANIZATION_ID \
-  --turnkey-private-key-id $TURNKEY_PRIVATE_KEY_ID \
-  --turnkey-public-key $TURNKEY_PUBLIC_KEY \
-  --port 8080
+cargo run -p kora --bin kora -- rpc start --signers-config path/to/turnkey-signers.toml
 
 # Run with Privy signer
-cargo run -p kora-cli --bin kora -- rpc start \
-  --with-privy-signer \
-  --privy-app-id $PRIVY_APP_ID \
-  --privy-app-secret $PRIVY_APP_SECRET \
-  --privy-wallet-id $PRIVY_WALLET_ID
+cargo run -p kora --bin kora -- rpc start --signers-config path/to/privy-signers.toml
 
 # Run with Vault signer  
-cargo run -p kora-cli --bin kora -- rpc start \
-  --vault-signer \
-  --vault-addr $VAULT_ADDR \
-  --vault-token $VAULT_TOKEN \
-  --vault-key-name $VAULT_KEY_NAME \
-  --vault-pubkey $VAULT_PUBKEY
+cargo run -p kora --bin kora -- rpc start \
+  --signers-config path/to/vault-signers.toml
 
 # Configuration validation commands
-cargo run -p kora-cli --bin kora -- config validate
-cargo run -p kora-cli --bin kora -- config validate-with-rpc
+cargo run -p kora --bin kora -- config validate
+cargo run -p kora --bin kora -- config validate-with-rpc
 
 # Generate OpenAPI documentation
-cargo run -p kora-cli --bin kora --features docs -- openapi -o openapi.json
+cargo run -p kora --bin kora --features docs -- openapi -o openapi.json
 ```
 
 ### TypeScript SDK Development
@@ -244,12 +230,13 @@ pnpm run format
 
 ### Core Library (`kora-lib/src/`)
 
-- **signer/** - Abstraction layer supporting multiple signer types:
+- **signer/** - Abstraction layer supporting multiple signer types (configured in `signers.toml`)
   - `SolanaMemorySigner` - Local keypair signing
   - `VaultSigner` - HashiCorp Vault integration
   - `TurnkeySigner` - Turnkey API integration  
   - `PrivySigner` - Privy API integration
   - Unified `KoraSigner` enum with trait implementation
+  - optionally, `--no-signer` flag to run Kora without a signer
 
 - **transaction/** - Transaction processing pipeline:
   - Fee estimation and calculation
@@ -289,6 +276,8 @@ pnpm run format
   - `getConfig` - Return server configuration
   - `getSupportedTokens` - List accepted payment tokens
   - `signTransactionIfPaid` - Conditional signing based on payment verification
+  - `getPayerSigner` - Get the payer signer and payment destination
+  - (client-only) `getPaymentInstruction` - Get a payment instruction for a transaction
 
 - **openapi/** - Auto-generated API documentation using `utoipa`
 - **args.rs** - RPC-specific command line arguments
@@ -298,7 +287,8 @@ pnpm run format
 - Unified command-line interface with subcommands:
   - `kora config validate` - Validate configuration file
   - `kora config validate-with-rpc` - Validate configuration with RPC calls
-  - `kora rpc` - Start the RPC server with all signer options
+  - `kora rpc start` - Start the RPC server with all signer options (kora.toml & signers.toml in cwd)
+  - `kora --config path/to/kora.toml rpc start --signers-config path/to/signers.toml` - Start the RPC server with specific config and signers
   - `kora openapi` - Generate OpenAPI documentation
 - Global arguments (rpc-url, config) separated from RPC-specific arguments
 - All signer types supported for RPC server mode
@@ -306,23 +296,16 @@ pnpm run format
 **Example CLI usage:**
 ```bash
 # Validate configuration
-cargo run -p kora-cli --bin kora -- --config kora.toml config validate
+cargo run -p kora --bin kora -- --config kora.toml config validate
 
 # Start RPC server with local private key
-cargo run -p kora-cli --bin kora -- --config kora.toml --rpc-url https://api.devnet.solana.com rpc start \
-  --private-key your_base58_private_key
+cargo run -p kora --bin kora -- --config path/to/kora.toml --rpc-url https://api.devnet.solana.com rpc start --signers-config path/to/signers.toml
 
 # Start RPC server with Turnkey signer
-cargo run -p kora-cli --bin kora -- rpc start \
-  --with-turnkey-signer \
-  --turnkey-api-public-key $TURNKEY_API_PUBLIC_KEY \
-  --turnkey-api-private-key $TURNKEY_API_PRIVATE_KEY \
-  --turnkey-organization-id $TURNKEY_ORGANIZATION_ID \
-  --turnkey-private-key-id $TURNKEY_PRIVATE_KEY_ID \
-  --turnkey-public-key $TURNKEY_PUBLIC_KEY
+cargo run -p kora --bin kora -- rpc start --signers-config path/to/turnkey-signers.toml
 
 # Generate OpenAPI documentation
-cargo run -p kora-cli --bin kora --features docs -- openapi -o openapi.json
+cargo run -p kora --bin kora --features docs -- openapi -o openapi.json
 ```
 
 ### Signer Integrations
@@ -378,31 +361,7 @@ allow_token2022_transfers = true # Allow fee payer to be source in Token2022 tra
 allow_assign = true             # Allow fee payer to use Assign instruction
 ```
 
-### Environment Variables
-
-**Turnkey Integration:**
-```bash
-TURNKEY_API_PUBLIC_KEY=your_api_public_key
-TURNKEY_API_PRIVATE_KEY=your_api_private_key  
-TURNKEY_ORGANIZATION_ID=your_org_id
-TURNKEY_PRIVATE_KEY_ID=your_private_key_id
-TURNKEY_PUBLIC_KEY=your_public_key
-```
-
-**Privy Integration:**
-```bash
-PRIVY_APP_ID=your_app_id
-PRIVY_APP_SECRET=your_app_secret
-PRIVY_WALLET_ID=your_wallet_id
-```
-
-**HashiCorp Vault Integration:**
-```bash
-VAULT_ADDR=https://vault.example.com
-VAULT_TOKEN=your_vault_token
-VAULT_KEY_NAME=your_key_name
-VAULT_PUBKEY=your_base58_public_key
-```
+### Environment Variables set in `signers.toml`
 
 **General:**
 ```bash
@@ -439,24 +398,24 @@ The fee payer policy is configured via the `[validation.fee_payer_policy]` secti
 
 ## Private Key Formats
 
-Kora supports multiple private key formats for enhanced usability and compatibility with different tooling:
+Kora supports multiple private key formats for enhanced usability and compatibility with different tooling, each specified in `signers.toml`
 
-### 1. Base58 Format (Default)
+### 1. Base58 Format
 Traditional Solana private key format - base58-encoded 64-byte private key:
 ```bash
---private-key FEE_PAYER_KEYPAIR_BASE58_STRING
+KORA_PRIVATE_KEY=your_base58_private_key
 ```
 
 ### 2. U8Array Format
 Comma-separated byte array format compatible with Solana CLI outputs:
 ```bash
---private-key "[123,45,67,89,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56]"
+KORA_PRIVATE_KEY="[123,45,67,89,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56]"
 ```
 
 ### 3. JSON File Path
 Path to a JSON file containing the private key:
 ```bash
---private-key "/path/to/keypair.json"
+KORA_PRIVATE_KEY="/path/to/keypair.json"
 ```
 
 ### Format Detection
