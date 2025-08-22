@@ -1,3 +1,5 @@
+// TODO Make sure to change necessary deps from devdeps to deps
+import { assertIsAddress, createNoopSigner, Instruction } from '@solana/kit';
 import {
     Config,
     EstimateTransactionFeeRequest,
@@ -17,8 +19,17 @@ import {
     AuthenticationHeaders,
     KoraClientOptions,
     GetPayerSignerResponse,
+    GetPaymentInstructionRequest,
+    GetPaymentInstructionResponse,
 } from './types/index.js';
 import crypto from 'crypto';
+import {
+    findAssociatedTokenPda,
+    getTransferCheckedInstruction,
+    TOKEN_PROGRAM_ADDRESS,
+    fetchMaybeMint,
+    getTransferInstruction,
+} from '@solana-program/token';
 
 /**
  * Kora RPC client for interacting with the Kora paymaster service.
@@ -280,5 +291,75 @@ export class KoraClient {
      */
     async transferTransaction(request: TransferTransactionRequest): Promise<TransferTransactionResponse> {
         return this.rpcRequest<TransferTransactionResponse, TransferTransactionRequest>('transferTransaction', request);
+    }
+
+    /**
+     * Creates a payment instruction to append to a transaction for fee payment to the Kora paymaster.
+     *
+     * This method estimates the required fee and generates a token transfer instruction
+     * from the source wallet to the Kora payment address. The server handles decimal
+     * conversion internally, so the raw token amount is used directly.
+     *
+     * @param request - Payment instruction request parameters
+     * @param request.transaction - Base64-encoded transaction to estimate fees for
+     * @param request.fee_token - Mint address of the token to use for payment
+     * @param request.source_wallet - Public key of the wallet paying the fees
+     * @param request.token_program_id - Optional token program ID (defaults to TOKEN_PROGRAM_ADDRESS)
+     * @returns Payment instruction details including the instruction, amount, and addresses
+     * @throws {Error} When the token is not supported, payment is not required, or invalid addresses are provided
+     *
+     * @example
+     * ```typescript
+     * const paymentInfo = await client.getPaymentInstruction({
+     *   transaction: 'base64EncodedTransaction',
+     *   fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+     *   source_wallet: 'sourceWalletPublicKey'
+     * });
+     * // Append paymentInfo.payment_instruction to your transaction
+     * ```
+     */
+    async getPaymentInstruction({
+        transaction,
+        fee_token,
+        source_wallet,
+        token_program_id = TOKEN_PROGRAM_ADDRESS,
+    }: GetPaymentInstructionRequest): Promise<GetPaymentInstructionResponse> {
+        assertIsAddress(source_wallet);
+        assertIsAddress(fee_token);
+        assertIsAddress(token_program_id);
+
+        const { fee_in_token, payment_address, signer_pubkey } = await this.estimateTransactionFee({
+            transaction,
+            fee_token,
+        });
+        assertIsAddress(payment_address);
+
+        const [sourceTokenAccount] = await findAssociatedTokenPda({
+            owner: source_wallet,
+            tokenProgram: token_program_id,
+            mint: fee_token,
+        });
+
+        const [destinationTokenAccount] = await findAssociatedTokenPda({
+            owner: payment_address,
+            tokenProgram: token_program_id,
+            mint: fee_token,
+        });
+
+        const paymentInstruction: Instruction = getTransferInstruction({
+            source: sourceTokenAccount,
+            destination: destinationTokenAccount,
+            authority: createNoopSigner(source_wallet),
+            amount: fee_in_token,
+        });
+
+        return {
+            original_transaction: transaction,
+            payment_instruction: paymentInstruction,
+            payment_amount: fee_in_token,
+            payment_token: fee_token,
+            payment_address,
+            signer_address: signer_pubkey,
+        };
     }
 }

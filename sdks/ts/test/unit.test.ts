@@ -15,6 +15,7 @@ import {
     TransferTransactionResponse,
     EstimateTransactionFeeResponse,
 } from '../src/types/index.js';
+import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 
 // Mock fetch globally
 const mockFetch = jest.fn();
@@ -204,7 +205,8 @@ describe('KoraClient Unit Tests', () => {
             const mockResponse: EstimateTransactionFeeResponse = {
                 fee_in_lamports: 5000,
                 fee_in_token: 25,
-                signer_pubkey: 'test_signer_pubkey',
+                signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             };
 
             await testSuccessfulRpcMethod(
@@ -303,6 +305,205 @@ describe('KoraClient Unit Tests', () => {
             );
         });
     });
+    describe('getPaymentInstruction', () => {
+        const mockConfig: Config = {
+            fee_payers: ['11111111111111111111111111111111'],
+            validation_config: {
+                max_allowed_lamports: 1000000,
+                max_signatures: 10,
+                price_source: 'Jupiter',
+                allowed_programs: ['program1'],
+                allowed_tokens: ['token1'],
+                allowed_spl_paid_tokens: ['4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'],
+                disallowed_accounts: [],
+                fee_payer_policy: {
+                    allow_sol_transfers: true,
+                    allow_spl_transfers: true,
+                    allow_token2022_transfers: true,
+                    allow_assign: true,
+                    allow_burn: true,
+                    allow_close_account: true,
+                    allow_approve: true,
+                },
+                price: {
+                    type: 'margin',
+                    margin: 0.1,
+                },
+                token2022: {
+                    blocked_mint_extensions: [],
+                    blocked_account_extensions: [],
+                },
+            },
+            enabled_methods: {
+                liveness: true,
+                estimate_transaction_fee: true,
+                get_supported_tokens: true,
+                sign_transaction: true,
+                sign_and_send_transaction: true,
+                transfer_transaction: true,
+                get_blockhash: true,
+                get_config: true,
+                sign_transaction_if_paid: true,
+            },
+        };
+
+        const mockFeeEstimate: EstimateTransactionFeeResponse = {
+            fee_in_lamports: 5000,
+            fee_in_token: 50000,
+            signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+            payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+        };
+
+        // Create a mock base64-encoded transaction
+        // This is a minimal valid transaction structure
+        const mockTransactionBase64 =
+            'Aoq7ymA5OGP+gmDXiY5m3cYXlY2Rz/a/gFjOgt9ZuoCS7UzuiGGaEnW2OOtvHvMQHkkD7Z4LRF5B63ftu+1oZwIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgECB1urjQEjgFgzqYhJ8IXJeSg4cJP1j1g2CJstOQTDchOKUzqH3PxgGW3c4V3vZV05A5Y30/MggOBs0Kd00s1JEwg5TaEeaV4+KL2y7fXIAuf6cN0ZQitbhY+G9ExtBSChspOXPgNcy9pYpETe4bmB+fg4bfZx1tnicA/kIyyubczAmbcIKIuniNOOQYG2ggKCz8NjEsHVezrWMatndu1wk6J5miGP26J6Vwp31AljiAajAFuP0D9mWJwSeFuA7J5rPwbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpd/O36SW02zRtNtqk6GFeip2+yBQsVTeSbLL4rWJRkd4CBgQCBQQBCgxAQg8AAAAAAAYGBAIFAwEKDBAnAAAAAAAABg==';
+
+        const validRequest = {
+            transaction: mockTransactionBase64,
+            fee_token: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+            source_wallet: '11111111111111111111111111111111',
+            token_program_id: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+        };
+
+        beforeEach(() => {
+            // Mock console.log to avoid noise in tests
+            jest.spyOn(console, 'log').mockImplementation();
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it('should successfully append payment instruction', async () => {
+            // Mock estimateTransactionFee call
+            mockFetch.mockResolvedValueOnce({
+                json: jest.fn().mockResolvedValueOnce({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    result: mockFeeEstimate,
+                }),
+            });
+
+            const result = await client.getPaymentInstruction(validRequest);
+
+            expect(result).toEqual({
+                original_transaction: validRequest.transaction,
+                payment_instruction: expect.objectContaining({
+                    programAddress: TOKEN_PROGRAM_ADDRESS,
+                    accounts: [
+                        expect.objectContaining({
+                            role: 1, // writable
+                        }), // Source token account
+                        expect.objectContaining({
+                            role: 1, // writable
+                        }), // Destination token account
+                        expect.objectContaining({
+                            role: 2, // readonly-signer
+                            address: validRequest.source_wallet,
+                            signer: expect.objectContaining({
+                                address: validRequest.source_wallet,
+                            }),
+                        }), // Authority
+                    ],
+                    data: expect.any(Uint8Array),
+                }),
+                payment_amount: mockFeeEstimate.fee_in_token,
+                payment_token: validRequest.fee_token,
+                payment_address: mockFeeEstimate.payment_address,
+                signer_address: mockFeeEstimate.signer_pubkey,
+            });
+
+            // Verify only estimateTransactionFee was called
+            expect(mockFetch).toHaveBeenCalledTimes(1);
+            expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'estimateTransactionFee',
+                    params: {
+                        transaction: validRequest.transaction,
+                        fee_token: validRequest.fee_token,
+                    },
+                }),
+            });
+        });
+
+        it('should handle fixed pricing configuration', async () => {
+            // Mock estimateTransactionFee call
+            mockFetch.mockResolvedValueOnce({
+                json: jest.fn().mockResolvedValueOnce({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    result: mockFeeEstimate,
+                }),
+            });
+
+            const result = await client.getPaymentInstruction(validRequest);
+
+            expect(result.payment_amount).toBe(mockFeeEstimate.fee_in_token);
+            expect(result.payment_token).toBe(validRequest.fee_token);
+        });
+
+        it('should throw error for invalid addresses', async () => {
+            const invalidRequests = [
+                { ...validRequest, source_wallet: 'invalid_address' },
+                { ...validRequest, fee_token: 'invalid_token' },
+                { ...validRequest, token_program_id: 'invalid_program' },
+            ];
+
+            for (const invalidRequest of invalidRequests) {
+                await expect(client.getPaymentInstruction(invalidRequest)).rejects.toThrow();
+            }
+        });
+
+        it('should handle estimateTransactionFee RPC error', async () => {
+            // Mock failed estimateTransactionFee
+            const mockError = { code: -32602, message: 'Invalid transaction' };
+            mockFetch.mockResolvedValueOnce({
+                json: jest.fn().mockResolvedValueOnce({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    error: mockError,
+                }),
+            });
+
+            await expect(client.getPaymentInstruction(validRequest)).rejects.toThrow(
+                'RPC Error -32602: Invalid transaction',
+            );
+        });
+
+        it('should handle network errors', async () => {
+            mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+            await expect(client.getPaymentInstruction(validRequest)).rejects.toThrow('Network error');
+        });
+
+        it('should return correct payment details in response', async () => {
+            mockFetch.mockResolvedValueOnce({
+                json: jest.fn().mockResolvedValueOnce({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    result: mockFeeEstimate,
+                }),
+            });
+
+            const result = await client.getPaymentInstruction(validRequest);
+
+            expect(result).toMatchObject({
+                original_transaction: validRequest.transaction,
+                payment_instruction: expect.any(Object),
+                payment_amount: mockFeeEstimate.fee_in_token,
+                payment_token: validRequest.fee_token,
+                payment_address: mockFeeEstimate.payment_address,
+                signer_address: mockFeeEstimate.signer_pubkey,
+            });
+        });
+    });
 
     describe('Error Handling Edge Cases', () => {
         it('should handle malformed JSON responses', async () => {
@@ -323,4 +524,27 @@ describe('KoraClient Unit Tests', () => {
             await expect(client.getConfig()).rejects.toThrow('RPC Error undefined: undefined');
         });
     });
+
+    // TODO: Add Authentication Tests (separate PR)
+    //
+    // describe('Authentication', () => {
+    //     describe('API Key Authentication', () => {
+    //         - Test that x-api-key header is included when apiKey is provided
+    //         - Test requests work without apiKey when not provided
+    //         - Test all RPC methods include the header
+    //     });
+    //
+    //     describe('HMAC Authentication', () => {
+    //         - Test x-timestamp and x-hmac-signature headers are included when hmacSecret is provided
+    //         - Test HMAC signature calculation is correct (SHA256 of timestamp + body)
+    //         - Test timestamp is current (within reasonable bounds)
+    //         - Test requests work without HMAC when not provided
+    //         - Test all RPC methods include the headers
+    //     });
+    //
+    //     describe('Combined Authentication', () => {
+    //         - Test both API key and HMAC headers are included when both are provided
+    //         - Test headers are correctly combined
+    //     });
+    // });
 });
