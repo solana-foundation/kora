@@ -377,7 +377,17 @@ impl LookupTableUtil {
 
 #[cfg(test)]
 mod tests {
-    use crate::{tests::common::create_mock_rpc_client_with_account, transaction::TransactionUtil};
+    use crate::{
+        tests::{
+            common::RpcMockBuilder, config_mock::mock_state::setup_config_mock,
+            toml_mock::ConfigBuilder,
+        },
+        transaction::TransactionUtil,
+        Config,
+    };
+    use serde_json::json;
+    use solana_client::rpc_request::RpcRequest;
+    use std::collections::HashMap;
 
     use super::*;
     use solana_address_lookup_table_interface::state::LookupTableMeta;
@@ -389,6 +399,17 @@ mod tests {
         signature::Keypair,
         signer::Signer,
     };
+
+    fn setup_test_config() -> Config {
+        ConfigBuilder::new()
+            .with_programs(vec![])
+            .with_tokens(vec![])
+            .with_spl_paid_tokens(vec![])
+            .with_free_price()
+            .with_cache_config(None, false, 60, 30) // Disable cache for tests
+            .build_config()
+            .expect("Failed to build test config")
+    }
 
     #[test]
     fn test_encode_transaction_b64() {
@@ -478,6 +499,36 @@ mod tests {
     }
 
     #[test]
+    fn test_find_signer_position_middle_of_accounts() {
+        let keypair1 = Keypair::new();
+        let keypair2 = Keypair::new();
+        let keypair3 = Keypair::new();
+        let program_id = Pubkey::new_unique();
+
+        let v0_message = v0::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 3,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 1,
+            },
+            account_keys: vec![keypair1.pubkey(), keypair2.pubkey(), keypair3.pubkey(), program_id],
+            recent_blockhash: Hash::default(),
+            instructions: vec![CompiledInstruction {
+                program_id_index: 3,
+                accounts: vec![0, 1, 2],
+                data: vec![1, 2, 3],
+            }],
+            address_table_lookups: vec![],
+        };
+        let message = VersionedMessage::V0(v0_message);
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        assert_eq!(transaction.find_signer_position(&keypair1.pubkey()).unwrap(), 0);
+        assert_eq!(transaction.find_signer_position(&keypair2.pubkey()).unwrap(), 1);
+        assert_eq!(transaction.find_signer_position(&keypair3.pubkey()).unwrap(), 2);
+    }
+
+    #[test]
     fn test_find_signer_position_not_found() {
         let keypair = Keypair::new();
         let missing_keypair = Keypair::new();
@@ -521,8 +572,358 @@ mod tests {
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
     }
 
+    #[test]
+    fn test_from_kora_built_transaction() {
+        let keypair = Keypair::new();
+        let program_id = Pubkey::new_unique();
+        let instruction = Instruction::new_with_bytes(
+            program_id,
+            &[1, 2, 3, 4],
+            vec![
+                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new_readonly(Pubkey::new_unique(), false),
+            ],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction.clone()], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message.clone(), &[&keypair]).unwrap();
+
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+
+        assert_eq!(resolved.transaction, transaction);
+        assert_eq!(resolved.all_account_keys, transaction.message.static_account_keys());
+        assert_eq!(resolved.all_instructions.len(), 1);
+
+        // Check instruction properties rather than direct equality since IxUtils::uncompile_instructions
+        // properly sets signer status based on the transaction message
+        let resolved_instruction = &resolved.all_instructions[0];
+        assert_eq!(resolved_instruction.program_id, instruction.program_id);
+        assert_eq!(resolved_instruction.data, instruction.data);
+        assert_eq!(resolved_instruction.accounts.len(), instruction.accounts.len());
+
+        assert!(resolved.parsed_system_instructions.is_none());
+        assert!(resolved.parsed_spl_instructions.is_none());
+    }
+
+    #[test]
+    fn test_from_kora_built_transaction_v0() {
+        let keypair = Keypair::new();
+        let program_id = Pubkey::new_unique();
+        let other_account = Pubkey::new_unique();
+
+        let v0_message = v0::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 2,
+            },
+            account_keys: vec![keypair.pubkey(), other_account, program_id],
+            recent_blockhash: Hash::new_unique(),
+            instructions: vec![CompiledInstruction {
+                program_id_index: 2,
+                accounts: vec![0, 1],
+                data: vec![1, 2, 3],
+            }],
+            address_table_lookups: vec![],
+        };
+        let message = VersionedMessage::V0(v0_message);
+        let transaction = VersionedTransaction::try_new(message.clone(), &[&keypair]).unwrap();
+
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+
+        assert_eq!(resolved.transaction, transaction);
+        assert_eq!(resolved.all_account_keys, vec![keypair.pubkey(), other_account, program_id]);
+        assert_eq!(resolved.all_instructions.len(), 1);
+        assert_eq!(resolved.all_instructions[0].program_id, program_id);
+        assert_eq!(resolved.all_instructions[0].accounts.len(), 2);
+        assert_eq!(resolved.all_instructions[0].data, vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn test_from_transaction_legacy() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction.clone()], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        // Mock RPC client that will be used for inner instructions
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": [],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": []
+                }
+            }),
+        );
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let resolved = VersionedTransactionResolved::from_transaction(&transaction, &rpc_client)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.transaction, transaction);
+        assert_eq!(resolved.all_account_keys, transaction.message.static_account_keys());
+        assert_eq!(resolved.all_instructions.len(), 1); // Only outer instruction since no inner instructions in mock
+
+        // Check instruction properties rather than direct equality since IxUtils::uncompile_instructions
+        // properly sets signer status based on the transaction message
+        let resolved_instruction = &resolved.all_instructions[0];
+        assert_eq!(resolved_instruction.program_id, instruction.program_id);
+        assert_eq!(resolved_instruction.data, instruction.data);
+        assert_eq!(resolved_instruction.accounts.len(), instruction.accounts.len());
+        assert_eq!(resolved_instruction.accounts[0].pubkey, instruction.accounts[0].pubkey);
+        assert_eq!(
+            resolved_instruction.accounts[0].is_writable,
+            instruction.accounts[0].is_writable
+        );
+    }
+
+    #[tokio::test]
+    async fn test_from_transaction_v0_with_lookup_tables() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let program_id = Pubkey::new_unique();
+        let lookup_table_account = Pubkey::new_unique();
+        let resolved_address = Pubkey::new_unique();
+
+        // Create lookup table
+        let lookup_table = AddressLookupTable {
+            meta: LookupTableMeta {
+                deactivation_slot: u64::MAX,
+                last_extended_slot: 0,
+                last_extended_slot_start_index: 0,
+                authority: Some(Pubkey::new_unique()),
+                _padding: 0,
+            },
+            addresses: vec![resolved_address].into(),
+        };
+
+        let v0_message = v0::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 1,
+            },
+            account_keys: vec![keypair.pubkey(), program_id],
+            recent_blockhash: Hash::new_unique(),
+            instructions: vec![CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![0, 2], // Index 2 comes from lookup table
+                data: vec![42],
+            }],
+            address_table_lookups: vec![solana_message::v0::MessageAddressTableLookup {
+                account_key: lookup_table_account,
+                writable_indexes: vec![0],
+                readonly_indexes: vec![],
+            }],
+        };
+
+        let message = VersionedMessage::V0(v0_message);
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        // Create mock RPC client with lookup table account and simulation
+        let mut mocks = HashMap::new();
+        let serialized_data = lookup_table.serialize_for_tests().unwrap();
+        let encoded_data = base64::engine::general_purpose::STANDARD.encode(&serialized_data);
+
+        mocks.insert(
+            RpcRequest::GetAccountInfo,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "data": [encoded_data, "base64"],
+                    "executable": false,
+                    "lamports": 0,
+                    "owner": "AddressLookupTab1e1111111111111111111111111".to_string(),
+                    "rentEpoch": 0
+                }
+            }),
+        );
+
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": [],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": []
+                }
+            }),
+        );
+
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let resolved = VersionedTransactionResolved::from_transaction(&transaction, &rpc_client)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.transaction, transaction);
+
+        // Should include both static accounts and resolved addresses
+        assert_eq!(resolved.all_account_keys.len(), 3); // keypair, program_id, resolved_address
+        assert_eq!(resolved.all_account_keys[0], keypair.pubkey());
+        assert_eq!(resolved.all_account_keys[1], program_id);
+        assert_eq!(resolved.all_account_keys[2], resolved_address);
+    }
+
+    #[tokio::test]
+    async fn test_from_transaction_simulation_failure() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        // Mock RPC client with simulation error
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": "InstructionError",
+                    "logs": ["Some error log"],
+                    "accounts": null,
+                    "unitsConsumed": 0
+                }
+            }),
+        );
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let result =
+            VersionedTransactionResolved::from_transaction(&transaction, &rpc_client).await;
+
+        // The simulation should fail, but the exact error type depends on mock implementation
+        // We expect either an RpcError (from mock deserialization) or InvalidTransaction (from simulation logic)
+        assert!(result.is_err());
+
+        match result {
+            Err(KoraError::RpcError(msg)) => {
+                assert!(msg.contains("Failed to simulate transaction"));
+            }
+            Err(KoraError::InvalidTransaction(msg)) => {
+                assert!(msg.contains("inner instructions fetching failed"));
+            }
+            _ => panic!("Expected RpcError or InvalidTransaction"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_inner_instructions_with_inner_instructions() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        // Mock RPC client with inner instructions
+        let inner_instruction_data = bs58::encode(&[10, 20, 30]).into_string();
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": [],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": [
+                        {
+                            "index": 0,
+                            "instructions": [
+                                {
+                                    "programIdIndex": 1,
+                                    "accounts": [0],
+                                    "data": inner_instruction_data
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }),
+        );
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let inner_instructions = resolved.fetch_inner_instructions(&rpc_client).await.unwrap();
+
+        assert_eq!(inner_instructions.len(), 1);
+        assert_eq!(inner_instructions[0].data, vec![10, 20, 30]);
+    }
+
+    #[tokio::test]
+    async fn test_get_or_parse_system_instructions() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let recipient = Pubkey::new_unique();
+
+        // Create a system transfer instruction
+        let instruction =
+            solana_sdk::system_instruction::transfer(&keypair.pubkey(), &recipient, 1000000);
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+
+        // First call should parse and cache
+        let parsed1_len = {
+            let parsed1 = resolved.get_or_parse_system_instructions().unwrap();
+            assert!(!parsed1.is_empty());
+            parsed1.len()
+        };
+
+        // Second call should return cached result
+        let parsed2 = resolved.get_or_parse_system_instructions().unwrap();
+        assert_eq!(parsed1_len, parsed2.len());
+
+        // Should contain transfer instruction
+        assert!(
+            parsed2.contains_key(&crate::transaction::ParsedSystemInstructionType::SystemTransfer)
+        );
+    }
+
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
         let lookup_account_key = Pubkey::new_unique();
         let address1 = Pubkey::new_unique();
         let address2 = Pubkey::new_unique();
@@ -541,13 +942,15 @@ mod tests {
 
         let serialized_data = lookup_table.serialize_for_tests().unwrap();
 
-        let rpc_client = create_mock_rpc_client_with_account(&Account {
-            data: serialized_data,
-            executable: false,
-            lamports: 0,
-            owner: Pubkey::new_unique(),
-            rent_epoch: 0,
-        });
+        let rpc_client = RpcMockBuilder::new()
+            .with_account_info(&Account {
+                data: serialized_data,
+                executable: false,
+                lamports: 0,
+                owner: Pubkey::new_unique(),
+                rent_epoch: 0,
+            })
+            .build();
 
         let lookups = vec![solana_message::v0::MessageAddressTableLookup {
             account_key: lookup_account_key,
@@ -562,5 +965,124 @@ mod tests {
         assert_eq!(resolved_addresses[0], address1);
         assert_eq!(resolved_addresses[1], address3);
         assert_eq!(resolved_addresses[2], address2);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_lookup_table_addresses_empty() {
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let lookups = vec![];
+
+        let resolved_addresses =
+            LookupTableUtil::resolve_lookup_table_addresses(&rpc_client, &lookups).await.unwrap();
+
+        assert_eq!(resolved_addresses.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_lookup_table_addresses_account_not_found() {
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let lookups = vec![solana_message::v0::MessageAddressTableLookup {
+            account_key: Pubkey::new_unique(),
+            writable_indexes: vec![0],
+            readonly_indexes: vec![],
+        }];
+
+        let result = LookupTableUtil::resolve_lookup_table_addresses(&rpc_client, &lookups).await;
+        assert!(matches!(result, Err(KoraError::RpcError(_))));
+
+        if let Err(KoraError::RpcError(msg)) = result {
+            assert!(msg.contains("Failed to fetch lookup table"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_resolve_lookup_table_addresses_invalid_index() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let lookup_account_key = Pubkey::new_unique();
+        let address1 = Pubkey::new_unique();
+
+        let lookup_table = AddressLookupTable {
+            meta: LookupTableMeta {
+                deactivation_slot: u64::MAX,
+                last_extended_slot: 0,
+                last_extended_slot_start_index: 0,
+                authority: Some(Pubkey::new_unique()),
+                _padding: 0,
+            },
+            addresses: vec![address1].into(), // Only 1 address, index 0
+        };
+
+        let serialized_data = lookup_table.serialize_for_tests().unwrap();
+        let rpc_client = RpcMockBuilder::new()
+            .with_account_info(&Account {
+                data: serialized_data,
+                executable: false,
+                lamports: 0,
+                owner: Pubkey::new_unique(),
+                rent_epoch: 0,
+            })
+            .build();
+
+        // Try to access index 1 which doesn't exist
+        let lookups = vec![solana_message::v0::MessageAddressTableLookup {
+            account_key: lookup_account_key,
+            writable_indexes: vec![1], // Invalid index
+            readonly_indexes: vec![],
+        }];
+
+        let result = LookupTableUtil::resolve_lookup_table_addresses(&rpc_client, &lookups).await;
+        assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
+
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("index 1 out of bounds"));
+            assert!(msg.contains("writable addresses"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_resolve_lookup_table_addresses_invalid_readonly_index() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let lookup_account_key = Pubkey::new_unique();
+        let address1 = Pubkey::new_unique();
+
+        let lookup_table = AddressLookupTable {
+            meta: LookupTableMeta {
+                deactivation_slot: u64::MAX,
+                last_extended_slot: 0,
+                last_extended_slot_start_index: 0,
+                authority: Some(Pubkey::new_unique()),
+                _padding: 0,
+            },
+            addresses: vec![address1].into(),
+        };
+
+        let serialized_data = lookup_table.serialize_for_tests().unwrap();
+        let rpc_client = RpcMockBuilder::new()
+            .with_account_info(&Account {
+                data: serialized_data,
+                executable: false,
+                lamports: 0,
+                owner: Pubkey::new_unique(),
+                rent_epoch: 0,
+            })
+            .build();
+
+        let lookups = vec![solana_message::v0::MessageAddressTableLookup {
+            account_key: lookup_account_key,
+            writable_indexes: vec![],
+            readonly_indexes: vec![5], // Invalid index
+        }];
+
+        let result = LookupTableUtil::resolve_lookup_table_addresses(&rpc_client, &lookups).await;
+        assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
+
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("index 5 out of bounds"));
+            assert!(msg.contains("readonly addresses"));
+        }
     }
 }
