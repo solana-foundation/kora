@@ -182,13 +182,13 @@ jobs:
 
             // Create coverage badge section
             const coverageBadge = `![Coverage](https://img.shields.io/badge/coverage-${coverage}%25-${color})`;
-            const coverageSection = `\\n\\n## 📊 Test Coverage\\n${coverageBadge}\\n\\n**Coverage: ${coverage}%**\\n\\n[View Detailed Coverage Report](https://github.com/\${{ github.repository }}/actions/runs/\${{ github.run_id }})`;
+            const coverageSection = `\n\n## 📊 Test Coverage\n${coverageBadge}\n\n**Coverage: ${coverage}%**\n\n[View Detailed Coverage Report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
 
             // Update PR body
             let newBody = pr.body || '';
             
             // Remove existing coverage section if present
-            newBody = newBody.replace(/\\n## 📊 Test Coverage[\\s\\S]*?(?=\\n## |\\n$|$)/g, '');
+            newBody = newBody.replace(/\n## 📊 Test Coverage[\s\S]*?(?=\n## |\n$|$)/g, '');
             
             // Add new coverage section
             newBody += coverageSection;
