@@ -1,17 +1,16 @@
 import { KoraClient } from '../src/index.js';
 import setupTestSuite from './setup.js';
 import { runAuthenticationTests } from './auth-setup.js';
-
 import {
     Address,
     getBase64EncodedWireTransaction,
     getBase64Encoder,
     getTransactionDecoder,
-    partiallySignTransaction,
     signTransaction,
     type KeyPairSigner,
     type Transaction,
 } from '@solana/kit';
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 
 function transactionFromBase64(base64: string): Transaction {
     const encoder = getBase64Encoder();
@@ -192,6 +191,50 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(signResult).toBeDefined();
             expect(signResult.transaction).toBeDefined();
             expect(signResult.signed_transaction).toBeDefined();
+        });
+
+        it('should get payment instruction', async () => {
+            const transferRequest = {
+                amount: 1000000,
+                token: usdcMint,
+                source: testWalletAddress,
+                destination: destinationAddress,
+            };
+            const [expectedSenderAta] = await findAssociatedTokenPda({
+                owner: testWalletAddress,
+                tokenProgram: TOKEN_PROGRAM_ADDRESS,
+                mint: usdcMint,
+            });
+            const [koraAta] = await findAssociatedTokenPda({
+                owner: koraAddress,
+                tokenProgram: TOKEN_PROGRAM_ADDRESS,
+                mint: usdcMint,
+            });
+
+            const { transaction } = await client.transferTransaction(transferRequest);
+            const {
+                payment_instruction,
+                payment_amount,
+                payment_token,
+                payment_address,
+                signer_address,
+                original_transaction,
+            } = await client.getPaymentInstruction({
+                transaction,
+                fee_token: usdcMint,
+                source_wallet: testWalletAddress,
+            });
+            expect(payment_instruction).toBeDefined();
+            expect(payment_instruction.programAddress).toBe(TOKEN_PROGRAM_ADDRESS);
+            expect(payment_instruction.accounts?.[0].address).toBe(expectedSenderAta);
+            expect(payment_instruction.accounts?.[1].address).toBe(koraAta);
+            expect(payment_instruction.accounts?.[2].address).toBe(testWalletAddress);
+            // todo math to verify payment amount
+            // expect(payment_amount).toBe(1000000);
+            expect(payment_token).toBe(usdcMint);
+            expect(payment_address).toBe(koraAddress);
+            expect(signer_address).toBe(koraAddress);
+            expect(original_transaction).toBe(transaction);
         });
     });
 

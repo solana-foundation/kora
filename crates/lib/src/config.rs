@@ -79,6 +79,10 @@ impl ValidationConfig {
     pub fn is_payment_required(&self) -> bool {
         !matches!(&self.price.model, PriceModel::Free)
     }
+
+    pub fn supports_token(&self, token: &str) -> bool {
+        self.allowed_spl_paid_tokens.iter().any(|s| s == token)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

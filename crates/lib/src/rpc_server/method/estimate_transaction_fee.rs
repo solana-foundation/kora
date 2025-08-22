@@ -30,6 +30,8 @@ pub struct EstimateTransactionFeeResponse {
     pub fee_in_token: Option<f64>,
     /// Public key of the signer used for fee estimation (for client consistency)
     pub signer_pubkey: String,
+    /// Public key of the payment destination
+    pub payment_address: String,
 }
 
 pub async fn estimate_transaction_fee(
@@ -39,7 +41,10 @@ pub async fn estimate_transaction_fee(
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
-    let validation_config = &get_config()?.validation;
+    let config = get_config()?;
+    let payment_destination = config.kora.get_payment_address(&signer.solana_pubkey())?;
+
+    let validation_config = &config.validation;
     let fee_payer = signer.solana_pubkey();
 
     let mut resolved_transaction =
@@ -61,6 +66,10 @@ pub async fn estimate_transaction_fee(
             KoraError::InvalidTransaction("Invalid fee token mint address".to_string())
         })?;
 
+        if !validation_config.supports_token(fee_token) {
+            return Err(KoraError::InvalidRequest(format!("Token {fee_token} is not supported")));
+        }
+
         let fee_value_in_token = TokenUtil::calculate_lamports_value_in_token(
             fee_in_lamports,
             &token_mint,
@@ -76,5 +85,6 @@ pub async fn estimate_transaction_fee(
         fee_in_lamports,
         fee_in_token,
         signer_pubkey: fee_payer.to_string(),
+        payment_address: payment_destination.to_string(),
     })
 }
