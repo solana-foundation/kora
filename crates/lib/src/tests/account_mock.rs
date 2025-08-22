@@ -23,6 +23,12 @@ use crate::token::{
     spl_token_2022::Token2022Mint, spl_token_2022_util::ParsedExtension, Token2022Account,
 };
 
+// Common default values used across mock builders
+const DEFAULT_LAMPORTS: u64 = 1_000_000;
+const DEFAULT_TOKEN_AMOUNT: u64 = 100;
+const DEFAULT_MINT_SUPPLY: u64 = 1_000_000_000_000;
+const DEFAULT_RENT_EPOCH: u64 = 0;
+
 fn into_rust_option<T>(c_option: COption<T>) -> Option<T> {
     match c_option {
         COption::Some(value) => Some(value),
@@ -47,11 +53,11 @@ impl Default for AccountMockBuilder {
 impl AccountMockBuilder {
     pub fn new() -> Self {
         Self {
-            lamports: 1000000,
+            lamports: DEFAULT_LAMPORTS,
             data: vec![0u8; 100],
             owner: Pubkey::new_unique(),
             executable: false,
-            rent_epoch: 0,
+            rent_epoch: DEFAULT_RENT_EPOCH,
         }
     }
 
@@ -91,17 +97,23 @@ impl AccountMockBuilder {
     }
 }
 
+/// Unified token account builder supporting both SPL Token and Token2022
+///
+/// Use `build()` for SPL Token accounts or `build_token2022()` for Token2022 accounts
 pub struct TokenAccountMockBuilder {
     mint: Pubkey,
     owner: Pubkey,
     amount: u64,
     delegate: COption<Pubkey>,
-    state: SplAccountState,
-    is_native: COption<u64>,
     delegated_amount: u64,
     close_authority: COption<Pubkey>,
     lamports: u64,
     rent_epoch: u64,
+    // Token2022-specific fields
+    extensions: Vec<ExtensionType>,
+    // Configuration for different token types
+    is_native_spl: COption<u64>,
+    is_native_token2022: COption<u64>,
 }
 
 impl Default for TokenAccountMockBuilder {
@@ -115,14 +127,15 @@ impl TokenAccountMockBuilder {
         Self {
             mint: Pubkey::new_unique(),
             owner: Pubkey::new_unique(),
-            amount: 100,
+            amount: DEFAULT_TOKEN_AMOUNT,
             delegate: COption::None,
-            state: SplAccountState::Initialized,
-            is_native: COption::Some(0),
             delegated_amount: 0,
             close_authority: COption::None,
-            lamports: 1000000,
-            rent_epoch: 0,
+            lamports: DEFAULT_LAMPORTS,
+            rent_epoch: DEFAULT_RENT_EPOCH,
+            extensions: Vec::new(),
+            is_native_spl: COption::Some(0),
+            is_native_token2022: COption::None,
         }
     }
 
@@ -149,17 +162,47 @@ impl TokenAccountMockBuilder {
         self
     }
 
-    pub fn with_state(mut self, state: SplAccountState) -> Self {
-        self.state = state;
-        self
-    }
-
-    pub fn with_native(mut self, native_amount: Option<u64>) -> Self {
-        self.is_native = match native_amount {
+    /// Set native amount for SPL Token
+    pub fn with_native_spl(mut self, native_amount: Option<u64>) -> Self {
+        self.is_native_spl = match native_amount {
             Some(amount) => COption::Some(amount),
             None => COption::None,
         };
         self
+    }
+
+    /// Set native amount for Token2022
+    pub fn with_native_token2022(mut self, native_amount: Option<u64>) -> Self {
+        self.is_native_token2022 = match native_amount {
+            Some(amount) => COption::Some(amount),
+            None => COption::None,
+        };
+        self
+    }
+
+    /// Add an extension type (Token2022 only)
+    pub fn with_extension(mut self, extension: ExtensionType) -> Self {
+        if !self.extensions.contains(&extension) {
+            self.extensions.push(extension);
+        }
+        self
+    }
+
+    /// Add multiple extension types (Token2022 only)
+    pub fn with_extensions(mut self, extensions: Vec<ExtensionType>) -> Self {
+        self.extensions = extensions;
+        self
+    }
+
+    /// Set account state (for SPL Token compatibility)
+    pub fn with_state(self, _state: SplAccountState) -> Self {
+        // State is handled automatically in build methods, this is for compatibility
+        self
+    }
+
+    /// Legacy method for backward compatibility (defaults to SPL Token behavior)
+    pub fn with_native(self, native_amount: Option<u64>) -> Self {
+        self.with_native_spl(native_amount)
     }
 
     pub fn with_delegated_amount(mut self, amount: u64) -> Self {
@@ -180,14 +223,15 @@ impl TokenAccountMockBuilder {
         self
     }
 
+    /// Build SPL Token account
     pub fn build(self) -> Account {
         let token_account = TokenAccount {
             mint: self.mint,
             owner: self.owner,
             amount: self.amount,
             delegate: self.delegate,
-            state: self.state,
-            is_native: self.is_native,
+            state: SplAccountState::Initialized,
+            is_native: self.is_native_spl,
             delegated_amount: self.delegated_amount,
             close_authority: self.close_authority,
         };
@@ -203,8 +247,55 @@ impl TokenAccountMockBuilder {
             rent_epoch: self.rent_epoch,
         }
     }
+
+    /// Build Token2022 account
+    pub fn build_token2022(self) -> Account {
+        let base_account = Token2022AccountState {
+            mint: self.mint,
+            owner: self.owner,
+            amount: self.amount,
+            delegate: self.delegate,
+            state: Token2022AccountState_::Initialized,
+            is_native: self.is_native_token2022,
+            delegated_amount: self.delegated_amount,
+            close_authority: self.close_authority,
+        };
+
+        let mut data = vec![0u8; Token2022AccountState::LEN];
+        base_account.pack_into_slice(&mut data[..Token2022AccountState::LEN]);
+
+        Account {
+            lamports: self.lamports,
+            data,
+            owner: spl_token_2022::id(),
+            executable: false,
+            rent_epoch: self.rent_epoch,
+        }
+    }
+
+    /// Build Token2022 account as custom structure (for Token2022Account type)
+    pub fn build_as_custom_token2022_token_account(
+        self,
+        extensions: HashMap<u16, ParsedExtension>,
+    ) -> Token2022Account {
+        Token2022Account {
+            mint: self.mint,
+            owner: self.owner,
+            amount: self.amount,
+            delegate: into_rust_option(self.delegate),
+            state: Token2022AccountState_::Initialized.into(),
+            is_native: into_rust_option(self.is_native_token2022),
+            delegated_amount: self.delegated_amount,
+            close_authority: into_rust_option(self.close_authority),
+            extensions_types: self.extensions.clone(),
+            extensions,
+        }
+    }
 }
 
+/// Unified mint account builder supporting both SPL Token and Token2022
+///
+/// Use `build()` for SPL Token mints or `build_token2022()` for Token2022 mints
 pub struct MintAccountMockBuilder {
     mint_authority: COption<Pubkey>,
     supply: u64,
@@ -213,6 +304,8 @@ pub struct MintAccountMockBuilder {
     freeze_authority: COption<Pubkey>,
     lamports: u64,
     rent_epoch: u64,
+    // Token2022-specific fields
+    extensions: Vec<ExtensionType>,
 }
 
 impl Default for MintAccountMockBuilder {
@@ -225,12 +318,13 @@ impl MintAccountMockBuilder {
     pub fn new() -> Self {
         Self {
             mint_authority: COption::Some(Pubkey::new_unique()),
-            supply: 1_000_000_000_000,
+            supply: DEFAULT_MINT_SUPPLY,
             decimals: 9,
             is_initialized: true,
             freeze_authority: COption::None,
             lamports: 0,
-            rent_epoch: 0,
+            rent_epoch: DEFAULT_RENT_EPOCH,
+            extensions: Vec::new(),
         }
     }
 
@@ -267,6 +361,24 @@ impl MintAccountMockBuilder {
 
     pub fn with_lamports(mut self, lamports: u64) -> Self {
         self.lamports = lamports;
+        self
+    }
+
+    /// Add an extension type (Token2022 only)
+    pub fn with_extension(mut self, extension: ExtensionType) -> Self {
+        if !self.extensions.contains(&extension) {
+            self.extensions.push(extension);
+        }
+        self
+    }
+
+    /// Add multiple extension types (Token2022 only)
+    pub fn with_extensions(mut self, extensions: Vec<ExtensionType>) -> Self {
+        for ext in extensions {
+            if !self.extensions.contains(&ext) {
+                self.extensions.push(ext);
+            }
+        }
         self
     }
 
@@ -292,250 +404,32 @@ impl MintAccountMockBuilder {
     }
 
     pub fn build_token2022(self) -> Account {
-        let mint_data = Mint2022 {
-            mint_authority: self.mint_authority,
-            supply: self.supply,
-            decimals: self.decimals,
-            is_initialized: self.is_initialized,
-            freeze_authority: self.freeze_authority,
-        };
+        if !self.extensions.is_empty() {
+            self.build_token2022_account_state_with_extensions().unwrap()
+        } else {
+            let base_mint = Mint2022 {
+                mint_authority: self.mint_authority,
+                supply: self.supply,
+                decimals: self.decimals,
+                is_initialized: self.is_initialized,
+                freeze_authority: self.freeze_authority,
+            };
 
-        let mut data = vec![0u8; Mint2022::LEN];
-        mint_data.pack_into_slice(&mut data);
+            let mut data = vec![0u8; Mint2022::LEN];
+            base_mint.pack_into_slice(&mut data[..Mint2022::LEN]);
 
-        Account {
-            lamports: self.lamports,
-            data,
-            owner: spl_token_2022::id(),
-            executable: false,
-            rent_epoch: self.rent_epoch,
-        }
-    }
-}
-
-pub struct Token2022AccountMockBuilder {
-    mint: Pubkey,
-    owner: Pubkey,
-    amount: u64,
-    delegate: COption<Pubkey>,
-    state: Token2022AccountState_,
-    is_native: COption<u64>,
-    delegated_amount: u64,
-    close_authority: COption<Pubkey>,
-    lamports: u64,
-    rent_epoch: u64,
-    extensions: Vec<ExtensionType>,
-}
-
-impl Default for Token2022AccountMockBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Token2022AccountMockBuilder {
-    pub fn new() -> Self {
-        Self {
-            mint: Pubkey::new_unique(),
-            owner: Pubkey::new_unique(),
-            amount: 100,
-            delegate: COption::None,
-            state: Token2022AccountState_::Initialized,
-            is_native: COption::None,
-            delegated_amount: 0,
-            close_authority: COption::None,
-            lamports: 1000000,
-            rent_epoch: 0,
-            extensions: Vec::new(),
+            Account {
+                lamports: self.lamports,
+                data,
+                owner: spl_token_2022::id(),
+                executable: false,
+                rent_epoch: self.rent_epoch,
+            }
         }
     }
 
-    pub fn with_mint(mut self, mint: &Pubkey) -> Self {
-        self.mint = *mint;
-        self
-    }
-
-    pub fn with_owner(mut self, owner: &Pubkey) -> Self {
-        self.owner = *owner;
-        self
-    }
-
-    pub fn with_amount(mut self, amount: u64) -> Self {
-        self.amount = amount;
-        self
-    }
-
-    pub fn with_delegate(mut self, delegate: Option<Pubkey>) -> Self {
-        self.delegate = match delegate {
-            Some(key) => COption::Some(key),
-            None => COption::None,
-        };
-        self
-    }
-
-    pub fn with_state(mut self, state: Token2022AccountState_) -> Self {
-        self.state = state;
-        self
-    }
-
-    pub fn with_native(mut self, native_amount: Option<u64>) -> Self {
-        self.is_native = match native_amount {
-            Some(amount) => COption::Some(amount),
-            None => COption::None,
-        };
-        self
-    }
-
-    pub fn with_delegated_amount(mut self, amount: u64) -> Self {
-        self.delegated_amount = amount;
-        self
-    }
-
-    pub fn with_close_authority(mut self, authority: Option<Pubkey>) -> Self {
-        self.close_authority = match authority {
-            Some(key) => COption::Some(key),
-            None => COption::None,
-        };
-        self
-    }
-
-    pub fn with_lamports(mut self, lamports: u64) -> Self {
-        self.lamports = lamports;
-        self
-    }
-
-    pub fn with_extensions(mut self, extensions: Vec<ExtensionType>) -> Self {
-        self.extensions = extensions;
-        self
-    }
-
-    pub fn with_extension(mut self, extension: ExtensionType) -> Self {
-        self.extensions.push(extension);
-        self
-    }
-
-    pub fn build(self) -> Account {
-        let base_account = Token2022AccountState {
-            mint: self.mint,
-            owner: self.owner,
-            amount: self.amount,
-            delegate: self.delegate,
-            state: self.state,
-            is_native: self.is_native,
-            delegated_amount: self.delegated_amount,
-            close_authority: self.close_authority,
-        };
-
-        let mut data = vec![0u8; Token2022AccountState::LEN];
-
-        base_account.pack_into_slice(&mut data[..Token2022AccountState::LEN]);
-
-        Account {
-            lamports: self.lamports,
-            data,
-            owner: spl_token_2022::id(),
-            executable: false,
-            rent_epoch: self.rent_epoch,
-        }
-    }
-
-    pub fn build_as_custom_token_account(
-        self,
-        extensions: HashMap<u16, ParsedExtension>,
-    ) -> Token2022Account {
-        Token2022Account {
-            mint: self.mint,
-            owner: self.owner,
-            amount: self.amount,
-            delegate: into_rust_option(self.delegate),
-            state: self.state.into(),
-            is_native: into_rust_option(self.is_native),
-            delegated_amount: self.delegated_amount,
-            close_authority: into_rust_option(self.close_authority),
-            extensions_types: self.extensions.clone(),
-            extensions,
-        }
-    }
-}
-
-pub struct Token2022MintMockBuilder {
-    mint_authority: COption<Pubkey>,
-    supply: u64,
-    decimals: u8,
-    is_initialized: bool,
-    freeze_authority: COption<Pubkey>,
-    lamports: u64,
-    rent_epoch: u64,
-    extensions: Vec<ExtensionType>,
-}
-
-impl Default for Token2022MintMockBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Token2022MintMockBuilder {
-    pub fn new() -> Self {
-        Self {
-            mint_authority: COption::Some(Pubkey::new_unique()),
-            supply: 1_000_000_000_000,
-            decimals: 9,
-            is_initialized: true,
-            freeze_authority: COption::None,
-            lamports: 0,
-            rent_epoch: 0,
-            extensions: Vec::new(),
-        }
-    }
-
-    pub fn with_mint_authority(mut self, authority: Option<Pubkey>) -> Self {
-        self.mint_authority = match authority {
-            Some(key) => COption::Some(key),
-            None => COption::None,
-        };
-        self
-    }
-
-    pub fn with_supply(mut self, supply: u64) -> Self {
-        self.supply = supply;
-        self
-    }
-
-    pub fn with_decimals(mut self, decimals: u8) -> Self {
-        self.decimals = decimals;
-        self
-    }
-
-    pub fn with_initialized(mut self, initialized: bool) -> Self {
-        self.is_initialized = initialized;
-        self
-    }
-
-    pub fn with_freeze_authority(mut self, authority: Option<Pubkey>) -> Self {
-        self.freeze_authority = match authority {
-            Some(key) => COption::Some(key),
-            None => COption::None,
-        };
-        self
-    }
-
-    pub fn with_lamports(mut self, lamports: u64) -> Self {
-        self.lamports = lamports;
-        self
-    }
-
-    pub fn with_extensions(mut self, extensions: Vec<ExtensionType>) -> Self {
-        self.extensions = extensions;
-        self
-    }
-
-    pub fn with_extension(mut self, extension: ExtensionType) -> Self {
-        self.extensions.push(extension);
-        self
-    }
-
-    pub fn build_account_state_with_extensions(
+    /// Build Token2022 mint with extensions (returns Result<Account>)
+    pub fn build_token2022_account_state_with_extensions(
         self,
     ) -> Result<Account, Box<dyn std::error::Error>> {
         let account_len = if !self.extensions.is_empty() {
@@ -596,32 +490,8 @@ impl Token2022MintMockBuilder {
         })
     }
 
-    pub fn build(self) -> Account {
-        if !self.extensions.is_empty() {
-            self.build_account_state_with_extensions().unwrap()
-        } else {
-            let base_mint = Mint2022 {
-                mint_authority: self.mint_authority,
-                supply: self.supply,
-                decimals: self.decimals,
-                is_initialized: self.is_initialized,
-                freeze_authority: self.freeze_authority,
-            };
-
-            let mut data = vec![0u8; Mint2022::LEN];
-            base_mint.pack_into_slice(&mut data[..Mint2022::LEN]);
-
-            Account {
-                lamports: self.lamports,
-                data,
-                owner: spl_token_2022::id(),
-                executable: false,
-                rent_epoch: self.rent_epoch,
-            }
-        }
-    }
-
-    pub fn build_as_custom_mint(
+    /// Build Token2022 mint as custom structure (for Token2022Mint type)
+    pub fn build_as_custom_token2022_mint(
         self,
         mint_pubkey: Pubkey,
         extensions: HashMap<u16, ParsedExtension>,
@@ -639,6 +509,8 @@ impl Token2022MintMockBuilder {
     }
 }
 
+// Helper functions for test account creation
+
 pub fn create_mock_account() -> Account {
     AccountMockBuilder::new().build()
 }
@@ -646,7 +518,7 @@ pub fn create_mock_account() -> Account {
 pub fn create_mock_program_account() -> Account {
     AccountMockBuilder::new()
         .with_executable(true)
-        .with_owner(Pubkey::new_unique()) // Programs are owned by the loader
+        .with_owner(Pubkey::new_unique())
         .with_data(vec![0u8; 100])
         .build()
 }
@@ -678,7 +550,7 @@ pub fn create_mock_account_with_owner(owner: Pubkey) -> Account {
 pub fn create_mock_usdc_mint_account() -> Account {
     MintAccountMockBuilder::new()
         .with_decimals(6)
-        .with_supply(1_000_000_000_000) // 1M USDC with 6 decimals
+        .with_supply(DEFAULT_MINT_SUPPLY) // 1M USDC with 6 decimals
         .build()
 }
 
@@ -693,11 +565,11 @@ pub fn create_mock_token2022_account_with_extensions(
     mint: &Pubkey,
     extensions: Vec<ExtensionType>,
 ) -> Account {
-    Token2022AccountMockBuilder::new()
+    TokenAccountMockBuilder::new()
         .with_owner(owner)
         .with_mint(mint)
         .with_extensions(extensions)
-        .build()
+        .build_token2022()
 }
 
 /// Create mock Token2022 mint with specific extensions
@@ -705,59 +577,10 @@ pub fn create_mock_token2022_mint_with_extensions(
     decimals: u8,
     extensions: Vec<ExtensionType>,
 ) -> Account {
-    Token2022MintMockBuilder::new().with_decimals(decimals).with_extensions(extensions).build()
-}
-
-/// Create mock Token2022 account with transfer fee extension
-pub fn create_mock_token2022_account_with_transfer_fee(owner: &Pubkey, mint: &Pubkey) -> Account {
-    Token2022AccountMockBuilder::new()
-        .with_owner(owner)
-        .with_mint(mint)
-        .with_extension(ExtensionType::TransferHookAccount)
-        .build()
-}
-
-/// Create mock Token2022 mint with transfer fee extension
-pub fn create_mock_token2022_mint_with_transfer_fee(decimals: u8) -> Account {
-    Token2022MintMockBuilder::new()
+    MintAccountMockBuilder::new()
         .with_decimals(decimals)
-        .with_extension(ExtensionType::TransferFeeConfig)
-        .build()
-}
-
-/// Create mock Token2022 account with non-transferable extension
-pub fn create_mock_token2022_account_non_transferable(owner: &Pubkey, mint: &Pubkey) -> Account {
-    Token2022AccountMockBuilder::new()
-        .with_owner(owner)
-        .with_mint(mint)
-        .with_extension(ExtensionType::NonTransferableAccount)
-        .build()
-}
-
-/// Create mock Token2022 mint with non-transferable extension
-pub fn create_mock_token2022_mint_non_transferable(decimals: u8) -> Account {
-    Token2022MintMockBuilder::new()
-        .with_decimals(decimals)
-        .with_extension(ExtensionType::NonTransferable)
-        .build()
-}
-
-/// Create mock Token2022 account with CPI guard extension
-pub fn create_mock_token2022_account_with_cpi_guard(owner: &Pubkey, mint: &Pubkey) -> Account {
-    Token2022AccountMockBuilder::new()
-        .with_owner(owner)
-        .with_mint(mint)
-        .with_extension(ExtensionType::CpiGuard)
-        .build()
-}
-
-/// Create mock Token2022 account with memo transfer extension
-pub fn create_mock_token2022_account_with_memo_transfer(owner: &Pubkey, mint: &Pubkey) -> Account {
-    Token2022AccountMockBuilder::new()
-        .with_owner(owner)
-        .with_mint(mint)
-        .with_extension(ExtensionType::MemoTransfer)
-        .build()
+        .with_extensions(extensions)
+        .build_token2022()
 }
 
 // ========== Token2022 Test Helpers ==========

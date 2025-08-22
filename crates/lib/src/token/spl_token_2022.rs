@@ -550,8 +550,7 @@ pub trait Token2022Extensions {
 #[cfg(test)]
 mod tests {
     use crate::tests::common::{
-        create_transfer_fee_config, RpcMockBuilder, Token2022AccountMockBuilder,
-        Token2022MintMockBuilder,
+        create_transfer_fee_config, MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder,
     };
 
     use super::*;
@@ -684,11 +683,11 @@ mod tests {
         let mint = Pubkey::new_unique();
         let amount = 1000;
 
-        let token_account = Token2022AccountMockBuilder::new()
+        let token_account = TokenAccountMockBuilder::new()
             .with_mint(&mint)
             .with_owner(&owner)
             .with_amount(amount)
-            .build_as_custom_token_account(HashMap::new());
+            .build_as_custom_token2022_token_account(HashMap::new());
 
         // Test extension detection
         assert!(!token_account.has_extension(ExtensionType::TransferFeeConfig));
@@ -702,11 +701,11 @@ mod tests {
         let owner = Pubkey::new_unique();
         let amount = 1000;
 
-        let token_account = Token2022AccountMockBuilder::new()
+        let token_account = TokenAccountMockBuilder::new()
             .with_mint(&mint)
             .with_owner(&owner)
             .with_amount(amount)
-            .build_as_custom_token_account(create_test_extensions());
+            .build_as_custom_token2022_token_account(create_test_extensions());
 
         assert_eq!(token_account.mint(), mint);
         assert_eq!(token_account.owner(), owner);
@@ -719,14 +718,14 @@ mod tests {
     fn test_token2022_mint_transfer_fee_edge_cases() {
         let mint_pubkey = Pubkey::new_unique();
 
-        let mint =
-            Token2022MintMockBuilder::new().build_as_custom_mint(mint_pubkey, HashMap::new());
+        let mint = MintAccountMockBuilder::new()
+            .build_as_custom_token2022_mint(mint_pubkey, HashMap::new());
 
         let fee = mint.calculate_transfer_fee(1000, 0);
         assert!(fee.is_none(), "Mint without transfer fee config should return None");
 
-        let mint = Token2022MintMockBuilder::new()
-            .build_as_custom_mint(mint_pubkey, create_test_extensions());
+        let mint = MintAccountMockBuilder::new()
+            .build_as_custom_token2022_mint(mint_pubkey, create_test_extensions());
 
         // Test zero amount
         let zero_fee = mint.calculate_transfer_fee(0, 0);
@@ -768,7 +767,7 @@ mod tests {
         let program = Token2022Program::new();
         let mint_pubkey = Pubkey::new_unique();
 
-        let mint_account = Token2022MintMockBuilder::new().with_decimals(6).build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build_token2022();
 
         let result = program.get_ata_account_size(&mint_pubkey, &mint_account).await;
 
@@ -783,9 +782,9 @@ mod tests {
 
     #[test]
     fn test_token2022_account_extension_validation_non_transferable() {
-        let account = Token2022AccountMockBuilder::new()
+        let account = TokenAccountMockBuilder::new()
             .with_extensions(vec![ExtensionType::NonTransferableAccount])
-            .build_as_custom_token_account(HashMap::new());
+            .build_as_custom_token2022_token_account(HashMap::new());
 
         assert!(account.is_non_transferable());
 
@@ -805,9 +804,9 @@ mod tests {
             })),
         );
 
-        let account = Token2022AccountMockBuilder::new()
+        let account = TokenAccountMockBuilder::new()
             .with_extensions(vec![ExtensionType::CpiGuard])
-            .build_as_custom_token_account(extensions);
+            .build_as_custom_token2022_token_account(extensions);
 
         assert!(account.is_cpi_guarded());
 
@@ -827,9 +826,9 @@ mod tests {
             })),
         );
 
-        let account = Token2022AccountMockBuilder::new()
+        let account = TokenAccountMockBuilder::new()
             .with_extensions(vec![ExtensionType::CpiGuard])
-            .build_as_custom_token_account(extensions);
+            .build_as_custom_token2022_token_account(extensions);
 
         assert!(!account.is_cpi_guarded());
 
@@ -840,7 +839,7 @@ mod tests {
 
     #[test]
     fn test_token2022_account_extension_methods() {
-        let account = Token2022AccountMockBuilder::new()
+        let account = TokenAccountMockBuilder::new()
             .with_extensions(vec![
                 ExtensionType::MemoTransfer,
                 ExtensionType::ImmutableOwner,
@@ -849,7 +848,7 @@ mod tests {
                 ExtensionType::TransferHookAccount,
                 ExtensionType::PausableAccount,
             ])
-            .build_as_custom_token_account(HashMap::new());
+            .build_as_custom_token2022_token_account(HashMap::new());
 
         // Test all extension detection methods
         assert!(account.has_memo_extension());
@@ -865,9 +864,9 @@ mod tests {
 
     #[test]
     fn test_token2022_mint_extension_validation_non_transferable() {
-        let mint = Token2022MintMockBuilder::new()
+        let mint = MintAccountMockBuilder::new()
             .with_extensions(vec![ExtensionType::NonTransferable])
-            .build_as_custom_mint(Pubkey::new_unique(), HashMap::new());
+            .build_as_custom_token2022_mint(Pubkey::new_unique(), HashMap::new());
 
         assert!(mint.is_non_transferable());
 
@@ -888,9 +887,9 @@ mod tests {
             )), // 2.5%, max 1000
         );
 
-        let mint = Token2022MintMockBuilder::new()
+        let mint = MintAccountMockBuilder::new()
             .with_extensions(vec![ExtensionType::TransferFeeConfig])
-            .build_as_custom_mint(mint_pubkey, extensions);
+            .build_as_custom_token2022_mint(mint_pubkey, extensions);
 
         // Test fee calculation with transfer fee
         let test_cases = vec![
@@ -942,9 +941,9 @@ mod tests {
             ParsedExtension::Mint(MintExtension::TransferFeeConfig(transfer_fee_config)),
         );
 
-        let mint = Token2022MintMockBuilder::new()
+        let mint = MintAccountMockBuilder::new()
             .with_extensions(vec![ExtensionType::TransferFeeConfig])
-            .build_as_custom_mint(mint_pubkey, extensions);
+            .build_as_custom_token2022_mint(mint_pubkey, extensions);
 
         // Test older fee (epoch < 10)
         let result_old = mint.validate_and_adjust_amount(10000, 5);
@@ -963,7 +962,7 @@ mod tests {
 
     #[test]
     fn test_token2022_mint_all_extension_methods() {
-        let mint = Token2022MintMockBuilder::new()
+        let mint = MintAccountMockBuilder::new()
             .with_extensions(vec![
                 ExtensionType::InterestBearingConfig,
                 ExtensionType::PermanentDelegate,
@@ -973,7 +972,7 @@ mod tests {
                 ExtensionType::TransferHook,
                 ExtensionType::Pausable,
             ])
-            .build_as_custom_mint(Pubkey::new_unique(), HashMap::new());
+            .build_as_custom_token2022_mint(Pubkey::new_unique(), HashMap::new());
 
         // Test all extension detection methods
         assert!(mint.has_interest_bearing_extension());
@@ -995,9 +994,9 @@ mod tests {
         let program = Token2022Program::new();
 
         // Test with Token2022 account containing transfer restrictions
-        let account = Token2022AccountMockBuilder::new()
+        let account = TokenAccountMockBuilder::new()
             .with_extensions(vec![ExtensionType::NonTransferableAccount])
-            .build_as_custom_token_account(HashMap::new());
+            .build_as_custom_token2022_token_account(HashMap::new());
 
         let result = program
             .get_and_validate_amount_for_payment(&rpc_client, Some(&account), None, 1000)
@@ -1015,11 +1014,11 @@ mod tests {
         let mint_pubkey = Pubkey::new_unique();
 
         // Create a mint with transfer fee extension
-        let mint_account = Token2022MintMockBuilder::new()
+        let mint_account = MintAccountMockBuilder::new()
             .with_decimals(6)
             .with_supply(1_000_000)
             .with_extension(ExtensionType::TransferFeeConfig)
-            .build_account_state_with_extensions()
+            .build_token2022_account_state_with_extensions()
             .unwrap();
 
         let result = program.get_ata_account_size(&mint_pubkey, &mint_account).await;

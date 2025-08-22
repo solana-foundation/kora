@@ -4,7 +4,15 @@ use redis_test::MockRedisConnection;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::Account, pubkey::Pubkey};
 
-/// Minimal Redis cache mock focused on testing cache.rs functions
+/// Redis cache mock for testing scenarios where caching behavior is tested
+///
+/// It provides a mockall-based replacement for the real CacheUtil to avoid Redis dependencies in tests.
+///
+/// Usage:
+/// ```rust
+/// #[cfg(test)]
+/// use crate::tests::redis_cache_mock::MockCacheUtil as CacheUtil;
+/// ```
 pub struct RedisCacheMock {
     mock_connection: MockRedisConnection,
 }

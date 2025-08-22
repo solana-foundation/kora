@@ -352,7 +352,7 @@ mod tests_token {
     use crate::{
         oracle::utils::{USDC_DEVNET_MINT, WSOL_DEVNET_MINT},
         tests::{
-            common::{RpcMockBuilder, Token2022AccountMockBuilder},
+            common::{RpcMockBuilder, TokenAccountMockBuilder},
             config_mock::ConfigMockBuilder,
         },
     };
@@ -741,7 +741,7 @@ mod tests_token {
         let destination_address = Pubkey::new_unique();
 
         // Create accounts without any blocked extensions - test source account first
-        let source_account = Token2022AccountMockBuilder::new().build();
+        let source_account = TokenAccountMockBuilder::new().build_token2022();
 
         let rpc_client = RpcMockBuilder::new().with_account_info(&source_account).build();
 

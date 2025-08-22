@@ -3,8 +3,16 @@ use tempfile::NamedTempFile;
 
 use crate::{config::Config, error::KoraError};
 
+/// TOML-specific configuration builder for testing TOML parsing and serialization
+///
+/// This builder is specifically designed for testing TOML file generation and parsing.
+/// For direct Config object creation in tests, use `config_mock::ConfigMockBuilder` instead.
+///
+/// Key differences:
+/// - This builder generates TOML strings via `build_toml()`
+/// - Used primarily for testing config file parsing logic
+/// - Validates TOML parsing and deserialization
 #[derive(Default)]
-
 pub struct ConfigBuilder {
     validation: ValidationSection,
     kora: KoraSection,
@@ -235,6 +243,8 @@ impl ConfigBuilder {
     }
 }
 
+/// Create an invalid config for testing error handling
+/// Used specifically for testing TOML parsing error scenarios
 pub fn create_invalid_config(content: &str) -> Result<Config, KoraError> {
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(&temp_file, content).unwrap();

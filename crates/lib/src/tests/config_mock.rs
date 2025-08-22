@@ -17,6 +17,9 @@ use crate::{
 };
 use solana_sdk::pubkey::Pubkey;
 
+/// Mock state management for test isolation
+///
+/// This module provides mutex-based test isolation for config state.
 pub mod mock_state {
     use super::*;
     use once_cell::sync::Lazy;
@@ -53,6 +56,9 @@ pub mod mock_state {
     }
 }
 
+/// Primary configuration builder for test mocks
+///
+/// Provides a fluent interface for building Config objects with sensible defaults.
 pub struct ConfigMockBuilder {
     config: Config,
 }

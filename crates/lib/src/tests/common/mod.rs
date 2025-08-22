@@ -1,3 +1,8 @@
+/// Common test utilities and centralized re-exports
+///
+/// This module provides:
+/// 1. Setup functions for test environment initialization (signer & config)
+/// 2. Centralized re-exports of commonly used mock utilities
 use crate::{
     get_request_signer_with_signer_key,
     signer::{KoraSigner, SignerPool, SignerWithMetadata, SolanaMemorySigner},
@@ -7,10 +12,13 @@ use crate::{
 };
 use solana_sdk::{pubkey::Pubkey, signature::Keypair};
 
-// Re-export mock utilities for easy access
+// Re-export mock utilities for centralized access
 pub use account_mock::*;
 pub use rpc_mock::*;
 
+/// Setup or retrieve test signer for global state initialization
+///
+/// Returns the signer's public key.
 pub fn setup_or_get_test_signer() -> Pubkey {
     if let Ok(signer) = get_request_signer_with_signer_key(None) {
         return signer.solana_pubkey();
@@ -36,6 +44,9 @@ pub fn setup_or_get_test_signer() -> Pubkey {
     signer.solana_pubkey()
 }
 
+/// Setup or retrieve test config for global state initialization
+///
+/// Returns the config object.
 pub fn setup_or_get_test_config() -> Config {
     if let Ok(config) = get_config() {
         return config.clone();

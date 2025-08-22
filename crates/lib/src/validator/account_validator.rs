@@ -134,7 +134,7 @@ mod tests {
             create_mock_account, create_mock_account_with_owner,
             create_mock_non_executable_account, create_mock_program_account,
             create_mock_spl_mint_account, create_mock_token2022_mint_account,
-            create_mock_token_account, AccountMockBuilder, Token2022AccountMockBuilder,
+            create_mock_token_account, AccountMockBuilder,
         },
         common::{MintAccountMockBuilder, TokenAccountMockBuilder},
         config_mock::ConfigMockBuilder,
@@ -217,7 +217,7 @@ mod tests {
         let owner = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
         let token_account =
-            Token2022AccountMockBuilder::new().with_owner(&owner).with_mint(&mint).build();
+            TokenAccountMockBuilder::new().with_owner(&owner).with_mint(&mint).build_token2022();
         let account_pubkey = Pubkey::new_unique();
 
         let result =
