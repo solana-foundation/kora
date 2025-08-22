@@ -170,7 +170,7 @@ impl ConfigValidator {
                 if Pubkey::from_str(token).is_err() {
                     errors.push(format!("Invalid token address for fixed price: {token}"));
                 }
-                if !config.validation.is_spl_token_paid_valid(token) {
+                if !config.validation.supports_token(token) {
                     errors.push(format!(
                         "Token address for fixed price is not in allowed spl paid tokens: {token}"
                     ));
