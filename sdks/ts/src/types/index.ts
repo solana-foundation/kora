@@ -1,3 +1,5 @@
+import { Instruction, Address } from '@solana/kit';
+
 /**
  * Request Types
  */
@@ -58,6 +60,20 @@ export interface EstimateTransactionFeeRequest {
     fee_token: string;
     /** Optional signer address for the transaction */
     signer_key?: string;
+}
+
+/**
+ * Parameters for getting a payment instruction.
+ */
+export interface GetPaymentInstructionRequest {
+    /** Base64-encoded transaction to estimate fees for */
+    transaction: string;
+    /** Mint address of the token to calculate fees in */
+    fee_token: string;
+    /** The wallet owner (not token account) that will be making the token payment */
+    source_wallet: string;
+    /** The token program id to use for the payment (defaults to TOKEN_PROGRAM_ID) */
+    token_program_id?: string;
 }
 
 /**
@@ -152,6 +168,24 @@ export interface GetPayerSignerResponse {
     signer_address: string;
     /** Public key of the payment destination */
     payment_address: string;
+}
+
+/**
+ * Response containing a payment instruction.
+ */
+export interface GetPaymentInstructionResponse {
+    /** Base64-encoded original transaction */
+    original_transaction: string;
+    /** Base64-encoded payment instruction */
+    payment_instruction: Instruction;
+    /** Payment amount in the requested token */
+    payment_amount: number;
+    /** Mint address of the token used for payment */
+    payment_token: string;
+    /** Public key of the payment destination */
+    payment_address: string;
+    /** Public key of the payer signer */
+    signer_address: string;
 }
 
 /**
