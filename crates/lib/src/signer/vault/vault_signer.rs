@@ -108,3 +108,49 @@ impl VaultSigner {
             .map_err(|e| KoraError::SigningError(format!("Invalid signature format: {e}")))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_vault_signer() {
+        let vault_addr = "https://vault.example.com".to_string();
+        let token = "test_token".to_string();
+        let key_name = "test_key".to_string();
+        let pubkey = "11111111111111111111111111111111".to_string();
+
+        let result = VaultSigner::new(vault_addr, token, key_name.clone(), pubkey);
+
+        assert!(result.is_ok());
+        let signer = result.unwrap();
+        assert_eq!(signer.key_name, key_name);
+        assert_eq!(signer.pubkey.to_string(), "11111111111111111111111111111111");
+    }
+
+    #[test]
+    fn test_new_vault_signer_invalid_pubkey() {
+        let vault_addr = "https://vault.example.com".to_string();
+        let token = "test_token".to_string();
+        let key_name = "test_key".to_string();
+        let invalid_pubkey = "invalid_pubkey".to_string();
+
+        let result = VaultSigner::new(vault_addr, token, key_name, invalid_pubkey);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid public key"));
+    }
+
+    #[test]
+    fn test_solana_pubkey() {
+        let vault_addr = "https://vault.example.com".to_string();
+        let token = "test_token".to_string();
+        let key_name = "test_key".to_string();
+        let pubkey = "11111111111111111111111111111111".to_string();
+
+        let signer = VaultSigner::new(vault_addr, token, key_name, pubkey).unwrap();
+        let retrieved_pubkey = signer.solana_pubkey();
+
+        assert_eq!(retrieved_pubkey.to_string(), "11111111111111111111111111111111");
+    }
+}
