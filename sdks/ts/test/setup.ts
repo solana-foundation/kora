@@ -84,7 +84,7 @@ const createKeyPairSignerFromB58Secret = async (b58Secret: string) => {
     const b58SecretEncoded = base58Encoder.encode(b58Secret);
     return await createKeyPairSignerFromBytes(b58SecretEncoded);
 };
-
+// TODO Add KORA_PRIVATE_KEY_2= support for multi-signer configs
 function loadEnvironmentVariables() {
     const koraSignerType = process.env.KORA_SIGNER_TYPE || DEFAULTS.KORA_SIGNER_TYPE;
 
@@ -169,13 +169,11 @@ const createDefaultTransaction = async (
 const signAndSendTransaction = async (
     client: Client,
     transactionMessage: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime,
-    commitment: Commitment = loadEnvironmentVariables().commitment,
+    commitment: Commitment,
 ) => {
     const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
     const signature = getSignatureFromTransaction(signedTransaction);
-    await sendAndConfirmTransactionFactory(client)(signedTransaction, {
-        commitment,
-    });
+    await sendAndConfirmTransactionFactory(client)(signedTransaction, { commitment, skipPreflight: true });
     return signature;
 };
 
@@ -197,19 +195,13 @@ async function sendAndConfirmInstructions(
     payer: TransactionSigner,
     instructions: Instruction[],
     description: string,
+    commitment: Commitment = loadEnvironmentVariables().commitment,
 ): Promise<Signature> {
     try {
-        const simulationTx = await pipe(await createDefaultTransaction(client, payer), tx =>
-            appendTransactionMessageInstructions(instructions, tx),
-        );
-        const estimateCompute = estimateComputeUnitLimitFactory({
-            rpc: client.rpc,
-        });
-        const computeUnitLimit = await estimateCompute(simulationTx);
         const signature = await pipe(
-            await createDefaultTransaction(client, payer, computeUnitLimit),
+            await createDefaultTransaction(client, payer, 200_000),
             tx => appendTransactionMessageInstructions(instructions, tx),
-            tx => signAndSendTransaction(client, tx),
+            tx => signAndSendTransaction(client, tx, commitment),
         );
         return signature;
     } catch (error) {
@@ -292,7 +284,7 @@ async function initializeToken({
           )
         : [];
     const instructions = [...baseInstructions, ...otherAtaInstructions];
-    await sendAndConfirmInstructions(client, payer, instructions, 'Initialize token and ATAs');
+    await sendAndConfirmInstructions(client, payer, instructions, 'Initialize token and ATAs', 'finalized');
 }
 
 async function setupTestSuite(): Promise<TestSuite> {
@@ -329,12 +321,12 @@ async function setupTestSuite(): Promise<TestSuite> {
     // Airdrop SOL to test sender and kora wallets
     await Promise.all([
         airdrop({
-            commitment,
+            commitment: 'finalized',
             lamports: lamports(solDropAmount),
             recipientAddress: koraAddress,
         }),
         airdrop({
-            commitment,
+            commitment: 'finalized',
             lamports: lamports(solDropAmount),
             recipientAddress: testWallet.address,
         }),
