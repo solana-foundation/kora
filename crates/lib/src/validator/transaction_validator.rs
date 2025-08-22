@@ -336,10 +336,8 @@ mod tests {
         program::ID as SYSTEM_PROGRAM_ID,
     };
 
-    #[tokio::test]
-    #[serial]
-    async fn test_validate_transaction() {
-        let fee_payer = Pubkey::new_unique();
+    // Helper functions to reduce test duplication and setup config
+    fn setup_default_config() {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
@@ -347,6 +345,63 @@ mod tests {
             .with_fee_payer_policy(FeePayerPolicy::default())
             .build();
         update_config(config).unwrap();
+    }
+
+    fn setup_spl_token_config() {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
+        update_config(config).unwrap();
+    }
+
+    fn setup_token2022_config() {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
+        update_config(config).unwrap();
+    }
+
+    fn setup_config_with_policy(policy: FeePayerPolicy) {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        update_config(config).unwrap();
+    }
+
+    fn setup_spl_config_with_policy(policy: FeePayerPolicy) {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        update_config(config).unwrap();
+    }
+
+    fn setup_token2022_config_with_policy(policy: FeePayerPolicy) {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        update_config(config).unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_transaction() {
+        let fee_payer = Pubkey::new_unique();
+        setup_default_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -363,13 +418,7 @@ mod tests {
     #[serial]
     async fn test_transfer_amount_limits() {
         let fee_payer = Pubkey::new_unique();
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_default_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let sender = Pubkey::new_unique();
@@ -394,13 +443,7 @@ mod tests {
     #[serial]
     async fn test_validate_programs() {
         let fee_payer = Pubkey::new_unique();
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_default_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let sender = Pubkey::new_unique();
@@ -458,13 +501,7 @@ mod tests {
     #[serial]
     async fn test_sign_and_send_transaction_mode() {
         let fee_payer = Pubkey::new_unique();
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_default_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let sender = Pubkey::new_unique();
@@ -487,13 +524,7 @@ mod tests {
     #[serial]
     async fn test_empty_transaction() {
         let fee_payer = Pubkey::new_unique();
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_default_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -536,13 +567,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         // Test with allow_sol_transfers = true (default)
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_default_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -553,16 +578,10 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_sol_transfers = false
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy {
-                allow_sol_transfers: false,
-                ..Default::default()
-            })
-            .build();
-        update_config(config).unwrap();
+        setup_config_with_policy(FeePayerPolicy {
+            allow_sol_transfers: false,
+            ..Default::default()
+        });
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -579,13 +598,7 @@ mod tests {
         let new_owner = Pubkey::new_unique();
 
         // Test with allow_assign = true (default)
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_default_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -595,13 +608,7 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_assign = false
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy { allow_assign: false, ..Default::default() })
-            .build();
-        update_config(config).unwrap();
+        setup_config_with_policy(FeePayerPolicy { allow_assign: false, ..Default::default() });
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -620,13 +627,7 @@ mod tests {
         let recipient_token_account = Pubkey::new_unique();
 
         // Test with allow_spl_transfers = true (default)
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_spl_token_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -645,16 +646,10 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_spl_transfers = false
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy {
-                allow_spl_transfers: false,
-                ..Default::default()
-            })
-            .build();
-        update_config(config).unwrap();
+        setup_spl_config_with_policy(FeePayerPolicy {
+            allow_spl_transfers: false,
+            ..Default::default()
+        });
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -699,13 +694,7 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         // Test with allow_token2022_transfers = true (default)
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_token2022_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -726,16 +715,10 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_token2022_transfers = false
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy {
-                allow_token2022_transfers: false,
-                ..Default::default()
-            })
-            .build();
-        update_config(config).unwrap();
+        setup_token2022_config_with_policy(FeePayerPolicy {
+            allow_token2022_transfers: false,
+            ..Default::default()
+        });
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -906,13 +889,7 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         // Test with allow_burn = true (default)
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_spl_token_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -932,13 +909,7 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_burn = false
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy { allow_burn: false, ..Default::default() })
-            .build();
-        update_config(config).unwrap();
+        setup_spl_config_with_policy(FeePayerPolicy { allow_burn: false, ..Default::default() });
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -985,13 +956,7 @@ mod tests {
         let destination = Pubkey::new_unique();
 
         // Test with allow_close_account = true (default)
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_spl_token_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1010,16 +975,10 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_close_account = false
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy {
-                allow_close_account: false,
-                ..Default::default()
-            })
-            .build();
-        update_config(config).unwrap();
+        setup_spl_config_with_policy(FeePayerPolicy {
+            allow_close_account: false,
+            ..Default::default()
+        });
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1047,13 +1006,7 @@ mod tests {
         let delegate = Pubkey::new_unique();
 
         // Test with allow_approve = true (default)
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_spl_token_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1073,13 +1026,7 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_approve = false
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy { allow_approve: false, ..Default::default() })
-            .build();
-        update_config(config).unwrap();
+        setup_spl_config_with_policy(FeePayerPolicy { allow_approve: false, ..Default::default() });
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1129,13 +1076,10 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         // Test with allow_burn = false for Token2022
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy { allow_burn: false, ..Default::default() })
-            .build();
-        update_config(config).unwrap();
+        setup_token2022_config_with_policy(FeePayerPolicy {
+            allow_burn: false,
+            ..Default::default()
+        });
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1163,16 +1107,10 @@ mod tests {
         let destination = Pubkey::new_unique();
 
         // Test with allow_close_account = false for Token2022
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy {
-                allow_close_account: false,
-                ..Default::default()
-            })
-            .build();
-        update_config(config).unwrap();
+        setup_token2022_config_with_policy(FeePayerPolicy {
+            allow_close_account: false,
+            ..FeePayerPolicy::default()
+        });
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1199,13 +1137,7 @@ mod tests {
         let delegate = Pubkey::new_unique();
 
         // Test with allow_approve = true (default)
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
+        setup_token2022_config();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1225,13 +1157,10 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction).await.is_ok());
 
         // Test with allow_approve = false
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy { allow_approve: false, ..Default::default() })
-            .build();
-        update_config(config).unwrap();
+        setup_token2022_config_with_policy(FeePayerPolicy {
+            allow_approve: false,
+            ..Default::default()
+        });
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
