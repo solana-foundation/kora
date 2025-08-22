@@ -1,5 +1,7 @@
 # Kora Signers Guide
 
+*Last Updated: 2025-08-22*
+
 ## What is a Signer?
 
 A **signer** is the cryptographic keypair that your Kora node uses to sign Solana transactions as the fee payer. When users send transactions to your Kora node, it validates them and co-signs them with your signer's private key to cover the SOL transaction fees.
@@ -91,7 +93,7 @@ TURNKEY_PUBLIC_KEY="your_turnkey_public_key"
 ### Start Kora with Signers Configuration
 
 ```bash
-kora rpc --config kora.toml start --signers-config signers.toml
+kora --config path/to/kora.toml rpc start --signers-config path/to/signers.toml
 ```
 
 
@@ -249,10 +251,7 @@ TURNKEY_PUBLIC_KEY="your_solana_public_key"
 
 See [.env.example](../../.env.example) for a complete example.
 
-
-
 For support with Turnkey, see the [Turnkey documentation](https://docs.turnkey.com/embedded-wallets/overview).
-
 
 ### Signer.toml Configuration
 
@@ -368,7 +367,7 @@ wallet_id_env = "PRIVY_WALLET_ID"
 If no signer is configured, Kora will throw an error. If you want to run Kora without a signer, you run it with the `--no-signer` flag:
 
 ```bash
-kora rpc start --no-signer
+kora --config path/to/kora.toml rpc start --no-signer
 ```
 
 Note that this will limit your node to only processing requests that do not require a signer.

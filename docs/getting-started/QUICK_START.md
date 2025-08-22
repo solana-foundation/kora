@@ -1,5 +1,7 @@
 # Kora Quick Start Guide
 
+*Last Updated: 2025-08-22*
+
 ## Kora Basics
 
 Kora is a JSON-RPC server that provides fee payment services for Solana transactions. It allows users to pay transaction fees with SPL tokens instead of SOL, enabling better UX for applications where users may not hold SOL.
@@ -25,7 +27,7 @@ This quick start will launch a local Kora RPC server and demonstrate client inte
 
 - [Solana CLI](https://solana.com/docs/intro/installation) v2.2.x or greater
 - [Rust/Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html) (for Kora RPC installation)
-- [Node.js v24+](https://nodejs.org/en/download) and a package manager (e.g., [pnpm](https://pnpm.io/), npm)
+- [Node.js v22+](https://nodejs.org/en/download) and a package manager (e.g., [pnpm](https://pnpm.io/), npm)
 
 ## Install Kora RPC
 
@@ -54,6 +56,7 @@ The demo contains three main components:
 
 **Server Directory (`server/`)**
 - `kora.toml` - Kora RPC configuration defining validation rules, allowed tokens, and fee parameters
+- `signers.toml` - Signers configuration defining signers for the Kora server
 
 **Shared Configuration**
 - `.env` - Environment variables for keypairs and addresses (create `.env` in root - `demo/.env`). The environment variables will be created by the setup script.
@@ -63,6 +66,7 @@ The demo contains three main components:
 First, create .env for your environment :
 
 ```bash
+# Create .env file (will be populated by setup script)
 touch .env
 ```
 
@@ -98,6 +102,11 @@ The Kora server requires configuration to specify which tokens can be used for f
 - `disallowed_accounts`: blacklist of accounts not allowed to interact with your kora RPC
 
 For now, let's leave the default values--you can come back here and change these later (for more information on the configuration options, see the [Kora Configuration](../operators/CONFIGURATION.md) documentation). 
+
+### Setup Signers
+
+Open `server/signers.toml` and note the signers section. Here we can specify which signers will be used to sign transactions and (if using multiple signers) a strategy for selecting which signer to use. For now, let's use a single-signer using the default values--you can come back here and change these later (for more information on the signers configuration, see the [Signers Guide](../operators/SIGNERS.md) documentation). 
+
 
 ## Test Server
 
@@ -203,10 +212,12 @@ This confirms your Kora server is running and properly configured!
 Once you have the basic setup working, explore additional Kora RPC methods:
 
 - `estimateTransactionFee` - Calculate fees for transactions
+- `getPayerSigner` - Get the payer signer and payment destination
 - `getSupportedTokens` - Returns an array of supported payment tokens
 - `signTransaction` - Sign transactions with the Kora feepayer
 - `transferTransaction` - Create transfer SOL or SPL token transfer transactions (signed by the Kora feepayer)
 - `signAndSendTransaction` - Signs a transaction with the Kora feepayer and sends it to the configured Solana RPC
 - `signTransactionIfPaid` - Conditionally sign transactions when fees are covered
+- `getPaymentInstruction` - Get a payment instruction for a transaction
 
 **Got questions?** Ask questions the [Solana Stack Exchange](https://solana.stackexchange.com/) with a `Kora` tag.
