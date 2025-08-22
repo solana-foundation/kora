@@ -84,10 +84,10 @@ impl<'a> IntoIterator for &'a SplTokenPaymentConfig {
 }
 
 impl SplTokenPaymentConfig {
-    pub fn has_token(&self, token: &String) -> bool {
+    pub fn has_token(&self, token: &str) -> bool {
         match self {
             SplTokenPaymentConfig::All => true,
-            SplTokenPaymentConfig::Allowlist(tokens) => tokens.contains(token),
+            SplTokenPaymentConfig::Allowlist(tokens) => tokens.iter().any(|s| s == token),
         }
     }
 
