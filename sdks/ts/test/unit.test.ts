@@ -719,4 +719,27 @@ describe('KoraClient Unit Tests', () => {
             await expect(client.getConfig()).rejects.toThrow('RPC Error undefined: undefined');
         });
     });
+
+    // TODO: Add Authentication Tests (separate PR)
+    //
+    // describe('Authentication', () => {
+    //     describe('API Key Authentication', () => {
+    //         - Test that x-api-key header is included when apiKey is provided
+    //         - Test requests work without apiKey when not provided
+    //         - Test all RPC methods include the header
+    //     });
+    //
+    //     describe('HMAC Authentication', () => {
+    //         - Test x-timestamp and x-hmac-signature headers are included when hmacSecret is provided
+    //         - Test HMAC signature calculation is correct (SHA256 of timestamp + body)
+    //         - Test timestamp is current (within reasonable bounds)
+    //         - Test requests work without HMAC when not provided
+    //         - Test all RPC methods include the headers
+    //     });
+    //
+    //     describe('Combined Authentication', () => {
+    //         - Test both API key and HMAC headers are included when both are provided
+    //         - Test headers are correctly combined
+    //     });
+    // });
 });
