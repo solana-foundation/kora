@@ -1,8 +1,46 @@
 # Kora Metrics Guide
 
+*Last Updated: 2025-08-22*
+
 The [Kora Metrics Crate](../../crates/metrics) provides comprehensive metrics collection and monitoring for the Kora RPC server.
 
 Kora exposes a `/metrics` endpoint that provides real-time performance data in Prometheus format.
+
+## Configuration
+
+Metrics are configured in the `[metrics]` section of your `kora.toml`. The `[metrics]` section configures metrics collection and monitoring. This section is optional and by default, metrics are disabled.
+
+```toml
+[metrics]
+enabled = true
+endpoint = "/metrics"
+port = 8080
+scrape_interval = 60
+
+[metrics.fee_payer_balance]
+enabled = true
+expiry_seconds = 30
+```
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `enabled` | Enable metrics collection | ✅ | boolean |
+| `endpoint` | Custom metrics endpoint path | ✅ | string |
+| `port` | Metrics endpoint port | ✅ | number |
+| `scrape_interval` | Frequency of Prometheus scrape (seconds) | ✅ | number |
+
+### Fee Payer Balance Tracking
+
+The `[metrics.fee_payer_balance]` section configures automatic monitoring of your fee payer's SOL balance:
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `enabled` | Enable fee payer balance tracking | ❌ (default: false) | boolean |
+| `expiry_seconds` | Background tracking interval in seconds | ❌ (default: 30) | number |
+
+When enabled, Kora automatically tracks your fee payer's SOL balance and exposes it via the `fee_payer_balance_lamports` Prometheus gauge. This helps with capacity planning and low-balance alerting.
+
+
 
 ## Quick Start
 
@@ -163,10 +201,4 @@ The `/metrics` endpoint is public by default. In production, consider:
    - Handled by `MetricsHandlerLayer` 
    - Returns Prometheus-formatted metrics
 
-3. **Prometheus Scraping** - Configured to scrape Kora every 60 seconds (see [`crates/metrics/prometheus.yml`](../../crates/metrics/prometheus.yml)):
-   ```yaml
-   scrape_configs:
-     - job_name: 'kora'
-       static_configs:
-         - targets: ['kora:8080']
-   ```
+3. **Prometheus Scraping** - Configured to scrape Kora every 60 seconds (see [`crates/lib/src/metrics/prometheus.yml`](/crates/lib/src/metrics/prometheus.yml))

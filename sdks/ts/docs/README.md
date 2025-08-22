@@ -30,6 +30,7 @@ const config = await client.getConfig();
 - [getBlockhash()](#getblockhash)
 - [getConfig()](#getconfig)
 - [getPayerSigner()](#getpayersigner)
+- [getPaymentInstruction()](#getpaymentinstruction)
 - [getSupportedTokens()](#getsupportedtokens)
 - [signAndSendTransaction()](#signandsendtransaction)
 - [signTransaction()](#signtransaction)
@@ -166,6 +167,45 @@ When the RPC call fails
 
 ```ts
 
+```
+
+##### getPaymentInstruction()
+
+```ts
+getPaymentInstruction(request: GetPaymentInstructionRequest): Promise<GetPaymentInstructionResponse>;
+```
+
+Creates a payment instruction to append to a transaction for fee payment to the Kora paymaster.
+
+This method estimates the required fee and generates a token transfer instruction
+from the source wallet to the Kora payment address. The server handles decimal
+conversion internally, so the raw token amount is used directly.
+
+###### Parameters
+
+| Parameter | Type | Description |
+| ------ | ------ | ------ |
+| `request` | [`GetPaymentInstructionRequest`](#getpaymentinstructionrequest) | Payment instruction request parameters |
+
+###### Returns
+
+`Promise`\<[`GetPaymentInstructionResponse`](#getpaymentinstructionresponse)\>
+
+Payment instruction details including the instruction, amount, and addresses
+
+###### Throws
+
+When the token is not supported, payment is not required, or invalid addresses are provided
+
+###### Example
+
+```typescript
+const paymentInfo = await client.getPaymentInstruction({
+  transaction: 'base64EncodedTransaction',
+  fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  source_wallet: 'sourceWalletPublicKey'
+});
+// Append paymentInfo.payment_instruction to your transaction
 ```
 
 ##### getSupportedTokens()
@@ -405,6 +445,7 @@ Response containing estimated transaction fees.
 | ------ | ------ | ------ |
 | <a id="fee_in_lamports"></a> `fee_in_lamports` | `number` | Transaction fee in lamports |
 | <a id="fee_in_token"></a> `fee_in_token` | `number` | Transaction fee in the requested token (in decimals value of the token, e.g. 10^6 for USDC) |
+| <a id="payment_address"></a> `payment_address` | `string` | Public key of the payment destination |
 | <a id="signer_pubkey"></a> `signer_pubkey` | `string` | Public key of the signer used to estimate the fee |
 
 ***
@@ -447,8 +488,40 @@ Response containing the payer signer and payment destination.
 
 | Property | Type | Description |
 | ------ | ------ | ------ |
-| <a id="payment_address"></a> `payment_address` | `string` | Public key of the payment destination |
+| <a id="payment_address-1"></a> `payment_address` | `string` | Public key of the payment destination |
 | <a id="signer_address"></a> `signer_address` | `string` | Public key of the payer signer |
+
+***
+
+### GetPaymentInstructionRequest
+
+Parameters for getting a payment instruction.
+
+#### Properties
+
+| Property | Type | Description |
+| ------ | ------ | ------ |
+| <a id="fee_token-1"></a> `fee_token` | `string` | Mint address of the token to calculate fees in |
+| <a id="source_wallet"></a> `source_wallet` | `string` | The wallet owner (not token account) that will be making the token payment |
+| <a id="token_program_id"></a> `token_program_id?` | `string` | The token program id to use for the payment (defaults to TOKEN_PROGRAM_ID) |
+| <a id="transaction-1"></a> `transaction` | `string` | Base64-encoded transaction to estimate fees for |
+
+***
+
+### GetPaymentInstructionResponse
+
+Response containing a payment instruction.
+
+#### Properties
+
+| Property | Type | Description |
+| ------ | ------ | ------ |
+| <a id="original_transaction"></a> `original_transaction` | `string` | Base64-encoded original transaction |
+| <a id="payment_address-2"></a> `payment_address` | `string` | Public key of the payment destination |
+| <a id="payment_amount"></a> `payment_amount` | `number` | Payment amount in the requested token |
+| <a id="payment_instruction"></a> `payment_instruction` | `Instruction` | Base64-encoded payment instruction |
+| <a id="payment_token"></a> `payment_token` | `string` | Mint address of the token used for payment |
+| <a id="signer_address-1"></a> `signer_address` | `string` | Public key of the payer signer |
 
 ***
 
@@ -521,7 +594,7 @@ Parameters for signing and sending a transaction.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="signer_key-1"></a> `signer_key?` | `string` | Optional signer address for the transaction |
-| <a id="transaction-1"></a> `transaction` | `string` | Base64-encoded transaction to sign and send |
+| <a id="transaction-2"></a> `transaction` | `string` | Base64-encoded transaction to sign and send |
 
 ***
 
@@ -548,7 +621,7 @@ Parameters for conditionally signing a transaction based on payment.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="signer_key-2"></a> `signer_key?` | `string` | Optional signer address for the transaction |
-| <a id="transaction-2"></a> `transaction` | `string` | Base64-encoded transaction |
+| <a id="transaction-3"></a> `transaction` | `string` | Base64-encoded transaction |
 
 ***
 
@@ -562,7 +635,7 @@ Response from conditionally signing a transaction.
 | ------ | ------ | ------ |
 | <a id="signed_transaction-1"></a> `signed_transaction` | `string` | Base64-encoded signed transaction |
 | <a id="signer_pubkey-2"></a> `signer_pubkey` | `string` | Public key of the signer used to sign the transaction |
-| <a id="transaction-3"></a> `transaction` | `string` | Base64-encoded original transaction |
+| <a id="transaction-4"></a> `transaction` | `string` | Base64-encoded original transaction |
 
 ***
 
@@ -575,7 +648,7 @@ Parameters for signing a transaction.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="signer_key-3"></a> `signer_key?` | `string` | Optional signer address for the transaction |
-| <a id="transaction-4"></a> `transaction` | `string` | Base64-encoded transaction to sign |
+| <a id="transaction-5"></a> `transaction` | `string` | Base64-encoded transaction to sign |
 
 ***
 
@@ -633,7 +706,7 @@ Response from creating a transfer transaction.
 | <a id="blockhash-1"></a> `blockhash` | `string` | Recent blockhash used in the transaction |
 | <a id="message-1"></a> `message` | `string` | Base64-encoded message |
 | <a id="signer_pubkey-4"></a> `signer_pubkey` | `string` | Public key of the signer used to send the transaction |
-| <a id="transaction-5"></a> `transaction` | `string` | Base64-encoded signed transaction |
+| <a id="transaction-6"></a> `transaction` | `string` | Base64-encoded signed transaction |
 
 ***
 
