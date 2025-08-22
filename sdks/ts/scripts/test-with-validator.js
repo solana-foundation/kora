@@ -38,6 +38,7 @@ async function waitForValidator() {
       
       if (exitCode === 0) {
         console.log('Validator is ready!');
+        await setTimeout(2_000);
         return;
       }
     } catch (error) {

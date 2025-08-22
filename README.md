@@ -1,7 +1,9 @@
 # Kora
 
+[![Rust Tests](https://github.com/solana-foundation/kora/actions/workflows/rust.yml/badge.svg)](https://github.com/solana-foundation/kora/actions/workflows/rust.yml)
+![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/solana-foundation/kora/main/.github/badges/coverage.json)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/solana-foundation/kora)
-[![Crates.io](https://img.shields.io/crates/v/kora-rpc.svg)](https://crates.io/crates/kora-rpc)
+[![Crates.io](https://img.shields.io/crates/v/kora-cli.svg)](https://crates.io/crates/kora-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Kora eliminates the SOL requirement for Solana transactions.** Let your users pay fees in any token—USDC, BONK, or your app's native token—while you handle the SOL behind the scenes.
@@ -25,24 +27,26 @@
 ### Features
 
 - Configurable validation rules and allowlists
-- Rate limiting protection
+- Full Token-2022 support with extension filtering
+- Redis caching for improved performance
+- Rate limiting and spend protection
 - Secure key management (Turnkey, Privy, Vault)
-- HMAC and API key request authentication
-- Transaction spend limits
-
+- HMAC and API key authentication
+- Prometheus metrics and monitoring
+- Enhanced fee payer protection policies
 
 ## Quick Start
 
 Install Kora: 
 
 ```bash
-cargo install kora-rpc
+cargo install kora-cli
 ```
 
 Basic usage:
 
 ```bash
-kora-rpc -- [OPTIONS] # --help for full list of options
+kora rpc [OPTIONS] # --help for full list of options
 ```
 
 **[→ Full Documentation](docs/README.md)** - Learn how Kora works
@@ -94,7 +98,7 @@ make build
 Basic usage:
 
 ```bash
-kora-rpc -- [OPTIONS]
+kora rpc [OPTIONS]
 ```
 
 Or for running with a test configuration, run: 
@@ -116,13 +120,10 @@ make test-all
 ```
 kora/
 ├── crates/                   # Rust workspace
-│   ├── kora-lib/             # Core library (signers, validation, transactions)
-│   ├── kora-rpc/             # JSON-RPC server implementation
-│   ├── kora-cli/             # Command-line interface
-│   ├── kora-turnkey/         # Turnkey signer integration
-│   └── kora-privy/           # Privy signer integration
+│   ├── kora-lib/             # Core library with RPC server (signers, validation, transactions)
+│   └── kora-cli/             # Command-line interface and RPC server
 ├── sdks/                     # Client SDKs
-│   ├── ts/                   # TypeScript SDK
+│   └── ts/                   # TypeScript SDK
 ├── tests/                    # Integration tests
 ├── docs/                     # Documentation
 │   ├── getting-started/      # Quick start guides
@@ -138,7 +139,7 @@ kora/
 
 ## Other Resources
 
-- [Kora-RPC Crates.io](https://crates.io/crates/kora-rpc) - Rust crate for running a Kora node
+- [Kora CLI Crates.io](https://crates.io/crates/kora-cli) - Rust crate for running a Kora node
 - @kora/sdk NPM Package Coming Soon
 
 ---

@@ -1,4 +1,5 @@
 # Kora Configuration Reference
+*Last Updated: 2025-08-22*
 
 Your Kora node will be signing transactions for your users, so it is important to configure it to only sign transactions that meet your business requirements. Kora gives you a lot of flexibility in how you configure your node, but it is important to understand the implications of your configuration. `kora.toml` is the control center for your Kora configuration. This document provides a comprehensive reference for configuring your Kora paymaster node through the `kora.toml` configuration file.
 
@@ -6,10 +7,14 @@ Your Kora node will be signing transactions for your users, so it is important t
 
 The `kora.toml` file controls all aspects of your Kora node's behavior including:
 - Rate limiting and authentication
+- RPC method availability
 - Transaction validation rules
 - Fee pricing models
 - Security policies
 - RPC method availability
+- Fee pricing models
+- Payment address configuration
+- Performance monitoring
 
 Your configuration file should be placed in your deployment directory or specified via the `--config` flag when starting the server.
 
@@ -18,10 +23,14 @@ Your configuration file should be placed in your deployment directory or specifi
 The `kora.toml` file is organized into sections, each with its own set of options. This guide walks through each section and explains the options available:
 
 - [Kora Core Policies](#kora-core-policies) - Core server settings
-- [Kora Enabled Methods](#kora-enabled-methods) - Kora RPC methods to enable
+- [Kora Authentication](#kora-authentication) - Authentication settings
+- [Kora Caching](#kora-caching-optional) - Redis caching for RPC calls
+- [Kora Enabled Methods](#kora-enabled-methods-optional) - Kora RPC methods to enable
 - [Validation Policies](#validation-policies) - Transaction validation and security
+- [Token-2022 Extension Blocking](#token-2022-extension-blocking) - Block risky Token-2022 extensions
 - [Fee Payer Policy](#fee-payer-policy) - Restrictions on fee payer wallet
 - [Price Configuration](#price-configuration) - Transaction fee pricing models
+- [Performance Monitoring](#performance-monitoring-optional) - Metrics collection and monitoring
 - [Complete Example](#complete-example) - Full production-ready configuration
 
 Sample `kora.toml` file sections:
@@ -30,20 +39,29 @@ Sample `kora.toml` file sections:
 [kora]
 # Core server settings
 
+[kora.auth]
+# Authentication settings
+
+[kora.cache]
+# Redis caching configuration
+
 [kora.enabled_methods]
 # Kora RPC methods to enable
 
-[kora.rate_limit]
-# Rate limiting settings
-
 [validation]
 # Transaction validation rules
+
+[validation.token2022]
+# Token-2022 extension blocking
 
 [validation.fee_payer_policy]
 # Restrictions on fee payer wallet
 
 [validation.price]
 # Transaction fee pricing models
+
+[metrics]
+# Performance monitoring
 ```
 
 
@@ -54,6 +72,21 @@ The `[kora]` section configures core server behavior:
 ```toml
 [kora]
 rate_limit = 100
+payment_address = "YourPaymentAddressPubkey11111111111111111111"  # Optional
+```
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `rate_limit` | Global rate limit (requests per second) across all clients | ✅ | number |
+| `payment_address` | Optional payment address to receive payment tokens (defaults to signer address(es) if not specified) | ❌ | b58-encoded string |
+
+
+## Kora Authentication
+
+The `[kora.auth]` section configures authentication for the Kora server:
+
+```toml
+[kora.auth]
 api_key = "kora_live_sk_1234567890abcdef"
 hmac_secret = "kora_hmac_your-strong-hmac-secret-key-here"
 max_timestamp_age = 300
@@ -62,13 +95,32 @@ max_timestamp_age = 300
 
 | Option | Description | Required | Type |
 |--------|-------------|---------|---------|
-| `rate_limit` | Global rate limit (requests per second) across all clients | ✅ | number |
 | `api_key` | API key for simple authentication | ❌ | string |
 | `hmac_secret` | HMAC secret for signature-based authentication (min 32 chars) | ❌ | string |
 | `max_timestamp_age` | Maximum age of an HMAC timestamp in seconds | ❌ (default: 300) | number |
 
 > *Note: `api_key` and `hmac_secret` set a global authentication policy for all clients. For detailed authentication setup, see [Authentication Guide](./AUTHENTICATION.md).*
 
+## Kora Caching (optional)
+
+The `[kora.cache]` section configures Redis-based caching for Solana RPC calls. This can significantly improve performance by reducing redundant account data fetches:
+
+```toml
+[kora.cache]
+enabled = true                      # Enable/disable caching
+url = "redis://localhost:6379"      # Redis connection URL
+default_ttl = 300                   # Default TTL in seconds (5 minutes)
+account_ttl = 60                    # Account data TTL in seconds (1 minute)
+```
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `enabled` | Enable Redis caching for RPC calls | ❌ (default: false) | boolean |
+| `url` | Redis connection URL (required when enabled) | ✅ | string |
+| `default_ttl` | Default TTL for cached entries in seconds | ❌ (default: 300) | number |
+| `account_ttl` | TTL for account data cache in seconds | ❌ (default: 60) | number |
+
+> *Note: When caching is enabled, a Redis instance must be available at the specified URL. The cache gracefully falls back to direct RPC calls if Redis is unavailable.*
 
 ### Kora Enabled Methods (optional)
 The `[kora.enabled_methods]` section controls which RPC methods are enabled. This section is optional and by default, all methods are enabled. Each method can be enabled or disabled by setting the value to `true` or `false`:
@@ -140,7 +192,53 @@ disallowed_accounts = [
 | `allowed_spl_paid_tokens` | SPL tokens accepted as payment for transaction fees | ✅ | Array of b58-encoded string |
 | `disallowed_accounts` | Accounts that are explicitly blocked from transactions | ✅ | Array of b58-encoded string |
 
-> *Note: Empty arrays are allowed, but you will need to specify at least one whitelisted `allowed_programs`, `allowed_tokens`, `allowed_spl_paid_tokens` for the Kora node to be able to process transactions. You need to specify the System Program or Token Program for the Kora node to be able to process transactions.*
+> *Note: Empty arrays are allowed, but you will need to specify at least one whitelisted `allowed_programs`, `allowed_tokens`, `allowed_spl_paid_tokens` for the Kora node to be able to process transactions. You need to specify the System Program or Token Program for the Kora node to be able to process transfers.*
+
+## Token-2022 Extension Blocking
+
+The `[validation.token2022]` section allows you to block specific Token-2022 extensions for enhanced security. All extensions are enabled by default. You can block specific extensions by adding them to the `blocked_mint_extensions` or `blocked_account_extensions` arrays:
+
+```toml
+[validation.token2022]
+blocked_mint_extensions = [
+    "transfer_hook",           # Block tokens with transfer hooks
+    "pausable",                # Block pausable tokens
+    "permanent_delegate",      # Block tokens with permanent delegates
+]
+blocked_account_extensions = [
+    "cpi_guard",              # Block accounts with CPI guard
+    "memo_transfer",          # Block accounts requiring memos
+]
+```
+
+### Available Mint Extensions
+
+| Extension Name | Description |
+|----------------|-------------|
+| `confidential_transfer_mint` | Confidential transfer configuration for the mint |
+| `confidential_mint_burn` | Confidential mint and burn configuration |
+| `transfer_fee_config` | Transfer fee configuration |
+| `mint_close_authority` | Authority allowed to close the mint |
+| `interest_bearing_config` | Interest-bearing token configuration |
+| `non_transferable` | Makes tokens non-transferable |
+| `permanent_delegate` | Permanent delegate for the mint |
+| `transfer_hook` | Custom transfer hook program |
+| `pausable` | Pausable token configuration |
+
+### Available Account Extensions
+
+| Extension Name | Description |
+|----------------|-------------|
+| `confidential_transfer_account` | Confidential transfer state for the account |
+| `non_transferable_account` | Non-transferable token account |
+| `transfer_hook_account` | Transfer hook state for the account |
+| `pausable_account` | Pausable token account state |
+| `memo_transfer` | Requires memo for transfers |
+| `cpi_guard` | Prevents certain CPI calls |
+| `immutable_owner` | Account owner cannot be changed |
+| `default_account_state` | Default state for new accounts |
+
+> *Note: Blocking extensions helps prevent interactions with tokens that have complex or potentially risky behaviors. For example, blocking `transfer_hook` prevents signing transactions for tokens with custom transfer logic.*
 
 
 ## Fee Payer Policy
@@ -154,6 +252,9 @@ allow_sol_transfers = false
 allow_spl_transfers = false
 allow_token2022_transfers = false
 allow_assign = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
 ``` 
 
 | Option | Description | Required | Type |
@@ -162,6 +263,9 @@ allow_assign = false
 | `allow_spl_transfers` | Allow SPL token transfers where the Kora node's fee payer is the signer/authority | ✅ | boolean |
 | `allow_token2022_transfers` | Allow Token-2022 transfers where the Kora node's fee payer is the signer/authority | ✅ | boolean |
 | `allow_assign` | Allow account ownership changes where the Kora node's fee payer is the signer/authority | ✅ | boolean |
+| `allow_burn` | Allow token burn operations where the Kora node's fee payer is the signer/authority | ✅ | boolean |
+| `allow_close_account` | Allow closing token accounts where the Kora node's fee payer is the signer/authority | ✅ | boolean |
+| `allow_approve` | Allow token delegation/approval where the Kora node's fee payer is the signer/authority | ✅ | boolean |
 
 > *Note: For security reasons, it is recommended to set all of these to `false` and only enable as needed.*
 
@@ -209,21 +313,71 @@ Sponsor all transaction fees (no charge to users):
 type = "free"
 ```
 
+## Performance Monitoring (optional)
+
+The `[metrics]` section configures metrics collection and monitoring. This section is optional and by default, metrics are disabled.
+
+```toml
+[metrics]
+enabled = true
+endpoint = "/metrics"
+port = 8080
+scrape_interval = 60
+
+[metrics.fee_payer_balance]
+enabled = true
+expiry_seconds = 30
+```
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `enabled` | Enable metrics collection | ✅ | boolean |
+| `endpoint` | Custom metrics endpoint path | ✅ | string |
+| `port` | Metrics endpoint port | ✅ | number |
+| `scrape_interval` | Frequency of Prometheus scrape (seconds) | ✅ | number |
+
+### Fee Payer Balance Tracking
+
+The `[metrics.fee_payer_balance]` section configures automatic monitoring of your fee payer's SOL balance:
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `enabled` | Enable fee payer balance tracking | ❌ (default: false) | boolean |
+| `expiry_seconds` | Background tracking interval in seconds | ❌ (default: 30) | number |
+
+When enabled, Kora automatically tracks your fee payer's SOL balance and exposes it via the `fee_payer_balance_lamports` Prometheus gauge. This helps with capacity planning and low-balance alerting.
+
+> *Note: Metrics are served at `http://localhost:{port}/{metrics-endpoint}` (Metrics can be served on the same port as the RPC server).*
+
+**[→ Kora Monitoring Reference Guide](./MONITORING.md)**
+
 ## Complete Example
 
 Here's a production-ready configuration with security best practices:
 
 ```toml
 # Kora Paymaster Configuration
-# Last Updated: 2024-01-15
+# Last Updated: 2025-08-22
 
 [kora]
 # Rate limiting: 100 requests per second globally
 rate_limit = 100
 
+# Optional payment address (defaults to signer address(es) if not specified)
+# payment_address = "YourPaymentAddressPubkey11111111111111111111"
+
+[kora.auth]
 # Authentication (choose based on security needs)
 # api_key = "kora_live_sk_generate_secure_key_here"
 hmac_secret = "kora_hmac_minimum_32_character_secret_here"
+max_timestamp_age = 300
+
+# Caching configuration (optional but recommended for production)
+[kora.cache]
+enabled = true
+url = "redis://localhost:6379"
+default_ttl = 300  # 5 minutes
+account_ttl = 60   # 1 minute
 
 # Disable unnecessary RPC methods for security
 [kora.enabled_methods]
@@ -278,28 +432,81 @@ allow_sol_transfers = false
 allow_spl_transfers = false
 allow_token2022_transfers = false
 allow_assign = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+
+# Token-2022 extension blocking
+[validation.token2022]
+# Block potentially risky mint extensions
+blocked_mint_extensions = [
+    "transfer_hook",       # Custom transfer logic
+    "pausable",            # Can freeze transfers
+    "permanent_delegate",  # Permanent control
+]
+# Block complex account extensions
+blocked_account_extensions = [
+    "cpi_guard",      # Restricts composability
+    "memo_transfer",  # Requires additional data
+]
 
 # Sustainable pricing with 15% margin
 [validation.price]
 type = "margin"
 margin = 0.15  # 15% margin on network fees
+
+# Metrics collection
+[metrics]
+enabled = true
+endpoint = "/metrics"
+port = 8080
+scrape_interval = 60
+
+# Fee payer balance monitoring
+[metrics.fee_payer_balance]
+enabled = true
+expiry_seconds = 30
 ```
 
 ## Configuration Validation
 
-Kora validates your configuration on startup. If you would like to validate your configuration without starting the server, you can use the `--validate-config` flag:
+Kora validates your configuration on startup. If you would like to validate your configuration without starting the server, you can use the config validation command:
 
 ```bash
-kora-rpc --config kora.toml --validate-config
+kora --config kora.toml config validate # or validate-with-rpc
 ```
+
+You can also run the `validate-with-rpc` command to validate your configuration with the RPC server (this validation check is a little bit slower but does more thorough account checks)
 
 ## Starting the Server
 
 Once you have configured your `kora.toml` file, you can start the Kora server:
 
 ```bash
-kora-rpc --config path/to/kora.toml # --other-flags-here
+kora --config path/to/kora.toml rpc start --no-load-signer # --other-rpc-flags-here
 ```
+
+The `--no-load-signer` flag will initialize the server without loading any signers. This is useful for testing your configuration. In order to load signers, you will need to configure the `signers.toml` file. A minimum configuration with a single signer would look like this:
+
+```toml
+[signer_pool]
+# Selection strategy: round_robin, random, weighted
+strategy = "round_robin"
+
+# Primary memory signer
+[[signers]]
+name = "my-signer"
+type = "memory"
+private_key_env = "MY_SIGNER_PRIVATE_KEY"
+```
+
+This will load a single signer from the `MY_SIGNER_PRIVATE_KEY` environment variable. Then you can start your server with:
+
+```bash
+kora --config path/to/kora.toml rpc start --signers-config path/to/signers.toml
+```
+
+For more information and advanced signer configuration, see the [Signers Guide](./SIGNERS.md).
 
 ## Best Practices
 
@@ -312,6 +519,7 @@ kora-rpc --config path/to/kora.toml # --other-flags-here
 ## Need Help?
 
 - Check [Authentication Guide](./AUTHENTICATION.md) for auth setup
+- Check [Signers Guide](./SIGNERS.md) for signer configuration
 - Check [Operator Guide](./README.md) for more information on how to run a Kora node
 - Visit [Solana Stack Exchange](https://solana.stackexchange.com/) with the `kora` tag
 - Report issues on [GitHub](https://github.com/solana-foundation/kora/issues)

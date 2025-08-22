@@ -1,12 +1,35 @@
-version: '3.8'
-
 services:
-  app:
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  kora:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3030:3030"
+      - "8080:8080"
+    volumes:
+      - ./kora.toml:/app/kora.toml
+      - ./signers.toml:/app/signers.toml
+      - ./.env:/app/.env:ro
     environment:
       - RUST_LOG=info
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env
+    command:
+      - sh
+      - -c
+      - "kora-rpc --config /app/kora.toml --signers-config /app/signers.toml"
     restart: unless-stopped
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:

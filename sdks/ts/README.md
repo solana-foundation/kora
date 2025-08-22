@@ -97,6 +97,12 @@ Get the current Kora configuration.
 const config = await client.getConfig();
 ```
 
+#### `getPayerSigner()`
+Get the payer signer and payment destination.
+```typescript
+const { signer, payment_destination } = await client.getPayerSigner();
+```
+
 #### `getSupportedTokens()`
 Get list of supported tokens.
 ```typescript

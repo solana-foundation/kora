@@ -12,6 +12,7 @@
   "license": "MIT",
   "packageManager": "pnpm@10.12.3",
   "dependencies": {
+    "@kora/sdk": "file:../../../../sdks/ts",
     "@solana-program/compute-budget": "^0.8.0",
     "@solana-program/system": "^0.7.0",
     "@solana-program/token": "^0.5.1",

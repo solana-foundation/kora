@@ -1,15 +1,29 @@
 use async_trait::async_trait;
 use mockall::automock;
-use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
 use std::any::Any;
 
-pub trait TokenState: Any {
+pub trait TokenState: Any + Send + Sync {
     fn mint(&self) -> Pubkey;
     fn owner(&self) -> Pubkey;
     fn amount(&self) -> u64;
     fn decimals(&self) -> u8;
 
     // Add method to support downcasting for Token2022 specific features
+    fn as_any(&self) -> &dyn Any;
+}
+
+pub trait TokenMint: Any + Send + Sync {
+    fn address(&self) -> Pubkey;
+    fn mint_authority(&self) -> Option<Pubkey>;
+    fn supply(&self) -> u64;
+    fn decimals(&self) -> u8;
+    fn freeze_authority(&self) -> Option<Pubkey>;
+    fn is_initialized(&self) -> bool;
+    fn get_token_program(&self) -> Box<dyn TokenInterface>;
+
+    // For downcasting to specific types
     fn as_any(&self) -> &dyn Any;
 }
 
@@ -57,13 +71,26 @@ pub trait TokenInterface: Send + Sync {
         mint: &Pubkey,
     ) -> Instruction;
 
-    fn get_mint_decimals(
+    fn unpack_mint(
         &self,
+        mint: &Pubkey,
         mint_data: &[u8],
-    ) -> Result<u8, Box<dyn std::error::Error + Send + Sync>>;
+    ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>>;
 
-    fn decode_transfer_instruction(
+    async fn get_and_validate_amount_for_payment<'a>(
         &self,
-        data: &[u8],
+        rpc_client: &'a RpcClient,
+        token_account: Option<&'a dyn TokenState>,
+        mint_account: Option<&'a dyn TokenMint>,
+        amount: u64,
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>>;
+
+    /// Get the account size required for creating an ATA for this token program
+    /// For SPL Token, this returns the standard size
+    /// For Token-2022, this query the mint to determine size requirements
+    async fn get_ata_account_size(
+        &self,
+        mint_pubkey: &Pubkey,
+        mint: &Account,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>>;
 }

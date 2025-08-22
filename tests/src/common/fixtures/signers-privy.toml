@@ -1,0 +1,10 @@
+[signer_pool]
+strategy = "round_robin"
+
+[[signers]]
+name = "privy_signer"
+type = "privy"
+app_id_env = "PRIVY_APP_ID"
+app_secret_env = "PRIVY_APP_SECRET"
+wallet_id_env = "PRIVY_WALLET_ID"
+weight = 1

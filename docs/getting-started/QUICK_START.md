@@ -1,5 +1,7 @@
 # Kora Quick Start Guide
 
+*Last Updated: 2025-08-22*
+
 ## Kora Basics
 
 Kora is a JSON-RPC server that provides fee payment services for Solana transactions. It allows users to pay transaction fees with SPL tokens instead of SOL, enabling better UX for applications where users may not hold SOL.
@@ -25,14 +27,14 @@ This quick start will launch a local Kora RPC server and demonstrate client inte
 
 - [Solana CLI](https://solana.com/docs/intro/installation) v2.2.x or greater
 - [Rust/Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html) (for Kora RPC installation)
-- [Node.js v24+](https://nodejs.org/en/download) and a package manager (e.g., [pnpm](https://pnpm.io/), npm)
+- [Node.js v22+](https://nodejs.org/en/download) and a package manager (e.g., [pnpm](https://pnpm.io/), npm)
 
 ## Install Kora RPC
 
 Install the Kora RPC server globally:
 
 ```bash
-cargo install kora-rpc
+cargo install kora-cli
 ```
 
 ## Create Project
@@ -50,12 +52,11 @@ The demo contains three main components:
 
 **Client Directory (`client/src/`)**
 - `setup.ts` - Local environment setup (creates keypairs & writes them to .env, airdrops SOL, initializes test token)
-- `types.ts` - TypeScript definitions for Kora RPC request/response types
-- `client.ts` - Kora client factory using Solana Kit
 - `main.ts` - Main demonstration script showing Kora integration
 
 **Server Directory (`server/`)**
 - `kora.toml` - Kora RPC configuration defining validation rules, allowed tokens, and fee parameters
+- `signers.toml` - Signers configuration defining signers for the Kora server
 
 **Shared Configuration**
 - `.env` - Environment variables for keypairs and addresses (create `.env` in root - `demo/.env`). The environment variables will be created by the setup script.
@@ -65,7 +66,18 @@ The demo contains three main components:
 First, create .env for your environment :
 
 ```bash
+# Create .env file (will be populated by setup script)
 touch .env
+```
+
+### Build Kora SDK
+
+The client uses the local Kora TypeScript SDK. Build it first:
+
+```bash
+# From project root (kora/)
+make install-ts-sdk
+make build-ts-sdk
 ```
 
 ### Setup Client
@@ -73,8 +85,9 @@ touch .env
 Install client dependencies:
 
 ```bash
-cd client
-pnpm install  # or npm install
+# From project root (kora/)
+cd docs/getting-started/demo/client
+pnpm install --ignore-workspace # use --ignore-workspace to avoid pnpm workspace conflicts
 ```
 ### Setup Kora RPC Server
 
@@ -88,7 +101,12 @@ The Kora server requires configuration to specify which tokens can be used for f
 - `allowed_spl_paid_tokens`: array of mint addresses your program accepts as payment
 - `disallowed_accounts`: blacklist of accounts not allowed to interact with your kora RPC
 
-For now, let's leave the default values--you can come back here and change these later. 
+For now, let's leave the default values--you can come back here and change these later (for more information on the configuration options, see the [Kora Configuration](../operators/CONFIGURATION.md) documentation). 
+
+### Setup Signers
+
+Open `server/signers.toml` and note the signers section. Here we can specify which signers will be used to sign transactions and (if using multiple signers) a strategy for selecting which signer to use. For now, let's use a single-signer using the default values--you can come back here and change these later (for more information on the signers configuration, see the [Signers Guide](../operators/SIGNERS.md) documentation). 
+
 
 ## Test Server
 
@@ -123,15 +141,35 @@ allowed_spl_paid_tokens = [
 ] 
 ```
 
-### Terminal 3: Start Kora RPC Server
+### Terminal 3: Initialize Payment ATAs (Optional)
+In order to receive payments, you'll need to initialize Associated Token Accounts (ATAs) for your payment tokens. You can do this by running the following command:
+
 ```bash
 # From ./server directory
-kora-rpc
+kora rpc initialize-atas
 ```
 
-The server reads configuration from `kora.toml` and uses environment variables from the shared `.env` file. If you are using a different folder structure than specified here, you may need to use the `--config` to specify the location of `kora.toml` and `--private-key` to specify the directory of your private key. You can access `kora-rpc -h` for help on the function.
+This command will:
+- Read your payment address from `kora.toml` (or if you have not specified a payment address, all of the signers listed in `signers.toml`)
+- Create ATAs for all tokens listed in `allowed_spl_paid_tokens`
+- Skip any ATAs that already exist
+- You can optionally specify a customer fee payer for ATA generation by using the `fee_payer_key` flag.
 
-### Terminal 4: Run Client Demo
+### Terminal 4: Start Kora RPC Server
+```bash
+# From ./server directory
+kora rpc start
+```
+
+The server reads configuration from `kora.toml` and `signers.toml` and uses environment variables from the shared `.env` file. If you are using a different folder structure than specified here, you may need to use the `--config` to specify the location of `kora.toml` and `--signers-config` to specify the directory of your signers configuration: 
+
+```bash
+kora rpc --config path/to/kora.toml start --signers-config path/to/signers.toml
+```
+
+You can access `kora rpc -h` for help on the RPC server options.
+
+### Terminal 5: Run Client Demo
 ```bash
 # From ./client directory
 pnpm start
@@ -157,8 +195,12 @@ Kora Config: {
       'usdCAEFbouFGxdkbHCRtMTcN7DJHd3aCmP9vqjLgmAp' 
     ],
     disallowed_accounts: [],
-    price_source: 'Mock'
-  }
+    price_source: 'Mock',
+    fee_payer_policy: {...},
+    price: { type: 'margin', margin: 0 }
+  },
+  enabled_methods: { ... }
+ }
 }
 Blockhash:  C8W8d5w2H4jKXyFg5CEBoiaPvEpJ1am7xLxZ3fym4a2g
 ```
@@ -170,10 +212,12 @@ This confirms your Kora server is running and properly configured!
 Once you have the basic setup working, explore additional Kora RPC methods:
 
 - `estimateTransactionFee` - Calculate fees for transactions
+- `getPayerSigner` - Get the payer signer and payment destination
 - `getSupportedTokens` - Returns an array of supported payment tokens
 - `signTransaction` - Sign transactions with the Kora feepayer
 - `transferTransaction` - Create transfer SOL or SPL token transfer transactions (signed by the Kora feepayer)
 - `signAndSendTransaction` - Signs a transaction with the Kora feepayer and sends it to the configured Solana RPC
 - `signTransactionIfPaid` - Conditionally sign transactions when fees are covered
+- `getPaymentInstruction` - Get a payment instruction for a transaction
 
 **Got questions?** Ask questions the [Solana Stack Exchange](https://solana.stackexchange.com/) with a `Kora` tag.

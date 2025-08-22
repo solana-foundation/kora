@@ -13,7 +13,7 @@ As a Kora node operator, you run a **paymaster service** that sponsors Solana tr
 
 - [Quick Start](#quick-start)
 - [Core Concepts](#core-concepts)
-- [Kora-RPC Crate](#kora-rpc-crate)
+- [Kora CLI](#kora-cli)
 - [Configuration](#configuration)
 - [Deployment](#deployment)
 - [Need Help?](#need-help)
@@ -28,23 +28,32 @@ As a Kora node operator, you're responsible for running a secure paymaster servi
 
 ### 1. Validate Transactions
 Configure your node to accept only transactions that meet your business requirements via `kora.toml`:
-- **Token allowlists**: Define which SPL tokens you accept as payment
+- **Token allowlists**: Define which SPL tokens you accept as payment (supports both SPL and Token-2022)
 - **Program allowlists**: Whitelist which Solana programs users can interact with
 - **Transaction limits**: Set maximum fees you're willing to pay and signature limits
 - **Account blocklists**: Prevent interactions with problematic addresses
 - **Pricing oracles**: Configure Jupiter or mock pricing for fee calculations
 - **Payment tokens**: Specify which type of tokens you will accept as payment 
-- **Feepayer policies**: Specify which types of instructions your feepayer can sign
+- **Feepayer policies**: Control what operations your feepayer can perform (transfers, burns, approvals, etc.)
+- **Token-2022 extensions**: Block specific Token-2022 extensions for enhanced security
+- **Caching**: Enable Redis caching to improve performance by reducing RPC calls
+
+**[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)**
+**[→ Sample kora.toml](./deploy/sample/kora.toml)**
 
 ### 2. Sign Transactions  
-Your node needs a Solana keypair to sign transactions as the fee payer. Consider implementing key rotation, access controls, backups, and other strategies for signer security. At present, Kora enables you to sign with:
-- **Environment Variables**: Store private key directly in server environment (as base58, .json file, or u8 array)
-- [**Turnkey**](https://www.turnkey.com/): Turnkey is private key management made simple. Create wallets, sign transactions, and automate onchain actions — all with one elegant API.
-- [**Privy**](https://www.privy.io/): Privy makes it easy to build on crypto rails. Securely spin up whitelabel wallets, sign transactions, and integrate onchain infrastructure—all through one simple API.
+Your node needs Solana keypair(s) to sign transactions as the fee payer. For production deployments, Kora supports **multi-signer configurations** for improved reliability and account-lock distribution. Consider implementing key rotation, access controls, backups, and other strategies for signer security. Signing options available:
+
+- **Local Private Key**: Store private key directly in server environment (as base58, .json file, or u8 array)
+- [**Turnkey**](https://www.turnkey.com/): Private key management made simple. Create wallets, sign transactions, and automate onchain actions.
+- [**Privy**](https://www.privy.io/): Easy crypto infrastructure. Securely spin up whitelabel wallets and sign transactions.
+- [**HashiCorp Vault**](https://developer.hashicorp.com/vault): Manage Secrets & Protect Sensitive Data
+
+**[→ Complete Signers Configuration Guide](SIGNERS.md)**
 
 ### 3. Pay Transaction Fees
 Maintain sufficient SOL to cover network fees for your expected transaction volume:
-- **Balance monitoring**: Track SOL balance and set up low-balance alerts
+- **Balance monitoring**: Track SOL balance and set up low-balance alerts (Kora provides built-in Prometheus metrics - see [Monitoring](./MONITORING.md))
 - **Automation**: Implement automatic SOL top-up procedures for production environments
 - **Capacity planning**: Plan for expected use case, user volume, etc.
 
@@ -53,16 +62,27 @@ Continuously track your node's security, performance, and business metrics:
 - **Security monitoring**: Unusual patterns, failed validations, and rate limit breaches
 - **Operational alerts**: System health, balance warnings, and security events
 - **Financial tracking**: SOL costs vs. token revenue, profitability analysis
+- **Signer balance monitoring**: Track signer balance and set up low-balance alerts
 
-## Kora-RPC Crate
+Kora provides an optional `/metrics` endpoint that provides real-time performance data in Prometheus format.
 
-The [kora-rpc crate](https://crates.io/crates/kora-rpc) is a production-ready Rust binary that provides everything you need to run a Kora paymaster node. It's distributed as a standalone executable that you can install globally or deploy in containers.
+**[→ Kora Monitoring Reference Guide](./MONITORING.md)**
+
+### 5. Optimize Performance (Optional)
+For high-traffic deployments, enable Redis caching to reduce RPC calls and improve response times:
+- **Account caching**: Cache Solana account data with configurable time to live (TTL)
+- **Automatic fallback**: Gracefully falls back to direct RPC calls if Redis is unavailable
+- **Cache management**: Automatic expiration and force-refresh capabilities for critical operations
+
+## Kora CLI
+
+The [kora-cli crate](https://crates.io/crates/kora-cli) is a production-ready Rust binary that provides everything you need to run a Kora paymaster node. It's distributed as a standalone executable that you can install globally or deploy in containers.
 
 ### Installation Options
 
 **Global Installation (recommended for development)**
 ```bash
-cargo install kora-rpc
+cargo install kora-cli
 ```
 
 **Or build from source  (recommended for contributing)**
@@ -75,23 +95,26 @@ make install
 
 ### Basic Usage
 
-The Kora RPC server exposes a JSON-RPC endpoint (default: http://localhost:8080). Launch it with the `kora-rpc` command:
+The Kora RPC server exposes a JSON-RPC endpoint (default: http://localhost:8080). Launch it with the `kora rpc` command:
 
 ```bash
 # Run with default configuration (looks for .env and kora.toml in current directory)
-kora-rpc
+kora rpc
 
 # Specify custom configuration path
-kora-rpc --config /path/to/kora.toml
+kora --config /path/to/kora.toml rpc
 
-# Specify private key location
-kora-rpc --private-key /path/to/keypair.json
+# Single signer setup
+kora rpc --private-key /path/to/keypair.json
+
+# Multi-signer setup (production recommended)
+kora rpc --signers-config signers.toml
 
 # Set custom port
-kora-rpc --port 3000
+kora rpc --port 3000
 
 # Help
-kora-rpc --help
+kora rpc --help
 ```
 
 Applications can access the Kora RPC Server via the [Kora CLI](../../crates/cli/) or the [Kora TS SDK](../../sdks/ts/)
@@ -100,81 +123,30 @@ Applications can access the Kora RPC Server via the [Kora CLI](../../crates/cli/
 
 Every Kora RPC node must be configured with at least:
 - a Solana RPC endpoint (specified via the `--rpc-url` flag or `RPC_URL` environment variable) [default: http://127.0.0.1:8899]
-- a Solana signer (specified via the `--private-key` or `KORA_PRIVATE_KEY=` environment variable) (Check out the **[Signers Documentation](./SIGNERS.md)** for signing with a key management provider)
+- Solana signer(s) configuration (specified via the `--signers-config signers.toml` flag) 
 - a config file, `kora.toml` (specified via the `--config path/to/kora.toml` flag)
 
 **kora.toml**
 
-Before deploying, you'll need to create and configure a `kora.toml` to specify: payment tokens, security rules, rate limits, fee payer protections, and pricing oracle. Begin with tight limits, then gradually expand based on your application's needs.
-Your `kora.toml` should live in the same directory as your deployment or be specified via the `--config` flag when starting the server.
+Before deploying, you'll need to create and configure a `kora.toml` to specify:
 
-**[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)**
-**[→ Sample kora.toml](./deploy/sample/kora.toml)**
+- Rate limiting and authentication
+- Payment destination address
+- RPC method availability
+- Transaction validation rules
+- Security policies (whitelist or blacklist of SPL tokens, programs, accounts, token extensions, etc.)
+- Fee pricing models
+- Enhanced fee payer policies (protect against unwanted signer behavior)
+- Metrics collection
+- Redis caching configuration (optional)
 
+**signers.toml**
 
+You will also need to create a `signers.toml` file to specify:
 
-### 1. Rate Limiting
-
-Implement global, per-second rate limiting for the server:
-
-```toml
-[kora]
-rate_limit = 100
-```
-
-### 2. Payment Tokens
-
-Specify the types of tokens you will accept as payment (e.g., USDC and Bonk):
-
-```toml
-[validation]
-allowed_spl_paid_tokens = [
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
-    "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"   # BONK
-]
-```
-
-### 3. Security Rules
-
-Specify the maximum amount you are willing to pay, whitelist programs, or blacklist specific wallets
-
-```toml
-# [validation] (continued)
-max_allowed_lamports = 1000000    # Max 0.001 SOL per transaction
-max_signatures = 10               # Prevent complex transactions
-allowed_programs = [              # Whitelist programs
-    "11111111111111111111111111111111",  # System Program
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"  # Token Program
-]
-disallowed_accounts = []
-```
-
-### 4. Price Source (Oracle)
-
-At present, you can choose 'Jupiter' for production applications or 'Mock' for testing. 
-
-```toml
-# [validation] (continued)
-price_source = 'Jupiter'
-```
-
-### 5. Fee Payer Protections
-
-Restrict your fee payer wallet from signing transactions that include certain types of instructions where the fee payer is the signer (e.g., Prevent transfers of SPL tokens that the fee payer is owner/authority of)
-
-```toml
-[validation.fee_payer_policy]
-allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
-allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
-allow_token2022_transfers = true # Allow fee payer to be source in Token2022 transfers
-allow_assign = true             # Allow fee payer to use Assign instruction
-```
-
-### 6. User Authentication
-
-Kora supports two optional authentication methods for securing your RPC endpoint: a global API key for all users or [HMAC authentication](https://en.wikipedia.org/wiki/HMAC) with replay protection. If neither is configured, no authentication is required to use the RPC endpoint. You can use both methods simultaneously for maximum security.
-
-For more information on authentication, see [Kora Authentication](./AUTHENTICATION.md)
+- Signer(s) for your node
+- Signer selection strategy
+- Each signer's configuration and applicable keys
 
 ## Deployment 
 
@@ -184,9 +156,10 @@ Start up and test a local Kora Server in minutes: [Quick Start Guide](../getting
 
 ### Docker
 
-Use the sample Dockerfile to deploy on any container platform:
+Use the sample Dockerfile to deploy on any container platform. The docker-compose.yml file includes Redis for caching support:
 
 **[→ Sample Dockerfile](./deploy/sample/Dockerfile)**
+**[→ Docker Compose with Redis](../../docker-compose.yml)**
 
 ### Platform-Specific Guides
 
@@ -199,7 +172,7 @@ Use the sample Dockerfile to deploy on any container platform:
 
 - **[Solana Stack Exchange](https://solana.stackexchange.com/)** - Ask questions/share learnings (make sure to use the `kora` tag)
 - **[GitHub Issues](https://github.com/solana-foundation/kora/issues)** - Report bugs or get help
-
+- Run `kora-rpc --help` to see all available flags and configuration options
 
 
 

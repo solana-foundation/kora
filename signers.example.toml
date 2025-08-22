@@ -1,0 +1,77 @@
+# Example multi-signer configuration for Kora
+# Copy this file to signers.toml and configure environment variables
+
+[signer_pool]
+# Selection strategy: round_robin, random, weighted
+strategy = "round_robin"
+
+# Memory signer example
+[[signers]]
+name = "memory_signer_1"
+type = "memory"
+private_key_env = "SIGNER_1_PRIVATE_KEY"
+weight = 1
+
+# Another memory signer for load balancing
+[[signers]]
+name = "memory_signer_2"
+type = "memory"
+private_key_env = "SIGNER_2_PRIVATE_KEY"
+weight = 1
+
+# Turnkey signer example
+[[signers]]
+name = "turnkey_signer_1"
+type = "turnkey"
+api_public_key_env = "TURNKEY_API_PUBLIC_KEY_1"
+api_private_key_env = "TURNKEY_API_PRIVATE_KEY_1"
+organization_id_env = "TURNKEY_ORG_ID_1"
+private_key_id_env = "TURNKEY_PRIVATE_KEY_ID_1"
+public_key_env = "TURNKEY_PUBLIC_KEY_1"
+weight = 2                                        # Higher weight = selected more often
+
+# Privy signer example
+[[signers]]
+name = "privy_signer_1"
+type = "privy"
+app_id_env = "PRIVY_APP_ID_1"
+app_secret_env = "PRIVY_APP_SECRET_1"
+wallet_id_env = "PRIVY_WALLET_ID_1"
+weight = 1
+
+# Vault signer example
+[[signers]]
+name = "vault_signer_1"
+type = "vault"
+addr_env = "VAULT_ADDR_1"
+token_env = "VAULT_TOKEN_1"
+key_name_env = "VAULT_KEY_NAME_1"
+pubkey_env = "VAULT_PUBKEY_1"
+weight = 1
+
+# Environment Variables Required:
+# 
+# Memory Signers:
+# export SIGNER_1_PRIVATE_KEY="your_base58_private_key_1"
+# export SIGNER_2_PRIVATE_KEY="your_base58_private_key_2"
+#
+# Turnkey Signer:
+# export TURNKEY_API_PUBLIC_KEY_1="your_turnkey_api_public_key"
+# export TURNKEY_API_PRIVATE_KEY_1="your_turnkey_api_private_key"
+# export TURNKEY_ORG_ID_1="your_turnkey_organization_id"
+# export TURNKEY_PRIVATE_KEY_ID_1="your_turnkey_private_key_id"
+# export TURNKEY_PUBLIC_KEY_1="your_turnkey_public_key"
+#
+# Privy Signer:
+# export PRIVY_APP_ID_1="your_privy_app_id"
+# export PRIVY_APP_SECRET_1="your_privy_app_secret"
+# export PRIVY_WALLET_ID_1="your_privy_wallet_id"
+#
+# Vault Signer:
+# export VAULT_ADDR_1="your_vault_addr"
+# export VAULT_TOKEN_1="your_vault_token"
+# export VAULT_KEY_NAME_1="your_vault_key_name"
+# export VAULT_PUBKEY_1="your_vault_public_key_base58"
+
+# Usage:
+# kora rpc start --signers-config signers.toml

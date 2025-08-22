@@ -2,17 +2,31 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## TL;DR - Development Workflow
+
+### Branches & Commits
+- **Main branch**: `main` (protected, requires PRs)
+- **Release branch**: `release/{id}` (requires PRs)
+- **Commit format**: Use conventional commits for automatic releases
+  - `feat:` → minor version bump (1.0.3 → 1.1.0)
+  - `fix:` → patch version bump (1.0.3 → 1.0.4)
+  - `BREAKING CHANGE:` → major version bump (1.0.3 → 2.0.0)
+  - `chore:`, `docs:`, `refactor:` → patch version bump
+
+### Publishing Flow
+- **Rust crates**: Automatic publishing when files change + conventional commits
+- **TypeScript SDKs**: Changeset-based releases (require `pnpm changeset`)
+- **Individual crate releases**: Each crate publishes independently when modified
+- **GitHub releases**: Auto-generated with commit-based release notes
+
 ## Project Overview
 
 Kora is a Solana paymaster node that provides a JSON-RPC interface for handling gasless transactions and fee abstractions. It enables developers to build applications where users can pay transaction fees in tokens other than SOL.
 
-The repository consists of 5 main workspace crates:
+The repository consists of 2 main workspace crates:
 
-- `kora-lib`: Core library containing shared functionality, signers, transaction handling, and configuration
-- `kora-rpc`: JSON-RPC server implementation with middleware support
-- `kora-cli`: Command-line interface for transaction operations
-- `kora-turnkey`: Turnkey signer integration library
-- `kora-privy`: Privy signer integration library
+- `kora-lib`: Core library with integrated RPC server functionality, signers, transaction handling, and configuration
+- `kora-cli`: Unified command-line interface with RPC server and configuration commands
 - `tests`: Integration tests for the entire workspace
 - `sdks/`: TypeScript SDKs for client integration
 
@@ -38,7 +52,6 @@ make build
 
 # Build specific packages
 make build-lib    # Build the lib crate
-make build-rpc    # Build the RPC server
 make build-cli    # Build the CLI tool
 
 # Install all binaries
@@ -75,35 +88,71 @@ cargo test --workspace
 
 #### Integration Test Environment Setup
 
-Integration tests require a local validator and test account setup:
+Integration tests are fully automated using a makefile-based approach that handles sequential test execution:
 
-1. **Start local validator:**
-   ```bash
-   solana-test-validator --reset --quiet
-   ```
+**Quick Start:**
+```bash
+make test-integration
+```
 
-2. **Start local Kora Server with test configuration:**
-    ```bash
-    cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
-    ```
-    This runs the Kora RPC server with `tests/kora-test.toml` config file, which includes test-specific settings and the correct test USDC mint.
+**What happens automatically:**
+1. **Solana Validator**: Starts local test validator with reset
+2. **Test Environment Setup**: Creates test accounts, tokens, and ATAs
+3. **Sequential Test Phases**: Runs 3 test suites with different configurations
 
-3. **Run integration tests:**
-   ```bash
-   make test-integration
-   ```
-   This will run all integration tests in two phases (fully self-contained):
-   
-   **Phase 1: Regular integration tests**
-   - Initialize test environment (cargo run -p tests --bin setup-test-env)
-   - Start Kora RPC server with regular configuration
-   - Run API and token integration tests
-   - Stop the regular server
-   
-   **Phase 2: Auth integration tests**
-   - Start Kora server with auth configuration (`tests/fixtures/auth-test.toml`)
-   - Run auth integration tests (API key and HMAC authentication)
-   - Clean up the auth server
+**Test Phases (Auto-managed):**
+
+**Phase 1: Regular integration tests (26 tests)**
+- Config: `tests/src/common/fixtures/kora-test.toml` (no auth)
+- Server: Standard Kora RPC server 
+- Tests: Core RPC functionality, token operations, compute budget
+
+**Phase 2: Auth integration tests (4 tests)**  
+- Config: `tests/src/common/fixtures/auth-test.toml` (auth enabled)
+- Server: Restart with auth middleware
+- Tests: API key and HMAC authentication validation
+
+**Phase 3: Payment address tests (2 tests)**
+- Config: `tests/src/common/fixtures/paymaster-address-test.toml` (payment address)
+- Server: Restart with payment address configuration
+- **CLI ATA Initialization**: Automatically runs `kora rpc initialize-atas` before tests
+- Tests: Payment address validation and wrong destination rejection
+
+**File Structure:**
+```
+tests/
+├── src/
+│   ├── common/
+│   │   ├── fixtures/
+│   │   │   ├── kora-test.toml           # Regular tests config
+│   │   │   ├── auth-test.toml           # Auth tests config  
+│   │   │   └── paymaster-address-test.toml  # Payment address config
+│   │   ├── local-keys/
+│   │   │   ├── fee-payer-local.json     # Fee payer keypair
+│   │   │   ├── payment-local.json       # Payment address keypair
+│   │   │   ├── sender-local.json        # Sender keypair
+│   │   │   └── usdc-mint-local.json     # USDC mint keypair
+│   │   └── setup_test_env.rs            # Test environment setup
+│   └── bin/
+│       └── setup_test_env.rs            # Binary wrapper for setup
+├── integration/                         # Regular integration tests
+├── auth/                                # Authentication tests
+└── payment-address/                     # Payment address tests
+```
+
+**Manual Test Commands (if needed):**
+```bash
+# Setup test environment only
+make setup-test-env
+
+# Clean up test environment
+make clean-test-env
+
+# Run specific test phase
+cargo test -p tests --test integration
+cargo test -p tests --test auth  
+cargo test -p tests --test payment-address
+```
 
 #### Customize Test Environment
 
@@ -119,7 +168,7 @@ The test suite uses environment variables for configuration (checked before fall
 | `TEST_USDC_MINT_KEYPAIR` | Test USDC mint keypair | Built-in test mint |
 | `TEST_USDC_MINT_DECIMALS` | USDC mint decimals | `6` |
 
-Make sure to update the appropriate config file (kora.toml for production, tests/kora-test.toml for testing) to reflect the public key of TEST_USDC_MINT_KEYPAIR.
+Make sure to update the appropriate config file (kora.toml for production, tests/common/fixtures/kora-test.toml for testing) to reflect the public key of TEST_USDC_MINT_KEYPAIR.
 
 **Example with custom test configuration:**
 ```bash
@@ -139,46 +188,32 @@ make test-integration
 make run
 
 # Run with test configuration (for integration testing)
-cargo run -p kora-rpc --bin kora-rpc -- --private-key ./tests/testing-utils/local-keys/fee-payer-local.json --config tests/kora-test.toml --rpc-url http://127.0.0.1:8899
+cargo run -p kora --bin kora -- --config tests/common/fixtures/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --signers-config tests/common/fixtures/signers.toml
 
 # Run with debug logging
-RUST_LOG=debug cargo run -p kora-rpc --bin kora-rpc
+RUST_LOG=debug cargo run -p kora --bin kora -- rpc start
 
 # Run RPC server with all parameters
-cargo run -p kora-rpc --bin kora-rpc -- \
+cargo run -p kora --bin kora -- --config kora.toml --rpc-url https://api.devnet.solana.com rpc start \
   --port 8080 \
-  --config kora.toml \
-  --rpc-url https://api.devnet.solana.com \
-  --logging-format standard \
-  --metrics-endpoint http://localhost:9090
+  --logging-format standard
 
 # Run with Turnkey signer
-cargo run -p kora-rpc --bin kora-rpc -- \
-  --with-turnkey-signer \
-  --turnkey-api-public-key $TURNKEY_API_PUBLIC_KEY \
-  --turnkey-api-private-key $TURNKEY_API_PRIVATE_KEY \
-  --turnkey-organization-id $TURNKEY_ORGANIZATION_ID \
-  --turnkey-private-key-id $TURNKEY_PRIVATE_KEY_ID \
-  --turnkey-public-key $TURNKEY_PUBLIC_KEY \
-  --port 8080
+cargo run -p kora --bin kora -- rpc start --signers-config path/to/turnkey-signers.toml
 
 # Run with Privy signer
-cargo run -p kora-rpc --bin kora-rpc -- \
-  --with-privy-signer \
-  --privy-app-id $PRIVY_APP_ID \
-  --privy-app-secret $PRIVY_APP_SECRET \
-  --privy-wallet-id $PRIVY_WALLET_ID
+cargo run -p kora --bin kora -- rpc start --signers-config path/to/privy-signers.toml
 
 # Run with Vault signer  
-cargo run -p kora-rpc --bin kora-rpc -- \
-  --vault-signer \
-  --vault-addr $VAULT_ADDR \
-  --vault-token $VAULT_TOKEN \
-  --vault-key-name $VAULT_KEY_NAME \
-  --vault-pubkey $VAULT_PUBKEY
+cargo run -p kora --bin kora -- rpc start \
+  --signers-config path/to/vault-signers.toml
 
-# Run CLI commands
-cargo run -p kora-cli --bin kora-cli -- [subcommand]
+# Configuration validation commands
+cargo run -p kora --bin kora -- config validate
+cargo run -p kora --bin kora -- config validate-with-rpc
+
+# Generate OpenAPI documentation
+cargo run -p kora --bin kora --features docs -- openapi -o openapi.json
 ```
 
 ### TypeScript SDK Development
@@ -195,12 +230,13 @@ pnpm run format
 
 ### Core Library (`kora-lib/src/`)
 
-- **signer/** - Abstraction layer supporting multiple signer types:
+- **signer/** - Abstraction layer supporting multiple signer types (configured in `signers.toml`)
   - `SolanaMemorySigner` - Local keypair signing
   - `VaultSigner` - HashiCorp Vault integration
   - `TurnkeySigner` - Turnkey API integration  
   - `PrivySigner` - Privy API integration
   - Unified `KoraSigner` enum with trait implementation
+  - optionally, `--no-signer` flag to run Kora without a signer
 
 - **transaction/** - Transaction processing pipeline:
   - Fee estimation and calculation
@@ -223,7 +259,7 @@ pnpm run format
 - **cache.rs** - Token account caching
 - **rpc.rs** - Solana RPC client utilities
 
-### RPC Server (`kora-rpc/src/`)
+### RPC Server (now in `kora-lib/src/rpc_server/`)
 
 - **server.rs** - HTTP JSON-RPC server setup with middleware:
   - CORS configuration
@@ -240,31 +276,36 @@ pnpm run format
   - `getConfig` - Return server configuration
   - `getSupportedTokens` - List accepted payment tokens
   - `signTransactionIfPaid` - Conditional signing based on payment verification
+  - `getPayerSigner` - Get the payer signer and payment destination
+  - (client-only) `getPaymentInstruction` - Get a payment instruction for a transaction
 
 - **openapi/** - Auto-generated API documentation using `utoipa`
+- **args.rs** - RPC-specific command line arguments
 
 ### CLI Tool (`kora-cli/src/`)
 
-- Command-line interface with commands: `sign`, `sign-and-send`, `estimate-fee`, `sign-if-paid`
-- Supports same configuration system as RPC server
-- Can use any supported signer type
+- Unified command-line interface with subcommands:
+  - `kora config validate` - Validate configuration file
+  - `kora config validate-with-rpc` - Validate configuration with RPC calls
+  - `kora rpc start` - Start the RPC server with all signer options (kora.toml & signers.toml in cwd)
+  - `kora --config path/to/kora.toml rpc start --signers-config path/to/signers.toml` - Start the RPC server with specific config and signers
+  - `kora openapi` - Generate OpenAPI documentation
+- Global arguments (rpc-url, config) separated from RPC-specific arguments
+- All signer types supported for RPC server mode
 
 **Example CLI usage:**
 ```bash
-# Sign transaction with local private key
-cargo run -p kora-cli --bin kora-cli -- sign \
-  --private-key your_base58_private_key \
-  --config kora.toml \
-  --rpc-url https://api.devnet.solana.com
+# Validate configuration
+cargo run -p kora --bin kora -- --config kora.toml config validate
 
-# Sign with Turnkey
-cargo run -p kora-cli --bin kora-cli -- sign \
-  --with-turnkey-signer \
-  --turnkey-api-public-key $TURNKEY_API_PUBLIC_KEY \
-  --turnkey-api-private-key $TURNKEY_API_PRIVATE_KEY \
-  --turnkey-organization-id $TURNKEY_ORGANIZATION_ID \
-  --turnkey-private-key-id $TURNKEY_PRIVATE_KEY_ID \
-  --turnkey-public-key $TURNKEY_PUBLIC_KEY
+# Start RPC server with local private key
+cargo run -p kora --bin kora -- --config path/to/kora.toml --rpc-url https://api.devnet.solana.com rpc start --signers-config path/to/signers.toml
+
+# Start RPC server with Turnkey signer
+cargo run -p kora --bin kora -- rpc start --signers-config path/to/turnkey-signers.toml
+
+# Generate OpenAPI documentation
+cargo run -p kora --bin kora --features docs -- openapi -o openapi.json
 ```
 
 ### Signer Integrations
@@ -320,31 +361,7 @@ allow_token2022_transfers = true # Allow fee payer to be source in Token2022 tra
 allow_assign = true             # Allow fee payer to use Assign instruction
 ```
 
-### Environment Variables
-
-**Turnkey Integration:**
-```bash
-TURNKEY_API_PUBLIC_KEY=your_api_public_key
-TURNKEY_API_PRIVATE_KEY=your_api_private_key  
-TURNKEY_ORGANIZATION_ID=your_org_id
-TURNKEY_PRIVATE_KEY_ID=your_private_key_id
-TURNKEY_PUBLIC_KEY=your_public_key
-```
-
-**Privy Integration:**
-```bash
-PRIVY_APP_ID=your_app_id
-PRIVY_APP_SECRET=your_app_secret
-PRIVY_WALLET_ID=your_wallet_id
-```
-
-**HashiCorp Vault Integration:**
-```bash
-VAULT_ADDR=https://vault.example.com
-VAULT_TOKEN=your_vault_token
-VAULT_KEY_NAME=your_key_name
-VAULT_PUBKEY=your_base58_public_key
-```
+### Environment Variables set in `signers.toml`
 
 **General:**
 ```bash
@@ -381,24 +398,24 @@ The fee payer policy is configured via the `[validation.fee_payer_policy]` secti
 
 ## Private Key Formats
 
-Kora supports multiple private key formats for enhanced usability and compatibility with different tooling:
+Kora supports multiple private key formats for enhanced usability and compatibility with different tooling, each specified in `signers.toml`
 
-### 1. Base58 Format (Default)
+### 1. Base58 Format
 Traditional Solana private key format - base58-encoded 64-byte private key:
 ```bash
---private-key FEE_PAYER_KEYPAIR_BASE58_STRING
+KORA_PRIVATE_KEY=your_base58_private_key
 ```
 
 ### 2. U8Array Format
 Comma-separated byte array format compatible with Solana CLI outputs:
 ```bash
---private-key "[123,45,67,89,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56]"
+KORA_PRIVATE_KEY="[123,45,67,89,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56,78,90,12,34,56]"
 ```
 
 ### 3. JSON File Path
 Path to a JSON file containing the private key:
 ```bash
---private-key "/path/to/keypair.json"
+KORA_PRIVATE_KEY="/path/to/keypair.json"
 ```
 
 ### Format Detection
@@ -543,6 +560,30 @@ Both skip `/liveness` endpoint and can be used simultaneously. Implementation us
 - **API tests** - Include example JSON payloads in `tests/examples/`
 - **SDK tests** - TypeScript tests in `sdks/*/test/` directories
 
+## Makefile Structure
+
+The project uses a modular makefile approach for better organization:
+
+```
+/Makefile                  # Main makefile with includes
+/makefiles/
+├── utils.mk              # Common utilities and functions
+├── rs.mk                 # Rust build commands  
+├── tests_rs.mk           # Integration test orchestration
+└── docs.mk               # Documentation generation
+```
+
+**Key Features:**
+- **Sequential Test Execution**: Prevents port conflicts and ensures clean config isolation
+- **Server Lifecycle Management**: Automatic start/stop with proper cleanup
+- **CLI Integration**: Automated `kora rpc initialize-atas` for payment address tests
+- **Parallel Tool Execution**: Optimized for development workflow efficiency
+
+**Core Functions (from utils.mk):**
+- `start_solana_validator` / `stop_solana_validator`: Validator lifecycle
+- `start_kora_server` / `stop_kora_server`: Server lifecycle with config switching
+- `run_integration_phase`: Orchestrates server + CLI + tests for each phase
+
 ## Development Guidelines
 
 ### Behavioral Instructions
@@ -558,3 +599,35 @@ Both skip `/liveness` endpoint and can be used simultaneously. Implementation us
 - Add new signer types by implementing the `Signer` trait
 - Update configuration schema when adding new validation rules
 - Keep OpenAPI documentation in sync with method signatures
+
+## Key Integration Test Achievements
+
+**✅ Complete Sequential Test Runner**
+- Makefile-based orchestration with 3 automated phases
+- Proper server lifecycle management (start/stop/restart)
+- Config isolation between test suites
+- Zero manual intervention required
+
+**✅ CLI Integration for Payment Address Tests**
+- Automated `kora rpc initialize-atas` execution before payment tests
+- Real-world workflow simulation (CLI → tests)
+- Payment address ATA creation and validation
+
+**✅ Payment Validation Testing**
+- Tests payment address validation logic (not transaction simulation)
+- Proper positive/negative test cases:
+  - ✅ Transfer to payment address → should succeed  
+  - ✅ Transfer to wrong destination → should fail validation
+- Removed transaction simulation dependency (caused AccountNotFound issues)
+
+**✅ Test Infrastructure**
+- File reorganization: `tests/src/common/` structure for proper Rust crate organization
+- Config files: `kora-test.toml`, `auth-test.toml`, `paymaster-address-test.toml`
+- Binary setup: `setup_test_env` binary for account/token initialization
+- Path resolution fixes for workspace vs. crate directory differences
+
+**Test Results:**
+- Integration tests: **26/26 passed** ✅
+- Auth tests: **4/4 passed** ✅  
+- Payment address tests: **2/2 passed** ✅
+- CLI ATA initialization: **Working** ✅

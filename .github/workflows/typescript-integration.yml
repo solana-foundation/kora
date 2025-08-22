@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   workflow_call:
   push:
-    branches: [main]
+    branches: [main, "release/*"]
     paths:
       # TS SDK changes
       - "sdks/ts/**"
@@ -15,7 +15,7 @@ on:
       - ".github/workflows/typescript-integration.yml"
 
   pull_request:
-    branches: [main]
+    branches: [main, "release/*"]
     paths:
       # TS SDK changes
       - "sdks/ts/**"
@@ -89,6 +89,24 @@ jobs:
           echo "🧪 Running TypeScript SDK integration tests..."
           # The test script handles starting/stopping its own validator
           pnpm test:ci:integration
+
+      - name: Stop Kora RPC server
+        run: |
+          if [ ! -z "$KORA_PID" ]; then
+            kill $KORA_PID || true
+          fi
+          sleep 2
+
+      - name: Setup Kora RPC server (auth config)
+        uses: ./.github/actions/setup-kora-rpc
+        with:
+          config-file: "tests/src/common/fixtures/auth-test.toml"
+
+      - name: Run TypeScript auth integration tests
+        working-directory: sdks/ts
+        run: |
+          echo "🧪 Running TypeScript SDK auth integration tests..."
+          pnpm test:ci:integration:auth
 
       - name: Cleanup test environment
         uses: ./.github/actions/cleanup-test-env
