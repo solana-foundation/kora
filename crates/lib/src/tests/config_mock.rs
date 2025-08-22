@@ -189,6 +189,18 @@ impl ConfigMockBuilder {
         self
     }
 
+    pub fn with_blocked_token2022_mint_extensions(mut self, extensions: Vec<String>) -> Self {
+        self.config.validation.token_2022.blocked_mint_extensions = extensions;
+        let _ = self.config.validation.token_2022.initialize();
+        self
+    }
+
+    pub fn with_blocked_token2022_account_extensions(mut self, extensions: Vec<String>) -> Self {
+        self.config.validation.token_2022.blocked_account_extensions = extensions;
+        let _ = self.config.validation.token_2022.initialize();
+        self
+    }
+
     /// Build and setup the config mock with mutex lock
     /// Returns a lock guard that should be held for the duration of the test
     pub fn build_and_setup(self) -> std::sync::MutexGuard<'static, ()> {

@@ -3,6 +3,8 @@ use tempfile::NamedTempFile;
 
 use crate::{config::Config, error::KoraError};
 
+#[derive(Default)]
+
 pub struct ConfigBuilder {
     validation: ValidationSection,
     kora: KoraSection,
@@ -51,11 +53,7 @@ impl Default for KoraSection {
 
 impl ConfigBuilder {
     pub fn new() -> Self {
-        Self {
-            validation: ValidationSection::default(),
-            kora: KoraSection::default(),
-            custom_sections: Vec::new(),
-        }
+        Self::default()
     }
 
     pub fn with_programs(mut self, programs: Vec<&str>) -> Self {

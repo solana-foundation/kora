@@ -64,14 +64,13 @@ impl RpcMockBuilder {
         self
     }
 
-    pub fn with_mint_account(mut self, decimals: u8) -> Self {
+    pub fn with_mint_account(self, decimals: u8) -> Self {
         let mint_account = MintAccountMockBuilder::new()
             .with_decimals(decimals)
             .with_supply(1_000_000_000_000)
             .build();
 
-        self = self.with_account_info(&mint_account);
-        self
+        self.with_account_info(&mint_account)
     }
 
     pub fn with_custom_mock(mut self, request: RpcRequest, response: Value) -> Self {

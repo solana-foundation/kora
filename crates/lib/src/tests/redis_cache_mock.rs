@@ -1,4 +1,4 @@
-use crate::{cache::CachedAccount, error::KoraError};
+use crate::error::KoraError;
 use mockall::mock;
 use redis_test::MockRedisConnection;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -24,34 +24,6 @@ impl RedisCacheMock {
 impl Default for RedisCacheMock {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Create mock cached account for testing cache.rs
-pub fn create_mock_cached_account(pubkey: &Pubkey, lamports: u64) -> CachedAccount {
-    CachedAccount {
-        account: Account {
-            lamports,
-            data: vec![0u8; 100],
-            owner: *pubkey,
-            executable: false,
-            rent_epoch: 0,
-        },
-        cached_at: chrono::Utc::now().timestamp(),
-    }
-}
-
-/// Create expired cached account for TTL testing
-pub fn create_expired_cached_account(pubkey: &Pubkey, lamports: u64) -> CachedAccount {
-    CachedAccount {
-        account: Account {
-            lamports,
-            data: vec![0u8; 100],
-            owner: *pubkey,
-            executable: false,
-            rent_epoch: 0,
-        },
-        cached_at: chrono::Utc::now().timestamp() - 3600, // 1 hour ago
     }
 }
 
