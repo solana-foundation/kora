@@ -507,6 +507,7 @@ async fn test_estimate_transaction_fee_without_fee_token() {
         response["fee_in_token"].is_null(),
         "Expected fee_in_token to be null when not requested"
     );
+    assert!(response["payment_address"].as_str().is_some(), "Expected payment_address in response");
 }
 
 #[tokio::test]
@@ -539,6 +540,7 @@ async fn test_estimate_transaction_fee_with_fee_token() {
     // 0.01 usdc * 10^6 = 10000 usdc in base units
     assert_eq!(fee_in_lamports, 10050, "Fee in lamports should be 10050");
     assert_eq!(fee_in_token, 10050.0, "Fee in token should be 10050");
+    assert!(response["payment_address"].as_str().is_some(), "Expected payment_address in response");
 }
 
 #[tokio::test]
@@ -571,7 +573,7 @@ async fn test_estimate_transaction_fee_without_payment_instruction() {
         .expect("Failed to estimate transaction fee with token");
 
     assert!(response["fee_in_lamports"].as_u64().is_some(), "Expected fee_in_lamports in response");
-
+    assert!(response["payment_address"].as_str().is_some(), "Expected payment_address in response");
     let fee_in_lamports = response["fee_in_lamports"].as_u64().unwrap();
 
     println!("fee_in_lamports: {:?}", fee_in_lamports);
