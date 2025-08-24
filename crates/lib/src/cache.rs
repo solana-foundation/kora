@@ -245,7 +245,7 @@ impl CacheUtil {
 mod tests {
     use super::*;
     use crate::{
-        config::{Config, KoraConfig, ValidationConfig},
+        config::{Config, KoraConfig, SplTokenPaymentConfig, ValidationConfig},
         fee::price::PriceConfig,
         oracle::PriceSource,
         state::update_config,
@@ -259,7 +259,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![],
                 allowed_tokens: vec![],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Mock,
                 fee_payer_policy: crate::config::FeePayerPolicy::default(),

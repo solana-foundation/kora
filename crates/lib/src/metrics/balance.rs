@@ -150,7 +150,8 @@ mod tests {
     use super::*;
     use crate::{
         config::{
-            Config, FeePayerBalanceMetricsConfig, KoraConfig, MetricsConfig, ValidationConfig,
+            Config, FeePayerBalanceMetricsConfig, KoraConfig, MetricsConfig, SplTokenPaymentConfig,
+            ValidationConfig,
         },
         fee::price::PriceConfig,
         oracle::PriceSource,
@@ -170,7 +171,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![],
                 allowed_tokens: vec![],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Mock,
                 fee_payer_policy: crate::config::FeePayerPolicy::default(),

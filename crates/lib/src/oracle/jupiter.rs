@@ -246,4 +246,43 @@ mod tests {
         assert_eq!(price.price, 1.0);
         assert_eq!(price.source, PriceSource::Jupiter);
     }
+
+    #[tokio::test]
+    async fn test_jupiter_price_fetch_when_no_price_data() {
+        // No API key
+        {
+            let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
+            *api_key_guard = None;
+        }
+
+        let mock_response = r#"{
+            "So11111111111111111111111111111111111111112": {
+                "usdPrice": 100.0,
+                "blockId": 12345,
+                "decimals": 9,
+                "priceChange24h": 2.5
+            }
+        }"#;
+        let mut server = Server::new_async().await;
+        let _m = server
+            .mock("GET", "/price/v3")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_response)
+            .create();
+
+        let client = Client::new();
+        // Test without API key - should use lite API
+        let mut oracle = JupiterPriceOracle::new();
+        oracle.lite_api_url = format!("{}/price/v3", server.url());
+
+        let result = oracle.get_price(&client, "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN").await;
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.err(),
+            Some(KoraError::RpcError("No price data from Jupiter".to_string()))
+        )
+    }
 }

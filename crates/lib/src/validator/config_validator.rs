@@ -16,7 +16,7 @@ use spl_token::ID as SPL_TOKEN_PROGRAM_ID;
 use spl_token_2022::ID as TOKEN_2022_PROGRAM_ID;
 
 #[cfg(test)]
-use crate::config::{CacheConfig, FeePayerPolicy, ValidationConfig};
+use crate::config::{CacheConfig, FeePayerPolicy, SplTokenPaymentConfig, ValidationConfig};
 #[cfg(test)]
 use crate::fee::price::PriceConfig;
 
@@ -118,7 +118,9 @@ impl ConfigValidator {
         }
 
         // Validate allowed spl paid tokens
-        if let Err(e) = TokenUtil::check_valid_tokens(&config.validation.allowed_spl_paid_tokens) {
+        if let Err(e) =
+            TokenUtil::check_valid_tokens(config.validation.allowed_spl_paid_tokens.as_slice())
+        {
             errors.push(format!("Invalid spl paid token address: {e}"));
         }
 
@@ -147,7 +149,7 @@ impl ConfigValidator {
             }
 
             // If fees enabled, allowed_spl_paid_tokens can't be empty
-            if config.validation.allowed_spl_paid_tokens.is_empty() {
+            if !config.validation.allowed_spl_paid_tokens.has_tokens() {
                 errors.push(
                     "When fees are enabled, allowed_spl_paid_tokens cannot be empty".to_string(),
                 );
@@ -173,7 +175,7 @@ impl ConfigValidator {
                 if Pubkey::from_str(token).is_err() {
                     errors.push(format!("Invalid token address for fixed price: {token}"));
                 }
-                if !config.validation.allowed_spl_paid_tokens.contains(token) {
+                if !config.validation.supports_token(token) {
                     errors.push(format!(
                         "Token address for fixed price is not in allowed spl paid tokens: {token}"
                     ));
@@ -302,7 +304,7 @@ impl ValidationConfig {
             max_signatures: 10,
             allowed_programs: vec![],
             allowed_tokens: vec![],
-            allowed_spl_paid_tokens: vec![],
+            allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
             disallowed_accounts: vec![],
             price_source: PriceSource::Mock,
             fee_payer_policy: FeePayerPolicy::default(),
@@ -341,8 +343,8 @@ impl ValidationConfig {
         self
     }
 
-    pub fn with_allowed_spl_paid_tokens(mut self, tokens: Vec<String>) -> Self {
-        self.allowed_spl_paid_tokens = tokens;
+    pub fn with_allowed_spl_paid_tokens(mut self, config: SplTokenPaymentConfig) -> Self {
+        self.allowed_spl_paid_tokens = config;
         self
     }
 
@@ -354,7 +356,6 @@ impl ValidationConfig {
 
 #[cfg(test)]
 mod tests {
-
     use crate::{
         config::{AuthConfig, Config, EnabledMethods, KoraConfig, MetricsConfig},
         fee::price::PriceConfig,
@@ -378,7 +379,9 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec!["program1".to_string()],
                 allowed_tokens: vec!["token1".to_string()],
-                allowed_spl_paid_tokens: vec!["token3".to_string()],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![
+                    "token3".to_string()
+                ]),
                 disallowed_accounts: vec!["account1".to_string()],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -414,9 +417,9 @@ mod tests {
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![
-                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
-                ],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -446,7 +449,7 @@ mod tests {
                 max_signatures: 0,        // Should warn
                 allowed_programs: vec![], // Should warn
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Mock, // Should warn
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -500,7 +503,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec!["SomeOtherProgram".to_string()], // Missing system program
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -532,7 +535,9 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
                 allowed_tokens: vec![], // Error - no tokens
-                allowed_spl_paid_tokens: vec!["invalid_token_address".to_string()], // Error - invalid token
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![
+                    "invalid_token_address".to_string(),
+                ]), // Error - invalid token
                 disallowed_accounts: vec!["invalid_account_address".to_string()], // Error - invalid account
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -567,9 +572,9 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![
-                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
-                ],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -604,9 +609,9 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![
-                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
-                ],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -649,9 +654,9 @@ mod tests {
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![
-                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
-                ],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -688,7 +693,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()], // Missing token programs
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![], // Empty when fees enabled - should error
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]), // Empty when fees enabled - should error
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -714,6 +719,38 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_validate_with_result_fee_and_any_spl_token_allowed() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::All, // All tokens are allowed
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
+                token_2022: Token2022Config::default(),
+            },
+            metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let mock_account = create_mock_program_account();
+        let rpc_client = get_mock_rpc_client(&mock_account);
+
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_validate_with_result_paid_tokens_not_in_allowed_tokens() {
         let config = Config {
             validation: ValidationConfig {
@@ -724,9 +761,9 @@ mod tests {
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                 ],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![
                     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(), // Not in allowed_tokens
-                ],
+                ]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -755,9 +792,9 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()], // Required to pass basic validation
-                allowed_spl_paid_tokens: vec![
-                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()
-                ],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -777,7 +814,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![], // No programs
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![], // Empty to avoid duplicate validation
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]), // Empty to avoid duplicate validation
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -841,7 +878,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -874,7 +911,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -905,7 +942,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -935,7 +972,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -969,7 +1006,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -1003,7 +1040,7 @@ mod tests {
                 max_signatures: 10,
                 allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Jupiter,
                 fee_payer_policy: FeePayerPolicy::default(),
