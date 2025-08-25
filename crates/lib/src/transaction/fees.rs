@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
 use solana_sdk::{
-    instruction::CompiledInstruction, pubkey::Pubkey, rent::Rent, transaction::VersionedTransaction,
+    instruction::CompiledInstruction, pubkey::Pubkey, rent::Rent,
 };
 use solana_system_interface::{instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID};
 use spl_associated_token_account::get_associated_token_address;
@@ -106,7 +106,7 @@ pub async fn estimate_transaction_fee(
     let base_fee = get_estimate_fee(rpc_client, &transaction.message).await?;
 
     // Get account creation fees (for ATA creation)
-    let account_creation_fee = get_associated_token_account_creation_fees(rpc_client, transaction)
+    let account_creation_fee = get_associated_token_account_creation_fees(rpc_client, resolved_transaction)
         .await
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
@@ -124,7 +124,7 @@ pub async fn estimate_transaction_fee(
             rpc_client,
             fee_payer_pubkey,
             &transaction.message,
-            &transaction.get_all_account_keys(),
+            &resolved_transaction.get_all_account_keys(),
         )
         .await?
     } else {
@@ -136,24 +136,25 @@ pub async fn estimate_transaction_fee(
 
 async fn get_associated_token_account_creation_fees(
     rpc_client: &RpcClient,
-    transaction: &VersionedTransaction,
+    resolved_transaction: &impl VersionedTransactionExt,
 ) -> Result<u64, KoraError> {
     const ATA_ACCOUNT_SIZE: usize = 165; // Standard ATA size
     let mut ata_count = 0u64;
 
     // Check each instruction in the transaction for ATA creation
+    let transaction = resolved_transaction.get_transaction();
+    let all_account_keys = resolved_transaction.get_all_account_keys();
     for instruction in transaction.message.instructions() {
-        let account_keys = transaction.message.static_account_keys();
-        let program_id = account_keys[instruction.program_id_index as usize];
+        let program_id = all_account_keys[instruction.program_id_index as usize];
 
         // Skip if not an ATA program instruction
         if program_id != spl_associated_token_account::id() {
             continue;
         }
 
-        let ata = account_keys[instruction.accounts[1] as usize];
-        let owner = account_keys[instruction.accounts[2] as usize];
-        let mint = account_keys[instruction.accounts[3] as usize];
+        let ata = all_account_keys[instruction.accounts[1] as usize];
+        let owner = all_account_keys[instruction.accounts[2] as usize];
+        let mint = all_account_keys[instruction.accounts[3] as usize];
 
         let expected_ata = get_associated_token_address(&owner, &mint);
 
