@@ -1,8 +1,7 @@
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 use crate::common::{
-    helpers::{TestAccountInfo, DEFAULT_RPC_URL},
-    setup::TestAccountSetup,
+    constants::DEFAULT_RPC_URL, helpers::TestAccountInfo, setup::TestAccountSetup,
 };
 
 pub async fn check_test_validator() -> bool {

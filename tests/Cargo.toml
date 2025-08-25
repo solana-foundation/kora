@@ -9,20 +9,28 @@ path = "src/bin/setup_test_env.rs"
 
 
 [[test]]
-name = "integration"
-path = "integration/main.rs"
+name = "rpc"
+path = "rpc/main.rs"
+
+[[test]]
+name = "tokens"
+path = "tokens/main.rs"
 
 [[test]]
 name = "auth"
 path = "auth/main.rs"
 
 [[test]]
-name = "payment-address"
-path = "payment-address/main.rs"
+name = "multi_signer"
+path = "multi_signer/main.rs"
 
 [[test]]
-name = "multi-signers"
-path = "multi-signers/main.rs"
+name = "external"
+path = "external/main.rs"
+
+[[test]]
+name = "payment_address"
+path = "payment_address/main.rs"
 
 [dependencies]
 kora-lib = { path = "../crates/lib" }

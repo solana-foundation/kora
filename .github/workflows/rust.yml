@@ -50,98 +50,26 @@ jobs:
       - name: Install cargo-llvm-cov for coverage
         run: cargo install cargo-llvm-cov
 
-      - name: Initialize coverage with unit tests
+      - name: Run unit tests with coverage
         run: |
           echo "🧪 Running unit tests with coverage instrumentation..."
           cargo llvm-cov clean --workspace
-          cargo llvm-cov test --no-report --workspace --lib
+          cargo llvm-cov test --workspace --lib --html --output-dir coverage/html --lcov --output-path coverage/lcov.info
 
-      - name: Setup test environment
+      - name: Run integration tests (no coverage)
         run: |
-          echo "🔧 Setting up test environment..."
-          # Create second signer key for multi-signer tests
-          if [ ! -f "tests/src/common/local-keys/signer2-local.json" ]; then
-            echo "Creating second signer key..."
-            solana-keygen new --outfile tests/src/common/local-keys/signer2-local.json --no-bip39-passphrase --silent
+          echo "🧪 Running integration tests for behavior validation..."
+          make test-integration
+
+      - name: Display coverage summary
+        run: |
+          echo "📊 Coverage Summary:"
+          if [ -f "coverage/lcov.info" ]; then
+            echo "✅ Coverage reports generated successfully"
+            ls -la coverage/
+          else
+            echo "❌ Coverage reports not found"
           fi
-          cargo run -p tests --bin setup_test_env
-
-      - name: Setup Kora RPC server (regular config)
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          config-file: "tests/src/common/fixtures/kora-test.toml"
-
-      - name: Run all tests with coverage
-        run: |
-          echo "🧪 Running regular integration tests..."
-          cargo llvm-cov test --no-report -p tests --test integration
-
-      - name: Stop Kora RPC server
-        run: |
-          if [ ! -z "$KORA_PID" ]; then
-            kill $KORA_PID || true
-          fi
-          sleep 2
-
-      - name: Setup Kora RPC server (auth config)
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          config-file: "tests/src/common/fixtures/auth-test.toml"
-
-      - name: Run auth integration tests with coverage
-        run: |
-          echo "🧪 Running auth integration tests..."
-          cargo llvm-cov test --no-report -p tests --test auth
-
-      - name: Stop Kora RPC server
-        run: |
-          if [ ! -z "$KORA_PID" ]; then
-            kill $KORA_PID || true
-          fi
-          sleep 2
-
-      - name: Setup Kora RPC server (payment address config)
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          config-file: "tests/src/common/fixtures/paymaster-address-test.toml"
-          initialize-atas: "true"
-
-      - name: Run payment address integration tests with coverage
-        run: |
-          echo "🧪 Running payment address integration tests..."
-          cargo llvm-cov test --no-report -p tests --test payment-address
-
-      - name: Stop Kora RPC server
-        run: |
-          if [ ! -z "$KORA_PID" ]; then
-            kill $KORA_PID || true
-          fi
-          sleep 2
-
-      - name: Setup multi-signer test environment
-        run: |
-          echo "🔧 Setting up multi-signer test environment..."
-          export KORA_PRIVATE_KEY="$(cat tests/src/common/local-keys/fee-payer-local.json)"
-          export KORA_PRIVATE_KEY_2="$(cat tests/src/common/local-keys/signer2-local.json)"
-          cargo run -p tests --bin setup_test_env
-
-      - name: Setup Kora RPC server (multi-signer config)
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          config-file: "tests/src/common/fixtures/kora-test.toml"
-          signers-config: "tests/src/common/fixtures/multi-signers.toml"
-
-      - name: Run multi-signer integration tests with coverage
-        run: |
-          echo "🧪 Running multi-signer integration tests..."
-          cargo llvm-cov test --no-report -p tests --test multi-signers
-
-      - name: Generate coverage reports
-        run: |
-          echo "📊 Generating coverage reports..."
-          mkdir -p coverage
-          cargo llvm-cov report --lcov --output-path coverage/lcov.info
-          cargo llvm-cov report --html --output-dir coverage/html
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
