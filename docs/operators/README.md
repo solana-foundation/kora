@@ -1,4 +1,5 @@
 # Kora Node Operator Guide
+*Last Updated: 2025-08-25*
 
 ## What is a Kora Node Operator?
 
@@ -98,26 +99,16 @@ make install
 The Kora RPC server exposes a JSON-RPC endpoint (default: http://localhost:8080). Launch it with the `kora rpc` command:
 
 ```bash
-# Run with default configuration (looks for .env and kora.toml in current directory)
-kora rpc
-
-# Specify custom configuration path
-kora --config /path/to/kora.toml rpc
-
-# Single signer setup
-kora rpc --private-key /path/to/keypair.json
-
-# Multi-signer setup (production recommended)
-kora rpc --signers-config signers.toml
-
-# Set custom port
-kora rpc --port 3000
+# Run with specified kora.toml and signers.toml
+kora --config path/to/kora.toml rpc start --signers-config path/to/signers.toml
 
 # Help
 kora rpc --help
 ```
 
-Applications can access the Kora RPC Server via the [Kora CLI](../../crates/cli/) or the [Kora TS SDK](../../sdks/ts/)
+For more information on the using the Kora CLI, see the [CLI Guide](./CLI.md).
+
+Applications can access the Kora RPC Server via the [Kora TS SDK](../../sdks/ts/)
 
 ## Configuration 
 
@@ -172,7 +163,7 @@ Use the sample Dockerfile to deploy on any container platform. The docker-compos
 
 - **[Solana Stack Exchange](https://solana.stackexchange.com/)** - Ask questions/share learnings (make sure to use the `kora` tag)
 - **[GitHub Issues](https://github.com/solana-foundation/kora/issues)** - Report bugs or get help
-- Run `kora-rpc --help` to see all available flags and configuration options
+- Run `kora rpc --help` to see all available flags and configuration options
 
 
 

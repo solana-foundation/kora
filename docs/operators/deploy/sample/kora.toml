@@ -14,8 +14,10 @@ price_source = "Mock"
 max_allowed_lamports = 1000000
 max_signatures = 10
 allowed_programs = [
-    "11111111111111111111111111111111", # System Program
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # Token Program
+    "11111111111111111111111111111111",             # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
+    "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
 ]
 allowed_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # mainnet USDC
@@ -38,3 +40,24 @@ allow_assign = true             # Allow fee payer to use Assign instruction
 allow_burn = true               # Allow fee payer to burn tokens from their accounts
 allow_close_account = true      # Allow fee payer to close their token accounts
 allow_approve = true            # Allow fee payer to approve tokens from their accounts
+
+[kora.enabled_methods]
+liveness = false
+estimate_transaction_fee = true
+get_supported_tokens = true
+sign_transaction = true
+sign_and_send_transaction = true
+transfer_transaction = true
+get_blockhash = true
+get_config = true
+sign_transaction_if_paid = true
+get_payer_signer = true
+
+[validation.price]
+type = "margin" # free / margin / fixed
+margin = 0.1  # Default margin (10%) for paid transaction validation
+
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60

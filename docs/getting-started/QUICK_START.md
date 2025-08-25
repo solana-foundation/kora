@@ -1,6 +1,6 @@
 # Kora Quick Start Guide
 
-*Last Updated: 2025-08-22*
+*Last Updated: 2025-08-25*
 
 ## Kora Basics
 
@@ -146,7 +146,7 @@ In order to receive payments, you'll need to initialize Associated Token Account
 
 ```bash
 # From ./server directory
-kora rpc initialize-atas
+kora rpc initialize-atas --signers-config signers.toml
 ```
 
 This command will:
@@ -158,7 +158,7 @@ This command will:
 ### Terminal 4: Start Kora RPC Server
 ```bash
 # From ./server directory
-kora rpc start
+kora rpc start --signers-config signers.toml
 ```
 
 The server reads configuration from `kora.toml` and `signers.toml` and uses environment variables from the shared `.env` file. If you are using a different folder structure than specified here, you may need to use the `--config` to specify the location of `kora.toml` and `--signers-config` to specify the directory of your signers configuration: 

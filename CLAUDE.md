@@ -287,7 +287,7 @@ pnpm run format
 - Unified command-line interface with subcommands:
   - `kora config validate` - Validate configuration file
   - `kora config validate-with-rpc` - Validate configuration with RPC calls
-  - `kora rpc start` - Start the RPC server with all signer options (kora.toml & signers.toml in cwd)
+  - `kora rpc start --signers-config path/to/signers.toml` - Start the RPC server with all signer options (kora.toml in cwd)
   - `kora --config path/to/kora.toml rpc start --signers-config path/to/signers.toml` - Start the RPC server with specific config and signers
   - `kora openapi` - Generate OpenAPI documentation
 - Global arguments (rpc-url, config) separated from RPC-specific arguments
