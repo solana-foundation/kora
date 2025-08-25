@@ -404,18 +404,18 @@ mod tests {
     #[test]
     fn test_kora_error_display() {
         let error = KoraError::AccountNotFound("test_account".to_string());
-        let display_string = format!("{}", error);
+        let display_string = format!("{error}");
         assert_eq!(display_string, "Account test_account not found");
 
         let error = KoraError::RateLimitExceeded;
-        let display_string = format!("{}", error);
+        let display_string = format!("{error}");
         assert_eq!(display_string, "Rate limit exceeded");
     }
 
     #[test]
     fn test_kora_error_debug() {
         let error = KoraError::ValidationError("test".to_string());
-        let debug_string = format!("{:?}", error);
+        let debug_string = format!("{error:?}");
         assert!(debug_string.contains("ValidationError"));
     }
 
