@@ -52,7 +52,8 @@ The demo contains three main components:
 
 **Client Directory (`client/src/`)**
 - `setup.ts` - Local environment setup (creates keypairs & writes them to .env, airdrops SOL, initializes test token)
-- `main.ts` - Main demonstration script showing Kora integration
+- `quick-start.ts` - Quick start demonstration script showing establishing a Kora connection and making a simple call to the Kora RPC server
+- `full-demo.ts` - Full demo script demonstration multiple Kora RPC methods
 
 **Server Directory (`server/`)**
 - `kora.toml` - Kora RPC configuration defining validation rules, allowed tokens, and fee parameters

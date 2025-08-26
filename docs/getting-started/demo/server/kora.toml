@@ -26,10 +26,10 @@ allowed_programs = [
     "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
 ]
 allowed_tokens = [
-    "usdCAEFbouFGxdkbHCRtMTcN7DJHd3aCmP9vqjLgmAp", # Update this based on the USDC_LOCAL_KEY public key comment in your .env
+    "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Update this based on the USDC_LOCAL_KEY public key comment in your .env
 ]
 allowed_spl_paid_tokens = [
-    "usdCAEFbouFGxdkbHCRtMTcN7DJHd3aCmP9vqjLgmAp", # Update this based on the USDC_LOCAL_KEY public key comment in your .env
+    "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Update this based on the USDC_LOCAL_KEY public key comment in your .env
 ]
 
 disallowed_accounts = [

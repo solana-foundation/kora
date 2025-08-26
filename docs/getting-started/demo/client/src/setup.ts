@@ -269,7 +269,7 @@ async function initializeToken({
 
 }
 
-async function getOrCreateEnvKeyPair(envKey: string) {
+export async function getOrCreateEnvKeyPair(envKey: string) {
     if (process.env[envKey]) {
         return await createKeyPairSignerFromB58Secret(process.env[envKey]);
     }
