@@ -21,6 +21,7 @@ cd my-kora-node
 Add the sample files to your directory:
 
 - [kora.toml](../deploy/sample/kora.toml)
+- [signers.toml](../deploy/sample/signers.toml)
 - [Dockerfile](../deploy/sample/Dockerfile)
 
 Your directory should now look like:
@@ -28,6 +29,7 @@ Your directory should now look like:
 ```bash
 my-kora-node/
 ├── kora.toml
+├── signers.toml
 └── Dockerfile
 ```
 
@@ -85,10 +87,10 @@ Add these environment variables:
 | Variable | Value | Description |
 |----------|-------|-------------|
 | `RPC_URL` | `https://api.mainnet-beta.solana.com` | Solana RPC endpoint |
-| `PRIVATE_KEY` | `your-base58-private-key` | Your Solana private key (base58 format) |
+| `KORA_PRIVATE_KEY` | `your-base58-private-key` | Your Solana private key (base58 format) |
 | `RUST_LOG` | `info` | Log level for debugging |
 
-> **Security Warning**: Your private key has access to SOL for paying fees. Use a dedicated keypair for your Kora node and only fund it with the SOL you're willing to spend on transaction fees. <!-- TODO link to signers guide -->
+> **Security Warning**: Your private key has access to SOL for paying fees. Use a dedicated keypair for your Kora node and only fund it with the SOL you're willing to spend on transaction fees. For more information on signers, see the [Signers Guide](../SIGNERS.md).
 
 
 ### Getting Your Private Key
