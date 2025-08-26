@@ -37,11 +37,9 @@ async function main() {
   try {
     // Get supported tokens
     const { tokens } = await client.getSupportedTokens();
-    console.log("Supported tokens:", tokens);
 
     // Get current configuration
     const config = await client.getConfig();
-    console.log("Current configuration:", config);
 
     // Load signer from env var
     const signer =
@@ -56,10 +54,6 @@ async function main() {
         destination: signer.address.toString(), // Sending to self as example
       }
     );
-
-    // Access the parsed instructions directly
-    console.log("Transfer instructions:", transferResult.instructions);
-    console.log("Number of instructions:", transferResult.instructions.length);
 
     // Sign the transaction
     const transaction = transactionFromBase64(transferResult.transaction);
