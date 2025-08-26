@@ -185,3 +185,55 @@ impl KoraRpc {
         ]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        state::update_config,
+        tests::{
+            common::setup_or_get_test_signer, config_mock::ConfigMockBuilder,
+            rpc_mock::RpcMockBuilder,
+        },
+    };
+
+    fn create_test_kora_rpc() -> KoraRpc {
+        let rpc_client = RpcMockBuilder::new().build();
+        KoraRpc::new(rpc_client)
+    }
+
+    #[tokio::test]
+    async fn test_liveness() {
+        let kora_rpc = create_test_kora_rpc();
+
+        // Test liveness endpoint
+        let result = kora_rpc.liveness().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_method_delegation_with_mocks() {
+        // Setup test environment with both config and signer
+        let config = ConfigMockBuilder::new().build();
+        update_config(config).expect("Failed to update config");
+        let _ = setup_or_get_test_signer(); // This initializes the signer pool
+
+        let kora_rpc = create_test_kora_rpc();
+
+        // Test liveness - should always succeed
+        let liveness_result = kora_rpc.liveness().await;
+        assert!(liveness_result.is_ok(), "Liveness should always succeed");
+
+        // Test get_config - should work with mock config and signer pool
+        let config_result = kora_rpc.get_config().await;
+        assert!(config_result.is_ok(), "Get config failed: {:?}", config_result.err());
+
+        // Test get_supported_tokens - should work with mock config
+        let tokens_result = kora_rpc.get_supported_tokens().await;
+        assert!(tokens_result.is_ok(), "Get supported tokens failed: {:?}", tokens_result.err());
+
+        // Test get_payer_signer - should work with mock signer pool
+        let signer_result = kora_rpc.get_payer_signer().await;
+        assert!(signer_result.is_ok(), "Get payer signer failed: {:?}", signer_result.err());
+    }
+}

@@ -34,7 +34,7 @@ pub trait Signer {
     ) -> impl std::future::Future<Output = Result<SolanaSignature, Self::Error>> + Send;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum KoraSigner {
     Memory(SolanaMemorySigner),
@@ -91,5 +91,60 @@ impl super::Signer for KoraSigner {
                 signer.sign_solana(transaction).await.map_err(KoraError::from)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        tests::{config_mock::ConfigMockBuilder, transaction_mock::create_mock_transaction},
+        Signer,
+    };
+    use solana_sdk::{signature::Keypair, signer::Signer as SolanaSigner};
+
+    #[test]
+    fn test_kora_signer_memory_pubkey() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+
+        let keypair = Keypair::new();
+        let expected_pubkey = keypair.pubkey();
+        let memory_signer = SolanaMemorySigner::new(keypair);
+        let kora_signer = KoraSigner::Memory(memory_signer);
+
+        assert_eq!(kora_signer.solana_pubkey(), expected_pubkey);
+    }
+
+    #[tokio::test]
+    async fn test_kora_signer_memory_sign() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+
+        let keypair = Keypair::new();
+        let memory_signer = SolanaMemorySigner::new(keypair);
+        let kora_signer = KoraSigner::Memory(memory_signer);
+        let transaction = create_mock_transaction();
+
+        let result = kora_signer.sign(&transaction).await;
+        assert!(result.is_ok());
+
+        let signature = result.unwrap();
+        assert_eq!(signature.bytes.len(), 64);
+        assert!(!signature.is_partial);
+    }
+
+    #[tokio::test]
+    async fn test_kora_signer_memory_sign_solana() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+
+        let keypair = Keypair::new();
+        let memory_signer = SolanaMemorySigner::new(keypair);
+        let kora_signer = KoraSigner::Memory(memory_signer);
+        let transaction = create_mock_transaction();
+
+        let result = kora_signer.sign_solana(&transaction).await;
+        assert!(result.is_ok());
+
+        let signature = result.unwrap();
+        assert_eq!(signature.as_ref().len(), 64);
     }
 }

@@ -366,30 +366,22 @@ impl KoraConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::fee::price::PriceModel;
+    use crate::{
+        fee::price::PriceModel,
+        tests::toml_mock::{create_invalid_config, ConfigBuilder},
+    };
 
     use super::*;
-    use tempfile::NamedTempFile;
 
     #[test]
     fn test_load_valid_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1", "program2"]
-            allowed_tokens = ["token1", "token2"]
-            allowed_spl_paid_tokens = ["token3"]
-            disallowed_accounts = ["account1"]
-            price_source = "Jupiter"
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
+        let config = ConfigBuilder::new()
+            .with_programs(vec!["program1", "program2"])
+            .with_tokens(vec!["token1", "token2"])
+            .with_spl_paid_tokens(vec!["token3"])
+            .with_disallowed_accounts(vec!["account1"])
+            .build_config()
+            .unwrap();
 
         assert_eq!(config.validation.max_allowed_lamports, 1000000000);
         assert_eq!(config.validation.max_signatures, 10);
@@ -399,41 +391,31 @@ mod tests {
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
         assert_eq!(config.validation.price_source, PriceSource::Jupiter);
         assert_eq!(config.kora.rate_limit, 100);
-        // Test default enabled methods
         assert!(config.kora.enabled_methods.estimate_transaction_fee);
         assert!(config.kora.enabled_methods.sign_and_send_transaction);
     }
 
     #[test]
     fn test_load_config_with_enabled_methods() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1", "program2"]
-            allowed_tokens = ["token1", "token2"]
-            allowed_spl_paid_tokens = ["token3"]
-            disallowed_accounts = ["account1"]
-            price_source = "Jupiter"
-            [kora]
-            rate_limit = 100
-            [kora.enabled_methods]
-            liveness = true
-            estimate_transaction_fee = false
-            get_supported_tokens = true
-            sign_transaction = true
-            get_payer_signer = true
-            sign_and_send_transaction = false
-            transfer_transaction = true
-            get_blockhash = true
-            get_config = true
-            sign_transaction_if_paid = true
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
+        let config = ConfigBuilder::new()
+            .with_programs(vec!["program1", "program2"])
+            .with_tokens(vec!["token1", "token2"])
+            .with_spl_paid_tokens(vec!["token3"])
+            .with_disallowed_accounts(vec!["account1"])
+            .with_enabled_methods(&[
+                ("liveness", true),
+                ("estimate_transaction_fee", false),
+                ("get_supported_tokens", true),
+                ("sign_transaction", true),
+                ("sign_and_send_transaction", false),
+                ("transfer_transaction", true),
+                ("get_blockhash", true),
+                ("get_config", true),
+                ("sign_transaction_if_paid", true),
+                ("get_payer_signer", true),
+            ])
+            .build_config()
+            .unwrap();
 
         assert_eq!(config.kora.rate_limit, 100);
         assert!(config.kora.enabled_methods.liveness);
@@ -449,11 +431,7 @@ mod tests {
 
     #[test]
     fn test_load_invalid_config() {
-        let invalid_content = "invalid toml content";
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, invalid_content).unwrap();
-
-        let result = Config::load_config(temp_file.path());
+        let result = create_invalid_config("invalid toml content");
         assert!(result.is_err());
     }
 
@@ -465,28 +443,7 @@ mod tests {
 
     #[test]
     fn test_parse_margin_price_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [validation.price]
-            type = "margin"
-            margin = 0.1
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
+        let config = ConfigBuilder::new().with_margin_price(0.1).build_config().unwrap();
 
         match &config.validation.price.model {
             PriceModel::Margin { margin } => {
@@ -498,33 +455,14 @@ mod tests {
 
     #[test]
     fn test_parse_fixed_price_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [validation.price]
-            type = "fixed"
-            amount = 1000000
-            token = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
+        let config = ConfigBuilder::new()
+            .with_fixed_price(1000000, "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU")
+            .build_config()
+            .unwrap();
 
         match &config.validation.price.model {
             PriceModel::Fixed { amount, token } => {
-                assert_eq!(*amount, 1000000); // Amount as token units, not lamports
+                assert_eq!(*amount, 1000000);
                 assert_eq!(token, "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
             }
             _ => panic!("Expected Fixed price model"),
@@ -533,31 +471,11 @@ mod tests {
 
     #[test]
     fn test_parse_free_price_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [validation.price]
-            type = "free"
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
+        let config = ConfigBuilder::new().with_free_price().build_config().unwrap();
 
         match &config.validation.price.model {
             PriceModel::Free => {
-                // Test passed - Free model has no additional fields
+                // Test passed
             }
             _ => panic!("Expected Free price model"),
         }
@@ -565,24 +483,7 @@ mod tests {
 
     #[test]
     fn test_parse_missing_price_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
+        let config = ConfigBuilder::new().build_config().unwrap();
 
         // Should default to Margin with 0.0 margin
         match &config.validation.price.model {
@@ -595,31 +496,9 @@ mod tests {
 
     #[test]
     fn test_parse_invalid_price_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
+        let result = ConfigBuilder::new().with_invalid_price("invalid_type").build_config();
 
-            [validation.price]
-            type = "invalid_type"
-            margin = 0.1
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let result = Config::load_config(temp_file.path());
         assert!(result.is_err());
-
-        // Verify it's a parsing error
         if let Err(KoraError::InternalServerError(msg)) = result {
             assert!(msg.contains("Failed to parse config file"));
         } else {
@@ -629,28 +508,13 @@ mod tests {
 
     #[test]
     fn test_token2022_config_parsing() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [validation.token_2022]
-            blocked_mint_extensions = ["transfer_fee_config", "pausable"]
-            blocked_account_extensions = ["memo_transfer", "cpi_guard"]
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
+        let config = ConfigBuilder::new()
+            .with_token2022_extensions(
+                vec!["transfer_fee_config", "pausable"],
+                vec!["memo_transfer", "cpi_guard"],
+            )
+            .build_config()
+            .unwrap();
 
         assert_eq!(
             config.validation.token_2022.blocked_mint_extensions,
@@ -661,7 +525,6 @@ mod tests {
             vec!["memo_transfer", "cpi_guard"]
         );
 
-        // Test that the extensions can be parsed correctly
         let mint_extensions = config.validation.token_2022.get_blocked_mint_extensions();
         assert_eq!(mint_extensions.len(), 2);
 
@@ -671,28 +534,10 @@ mod tests {
 
     #[test]
     fn test_token2022_config_invalid_extension() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
+        let result = ConfigBuilder::new()
+            .with_token2022_extensions(vec!["invalid_extension"], vec![])
+            .build_config();
 
-            [validation.token_2022]
-            blocked_mint_extensions = ["invalid_extension"]
-            blocked_account_extensions = []
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let result = Config::load_config(temp_file.path());
         assert!(result.is_err());
         if let Err(KoraError::InternalServerError(msg)) = result {
             assert!(msg.contains("Failed to initialize Token2022 config"));
@@ -704,58 +549,24 @@ mod tests {
 
     #[test]
     fn test_token2022_config_default() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
+        let config = ConfigBuilder::new().build_config().unwrap();
 
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
-
-        // Should default to empty lists
         assert!(config.validation.token_2022.blocked_mint_extensions.is_empty());
         assert!(config.validation.token_2022.blocked_account_extensions.is_empty());
 
-        // Should have empty cached extensions
         assert!(config.validation.token_2022.get_blocked_mint_extensions().is_empty());
         assert!(config.validation.token_2022.get_blocked_account_extensions().is_empty());
     }
 
     #[test]
     fn test_token2022_extension_blocking_check() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [validation.token_2022]
-            blocked_mint_extensions = ["transfer_fee_config", "pausable"]
-            blocked_account_extensions = ["memo_transfer"]
-
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
+        let config = ConfigBuilder::new()
+            .with_token2022_extensions(
+                vec!["transfer_fee_config", "pausable"],
+                vec!["memo_transfer"],
+            )
+            .build_config()
+            .unwrap();
 
         // Test mint extension blocking
         assert!(config
@@ -781,30 +592,10 @@ mod tests {
 
     #[test]
     fn test_cache_config_parsing() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
-
-            [kora]
-            rate_limit = 100
-
-            [kora.cache]
-            url = "redis://localhost:6379"
-            enabled = true
-            default_ttl = 600
-            account_ttl = 120
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
+        let config = ConfigBuilder::new()
+            .with_cache_config(Some("redis://localhost:6379"), true, 600, 120)
+            .build_config()
+            .unwrap();
 
         assert_eq!(config.kora.cache.url, Some("redis://localhost:6379".to_string()));
         assert!(config.kora.cache.enabled);
@@ -814,26 +605,8 @@ mod tests {
 
     #[test]
     fn test_cache_config_default() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1"]
-            allowed_tokens = ["token1"]
-            allowed_spl_paid_tokens = ["token2"]
-            disallowed_accounts = []
-            price_source = "Jupiter"
+        let config = ConfigBuilder::new().build_config().unwrap();
 
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
-
-        // Should use default cache config
         assert_eq!(config.kora.cache.url, None);
         assert!(!config.kora.cache.enabled);
         assert_eq!(config.kora.cache.default_ttl, 300);

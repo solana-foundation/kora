@@ -225,3 +225,413 @@ pub fn get_all_mint_extension_names() -> &'static [&'static str] {
 pub fn get_all_account_extension_names() -> &'static [&'static str] {
     AccountExtension::all_string_names()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spl_token_2022::extension::ExtensionType;
+
+    #[test]
+    fn test_mint_extension_from_string() {
+        // Test valid mint extension strings
+        assert_eq!(
+            MintExtension::from_string("confidential_transfer_mint"),
+            Some(ExtensionType::ConfidentialTransferMint)
+        );
+        assert_eq!(
+            MintExtension::from_string("transfer_fee_config"),
+            Some(ExtensionType::TransferFeeConfig)
+        );
+        assert_eq!(
+            MintExtension::from_string("mint_close_authority"),
+            Some(ExtensionType::MintCloseAuthority)
+        );
+        assert_eq!(
+            MintExtension::from_string("interest_bearing_config"),
+            Some(ExtensionType::InterestBearingConfig)
+        );
+        assert_eq!(
+            MintExtension::from_string("non_transferable"),
+            Some(ExtensionType::NonTransferable)
+        );
+        assert_eq!(
+            MintExtension::from_string("permanent_delegate"),
+            Some(ExtensionType::PermanentDelegate)
+        );
+        assert_eq!(MintExtension::from_string("transfer_hook"), Some(ExtensionType::TransferHook));
+        assert_eq!(MintExtension::from_string("pausable"), Some(ExtensionType::Pausable));
+        assert_eq!(
+            MintExtension::from_string("confidential_mint_burn"),
+            Some(ExtensionType::ConfidentialMintBurn)
+        );
+
+        // Test invalid strings
+        assert_eq!(MintExtension::from_string("invalid_extension"), None);
+        assert_eq!(MintExtension::from_string("memo_transfer"), None); // This is an account extension
+        assert_eq!(MintExtension::from_string(""), None);
+        assert_eq!(MintExtension::from_string("TRANSFER_FEE_CONFIG"), None); // Case sensitive
+    }
+
+    #[test]
+    fn test_mint_extension_to_string_name() {
+        // Test valid mint extension types
+        assert_eq!(
+            MintExtension::to_string_name(ExtensionType::ConfidentialTransferMint),
+            Some("confidential_transfer_mint")
+        );
+        assert_eq!(
+            MintExtension::to_string_name(ExtensionType::TransferFeeConfig),
+            Some("transfer_fee_config")
+        );
+        assert_eq!(
+            MintExtension::to_string_name(ExtensionType::MintCloseAuthority),
+            Some("mint_close_authority")
+        );
+        assert_eq!(
+            MintExtension::to_string_name(ExtensionType::InterestBearingConfig),
+            Some("interest_bearing_config")
+        );
+        assert_eq!(
+            MintExtension::to_string_name(ExtensionType::NonTransferable),
+            Some("non_transferable")
+        );
+        assert_eq!(
+            MintExtension::to_string_name(ExtensionType::PermanentDelegate),
+            Some("permanent_delegate")
+        );
+        assert_eq!(
+            MintExtension::to_string_name(ExtensionType::TransferHook),
+            Some("transfer_hook")
+        );
+        assert_eq!(MintExtension::to_string_name(ExtensionType::Pausable), Some("pausable"));
+        assert_eq!(
+            MintExtension::to_string_name(ExtensionType::ConfidentialMintBurn),
+            Some("confidential_mint_burn")
+        );
+
+        // Test invalid extension types (account extensions)
+        assert_eq!(MintExtension::to_string_name(ExtensionType::MemoTransfer), None);
+        assert_eq!(MintExtension::to_string_name(ExtensionType::CpiGuard), None);
+        assert_eq!(MintExtension::to_string_name(ExtensionType::ImmutableOwner), None);
+    }
+
+    #[test]
+    fn test_mint_extension_all_string_names() {
+        let names = MintExtension::all_string_names();
+
+        // Check that all expected names are present
+        let expected_names = [
+            "confidential_transfer_mint",
+            "confidential_mint_burn",
+            "transfer_fee_config",
+            "mint_close_authority",
+            "interest_bearing_config",
+            "non_transferable",
+            "permanent_delegate",
+            "transfer_hook",
+            "pausable",
+        ];
+
+        assert_eq!(names.len(), expected_names.len());
+
+        // Verify each expected name is present
+        for expected_name in &expected_names {
+            assert!(names.contains(expected_name), "Missing expected name: {expected_name}");
+        }
+
+        // Verify no account extension names are included
+        assert!(!names.contains(&"memo_transfer"));
+        assert!(!names.contains(&"cpi_guard"));
+        assert!(!names.contains(&"immutable_owner"));
+    }
+
+    #[test]
+    fn test_mint_extension_constants() {
+        let extensions = MintExtension::EXTENSIONS;
+
+        // Check that all expected extension types are present
+        let expected_extensions = [
+            ExtensionType::ConfidentialTransferMint,
+            ExtensionType::ConfidentialMintBurn,
+            ExtensionType::TransferFeeConfig,
+            ExtensionType::MintCloseAuthority,
+            ExtensionType::InterestBearingConfig,
+            ExtensionType::NonTransferable,
+            ExtensionType::PermanentDelegate,
+            ExtensionType::TransferHook,
+            ExtensionType::Pausable,
+        ];
+
+        assert_eq!(extensions.len(), expected_extensions.len());
+
+        for expected_ext in &expected_extensions {
+            assert!(
+                extensions.contains(expected_ext),
+                "Missing expected extension: {expected_ext:?}"
+            );
+        }
+
+        // Verify no account extensions are included
+        assert!(!extensions.contains(&ExtensionType::MemoTransfer));
+        assert!(!extensions.contains(&ExtensionType::CpiGuard));
+        assert!(!extensions.contains(&ExtensionType::ImmutableOwner));
+    }
+
+    #[test]
+    fn test_account_extension_from_string() {
+        // Test valid account extension strings
+        assert_eq!(
+            AccountExtension::from_string("confidential_transfer_account"),
+            Some(ExtensionType::ConfidentialTransferAccount)
+        );
+        assert_eq!(
+            AccountExtension::from_string("non_transferable_account"),
+            Some(ExtensionType::NonTransferableAccount)
+        );
+        assert_eq!(
+            AccountExtension::from_string("transfer_hook_account"),
+            Some(ExtensionType::TransferHookAccount)
+        );
+        assert_eq!(
+            AccountExtension::from_string("pausable_account"),
+            Some(ExtensionType::PausableAccount)
+        );
+        assert_eq!(
+            AccountExtension::from_string("memo_transfer"),
+            Some(ExtensionType::MemoTransfer)
+        );
+        assert_eq!(AccountExtension::from_string("cpi_guard"), Some(ExtensionType::CpiGuard));
+        assert_eq!(
+            AccountExtension::from_string("immutable_owner"),
+            Some(ExtensionType::ImmutableOwner)
+        );
+        assert_eq!(
+            AccountExtension::from_string("default_account_state"),
+            Some(ExtensionType::DefaultAccountState)
+        );
+
+        // Test invalid strings
+        assert_eq!(AccountExtension::from_string("invalid_extension"), None);
+        assert_eq!(AccountExtension::from_string("transfer_fee_config"), None); // This is a mint extension
+        assert_eq!(AccountExtension::from_string(""), None);
+        assert_eq!(AccountExtension::from_string("MEMO_TRANSFER"), None); // Case sensitive
+    }
+
+    #[test]
+    fn test_account_extension_to_string_name() {
+        // Test valid account extension types
+        assert_eq!(
+            AccountExtension::to_string_name(ExtensionType::ConfidentialTransferAccount),
+            Some("confidential_transfer_account")
+        );
+        assert_eq!(
+            AccountExtension::to_string_name(ExtensionType::NonTransferableAccount),
+            Some("non_transferable_account")
+        );
+        assert_eq!(
+            AccountExtension::to_string_name(ExtensionType::TransferHookAccount),
+            Some("transfer_hook_account")
+        );
+        assert_eq!(
+            AccountExtension::to_string_name(ExtensionType::PausableAccount),
+            Some("pausable_account")
+        );
+        assert_eq!(
+            AccountExtension::to_string_name(ExtensionType::MemoTransfer),
+            Some("memo_transfer")
+        );
+        assert_eq!(AccountExtension::to_string_name(ExtensionType::CpiGuard), Some("cpi_guard"));
+        assert_eq!(
+            AccountExtension::to_string_name(ExtensionType::ImmutableOwner),
+            Some("immutable_owner")
+        );
+        assert_eq!(
+            AccountExtension::to_string_name(ExtensionType::DefaultAccountState),
+            Some("default_account_state")
+        );
+
+        // Test invalid extension types (mint extensions)
+        assert_eq!(AccountExtension::to_string_name(ExtensionType::TransferFeeConfig), None);
+        assert_eq!(AccountExtension::to_string_name(ExtensionType::MintCloseAuthority), None);
+        assert_eq!(AccountExtension::to_string_name(ExtensionType::NonTransferable), None);
+    }
+
+    #[test]
+    fn test_account_extension_all_string_names() {
+        let names = AccountExtension::all_string_names();
+
+        // Check that all expected names are present
+        let expected_names = [
+            "confidential_transfer_account",
+            "non_transferable_account",
+            "transfer_hook_account",
+            "pausable_account",
+            "memo_transfer",
+            "cpi_guard",
+            "immutable_owner",
+            "default_account_state",
+        ];
+
+        assert_eq!(names.len(), expected_names.len());
+
+        // Verify each expected name is present
+        for expected_name in &expected_names {
+            assert!(names.contains(expected_name), "Missing expected name: {expected_name}");
+        }
+
+        // Verify no mint extension names are included
+        assert!(!names.contains(&"transfer_fee_config"));
+        assert!(!names.contains(&"mint_close_authority"));
+        assert!(!names.contains(&"interest_bearing_config"));
+    }
+
+    #[test]
+    fn test_account_extension_constants() {
+        let extensions = AccountExtension::EXTENSIONS;
+
+        // Check that all expected extension types are present
+        let expected_extensions = [
+            ExtensionType::ConfidentialTransferAccount,
+            ExtensionType::NonTransferableAccount,
+            ExtensionType::TransferHookAccount,
+            ExtensionType::PausableAccount,
+            ExtensionType::MemoTransfer,
+            ExtensionType::CpiGuard,
+            ExtensionType::ImmutableOwner,
+            ExtensionType::DefaultAccountState,
+        ];
+
+        assert_eq!(extensions.len(), expected_extensions.len());
+
+        for expected_ext in &expected_extensions {
+            assert!(
+                extensions.contains(expected_ext),
+                "Missing expected extension: {expected_ext:?}"
+            );
+        }
+
+        // Verify no mint extensions are included
+        assert!(!extensions.contains(&ExtensionType::TransferFeeConfig));
+        assert!(!extensions.contains(&ExtensionType::MintCloseAuthority));
+        assert!(!extensions.contains(&ExtensionType::InterestBearingConfig));
+    }
+
+    #[test]
+    fn test_parse_mint_extension_string() {
+        // Test valid mint extension strings
+        assert_eq!(
+            parse_mint_extension_string("transfer_fee_config"),
+            Some(ExtensionType::TransferFeeConfig)
+        );
+        assert_eq!(
+            parse_mint_extension_string("mint_close_authority"),
+            Some(ExtensionType::MintCloseAuthority)
+        );
+        assert_eq!(
+            parse_mint_extension_string("non_transferable"),
+            Some(ExtensionType::NonTransferable)
+        );
+
+        // Test invalid strings
+        assert_eq!(parse_mint_extension_string("invalid_extension"), None);
+        assert_eq!(parse_mint_extension_string("memo_transfer"), None); // Account extension
+        assert_eq!(parse_mint_extension_string(""), None);
+    }
+
+    #[test]
+    fn test_parse_account_extension_string() {
+        // Test valid account extension strings
+        assert_eq!(
+            parse_account_extension_string("memo_transfer"),
+            Some(ExtensionType::MemoTransfer)
+        );
+        assert_eq!(parse_account_extension_string("cpi_guard"), Some(ExtensionType::CpiGuard));
+        assert_eq!(
+            parse_account_extension_string("immutable_owner"),
+            Some(ExtensionType::ImmutableOwner)
+        );
+
+        // Test invalid strings
+        assert_eq!(parse_account_extension_string("invalid_extension"), None);
+        assert_eq!(parse_account_extension_string("transfer_fee_config"), None); // Mint extension
+        assert_eq!(parse_account_extension_string(""), None);
+    }
+
+    #[test]
+    fn test_get_all_mint_extension_names() {
+        let names = get_all_mint_extension_names();
+        let direct_names = MintExtension::all_string_names();
+
+        // Should be identical to the direct call
+        assert_eq!(names, direct_names);
+
+        // Should contain all expected mint extension names
+        assert!(names.contains(&"transfer_fee_config"));
+        assert!(names.contains(&"mint_close_authority"));
+        assert!(names.contains(&"interest_bearing_config"));
+
+        // Should not contain account extension names
+        assert!(!names.contains(&"memo_transfer"));
+        assert!(!names.contains(&"cpi_guard"));
+    }
+
+    #[test]
+    fn test_get_all_account_extension_names() {
+        let names = get_all_account_extension_names();
+        let direct_names = AccountExtension::all_string_names();
+
+        // Should be identical to the direct call
+        assert_eq!(names, direct_names);
+
+        // Should contain all expected account extension names
+        assert!(names.contains(&"memo_transfer"));
+        assert!(names.contains(&"cpi_guard"));
+        assert!(names.contains(&"immutable_owner"));
+
+        // Should not contain mint extension names
+        assert!(!names.contains(&"transfer_fee_config"));
+        assert!(!names.contains(&"mint_close_authority"));
+    }
+
+    #[test]
+    fn test_extension_parsing_logic_coverage() {
+        // Mint extensions that should be supported
+        let supported_mint_extensions = [
+            ExtensionType::ConfidentialTransferMint,
+            ExtensionType::TransferFeeConfig,
+            ExtensionType::MintCloseAuthority,
+            ExtensionType::InterestBearingConfig,
+            ExtensionType::NonTransferable,
+            ExtensionType::PermanentDelegate,
+            ExtensionType::TransferHook,
+            ExtensionType::Pausable,
+            ExtensionType::ConfidentialMintBurn,
+        ];
+
+        // Account extensions that should be supported
+        let supported_account_extensions = [
+            ExtensionType::ConfidentialTransferAccount,
+            ExtensionType::NonTransferableAccount,
+            ExtensionType::TransferHookAccount,
+            ExtensionType::PausableAccount,
+            ExtensionType::MemoTransfer,
+            ExtensionType::CpiGuard,
+            ExtensionType::ImmutableOwner,
+            ExtensionType::DefaultAccountState,
+        ];
+
+        // Verify that the constants match our expected extensions
+        assert_eq!(MintExtension::EXTENSIONS.len(), supported_mint_extensions.len());
+        assert_eq!(AccountExtension::EXTENSIONS.len(), supported_account_extensions.len());
+
+        // Verify all supported mint extensions are in our constants
+        for ext in supported_mint_extensions {
+            assert!(MintExtension::EXTENSIONS.contains(&ext));
+        }
+
+        // Verify all supported account extensions are in our constants
+        for ext in supported_account_extensions {
+            assert!(AccountExtension::EXTENSIONS.contains(&ext));
+        }
+    }
+}

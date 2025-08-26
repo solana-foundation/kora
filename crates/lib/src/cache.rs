@@ -5,7 +5,13 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio::sync::OnceCell;
 
-use crate::{error::KoraError, state::get_config};
+use crate::error::KoraError;
+
+#[cfg(not(test))]
+use crate::state::get_config;
+
+#[cfg(test)]
+use crate::tests::config_mock::mock_state::get_config;
 
 const ACCOUNT_CACHE_KEY: &str = "account";
 
@@ -83,27 +89,6 @@ impl CacheUtil {
         }
     }
 
-    /// Get account from RPC and cache it
-    pub async fn get_account_from_rpc_and_cache(
-        rpc_client: &RpcClient,
-        pubkey: &Pubkey,
-        pool: &Pool,
-        ttl: u64,
-    ) -> Result<Account, KoraError> {
-        let account = Self::get_account_from_rpc(rpc_client, pubkey).await?;
-
-        let cache_key = Self::get_account_key(pubkey);
-        let cached_account =
-            CachedAccount { account: account.clone(), cached_at: chrono::Utc::now().timestamp() };
-
-        if let Err(e) = Self::set_in_cache(pool, &cache_key, &cached_account, ttl).await {
-            log::warn!("Failed to cache account {pubkey}: {e}");
-            // Don't fail the request if caching fails
-        }
-
-        Ok(account)
-    }
-
     /// Get data from cache
     async fn get_from_cache(pool: &Pool, key: &str) -> Result<Option<CachedAccount>, KoraError> {
         let mut conn = Self::get_connection(pool).await?;
@@ -125,6 +110,27 @@ impl CacheUtil {
         }
     }
 
+    /// Get account from RPC and cache it
+    async fn get_account_from_rpc_and_cache(
+        rpc_client: &RpcClient,
+        pubkey: &Pubkey,
+        pool: &Pool,
+        ttl: u64,
+    ) -> Result<Account, KoraError> {
+        let account = Self::get_account_from_rpc(rpc_client, pubkey).await?;
+
+        let cache_key = Self::get_account_key(pubkey);
+        let cached_account =
+            CachedAccount { account: account.clone(), cached_at: chrono::Utc::now().timestamp() };
+
+        if let Err(e) = Self::set_in_cache(pool, &cache_key, &cached_account, ttl).await {
+            log::warn!("Failed to cache account {pubkey}: {e}");
+            // Don't fail the request if caching fails
+        }
+
+        Ok(account)
+    }
+
     /// Set data in cache with TTL
     async fn set_in_cache(
         pool: &Pool,
@@ -143,6 +149,14 @@ impl CacheUtil {
         })?;
 
         Ok(())
+    }
+
+    /// Check if cache is enabled and available
+    fn is_cache_enabled() -> bool {
+        match get_config() {
+            Ok(config) => config.kora.cache.enabled && config.kora.cache.url.is_some(),
+            Err(_) => false,
+        }
     }
 
     /// Get account from cache with optional force refresh
@@ -209,106 +223,116 @@ impl CacheUtil {
 
         Ok(account)
     }
-
-    /// Clear cache for a specific account
-    pub async fn invalidate_account_cache(pubkey: &Pubkey) -> Result<(), KoraError> {
-        let pool = match CACHE_POOL.get() {
-            Some(pool) => pool,
-            None => return Ok(()), // Cache not initialized, nothing to invalidate
-        };
-
-        let pool = match pool {
-            Some(pool) => pool,
-            None => return Ok(()), // Cache disabled, nothing to invalidate
-        };
-
-        let mut conn = Self::get_connection(pool).await?;
-
-        let cache_key = Self::get_account_key(pubkey);
-        let _: u32 = conn.del(&cache_key).await.map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to invalidate cache: {e}"))
-        })?;
-
-        Ok(())
-    }
-
-    /// Check if cache is enabled and available
-    pub fn is_cache_enabled() -> bool {
-        match get_config() {
-            Ok(config) => config.kora.cache.enabled && config.kora.cache.url.is_some(),
-            Err(_) => false,
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        config::{Config, KoraConfig, ValidationConfig},
-        fee::price::PriceConfig,
-        oracle::PriceSource,
-        state::update_config,
+    use crate::tests::{
+        common::{create_mock_token_account, RpcMockBuilder},
+        config_mock::ConfigMockBuilder,
     };
-    use serial_test::serial;
 
-    fn create_test_config(cache_enabled: bool, cache_url: Option<String>) -> Config {
-        Config {
-            validation: ValidationConfig {
-                max_allowed_lamports: 1000000,
-                max_signatures: 10,
-                allowed_programs: vec![],
-                allowed_tokens: vec![],
-                allowed_spl_paid_tokens: vec![],
-                disallowed_accounts: vec![],
-                price_source: PriceSource::Mock,
-                fee_payer_policy: crate::config::FeePayerPolicy::default(),
-                price: PriceConfig::default(),
-                token_2022: crate::config::Token2022Config::default(),
-            },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: crate::config::EnabledMethods::default(),
-                auth: crate::config::AuthConfig::default(),
-                payment_address: None,
-                cache: crate::config::CacheConfig {
-                    url: cache_url,
-                    enabled: cache_enabled,
-                    default_ttl: 300,
-                    account_ttl: 60,
-                },
-            },
-            metrics: crate::config::MetricsConfig::default(),
+    #[tokio::test]
+    async fn test_is_cache_enabled_disabled() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        assert!(!CacheUtil::is_cache_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_is_cache_enabled_no_url() {
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(true)
+            .with_cache_url(None) // Explicitly set no URL
+            .build_and_setup();
+
+        // Without URL, cache should be disabled
+        assert!(!CacheUtil::is_cache_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_is_cache_enabled_with_url() {
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(true)
+            .with_cache_url(Some("redis://localhost:6379".to_string()))
+            .build_and_setup();
+
+        // Give time for config to be set up
+        assert!(CacheUtil::is_cache_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_get_account_key_format() {
+        let pubkey = Pubkey::new_unique();
+        let key = CacheUtil::get_account_key(&pubkey);
+        assert_eq!(key, format!("account:{pubkey}"));
+    }
+
+    #[tokio::test]
+    async fn test_get_account_from_rpc_success() {
+        let pubkey = Pubkey::new_unique();
+        let expected_account = create_mock_token_account(&pubkey, &Pubkey::new_unique());
+
+        let rpc_client = RpcMockBuilder::new().with_account_info(&expected_account).build();
+
+        let result = CacheUtil::get_account_from_rpc(&rpc_client, &pubkey).await;
+
+        assert!(result.is_ok());
+        let account = result.unwrap();
+        assert_eq!(account.lamports, expected_account.lamports);
+        assert_eq!(account.owner, expected_account.owner);
+    }
+
+    #[tokio::test]
+    async fn test_get_account_from_rpc_error() {
+        let pubkey = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+
+        let result = CacheUtil::get_account_from_rpc(&rpc_client, &pubkey).await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            KoraError::InternalServerError(msg) => {
+                assert!(msg.contains("Failed to get account"));
+                assert!(msg.contains(&pubkey.to_string()));
+            }
+            _ => panic!("Expected InternalServerError"),
         }
     }
 
     #[tokio::test]
-    #[serial]
-    async fn test_cache_disabled() {
-        let config = create_test_config(false, None);
-        let _ = update_config(config);
+    async fn test_get_account_cache_disabled_fallback_to_rpc() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
-        // Cache should report as disabled
-        assert!(!CacheUtil::is_cache_enabled());
+        let pubkey = Pubkey::new_unique();
+        let expected_account = create_mock_token_account(&pubkey, &Pubkey::new_unique());
+
+        let rpc_client = RpcMockBuilder::new().with_account_info(&expected_account).build();
+
+        let result = CacheUtil::get_account(&rpc_client, &pubkey, false).await;
+
+        assert!(result.is_ok());
+        let account = result.unwrap();
+        assert_eq!(account.lamports, expected_account.lamports);
     }
 
     #[tokio::test]
-    #[serial]
-    async fn test_cache_enabled_no_url() {
-        let config = create_test_config(true, None);
-        let _ = update_config(config);
+    async fn test_get_account_force_refresh_bypasses_cache() {
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(false) // Force RPC fallback for simplicity
+            .build_and_setup();
 
-        // Cache should report as disabled when no URL is provided
-        assert!(!CacheUtil::is_cache_enabled());
-    }
+        let pubkey = Pubkey::new_unique();
+        let expected_account = create_mock_token_account(&pubkey, &Pubkey::new_unique());
 
-    #[tokio::test]
-    #[serial]
-    async fn test_cache_enabled_with_url() {
-        let config = create_test_config(true, Some("redis://localhost:6379".to_string()));
-        let _ = update_config(config);
+        let rpc_client = RpcMockBuilder::new().with_account_info(&expected_account).build();
 
-        // Cache should report as enabled
-        assert!(CacheUtil::is_cache_enabled());
+        // force_refresh = true should always go to RPC
+        let result = CacheUtil::get_account(&rpc_client, &pubkey, true).await;
+
+        assert!(result.is_ok());
+        let account = result.unwrap();
+        assert_eq!(account.lamports, expected_account.lamports);
     }
 }

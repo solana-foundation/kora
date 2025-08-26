@@ -192,6 +192,8 @@ impl From<crate::signer::privy::types::PrivyError> for KoraError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solana_program::program_error::ProgramError;
+    use std::error::Error as StdError;
 
     #[test]
     fn test_kora_response_ok() {
@@ -235,17 +237,204 @@ mod tests {
     }
 
     #[test]
-    fn test_error_conversions() {
+    fn test_client_error_conversion() {
         let client_error = ClientError::from(std::io::Error::other("test"));
         let kora_error: KoraError = client_error.into();
         assert!(matches!(kora_error, KoraError::RpcError(_)));
+        if let KoraError::RpcError(msg) = kora_error {
+            assert!(msg.contains("test"));
+        }
+    }
 
-        let signer_error = SignerError::Custom("test".to_string());
+    #[test]
+    fn test_signer_error_conversion() {
+        let signer_error = SignerError::Custom("signing failed".to_string());
         let kora_error: KoraError = signer_error.into();
         assert!(matches!(kora_error, KoraError::SigningError(_)));
+        if let KoraError::SigningError(msg) = kora_error {
+            assert!(msg.contains("signing failed"));
+        }
+    }
 
-        let io_error = std::io::Error::other("test");
+    #[test]
+    fn test_bincode_error_conversion() {
+        let bincode_error = bincode::Error::from(bincode::ErrorKind::SizeLimit);
+        let kora_error: KoraError = bincode_error.into();
+        assert!(matches!(kora_error, KoraError::SerializationError(_)));
+    }
+
+    #[test]
+    fn test_bs58_decode_error_conversion() {
+        let bs58_error = bs58::decode::Error::InvalidCharacter { character: 'x', index: 0 };
+        let kora_error: KoraError = bs58_error.into();
+        assert!(matches!(kora_error, KoraError::SerializationError(_)));
+    }
+
+    #[test]
+    fn test_bs58_encode_error_conversion() {
+        let buffer_too_small_error = bs58::encode::Error::BufferTooSmall;
+        let kora_error: KoraError = buffer_too_small_error.into();
+        assert!(matches!(kora_error, KoraError::SerializationError(_)));
+    }
+
+    #[test]
+    fn test_io_error_conversion() {
+        let io_error = std::io::Error::other("file not found");
         let kora_error: KoraError = io_error.into();
         assert!(matches!(kora_error, KoraError::InternalServerError(_)));
+        if let KoraError::InternalServerError(msg) = kora_error {
+            assert!(msg.contains("file not found"));
+        }
+    }
+
+    #[test]
+    fn test_boxed_error_conversion() {
+        let error: Box<dyn StdError> = Box::new(std::io::Error::other("boxed error"));
+        let kora_error: KoraError = error.into();
+        assert!(matches!(kora_error, KoraError::InternalServerError(_)));
+    }
+
+    #[test]
+    fn test_boxed_error_send_sync_conversion() {
+        let error: Box<dyn StdError + Send + Sync> =
+            Box::new(std::io::Error::other("boxed send sync error"));
+        let kora_error: KoraError = error.into();
+        assert!(matches!(kora_error, KoraError::InternalServerError(_)));
+    }
+
+    #[test]
+    fn test_program_error_conversion() {
+        let program_error = ProgramError::InvalidAccountData;
+        let kora_error: KoraError = program_error.into();
+        assert!(matches!(kora_error, KoraError::InvalidTransaction(_)));
+        if let KoraError::InvalidTransaction(msg) = kora_error {
+            // Just check that the error is converted properly, don't rely on specific formatting
+            assert!(!msg.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_anyhow_error_conversion() {
+        let anyhow_error = anyhow::anyhow!("something went wrong");
+        let kora_error: KoraError = anyhow_error.into();
+        assert!(matches!(kora_error, KoraError::SigningError(_)));
+        if let KoraError::SigningError(msg) = kora_error {
+            assert!(msg.contains("something went wrong"));
+        }
+    }
+
+    #[test]
+    fn test_kora_error_to_rpc_error_invalid_request() {
+        let test_cases = vec![
+            KoraError::AccountNotFound("test".to_string()),
+            KoraError::InvalidTransaction("test".to_string()),
+            KoraError::ValidationError("test".to_string()),
+            KoraError::UnsupportedFeeToken("test".to_string()),
+            KoraError::InsufficientFunds("test".to_string()),
+        ];
+
+        for kora_error in test_cases {
+            let rpc_error: RpcError = kora_error.into();
+            assert!(matches!(rpc_error, RpcError::Call(_)));
+        }
+    }
+
+    #[test]
+    fn test_kora_error_to_rpc_error_internal_server() {
+        let test_cases = vec![
+            KoraError::InternalServerError("test".to_string()),
+            KoraError::SerializationError("test".to_string()),
+        ];
+
+        for kora_error in test_cases {
+            let rpc_error: RpcError = kora_error.into();
+            assert!(matches!(rpc_error, RpcError::Call(_)));
+        }
+    }
+
+    #[test]
+    fn test_kora_error_to_rpc_error_default_case() {
+        let other_errors = vec![
+            KoraError::RpcError("test".to_string()),
+            KoraError::SigningError("test".to_string()),
+            KoraError::TransactionExecutionFailed("test".to_string()),
+            KoraError::FeeEstimationFailed("test".to_string()),
+            KoraError::SwapError("test".to_string()),
+            KoraError::TokenOperationError("test".to_string()),
+            KoraError::ThreadSafetyError("test".to_string()),
+            KoraError::InvalidRequest("test".to_string()),
+            KoraError::Unauthorized("test".to_string()),
+            KoraError::RateLimitExceeded,
+        ];
+
+        for kora_error in other_errors {
+            let rpc_error: RpcError = kora_error.into();
+            assert!(matches!(rpc_error, RpcError::Call(_)));
+        }
+    }
+
+    #[test]
+    fn test_invalid_request_function() {
+        let error = KoraError::ValidationError("invalid input".to_string());
+        let rpc_error = invalid_request(error);
+        assert!(matches!(rpc_error, RpcError::Call(_)));
+    }
+
+    #[test]
+    fn test_internal_server_error_function() {
+        let error = KoraError::InternalServerError("server panic".to_string());
+        let rpc_error = internal_server_error(error);
+        assert!(matches!(rpc_error, RpcError::Call(_)));
+    }
+
+    #[test]
+    fn test_into_kora_response_with_different_error_types() {
+        let io_result: Result<String, std::io::Error> = Err(std::io::Error::other("test"));
+        let response = io_result.into_response();
+        assert_eq!(response.data, None);
+        assert!(matches!(response.error, Some(KoraError::InternalServerError(_))));
+
+        let signer_result: Result<String, SignerError> =
+            Err(SignerError::Custom("test".to_string()));
+        let response = signer_result.into_response();
+        assert_eq!(response.data, None);
+        assert!(matches!(response.error, Some(KoraError::SigningError(_))));
+    }
+
+    #[test]
+    fn test_kora_error_display() {
+        let error = KoraError::AccountNotFound("test_account".to_string());
+        let display_string = format!("{}", error);
+        assert_eq!(display_string, "Account test_account not found");
+
+        let error = KoraError::RateLimitExceeded;
+        let display_string = format!("{}", error);
+        assert_eq!(display_string, "Rate limit exceeded");
+    }
+
+    #[test]
+    fn test_kora_error_debug() {
+        let error = KoraError::ValidationError("test".to_string());
+        let debug_string = format!("{:?}", error);
+        assert!(debug_string.contains("ValidationError"));
+    }
+
+    #[test]
+    fn test_kora_error_clone() {
+        let error = KoraError::SwapError("original".to_string());
+        let cloned = error.clone();
+        assert_eq!(error, cloned);
+    }
+
+    #[test]
+    fn test_kora_response_serialization() {
+        let response = KoraResponse::ok("test_data".to_string());
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("test_data"));
+
+        let error_response: KoraResponse<String> =
+            KoraResponse::err(KoraError::ValidationError("test".to_string()));
+        let error_json = serde_json::to_string(&error_response).unwrap();
+        assert!(error_json.contains("ValidationError"));
     }
 }
