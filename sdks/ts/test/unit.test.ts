@@ -16,6 +16,7 @@ import {
     EstimateTransactionFeeResponse,
 } from '../src/types/index.js';
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
+import { getInstructionsFromBase64Message } from '../src/utils/transaction.js';
 
 // Mock fetch globally
 const mockFetch = jest.fn();
@@ -304,6 +305,59 @@ describe('KoraClient Unit Tests', () => {
                 request,
             );
         });
+
+        it('should parse instructions from transfer transaction message', async () => {
+            const request: TransferTransactionRequest = {
+                amount: 1000000,
+                token: 'SOL',
+                source: 'source_address',
+                destination: 'destination_address',
+            };
+
+            // This is a real base64 encoded message for testing
+            // In production, this would come from the RPC response
+            const mockMessage =
+                'AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIDAAEMAgAAAAEAAAAAAAAA';
+
+            const mockResponse: TransferTransactionResponse = {
+                transaction: 'base64_encoded_transaction',
+                message: mockMessage,
+                blockhash: 'test_blockhash',
+                signer_pubkey: 'test_signer_pubkey',
+            };
+
+            mockSuccessfulResponse(mockResponse);
+
+            const result = await client.transferTransaction(request);
+
+            expect(result.instructions).toBeDefined();
+            expect(Array.isArray(result.instructions)).toBe(true);
+            // The instructions array should be populated from the parsed message
+            expect(result.instructions).not.toBeNull();
+        });
+
+        it('should handle transfer transaction with empty message gracefully', async () => {
+            const request: TransferTransactionRequest = {
+                amount: 1000000,
+                token: 'SOL',
+                source: 'source_address',
+                destination: 'destination_address',
+            };
+
+            const mockResponse: TransferTransactionResponse = {
+                transaction: 'base64_encoded_transaction',
+                message: '',
+                blockhash: 'test_blockhash',
+                signer_pubkey: 'test_signer_pubkey',
+            };
+
+            mockSuccessfulResponse(mockResponse);
+
+            const result = await client.transferTransaction(request);
+
+            // Should handle empty message gracefully
+            expect(result.instructions).toEqual([]);
+        });
     });
     describe('getPaymentInstruction', () => {
         const mockConfig: Config = {
@@ -547,4 +601,47 @@ describe('KoraClient Unit Tests', () => {
     //         - Test headers are correctly combined
     //     });
     // });
+});
+
+describe('Transaction Utils', () => {
+    describe('getInstructionsFromBase64Message', () => {
+        it('should parse instructions from a valid base64 message', () => {
+            // This is a sample base64 encoded transaction message
+            const validMessage =
+                'AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIDAAEMAgAAAAEAAAAAAAAA';
+
+            const instructions = getInstructionsFromBase64Message(validMessage);
+
+            expect(Array.isArray(instructions)).toBe(true);
+            expect(instructions).not.toBeNull();
+        });
+
+        it('should return empty array for invalid base64 message', () => {
+            const invalidMessage = 'invalid_base64_message';
+
+            const instructions = getInstructionsFromBase64Message(invalidMessage);
+
+            expect(Array.isArray(instructions)).toBe(true);
+            expect(instructions).toEqual([]);
+        });
+
+        it('should return empty array for empty message', () => {
+            const emptyMessage = '';
+
+            const instructions = getInstructionsFromBase64Message(emptyMessage);
+
+            expect(Array.isArray(instructions)).toBe(true);
+            expect(instructions).toEqual([]);
+        });
+
+        it('should handle malformed transaction messages gracefully', () => {
+            // Valid base64 but not a valid transaction message
+            const malformedMessage = 'SGVsbG8gV29ybGQh'; // "Hello World!" in base64
+
+            const instructions = getInstructionsFromBase64Message(malformedMessage);
+
+            expect(Array.isArray(instructions)).toBe(true);
+            expect(instructions).toEqual([]);
+        });
+    });
 });

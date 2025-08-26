@@ -92,6 +92,8 @@ export interface TransferTransactionResponse {
     blockhash: string;
     /** Public key of the signer used to send the transaction */
     signer_pubkey: string;
+    /** Parsed instructions from the transaction message */
+    instructions?: Instruction[];
 }
 
 /**

@@ -23,13 +23,8 @@ import {
     GetPaymentInstructionResponse,
 } from './types/index.js';
 import crypto from 'crypto';
-import {
-    findAssociatedTokenPda,
-    getTransferCheckedInstruction,
-    TOKEN_PROGRAM_ADDRESS,
-    fetchMaybeMint,
-    getTransferInstruction,
-} from '@solana-program/token';
+import { getInstructionsFromBase64Message } from './utils/transaction.js';
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS, getTransferInstruction } from '@solana-program/token';
 
 /**
  * Kora RPC client for interacting with the Kora paymaster service.
@@ -274,7 +269,7 @@ export class KoraClient {
      * @param request.token - Mint address of the token to transfer
      * @param request.source - Source wallet public key
      * @param request.destination - Destination wallet public key
-     * @returns Base64-encoded signed transaction, base64-encoded message, and blockhash
+     * @returns Base64-encoded signed transaction, base64-encoded message, blockhash, and parsed instructions
      * @throws {Error} When the RPC call fails or token is not supported
      *
      * @example
@@ -287,10 +282,22 @@ export class KoraClient {
      * });
      * console.log('Transaction:', transfer.transaction);
      * console.log('Message:', transfer.message);
+     * console.log('Instructions:', transfer.instructions);
      * ```
      */
     async transferTransaction(request: TransferTransactionRequest): Promise<TransferTransactionResponse> {
-        return this.rpcRequest<TransferTransactionResponse, TransferTransactionRequest>('transferTransaction', request);
+        const response = await this.rpcRequest<TransferTransactionResponse, TransferTransactionRequest>(
+            'transferTransaction',
+            request,
+        );
+
+        // Parse instructions from the message to enhance developer experience
+        // Always set instructions, even for empty messages (for consistency)
+        if (response.message !== undefined) {
+            response.instructions = getInstructionsFromBase64Message(response.message);
+        }
+
+        return response;
     }
 
     /**

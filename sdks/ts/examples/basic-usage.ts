@@ -48,7 +48,7 @@ async function main() {
       await loadKeypairSignerFromEnvironmentBase58("PRIVATE_KEY");
 
     // Example transfer
-    const { transaction: transactionString } = await client.transferTransaction(
+    const transferResult = await client.transferTransaction(
       {
         amount: 1000000, // 1 USDC (6 decimals)
         token: usdcMint, // USDC mint
@@ -57,8 +57,14 @@ async function main() {
       }
     );
 
+    // Access the parsed instructions directly
+    if (transferResult.instructions) {
+      console.log("Transfer instructions:", transferResult.instructions);
+      console.log("Number of instructions:", transferResult.instructions?.length);
+    }
+
     // Sign the transaction
-    const transaction = transactionFromBase64(transactionString);
+    const transaction = transactionFromBase64(transferResult.transaction);
 
     // Send signed transaction
     const signedTransaction = await signTransaction(
