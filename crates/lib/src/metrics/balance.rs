@@ -1,8 +1,8 @@
-use crate::{
-    cache::CacheUtil,
-    error::KoraError,
-    state::{get_config, get_signers_info},
-};
+#[cfg(not(test))]
+use crate::state::get_config;
+#[cfg(test)]
+use crate::tests::config_mock::mock_state::get_config;
+use crate::{cache::CacheUtil, error::KoraError, state::get_signers_info};
 use prometheus::{register_gauge_vec, GaugeVec};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -149,108 +149,247 @@ impl BalanceTracker {
 mod tests {
     use super::*;
     use crate::{
-        config::{
-            Config, FeePayerBalanceMetricsConfig, KoraConfig, MetricsConfig, ValidationConfig,
-        },
-        fee::price::PriceConfig,
-        oracle::PriceSource,
+        config::FeePayerBalanceMetricsConfig,
         signer::{
             memory_signer::solana_signer::SolanaMemorySigner, KoraSigner, SignerPool,
             SignerWithMetadata,
         },
-        state::{update_config, update_signer_pool},
+        state::update_signer_pool,
+        tests::{
+            account_mock::create_mock_account_with_balance,
+            common::RpcMockBuilder,
+            config_mock::{ConfigMockBuilder, MetricsConfigBuilder},
+        },
     };
-    use serial_test::serial;
     use solana_sdk::signature::Keypair;
 
-    fn create_test_config(balance_metrics_enabled: bool) -> Config {
-        Config {
-            validation: ValidationConfig {
-                max_allowed_lamports: 1000000,
-                max_signatures: 10,
-                allowed_programs: vec![],
-                allowed_tokens: vec![],
-                allowed_spl_paid_tokens: vec![],
-                disallowed_accounts: vec![],
-                price_source: PriceSource::Mock,
-                fee_payer_policy: crate::config::FeePayerPolicy::default(),
-                price: PriceConfig::default(),
-                token_2022: crate::config::Token2022Config::default(),
-            },
-            kora: KoraConfig {
-                rate_limit: 100,
-                enabled_methods: crate::config::EnabledMethods::default(),
-                auth: crate::config::AuthConfig::default(),
-                payment_address: None,
-                cache: crate::config::CacheConfig {
-                    url: None,
-                    enabled: false,
-                    default_ttl: 300,
-                    account_ttl: 60,
-                },
-            },
-            metrics: MetricsConfig {
-                enabled: true,
-                endpoint: "/metrics".to_string(),
-                port: 8080,
-                scrape_interval: 60,
-                fee_payer_balance: FeePayerBalanceMetricsConfig {
-                    enabled: balance_metrics_enabled,
-                    expiry_seconds: 30,
-                },
-            },
-        }
-    }
-
-    fn create_test_signer_pool() -> SignerPool {
+    fn setup_test_signer_pool() {
         let signer1 = SolanaMemorySigner::new(Keypair::new());
         let signer2 = SolanaMemorySigner::new(Keypair::new());
 
-        SignerPool::new(vec![
+        let pool = SignerPool::new(vec![
             SignerWithMetadata::new("test_signer_1".to_string(), KoraSigner::Memory(signer1), 1),
             SignerWithMetadata::new("test_signer_2".to_string(), KoraSigner::Memory(signer2), 1),
-        ])
+        ]);
+
+        let _ = update_signer_pool(pool);
     }
 
     #[tokio::test]
-    #[serial]
-    async fn test_balance_tracking_disabled() {
-        let config = create_test_config(false);
-        let _ = update_config(config);
+    async fn test_is_enabled_when_disabled() {
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(false)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: false,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
 
-        // Balance tracking should report as disabled
         assert!(!BalanceTracker::is_enabled());
     }
 
     #[tokio::test]
-    #[serial]
-    async fn test_balance_tracking_enabled() {
-        let config = create_test_config(true);
-        let _ = update_config(config);
+    async fn test_is_enabled_when_enabled() {
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(true)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: true,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
 
-        // Balance tracking should report as enabled
         assert!(BalanceTracker::is_enabled());
     }
 
     #[tokio::test]
-    #[serial]
-    async fn test_multi_signer_balance_tracking() {
-        let config = create_test_config(true);
-        let _ = update_config(config);
+    async fn test_is_enabled_requires_both_flags() {
+        // Test case: metrics enabled but balance metrics disabled
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(true)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: false,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
 
-        // Set up test signer pool
-        let pool = create_test_signer_pool();
-        let _ = update_signer_pool(pool);
+        assert!(!BalanceTracker::is_enabled());
+    }
 
-        // Verify we can get signers info
-        let signers_info = get_signers_info().expect("Should get signers info");
-        assert_eq!(signers_info.len(), 2);
-        assert_eq!(signers_info[0].name, "test_signer_1");
-        assert_eq!(signers_info[1].name, "test_signer_2");
+    #[tokio::test]
+    async fn test_is_enabled_metrics_disabled_balance_enabled() {
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(false)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: true,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
 
-        // Verify public keys are valid Solana pubkeys
-        for signer_info in signers_info {
-            assert!(Pubkey::from_str(&signer_info.public_key).is_ok());
+        assert!(!BalanceTracker::is_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_init_when_disabled() {
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(false)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: false,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
+
+        let result = BalanceTracker::init().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_init_when_enabled() {
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(true)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: true,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
+
+        let result = BalanceTracker::init().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_track_all_signer_balances_when_disabled() {
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(false)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: false,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
+
+        let mock_rpc = RpcMockBuilder::new().build();
+        let result = BalanceTracker::track_all_signer_balances(&mock_rpc).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_track_all_signer_balances_successful() {
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(true)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: true,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
+
+        setup_test_signer_pool();
+        let _ = BalanceTracker::init().await;
+
+        let account = create_mock_account_with_balance(1_000_000_000); // 1 SOL
+        let mock_rpc = RpcMockBuilder::new().with_account_info(&account).build();
+
+        let result = BalanceTracker::track_all_signer_balances(&mock_rpc).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_track_all_signer_balances_handles_rpc_errors() {
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(true)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: true,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
+
+        setup_test_signer_pool();
+        let _ = BalanceTracker::init().await;
+
+        let mock_rpc = RpcMockBuilder::new().with_account_not_found().build();
+
+        let result = BalanceTracker::track_all_signer_balances(&mock_rpc).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_start_background_tracking_when_disabled() {
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(false)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: false,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
+
+        let mock_rpc = RpcMockBuilder::new().build();
+        let handle = BalanceTracker::start_background_tracking(mock_rpc).await;
+
+        assert!(handle.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_start_background_tracking_when_enabled() {
+        let _m = ConfigMockBuilder::new()
+            .with_metrics(
+                MetricsConfigBuilder::new()
+                    .with_enabled(true)
+                    .with_fee_payer_balance(FeePayerBalanceMetricsConfig {
+                        enabled: true,
+                        expiry_seconds: 30,
+                    })
+                    .build(),
+            )
+            .build_and_setup();
+
+        setup_test_signer_pool();
+        let _ = BalanceTracker::init().await;
+
+        let mock_rpc = RpcMockBuilder::new().build();
+        let handle = BalanceTracker::start_background_tracking(mock_rpc).await;
+
+        assert!(handle.is_some());
+
+        if let Some(task) = handle {
+            task.abort();
         }
     }
 }

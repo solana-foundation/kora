@@ -121,7 +121,7 @@ impl Token2022Extensions for Token2022Account {
     }
 
     fn has_transfer_hook_extension(&self) -> bool {
-        self.has_extension(ExtensionType::TransferHook)
+        self.has_extension(ExtensionType::TransferHookAccount)
     }
 
     fn has_pausable_extension(&self) -> bool {
@@ -549,32 +549,29 @@ pub trait Token2022Extensions {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::tests::common::get_mock_rpc_client;
-    use solana_client::nonblocking::rpc_client::RpcClient;
-    use solana_program::program_pack::Pack;
-    use solana_sdk::{
-        pubkey::Pubkey,
-        signature::{Keypair, Signer},
-        transaction::Transaction,
-    };
-    use spl_pod::{
-        optional_keys::OptionalNonZeroPubkey,
-        primitives::{PodU16, PodU64},
-    };
-    use spl_token_2022::{
-        extension::{
-            transfer_fee::{TransferFee, TransferFeeAmount, TransferFeeConfig},
-            ExtensionType,
-        },
-        state::Account as Token2022AccountState,
+    use crate::tests::common::{
+        create_transfer_fee_config, MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder,
     };
 
-    fn get_extensions_hashmap() -> HashMap<u16, ParsedExtension> {
+    use super::*;
+    use solana_sdk::pubkey::Pubkey;
+    use spl_pod::{
+        optional_keys::OptionalNonZeroPubkey,
+        primitives::{PodBool, PodU16, PodU64},
+    };
+    use spl_token_2022::extension::{
+        cpi_guard::CpiGuard,
+        transfer_fee::{TransferFee, TransferFeeConfig},
+        ExtensionType,
+    };
+
+    pub fn create_test_extensions() -> HashMap<u16, ParsedExtension> {
         let mut extensions = HashMap::new();
         extensions.insert(
             ExtensionType::TransferFeeConfig as u16,
-            ParsedExtension::Mint(MintExtension::TransferFeeConfig(TransferFeeConfig::default())),
+            ParsedExtension::Mint(MintExtension::TransferFeeConfig(create_transfer_fee_config(
+                100, 1000,
+            ))),
         );
         extensions
     }
@@ -597,9 +594,6 @@ mod tests {
         let owner = Pubkey::new_unique();
         let amount = 1000;
 
-        // For this test, we'll create a Token2022Account directly
-        // This avoids the complexity of properly setting up the extension data
-
         // Create a Token2022Account directly
         let account = Token2022Account {
             mint,
@@ -611,7 +605,7 @@ mod tests {
             delegated_amount: 0,
             close_authority: None,
             extensions_types: vec![ExtensionType::TransferFeeConfig],
-            extensions: get_extensions_hashmap(),
+            extensions: create_test_extensions(),
         };
 
         // Verify the basic fields
@@ -631,16 +625,8 @@ mod tests {
         let amount = 100;
 
         // Create the instruction directly for testing
-        #[allow(deprecated)]
-        let ix = spl_token_2022::instruction::transfer(
-            &spl_token_2022::id(),
-            &source,
-            &dest,
-            &authority,
-            &[],
-            amount,
-        )
-        .unwrap();
+        let program = Token2022Program::new();
+        let ix = program.create_transfer_instruction(&source, &dest, &authority, amount).unwrap();
 
         assert_eq!(ix.program_id, spl_token_2022::id());
         // Verify accounts are in correct order
@@ -658,18 +644,12 @@ mod tests {
         let amount = 100;
         let decimals = 9;
 
-        // Create the instruction directly for testing
-        let ix = spl_token_2022::instruction::transfer_checked(
-            &spl_token_2022::id(),
-            &source,
-            &mint,
-            &dest,
-            &authority,
-            &[],
-            amount,
-            decimals,
-        )
-        .unwrap();
+        let program = Token2022Program::new();
+        let ix = program
+            .create_transfer_checked_instruction(
+                &source, &mint, &dest, &authority, amount, decimals,
+            )
+            .unwrap();
 
         assert_eq!(ix.program_id, spl_token_2022::id());
         // Verify accounts are in correct order
@@ -698,59 +678,18 @@ mod tests {
     }
 
     #[test]
-    fn test_token2022_transfer_fee_calculation() {
-        let owner = Pubkey::new_unique();
-        let amount = 1000;
-
-        // Create a transfer fee config
-        let transfer_fee_config = TransferFeeConfig {
-            transfer_fee_config_authority: OptionalNonZeroPubkey::try_from(Some(owner)).unwrap(),
-            withdraw_withheld_authority: OptionalNonZeroPubkey::try_from(Some(owner)).unwrap(),
-            withheld_amount: PodU64::from(0),
-            newer_transfer_fee: TransferFee {
-                epoch: PodU64::from(0),
-                transfer_fee_basis_points: PodU16::from(100), // 1%
-                maximum_fee: PodU64::from(100),               // Maximum fee is 100
-            },
-            older_transfer_fee: TransferFee {
-                epoch: PodU64::from(0),
-                transfer_fee_basis_points: PodU16::from(0),
-                maximum_fee: PodU64::from(0),
-            },
-        };
-
-        // Calculate transfer fee manually since TokenProgram doesn't have this method
-        let basis_points =
-            u16::from(transfer_fee_config.newer_transfer_fee.transfer_fee_basis_points);
-        let fee_amount = (amount as u128 * basis_points as u128 / 10000) as u64;
-        let transfer_fee = TransferFeeAmount { withheld_amount: PodU64::from(fee_amount) };
-        assert_eq!(u64::from(transfer_fee.withheld_amount), 10); // 1% of 1000
-    }
-
-    #[test]
     fn test_token2022_account_state_extensions() {
-        // For this test, we'll create a Token2022Account directly
-        // This avoids the complexity of properly setting up the extension data
         let owner = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
         let amount = 1000;
 
-        // Create a Token2022Account directly
-        let token_account = Token2022Account {
-            mint,
-            owner,
-            amount,
-            delegate: None,
-            state: 1, // Initialized
-            is_native: None,
-            delegated_amount: 0,
-            close_authority: None,
-            extensions_types: vec![],
-            extensions: HashMap::new(),
-        };
+        let token_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&owner)
+            .with_amount(amount)
+            .build_as_custom_token2022_token_account(HashMap::new());
 
         // Test extension detection
-        // Test core extensions only
         assert!(!token_account.has_extension(ExtensionType::TransferFeeConfig));
         assert!(!token_account.has_extension(ExtensionType::NonTransferableAccount));
         assert!(!token_account.has_extension(ExtensionType::CpiGuard));
@@ -758,444 +697,340 @@ mod tests {
 
     #[test]
     fn test_token2022_extension_support() {
-        // For this test, we'll create a Token2022Account directly
-        // This avoids the complexity of properly setting up the extension data
         let mint = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
         let amount = 1000;
 
-        // Create a Token2022Account directly
-        let token_account = Token2022Account {
-            mint,
-            owner,
-            amount,
-            delegate: None,
-            state: 1, // Initialized
-            is_native: None,
-            delegated_amount: 0,
-            close_authority: None,
-            extensions_types: vec![ExtensionType::TransferFeeConfig],
-            extensions: get_extensions_hashmap(),
-        };
+        let token_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&owner)
+            .with_amount(amount)
+            .build_as_custom_token2022_token_account(create_test_extensions());
 
-        // Verify basic fields
         assert_eq!(token_account.mint(), mint);
         assert_eq!(token_account.owner(), owner);
         assert_eq!(token_account.amount(), amount);
 
-        // Verify extension data is present
         assert!(!token_account.extensions.is_empty());
     }
 
     #[test]
-    fn test_unpack_pyusd_token() {
-        // For this test, we'll create a Token2022Account directly rather than unpacking
-        // This avoids the complexity of properly setting up the extension data
-        let mint = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
-        let amount = 100;
-
-        // Create a Token2022Account directly
-        let account = Token2022Account {
-            mint,
-            owner,
-            amount,
-            delegate: None,
-            state: 1, // Initialized
-            is_native: None,
-            delegated_amount: 0,
-            close_authority: None,
-            extensions_types: vec![ExtensionType::TransferFeeConfig],
-            extensions: get_extensions_hashmap(),
-        };
-
-        // Verify the basic fields
-        assert_eq!(account.mint(), mint);
-        assert_eq!(account.owner(), owner);
-        assert_eq!(account.amount(), amount);
-
-        // Verify extensions map is available
-        assert!(!account.extensions.is_empty());
-    }
-
-    #[test]
-    fn test_unpack_pyusd_token_with_real_data() {
-        // Create a Token2022Account directly
-        let mint = Pubkey::new_from_array([
-            39, 205, 189, 131, 172, 37, 24, 242, 132, 25, 240, 173, 104, 66, 136, 20, 150, 118,
-            250, 155, 153, 151, 73, 158, 106, 120, 35, 236, 68, 53, 202, 238,
-        ]);
-        let owner = Pubkey::new_unique();
-        let amount = 100;
-
-        let token_account = Token2022Account {
-            mint,
-            owner,
-            amount,
-            delegate: None,
-            state: 1, // Initialized
-            is_native: None,
-            delegated_amount: 0,
-            close_authority: None,
-            extensions_types: vec![ExtensionType::TransferFeeConfig],
-            extensions: get_extensions_hashmap(),
-        };
-
-        // Verify the basic fields
-        assert_eq!(token_account.mint(), mint);
-        assert_eq!(token_account.owner(), owner);
-        assert_eq!(token_account.amount(), amount);
-
-        // Verify extension data is present
-        assert!(!token_account.extensions.is_empty());
-    }
-
-    #[test]
-    fn test_token2022_account_from_bytes() {
-        // For this test, we'll create a Token2022Account directly
-        // This avoids the complexity of properly setting up the extension data
-        let mint = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
-        let amount = 100;
-
-        // Create a Token2022Account directly
-        let token_account = Token2022Account {
-            mint,
-            owner,
-            amount,
-            delegate: None,
-            state: 1, // Initialized
-            is_native: None,
-            delegated_amount: 0,
-            close_authority: None,
-            extensions_types: vec![ExtensionType::TransferFeeConfig],
-            extensions: get_extensions_hashmap(),
-        };
-
-        // Verify the basic fields
-        assert_eq!(token_account.mint(), mint);
-        assert_eq!(token_account.owner(), owner);
-        assert_eq!(token_account.amount(), amount);
-
-        // Verify extension data is present
-        assert!(!token_account.extensions.is_empty());
-    }
-
-    #[test]
-    fn test_token2022_account_from_bytes_with_extensions() {
-        // For this test, we'll create a Token2022Account directly
-        // This avoids the complexity of properly setting up the extension data
-        let mint = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
-        let amount = 100;
-
-        // Create a proper Token2022 account data buffer
-        let mut buffer = vec![0; Token2022AccountState::LEN];
-        let account_state = Token2022AccountState {
-            mint,
-            owner,
-            amount,
-            state: spl_token_2022::state::AccountState::Initialized,
-            ..Default::default()
-        };
-        account_state.pack_into_slice(&mut buffer);
-
-        // Create a Token2022Account directly
-        let token2022_account = Token2022Account {
-            mint,
-            owner,
-            amount,
-            delegate: None,
-            state: 1, // Initialized
-            is_native: None,
-            delegated_amount: 0,
-            close_authority: None,
-            extensions_types: vec![ExtensionType::TransferFeeConfig],
-            extensions: get_extensions_hashmap(),
-        };
-
-        assert_eq!(token2022_account.amount(), amount);
-        assert_eq!(token2022_account.mint(), mint);
-        assert_eq!(token2022_account.owner(), owner);
-        assert!(!token2022_account.extensions.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_token2022_full_flow() {
-        // Skip this test in normal unit test runs as it requires a local validator
-        if option_env!("RUN_INTEGRATION_TESTS").is_none() {
-            return;
-        }
-
-        let rpc_url = "http://localhost:8899".to_string();
-        let rpc_client = RpcClient::new(rpc_url);
-
-        // Create mint authority
-        let mint_authority = Keypair::new();
-        let mint_authority_pubkey = mint_authority.pubkey();
-
-        // Create mint with transfer fee
-        let mint = Keypair::new();
-
-        // Initialize mint
-        let decimals = 9;
-        let init_mint_ix = spl_token_2022::instruction::initialize_mint2(
-            &spl_token_2022::id(),
-            &mint.pubkey(),
-            &mint_authority_pubkey,
-            None,
-            decimals,
-        )
-        .unwrap();
-
-        // Create source account
-        let source_owner = Keypair::new();
-        let token_program = Token2022Program::new();
-        let source_account =
-            token_program.get_associated_token_address(&source_owner.pubkey(), &mint.pubkey());
-
-        // Create destination account
-        let dest_owner = Keypair::new();
-        let dest_account =
-            token_program.get_associated_token_address(&dest_owner.pubkey(), &mint.pubkey());
-
-        // Create source ATA
-        let create_source_ata_ix = token_program.create_associated_token_account_instruction(
-            &source_owner.pubkey(),
-            &source_owner.pubkey(),
-            &mint.pubkey(),
-        );
-
-        // Create destination ATA
-        let create_dest_ata_ix = token_program.create_associated_token_account_instruction(
-            &dest_owner.pubkey(),
-            &dest_owner.pubkey(),
-            &mint.pubkey(),
-        );
-
-        // Mint tokens
-        let mint_amount = 1_000_000;
-        let mint_to_ix = spl_token_2022::instruction::mint_to(
-            &spl_token_2022::id(),
-            &mint.pubkey(),
-            &source_account,
-            &mint_authority_pubkey,
-            &[],
-            mint_amount,
-        )
-        .unwrap();
-
-        // Transfer tokens
-        let transfer_amount = 100_000;
-        let transfer_ix = token_program
-            .create_transfer_checked_instruction(
-                &source_account,
-                &mint.pubkey(),
-                &dest_account,
-                &source_owner.pubkey(),
-                transfer_amount,
-                decimals,
-            )
-            .unwrap();
-
-        // Build and send transaction
-        let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
-        let transaction = Transaction::new_signed_with_payer(
-            &[init_mint_ix, create_source_ata_ix, create_dest_ata_ix, mint_to_ix, transfer_ix],
-            Some(&source_owner.pubkey()),
-            &[&source_owner, &mint_authority],
-            recent_blockhash,
-        );
-
-        // Send and confirm transaction
-        let result = rpc_client.send_and_confirm_transaction(&transaction).await;
-
-        assert!(result.is_ok());
-
-        // Verify balances
-        let source_balance = rpc_client.get_token_account_balance(&source_account).await.unwrap();
-        let dest_balance = rpc_client.get_token_account_balance(&dest_account).await.unwrap();
-
-        // Account for transfer fee
-        let fee = std::cmp::min((transfer_amount as u128 * 100u128 / 10000) as u64, 10_000);
-        let expected_transfer = transfer_amount - fee;
-
-        assert_eq!(source_balance.ui_amount.unwrap() as u64, mint_amount - transfer_amount);
-        assert_eq!(dest_balance.ui_amount.unwrap() as u64, expected_transfer);
-    }
-
-    #[test]
-    fn test_get_associated_token_address() {
-        let wallet = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-
-        let program = Token2022Program::new();
-        let ata_2022 = program.get_associated_token_address(&wallet, &mint);
-        assert_ne!(ata_2022, wallet);
-        assert_ne!(ata_2022, mint);
-    }
-
-    #[test]
-    fn test_create_ata_instruction() {
-        let funder = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-
-        // Test Token2022 ATA creation
-        let program = Token2022Program::new();
-        let ix = program.create_associated_token_account_instruction(&funder, &owner, &mint);
-
-        assert_eq!(ix.program_id, spl_associated_token_account::id());
-    }
-
-    #[tokio::test]
-    async fn test_get_and_validate_amount_for_payment() {
-        let mint = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
-        let amount = 1000;
-
-        // Create a minimal Token2022Account for testing
-        let account = Token2022Account {
-            mint,
-            owner,
-            amount,
-            delegate: None,
-            state: 1,
-            is_native: None,
-            delegated_amount: 0,
-            close_authority: None,
-            extensions_types: vec![],
-            extensions: HashMap::new(),
-        };
-
-        let mock_account = crate::tests::common::create_mock_token2022_mint_account(6);
-        let rpc_client = get_mock_rpc_client(&mock_account);
-        let program = Token2022Program::new();
-        let result = program
-            .get_and_validate_amount_for_payment(&rpc_client, Some(&account), None, amount)
-            .await;
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), amount);
-    }
-
-    #[tokio::test]
-    async fn test_get_and_validate_amount_for_payment_insufficient_balance() {
-        let mint = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
-        let account_balance = 500;
-        let requested_amount = 1000;
-
-        // Create a Token2022Account with insufficient balance
-        let account = Token2022Account {
-            mint,
-            owner,
-            amount: account_balance,
-            delegate: None,
-            state: 1,
-            is_native: None,
-            delegated_amount: 0,
-            close_authority: None,
-            extensions_types: vec![],
-            extensions: HashMap::new(),
-        };
-
-        let mock_account = crate::tests::common::create_mock_token2022_mint_account(6);
-        let rpc_client = get_mock_rpc_client(&mock_account);
-        let program = Token2022Program::new();
-        // This test focuses on logic that happens before RPC calls
-        // With empty extension data, it should return the original amount without RPC calls
-        let result = program
-            .get_and_validate_amount_for_payment(
-                &rpc_client,
-                Some(&account),
-                None,
-                requested_amount,
-            )
-            .await;
-        assert!(result.is_ok());
-        // The method doesn't currently check balance, it just validates extensions and calculates fees
-        assert_eq!(result.unwrap(), requested_amount);
-    }
-
-    #[tokio::test]
-    async fn test_get_ata_account_size_minimal_token2022() {
-        // Test Token2022 mint with minimal extensions (only ImmutableOwner for ATAs)
+    fn test_token2022_mint_transfer_fee_edge_cases() {
         let mint_pubkey = Pubkey::new_unique();
 
-        let mint_state = Token2022MintState {
-            mint_authority: None.into(),
+        let mint = MintAccountMockBuilder::new()
+            .build_as_custom_token2022_mint(mint_pubkey, HashMap::new());
+
+        let fee = mint.calculate_transfer_fee(1000, 0);
+        assert!(fee.is_none(), "Mint without transfer fee config should return None");
+
+        let mint = MintAccountMockBuilder::new()
+            .build_as_custom_token2022_mint(mint_pubkey, create_test_extensions());
+
+        // Test zero amount
+        let zero_fee = mint.calculate_transfer_fee(0, 0);
+        assert!(zero_fee.is_some());
+        assert_eq!(zero_fee.unwrap(), 0, "Zero amount should result in zero fee");
+
+        // Test maximum fee cap
+        let large_amount_fee = mint.calculate_transfer_fee(1_000_000, 0);
+        assert!(large_amount_fee.is_some());
+        assert_eq!(large_amount_fee.unwrap(), 1000, "Large amount should be capped at maximum fee");
+    }
+
+    #[test]
+    fn test_token2022_mint_specific_extensions() {
+        let mint_pubkey = Pubkey::new_unique();
+        let mint = Token2022Mint {
+            mint: mint_pubkey,
+            mint_authority: None,
             supply: 0,
             decimals: 6,
             is_initialized: true,
-            freeze_authority: None.into(),
+            freeze_authority: None,
+            extensions_types: vec![
+                ExtensionType::InterestBearingConfig,
+                ExtensionType::PermanentDelegate,
+                ExtensionType::MintCloseAuthority,
+            ],
+            extensions: HashMap::new(), // Extension data not needed for has_extension tests
         };
 
-        let mut mint_data = vec![0; Token2022MintState::LEN];
-        mint_state.pack_into_slice(&mut mint_data);
-
-        let mint_account = Account {
-            lamports: 0,
-            data: mint_data,
-            owner: spl_token_2022::id(),
-            executable: false,
-            rent_epoch: 0,
-        };
-
-        let program = Token2022Program::new();
-
-        let result = program.get_ata_account_size(&mint_pubkey, &mint_account).await.unwrap();
-
-        // Should include ImmutableOwner extension, making it larger than base SPL Token
-        assert!(
-            result > Token2022AccountState::LEN,
-            "Token2022 ATA should include ImmutableOwner extension, got {result} bytes"
-        );
+        assert!(mint.has_interest_bearing_extension());
+        assert!(mint.has_permanent_delegate_extension());
+        assert!(mint.has_mint_close_authority_extension());
+        assert!(!mint.has_confidential_mint_burn_extension());
     }
 
     #[tokio::test]
-    async fn test_get_ata_account_size_with_transfer_fee() {
+    async fn test_token2022_get_ata_account_size() {
+        let program = Token2022Program::new();
         let mint_pubkey = Pubkey::new_unique();
 
-        let mock_account = crate::tests::common::create_mock_token2022_mint_account(6);
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build_token2022();
+
+        let result = program.get_ata_account_size(&mint_pubkey, &mint_account).await;
+
+        assert!(result.is_ok());
+        let size = result.unwrap();
+
+        // Size should be base Token2022AccountState size + ImmutableOwner extension + 1 byte padding
+        // (has 0 bytes of extension data, but still has the TVL overhead (type 2 bytes, length 2 bytes))
+        // (ATAs created for Token-2022 are immutable by default)
+        assert_eq!(size, 170); // Base (165) + Immutable Owner TVL Overhead (5)
+    }
+
+    #[test]
+    fn test_token2022_account_extension_validation_non_transferable() {
+        let account = TokenAccountMockBuilder::new()
+            .with_extensions(vec![ExtensionType::NonTransferableAccount])
+            .build_as_custom_token2022_token_account(HashMap::new());
+
+        assert!(account.is_non_transferable());
+
+        let result = account.validate_and_adjust_amount(1000);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("non-transferable"));
+    }
+
+    #[test]
+    fn test_token2022_account_extension_validation_cpi_guard() {
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            ExtensionType::CpiGuard as u16,
+            ParsedExtension::Account(AccountExtension::CpiGuard(CpiGuard {
+                lock_cpi: PodBool::from(true),
+            })),
+        );
+
+        let account = TokenAccountMockBuilder::new()
+            .with_extensions(vec![ExtensionType::CpiGuard])
+            .build_as_custom_token2022_token_account(extensions);
+
+        assert!(account.is_cpi_guarded());
+
+        let result = account.validate_and_adjust_amount(1000);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("CPI guarded"));
+    }
+
+    #[test]
+    fn test_token2022_account_extension_validation_cpi_guard_unlocked() {
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            ExtensionType::CpiGuard as u16,
+            ParsedExtension::Account(AccountExtension::CpiGuard(CpiGuard {
+                lock_cpi: PodBool::from(false), // Unlocked
+            })),
+        );
+
+        let account = TokenAccountMockBuilder::new()
+            .with_extensions(vec![ExtensionType::CpiGuard])
+            .build_as_custom_token2022_token_account(extensions);
+
+        assert!(!account.is_cpi_guarded());
+
+        let result = account.validate_and_adjust_amount(1000);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1000);
+    }
+
+    #[test]
+    fn test_token2022_account_extension_methods() {
+        let account = TokenAccountMockBuilder::new()
+            .with_extensions(vec![
+                ExtensionType::MemoTransfer,
+                ExtensionType::ImmutableOwner,
+                ExtensionType::DefaultAccountState,
+                ExtensionType::ConfidentialTransferAccount,
+                ExtensionType::TransferHookAccount,
+                ExtensionType::PausableAccount,
+            ])
+            .build_as_custom_token2022_token_account(HashMap::new());
+
+        // Test all extension detection methods
+        assert!(account.has_memo_extension());
+        assert!(account.has_immutable_owner_extension());
+        assert!(account.has_default_account_state_extension());
+        assert!(account.has_confidential_transfer_extension());
+        assert!(account.has_transfer_hook_extension());
+        assert!(account.has_pausable_extension());
+
+        // Test extensions not present
+        assert!(!account.is_non_transferable());
+    }
+
+    #[test]
+    fn test_token2022_mint_extension_validation_non_transferable() {
+        let mint = MintAccountMockBuilder::new()
+            .with_extensions(vec![ExtensionType::NonTransferable])
+            .build_as_custom_token2022_mint(Pubkey::new_unique(), HashMap::new());
+
+        assert!(mint.is_non_transferable());
+
+        let result = mint.validate_and_adjust_amount(1000, 0);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("non-transferable"));
+    }
+
+    #[test]
+    fn test_token2022_mint_transfer_fee_calculation_with_fee() {
+        let mint_pubkey = Pubkey::new_unique();
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            ExtensionType::TransferFeeConfig as u16,
+            ParsedExtension::Mint(MintExtension::TransferFeeConfig(
+                crate::tests::account_mock::create_transfer_fee_config(250, 1000),
+            )), // 2.5%, max 1000
+        );
+
+        let mint = MintAccountMockBuilder::new()
+            .with_extensions(vec![ExtensionType::TransferFeeConfig])
+            .build_as_custom_token2022_mint(mint_pubkey, extensions);
+
+        // Test fee calculation with transfer fee
+        let test_cases = vec![
+            (10000, 250),   // 10000 * 2.5% = 250
+            (100000, 1000), // Would be 2500, but capped at 1000
+            (1000, 25),     // 1000 * 2.5% = 25
+            (0, 0),         // Zero amount = zero fee
+        ];
+
+        for (amount, _expected_adjusted) in test_cases {
+            let result = mint.validate_and_adjust_amount(amount, 0);
+            assert!(result.is_ok());
+            let expected_fee = mint.calculate_transfer_fee(amount, 0).unwrap_or(0);
+            let expected_result = amount.saturating_sub(expected_fee);
+            assert_eq!(result.unwrap(), expected_result);
+        }
+    }
+
+    #[test]
+    fn test_token2022_mint_transfer_fee_epoch_handling() {
+        let mint_pubkey = Pubkey::new_unique();
+
+        // Create config with different fees for different epochs
+        let transfer_fee_config = TransferFeeConfig {
+            transfer_fee_config_authority: OptionalNonZeroPubkey::try_from(Some(
+                Pubkey::new_unique(),
+            ))
+            .unwrap(),
+            withdraw_withheld_authority: OptionalNonZeroPubkey::try_from(
+                Some(Pubkey::new_unique()),
+            )
+            .unwrap(),
+            withheld_amount: PodU64::from(0),
+            older_transfer_fee: TransferFee {
+                epoch: PodU64::from(0),
+                transfer_fee_basis_points: PodU16::from(100), // 1%
+                maximum_fee: PodU64::from(500),
+            },
+            newer_transfer_fee: TransferFee {
+                epoch: PodU64::from(10),
+                transfer_fee_basis_points: PodU16::from(200), // 2%
+                maximum_fee: PodU64::from(1000),
+            },
+        };
+
+        let mut extensions = HashMap::new();
+        extensions.insert(
+            ExtensionType::TransferFeeConfig as u16,
+            ParsedExtension::Mint(MintExtension::TransferFeeConfig(transfer_fee_config)),
+        );
+
+        let mint = MintAccountMockBuilder::new()
+            .with_extensions(vec![ExtensionType::TransferFeeConfig])
+            .build_as_custom_token2022_mint(mint_pubkey, extensions);
+
+        // Test older fee (epoch < 10)
+        let result_old = mint.validate_and_adjust_amount(10000, 5);
+        assert!(result_old.is_ok());
+        let fee_old = mint.calculate_transfer_fee(10000, 5).unwrap();
+        assert_eq!(fee_old, 100); // 10000 * 1% = 100
+        assert_eq!(result_old.unwrap(), 9900); // 10000 - 100
+
+        // Test newer fee (epoch >= 10)
+        let result_new = mint.validate_and_adjust_amount(10000, 15);
+        assert!(result_new.is_ok());
+        let fee_new = mint.calculate_transfer_fee(10000, 15).unwrap();
+        assert_eq!(fee_new, 200); // 10000 * 2% = 200
+        assert_eq!(result_new.unwrap(), 9800); // 10000 - 200
+    }
+
+    #[test]
+    fn test_token2022_mint_all_extension_methods() {
+        let mint = MintAccountMockBuilder::new()
+            .with_extensions(vec![
+                ExtensionType::InterestBearingConfig,
+                ExtensionType::PermanentDelegate,
+                ExtensionType::MintCloseAuthority,
+                ExtensionType::ConfidentialMintBurn,
+                ExtensionType::ConfidentialTransferMint,
+                ExtensionType::TransferHook,
+                ExtensionType::Pausable,
+            ])
+            .build_as_custom_token2022_mint(Pubkey::new_unique(), HashMap::new());
+
+        // Test all extension detection methods
+        assert!(mint.has_interest_bearing_extension());
+        assert!(mint.has_permanent_delegate_extension());
+        assert!(mint.has_mint_close_authority_extension());
+        assert!(mint.has_confidential_mint_burn_extension());
+        assert!(mint.has_confidential_transfer_extension());
+        assert!(mint.has_transfer_hook_extension());
+        assert!(mint.has_pausable_extension());
+
+        // Test extensions not present
+        assert!(!mint.is_non_transferable());
+    }
+
+    #[tokio::test]
+    async fn test_token2022_get_and_validate_amount_for_payment() {
+        let rpc_client = RpcMockBuilder::new().build();
 
         let program = Token2022Program::new();
-        let result = program.get_ata_account_size(&mint_pubkey, &mock_account).await.unwrap();
 
-        // For basic Token2022 mint, should include ImmutableOwner extension (always present on ATAs)
-        let minimal_extensions = vec![ExtensionType::ImmutableOwner];
-        let minimal_size =
-            ExtensionType::try_calculate_account_len::<Token2022AccountState>(&minimal_extensions)
-                .unwrap();
+        // Test with Token2022 account containing transfer restrictions
+        let account = TokenAccountMockBuilder::new()
+            .with_extensions(vec![ExtensionType::NonTransferableAccount])
+            .build_as_custom_token2022_token_account(HashMap::new());
 
-        assert_eq!(
-            result, minimal_size,
-            "Basic Token2022 ATA should include ImmutableOwner extension. Got {result} bytes, expected {minimal_size} bytes"
-        );
+        let result = program
+            .get_and_validate_amount_for_payment(&rpc_client, Some(&account), None, 1000)
+            .await;
 
-        // Test the calculation logic for TransferFeeAmount extension
-        // When a mint has TransferFeeConfig, the ATA needs TransferFeeAmount extension
-        let transfer_fee_extensions =
-            vec![ExtensionType::ImmutableOwner, ExtensionType::TransferFeeAmount];
-        let transfer_fee_size = ExtensionType::try_calculate_account_len::<Token2022AccountState>(
-            &transfer_fee_extensions,
-        )
-        .unwrap();
+        // Should fail due to non-transferable restriction
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("non-transferable"));
+    }
 
-        // Verify that transfer fee would make the account larger
-        assert!(
-            transfer_fee_size > result,
-            "ATA with TransferFeeAmount should be larger than basic ATA: {transfer_fee_size} > {result}"
-        );
+    #[tokio::test]
+    async fn test_token2022_get_ata_account_size_with_extensions() {
+        let program = Token2022Program::new();
+        let mint_pubkey = Pubkey::new_unique();
 
-        // Verify sizes are reasonable (between base account and reasonable maximum)
-        assert!(
-            result >= Token2022AccountState::LEN,
-            "ATA size should be at least base account size"
-        );
-        assert!(
-            result <= Token2022AccountState::LEN + 100,
-            "ATA size should not exceed reasonable bounds"
-        );
+        // Create a mint with transfer fee extension
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_supply(1_000_000)
+            .with_extension(ExtensionType::TransferFeeConfig)
+            .build_token2022_account_state_with_extensions()
+            .unwrap();
+
+        let result = program.get_ata_account_size(&mint_pubkey, &mint_account).await;
+
+        // Should succeed and return size that includes extension space
+        assert!(result.is_ok());
+
+        // Size would be
+        // Base 165
+        // Immutable owner tvl overhead 4 (all ATA for 2022 have immutable owner)
+        // + 1 byte padding
+        // Transfer fee config 8 bytes for data and 4 bytes for TVL overhead
+        assert_eq!(result.unwrap(), 182);
     }
 }

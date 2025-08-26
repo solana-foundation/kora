@@ -8,6 +8,7 @@ pub struct TurnkeySigner {
     pub api_public_key: String,
     pub api_private_key: String,
     pub public_key: String,
+    pub api_base_url: String,
     pub client: Client,
 }
 

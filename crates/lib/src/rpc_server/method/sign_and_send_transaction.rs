@@ -44,3 +44,49 @@ pub async fn sign_and_send_transaction(
         signer_pubkey: signer.solana_pubkey().to_string(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{
+        common::{setup_or_get_test_signer, RpcMockBuilder},
+        config_mock::ConfigMockBuilder,
+        transaction_mock::create_mock_encoded_transaction,
+    };
+
+    #[tokio::test]
+    async fn test_sign_and_send_transaction_decode_error() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+
+        let request = SignAndSendTransactionRequest {
+            transaction: "invalid_base64!@#$".to_string(),
+            signer_key: None,
+        };
+
+        let result = sign_and_send_transaction(&rpc_client, request).await;
+
+        assert!(result.is_err(), "Should fail with decode error");
+    }
+
+    #[tokio::test]
+    async fn test_sign_and_send_transaction_invalid_signer_key() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+
+        let request = SignAndSendTransactionRequest {
+            transaction: create_mock_encoded_transaction(),
+            signer_key: Some("invalid_pubkey".to_string()),
+        };
+
+        let result = sign_and_send_transaction(&rpc_client, request).await;
+
+        assert!(result.is_err(), "Should fail with invalid signer key");
+        let error = result.unwrap_err();
+        assert!(matches!(error, KoraError::ValidationError(_)), "Should return ValidationError");
+    }
+}

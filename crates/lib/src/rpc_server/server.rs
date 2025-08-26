@@ -5,8 +5,13 @@ use crate::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
         rpc::KoraRpc,
     },
-    state::get_config,
 };
+
+#[cfg(not(test))]
+use crate::state::get_config;
+
+#[cfg(test)]
+use crate::tests::config_mock::mock_state::get_config;
 use http::{header, Method};
 use jsonrpsee::{
     server::{middleware::proxy_get_request::ProxyGetRequestLayer, ServerBuilder, ServerHandle},
@@ -189,4 +194,144 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
     );
 
     Ok(module)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        config::EnabledMethods,
+        tests::{
+            common::setup_or_get_test_signer,
+            config_mock::{ConfigMockBuilder, KoraConfigBuilder},
+            rpc_mock::RpcMockBuilder,
+        },
+    };
+    use std::env;
+
+    #[test]
+    fn test_get_value_by_priority_env_var_takes_precedence() {
+        let env_var_name = "TEST_ENV_VAR_PRECEDENCE_UNIQUE";
+        env::set_var(env_var_name, "env_value");
+
+        let result = get_value_by_priority(env_var_name, Some("config_value".to_string()));
+        assert_eq!(result, Some("env_value".to_string()));
+
+        env::remove_var(env_var_name);
+    }
+
+    #[test]
+    fn test_get_value_by_priority_config_fallback() {
+        let env_var_name = "TEST_ENV_VAR_FALLBACK_UNIQUE_XYZ123";
+
+        let result = get_value_by_priority(env_var_name, Some("config_value".to_string()));
+        assert_eq!(result, Some("config_value".to_string()));
+    }
+
+    #[test]
+    fn test_get_value_by_priority_none_when_both_missing() {
+        let env_var_name = "TEST_ENV_VAR_MISSING_UNIQUE_ABC789";
+
+        let result = get_value_by_priority(env_var_name, None);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_build_rpc_module_all_methods_enabled() {
+        // Default is all methods enabled
+        let enabled_methods = EnabledMethods::default();
+
+        let kora_config = KoraConfigBuilder::new().with_enabled_methods(enabled_methods).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let kora_rpc = KoraRpc::new(rpc_client);
+
+        let result = build_rpc_module(kora_rpc);
+        assert!(result.is_ok(), "Failed to build RPC module with all methods enabled");
+
+        // Verify that the module has the expected methods
+        let module = result.unwrap();
+        let method_names: Vec<&str> = module.method_names().collect();
+        assert_eq!(method_names.len(), 10);
+        assert!(method_names.contains(&"liveness"));
+        assert!(method_names.contains(&"estimateTransactionFee"));
+        assert!(method_names.contains(&"getSupportedTokens"));
+        assert!(method_names.contains(&"getPayerSigner"));
+        assert!(method_names.contains(&"signTransaction"));
+        assert!(method_names.contains(&"signAndSendTransaction"));
+        assert!(method_names.contains(&"transferTransaction"));
+        assert!(method_names.contains(&"getBlockhash"));
+        assert!(method_names.contains(&"getConfig"));
+        assert!(method_names.contains(&"signTransactionIfPaid"));
+    }
+
+    #[test]
+    fn test_build_rpc_module_all_methods_disabled() {
+        // Setup config with all methods disabled
+        let enabled_methods = EnabledMethods {
+            estimate_transaction_fee: false,
+            get_supported_tokens: false,
+            get_payer_signer: false,
+            sign_transaction: false,
+            sign_and_send_transaction: false,
+            transfer_transaction: false,
+            get_blockhash: false,
+            get_config: false,
+            sign_transaction_if_paid: false,
+            liveness: false,
+        };
+
+        let kora_config = KoraConfigBuilder::new().with_enabled_methods(enabled_methods).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        // Create RPC module
+        let rpc_client = RpcMockBuilder::new().build();
+        let kora_rpc = KoraRpc::new(rpc_client);
+
+        // Build the module - should succeed even with no methods
+        let result = build_rpc_module(kora_rpc);
+        assert!(result.is_ok(), "Failed to build RPC module with all methods disabled");
+
+        assert_eq!(result.unwrap().method_names().count(), 0);
+    }
+
+    #[test]
+    fn test_build_rpc_module_selective_methods() {
+        // Setup config with only some methods enabled
+        let enabled_methods = EnabledMethods {
+            liveness: true,
+            get_config: true,
+            get_supported_tokens: true,
+            estimate_transaction_fee: false,
+            get_payer_signer: false,
+            sign_transaction: false,
+            sign_and_send_transaction: false,
+            transfer_transaction: false,
+            get_blockhash: false,
+            sign_transaction_if_paid: false,
+        };
+
+        let kora_config = KoraConfigBuilder::new().with_enabled_methods(enabled_methods).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        // Create RPC module
+        let rpc_client = RpcMockBuilder::new().build();
+        let kora_rpc = KoraRpc::new(rpc_client);
+
+        // Build the module
+        let result = build_rpc_module(kora_rpc);
+        assert!(result.is_ok(), "Failed to build RPC module with selective methods");
+
+        // Verify that only the expected methods are registered
+        let module = result.unwrap();
+        let method_names: Vec<&str> = module.method_names().collect();
+        assert_eq!(method_names.len(), 3);
+        assert!(method_names.contains(&"liveness"));
+        assert!(method_names.contains(&"getConfig"));
+        assert!(method_names.contains(&"getSupportedTokens"));
+    }
 }
