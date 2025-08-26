@@ -21,6 +21,7 @@ transfer_transaction = true
 get_blockhash = true
 get_config = true
 sign_transaction_if_paid = true
+get_payer_signer = true
 
 [validation]
 max_allowed_lamports = 1000000
