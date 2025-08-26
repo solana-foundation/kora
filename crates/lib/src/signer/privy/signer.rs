@@ -33,7 +33,7 @@ impl PrivySigner {
     }
 
     /// Get the Basic Auth header value
-    fn get_auth_header(&self) -> String {
+    fn get_privy_auth_header(&self) -> String {
         let credentials = format!("{}:{}", self.app_id, self.app_secret);
         format!("Basic {}", STANDARD.encode(credentials))
     }
@@ -45,7 +45,7 @@ impl PrivySigner {
         let response = self
             .client
             .get(&url)
-            .header("Authorization", self.get_auth_header())
+            .header("Authorization", self.get_privy_auth_header())
             .header("privy-app-id", &self.app_id)
             .send()
             .await?;
@@ -82,7 +82,7 @@ impl PrivySigner {
         let response = self
             .client
             .post(&url)
-            .header("Authorization", self.get_auth_header())
+            .header("Authorization", self.get_privy_auth_header())
             .header("privy-app-id", &self.app_id)
             .header("Content-Type", "application/json")
             .json(&request)
@@ -157,14 +157,14 @@ mod tests {
     }
 
     #[test]
-    fn test_get_auth_header() {
+    fn test_get_privy_auth_header() {
         let signer = PrivySigner::new(
             "test_app".to_string(),
             "test_secret".to_string(),
             "wallet123".to_string(),
         );
 
-        let auth_header = signer.get_auth_header();
+        let auth_header = signer.get_privy_auth_header();
         let expected_credentials = "test_app:test_secret";
         let expected_encoded = STANDARD.encode(expected_credentials);
         let expected_header = format!("Basic {expected_encoded}");

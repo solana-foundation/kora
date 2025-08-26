@@ -277,8 +277,7 @@ mod tests {
             .build_and_setup();
 
         let result = BalanceTracker::init().await;
-        // May succeed or fail depending on if already initialized, both are valid
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

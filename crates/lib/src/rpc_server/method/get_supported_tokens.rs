@@ -24,8 +24,10 @@ pub async fn get_supported_tokens() -> Result<GetSupportedTokensResponse, KoraEr
 mod tests {
     use super::*;
     use crate::{state::update_config, tests::config_mock::ConfigMockBuilder};
+    use serial_test::serial;
 
     #[tokio::test]
+    #[serial]
     async fn test_get_supported_tokens_empty_list() {
         let config = ConfigMockBuilder::new().with_allowed_tokens(vec![]).build();
         update_config(config).expect("Failed to update config");
@@ -41,6 +43,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_get_supported_tokens_contains_expected_tokens() {
         let expected_tokens = vec![
             "11111111111111111111111111111111".to_string(),

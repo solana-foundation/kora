@@ -431,6 +431,7 @@ mod tests_token {
 
     #[tokio::test]
     async fn test_get_mint_valid() {
+        // Any valid mint account (valid owner and valid data) will count as valid here. (not related to allowed mint in Kora's config)
         let _lock = ConfigMockBuilder::new().build_and_setup();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();

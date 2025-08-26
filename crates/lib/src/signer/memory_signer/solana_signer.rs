@@ -138,8 +138,7 @@ mod tests {
         let test_private_key = "5MaiiCavjCmn9Hs1o3eznqDEhRwxo7pXiAYez7keQUviUkauRiTMD8DrESdrNjN8zd9mTmVhRvBJeg5vhyvgrAhG";
         let signer = SolanaMemorySigner::from_private_key_string(test_private_key).unwrap();
 
-        // Just verify we can create the signer - actual pubkey depends on the private key
-        assert!(!signer.pubkey_base58().is_empty());
+        assert_eq!(signer.pubkey_base58(), "5pVyoAeURQHNMVU7DmfMHvCDNmTEYXWfEwc136GYhTKG");
     }
 
     #[test]

@@ -41,22 +41,82 @@ pub async fn get_config() -> Result<GetConfigResponse, KoraError> {
 mod tests {
     use super::*;
     use crate::tests::{common::setup_or_get_test_signer, config_mock::ConfigMockBuilder};
+    use serial_test::serial;
 
     #[tokio::test]
+    #[serial]
     async fn test_get_config_success() {
-        let _m = ConfigMockBuilder::new().build_and_setup();
+        let config = ConfigMockBuilder::new().build();
+        state::update_config(config).expect("Failed to update config");
 
         let _ = setup_or_get_test_signer();
 
         let result = get_config().await;
 
-        assert!(result.is_ok(), "Should successfully get config");
         let response = result.unwrap();
+
+        // Assert fee payers
         assert!(!response.fee_payers.is_empty(), "Should have at least one fee payer");
         assert!(!response.fee_payers[0].is_empty(), "Fee payer pubkey should not be empty");
-        assert!(
-            response.validation_config.max_allowed_lamports > 0,
-            "Should have max_allowed_lamports set"
-        );
+
+        // Assert ValidationConfig defaults
+        assert_eq!(response.validation_config.max_allowed_lamports, 1_000_000_000);
+        assert_eq!(response.validation_config.max_signatures, 10);
+        assert_eq!(response.validation_config.allowed_programs.len(), 3);
+        assert_eq!(
+            response.validation_config.allowed_programs[0],
+            "11111111111111111111111111111111"
+        ); // System Program
+        assert_eq!(
+            response.validation_config.allowed_programs[1],
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ); // Token Program
+        assert_eq!(
+            response.validation_config.allowed_programs[2],
+            "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        ); // ATA Program
+        assert_eq!(response.validation_config.allowed_tokens.len(), 1);
+        assert_eq!(
+            response.validation_config.allowed_tokens[0],
+            "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        ); // USDC devnet
+        assert_eq!(response.validation_config.allowed_spl_paid_tokens.len(), 1);
+        assert_eq!(
+            response.validation_config.allowed_spl_paid_tokens[0],
+            "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        ); // USDC devnet
+        assert_eq!(response.validation_config.disallowed_accounts.len(), 0);
+        assert_eq!(response.validation_config.price_source, crate::oracle::PriceSource::Mock);
+
+        // Assert FeePayerPolicy defaults
+        assert!(response.validation_config.fee_payer_policy.allow_sol_transfers);
+        assert!(response.validation_config.fee_payer_policy.allow_spl_transfers);
+        assert!(response.validation_config.fee_payer_policy.allow_token2022_transfers);
+        assert!(response.validation_config.fee_payer_policy.allow_assign);
+        assert!(response.validation_config.fee_payer_policy.allow_burn);
+        assert!(response.validation_config.fee_payer_policy.allow_close_account);
+        assert!(response.validation_config.fee_payer_policy.allow_approve);
+
+        // Assert PriceConfig default (check margin value)
+        match response.validation_config.price.model {
+            crate::fee::price::PriceModel::Margin { margin } => assert_eq!(margin, 0.0),
+            _ => panic!("Expected Margin price model"),
+        }
+
+        // Assert Token2022Config defaults (only public fields)
+        assert_eq!(response.validation_config.token_2022.blocked_mint_extensions.len(), 0);
+        assert_eq!(response.validation_config.token_2022.blocked_account_extensions.len(), 0);
+
+        // Assert EnabledMethods defaults
+        assert!(response.enabled_methods.liveness);
+        assert!(response.enabled_methods.estimate_transaction_fee);
+        assert!(response.enabled_methods.get_supported_tokens);
+        assert!(response.enabled_methods.get_payer_signer);
+        assert!(response.enabled_methods.sign_transaction);
+        assert!(response.enabled_methods.sign_and_send_transaction);
+        assert!(response.enabled_methods.transfer_transaction);
+        assert!(response.enabled_methods.get_blockhash);
+        assert!(response.enabled_methods.get_config);
+        assert!(response.enabled_methods.sign_transaction_if_paid);
     }
 }
