@@ -37,18 +37,16 @@ async function main() {
   try {
     // Get supported tokens
     const { tokens } = await client.getSupportedTokens();
-    console.log("Supported tokens:", tokens);
 
     // Get current configuration
     const config = await client.getConfig();
-    console.log("Current configuration:", config);
 
     // Load signer from env var
     const signer =
       await loadKeypairSignerFromEnvironmentBase58("PRIVATE_KEY");
 
     // Example transfer
-    const { transaction: transactionString } = await client.transferTransaction(
+    const transferResult = await client.transferTransaction(
       {
         amount: 1000000, // 1 USDC (6 decimals)
         token: usdcMint, // USDC mint
@@ -58,7 +56,7 @@ async function main() {
     );
 
     // Sign the transaction
-    const transaction = transactionFromBase64(transactionString);
+    const transaction = transactionFromBase64(transferResult.transaction);
 
     // Send signed transaction
     const signedTransaction = await signTransaction(
