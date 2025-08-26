@@ -3,6 +3,7 @@ import setupTestSuite from './setup.js';
 import { runAuthenticationTests } from './auth-setup.js';
 import {
     Address,
+    generateKeyPairSigner,
     getBase64EncodedWireTransaction,
     getBase64Encoder,
     getTransactionDecoder,
@@ -10,7 +11,7 @@ import {
     type KeyPairSigner,
     type Transaction,
 } from '@solana/kit';
-import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
+import { ASSOCIATED_TOKEN_PROGRAM_ADDRESS, findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 
 function transactionFromBase64(base64: string): Transaction {
     const encoder = getBase64Encoder();
@@ -113,6 +114,30 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(response.transaction).toBeDefined();
             expect(response.blockhash).toBeDefined();
             expect(response.message).toBeDefined();
+            expect(response.instructions).toBeDefined();
+            // since setup created ATA for destination, we should not expect ata instruction, only transfer instruction
+            expect(response.instructions?.length).toBe(1);
+            expect(response.instructions?.[0].programAddress).toBe(TOKEN_PROGRAM_ADDRESS);
+        });
+        it('should create transfer transaction to address with no ATA', async () => {
+            const randomDestination = await generateKeyPairSigner();
+            const request = {
+                amount: 1000000, // 1 USDC
+                token: usdcMint,
+                source: testWalletAddress,
+                destination: randomDestination.address,
+            };
+
+            const response = await client.transferTransaction(request);
+            expect(response).toBeDefined();
+            expect(response.transaction).toBeDefined();
+            expect(response.blockhash).toBeDefined();
+            expect(response.message).toBeDefined();
+            expect(response.instructions).toBeDefined();
+            // since setup created ATA for destination, we should not expect ata instruction, only transfer instruction
+            expect(response.instructions?.length).toBe(2);
+            expect(response.instructions?.[0].programAddress).toBe(ASSOCIATED_TOKEN_PROGRAM_ADDRESS);
+            expect(response.instructions?.[1].programAddress).toBe(TOKEN_PROGRAM_ADDRESS);
         });
 
         it('should estimate transaction fee', async () => {
