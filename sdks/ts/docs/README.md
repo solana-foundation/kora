@@ -352,7 +352,7 @@ Creates a token transfer transaction with Kora as the fee payer.
 
 `Promise`\<[`TransferTransactionResponse`](#transfertransactionresponse)\>
 
-Base64-encoded signed transaction, base64-encoded message, and blockhash
+Base64-encoded signed transaction, base64-encoded message, blockhash, and parsed instructions
 
 ###### Throws
 
@@ -369,6 +369,7 @@ const transfer = await client.transferTransaction({
 });
 console.log('Transaction:', transfer.transaction);
 console.log('Message:', transfer.message);
+console.log('Instructions:', transfer.instructions);
 ```
 
 ## Interfaces
@@ -704,6 +705,7 @@ Response from creating a transfer transaction.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="blockhash-1"></a> `blockhash` | `string` | Recent blockhash used in the transaction |
+| <a id="instructions"></a> `instructions` | `Instruction`\<`string`, readonly (`AccountLookupMeta`\<`string`, `string`\> \| `AccountMeta`\<`string`\>)[]\>[] | Parsed instructions from the transaction message |
 | <a id="message-1"></a> `message` | `string` | Base64-encoded message |
 | <a id="signer_pubkey-4"></a> `signer_pubkey` | `string` | Public key of the signer used to send the transaction |
 | <a id="transaction-6"></a> `transaction` | `string` | Base64-encoded signed transaction |

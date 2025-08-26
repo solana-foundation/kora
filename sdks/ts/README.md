@@ -79,12 +79,17 @@ import { KoraClient } from '@kora/sdk';
 const client = new KoraClient({ rpcUrl: 'http://localhost:8080' });
 
 // Example: Transfer tokens
-const signature = await client.transferTransaction({
+const result = await client.transferTransaction({
   amount: 1000000, // 1 USDC (6 decimals)
   token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC mint
   source: "sourceAddress",
   destination: "destinationAddress"
 });
+
+// Access the base64 encoded transaction, base64 encoded message, and parsed instructions directly
+console.log('Transaction:', result.transaction);
+console.log('Message:', result.message);
+console.log('Instructions:', result.instructions);
 ```
 
 ## API Reference
