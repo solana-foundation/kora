@@ -210,7 +210,11 @@ This confirms your Kora server is running and properly configured!
 
 ## Next Steps
 
-Once you have the basic setup working, explore additional Kora RPC methods:
+Once you have the basic setup working, check out the full Kora flow demo:
+
+**[→ Kora Complete Gasless Transaction Flow](./FULL_DEMO.md)**
+
+explore additional Kora RPC methods:
 
 - `estimateTransactionFee` - Calculate fees for transactions
 - `getPayerSigner` - Get the payer signer and payment destination

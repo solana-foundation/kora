@@ -23,7 +23,9 @@
     "@solana-program/token": "^0.5.1",
     "@solana/assertions": "^2.3.0",
     "@solana/kit": "^2.3.0",
-    "dotenv": "^17.2.0"
+    "@solana/transaction-confirmation": "^2.3.0",
+    "dotenv": "^17.2.0",
+    "gill": "^0.10.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.13",
