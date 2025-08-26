@@ -58,10 +58,8 @@ async function main() {
     );
 
     // Access the parsed instructions directly
-    if (transferResult.instructions) {
-      console.log("Transfer instructions:", transferResult.instructions);
-      console.log("Number of instructions:", transferResult.instructions?.length);
-    }
+    console.log("Transfer instructions:", transferResult.instructions);
+    console.log("Number of instructions:", transferResult.instructions.length);
 
     // Sign the transaction
     const transaction = transactionFromBase64(transferResult.transaction);

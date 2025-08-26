@@ -93,7 +93,7 @@ export interface TransferTransactionResponse {
     /** Public key of the signer used to send the transaction */
     signer_pubkey: string;
     /** Parsed instructions from the transaction message */
-    instructions?: Instruction[];
+    instructions: Instruction[];
 }
 
 /**

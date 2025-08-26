@@ -293,9 +293,7 @@ export class KoraClient {
 
         // Parse instructions from the message to enhance developer experience
         // Always set instructions, even for empty messages (for consistency)
-        if (response.message !== undefined) {
-            response.instructions = getInstructionsFromBase64Message(response.message);
-        }
+        response.instructions = getInstructionsFromBase64Message(response.message || '');
 
         return response;
     }
