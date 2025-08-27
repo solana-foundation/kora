@@ -96,7 +96,6 @@ async fn test_sign_transaction_v0_with_lookup() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    // Use the transaction lookup table which contains the mint address
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 
@@ -217,7 +216,6 @@ async fn test_sign_spl_transaction_v0_with_lookup() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    // Use the transaction lookup table which contains the mint address
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 
@@ -417,7 +415,6 @@ async fn test_sign_and_send_transaction_v0_with_lookup() {
 
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
-    // Use the transaction lookup table which contains the mint address used for ATA derivation
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 
@@ -582,7 +579,6 @@ async fn test_sign_transaction_if_paid_v0_with_lookup() {
 
     let fee_amount = 100000;
 
-    // Use the transaction lookup table which contains the mint address
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 

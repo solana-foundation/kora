@@ -113,7 +113,7 @@ impl LookupTableHelper {
         addresses.disallowed_pubkey()
     }
 
-    /// Get transaction lookup table address from fixtures
+    /// Get transaction lookup table address from fixtures, includes USDC mint and SPL token program
     pub fn get_transaction_lookup_table_address() -> Result<Pubkey> {
         let addresses = Self::load_lookup_table_addresses()?;
         addresses.transaction_pubkey()

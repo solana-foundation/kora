@@ -150,7 +150,7 @@ async fn test_estimate_transaction_fee_without_payment_instruction_legacy() {
 
     let fee_in_lamports = response["fee_in_lamports"].as_u64().unwrap();
 
-    // Fee in lamport is 10000 + payment instruction fee
+    // Fee in lamport is 10000 + payment instruction fee (so 10050)
     assert_eq!(fee_in_lamports, 10050, "Fee in lamports should be 10000, got {fee_in_lamports}");
 }
 
@@ -162,7 +162,6 @@ async fn test_estimate_transaction_fee_v0_with_lookup() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    // Use the transaction lookup table which contains the mint address used for ATA derivation
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 
@@ -190,7 +189,6 @@ async fn test_estimate_transaction_fee_without_fee_token_v0_with_lookup() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    // Use the transaction lookup table which contains the mint address used for ATA derivation
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 
@@ -224,7 +222,6 @@ async fn test_estimate_transaction_fee_with_fee_token_v0_with_lookup() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    // Use the transaction lookup table which contains the mint address used for ATA derivation
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 

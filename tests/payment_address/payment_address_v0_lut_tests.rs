@@ -17,7 +17,6 @@ async fn test_sign_transaction_if_paid_with_payment_address_v0_with_lookup() {
 
     let fee_amount = 10000;
 
-    // Use the transaction lookup table which contains the mint address
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 
@@ -50,7 +49,6 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_v0_with_lookup() {
 
     let fee_amount = 10000;
 
-    // Use the transaction lookup table which contains the mint address
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 
