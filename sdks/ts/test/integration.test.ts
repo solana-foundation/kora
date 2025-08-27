@@ -38,7 +38,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         destinationAddress = testSuite.destinationAddress;
         usdcMint = testSuite.usdcMint;
         koraAddress = testSuite.koraAddress;
-    }, 30000); // allow adequte time for airdrops and token initialization
+    }, 60000); // allow adequate time for airdrops and token initialization
 
     // Run authentication tests only when auth is enabled
     if (AUTH_ENABLED) {

@@ -24,12 +24,7 @@ test-ts-integration-auth:
 # Run TypeScript tests with Turnkey signer
 test-ts-integration-turnkey:
 	@$(call start_solana_validator)
-	@echo "🚀 Starting Kora node with Turnkey signer..."
-	@$(call stop_kora_server)
-	@cargo run -p kora-cli --bin kora -- --config $(REGULAR_CONFIG) --rpc-url $(TEST_RPC_URL) rpc start --signers-config $(TEST_SIGNERS_TURNKEY_CONFIG) --port $(TEST_PORT) $(QUIET_OUTPUT) &
-	@echo $$! > .kora.pid
-	@echo "⏳ Waiting for server to start..."
-	@sleep 5
+	@$(call start_kora_server,node for TS Turnkey tests,cargo run,,$(REGULAR_CONFIG),,$(TEST_SIGNERS_TURNKEY_CONFIG))
 	@printf "Running TypeScript SDK tests with Turnkey signer...\n"
 	-@cd sdks/ts && pnpm test:integration:turnkey
 	@$(call stop_kora_server)
@@ -38,12 +33,7 @@ test-ts-integration-turnkey:
 # Run TypeScript tests with Privy signer  
 test-ts-integration-privy:
 	@$(call start_solana_validator)
-	@echo "🚀 Starting Kora node with Privy signer..."
-	@$(call stop_kora_server)
-	@cargo run -p kora-cli --bin kora -- --config $(REGULAR_CONFIG) --rpc-url $(TEST_RPC_URL) rpc start --signers-config $(TEST_SIGNERS_PRIVY_CONFIG) --port $(TEST_PORT) $(QUIET_OUTPUT) &
-	@echo $$! > .kora.pid
-	@echo "⏳ Waiting for server to start..."
-	@sleep 5
+	@$(call start_kora_server,node for TS Privy tests,cargo run,,$(REGULAR_CONFIG),,$(TEST_SIGNERS_PRIVY_CONFIG))
 	@printf "Running TypeScript SDK tests with Privy signer...\n"
 	-@cd sdks/ts && pnpm test:integration:privy
 	@$(call stop_kora_server)
