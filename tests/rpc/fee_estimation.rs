@@ -168,7 +168,13 @@ async fn test_estimate_transaction_fee_v0_with_lookup() {
     let test_tx = ctx
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-        .with_spl_transfer_checked(&usdc_mint, &sender.pubkey(), &recipient, 10, 6)
+        .with_spl_transfer_checked(
+            &usdc_mint,
+            &sender.pubkey(),
+            &recipient,
+            10,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 transaction with mint in lookup table");
@@ -195,7 +201,13 @@ async fn test_estimate_transaction_fee_without_fee_token_v0_with_lookup() {
     let test_tx = ctx
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-        .with_spl_transfer_checked(&usdc_mint, &sender.pubkey(), &recipient, 10, 6)
+        .with_spl_transfer_checked(
+            &usdc_mint,
+            &sender.pubkey(),
+            &recipient,
+            10,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 transaction with mint in lookup table");
@@ -228,7 +240,13 @@ async fn test_estimate_transaction_fee_with_fee_token_v0_with_lookup() {
     let test_tx = ctx
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-        .with_spl_transfer_checked(&usdc_mint, &sender.pubkey(), &recipient, 10, 6)
+        .with_spl_transfer_checked(
+            &usdc_mint,
+            &sender.pubkey(),
+            &recipient,
+            10,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 transaction with mint in lookup table");

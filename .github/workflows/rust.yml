@@ -54,7 +54,7 @@ jobs:
         run: |
           echo "🧪 Running unit tests with coverage instrumentation..."
           cargo llvm-cov clean --workspace
-          cargo llvm-cov test --workspace --lib --html --output-dir coverage/html --lcov --output-path coverage/lcov.info
+          cargo llvm-cov test --workspace --lib --lcov --output-path coverage/lcov.info
 
       - name: Run integration tests (no coverage)
         run: |
@@ -65,10 +65,10 @@ jobs:
         run: |
           echo "📊 Coverage Summary:"
           if [ -f "coverage/lcov.info" ]; then
-            echo "✅ Coverage reports generated successfully"
-            ls -la coverage/
+            echo "✅ Coverage report generated successfully"
+            echo "📄 Generated: coverage/lcov.info"
           else
-            echo "❌ Coverage reports not found"
+            echo "❌ Coverage report not found"
           fi
 
       - name: Upload coverage artifacts
