@@ -22,7 +22,6 @@ async fn test_sign_transaction_if_paid_with_payment_address_legacy() {
 
     let sender_token_account = get_associated_token_address(&sender.pubkey(), &test_mint);
     let payment_address_token_account = get_associated_token_address(&payment_address, &test_mint);
-    let fee_amount = 10000;
 
     let token_interface = TokenProgram::new();
     let fee_payer_instruction = token_interface
@@ -30,7 +29,7 @@ async fn test_sign_transaction_if_paid_with_payment_address_legacy() {
             &sender_token_account,
             &payment_address_token_account,
             &sender.pubkey(),
-            fee_amount,
+            get_fee_for_default_transaction_in_usdc(),
         )
         .unwrap();
 
@@ -75,15 +74,13 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_legacy() {
         &spl_token::id(),
     );
 
-    let fee_amount = 10000;
-
     let token_interface = TokenProgram::new();
     let fee_payer_instruction = token_interface
         .create_transfer_instruction(
             &sender_token_account,
             &wrong_dest_ata,
             &sender.pubkey(),
-            fee_amount,
+            get_fee_for_default_transaction_in_usdc(),
         )
         .unwrap();
 

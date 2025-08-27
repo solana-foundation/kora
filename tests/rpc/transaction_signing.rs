@@ -60,7 +60,13 @@ async fn test_sign_transaction_v0() {
         .v0_transaction_builder()
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
         .with_signer(&sender)
-        .with_spl_transfer_checked(&token_mint, &sender.pubkey(), &recipient, 10, 6)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &recipient,
+            10,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 test transaction");
@@ -103,7 +109,13 @@ async fn test_sign_transaction_v0_with_lookup() {
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
         .with_signer(&sender)
-        .with_spl_transfer_checked(&token_mint, &sender.pubkey(), &recipient, 10, 6)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &recipient,
+            10,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 test transaction with lookup table");
@@ -180,7 +192,13 @@ async fn test_sign_spl_transaction_v0() {
         .v0_transaction_builder()
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
         .with_signer(&sender)
-        .with_spl_transfer_checked(&token_mint, &sender.pubkey(), &recipient, 10, 6)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &recipient,
+            10,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 signed test SPL transaction");
@@ -223,7 +241,13 @@ async fn test_sign_spl_transaction_v0_with_lookup() {
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
         .with_signer(&sender)
-        .with_spl_transfer_checked(&token_mint, &sender.pubkey(), &recipient, 10, 6)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &recipient,
+            10,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 signed test SPL transaction with lookup table");
@@ -389,7 +413,13 @@ async fn test_sign_and_send_transaction_v0() {
         .v0_transaction_builder()
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
-        .with_spl_transfer_checked(&token_mint, &sender.pubkey(), &recipient, 10, 6)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &recipient,
+            10,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 test transaction");
@@ -422,7 +452,13 @@ async fn test_sign_and_send_transaction_v0_with_lookup() {
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
-        .with_spl_transfer_checked(&token_mint, &sender.pubkey(), &recipient, 10, 6)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &recipient,
+            10,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 test transaction with lookup table");
@@ -462,14 +498,18 @@ async fn test_sign_transaction_if_paid_legacy() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
 
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-    let fee_amount = 100000;
 
     // Use transaction builder with proper signing and automatic ATA derivation
     let base64_transaction = ctx
         .transaction_builder()
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
-        .with_spl_transfer(&token_mint, &sender.pubkey(), &fee_payer, fee_amount)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            get_fee_for_default_transaction_in_usdc(),
+        )
         .with_spl_transfer(&token_mint, &sender.pubkey(), &recipient, 1)
         .build()
         .await
@@ -520,14 +560,24 @@ async fn test_sign_transaction_if_paid_v0() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let fee_amount = 100000;
-
     let base64_transaction = ctx
         .v0_transaction_builder()
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
-        .with_spl_transfer_checked(&token_mint, &sender.pubkey(), &fee_payer, fee_amount, 6)
-        .with_spl_transfer_checked(&token_mint, &sender.pubkey(), &recipient, 1, 6)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            get_fee_for_default_transaction_in_usdc(),
+            TEST_USDC_MINT_DECIMALS,
+        )
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &recipient,
+            1,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 signed transaction");
@@ -577,8 +627,6 @@ async fn test_sign_transaction_if_paid_v0_with_lookup() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let fee_amount = 100000;
-
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 
@@ -587,8 +635,20 @@ async fn test_sign_transaction_if_paid_v0_with_lookup() {
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
-        .with_spl_transfer_checked(&token_mint, &sender.pubkey(), &fee_payer, fee_amount, 6)
-        .with_spl_transfer_checked(&token_mint, &sender.pubkey(), &recipient, 1, 6)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            get_fee_for_default_transaction_in_usdc(),
+            TEST_USDC_MINT_DECIMALS,
+        )
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &recipient,
+            1,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create V0 signed transaction with lookup table");

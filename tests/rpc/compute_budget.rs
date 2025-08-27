@@ -79,7 +79,13 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0_with_lookup() {
     let test_tx = ctx
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
         .with_fee_payer(fee_payer.pubkey())
-        .with_spl_transfer_checked(&usdc_mint, &sender.pubkey(), &recipient, 500_000, 6)
+        .with_spl_transfer_checked(
+            &usdc_mint,
+            &sender.pubkey(),
+            &recipient,
+            500_000,
+            TEST_USDC_MINT_DECIMALS,
+        )
         .with_compute_budget(1_000_000, 25_000)
         .build()
         .await

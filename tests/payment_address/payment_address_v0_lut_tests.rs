@@ -15,8 +15,6 @@ async fn test_sign_transaction_if_paid_with_payment_address_v0_with_lookup() {
     let payment_address = Pubkey::from_str(TEST_PAYMENT_ADDRESS).unwrap();
     let test_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    let fee_amount = 10000;
-
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 
@@ -26,7 +24,13 @@ async fn test_sign_transaction_if_paid_with_payment_address_v0_with_lookup() {
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
-        .with_spl_transfer_checked(&test_mint, &sender.pubkey(), &payment_address, fee_amount, 6)
+        .with_spl_transfer_checked(
+            &test_mint,
+            &sender.pubkey(),
+            &payment_address,
+            get_fee_for_default_transaction_in_usdc(),
+            TEST_USDC_MINT_DECIMALS,
+        )
         .build()
         .await
         .expect("Failed to create signed V0 transaction with mint in lookup table");
@@ -46,8 +50,6 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_v0_with_lookup() {
     let sender = SenderTestHelper::get_test_sender_keypair();
     let wrong_destination = Keypair::new(); // Random wrong destination
     let test_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-
-    let fee_amount = 10000;
 
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
@@ -73,8 +75,8 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_v0_with_lookup() {
             &test_mint,
             &sender.pubkey(),
             &wrong_destination.pubkey(),
-            fee_amount,
-            6,
+            get_fee_for_default_transaction_in_usdc(),
+            TEST_USDC_MINT_DECIMALS,
         )
         .build()
         .await
