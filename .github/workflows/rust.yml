@@ -19,6 +19,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_LOG: info
+  CI: true
 
 jobs:
   test:
@@ -44,9 +45,6 @@ jobs:
       - name: Setup Solana CLI
         uses: ./.github/actions/setup-solana
 
-      - name: Setup Solana test validator
-        uses: ./.github/actions/setup-solana-validator
-
       - name: Install cargo-llvm-cov for coverage
         run: cargo install cargo-llvm-cov
 
@@ -59,6 +57,7 @@ jobs:
       - name: Run integration tests (no coverage)
         run: |
           echo "🧪 Running integration tests for behavior validation..."
+          # The makefile will handle the validator lifecycle
           make test-integration
 
       - name: Generate coverage reports
@@ -135,9 +134,11 @@ jobs:
             });
 
       - name: Cleanup test environment
+        if: always()
         uses: ./.github/actions/cleanup-test-env
 
       - name: Show failure logs
+        if: failure()
         uses: ./.github/actions/show-failure-logs
         with:
           test-type: "Rust integration"

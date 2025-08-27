@@ -11,12 +11,12 @@ test-integration:
 	@KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT)
 	$(call print_success,Infrastructure ready)
 	
-	$(call run_integration_phase,1,RPC tests,$(REGULAR_CONFIG),,--test rpc,)
-	$(call run_integration_phase,2,token tests,$(REGULAR_CONFIG),,--test tokens,)
-	$(call run_integration_phase,3,external tests,$(REGULAR_CONFIG),,--test external,)
-	$(call run_integration_phase,4,auth tests,$(AUTH_CONFIG),,--test auth,)
-	$(call run_integration_phase,5,payment address tests,$(PAYMENT_ADDRESS_CONFIG),,--test payment_address,true)
-	$(call run_multi_signer_phase,6,multi-signer tests,$(REGULAR_CONFIG),$(MULTI_SIGNERS_CONFIG),--test multi_signer)
+	@$(call run_integration_phase,1,RPC tests,$(REGULAR_CONFIG),,--test rpc,)
+	@$(call run_integration_phase,2,token tests,$(REGULAR_CONFIG),,--test tokens,)
+	@$(call run_integration_phase,3,external tests,$(REGULAR_CONFIG),,--test external,)
+	@$(call run_integration_phase,4,auth tests,$(AUTH_CONFIG),,--test auth,)
+	@$(call run_integration_phase,5,payment address tests,$(PAYMENT_ADDRESS_CONFIG),,--test payment_address,true)
+	@$(call run_multi_signer_phase,6,multi-signer tests,$(REGULAR_CONFIG),$(MULTI_SIGNERS_CONFIG),--test multi_signer)
 
 	$(call print_header,TEST SUITE COMPLETE)
 	@$(call stop_solana_validator)

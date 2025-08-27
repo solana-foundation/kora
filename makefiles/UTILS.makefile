@@ -19,6 +19,10 @@ REGULAR_CONFIG := tests/src/common/fixtures/kora-test.toml
 AUTH_CONFIG := tests/src/common/fixtures/auth-test.toml
 PAYMENT_ADDRESS_CONFIG := tests/src/common/fixtures/paymaster-address-test.toml
 
+# CI-aware timeouts
+VALIDATOR_TIMEOUT := $(if $(CI),20,30)
+SERVER_TIMEOUT := $(if $(CI),20,30)
+
 # Output control patterns
 QUIET_OUTPUT := >/dev/null 2>&1
 TEST_OUTPUT_FILTER := 2>&1 | grep -E "(test |running |ok$$|FAILED|failed|error:|Error:|ERROR)" | grep -v "running 0 tests" || true
@@ -54,9 +58,23 @@ endef
 # Solana validator lifecycle management functions
 define start_solana_validator
 	$(call print_step,Starting Solana test validator...)
+	@pkill -f "solana-test-validator" 2>/dev/null || true
+	@sleep 2
+	@rm -rf test-ledger 2>/dev/null || true
 	@solana-test-validator --reset --quiet $(QUIET_OUTPUT) &
 	@echo $$! > .validator.pid
-	@sleep 5
+	@counter=0; \
+	while [ $$counter -lt $(VALIDATOR_TIMEOUT) ]; do \
+		if solana cluster-version --url $(TEST_RPC_URL) >/dev/null 2>&1; then \
+			break; \
+		fi; \
+		sleep 1; \
+		counter=$$((counter + 1)); \
+	done; \
+	if [ $$counter -eq $(VALIDATOR_TIMEOUT) ]; then \
+		printf "  $(RED)✗$(RESET) Validator failed to start\n"; \
+		exit 1; \
+	fi
 	$(call print_substep,Validator ready on port 8899)
 endef
 
@@ -81,13 +99,27 @@ define start_kora_server
 	@$(call stop_kora_server)
 	@$(if $(5),\
 		printf "    $(YELLOW)•$(RESET) Setting up test environment...\n"; \
-		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT);)
+		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT) || exit 1;)
 	$(call print_substep,Starting Kora server with $(1) configuration...)
 	@$(if $(2),\
 		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" $(2) -p kora-cli --bin kora $(3) -- --config $(4) --rpc-url $(TEST_RPC_URL) rpc start --signers-config $(or $(6),$(TEST_SIGNERS_CONFIG)) --port $(TEST_PORT) $(QUIET_OUTPUT) &,\
 		make run $(QUIET_OUTPUT) &)
 	@echo $$! > .kora.pid
-	@sleep 5
+	@counter=0; \
+	while [ $$counter -lt $(SERVER_TIMEOUT) ]; do \
+		if curl -s http://127.0.0.1:$(TEST_PORT)/liveness >/dev/null 2>&1; then \
+			break; \
+		fi; \
+		sleep 1; \
+		counter=$$((counter + 1)); \
+	done; \
+	if [ $$counter -eq $(SERVER_TIMEOUT) ]; then \
+		printf "  $(RED)✗$(RESET) Kora server failed to start\n"; \
+		if [ -f .kora.pid ]; then \
+			printf "    $(YELLOW)•$(RESET) PID: $$(cat .kora.pid)\n"; \
+		fi; \
+		exit 1; \
+	fi
 	$(call print_substep,Server ready on port $(TEST_PORT))
 endef
 
@@ -112,19 +144,11 @@ define run_integration_phase
 	@$(call start_kora_server,$(2),cargo run,,$(3),$(4),$(7))
 	@$(if $(6),\
 		printf "    $(YELLOW)•$(RESET) Initializing payment ATAs...\n"; \
-		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p kora-cli --bin kora -- --config $(3) --rpc-url $(TEST_RPC_URL) rpc initialize-atas --signers-config $(or $(7),$(TEST_SIGNERS_CONFIG)) $(QUIET_OUTPUT); \
+		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p kora-cli --bin kora -- --config $(3) --rpc-url $(TEST_RPC_URL) rpc initialize-atas --signers-config $(or $(7),$(TEST_SIGNERS_CONFIG)) $(QUIET_OUTPUT) || exit 1; \
 		printf "    $(YELLOW)•$(RESET) Payment ATAs ready\n";)
 	$(call print_step,Running tests...)
-	@OUTPUT=$$(cargo test -p tests --quiet $(5) -- --nocapture 2>&1 | grep -E "^(test |running |ok$$|FAILED|failed)" | grep -v "running 0 tests" | tail -n 2); \
-	echo "$$OUTPUT" | while IFS= read -r line; do \
-		if echo "$$line" | grep -q "ok.* passed"; then \
-			printf "  $(GREEN)✓$(RESET) $$line\n"; \
-		elif echo "$$line" | grep -q "FAILED"; then \
-			printf "  $(RED)✗$(RESET) $$line\n"; \
-		else \
-			printf "  $$line\n"; \
-		fi; \
-	done
+	@cargo test -p tests --quiet $(5) -- --nocapture $(QUIET_OUTPUT) || exit 1
+	@printf "  $(GREEN)✓$(RESET) Tests passed\n"
 	@$(call stop_kora_server)
 	$(call print_success,Phase $(1) complete)
 endef
@@ -145,7 +169,7 @@ define run_multi_signer_phase
 	$(call print_substep,Setting up test accounts...)
 	@KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" \
 	 KORA_PRIVATE_KEY_2="$$(cat tests/src/common/local-keys/signer2-local.json)" \
-	 cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT)
+	 cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT) || exit 1
 	$(call print_substep,Starting server with multi-signer configuration...)
 	@KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" \
 	 KORA_PRIVATE_KEY_2="$$(cat tests/src/common/local-keys/signer2-local.json)" \
@@ -154,16 +178,8 @@ define run_multi_signer_phase
 	@sleep 5
 	$(call print_substep,Server ready on port $(TEST_PORT))
 	$(call print_step,Running tests...)
-	@OUTPUT=$$(cargo test -p tests --quiet $(5) -- --nocapture 2>&1 | grep -E "^(test |running |ok$$|FAILED|failed)" | grep -v "running 0 tests" | tail -n 2); \
-	echo "$$OUTPUT" | while IFS= read -r line; do \
-		if echo "$$line" | grep -q "ok.* passed"; then \
-			printf "  $(GREEN)✓$(RESET) $$line\n"; \
-		elif echo "$$line" | grep -q "FAILED"; then \
-			printf "  $(RED)✗$(RESET) $$line\n"; \
-		else \
-			printf "  $$line\n"; \
-		fi; \
-	done
+	@cargo test -p tests --quiet $(5) -- --nocapture $(QUIET_OUTPUT) || exit 1
+	@printf "  $(GREEN)✓$(RESET) Tests passed\n"
 	@$(call stop_kora_server)
 	$(call print_success,Phase $(1) complete)
 endef
