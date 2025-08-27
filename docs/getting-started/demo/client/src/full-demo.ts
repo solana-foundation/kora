@@ -91,7 +91,7 @@ async function createInstructions(
 
     // Create token transfer (will initialize ATA if needed)
     const transferTokens = await client.transferTransaction({
-        amount: 10_000_000, // 0.01 SOL (9 decimals)
+        amount: 10_000_000, // 10 USDC (6 decimals)
         token: paymentToken,
         source: testSenderKeypair.address,
         destination: destinationKeypair.address // todo replace with a generated address to test ata creation
