@@ -1,14 +1,14 @@
 # Include all makefile modules
-include makefiles/utils.mk
-include makefiles/rs.mk
-include makefiles/tests_rs.mk
-include makefiles/tests_ts.mk
-include makefiles/ts.mk
-include makefiles/docs.mk
-include makefiles/coverage.mk
-include makefiles/metrics.mk
+include makefiles/UTILS.makefile
+include makefiles/BUILD.makefile
+include makefiles/RUST_TESTS.makefile
+include makefiles/TYPESCRIPT_TESTS.makefile
+include makefiles/CLIENT.makefile
+include makefiles/DOCUMENTATION.makefile
+include makefiles/COVERAGE.makefile
+include makefiles/METRICS.makefile
 
-.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-integration-coverage test-all test-ts coverage coverage-clean build-bin build-lib build-cli run-presigned openapi gen-ts-client run-metrics
+.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-all test-ts coverage coverage-clean build-bin build-lib build-cli run-presigned openapi gen-ts-client run-metrics
 
 # Default target
 all: check test build
