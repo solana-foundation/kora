@@ -135,7 +135,9 @@ impl TokenUtil {
         let fee_in_token_base_units = fee_in_sol / token_price.price;
         let fee_in_token = fee_in_token_base_units * 10f64.powi(decimals as i32);
 
-        Ok(fee_in_token)
+        // Round to nearest integer to fix floating point precision errors
+        // This ensures values like 1010049.9999999999 become 1010050
+        Ok(fee_in_token.round())
     }
 
     /// Validate Token2022 extensions for payment instructions
@@ -711,6 +713,55 @@ mod tests_token {
         .await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_calculate_lamports_value_in_token_decimal_precision() {
+        let _lock = ConfigMockBuilder::new().build_and_setup();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+
+        // Comprehensive test cases covering all precision scenarios from PRO-249
+        let test_cases = vec![
+            // Low priority fees
+            (5_000u64, 50_000.0, "low priority base case"),
+            (10_001u64, 100_010.0, "odd number precision"),
+            // High priority fees
+            (1_010_050u64, 10_100_500.0, "high priority problematic case"),
+            // High compute unit scenarios
+            (5_000_000u64, 50_000_000.0, "very high CU limit"),
+            (2_500_050u64, 25_000_500.0, "odd high amount"),
+            (10_000_000u64, 100_000_000.0, "maximum CU cost"),
+            // Edge cases
+            (1_010_049u64, 10_100_490.0, "precision edge case -1"),
+            (1_010_051u64, 10_100_510.0, "precision edge case +1"),
+            (999_999u64, 9_999_990.0, "near million boundary"),
+            (1_000_001u64, 10_000_010.0, "over million boundary"),
+            (1_333_337u64, 13_333_370.0, "repeating digits edge case"),
+        ];
+
+        for (lamports, expected, description) in test_cases {
+            let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
+            let result = TokenUtil::calculate_lamports_value_in_token(
+                lamports,
+                &mint,
+                &PriceSource::Mock,
+                &rpc_client,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                result, expected,
+                "Failed for {description}: lamports={lamports}, expected={expected}, got={result}",
+            );
+
+            // Must be proper integers (no fractional part)
+            assert_eq!(
+                result.fract(),
+                0.0,
+                "Result should be integer for {lamports} lamports: got {result}",
+            );
+        }
     }
 
     #[tokio::test]
