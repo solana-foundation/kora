@@ -12,6 +12,7 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+use std::str::FromStr;
 
 #[allow(unused_imports)]
 use spl_token_2022::{
@@ -24,7 +25,6 @@ use spl_token_2022::{
     },
     state::Account as Token2022AccountState,
 };
-use std::str::FromStr;
 
 pub enum ValidationMode {
     Sign,
@@ -68,13 +68,21 @@ impl TransactionValidator {
             allowed_tokens: config
                 .allowed_tokens
                 .iter()
-                .map(|addr| Pubkey::from_str(addr).unwrap())
-                .collect(),
+                .map(|addr| Pubkey::from_str(addr))
+                .collect::<Result<Vec<Pubkey>, _>>()
+                .map_err(|e| {
+                    KoraError::InternalServerError(format!("Invalid allowed token address: {e}"))
+                })?,
             disallowed_accounts: config
                 .disallowed_accounts
                 .iter()
-                .map(|addr| Pubkey::from_str(addr).unwrap())
-                .collect(),
+                .map(|addr| Pubkey::from_str(addr))
+                .collect::<Result<Vec<Pubkey>, _>>()
+                .map_err(|e| {
+                    KoraError::InternalServerError(format!(
+                        "Invalid disallowed account address: {e}"
+                    ))
+                })?,
             fee_payer_policy: config.fee_payer_policy.clone(),
         })
     }

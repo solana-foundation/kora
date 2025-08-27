@@ -66,8 +66,23 @@ impl FeeConfigUtil {
             let expected_ata = get_associated_token_address(&owner, &mint);
 
             // Force refresh in case extensions are modified
-            if ata == expected_ata && CacheUtil::get_account(rpc_client, &ata, true).await.is_err()
-            {
+            // Check if ATA doesn't exist - this is expected for new token accounts
+            if ata == expected_ata {
+                match CacheUtil::get_account(rpc_client, &ata, true).await {
+                    Ok(_) => {
+                        // ATA already exists, no creation fee needed
+                        continue;
+                    }
+                    Err(KoraError::AccountNotFound(_)) => {
+                        // ATA doesn't exist, calculate creation fee
+                        // Continue to the account size calculation below
+                    }
+                    Err(e) => {
+                        // Other errors should still be propagated
+                        return Err(e);
+                    }
+                };
+
                 // Determine the appropriate token program and get account size
                 let account_size = match CacheUtil::get_account(rpc_client, &mint, true).await {
                     Ok(mint_account) => {
@@ -293,8 +308,8 @@ mod tests {
         fee::fee::{FeeConfigUtil, TransactionFeeUtil},
         tests::{
             common::{
-                create_mock_rpc_client_with_account, create_mock_token_account,
-                setup_or_get_test_config, setup_or_get_test_signer,
+                create_mock_rpc_client_with_account, create_mock_spl_mint_account,
+                create_mock_token_account, setup_or_get_test_config, setup_or_get_test_signer,
             },
             config_mock::ConfigMockBuilder,
             rpc_mock::{create_mock_rpc_client_account_not_found, RpcMockBuilder},
@@ -851,7 +866,9 @@ mod tests {
         // Call 1: ATA doesn't exist (Err)
         // Call 2: Mint exists (Ok)
         let responses = Arc::new(Mutex::new(VecDeque::from([
-            Err(KoraError::RpcError("ATA not found".to_string())),
+            Err(KoraError::AccountNotFound(
+                get_associated_token_address(&owner.pubkey(), &mint).to_string(),
+            )),
             Ok(create_mock_token_account(&owner.pubkey(), &mint)),
         ])));
 
@@ -902,8 +919,10 @@ mod tests {
 
         // Set up sequential cache responses: ATA not found, mint not found
         let responses = Arc::new(Mutex::new(VecDeque::from([
-            Err(KoraError::RpcError("ATA not found".to_string())),
-            Err(KoraError::RpcError("Mint not found".to_string())),
+            Err(KoraError::AccountNotFound(
+                get_associated_token_address(&owner.pubkey(), &mint).to_string(),
+            )),
+            Err(KoraError::AccountNotFound(mint.to_string())),
         ])));
 
         let responses_clone = responses.clone();
@@ -939,7 +958,7 @@ mod tests {
                     "Should get mint account fetch error"
                 );
             }
-            _ => panic!("Expected InternalServerError about mint account"),
+            _ => panic!("Expected InternalServerError about mint account not found"),
         }
     }
 
@@ -1080,5 +1099,81 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, 12500, "Should return mocked base fee for V0 message");
+    }
+
+    #[tokio::test]
+    async fn test_can_estimate_transaction_fees_on_transfers_with_uninitialized_atas() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+
+        let fee_payer = Keypair::new();
+        let sender = Keypair::new();
+        let recipient = Keypair::new(); // This will be a newly generated wallet
+        let mint = Pubkey::new_unique();
+
+        // Mock RPC client that returns base fee
+        let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(5000).build();
+
+        // Create ATA creation instruction for recipient (this is what triggers the fee calculation)
+        let recipient_ata = get_associated_token_address(&recipient.pubkey(), &mint);
+        let sender_ata = get_associated_token_address(&sender.pubkey(), &mint);
+
+        let create_ata_instruction = create_associated_token_account(
+            &fee_payer.pubkey(),
+            &recipient.pubkey(),
+            &mint,
+            &spl_token::id(),
+        );
+
+        let transfer_instruction = TokenProgram::new()
+            .create_transfer_instruction(&sender_ata, &recipient_ata, &sender.pubkey(), 1000)
+            .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[create_ata_instruction, transfer_instruction],
+            Some(&fee_payer.pubkey()),
+        ));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        // Setup cache responses for ATA creation instruction:
+        // 1. Recipient ATA (doesn't exist - AccountNotFound) - this is the case we're testing
+        // 2. Mint account exists (Ok) - needed to determine token program
+        let responses = Arc::new(Mutex::new(VecDeque::from([
+            Err(KoraError::AccountNotFound(recipient_ata.to_string())), // recipient ATA doesn't exist
+            Ok(create_mock_spl_mint_account(6)),                        // mint exists
+        ])));
+
+        let responses_clone = responses.clone();
+        cache_ctx
+            .expect()
+            .times(2)
+            .returning(move |_, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
+
+        // This should succeed without throwing InternalServerError
+        let result = FeeConfigUtil::estimate_transaction_fee(
+            &mocked_rpc_client,
+            &mut resolved_transaction,
+            &fee_payer.pubkey(),
+            false,
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "Fee estimation should succeed for transaction with uninitialized ATAs"
+        );
+
+        let fee = result.unwrap();
+        // Fee should include: base fee (5000) + ATA creation rent
+        let rent = Rent::default();
+        let expected_ata_rent = rent.minimum_balance(SplTokenAccountState::LEN);
+        let expected_min_fee = 5000 + expected_ata_rent;
+
+        assert_eq!(
+            fee, expected_min_fee,
+            "Fee should include base transaction fee plus ATA creation cost. Got: {fee}, Expected at least: {expected_min_fee}"
+        );
     }
 }

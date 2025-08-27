@@ -84,7 +84,13 @@ impl CacheUtil {
         match rpc_client.get_account(pubkey).await {
             Ok(account) => Ok(account),
             Err(e) => {
-                Err(KoraError::InternalServerError(format!("Failed to get account {pubkey}: {e}")))
+                let kora_error = e.into();
+                match kora_error {
+                    KoraError::AccountNotFound(_) => {
+                        Err(KoraError::AccountNotFound(pubkey.to_string()))
+                    }
+                    other_error => Err(other_error),
+                }
             }
         }
     }
@@ -293,11 +299,10 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            KoraError::InternalServerError(msg) => {
-                assert!(msg.contains("Failed to get account"));
-                assert!(msg.contains(&pubkey.to_string()));
+            KoraError::AccountNotFound(account_key) => {
+                assert_eq!(account_key, pubkey.to_string());
             }
-            _ => panic!("Expected InternalServerError"),
+            _ => panic!("Expected AccountNotFound for account not found error"),
         }
     }
 
