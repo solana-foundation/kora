@@ -54,12 +54,18 @@ jobs:
         run: |
           echo "🧪 Running unit tests with coverage instrumentation..."
           cargo llvm-cov clean --workspace
-          cargo llvm-cov test --workspace --lib --lcov --output-path coverage/lcov.info
+          cargo llvm-cov test --no-report --workspace --lib
 
       - name: Run integration tests (no coverage)
         run: |
           echo "🧪 Running integration tests for behavior validation..."
           make test-integration
+
+      - name: Generate coverage reports
+        run: |
+          echo "📊 Generating coverage reports..."
+          mkdir -p coverage
+          cargo llvm-cov report --lcov --output-path coverage/lcov.info
 
       - name: Display coverage summary
         run: |
