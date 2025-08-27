@@ -1,6 +1,9 @@
 name: Update Coverage Badge
 
 on:
+  pull_request:
+    branches:
+      - main
   workflow_run:
     workflows: ["Rust CI"]
     types:
@@ -10,7 +13,7 @@ on:
 
 jobs:
   update-badge:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'pull_request' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
 
       - name: Download coverage artifacts
         uses: actions/download-artifact@v4
@@ -57,8 +60,16 @@ jobs:
           mkdir -p .github/badges
           echo "{\"schemaVersion\": 1, \"label\": \"coverage\", \"message\": \"${COVERAGE}%\", \"color\": \"$COLOR\"}" > .github/badges/coverage.json
           
-          # Commit and push the badge file
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git add .github/badges/coverage.json
-          git diff --staged --quiet || (git commit -m "Update coverage badge [skip ci]" && git push)
+          # For PRs: commit and push badge to PR branch
+          # For main: no-op (badge already updated via PR merge)
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git config user.name github-actions
+            git config user.email github-actions@github.com
+            git add .github/badges/coverage.json
+            if ! git diff --staged --quiet; then
+              git commit -m "Update coverage badge [skip ci]"
+              git push
+            fi
+          else
+            echo "✅ Badge already updated via PR merge - no action needed"
+          fi
