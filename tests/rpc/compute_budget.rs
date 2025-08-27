@@ -73,7 +73,6 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0_with_lookup() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    // Use the transaction lookup table which contains the mint address used for ATA derivation
     let transaction_lookup_table = LookupTableHelper::get_transaction_lookup_table_address()
         .expect("Failed to get transaction lookup table from fixtures");
 
