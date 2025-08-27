@@ -1,5 +1,4 @@
 use anyhow::Result;
-use solana_address_lookup_table_interface::instruction::create_lookup_table;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
@@ -14,9 +13,10 @@ use spl_token::instruction as token_instruction;
 use std::sync::Arc;
 
 use crate::common::{
-    FeePayerTestHelper, LookupTableTestHelper, RPCTestHelper, RecipientTestHelper,
-    SenderTestHelper, TestAccountInfo, USDCMintTestHelper,
+    FeePayerTestHelper, LookupTableHelper, RecipientTestHelper, SenderTestHelper, TestAccountInfo,
+    USDCMintTestHelper, DEFAULT_RPC_URL,
 };
+
 /// Test account setup utilities for local validator
 pub struct TestAccountSetup {
     pub rpc_client: Arc<RpcClient>,
@@ -24,15 +24,14 @@ pub struct TestAccountSetup {
     pub fee_payer_keypair: Keypair,
     pub recipient_pubkey: Pubkey,
     pub usdc_mint: Keypair,
-    pub lookup_tables_key: Vec<Pubkey>,
 }
 
 impl TestAccountSetup {
     pub async fn new() -> Self {
-        let rpc_client = Arc::new(RpcClient::new_with_commitment(
-            RPCTestHelper::get_rpc_url().await,
-            CommitmentConfig::confirmed(),
-        ));
+        dotenv::dotenv().ok();
+        let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
+        let rpc_client =
+            Arc::new(RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed()));
         Self::new_with_client(rpc_client).await
     }
 
@@ -51,14 +50,7 @@ impl TestAccountSetup {
 
         let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_keypair();
 
-        Self {
-            rpc_client,
-            sender_keypair,
-            fee_payer_keypair,
-            recipient_pubkey,
-            usdc_mint,
-            lookup_tables_key: vec![],
-        }
+        Self { rpc_client, sender_keypair, fee_payer_keypair, recipient_pubkey, usdc_mint }
     }
 
     pub async fn setup_all_accounts(&mut self) -> Result<TestAccountInfo> {
@@ -245,57 +237,8 @@ impl TestAccountSetup {
     }
 
     async fn create_lookup_tables(&mut self) -> Result<()> {
-        let allowed_lookup_table =
-            self.create_with_addresses(vec![solana_sdk::system_program::ID]).await?;
-
-        let disallowed_address = LookupTableTestHelper::get_test_disallowed_address();
-        let blocked_lookup_table: Pubkey =
-            self.create_with_addresses(vec![disallowed_address]).await?;
-
-        self.lookup_tables_key = vec![allowed_lookup_table, blocked_lookup_table];
+        LookupTableHelper::setup_and_save_lookup_tables(self.rpc_client.clone()).await?;
 
         Ok(())
-    }
-
-    async fn create_with_addresses(&self, addresses: Vec<Pubkey>) -> Result<Pubkey> {
-        let recent_slot = self.rpc_client.get_slot().await?;
-        let (create_instruction, lookup_table_key) = create_lookup_table(
-            self.sender_keypair.pubkey(),
-            self.sender_keypair.pubkey(),
-            recent_slot - 1,
-        );
-
-        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
-        let create_transaction = Transaction::new_signed_with_payer(
-            &[create_instruction],
-            Some(&self.sender_keypair.pubkey()),
-            &[&self.sender_keypair],
-            recent_blockhash,
-        );
-
-        self.rpc_client.send_and_confirm_transaction(&create_transaction).await?;
-
-        // Add addresses to the lookup table if provided
-        if !addresses.is_empty() {
-            let extend_instruction =
-                solana_address_lookup_table_interface::instruction::extend_lookup_table(
-                    lookup_table_key,
-                    self.sender_keypair.pubkey(),
-                    Some(self.sender_keypair.pubkey()),
-                    addresses.clone(),
-                );
-
-            let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
-            let extend_transaction = Transaction::new_signed_with_payer(
-                &[extend_instruction],
-                Some(&self.sender_keypair.pubkey()),
-                &[&self.sender_keypair],
-                recent_blockhash,
-            );
-
-            self.rpc_client.send_and_confirm_transaction(&extend_transaction).await?;
-        }
-
-        Ok(lookup_table_key)
     }
 }
