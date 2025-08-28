@@ -2,7 +2,7 @@ use std::fs;
 use tempfile::NamedTempFile;
 
 use crate::{
-    config::{Config, SplTokenPaymentConfig},
+    config::{Config, SplTokenConfig},
     error::KoraError,
 };
 
@@ -27,7 +27,7 @@ struct ValidationSection {
     max_signatures: u64,
     allowed_programs: Vec<String>,
     allowed_tokens: Vec<String>,
-    allowed_spl_paid_tokens: SplTokenPaymentConfig,
+    allowed_spl_paid_tokens: SplTokenConfig,
     disallowed_accounts: Vec<String>,
     price_source: String,
     price_config: Option<String>,
@@ -47,7 +47,7 @@ impl Default for ValidationSection {
             max_signatures: 10,
             allowed_programs: vec!["program1".to_string()],
             allowed_tokens: vec!["token1".to_string()],
-            allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec!["token2".to_string()]),
+            allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec!["token2".to_string()]),
             disallowed_accounts: vec![],
             price_source: "Jupiter".to_string(),
             price_config: None,
@@ -77,7 +77,7 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn with_spl_paid_tokens(mut self, spl_payment_config: SplTokenPaymentConfig) -> Self {
+    pub fn with_spl_paid_tokens(mut self, spl_payment_config: SplTokenConfig) -> Self {
         self.validation.allowed_spl_paid_tokens = spl_payment_config;
         self
     }
@@ -174,11 +174,11 @@ impl ConfigBuilder {
             .join(", ");
 
         let spl_tokens_config = match self.validation.allowed_spl_paid_tokens {
-            SplTokenPaymentConfig::Allowlist(ref tokens) => format!(
+            SplTokenConfig::Allowlist(ref tokens) => format!(
                 "[{}]",
                 tokens.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(", ")
             ),
-            SplTokenPaymentConfig::All => format!("\"{}\"", "All"),
+            SplTokenConfig::All => format!("\"{}\"", "All"),
         };
 
         let disallowed_list = if self.validation.disallowed_accounts.is_empty() {

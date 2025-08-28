@@ -59,49 +59,49 @@ impl Default for FeePayerBalanceMetricsConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum SplTokenPaymentConfig {
+pub enum SplTokenConfig {
     All,
     #[serde(untagged)]
     Allowlist(Vec<String>),
 }
 
-impl Default for SplTokenPaymentConfig {
+impl Default for SplTokenConfig {
     fn default() -> Self {
-        SplTokenPaymentConfig::Allowlist(vec![])
+        SplTokenConfig::Allowlist(vec![])
     }
 }
 
-impl<'a> IntoIterator for &'a SplTokenPaymentConfig {
+impl<'a> IntoIterator for &'a SplTokenConfig {
     type Item = &'a String;
     type IntoIter = std::slice::Iter<'a, String>;
 
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            SplTokenPaymentConfig::All => [].iter(),
-            SplTokenPaymentConfig::Allowlist(tokens) => tokens.iter(),
+            SplTokenConfig::All => [].iter(),
+            SplTokenConfig::Allowlist(tokens) => tokens.iter(),
         }
     }
 }
 
-impl SplTokenPaymentConfig {
+impl SplTokenConfig {
     pub fn has_token(&self, token: &str) -> bool {
         match self {
-            SplTokenPaymentConfig::All => true,
-            SplTokenPaymentConfig::Allowlist(tokens) => tokens.iter().any(|s| s == token),
+            SplTokenConfig::All => true,
+            SplTokenConfig::Allowlist(tokens) => tokens.iter().any(|s| s == token),
         }
     }
 
     pub fn has_tokens(&self) -> bool {
         match self {
-            SplTokenPaymentConfig::All => true,
-            SplTokenPaymentConfig::Allowlist(tokens) => !tokens.is_empty(),
+            SplTokenConfig::All => true,
+            SplTokenConfig::Allowlist(tokens) => !tokens.is_empty(),
         }
     }
 
     pub fn as_slice(&self) -> &[String] {
         match self {
-            SplTokenPaymentConfig::All => &[],
-            SplTokenPaymentConfig::Allowlist(v) => v.as_slice(),
+            SplTokenConfig::All => &[],
+            SplTokenConfig::Allowlist(v) => v.as_slice(),
         }
     }
 }
@@ -112,7 +112,7 @@ pub struct ValidationConfig {
     pub max_signatures: u64,
     pub allowed_programs: Vec<String>,
     pub allowed_tokens: Vec<String>,
-    pub allowed_spl_paid_tokens: SplTokenPaymentConfig,
+    pub allowed_spl_paid_tokens: SplTokenConfig,
     pub disallowed_accounts: Vec<String>,
     pub price_source: PriceSource,
     #[serde(default)] // Default for backward compatibility
@@ -426,7 +426,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_programs(vec!["program1", "program2"])
             .with_tokens(vec!["token1", "token2"])
-            .with_spl_paid_tokens(SplTokenPaymentConfig::Allowlist(vec!["token3".to_string()]))
+            .with_spl_paid_tokens(SplTokenConfig::Allowlist(vec!["token3".to_string()]))
             .with_disallowed_accounts(vec!["account1"])
             .build_config()
             .unwrap();
@@ -437,7 +437,7 @@ mod tests {
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
         assert_eq!(
             config.validation.allowed_spl_paid_tokens,
-            SplTokenPaymentConfig::Allowlist(vec!["token3".to_string()])
+            SplTokenConfig::Allowlist(vec!["token3".to_string()])
         );
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
         assert_eq!(config.validation.price_source, PriceSource::Jupiter);
@@ -451,7 +451,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_programs(vec!["program1", "program2"])
             .with_tokens(vec!["token1", "token2"])
-            .with_spl_paid_tokens(SplTokenPaymentConfig::Allowlist(vec!["token3".to_string()]))
+            .with_spl_paid_tokens(SplTokenConfig::Allowlist(vec!["token3".to_string()]))
             .with_disallowed_accounts(vec!["account1"])
             .with_enabled_methods(&[
                 ("liveness", true),
@@ -494,12 +494,10 @@ mod tests {
 
     #[test]
     fn test_parse_spl_payment_config() {
-        let config = ConfigBuilder::new()
-            .with_spl_paid_tokens(SplTokenPaymentConfig::All)
-            .build_config()
-            .unwrap();
+        let config =
+            ConfigBuilder::new().with_spl_paid_tokens(SplTokenConfig::All).build_config().unwrap();
 
-        assert_eq!(config.validation.allowed_spl_paid_tokens, SplTokenPaymentConfig::All);
+        assert_eq!(config.validation.allowed_spl_paid_tokens, SplTokenConfig::All);
     }
 
     #[test]

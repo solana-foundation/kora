@@ -22,7 +22,7 @@ use {crate::cache::CacheUtil, crate::state::get_config};
 
 #[cfg(test)]
 use {
-    crate::config::SplTokenPaymentConfig, crate::tests::config_mock::mock_state::get_config,
+    crate::config::SplTokenConfig, crate::tests::config_mock::mock_state::get_config,
     crate::tests::redis_cache_mock::MockCacheUtil as CacheUtil,
 };
 
@@ -290,7 +290,7 @@ mod tests {
         let _m = ConfigMockBuilder::new()
             .with_validation(
                 ValidationConfigBuilder::new()
-                    .with_allowed_spl_paid_tokens(SplTokenPaymentConfig::Allowlist(vec![]))
+                    .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![]))
                     .build(),
             )
             .build_and_setup();
@@ -310,7 +310,7 @@ mod tests {
         let _m = ConfigMockBuilder::new()
             .with_validation(
                 ValidationConfigBuilder::new()
-                    .with_allowed_spl_paid_tokens(SplTokenPaymentConfig::Allowlist(
+                    .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(
                         allowed_spl_tokens.iter().map(|p| p.to_string()).collect(),
                     ))
                     .build(),
@@ -403,7 +403,7 @@ mod tests {
     #[tokio::test]
     async fn test_initialize_atas_when_all_tokens_are_allowed() {
         let _m = ConfigMockBuilder::new()
-            .with_allowed_spl_paid_tokens(SplTokenPaymentConfig::All)
+            .with_allowed_spl_paid_tokens(SplTokenConfig::All)
             .build_and_setup();
 
         let _ = setup_or_get_test_signer();

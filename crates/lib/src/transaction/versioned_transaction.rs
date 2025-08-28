@@ -377,7 +377,7 @@ impl LookupTableUtil {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::SplTokenPaymentConfig,
+        config::SplTokenConfig,
         tests::{
             common::RpcMockBuilder, config_mock::mock_state::setup_config_mock,
             toml_mock::ConfigBuilder,
@@ -404,7 +404,7 @@ mod tests {
         ConfigBuilder::new()
             .with_programs(vec![])
             .with_tokens(vec![])
-            .with_spl_paid_tokens(SplTokenPaymentConfig::Allowlist(vec![]))
+            .with_spl_paid_tokens(SplTokenConfig::Allowlist(vec![]))
             .with_free_price()
             .with_cache_config(None, false, 60, 30) // Disable cache for tests
             .build_config()
