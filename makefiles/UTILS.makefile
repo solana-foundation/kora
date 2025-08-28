@@ -128,14 +128,18 @@ define stop_kora_server
 	@if [ -f .kora.pid ]; then \
 		PID=$$(cat .kora.pid); \
 		if kill -0 $$PID 2>/dev/null; then \
-			kill $$PID 2>/dev/null || true; \
-			sleep 1; \
-			kill -9 $$PID 2>/dev/null || true; \
+			kill -TERM $$PID 2>/dev/null || true; \
+			sleep 2; \
+			if kill -0 $$PID 2>/dev/null; then \
+				kill -9 $$PID 2>/dev/null || true; \
+			fi; \
 		fi; \
 		rm -f .kora.pid; \
 	fi; \
-	pkill -f "kora" 2>/dev/null || true; \
-	sleep 2
+	pkill -f "kora.*rpc.*start" 2>/dev/null || true; \
+	sleep 1; \
+	lsof -ti:$(TEST_PORT) | xargs kill -9 2>/dev/null || true; \
+	sleep 1
 endef
 
 define run_integration_phase
