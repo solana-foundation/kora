@@ -1,7 +1,8 @@
 use crate::{
     config::{
         AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerBalanceMetricsConfig,
-        FeePayerPolicy, KoraConfig, MetricsConfig, Token2022Config, ValidationConfig,
+        FeePayerPolicy, KoraConfig, MetricsConfig, SplTokenConfig, Token2022Config,
+        ValidationConfig,
     },
     fee::price::PriceConfig,
     oracle::PriceSource,
@@ -85,9 +86,9 @@ impl ConfigMockBuilder {
                     allowed_tokens: vec![
                         "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".parse().unwrap(), // USDC devnet
                     ],
-                    allowed_spl_paid_tokens: vec![
+                    allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                         "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".parse().unwrap(), // USDC devnet
-                    ],
+                    ]),
                     disallowed_accounts: vec![],
                     price_source: PriceSource::Mock,
                     fee_payer_policy: FeePayerPolicy::default(),
@@ -157,6 +158,11 @@ impl ConfigMockBuilder {
 
     pub fn with_allowed_tokens(mut self, tokens: Vec<String>) -> Self {
         self.config.validation.allowed_tokens = tokens;
+        self
+    }
+
+    pub fn with_allowed_spl_paid_tokens(mut self, spl_payment_config: SplTokenConfig) -> Self {
+        self.config.validation.allowed_spl_paid_tokens = spl_payment_config;
         self
     }
 
@@ -232,7 +238,7 @@ impl ValidationConfigBuilder {
                 max_signatures: 10,
                 allowed_programs: vec![],
                 allowed_tokens: vec![],
-                allowed_spl_paid_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
                 price_source: PriceSource::Mock,
                 fee_payer_policy: FeePayerPolicy::default(),
@@ -261,8 +267,8 @@ impl ValidationConfigBuilder {
         self
     }
 
-    pub fn with_allowed_spl_paid_tokens(mut self, tokens: Vec<String>) -> Self {
-        self.config.allowed_spl_paid_tokens = tokens;
+    pub fn with_allowed_spl_paid_tokens(mut self, spl_payment_config: SplTokenConfig) -> Self {
+        self.config.allowed_spl_paid_tokens = spl_payment_config;
         self
     }
 

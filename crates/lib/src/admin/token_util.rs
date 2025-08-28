@@ -22,7 +22,7 @@ use {crate::cache::CacheUtil, crate::state::get_config};
 
 #[cfg(test)]
 use {
-    crate::tests::config_mock::mock_state::get_config,
+    crate::config::SplTokenConfig, crate::tests::config_mock::mock_state::get_config,
     crate::tests::redis_cache_mock::MockCacheUtil as CacheUtil,
 };
 
@@ -289,7 +289,9 @@ mod tests {
     async fn test_find_missing_atas_no_spl_tokens() {
         let _m = ConfigMockBuilder::new()
             .with_validation(
-                ValidationConfigBuilder::new().with_allowed_spl_paid_tokens(vec![]).build(),
+                ValidationConfigBuilder::new()
+                    .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![]))
+                    .build(),
             )
             .build_and_setup();
 
@@ -308,9 +310,9 @@ mod tests {
         let _m = ConfigMockBuilder::new()
             .with_validation(
                 ValidationConfigBuilder::new()
-                    .with_allowed_spl_paid_tokens(
+                    .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(
                         allowed_spl_tokens.iter().map(|p| p.to_string()).collect(),
-                    )
+                    ))
                     .build(),
             )
             .build_and_setup();
@@ -396,5 +398,20 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_initialize_atas_when_all_tokens_are_allowed() {
+        let _m = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenConfig::All)
+            .build_and_setup();
+
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let result = initialize_atas(&rpc_client, None, None, None, None).await;
+
+        assert!(result.is_ok(), "Expected atas init to succeed");
     }
 }

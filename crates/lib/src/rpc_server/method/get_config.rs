@@ -80,9 +80,9 @@ mod tests {
             response.validation_config.allowed_tokens[0],
             "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
         ); // USDC devnet
-        assert_eq!(response.validation_config.allowed_spl_paid_tokens.len(), 1);
+        assert_eq!(response.validation_config.allowed_spl_paid_tokens.as_slice().len(), 1);
         assert_eq!(
-            response.validation_config.allowed_spl_paid_tokens[0],
+            response.validation_config.allowed_spl_paid_tokens.as_slice()[0],
             "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
         ); // USDC devnet
         assert_eq!(response.validation_config.disallowed_accounts.len(), 0);

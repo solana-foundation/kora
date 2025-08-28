@@ -58,13 +58,61 @@ impl Default for FeePayerBalanceMetricsConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SplTokenConfig {
+    All,
+    #[serde(untagged)]
+    Allowlist(Vec<String>),
+}
+
+impl Default for SplTokenConfig {
+    fn default() -> Self {
+        SplTokenConfig::Allowlist(vec![])
+    }
+}
+
+impl<'a> IntoIterator for &'a SplTokenConfig {
+    type Item = &'a String;
+    type IntoIter = std::slice::Iter<'a, String>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            SplTokenConfig::All => [].iter(),
+            SplTokenConfig::Allowlist(tokens) => tokens.iter(),
+        }
+    }
+}
+
+impl SplTokenConfig {
+    pub fn has_token(&self, token: &str) -> bool {
+        match self {
+            SplTokenConfig::All => true,
+            SplTokenConfig::Allowlist(tokens) => tokens.iter().any(|s| s == token),
+        }
+    }
+
+    pub fn has_tokens(&self) -> bool {
+        match self {
+            SplTokenConfig::All => true,
+            SplTokenConfig::Allowlist(tokens) => !tokens.is_empty(),
+        }
+    }
+
+    pub fn as_slice(&self) -> &[String] {
+        match self {
+            SplTokenConfig::All => &[],
+            SplTokenConfig::Allowlist(v) => v.as_slice(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ValidationConfig {
     pub max_allowed_lamports: u64,
     pub max_signatures: u64,
     pub allowed_programs: Vec<String>,
     pub allowed_tokens: Vec<String>,
-    pub allowed_spl_paid_tokens: Vec<String>,
+    pub allowed_spl_paid_tokens: SplTokenConfig,
     pub disallowed_accounts: Vec<String>,
     pub price_source: PriceSource,
     #[serde(default)] // Default for backward compatibility
@@ -81,7 +129,7 @@ impl ValidationConfig {
     }
 
     pub fn supports_token(&self, token: &str) -> bool {
-        self.allowed_spl_paid_tokens.iter().any(|s| s == token)
+        self.allowed_spl_paid_tokens.has_token(token)
     }
 }
 
@@ -378,7 +426,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_programs(vec!["program1", "program2"])
             .with_tokens(vec!["token1", "token2"])
-            .with_spl_paid_tokens(vec!["token3"])
+            .with_spl_paid_tokens(SplTokenConfig::Allowlist(vec!["token3".to_string()]))
             .with_disallowed_accounts(vec!["account1"])
             .build_config()
             .unwrap();
@@ -387,7 +435,10 @@ mod tests {
         assert_eq!(config.validation.max_signatures, 10);
         assert_eq!(config.validation.allowed_programs, vec!["program1", "program2"]);
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
-        assert_eq!(config.validation.allowed_spl_paid_tokens, vec!["token3"]);
+        assert_eq!(
+            config.validation.allowed_spl_paid_tokens,
+            SplTokenConfig::Allowlist(vec!["token3".to_string()])
+        );
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
         assert_eq!(config.validation.price_source, PriceSource::Jupiter);
         assert_eq!(config.kora.rate_limit, 100);
@@ -400,7 +451,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_programs(vec!["program1", "program2"])
             .with_tokens(vec!["token1", "token2"])
-            .with_spl_paid_tokens(vec!["token3"])
+            .with_spl_paid_tokens(SplTokenConfig::Allowlist(vec!["token3".to_string()]))
             .with_disallowed_accounts(vec!["account1"])
             .with_enabled_methods(&[
                 ("liveness", true),
@@ -439,6 +490,14 @@ mod tests {
     fn test_load_nonexistent_file() {
         let result = Config::load_config("nonexistent_file.toml");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_spl_payment_config() {
+        let config =
+            ConfigBuilder::new().with_spl_paid_tokens(SplTokenConfig::All).build_config().unwrap();
+
+        assert_eq!(config.validation.allowed_spl_paid_tokens, SplTokenConfig::All);
     }
 
     #[test]
