@@ -1,19 +1,14 @@
 name: Update Coverage Badge
 
 on:
-  pull_request:
-    branches:
-      - main
   workflow_run:
     workflows: ["Rust CI"]
     types:
       - completed
-    branches:
-      - main
 
 jobs:
   update-badge:
-    if: github.event_name == 'pull_request' || github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -21,7 +16,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
+          ref: ${{ github.event.workflow_run.head_branch }}
 
       - name: Download coverage artifacts
         uses: actions/download-artifact@v4
@@ -60,16 +55,19 @@ jobs:
           mkdir -p .github/badges
           echo "{\"schemaVersion\": 1, \"label\": \"coverage\", \"message\": \"${COVERAGE}%\", \"color\": \"$COLOR\"}" > .github/badges/coverage.json
           
-          # For PRs: commit and push badge to PR branch
-          # For main: no-op (badge already updated via PR merge)
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          # Only commit and push badge updates for non-main branches (PRs)
+          # For main branch, the badge will be updated when the PR merges
+          if [ "${{ github.event.workflow_run.head_branch }}" != "main" ]; then
             git config user.name github-actions
             git config user.email github-actions@github.com
             git add .github/badges/coverage.json
             if ! git diff --staged --quiet; then
               git commit -m "Update coverage badge [skip ci]"
-              git push
+              # Push to the PR branch
+              git push origin HEAD:${{ github.event.workflow_run.head_branch }}
+            else
+              echo "✅ No changes to coverage badge"
             fi
           else
-            echo "✅ Badge already updated via PR merge - no action needed"
+            echo "✅ Running on main branch - badge updates happen via PR merges"
           fi
