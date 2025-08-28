@@ -2,27 +2,34 @@
   "name": "kora-demo-client",
   "version": "1.0.0",
   "description": "",
-  "main": "main.js",
   "scripts": {
-    "start": "ts-node src/main.ts",
-    "init-env": "ts-node src/setup.ts"
+    "start": "tsx src/quick-start.ts",
+    "full-demo": "tsx src/full-demo.ts",
+    "init-env": "tsx src/setup.ts"
   },
-  "keywords": ["solana", "kora", "client"],
+  "keywords": [
+    "solana",
+    "kora",
+    "client"
+  ],
   "author": "Solana Foundation",
   "license": "MIT",
   "packageManager": "pnpm@10.12.3",
   "dependencies": {
     "@kora/sdk": "file:../../../../sdks/ts",
     "@solana-program/compute-budget": "^0.8.0",
+    "@solana-program/memo": "^0.7.0",
     "@solana-program/system": "^0.7.0",
     "@solana-program/token": "^0.5.1",
     "@solana/assertions": "^2.3.0",
     "@solana/kit": "^2.3.0",
-    "dotenv": "^17.2.0"
+    "@solana/transaction-confirmation": "^2.3.0",
+    "dotenv": "^17.2.0",
+    "gill": "^0.10.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.13",
-    "ts-node": "^10.9.2",
+    "tsx": "^4.20.5",
     "typescript": "^5.8.3"
   }
 }
