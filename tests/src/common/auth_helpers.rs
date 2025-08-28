@@ -4,7 +4,7 @@ use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::common::helpers::ClientTestHelper;
+use crate::common::client::TestClient;
 
 pub const TEST_API_KEY: &str = "test-api-key-123";
 pub const TEST_HMAC_SECRET: &str = "test-hmac-secret-456";
@@ -35,7 +35,7 @@ pub async fn make_auth_request(headers: Option<Vec<(&str, &str)>>) -> reqwest::R
     let client = reqwest::Client::new();
 
     let mut request = client
-        .post(ClientTestHelper::get_test_server_url())
+        .post(TestClient::get_default_server_url())
         .header("Content-Type", "application/json")
         .json(&JSON_TEST_BODY.clone());
 
@@ -56,7 +56,7 @@ pub async fn make_auth_request_with_body(
     let client = reqwest::Client::new();
 
     let mut request = client
-        .post(ClientTestHelper::get_test_server_url())
+        .post(TestClient::get_default_server_url())
         .header("Content-Type", "application/json")
         .json(body);
 

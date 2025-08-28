@@ -22,6 +22,7 @@ coverage/
 .kora.pid
 test-ledger/
 .local/
+tests/src/common/fixtures/lookup_tables.json
 
 # Docs
 sdks/ts/docs-html/

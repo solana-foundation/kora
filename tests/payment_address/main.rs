@@ -7,7 +7,9 @@
 //        - Token transfer validation with specific payment addresses
 //        - Fee payer policy enforcement for payment scenarios
 
-mod payment_address_tests;
+mod payment_address_legacy_tests;
+mod payment_address_v0_lut_tests;
+mod payment_address_v0_tests;
 
 // Make common utilities available
 #[path = "../src/common/mod.rs"]

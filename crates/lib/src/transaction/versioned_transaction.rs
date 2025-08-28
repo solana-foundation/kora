@@ -241,9 +241,8 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             transaction.message.set_recent_blockhash(blockhash.0);
         }
 
-        // Validate transaction fee
-        let estimated_fee =
-            TransactionFeeUtil::get_estimate_fee(rpc_client, &transaction.message).await?;
+        // Validate transaction fee using resolved transaction
+        let estimated_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, self).await?;
         validator.validate_lamport_fee(estimated_fee)?;
 
         // Sign transaction

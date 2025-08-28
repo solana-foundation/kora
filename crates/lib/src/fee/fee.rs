@@ -7,6 +7,7 @@ use crate::{
         ParsedSystemInstructionType, VersionedTransactionResolved,
     },
 };
+use solana_message::Message;
 
 #[cfg(not(test))]
 use {crate::cache::CacheUtil, crate::state::get_config};
@@ -139,11 +140,9 @@ impl FeeConfigUtil {
         fee_payer: &Pubkey,
         is_payment_required: bool,
     ) -> Result<u64, KoraError> {
-        let inner_transaction = &transaction.transaction;
-
-        // Get base transaction fee
+        // Get base transaction fee using resolved transaction to handle lookup tables
         let base_fee =
-            TransactionFeeUtil::get_estimate_fee(rpc_client, &inner_transaction.message).await?;
+            TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, transaction).await?;
 
         // Get account creation fees (for ATA creation)
         let account_creation_fee =
@@ -250,6 +249,37 @@ impl TransactionFeeUtil {
         match message {
             VersionedMessage::Legacy(message) => rpc_client.get_fee_for_message(message).await,
             VersionedMessage::V0(message) => rpc_client.get_fee_for_message(message).await,
+        }
+        .map_err(|e| KoraError::RpcError(e.to_string()))
+    }
+
+    /// Get fee estimate for a resolved transaction, handling V0 transactions with lookup tables
+    pub async fn get_estimate_fee_resolved(
+        rpc_client: &RpcClient,
+        resolved_transaction: &VersionedTransactionResolved,
+    ) -> Result<u64, KoraError> {
+        let message = &resolved_transaction.transaction.message;
+
+        match message {
+            VersionedMessage::Legacy(message) => {
+                // Legacy transactions don't have lookup tables, use as-is
+                rpc_client.get_fee_for_message(message).await
+            }
+            VersionedMessage::V0(v0_message) => {
+                // Create a legacy message with resolved account keys to avoid lookup table index issues
+                // This is a workaround for https://github.com/anza-xyz/agave/pull/7719
+
+                let resolved_message = Message::new_with_compiled_instructions(
+                    v0_message.header.num_required_signatures,
+                    v0_message.header.num_readonly_signed_accounts,
+                    v0_message.header.num_readonly_unsigned_accounts,
+                    resolved_transaction.all_account_keys.clone(),
+                    v0_message.recent_blockhash,
+                    v0_message.instructions.clone(),
+                );
+
+                rpc_client.get_fee_for_message(&resolved_message).await
+            }
         }
         .map_err(|e| KoraError::RpcError(e.to_string()))
     }
