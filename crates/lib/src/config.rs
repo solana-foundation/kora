@@ -426,7 +426,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_programs(vec!["program1", "program2"])
             .with_tokens(vec!["token1", "token2"])
-            .with_spl_paid_tokens(vec!["token3"])
+            .with_spl_paid_tokens(SplTokenPaymentConfig::Allowlist(vec!["token3".to_string()]))
             .with_disallowed_accounts(vec!["account1"])
             .build_config()
             .unwrap();
@@ -451,7 +451,7 @@ mod tests {
         let config = ConfigBuilder::new()
             .with_programs(vec!["program1", "program2"])
             .with_tokens(vec!["token1", "token2"])
-            .with_spl_paid_tokens(vec!["token3"])
+            .with_spl_paid_tokens(SplTokenPaymentConfig::Allowlist(vec!["token3".to_string()]))
             .with_disallowed_accounts(vec!["account1"])
             .with_enabled_methods(&[
                 ("liveness", true),
@@ -494,23 +494,10 @@ mod tests {
 
     #[test]
     fn test_parse_spl_payment_config() {
-        let config_content = r#"
-            [validation]
-            max_allowed_lamports = 1000000000
-            max_signatures = 10
-            allowed_programs = ["program1", "program2"]
-            allowed_tokens = ["token1", "token2"]
-            allowed_spl_paid_tokens = "All"
-            disallowed_accounts = ["account1"]
-            price_source = "Jupiter"
-            [kora]
-            rate_limit = 100
-        "#;
-
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, config_content).unwrap();
-
-        let config = Config::load_config(temp_file.path()).unwrap();
+        let config = ConfigBuilder::new()
+            .with_spl_paid_tokens(SplTokenPaymentConfig::All)
+            .build_config()
+            .unwrap();
 
         assert_eq!(config.validation.allowed_spl_paid_tokens, SplTokenPaymentConfig::All);
     }

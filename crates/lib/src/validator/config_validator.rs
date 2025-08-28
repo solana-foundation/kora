@@ -296,7 +296,7 @@ mod tests {
     use crate::{
         config::{
             AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy, KoraConfig,
-            MetricsConfig, ValidationConfig,
+            MetricsConfig, SplTokenPaymentConfig, ValidationConfig,
         },
         fee::price::PriceConfig,
         state::update_config,
@@ -683,7 +683,7 @@ mod tests {
         let _ = update_config(config);
 
         let mock_account = create_mock_program_account();
-        let rpc_client = get_mock_rpc_client(&mock_account);
+        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
 
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());

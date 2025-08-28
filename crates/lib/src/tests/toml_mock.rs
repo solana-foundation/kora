@@ -1,7 +1,10 @@
 use std::fs;
 use tempfile::NamedTempFile;
 
-use crate::{config::Config, error::KoraError};
+use crate::{
+    config::{Config, SplTokenPaymentConfig},
+    error::KoraError,
+};
 
 /// TOML-specific configuration builder for testing TOML parsing and serialization
 ///
@@ -24,7 +27,7 @@ struct ValidationSection {
     max_signatures: u64,
     allowed_programs: Vec<String>,
     allowed_tokens: Vec<String>,
-    allowed_spl_paid_tokens: Vec<String>,
+    allowed_spl_paid_tokens: SplTokenPaymentConfig,
     disallowed_accounts: Vec<String>,
     price_source: String,
     price_config: Option<String>,
@@ -44,7 +47,7 @@ impl Default for ValidationSection {
             max_signatures: 10,
             allowed_programs: vec!["program1".to_string()],
             allowed_tokens: vec!["token1".to_string()],
-            allowed_spl_paid_tokens: vec!["token2".to_string()],
+            allowed_spl_paid_tokens: SplTokenPaymentConfig::Allowlist(vec!["token2".to_string()]),
             disallowed_accounts: vec![],
             price_source: "Jupiter".to_string(),
             price_config: None,
@@ -74,8 +77,8 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn with_spl_paid_tokens(mut self, tokens: Vec<&str>) -> Self {
-        self.validation.allowed_spl_paid_tokens = tokens.iter().map(|s| s.to_string()).collect();
+    pub fn with_spl_paid_tokens(mut self, config: SplTokenPaymentConfig) -> Self {
+        self.validation.allowed_spl_paid_tokens = config;
         self
     }
 
@@ -170,13 +173,13 @@ impl ConfigBuilder {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let spl_tokens_list = self
-            .validation
-            .allowed_spl_paid_tokens
-            .iter()
-            .map(|t| format!("\"{t}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let spl_tokens_config = match self.validation.allowed_spl_paid_tokens {
+            SplTokenPaymentConfig::Allowlist(ref tokens) => format!(
+                "[{}]",
+                tokens.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(", ")
+            ),
+            SplTokenPaymentConfig::All => format!("\"{}\"", "All"),
+        };
 
         let disallowed_list = if self.validation.disallowed_accounts.is_empty() {
             "[]".to_string()
@@ -198,14 +201,14 @@ impl ConfigBuilder {
             max_signatures = {}\n\
             allowed_programs = [{}]\n\
             allowed_tokens = [{}]\n\
-            allowed_spl_paid_tokens = [{}]\n\
+            allowed_spl_paid_tokens = {}\n\
             disallowed_accounts = {}\n\
             price_source = \"{}\"\n\n",
             self.validation.max_allowed_lamports,
             self.validation.max_signatures,
             programs_list,
             tokens_list,
-            spl_tokens_list,
+            spl_tokens_config,
             disallowed_list,
             self.validation.price_source
         );
