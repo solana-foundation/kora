@@ -406,6 +406,8 @@ mod tests {
             .with_allowed_spl_paid_tokens(SplTokenPaymentConfig::All)
             .build_and_setup();
 
+        let _ = setup_or_get_test_signer();
+
         let rpc_client = RpcMockBuilder::new().build();
 
         let result = initialize_atas(&rpc_client, None, None, None, None).await;
