@@ -62,7 +62,14 @@ pub enum KoraError {
 
 impl From<ClientError> for KoraError {
     fn from(e: ClientError) -> Self {
-        KoraError::RpcError(e.to_string())
+        let error_string = e.to_string();
+        if error_string.contains("AccountNotFound")
+            || error_string.contains("could not find account")
+        {
+            KoraError::AccountNotFound(error_string)
+        } else {
+            KoraError::RpcError(error_string)
+        }
     }
 }
 
