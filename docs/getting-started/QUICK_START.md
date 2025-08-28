@@ -187,7 +187,9 @@ Kora Config: {
     allowed_programs: [
       '11111111111111111111111111111111',
       'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-      'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
+      'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
+      'AddressLookupTab1e1111111111111111111111111',
+      'ComputeBudget11111111111111111111111111111111'
     ],
     allowed_tokens: [
       'usdCAEFbouFGxdkbHCRtMTcN7DJHd3aCmP9vqjLgmAp' 

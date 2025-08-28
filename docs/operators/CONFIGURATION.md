@@ -169,6 +169,7 @@ allowed_programs = [
     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",   # Token-2022 Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",  # Associated Token Program
     "AddressLookupTab1e1111111111111111111111111",   # Address Lookup Table Program
+    "ComputeBudget11111111111111111111111111111111", # Compute Budget Program
 ]
 allowed_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC (mainnet)
@@ -193,7 +194,7 @@ disallowed_accounts = [
 | `allowed_spl_paid_tokens` | SPL tokens accepted as payment for transaction fees | ✅ | Array of b58-encoded string |
 | `disallowed_accounts` | Accounts that are explicitly blocked from transactions | ✅ | Array of b58-encoded string |
 
-> *Note: Empty arrays are allowed, but you will need to specify at least one whitelisted `allowed_programs`, `allowed_tokens`, `allowed_spl_paid_tokens` for the Kora node to be able to process transactions. You need to specify the System Program or Token Program for the Kora node to be able to process transfers.*
+> *Note: Empty arrays are allowed, but you will need to specify at least one whitelisted `allowed_programs`, `allowed_tokens`, `allowed_spl_paid_tokens` for the Kora node to be able to process transactions. You need to specify the System Program or Token Program for the Kora node to be able to process transfers. To enable common instruction types (e.g., Compute Budget, Address Lookup Table), you need to specify the Compute Budget Program or Address Lookup Table Program, etc.*
 
 ## Token-2022 Extension Blocking
 
@@ -406,6 +407,8 @@ allowed_programs = [
     "11111111111111111111111111111111",              # System Program
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",   # SPL Token
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",  # Associated Token
+    "AddressLookupTab1e1111111111111111111111111",   # Address Lookup Table
+    "ComputeBudget11111111111111111111111111111111", # Compute Budget
     "MyProgram111111111111111111111111111111111", 
     # Add your specific program IDs here
 ]
