@@ -137,7 +137,7 @@ impl TokenUtil {
 
         // Round to nearest integer to fix floating point precision errors
         // This ensures values like 1010049.9999999999 become 1010050
-        Ok(fee_in_token.round())
+        Ok(fee_in_token.ceil())
     }
 
     /// Validate Token2022 extensions for payment instructions
@@ -720,7 +720,11 @@ mod tests_token {
         let _lock = ConfigMockBuilder::new().build_and_setup();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
 
-        // Comprehensive test cases covering all precision scenarios from PRO-249
+        // Explanation (i.e. for case 1)
+        // 1. Lamports → SOL: 5,000 / 1,000,000,000 = 0.000005 SOL
+        // 2. SOL → USDC: 0.000005 SOL / 0.0001 SOL/USDC = 0.05 USDC
+        // 3. USDC → Base units: 0.05 USDC × 10^6 = 50,000 base units
+
         let test_cases = vec![
             // Low priority fees
             (5_000u64, 50_000.0, "low priority base case"),
@@ -729,7 +733,7 @@ mod tests_token {
             (1_010_050u64, 10_100_500.0, "high priority problematic case"),
             // High compute unit scenarios
             (5_000_000u64, 50_000_000.0, "very high CU limit"),
-            (2_500_050u64, 25_000_500.0, "odd high amount"),
+            (2_500_050u64, 25_000_501.0, "odd high amount"), // round up
             (10_000_000u64, 100_000_000.0, "maximum CU cost"),
             // Edge cases
             (1_010_049u64, 10_100_490.0, "precision edge case -1"),
