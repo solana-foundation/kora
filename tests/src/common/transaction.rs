@@ -1,7 +1,7 @@
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use kora_lib::{
-    token::{TokenInterface, TokenProgram},
+    token::{Token2022Program, TokenInterface, TokenProgram},
     transaction::TransactionUtil,
 };
 use solana_address_lookup_table_interface::state::AddressLookupTable;
@@ -19,7 +19,9 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 use solana_system_interface::instruction::transfer;
-use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account::{
+    get_associated_token_address, get_associated_token_address_with_program_id,
+};
 use std::sync::Arc;
 
 /// Transaction version types
@@ -184,6 +186,68 @@ impl TransactionBuilder {
 
     /// Add a custom instruction
     pub fn with_instruction(mut self, instruction: Instruction) -> Self {
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add a Token 2022 transfer_checked instruction
+    pub fn with_spl_token_2022_transfer_checked(
+        mut self,
+        token_mint: &Pubkey,
+        from_authority: &Pubkey,
+        to_pubkey: &Pubkey,
+        amount: u64,
+        decimals: u8,
+    ) -> Self {
+        let from_ata = get_associated_token_address_with_program_id(
+            from_authority,
+            token_mint,
+            &spl_token_2022::id(),
+        );
+        let to_ata = get_associated_token_address_with_program_id(
+            to_pubkey,
+            token_mint,
+            &spl_token_2022::id(),
+        );
+
+        let token_interface = Token2022Program::new();
+        let instruction = token_interface
+            .create_transfer_checked_instruction(
+                &from_ata,
+                token_mint,
+                &to_ata,
+                from_authority,
+                amount,
+                decimals,
+            )
+            .expect("Failed to create Token 2022 transfer_checked instruction");
+
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add Token 2022 transfer checked instruction with specific token accounts
+    pub fn with_spl_token_2022_transfer_checked_with_accounts(
+        mut self,
+        token_mint: &Pubkey,
+        from_token_account: &Pubkey,
+        to_token_account: &Pubkey,
+        from_authority: &Pubkey,
+        amount: u64,
+        decimals: u8,
+    ) -> Self {
+        let token_interface = Token2022Program::new();
+        let instruction = token_interface
+            .create_transfer_checked_instruction(
+                from_token_account,
+                token_mint,
+                to_token_account,
+                from_authority,
+                amount,
+                decimals,
+            )
+            .expect("Failed to create Token 2022 transfer_checked instruction with accounts");
+
         self.instructions.push(instruction);
         self
     }

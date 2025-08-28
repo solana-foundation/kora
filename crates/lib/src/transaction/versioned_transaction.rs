@@ -146,9 +146,7 @@ impl VersionedTransactionResolved {
             .map_err(|e| KoraError::RpcError(format!("Failed to simulate transaction: {e}")))?;
 
         if let Some(err) = simulation_result.value.err {
-            log::warn!(
-                "Transaction simulation failed: {err}, continuing without inner instructions",
-            );
+            log::warn!("Transaction simulation failed: {err}");
             return Err(KoraError::InvalidTransaction(
                 "Transaction inner instructions fetching failed.".to_string(),
             ));

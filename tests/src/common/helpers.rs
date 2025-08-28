@@ -18,6 +18,11 @@ pub struct TestAccountInfo {
     pub sender_token_account: Pubkey,
     pub recipient_token_account: Pubkey,
     pub fee_payer_token_account: Pubkey,
+    // Token 2022 fields
+    pub usdc_mint_2022_pubkey: Pubkey,
+    pub sender_token_2022_account: Pubkey,
+    pub recipient_token_2022_account: Pubkey,
+    pub fee_payer_token_2022_account: Pubkey,
 }
 
 /// Helper function to parse a private key string in multiple formats.
@@ -91,5 +96,39 @@ impl USDCMintTestHelper {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(TEST_USDC_MINT_DECIMALS)
+    }
+}
+
+pub struct USDCMint2022TestHelper;
+
+impl USDCMint2022TestHelper {
+    pub fn get_test_usdc_mint_2022_keypair() -> Keypair {
+        dotenv::dotenv().ok();
+        let mint_keypair = match std::env::var("TEST_USDC_MINT_2022_KEYPAIR") {
+            Ok(key) => key,
+            Err(_) => std::fs::read_to_string(USDC_MINT_2022_KEYPAIR_PATH)
+                .expect("Failed to read USDC mint 2022 private key file"),
+        };
+        parse_private_key_string(&mint_keypair)
+            .expect("Failed to parse test USDC mint 2022 private key")
+    }
+
+    pub fn get_test_usdc_mint_2022_pubkey() -> Pubkey {
+        Self::get_test_usdc_mint_2022_keypair().pubkey()
+    }
+
+    pub fn get_test_interest_bearing_mint_keypair() -> Keypair {
+        dotenv::dotenv().ok();
+        let mint_keypair = match std::env::var("TEST_INTEREST_BEARING_MINT_KEYPAIR") {
+            Ok(key) => key,
+            Err(_) => std::fs::read_to_string(INTEREST_BEARING_MINT_KEYPAIR_PATH)
+                .expect("Failed to read interest bearing mint private key file"),
+        };
+        parse_private_key_string(&mint_keypair)
+            .expect("Failed to parse test interest bearing mint private key")
+    }
+
+    pub fn get_test_interest_bearing_mint_pubkey() -> Pubkey {
+        Self::get_test_interest_bearing_mint_keypair().pubkey()
     }
 }
