@@ -135,7 +135,7 @@ impl TokenUtil {
         let fee_in_token_base_units = fee_in_sol / token_price.price;
         let fee_in_token = fee_in_token_base_units * 10f64.powi(decimals as i32);
 
-        // Round to nearest integer to fix floating point precision errors
+        // Round up to the next integer to fix floating point precision errors
         // This ensures values like 1010049.9999999999 become 1010050
         Ok(fee_in_token.ceil())
     }
