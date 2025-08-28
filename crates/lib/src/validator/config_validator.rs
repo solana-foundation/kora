@@ -303,7 +303,7 @@ mod tests {
         tests::common::{
             create_mock_non_executable_account, create_mock_program_account,
             create_mock_rpc_client_account_not_found, create_mock_rpc_client_with_account,
-            create_mock_rpc_client_with_mint,
+            create_mock_rpc_client_with_mint, RpcMockBuilder,
         },
     };
     use serial_test::serial;
@@ -716,7 +716,7 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcMockBuilder::new().build();
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();

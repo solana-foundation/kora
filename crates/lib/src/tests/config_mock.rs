@@ -161,6 +161,14 @@ impl ConfigMockBuilder {
         self
     }
 
+    pub fn with_allowed_spl_paid_tokens(
+        mut self,
+        spl_payment_config: SplTokenPaymentConfig,
+    ) -> Self {
+        self.config.validation.allowed_spl_paid_tokens = spl_payment_config;
+        self
+    }
+
     pub fn with_payment_address(mut self, payment_address: Option<String>) -> Self {
         self.config.kora.payment_address = payment_address;
         self
@@ -262,8 +270,11 @@ impl ValidationConfigBuilder {
         self
     }
 
-    pub fn with_allowed_spl_paid_tokens(mut self, config: SplTokenPaymentConfig) -> Self {
-        self.config.allowed_spl_paid_tokens = config;
+    pub fn with_allowed_spl_paid_tokens(
+        mut self,
+        spl_payment_config: SplTokenPaymentConfig,
+    ) -> Self {
+        self.config.allowed_spl_paid_tokens = spl_payment_config;
         self
     }
 

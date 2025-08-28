@@ -399,4 +399,17 @@ mod tests {
             }
         }
     }
+
+    #[tokio::test]
+    async fn test_initialize_atas_when_all_tokens_are_allowed() {
+        let _m = ConfigMockBuilder::new()
+            .with_allowed_spl_paid_tokens(SplTokenPaymentConfig::All)
+            .build_and_setup();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let result = initialize_atas(&rpc_client, None, None, None, None).await;
+
+        assert!(result.is_ok(), "Expected atas init to succeed");
+    }
 }

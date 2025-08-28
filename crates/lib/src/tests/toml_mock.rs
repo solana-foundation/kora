@@ -77,8 +77,8 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn with_spl_paid_tokens(mut self, config: SplTokenPaymentConfig) -> Self {
-        self.validation.allowed_spl_paid_tokens = config;
+    pub fn with_spl_paid_tokens(mut self, spl_payment_config: SplTokenPaymentConfig) -> Self {
+        self.validation.allowed_spl_paid_tokens = spl_payment_config;
         self
     }
 
