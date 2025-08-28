@@ -14,14 +14,15 @@ price_source = "Mock"
 max_allowed_lamports = 1000000
 max_signatures = 10
 allowed_programs = [
-    "11111111111111111111111111111111",             # System Program
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
-    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
-    "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
+    "11111111111111111111111111111111",              # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",   # Token Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",  # Associated Token Program
+    "AddressLookupTab1e1111111111111111111111111",   # Address Lookup Table Program
+    "ComputeBudget11111111111111111111111111111111", # Compute Budget Program
 ]
 allowed_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # mainnet USDC
-    "So11111111111111111111111111111111111111112", # SOL
+    "So11111111111111111111111111111111111111112",  # SOL
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", # devnet USDC
 ]
 allowed_spl_paid_tokens = [
