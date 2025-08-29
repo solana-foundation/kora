@@ -270,7 +270,8 @@ mod tests {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(mock_response)
-            .create();
+            .create()
+            .expect(1);
 
         let client = Client::new();
         // Test without API key - should use lite API
