@@ -22,13 +22,10 @@ env:
   CI: true
 
 jobs:
-  test:
-    name: Rust Tests & Coverage
+  build-and-lint:
+    name: Build & Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      pull-requests: write
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -41,135 +38,207 @@ jobs:
         run: make lint
       - name: Build
         run: make build
-      
-      - name: Setup Solana CLI
-        uses: ./.github/actions/setup-solana
 
-      - name: Install cargo-llvm-cov for coverage
+  unit-tests:
+    name: Unit Tests
+    needs: build-and-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov
-
       - name: Run unit tests with coverage
         run: |
           echo "🧪 Running unit tests with coverage instrumentation..."
           cargo llvm-cov clean --workspace
           cargo llvm-cov test --no-report --workspace --lib
+      - name: Generate unit test coverage
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov report --lcov --output-path coverage/unit-lcov.info
+      - name: Upload unit test coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: coverage/unit-lcov.info
+          retention-days: 1
 
+  integration-tests:
+    name: Integration Tests
+    needs: build-and-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - name: "rpc"
+            config: "tests/src/common/fixtures/kora-test.toml"
+            signers: "tests/src/common/fixtures/signers.toml"
+            init_atas: false
+            setup_multi: false
+          - name: "tokens"
+            config: "tests/src/common/fixtures/kora-test.toml"
+            signers: "tests/src/common/fixtures/signers.toml"
+            init_atas: false
+            setup_multi: false
+          - name: "external"
+            config: "tests/src/common/fixtures/kora-test.toml"
+            signers: "tests/src/common/fixtures/signers.toml"
+            init_atas: false
+            setup_multi: false
+          - name: "auth"
+            config: "tests/src/common/fixtures/auth-test.toml"
+            signers: "tests/src/common/fixtures/signers.toml"
+            init_atas: false
+            setup_multi: false
+          - name: "payment_address"
+            config: "tests/src/common/fixtures/paymaster-address-test.toml"
+            signers: "tests/src/common/fixtures/signers.toml"
+            init_atas: true
+            setup_multi: false
+          - name: "multi_signer"
+            config: "tests/src/common/fixtures/kora-test.toml"
+            signers: "tests/src/common/fixtures/multi-signers.toml"
+            init_atas: false
+            setup_multi: true
+    env:
+      TEST_SERVER_URL: http://127.0.0.1:8080
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+          
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Setup Solana CLI
+        uses: ./.github/actions/setup-solana
+        
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
+        
       - name: Setup Solana test validator
         uses: ./.github/actions/setup-solana-validator
-
-      - name: Setup test environment
+        
+      - name: Create multi-signer key if needed
+        if: matrix.test.setup_multi
         run: |
-          echo "🔧 Setting up test environment..."
-          # Create second signer key for multi-signer tests
           if [ ! -f "tests/src/common/local-keys/signer2-local.json" ]; then
             echo "Creating second signer key..."
             solana-keygen new --outfile tests/src/common/local-keys/signer2-local.json --no-bip39-passphrase --silent
           fi
-          KORA_PRIVATE_KEY="$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p tests --bin setup_test_env
-
-      - name: Setup Kora RPC server (regular config)
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          config-file: "tests/src/common/fixtures/kora-test.toml"
-
-      - name: Run RPC integration tests
+          
+      - name: Setup test environment
         run: |
-          echo "🧪 Running RPC integration tests..."
-          cargo llvm-cov test --no-report -p tests --test rpc
-
-      - name: Run token integration tests
-        run: |
-          echo "🧪 Running token integration tests..."
-          cargo llvm-cov test --no-report -p tests --test tokens
-
-      - name: Run external integration tests
-        run: |
-          echo "🧪 Running external integration tests..."
-          cargo llvm-cov test --no-report -p tests --test external
-
-      - name: Stop Kora RPC server
-        run: |
-          if [ ! -z "$KORA_PID" ]; then
-            kill $KORA_PID || true
+          echo "🔧 Setting up test environment for ${{ matrix.test.name }}..."
+          if [ "${{ matrix.test.setup_multi }}" = "true" ]; then
+            export KORA_PRIVATE_KEY="$(cat tests/src/common/local-keys/fee-payer-local.json)"
+            export KORA_PRIVATE_KEY_2="$(cat tests/src/common/local-keys/signer2-local.json)"
+            cargo run -p tests --bin setup_test_env
+          else
+            KORA_PRIVATE_KEY="$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p tests --bin setup_test_env
           fi
-          sleep 2
-
-      - name: Setup Kora RPC server (auth config)
+          
+      - name: Setup Kora RPC server
         uses: ./.github/actions/setup-kora-rpc
         with:
-          config-file: "tests/src/common/fixtures/auth-test.toml"
-
-      - name: Run auth integration tests
+          config-file: ${{ matrix.test.config }}
+          signers-config: ${{ matrix.test.signers }}
+          initialize-atas: ${{ matrix.test.init_atas }}
+          port: "8080"
+          test-server-url: "http://127.0.0.1:8080"
+          
+      - name: Run ${{ matrix.test.name }} integration tests
         run: |
-          echo "🧪 Running auth integration tests..."
-          cargo llvm-cov test --no-report -p tests --test auth
-
-      - name: Stop Kora RPC server
+          echo "🧪 Running ${{ matrix.test.name }} integration tests..."
+          cargo llvm-cov test --no-report -p tests --test ${{ matrix.test.name }}
+          
+      - name: Generate coverage report
         run: |
-          if [ ! -z "$KORA_PID" ]; then
-            kill $KORA_PID || true
-          fi
-          sleep 2
-
-      - name: Setup Kora RPC server (payment address config)
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          config-file: "tests/src/common/fixtures/paymaster-address-test.toml"
-          initialize-atas: "true"
-
-      - name: Run payment address integration tests
-        run: |
-          echo "🧪 Running payment address integration tests..."
-          cargo llvm-cov test --no-report -p tests --test payment_address
-
-      - name: Stop Kora RPC server
-        run: |
-          if [ ! -z "$KORA_PID" ]; then
-            kill $KORA_PID || true
-          fi
-          sleep 2
-
-      - name: Setup multi-signer test environment
-        run: |
-          echo "🔧 Setting up multi-signer test environment..."
-          export KORA_PRIVATE_KEY="$(cat tests/src/common/local-keys/fee-payer-local.json)"
-          export KORA_PRIVATE_KEY_2="$(cat tests/src/common/local-keys/signer2-local.json)"
-          cargo run -p tests --bin setup_test_env
-
-      - name: Setup Kora RPC server (multi-signer config)
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          config-file: "tests/src/common/fixtures/kora-test.toml"
-          signers-config: "tests/src/common/fixtures/multi-signers.toml"
-
-      - name: Run multi-signer integration tests
-        run: |
-          echo "🧪 Running multi-signer integration tests..."
-          cargo llvm-cov test --no-report -p tests --test multi_signer
-
-      - name: Generate coverage reports
-        run: |
-          echo "📊 Generating coverage reports..."
+          echo "📊 Generating coverage report for ${{ matrix.test.name }}..."
           mkdir -p coverage
-          cargo llvm-cov report --lcov --output-path coverage/lcov.info
+          cargo llvm-cov report --lcov --output-path coverage/${{ matrix.test.name }}-lcov.info
+          
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.test.name }}
+          path: coverage/${{ matrix.test.name }}-lcov.info
+          retention-days: 1
+          
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-test-env
+        
+      - name: Show failure logs
+        if: failure()
+        uses: ./.github/actions/show-failure-logs
+        with:
+          test-type: "${{ matrix.test.name }} integration"
 
-      - name: Display coverage summary
+  # Coverage Collection & Reporting
+  coverage-report:
+    name: Coverage Report
+    needs: [unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    if: always()
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: coverage-artifacts
+          merge-multiple: false
+          
+      - name: Merge coverage reports
+        run: |
+          echo "📊 Merging coverage reports..."
+          mkdir -p coverage
+          
+          # Merge all lcov files
+          find coverage-artifacts -name "*.info" -type f | while read file; do
+            echo "Processing: $file"
+            cat "$file" >> coverage/merged.info
+          done
+          
+          # Generate final report
+          if [ -f "coverage/merged.info" ]; then
+            cp coverage/merged.info coverage/lcov.info
+            echo "✅ Coverage report merged successfully"
+          else
+            echo "❌ No coverage files found"
+            touch coverage/lcov.info
+          fi
+          
+      - name: Display coverage summary  
         run: |
           echo "📊 Coverage Summary:"
-          if [ -f "coverage/lcov.info" ]; then
+          if [ -f "coverage/lcov.info" ] && [ -s "coverage/lcov.info" ]; then
             echo "✅ Coverage report generated successfully"
             echo "📄 Generated: coverage/lcov.info"
           else
-            echo "❌ Coverage report not found"
+            echo "❌ Coverage report not found or empty"
           fi
-
-      - name: Upload coverage artifacts
+          
+      - name: Upload merged coverage
         uses: actions/upload-artifact@v4
         with:
           name: rust-coverage-report
           path: coverage/
           retention-days: 30
-
+          
       - name: Update PR description with coverage badge
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
@@ -220,12 +289,21 @@ jobs:
               body: newBody
             });
 
-      - name: Cleanup test environment
-        if: always()
-        uses: ./.github/actions/cleanup-test-env
-
-      - name: Show failure logs
-        if: failure()
-        uses: ./.github/actions/show-failure-logs
-        with:
-          test-type: "Rust integration"
+  # Final status check - ensures all tests pass
+  tests-complete:
+    name: All Tests Complete
+    needs: [unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          if [[ "${{ needs.unit-tests.result }}" != "success" ||
+                "${{ needs.integration-tests.result }}" != "success" ]]; then
+            echo "❌ One or more test suites failed"
+            echo "Unit Tests: ${{ needs.unit-tests.result }}"
+            echo "Integration Tests: ${{ needs.integration-tests.result }}"
+            exit 1
+          else
+            echo "✅ All tests passed!"
+          fi
