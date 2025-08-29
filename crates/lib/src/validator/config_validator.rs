@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use crate::{
     admin::token_util::find_missing_atas,
-    config::Token2022Config,
+    config::{SplTokenConfig, Token2022Config},
     fee::price::PriceModel,
     oracle::PriceSource,
     state::get_config,
@@ -117,6 +117,15 @@ impl ConfigValidator {
             TokenUtil::check_valid_tokens(config.validation.allowed_spl_paid_tokens.as_slice())
         {
             errors.push(format!("Invalid spl paid token address: {e}"));
+        }
+
+        // Warn if using "All" for allowed_spl_paid_tokens
+        if matches!(config.validation.allowed_spl_paid_tokens, SplTokenConfig::All) {
+            warnings.push(
+                "⚠️  Using 'All' for allowed_spl_paid_tokens - this accepts ANY SPL token for payment. \
+                Consider using an explicit allowlist to reduce volatility risk and protect against \
+                potentially malicious or worthless tokens being used for fees.".to_string()
+            );
         }
 
         // Validate disallowed accounts
@@ -680,11 +689,15 @@ mod tests {
 
         let _ = update_config(config);
 
-        let mock_account = create_mock_program_account();
         let rpc_client = RpcMockBuilder::new().build();
 
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
+
+        // Check that it warns about using "All" for allowed_spl_paid_tokens
+        let warnings = result.unwrap();
+        assert!(warnings.iter().any(|w| w.contains("Using 'All' for allowed_spl_paid_tokens")));
+        assert!(warnings.iter().any(|w| w.contains("volatility risk")));
     }
 
     #[tokio::test]
