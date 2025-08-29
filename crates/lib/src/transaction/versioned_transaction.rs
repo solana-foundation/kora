@@ -892,6 +892,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fetch_inner_instructions_with_sig_verify_false() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        // Mock RPC client with inner instructions
+        let inner_instruction_data = bs58::encode(&[10, 20, 30]).into_string();
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": [],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": [
+                        {
+                            "index": 0,
+                            "instructions": [
+                                {
+                                    "programIdIndex": 1,
+                                    "accounts": [0],
+                                    "data": inner_instruction_data
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }),
+        );
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let inner_instructions =
+            resolved.fetch_inner_instructions(&rpc_client, false).await.unwrap();
+
+        assert_eq!(inner_instructions.len(), 1);
+        assert_eq!(inner_instructions[0].data, vec![10, 20, 30]);
+    }
+
+    #[tokio::test]
     async fn test_get_or_parse_system_instructions() {
         let config = setup_test_config();
         let _m = setup_config_mock(config);
