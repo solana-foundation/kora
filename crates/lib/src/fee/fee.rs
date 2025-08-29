@@ -1,7 +1,8 @@
 use crate::{
     constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
-    token::token::TokenType,
+    oracle::PriceSource,
+    token::{spl_token_2022::Token2022Mint, token::TokenType},
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
         ParsedSystemInstructionType, VersionedTransactionResolved,
@@ -22,6 +23,17 @@ use solana_program::program_pack::Pack;
 use solana_sdk::{pubkey::Pubkey, rent::Rent};
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::Account as SplTokenAccountState;
+
+#[derive(Debug, Clone)]
+pub struct TotalFeeCalculation {
+    pub total_fee_lamports: u64,
+    pub base_fee: u64,
+    pub account_creation_fee: u64,
+    pub kora_signature_fee: u64,
+    pub fee_payer_outflow: u64,
+    pub payment_instruction_fee: u64,
+    pub transfer_fee_amount: u64,
+}
 
 pub struct FeeConfigUtil {}
 
@@ -149,12 +161,89 @@ impl FeeConfigUtil {
         Ok(ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION)
     }
 
-    pub async fn estimate_transaction_fee(
+    /// Calculate transfer fees for token transfers in the transaction
+    async fn calculate_transfer_fees(
+        rpc_client: &RpcClient,
+        transaction: &mut VersionedTransactionResolved,
+    ) -> Result<u64, KoraError> {
+        let config = get_config()?;
+
+        // Get fee payer and payment destination before parsing instructions to avoid borrow conflicts
+        let fee_payer = transaction.transaction.message.static_account_keys()[0];
+        let payment_destination = config.kora.get_payment_address(&fee_payer)?;
+
+        let parsed_spl_instructions = transaction.get_or_parse_spl_instructions()?;
+
+        for instruction in parsed_spl_instructions
+            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenTransfer {
+                mint,
+                amount,
+                is_2022,
+                destination_address,
+                ..
+            } = instruction
+            {
+                // Only calculate transfer fees for payments to Kora
+                // Skip if destination account doesn't exist (not a payment to existing Kora account)
+                let destination_account =
+                    match CacheUtil::get_account(rpc_client, destination_address, false).await {
+                        Ok(account) => account,
+                        Err(_) => {
+                            // Destination doesn't exist, can't be a payment to Kora, skip this instruction
+                            continue;
+                        }
+                    };
+
+                let destination_token_program =
+                    TokenType::get_token_program_from_owner(&destination_account.owner)?;
+
+                let destination_token_account =
+                    destination_token_program.unpack_token_account(&destination_account.data)?;
+
+                if destination_token_account.owner() != payment_destination {
+                    // This is not a payment transaction, skip it
+                    continue;
+                }
+
+                if let Some(mint_pubkey) = mint {
+                    // Get mint account to calculate transfer fees
+                    let mint_account =
+                        CacheUtil::get_account(rpc_client, mint_pubkey, true).await?;
+
+                    let token_program =
+                        TokenType::get_token_program_from_owner(&mint_account.owner)?;
+                    let mint_state = token_program.unpack_mint(mint_pubkey, &mint_account.data)?;
+
+                    if *is_2022 {
+                        // For Token2022, check for transfer fees
+                        if let Some(token2022_mint) =
+                            mint_state.as_any().downcast_ref::<Token2022Mint>()
+                        {
+                            let current_epoch = rpc_client.get_epoch_info().await?.epoch;
+
+                            if let Some(fee_amount) =
+                                token2022_mint.calculate_transfer_fee(*amount, current_epoch)
+                            {
+                                return Ok(fee_amount);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(0)
+    }
+
+    async fn estimate_transaction_fee(
         rpc_client: &RpcClient,
         transaction: &mut VersionedTransactionResolved,
         fee_payer: &Pubkey,
         is_payment_required: bool,
-    ) -> Result<u64, KoraError> {
+    ) -> Result<TotalFeeCalculation, KoraError> {
         // Get base transaction fee using resolved transaction to handle lookup tables
         let base_fee =
             TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, transaction).await?;
@@ -185,11 +274,58 @@ impl FeeConfigUtil {
             0
         };
 
-        Ok(base_fee
+        let transfer_fee_config_amount =
+            FeeConfigUtil::calculate_transfer_fees(rpc_client, transaction).await?;
+
+        let total_fee_lamports = base_fee
             + account_creation_fee
             + kora_signature_fee
             + fee_payer_outflow
-            + fee_for_payment_instruction)
+            + fee_for_payment_instruction
+            + transfer_fee_config_amount;
+
+        Ok(TotalFeeCalculation {
+            total_fee_lamports,
+            base_fee,
+            account_creation_fee,
+            kora_signature_fee,
+            fee_payer_outflow,
+            payment_instruction_fee: fee_for_payment_instruction,
+            transfer_fee_amount: transfer_fee_config_amount,
+        })
+    }
+
+    /// Main entry point for fee calculation with Kora's price model applied
+    pub async fn estimate_kora_fee(
+        rpc_client: &RpcClient,
+        transaction: &mut VersionedTransactionResolved,
+        fee_payer: &Pubkey,
+        is_payment_required: bool,
+        price_source: Option<PriceSource>,
+    ) -> Result<TotalFeeCalculation, KoraError> {
+        // Get the raw transaction fees
+        let mut fee_calculation =
+            Self::estimate_transaction_fee(rpc_client, transaction, fee_payer, is_payment_required)
+                .await?;
+
+        // Apply Kora's price model
+        if let Some(price_source) = price_source {
+            let config = get_config()?;
+            let adjusted_fee = config
+                .validation
+                .price
+                .get_required_lamports(
+                    Some(rpc_client),
+                    Some(price_source),
+                    fee_calculation.total_fee_lamports,
+                )
+                .await?;
+
+            // Update the total with the price model applied
+            fee_calculation.total_fee_lamports = adjusted_fee;
+        }
+
+        Ok(fee_calculation)
     }
 
     /// Calculate the total outflow (SOL spending) that could occur for a fee payer account in a transaction.
@@ -991,7 +1127,7 @@ mod tests {
         .unwrap();
 
         // Should include base fee (5000) + fee payer outflow (100_000)
-        assert_eq!(result, 105_000, "Should return base fee + outflow");
+        assert_eq!(result.total_fee_lamports, 105_000, "Should return base fee + outflow");
     }
 
     #[tokio::test]
@@ -1021,7 +1157,11 @@ mod tests {
         .unwrap();
 
         // Should include base fee + kora signature fee since kora signer not in transaction signers
-        assert_eq!(result, 5000 + LAMPORTS_PER_SIGNATURE, "Should add Kora signature fee");
+        assert_eq!(
+            result.total_fee_lamports,
+            5000 + LAMPORTS_PER_SIGNATURE,
+            "Should add Kora signature fee"
+        );
     }
 
     #[tokio::test]
@@ -1055,7 +1195,10 @@ mod tests {
 
         // Should include base fee + fee payer outflow + payment instruction fee
         let expected = 5000 + 100_000 + ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION;
-        assert_eq!(result, expected, "Should include payment instruction fee when required");
+        assert_eq!(
+            result.total_fee_lamports, expected,
+            "Should include payment instruction fee when required"
+        );
     }
 
     #[tokio::test]
@@ -1104,6 +1247,7 @@ mod tests {
     #[tokio::test]
     async fn test_can_estimate_transaction_fees_on_transfers_with_uninitialized_atas() {
         let _m = ConfigMockBuilder::new().build_and_setup();
+        let _signer = setup_or_get_test_signer();
         let cache_ctx = CacheUtil::get_account_context();
         cache_ctx.checkpoint();
 
@@ -1112,8 +1256,9 @@ mod tests {
         let recipient = Keypair::new(); // This will be a newly generated wallet
         let mint = Pubkey::new_unique();
 
-        // Mock RPC client that returns base fee
-        let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(5000).build();
+        // Mock RPC client that returns base fee and handles epoch info
+        let mocked_rpc_client =
+            RpcMockBuilder::new().with_fee_estimate(5000).with_epoch_info_mock().build();
 
         // Create ATA creation instruction for recipient (this is what triggers the fee calculation)
         let recipient_ata = get_associated_token_address(&recipient.pubkey(), &mint);
@@ -1137,18 +1282,20 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        // Setup cache responses for ATA creation instruction:
-        // 1. Recipient ATA (doesn't exist - AccountNotFound) - this is the case we're testing
-        // 2. Mint account exists (Ok) - needed to determine token program
+        // Setup cache responses - correct order based on estimate_transaction_fee execution:
+        // 1. ATA creation: Recipient ATA (doesn't exist - AccountNotFound) - this is expected
+        // 2. ATA creation: Mint account exists (Ok) - needed to determine token program
+        // 3. calculate_transfer_fees: Recipient ATA (doesn't exist - AccountNotFound) → skip
         let responses = Arc::new(Mutex::new(VecDeque::from([
-            Err(KoraError::AccountNotFound(recipient_ata.to_string())), // recipient ATA doesn't exist
+            Err(KoraError::AccountNotFound(recipient_ata.to_string())), // ATA creation check
             Ok(create_mock_spl_mint_account(6)),                        // mint exists
+            Err(KoraError::AccountNotFound(recipient_ata.to_string())), // calculate_transfer_fees -> skip
         ])));
 
         let responses_clone = responses.clone();
         cache_ctx
             .expect()
-            .times(2)
+            .times(3)
             .returning(move |_, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
 
         // This should succeed without throwing InternalServerError
@@ -1162,7 +1309,8 @@ mod tests {
 
         assert!(
             result.is_ok(),
-            "Fee estimation should succeed for transaction with uninitialized ATAs"
+            "Fee estimation should succeed for transaction with uninitialized ATAs: {:?}",
+            result.err()
         );
 
         let fee = result.unwrap();
@@ -1172,8 +1320,8 @@ mod tests {
         let expected_min_fee = 5000 + expected_ata_rent;
 
         assert_eq!(
-            fee, expected_min_fee,
-            "Fee should include base transaction fee plus ATA creation cost. Got: {fee}, Expected at least: {expected_min_fee}"
+            fee.total_fee_lamports, expected_min_fee,
+            "Fee should include base transaction fee plus ATA creation cost. Got: {}, Expected at least: {expected_min_fee}", fee.total_fee_lamports
         );
     }
 }

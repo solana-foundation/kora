@@ -58,24 +58,16 @@ pub async fn estimate_transaction_fee(
     )
     .await?;
 
-    let min_transaction_fee = FeeConfigUtil::estimate_transaction_fee(
+    let fee_calculation = FeeConfigUtil::estimate_kora_fee(
         rpc_client,
         &mut resolved_transaction,
         &fee_payer,
         validation_config.is_payment_required(),
+        Some(validation_config.price_source.clone()),
     )
     .await?;
 
-    // Apply price model to get the actual required fee (including margin or fixed amount)
-    let fee_in_lamports = validation_config
-        .price
-        .get_required_lamports(
-            Some(rpc_client),
-            Some(validation_config.price_source.clone()),
-            min_transaction_fee,
-        )
-        .await?;
-
+    let fee_in_lamports = fee_calculation.total_fee_lamports;
     let mut fee_in_token = None;
 
     // If fee_token is provided, calculate the fee in that token

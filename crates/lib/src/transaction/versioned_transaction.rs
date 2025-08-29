@@ -274,24 +274,16 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let fee_payer = signer.solana_pubkey();
         let config = &get_config()?;
 
-        // Get the simulation result for fee calculation
-        let min_transaction_fee = FeeConfigUtil::estimate_transaction_fee(
+        let fee_calculation = FeeConfigUtil::estimate_kora_fee(
             rpc_client,
             self,
             &fee_payer,
             config.validation.is_payment_required(),
+            Some(config.validation.price_source.clone()),
         )
         .await?;
 
-        let required_lamports = config
-            .validation
-            .price
-            .get_required_lamports(
-                Some(rpc_client),
-                Some(config.validation.price_source.clone()),
-                min_transaction_fee,
-            )
-            .await?;
+        let required_lamports = fee_calculation.total_fee_lamports;
 
         // Only validate payment if not free
         if required_lamports > 0 {

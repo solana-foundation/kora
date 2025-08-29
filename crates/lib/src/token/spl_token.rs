@@ -2,9 +2,8 @@ use crate::token::interface::TokenMint;
 
 use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_program::{program_pack::Pack, pubkey::Pubkey};
-use solana_sdk::{account::Account, instruction::Instruction};
+use solana_program::pubkey::Pubkey;
+use solana_sdk::{account::Account, instruction::Instruction, program_pack::Pack};
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
@@ -206,16 +205,6 @@ impl TokenInterface for TokenProgram {
         }))
     }
 
-    async fn get_and_validate_amount_for_payment<'a>(
-        &self,
-        _rpc_client: &'a RpcClient,
-        _token_account: Option<&'a dyn TokenState>,
-        _mint_account: Option<&'a dyn TokenMint>,
-        amount: u64,
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(amount)
-    }
-
     async fn get_ata_account_size(
         &self,
         _mint_pubkey: &Pubkey,
@@ -228,7 +217,7 @@ impl TokenInterface for TokenProgram {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::common::{MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder};
+    use crate::tests::common::{MintAccountMockBuilder, TokenAccountMockBuilder};
 
     use super::*;
     use solana_program::program_pack::Pack;
@@ -447,20 +436,6 @@ mod tests {
 
         assert_eq!(instruction.program_id, spl_associated_token_account::id());
         assert_eq!(instruction.accounts.len(), 6); // funding, ata, wallet, mint, system_program, token_program
-    }
-
-    #[tokio::test]
-    async fn test_get_and_validate_amount_for_payment() {
-        let program = TokenProgram::new();
-        let rpc_client = RpcMockBuilder::new().build();
-        let amount = 1000000u64;
-
-        // SPL Token implementation just returns the amount as-is
-        let result =
-            program.get_and_validate_amount_for_payment(&rpc_client, None, None, amount).await;
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), amount);
     }
 
     #[tokio::test]
