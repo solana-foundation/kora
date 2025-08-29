@@ -4,6 +4,7 @@ use utoipa::ToSchema;
 use crate::{
     error::KoraError,
     fee::fee::FeeConfigUtil,
+    rpc_server::middleware_utils::default_sig_verify,
     state::{get_config, get_request_signer_with_signer_key},
     token::token::TokenUtil,
     transaction::{TransactionUtil, VersionedTransactionResolved},
@@ -22,6 +23,9 @@ pub struct EstimateTransactionFeeRequest {
     /// Optional signer signer_key to ensure consistency across related RPC calls
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
+    /// Whether to verify signatures during simulation (defaults to true)
+    #[serde(default = "default_sig_verify")]
+    pub sig_verify: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -47,8 +51,12 @@ pub async fn estimate_transaction_fee(
     let validation_config = &config.validation;
     let fee_payer = signer.solana_pubkey();
 
-    let mut resolved_transaction =
-        VersionedTransactionResolved::from_transaction(&transaction, rpc_client).await?;
+    let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
+        &transaction,
+        rpc_client,
+        request.sig_verify,
+    )
+    .await?;
 
     let min_transaction_fee = FeeConfigUtil::estimate_transaction_fee(
         rpc_client,
@@ -118,6 +126,7 @@ mod tests {
             transaction: "invalid_base64!@#$".to_string(),
             fee_token: None,
             signer_key: None,
+            sig_verify: true,
         };
 
         let result = estimate_transaction_fee(&rpc_client, request).await;
@@ -136,6 +145,7 @@ mod tests {
             transaction: create_mock_encoded_transaction(),
             fee_token: None,
             signer_key: Some("invalid_pubkey".to_string()),
+            sig_verify: true,
         };
 
         let result = estimate_transaction_fee(&rpc_client, request).await;
@@ -156,6 +166,7 @@ mod tests {
             transaction: create_mock_encoded_transaction(),
             fee_token: Some("invalid_mint_address".to_string()),
             signer_key: None,
+            sig_verify: true,
         };
 
         let result = estimate_transaction_fee(&rpc_client, request).await;
