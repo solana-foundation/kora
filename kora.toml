@@ -58,7 +58,7 @@ allow_approve = true            # Allow fee payer to approve tokens
 
 [validation.price]
 type = "margin" # free / margin / fixed
-margin = 0.1  # Default margin (10%) for paid transaction validation
+margin = 0.1  # 10% margin (0.1 = 10%, 1.0 = 100%)
 
 [validation.token2022]
 blocked_mint_extensions = [
