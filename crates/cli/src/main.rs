@@ -43,9 +43,17 @@ enum Commands {
 #[derive(Subcommand)]
 enum ConfigCommands {
     /// Validate configuration file (fast, no RPC calls)
-    Validate,
+    Validate {
+        /// Path to signers configuration file (optional)
+        #[arg(long)]
+        signers_config: Option<std::path::PathBuf>,
+    },
     /// Validate configuration file with RPC validation (slower but more thorough)
-    ValidateWithRpc,
+    ValidateWithRpc {
+        /// Path to signers configuration file (optional)
+        #[arg(long)]
+        signers_config: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -116,11 +124,21 @@ async fn main() -> Result<(), KoraError> {
     match cli.command {
         Some(Commands::Config { config_command }) => {
             match config_command {
-                ConfigCommands::Validate => {
-                    let _ = ConfigValidator::validate_with_result(rpc_client.as_ref(), true).await;
+                ConfigCommands::Validate { signers_config } => {
+                    let _ = ConfigValidator::validate_with_result_and_signers(
+                        rpc_client.as_ref(),
+                        true,
+                        signers_config.as_ref(),
+                    )
+                    .await;
                 }
-                ConfigCommands::ValidateWithRpc => {
-                    let _ = ConfigValidator::validate_with_result(rpc_client.as_ref(), false).await;
+                ConfigCommands::ValidateWithRpc { signers_config } => {
+                    let _ = ConfigValidator::validate_with_result_and_signers(
+                        rpc_client.as_ref(),
+                        false,
+                        signers_config.as_ref(),
+                    )
+                    .await;
                 }
             }
             std::process::exit(0);
@@ -128,10 +146,25 @@ async fn main() -> Result<(), KoraError> {
         Some(Commands::Rpc { rpc_command }) => {
             match rpc_command {
                 RpcCommands::Start { rpc_args } => {
-                    // Validate config before starting server
-                    if let Err(e) = ConfigValidator::validate(rpc_client.as_ref()).await {
-                        print_error(&format!("Config validation failed: {e}"));
-                        std::process::exit(1);
+                    // Validate config and signers before starting server
+                    match ConfigValidator::validate_with_result_and_signers(
+                        rpc_client.as_ref(),
+                        true,
+                        rpc_args.signers_config.as_ref(),
+                    )
+                    .await
+                    {
+                        Err(errors) => {
+                            for e in errors {
+                                print_error(&format!("Validation error: {e}"));
+                            }
+                            std::process::exit(1);
+                        }
+                        Ok(warnings) => {
+                            for w in warnings {
+                                println!("Warning: {w}");
+                            }
+                        }
                     }
 
                     setup_logging(&rpc_args.logging_format);
