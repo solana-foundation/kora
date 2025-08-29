@@ -1,8 +1,6 @@
 
 # Generate TypeScript client
-gen-ts-client:
-	@echo "🔧 Generating OpenAPI spec with docs feature..."
-	cargo run -p kora-cli --bin kora --features docs -- openapi -o openapi.json
+gen-ts-client: openapi
 	@echo "🚀 Generating TypeScript client..."
 	docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate \
 		-i /local/crates/lib/src/rpc_server/openapi/spec/combined_api.json \

@@ -11,6 +11,14 @@ RESET := \033[0m
 # Common configuration
 TEST_PORT := 8080
 TEST_RPC_URL := http://127.0.0.1:8899
+
+# Parallel test port assignments
+RPC_PORT := 8080
+TOKENS_PORT := 8081
+EXTERNAL_PORT := 8082
+AUTH_PORT := 8083
+PAYMENT_PORT := 8084
+MULTI_SIGNER_PORT := 8085
 TEST_SIGNERS_CONFIG := tests/src/common/fixtures/signers.toml
 TEST_SIGNERS_TURNKEY_CONFIG := tests/src/common/fixtures/signers-turnkey.toml
 TEST_SIGNERS_PRIVY_CONFIG := tests/src/common/fixtures/signers-privy.toml
@@ -140,6 +148,39 @@ define stop_kora_server
 	sleep 1; \
 	lsof -ti:$(TEST_PORT) | xargs kill -9 2>/dev/null || true; \
 	sleep 1
+endef
+
+# Start Kora server on specific port for parallel testing
+# Usage: $(call start_kora_parallel,name,config_file,port,init_atas,signers_config)
+define start_kora_parallel
+	@$(if $(4),\
+		printf "    $(YELLOW)•$(RESET) Initializing ATAs for $(1)...\n"; \
+		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p kora-cli --bin kora -- --config $(2) --rpc-url $(TEST_RPC_URL) rpc initialize-atas --signers-config $(or $(5),$(TEST_SIGNERS_CONFIG)) $(QUIET_OUTPUT);)
+	@printf "    $(YELLOW)•$(RESET) Starting $(1) server on port $(3)...\n"
+	@$(if $(findstring Multi-Signer,$(1)),\
+		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" \
+		KORA_PRIVATE_KEY_2="$$(cat tests/src/common/local-keys/signer2-local.json)" \
+		cargo run -p kora-cli --bin kora -- --config $(2) --rpc-url $(TEST_RPC_URL) \
+		rpc start --signers-config $(or $(5),$(MULTI_SIGNERS_CONFIG)) --port $(3) $(QUIET_OUTPUT) &,\
+		KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" \
+		cargo run -p kora-cli --bin kora -- --config $(2) --rpc-url $(TEST_RPC_URL) \
+		rpc start --signers-config $(or $(5),$(TEST_SIGNERS_CONFIG)) --port $(3) $(QUIET_OUTPUT) &)
+	@echo $$! > .kora-$(1).pid
+endef
+
+# Stop all parallel servers
+define stop_all_parallel_servers
+	@for name in RPC Tokens External Auth Payment Multi-Signer; do \
+		if [ -f .kora-$$name.pid ]; then \
+			PID=$$(cat .kora-$$name.pid); \
+			if kill -0 $$PID 2>/dev/null; then \
+				kill $$PID 2>/dev/null || true; \
+			fi; \
+			rm -f .kora-$$name.pid; \
+		fi; \
+	done; \
+	pkill -f "kora" 2>/dev/null || true; \
+	sleep 2
 endef
 
 define run_integration_phase
