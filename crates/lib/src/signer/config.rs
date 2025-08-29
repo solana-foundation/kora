@@ -99,18 +99,31 @@ impl SignerPoolConfig {
 
     /// Validate the signer pool configuration
     pub fn validate_signer_config(&self) -> Result<(), KoraError> {
-        if self.signers.is_empty() {
-            return Err(KoraError::ValidationError(
-                "At least one signer must be configured".to_string(),
-            ));
-        }
+        // Validate that at least one signer is configured
+        self.validate_signer_not_empty()?;
 
         // Validate each signer configuration
         for (index, signer) in self.signers.iter().enumerate() {
             signer.validate_individual_signer_config(index)?;
         }
 
-        // Check for duplicate names
+        self.validate_signer_names()?;
+
+        self.validate_strategy_weights()?;
+
+        Ok(())
+    }
+
+    pub fn validate_signer_not_empty(&self) -> Result<(), KoraError> {
+        if self.signers.is_empty() {
+            return Err(KoraError::ValidationError(
+                "At least one signer must be configured".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn validate_signer_names(&self) -> Result<(), KoraError> {
         let mut names = std::collections::HashSet::new();
         for signer in &self.signers {
             if !names.insert(&signer.name) {
@@ -120,7 +133,22 @@ impl SignerPoolConfig {
                 )));
             }
         }
+        Ok(())
+    }
 
+    pub fn validate_strategy_weights(&self) -> Result<(), KoraError> {
+        if matches!(self.signer_pool.strategy, SelectionStrategy::Weighted) {
+            for signer in &self.signers {
+                if let Some(weight) = signer.weight {
+                    if weight == 0 {
+                        return Err(KoraError::ValidationError(format!(
+                            "Signer '{}' has weight of 0 in weighted strategy",
+                            signer.name
+                        )));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -145,7 +173,7 @@ impl SignerConfig {
     }
 
     /// Validate an individual signer configuration
-    fn validate_individual_signer_config(&self, index: usize) -> Result<(), KoraError> {
+    pub fn validate_individual_signer_config(&self, index: usize) -> Result<(), KoraError> {
         if self.name.is_empty() {
             return Err(KoraError::ValidationError(format!(
                 "Signer at index {index} must have a non-empty name"
@@ -230,6 +258,7 @@ weight = 2
         };
 
         assert!(config.validate_signer_config().is_ok());
+        assert!(config.validate_strategy_weights().is_ok());
     }
 
     #[test]
