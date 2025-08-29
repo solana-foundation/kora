@@ -160,7 +160,6 @@ impl JupiterPriceOracle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constant::SOL_MINT;
     use mockito::{Matcher, Server};
 
     #[tokio::test]

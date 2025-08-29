@@ -220,3 +220,211 @@ async fn test_blocked_interest_bearing_config_extension() {
         "Error should mention blocked extension: {error}",
     );
 }
+
+#[tokio::test]
+async fn test_transfer_fee_insufficient_payment() {
+    // Test that signTransactionIfPaid fails when payment amount doesn't account for transfer fee
+    // With 1% transfer fee: sending 1000 tokens results in recipient getting 990 tokens
+    // If Kora expects 1000 tokens, the payment should fail validation
+
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let mint_keypair = USDCMint2022TestHelper::get_test_usdc_mint_2022_keypair();
+
+    // Create ATAs for sender and fee payer
+    let sender_ata = get_associated_token_address_with_program_id(
+        &sender.pubkey(),
+        &mint_keypair.pubkey(),
+        &spl_token_2022::id(),
+    );
+
+    let fee_payer_ata = get_associated_token_address_with_program_id(
+        &fee_payer.pubkey(),
+        &mint_keypair.pubkey(),
+        &spl_token_2022::id(),
+    );
+
+    // Create ATAs if they don't exist
+    let create_sender_ata_instruction =
+        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &sender.pubkey(),
+            &mint_keypair.pubkey(),
+            &spl_token_2022::id(),
+        );
+
+    let create_fee_payer_ata_instruction =
+        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &fee_payer.pubkey(),
+            &mint_keypair.pubkey(),
+            &spl_token_2022::id(),
+        );
+
+    let recent_blockhash = ctx.rpc_client().get_latest_blockhash().await.unwrap();
+    let create_atas_transaction = Transaction::new_signed_with_payer(
+        &[create_sender_ata_instruction, create_fee_payer_ata_instruction],
+        Some(&fee_payer.pubkey()),
+        &[&fee_payer],
+        recent_blockhash,
+    );
+
+    ctx.rpc_client()
+        .send_and_confirm_transaction(&create_atas_transaction)
+        .await
+        .expect("Failed to create ATAs");
+
+    // Mint tokens to sender
+    ExtensionHelpers::mint_tokens_to_account(
+        ctx.rpc_client(),
+        &sender,
+        &mint_keypair.pubkey(),
+        &sender_ata,
+        &sender,
+        Some(100_000_000), // 100 USDC (with 6 decimals)
+    )
+    .await
+    .expect("Failed to mint tokens to sender");
+
+    // Build transaction with INSUFFICIENT payment
+    // Actual fee: 10,000 lamports = 0.1 USDC equivalent (100,000 micro-USDC equivalent)
+    // To make payment insufficient, we send less than what would result in 10,000 lamports after transfer fee
+    // If we send 10,000 micro-USDC with 1% transfer fee, recipient gets 9,900 micro-USDC (insufficient)
+    let payment_amount = 10_000; // 0.01 USDC in micro-units
+
+    let transaction = TransactionBuilder::v0()
+        .with_rpc_client(ctx.rpc_client().clone())
+        .with_fee_payer(fee_payer.pubkey())
+        .with_signer(&sender)
+        .with_spl_token_2022_transfer_checked_with_accounts(
+            &mint_keypair.pubkey(),
+            &sender_ata,
+            &fee_payer_ata,
+            &sender.pubkey(),
+            payment_amount,
+            6,
+        )
+        .build()
+        .await
+        .expect("Failed to build transaction");
+
+    // Try to sign the transaction if paid - should fail due to insufficient payment after fees
+    let result: Result<serde_json::Value, anyhow::Error> =
+        ctx.rpc_call("signTransactionIfPaid", rpc_params![transaction]).await;
+
+    assert!(result.is_err(), "Transaction should have failed due to insufficient payment");
+
+    let error = result.unwrap_err().to_string();
+
+    assert!(
+        error.contains("Insufficient payment")
+            || error.contains("transfer fee")
+            || error.contains("Invalid transaction")
+            || error.contains("does not meet the required amount"),
+        "Error should mention insufficient payment or transfer fee: {error}",
+    );
+}
+
+#[tokio::test]
+async fn test_transfer_fee_sufficient_payment() {
+    // Test that signTransactionIfPaid succeeds when payment amount accounts for transfer fee
+    // To receive 10,000 micro-USDC after 1% fee, sender must send ~10,101 micro-USDC
+
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let mint_keypair = USDCMint2022TestHelper::get_test_usdc_mint_2022_keypair();
+
+    // Create ATAs for sender and fee payer
+    let sender_ata = get_associated_token_address_with_program_id(
+        &sender.pubkey(),
+        &mint_keypair.pubkey(),
+        &spl_token_2022::id(),
+    );
+
+    let fee_payer_ata = get_associated_token_address_with_program_id(
+        &fee_payer.pubkey(),
+        &mint_keypair.pubkey(),
+        &spl_token_2022::id(),
+    );
+
+    // Create ATAs if they don't exist
+    let create_sender_ata_instruction =
+        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &sender.pubkey(),
+            &mint_keypair.pubkey(),
+            &spl_token_2022::id(),
+        );
+
+    let create_fee_payer_ata_instruction =
+        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &fee_payer.pubkey(),
+            &mint_keypair.pubkey(),
+            &spl_token_2022::id(),
+        );
+
+    let recent_blockhash = ctx.rpc_client().get_latest_blockhash().await.unwrap();
+    let create_atas_transaction = Transaction::new_signed_with_payer(
+        &[create_sender_ata_instruction, create_fee_payer_ata_instruction],
+        Some(&fee_payer.pubkey()),
+        &[&fee_payer],
+        recent_blockhash,
+    );
+
+    ctx.rpc_client()
+        .send_and_confirm_transaction(&create_atas_transaction)
+        .await
+        .expect("Failed to create ATAs");
+
+    // Mint tokens to sender
+    ExtensionHelpers::mint_tokens_to_account(
+        ctx.rpc_client(),
+        &sender,
+        &mint_keypair.pubkey(),
+        &sender_ata,
+        &sender,
+        Some(100_000_000), // 100 USDC (with 6 decimals)
+    )
+    .await
+    .expect("Failed to mint tokens to sender");
+
+    // Build transaction with SUFFICIENT payment
+    // To get 10,000 micro-USDC after 1% fee, we need to send:
+    // amount / (1 - 0.01) = 10,000 / 0.99 ≈ 10,101
+    let payment_amount = 10_101; // This should result in ~10,000 after 1% fee
+
+    let transaction = TransactionBuilder::v0()
+        .with_rpc_client(ctx.rpc_client().clone())
+        .with_fee_payer(fee_payer.pubkey())
+        .with_signer(&sender)
+        .with_spl_token_2022_transfer_checked_with_accounts(
+            &mint_keypair.pubkey(),
+            &sender_ata,
+            &fee_payer_ata,
+            &sender.pubkey(),
+            payment_amount,
+            6,
+        )
+        .build()
+        .await
+        .expect("Failed to build transaction");
+
+    let result: Result<serde_json::Value, anyhow::Error> =
+        ctx.rpc_call("signTransactionIfPaid", rpc_params![transaction]).await;
+
+    assert!(
+        result.is_ok(),
+        "Transaction should have succeeded with sufficient payment: {:?}",
+        result.unwrap_err()
+    );
+
+    let response = result.unwrap();
+
+    assert!(
+        response.get("signed_transaction").is_some(),
+        "Response should contain signed_transaction"
+    );
+}
