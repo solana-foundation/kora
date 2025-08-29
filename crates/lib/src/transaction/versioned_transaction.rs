@@ -145,7 +145,11 @@ impl VersionedTransactionResolved {
         let simulation_result = rpc_client
             .simulate_transaction_with_config(
                 &self.transaction,
-                RpcSimulateTransactionConfig { sig_verify, ..Default::default() },
+                RpcSimulateTransactionConfig {
+                    commitment: Some(rpc_client.commitment()),
+                    sig_verify,
+                    ..Default::default()
+                },
             )
             .await
             .map_err(|e| KoraError::RpcError(format!("Failed to simulate transaction: {e}")))?;
