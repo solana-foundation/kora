@@ -163,10 +163,11 @@ mod tests {
     use mockito::{Matcher, Server};
 
     #[tokio::test]
-    async fn test_jupiter_price_fetch() {
-        // No API key
+    async fn test_jupiter_price_fetch_comprehensive() {
+        // Test case 1: No API key - should use lite API
         {
             let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
+
             *api_key_guard = None;
         }
 
@@ -185,7 +186,7 @@ mod tests {
             }
         }"#;
         let mut server = Server::new_async().await;
-        let _m = server
+        let _m1 = server
             .mock("GET", "/price/v3")
             .match_query(Matcher::Any)
             .with_status(200)
@@ -194,38 +195,23 @@ mod tests {
             .create();
 
         let client = Client::new();
-        // Test without API key - should use lite API
         let mut oracle = JupiterPriceOracle::new();
         oracle.lite_api_url = format!("{}/price/v3", server.url());
 
         let result = oracle.get_price(&client, "So11111111111111111111111111111111111111112").await;
-
         assert!(result.is_ok());
         let price = result.unwrap();
         assert_eq!(price.price, 1.0);
         assert_eq!(price.source, PriceSource::Jupiter);
 
-        // With API key
+        // Test case 2: With API key - should use pro API
         {
             let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
             *api_key_guard = Some("test-api-key".to_string());
         }
-        let mock_response = r#"{
-            "So11111111111111111111111111111111111111112": {
-                "usdPrice": 100.0,
-                "blockId": 12345,
-                "decimals": 9,
-                "priceChange24h": 2.5
-            },
-            "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": {
-                "usdPrice": 0.532,
-                "blockId": 12345,
-                "decimals": 6,
-                "priceChange24h": -1.2
-            }
-        }"#;
-        let mut server = Server::new_async().await;
-        let _m = server
+
+        let mut server2 = Server::new_async().await;
+        let _m2 = server2
             .mock("GET", "/price/v3")
             .match_header("x-api-key", "test-api-key")
             .match_query(Matcher::Any)
@@ -234,28 +220,23 @@ mod tests {
             .with_body(mock_response)
             .create();
 
-        let client = Client::new();
-        // Test with API key - should use pro API
-        let mut oracle = JupiterPriceOracle::new();
-        oracle.pro_api_url = format!("{}/price/v3", server.url());
+        let mut oracle2 = JupiterPriceOracle::new();
+        oracle2.pro_api_url = format!("{}/price/v3", server2.url());
 
-        let result = oracle.get_price(&client, "So11111111111111111111111111111111111111112").await;
-
+        let result =
+            oracle2.get_price(&client, "So11111111111111111111111111111111111111112").await;
         assert!(result.is_ok());
         let price = result.unwrap();
         assert_eq!(price.price, 1.0);
         assert_eq!(price.source, PriceSource::Jupiter);
-    }
 
-    #[tokio::test]
-    async fn test_jupiter_price_fetch_when_no_price_data() {
-        // No API key
+        // Test case 3: No price data available - should return error
         {
             let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
             *api_key_guard = None;
         }
 
-        let mock_response = r#"{
+        let no_price_response = r#"{
             "So11111111111111111111111111111111111111112": {
                 "usdPrice": 100.0,
                 "blockId": 12345,
@@ -263,26 +244,24 @@ mod tests {
                 "priceChange24h": 2.5
             }
         }"#;
-        let mut server = Server::new_async().await;
-        let _m = server
+        let mut server3 = Server::new_async().await;
+        let _m3 = server3
             .mock("GET", "/price/v3")
             .match_query(Matcher::Any)
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(mock_response)
+            .with_body(no_price_response)
             .create();
 
-        let client = Client::new();
-        // Test without API key - should use lite API
-        let mut oracle = JupiterPriceOracle::new();
-        oracle.lite_api_url = format!("{}/price/v3", server.url());
+        let mut oracle3 = JupiterPriceOracle::new();
+        oracle3.lite_api_url = format!("{}/price/v3", server3.url());
 
-        let result = oracle.get_price(&client, "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN").await;
-
+        let result =
+            oracle3.get_price(&client, "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN").await;
         assert!(result.is_err());
         assert_eq!(
             result.err(),
             Some(KoraError::RpcError("No price data from Jupiter".to_string()))
-        )
+        );
     }
 }

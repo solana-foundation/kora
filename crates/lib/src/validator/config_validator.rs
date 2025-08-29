@@ -680,7 +680,6 @@ mod tests {
 
         let _ = update_config(config);
 
-        let mock_account = create_mock_program_account();
         let rpc_client = RpcMockBuilder::new().build();
 
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
