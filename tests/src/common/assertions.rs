@@ -83,7 +83,7 @@ impl RpcAssertions for Value {
 
 /// Assertions for transaction responses
 pub trait TransactionAssertions {
-    /// Assert the transaction blockhash is valid (44 chars base58)
+    /// Assert the transaction blockhash is valid (43-44 chars base58)
     fn assert_valid_blockhash(&self);
 }
 
@@ -95,7 +95,10 @@ impl TransactionAssertions for Value {
             .expect("Response missing blockhash field");
 
         // Solana blockhashes are typically 44 chars in base58
-        assert_eq!(blockhash.len(), 44, "Invalid blockhash format: {blockhash}");
+        assert!(
+            blockhash.len() >= 43 && blockhash.len() <= 44,
+            "Invalid blockhash format: {blockhash}"
+        );
     }
 }
 
