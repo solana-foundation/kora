@@ -1,3 +1,4 @@
+use crate::rpc_server::middleware_utils::default_sig_verify;
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
@@ -15,6 +16,9 @@ pub struct SignAndSendTransactionRequest {
     /// Optional signer signer_key to ensure consistency across related RPC calls
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
+    /// Whether to verify signatures during simulation (defaults to true)
+    #[serde(default = "default_sig_verify")]
+    pub sig_verify: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -32,8 +36,12 @@ pub async fn sign_and_send_transaction(
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
 
-    let mut resolved_transaction =
-        VersionedTransactionResolved::from_transaction(&transaction, rpc_client).await?;
+    let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
+        &transaction,
+        rpc_client,
+        request.sig_verify,
+    )
+    .await?;
 
     let (signature, signed_transaction) =
         resolved_transaction.sign_and_send_transaction(&signer, rpc_client).await?;
@@ -64,6 +72,7 @@ mod tests {
         let request = SignAndSendTransactionRequest {
             transaction: "invalid_base64!@#$".to_string(),
             signer_key: None,
+            sig_verify: true,
         };
 
         let result = sign_and_send_transaction(&rpc_client, request).await;
@@ -81,6 +90,7 @@ mod tests {
         let request = SignAndSendTransactionRequest {
             transaction: create_mock_encoded_transaction(),
             signer_key: Some("invalid_pubkey".to_string()),
+            sig_verify: true,
         };
 
         let result = sign_and_send_transaction(&rpc_client, request).await;
