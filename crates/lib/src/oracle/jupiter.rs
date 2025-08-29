@@ -160,6 +160,7 @@ impl JupiterPriceOracle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constant::SOL_MINT;
     use mockito::{Matcher, Server};
 
     #[tokio::test]
@@ -264,9 +265,13 @@ mod tests {
             }
         }"#;
         let mut server = Server::new_async().await;
+
+        let expected_query =
+            format!("ids={},{}", SOL_MINT, "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN");
+
         let _m = server
             .mock("GET", "/price/v3")
-            .match_query(Matcher::Any)
+            .match_query(Matcher::Exact(expected_query))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(mock_response)
@@ -284,6 +289,9 @@ mod tests {
         assert_eq!(
             result.err(),
             Some(KoraError::RpcError("No price data from Jupiter".to_string()))
-        )
+        );
+
+        // Verify the mock was called
+        _m.assert();
     }
 }
