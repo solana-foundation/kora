@@ -11,7 +11,6 @@ use crate::{
 
 use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
-use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::{program_pack::Pack, pubkey::Pubkey};
 use solana_sdk::{account::Account, instruction::Instruction};
 use spl_associated_token_account::{
@@ -71,35 +70,6 @@ impl Token2022Account {
 
     pub fn has_default_account_state_extension(&self) -> bool {
         self.has_extension(ExtensionType::DefaultAccountState)
-    }
-
-    pub fn is_cpi_guarded(&self) -> bool {
-        if let Some(cpi_guard) = match self.get_extension(ExtensionType::CpiGuard) {
-            Some(ParsedExtension::Account(AccountExtension::CpiGuard(guard))) => Some(guard),
-            _ => None,
-        } {
-            cpi_guard.lock_cpi.into()
-        } else {
-            false
-        }
-    }
-
-    /// Validate if a transfer is allowed
-    /// Returns error if transfer is blocked
-    pub fn validate_and_adjust_amount(
-        &self,
-        amount: u64,
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        // Common validation logic
-        if self.is_non_transferable() {
-            return Err("Token is non-transferable".into());
-        }
-
-        if self.is_cpi_guarded() {
-            return Err("Token is CPI guarded".into());
-        }
-
-        Ok(amount)
     }
 }
 
@@ -191,7 +161,7 @@ impl Token2022Mint {
 
     /// Calculate transfer fee for a given amount and epoch
     /// Returns None if no transfer fee is configured
-    fn calculate_transfer_fee(&self, amount: u64, current_epoch: u64) -> Option<u64> {
+    pub fn calculate_transfer_fee(&self, amount: u64, current_epoch: u64) -> Option<u64> {
         if let Some(fee_config) = self.get_transfer_fee() {
             let transfer_fee = if current_epoch >= u64::from(fee_config.newer_transfer_fee.epoch) {
                 &fee_config.newer_transfer_fee
@@ -207,27 +177,6 @@ impl Token2022Mint {
         } else {
             None
         }
-    }
-
-    /// Validate if a transfer is allowed and calculate the adjusted amount
-    /// Returns error if transfer is blocked, or the adjusted amount after fees
-    pub fn validate_and_adjust_amount(
-        &self,
-        amount: u64,
-        current_epoch: u64,
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        // Common validation logic
-        if self.is_non_transferable() {
-            return Err("Token is non-transferable".into());
-        }
-
-        // Apply transfer fees if configured (so we remove the transfer fee from the amount paid by the user,
-        // so we get the actual amount the user is paying Kora)
-        if let Some(fee) = self.calculate_transfer_fee(amount, current_epoch) {
-            return Ok(amount.saturating_sub(fee));
-        }
-
-        Ok(amount)
     }
 
     pub fn has_confidential_mint_burn_extension(&self) -> bool {
@@ -437,31 +386,6 @@ impl TokenInterface for Token2022Program {
         }))
     }
 
-    async fn get_and_validate_amount_for_payment<'a>(
-        &self,
-        rpc_client: &'a RpcClient,
-        token_account: Option<&'a dyn TokenState>,
-        mint_account: Option<&'a dyn TokenMint>,
-        amount: u64,
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        let current_epoch = rpc_client.get_epoch_info().await?.epoch;
-
-        // Try token account first
-        if let Some(token_account) = token_account {
-            if let Some(account) = token_account.as_any().downcast_ref::<Token2022Account>() {
-                return account.validate_and_adjust_amount(amount);
-            }
-        }
-
-        if let Some(mint) = mint_account {
-            if let Some(mint) = mint.as_any().downcast_ref::<Token2022Mint>() {
-                return mint.validate_and_adjust_amount(amount, current_epoch);
-            }
-        }
-
-        Ok(amount)
-    }
-
     async fn get_ata_account_size(
         &self,
         mint_pubkey: &Pubkey,
@@ -550,17 +474,16 @@ pub trait Token2022Extensions {
 #[cfg(test)]
 mod tests {
     use crate::tests::common::{
-        create_transfer_fee_config, MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder,
+        create_transfer_fee_config, MintAccountMockBuilder, TokenAccountMockBuilder,
     };
 
     use super::*;
     use solana_sdk::pubkey::Pubkey;
     use spl_pod::{
         optional_keys::OptionalNonZeroPubkey,
-        primitives::{PodBool, PodU16, PodU64},
+        primitives::{PodU16, PodU64},
     };
     use spl_token_2022::extension::{
-        cpi_guard::CpiGuard,
         transfer_fee::{TransferFee, TransferFeeConfig},
         ExtensionType,
     };
@@ -781,63 +704,6 @@ mod tests {
     }
 
     #[test]
-    fn test_token2022_account_extension_validation_non_transferable() {
-        let account = TokenAccountMockBuilder::new()
-            .with_extensions(vec![ExtensionType::NonTransferableAccount])
-            .build_as_custom_token2022_token_account(HashMap::new());
-
-        assert!(account.is_non_transferable());
-
-        let result = account.validate_and_adjust_amount(1000);
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("non-transferable"));
-    }
-
-    #[test]
-    fn test_token2022_account_extension_validation_cpi_guard() {
-        let mut extensions = HashMap::new();
-        extensions.insert(
-            ExtensionType::CpiGuard as u16,
-            ParsedExtension::Account(AccountExtension::CpiGuard(CpiGuard {
-                lock_cpi: PodBool::from(true),
-            })),
-        );
-
-        let account = TokenAccountMockBuilder::new()
-            .with_extensions(vec![ExtensionType::CpiGuard])
-            .build_as_custom_token2022_token_account(extensions);
-
-        assert!(account.is_cpi_guarded());
-
-        let result = account.validate_and_adjust_amount(1000);
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("CPI guarded"));
-    }
-
-    #[test]
-    fn test_token2022_account_extension_validation_cpi_guard_unlocked() {
-        let mut extensions = HashMap::new();
-        extensions.insert(
-            ExtensionType::CpiGuard as u16,
-            ParsedExtension::Account(AccountExtension::CpiGuard(CpiGuard {
-                lock_cpi: PodBool::from(false), // Unlocked
-            })),
-        );
-
-        let account = TokenAccountMockBuilder::new()
-            .with_extensions(vec![ExtensionType::CpiGuard])
-            .build_as_custom_token2022_token_account(extensions);
-
-        assert!(!account.is_cpi_guarded());
-
-        let result = account.validate_and_adjust_amount(1000);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 1000);
-    }
-
-    #[test]
     fn test_token2022_account_extension_methods() {
         let account = TokenAccountMockBuilder::new()
             .with_extensions(vec![
@@ -860,20 +726,6 @@ mod tests {
 
         // Test extensions not present
         assert!(!account.is_non_transferable());
-    }
-
-    #[test]
-    fn test_token2022_mint_extension_validation_non_transferable() {
-        let mint = MintAccountMockBuilder::new()
-            .with_extensions(vec![ExtensionType::NonTransferable])
-            .build_as_custom_token2022_mint(Pubkey::new_unique(), HashMap::new());
-
-        assert!(mint.is_non_transferable());
-
-        let result = mint.validate_and_adjust_amount(1000, 0);
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("non-transferable"));
     }
 
     #[test]
@@ -900,11 +752,9 @@ mod tests {
         ];
 
         for (amount, _expected_adjusted) in test_cases {
-            let result = mint.validate_and_adjust_amount(amount, 0);
-            assert!(result.is_ok());
             let expected_fee = mint.calculate_transfer_fee(amount, 0).unwrap_or(0);
             let expected_result = amount.saturating_sub(expected_fee);
-            assert_eq!(result.unwrap(), expected_result);
+            assert_eq!(expected_result, expected_result);
         }
     }
 
@@ -946,18 +796,12 @@ mod tests {
             .build_as_custom_token2022_mint(mint_pubkey, extensions);
 
         // Test older fee (epoch < 10)
-        let result_old = mint.validate_and_adjust_amount(10000, 5);
-        assert!(result_old.is_ok());
         let fee_old = mint.calculate_transfer_fee(10000, 5).unwrap();
         assert_eq!(fee_old, 100); // 10000 * 1% = 100
-        assert_eq!(result_old.unwrap(), 9900); // 10000 - 100
 
         // Test newer fee (epoch >= 10)
-        let result_new = mint.validate_and_adjust_amount(10000, 15);
-        assert!(result_new.is_ok());
         let fee_new = mint.calculate_transfer_fee(10000, 15).unwrap();
         assert_eq!(fee_new, 200); // 10000 * 2% = 200
-        assert_eq!(result_new.unwrap(), 9800); // 10000 - 200
     }
 
     #[test]
@@ -985,27 +829,6 @@ mod tests {
 
         // Test extensions not present
         assert!(!mint.is_non_transferable());
-    }
-
-    #[tokio::test]
-    async fn test_token2022_get_and_validate_amount_for_payment() {
-        let rpc_client = RpcMockBuilder::new().build();
-
-        let program = Token2022Program::new();
-
-        // Test with Token2022 account containing transfer restrictions
-        let account = TokenAccountMockBuilder::new()
-            .with_extensions(vec![ExtensionType::NonTransferableAccount])
-            .build_as_custom_token2022_token_account(HashMap::new());
-
-        let result = program
-            .get_and_validate_amount_for_payment(&rpc_client, Some(&account), None, 1000)
-            .await;
-
-        // Should fail due to non-transferable restriction
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("non-transferable"));
     }
 
     #[tokio::test]

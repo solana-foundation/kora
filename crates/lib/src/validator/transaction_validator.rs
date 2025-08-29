@@ -301,12 +301,9 @@ impl TransactionValidator {
         rpc_client: &RpcClient,
         expected_payment_destination: &Pubkey,
     ) -> Result<(), KoraError> {
-        let mut total_lamport_value = 0;
-
         if TokenUtil::process_token_transfer(
             transaction_resolved,
             rpc_client,
-            &mut total_lamport_value,
             required_lamports,
             expected_payment_destination,
         )
@@ -316,7 +313,7 @@ impl TransactionValidator {
         }
 
         Err(KoraError::InvalidTransaction(format!(
-            "Insufficient token payment. Required {required_lamports} lamports, got {total_lamport_value}"
+            "Insufficient token payment. Required {required_lamports} lamports"
         )))
     }
 }
