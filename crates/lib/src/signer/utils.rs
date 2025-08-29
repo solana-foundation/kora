@@ -3,7 +3,7 @@ use std::env;
 use crate::KoraError;
 
 pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, anyhow::Error> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err(anyhow::anyhow!("Hex string must have even length"));
     }
 

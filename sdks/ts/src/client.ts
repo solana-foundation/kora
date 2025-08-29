@@ -310,6 +310,8 @@ export class KoraClient {
      * @param request.fee_token - Mint address of the token to use for payment
      * @param request.source_wallet - Public key of the wallet paying the fees
      * @param request.token_program_id - Optional token program ID (defaults to TOKEN_PROGRAM_ADDRESS)
+     * @param request.signer_key - Optional signer address for the transaction
+     * @param request.sig_verify - Optional signer verification during transaction simulation (defaults to false)
      * @returns Payment instruction details including the instruction, amount, and addresses
      * @throws {Error} When the token is not supported, payment is not required, or invalid addresses are provided
      *
@@ -328,6 +330,8 @@ export class KoraClient {
         fee_token,
         source_wallet,
         token_program_id = TOKEN_PROGRAM_ADDRESS,
+        signer_key,
+        sig_verify,
     }: GetPaymentInstructionRequest): Promise<GetPaymentInstructionResponse> {
         assertIsAddress(source_wallet);
         assertIsAddress(fee_token);
@@ -336,6 +340,8 @@ export class KoraClient {
         const { fee_in_token, payment_address, signer_pubkey } = await this.estimateTransactionFee({
             transaction,
             fee_token,
+            sig_verify,
+            signer_key,
         });
         assertIsAddress(payment_address);
 
