@@ -50,13 +50,23 @@ pub async fn estimate_transaction_fee(
     let mut resolved_transaction =
         VersionedTransactionResolved::from_transaction(&transaction, rpc_client).await?;
 
-    let fee_in_lamports = FeeConfigUtil::estimate_transaction_fee(
+    let min_transaction_fee = FeeConfigUtil::estimate_transaction_fee(
         rpc_client,
         &mut resolved_transaction,
         &fee_payer,
         validation_config.is_payment_required(),
     )
     .await?;
+
+    // Apply price model to get the actual required fee (including margin or fixed amount)
+    let fee_in_lamports = validation_config
+        .price
+        .get_required_lamports(
+            Some(rpc_client),
+            Some(validation_config.price_source.clone()),
+            min_transaction_fee,
+        )
+        .await?;
 
     let mut fee_in_token = None;
 
