@@ -26,11 +26,6 @@ use spl_token_2022::{
     state::Account as Token2022AccountState,
 };
 
-pub enum ValidationMode {
-    Sign,
-    SignAndSend,
-}
-
 pub struct TransactionValidator {
     fee_payer_pubkey: Pubkey,
     max_allowed_lamports: u64,

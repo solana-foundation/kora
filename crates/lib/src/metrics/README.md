@@ -88,4 +88,4 @@ Access:
 
 ## Additional Documentation
 
-- [Kora Monitoring Guide](../../docs/operators/MONITORING.md)
+- [Kora Monitoring Guide](../../../../docs/operators/MONITORING.md)

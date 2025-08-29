@@ -3,6 +3,11 @@ rate_limit = 100
 # Optional: Payment address to receive payment tokens (defaults to signer address)
 # payment_address = "YourPaymentAddressPubkey11111111111111111111"
 
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60
+
 [kora.enabled_methods]
 liveness = false
 estimate_transaction_fee = true
@@ -46,3 +51,31 @@ allow_assign = true
 allow_burn = true
 allow_close_account = true
 allow_approve = true
+
+[validation.price]
+type = "margin" # free / margin / fixed
+margin = 0.1  # Default margin (10%) for paid transaction validation
+
+
+[validation.token2022]
+blocked_mint_extensions = [
+    # "confidential_transfer_mint",     # Confidential transfer configuration for the mint
+    # "confidential_mint_burn",         # Confidential mint and burn configuration
+    # "transfer_fee_config",            # Transfer fee configuration
+    # "mint_close_authority",           # Authority allowed to close the mint
+    # "interest_bearing_config",        # Interest-bearing token configuration
+    # "non_transferable",               # Makes tokens non-transferable
+    # "permanent_delegate",             # Permanent delegate for the mint
+    # "transfer_hook",                  # Block tokens with transfer hooks
+    # "pausable",                       # Block pausable tokens
+]
+blocked_account_extensions = [
+    # "confidential_transfer_account", # Confidential transfer state for the account
+    # "non_transferable_account",      # Non-transferable token account
+    # "transfer_hook_account",          # Transfer hook state for the account
+    # "pausable_account",               # Pausable token account state
+    # "memo_transfer",                  # Requires memo for transfers
+    # "cpi_guard",                      # Prevents certain CPI calls
+    # "immutable_owner",                # Account owner cannot be changed
+    # "default_account_state",          # Default state for new accounts
+]

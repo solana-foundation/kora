@@ -29,6 +29,13 @@ test-regular:
 	$(call run_integration_phase,1,Regular Tests,$(REGULAR_CONFIG),,--test rpc,)
 	@$(call stop_solana_validator)
 
+test-token:
+	$(call print_header,TOKEN TESTS)
+	@$(call start_solana_validator)
+	@cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT)
+	$(call run_integration_phase,1,Tokens Tests,$(REGULAR_CONFIG),,--test tokens,)
+	@$(call stop_solana_validator)
+
 test-auth:
 	$(call print_header,AUTHENTICATION TESTS)
 	@$(call start_solana_validator)

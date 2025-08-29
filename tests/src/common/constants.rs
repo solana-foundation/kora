@@ -30,6 +30,14 @@ pub const SENDER_KEYPAIR_PATH: &str =
 pub const USDC_MINT_KEYPAIR_PATH: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/usdc-mint-local.json");
 
+/// USDC mint 2022 keypair path (local testing only)
+pub const USDC_MINT_2022_KEYPAIR_PATH: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/usdc-mint-2022-local.json");
+
+/// Interest bearing mint keypair path (local testing only)
+pub const INTEREST_BEARING_MINT_KEYPAIR_PATH: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/mint-2022-interest-bearing.json");
+
 /// Second signer keypair path (for multi-signer tests)
 pub const SIGNER2_KEYPAIR_PATH: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/signer2-local.json");
