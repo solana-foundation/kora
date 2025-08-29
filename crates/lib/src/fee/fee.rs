@@ -165,12 +165,11 @@ impl FeeConfigUtil {
     async fn calculate_transfer_fees(
         rpc_client: &RpcClient,
         transaction: &mut VersionedTransactionResolved,
+        fee_payer: &Pubkey,
     ) -> Result<u64, KoraError> {
         let config = get_config()?;
 
-        // Get fee payer and payment destination before parsing instructions to avoid borrow conflicts
-        let fee_payer = transaction.transaction.message.static_account_keys()[0];
-        let payment_destination = config.kora.get_payment_address(&fee_payer)?;
+        let payment_destination = config.kora.get_payment_address(fee_payer)?;
 
         let parsed_spl_instructions = transaction.get_or_parse_spl_instructions()?;
 
@@ -192,7 +191,6 @@ impl FeeConfigUtil {
                     match CacheUtil::get_account(rpc_client, destination_address, false).await {
                         Ok(account) => account,
                         Err(_) => {
-                            // Destination doesn't exist, can't be a payment to Kora, skip this instruction
                             continue;
                         }
                     };
@@ -204,7 +202,7 @@ impl FeeConfigUtil {
                     destination_token_program.unpack_token_account(&destination_account.data)?;
 
                 if destination_token_account.owner() != payment_destination {
-                    // This is not a payment transaction, skip it
+                    // This is not a transfer transaction to Kora, skip it
                     continue;
                 }
 
@@ -275,7 +273,7 @@ impl FeeConfigUtil {
         };
 
         let transfer_fee_config_amount =
-            FeeConfigUtil::calculate_transfer_fees(rpc_client, transaction).await?;
+            FeeConfigUtil::calculate_transfer_fees(rpc_client, transaction, fee_payer).await?;
 
         let total_fee_lamports = base_fee
             + account_creation_fee
