@@ -28,6 +28,8 @@ export interface SignTransactionRequest {
     transaction: string;
     /** Optional signer address for the transaction */
     signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
 }
 
 /**
@@ -38,6 +40,8 @@ export interface SignAndSendTransactionRequest {
     transaction: string;
     /** Optional signer address for the transaction */
     signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
 }
 
 /**
@@ -48,6 +52,8 @@ export interface SignTransactionIfPaidRequest {
     transaction: string;
     /** Optional signer address for the transaction */
     signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
 }
 
 /**
@@ -60,6 +66,8 @@ export interface EstimateTransactionFeeRequest {
     fee_token: string;
     /** Optional signer address for the transaction */
     signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
 }
 
 /**
@@ -74,6 +82,10 @@ export interface GetPaymentInstructionRequest {
     source_wallet: string;
     /** The token program id to use for the payment (defaults to TOKEN_PROGRAM_ID) */
     token_program_id?: string;
+    /** Optional signer address for the transaction */
+    signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
 }
 
 /**

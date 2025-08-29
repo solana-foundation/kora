@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcSimulateTransactionConfig};
 use solana_commitment_config::CommitmentConfig;
 use solana_message::{v0::MessageAddressTableLookup, VersionedMessage};
 use solana_sdk::{
@@ -79,6 +79,7 @@ impl VersionedTransactionResolved {
     pub async fn from_transaction(
         transaction: &VersionedTransaction,
         rpc_client: &RpcClient,
+        sig_verify: bool,
     ) -> Result<Self, KoraError> {
         let mut resolved = Self {
             transaction: transaction.clone(),
@@ -113,7 +114,7 @@ impl VersionedTransactionResolved {
         let outer_instructions =
             IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys);
 
-        let inner_instructions = resolved.fetch_inner_instructions(rpc_client).await?;
+        let inner_instructions = resolved.fetch_inner_instructions(rpc_client, sig_verify).await?;
 
         resolved.all_instructions.extend(outer_instructions);
         resolved.all_instructions.extend(inner_instructions);
@@ -139,9 +140,17 @@ impl VersionedTransactionResolved {
     async fn fetch_inner_instructions(
         &mut self,
         rpc_client: &RpcClient,
+        sig_verify: bool,
     ) -> Result<Vec<Instruction>, KoraError> {
         let simulation_result = rpc_client
-            .simulate_transaction(&self.transaction)
+            .simulate_transaction_with_config(
+                &self.transaction,
+                RpcSimulateTransactionConfig {
+                    commitment: Some(rpc_client.commitment()),
+                    sig_verify,
+                    ..Default::default()
+                },
+            )
             .await
             .map_err(|e| KoraError::RpcError(format!("Failed to simulate transaction: {e}")))?;
 
@@ -669,9 +678,10 @@ mod tests {
         );
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let resolved = VersionedTransactionResolved::from_transaction(&transaction, &rpc_client)
-            .await
-            .unwrap();
+        let resolved =
+            VersionedTransactionResolved::from_transaction(&transaction, &rpc_client, true)
+                .await
+                .unwrap();
 
         assert_eq!(resolved.transaction, transaction);
         assert_eq!(resolved.all_account_keys, transaction.message.static_account_keys());
@@ -770,9 +780,10 @@ mod tests {
 
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let resolved = VersionedTransactionResolved::from_transaction(&transaction, &rpc_client)
-            .await
-            .unwrap();
+        let resolved =
+            VersionedTransactionResolved::from_transaction(&transaction, &rpc_client, true)
+                .await
+                .unwrap();
 
         assert_eq!(resolved.transaction, transaction);
 
@@ -815,7 +826,7 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
         let result =
-            VersionedTransactionResolved::from_transaction(&transaction, &rpc_client).await;
+            VersionedTransactionResolved::from_transaction(&transaction, &rpc_client, true).await;
 
         // The simulation should fail, but the exact error type depends on mock implementation
         // We expect either an RpcError (from mock deserialization) or InvalidTransaction (from simulation logic)
@@ -877,7 +888,60 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
         let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
-        let inner_instructions = resolved.fetch_inner_instructions(&rpc_client).await.unwrap();
+        let inner_instructions =
+            resolved.fetch_inner_instructions(&rpc_client, true).await.unwrap();
+
+        assert_eq!(inner_instructions.len(), 1);
+        assert_eq!(inner_instructions[0].data, vec![10, 20, 30]);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_inner_instructions_with_sig_verify_false() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        // Mock RPC client with inner instructions
+        let inner_instruction_data = bs58::encode(&[10, 20, 30]).into_string();
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": [],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": [
+                        {
+                            "index": 0,
+                            "instructions": [
+                                {
+                                    "programIdIndex": 1,
+                                    "accounts": [0],
+                                    "data": inner_instruction_data
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }),
+        );
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let inner_instructions =
+            resolved.fetch_inner_instructions(&rpc_client, false).await.unwrap();
 
         assert_eq!(inner_instructions.len(), 1);
         assert_eq!(inner_instructions[0].data, vec![10, 20, 30]);

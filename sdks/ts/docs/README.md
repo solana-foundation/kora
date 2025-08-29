@@ -431,6 +431,7 @@ Parameters for estimating transaction fees.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="fee_token"></a> `fee_token` | `string` | Mint address of the token to calculate fees in |
+| <a id="sig_verify"></a> `sig_verify?` | `boolean` | Optional signer verification during transaction simulation (defaults to false) |
 | <a id="signer_key"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="transaction"></a> `transaction` | `string` | Base64-encoded transaction to estimate fees for |
 
@@ -503,6 +504,8 @@ Parameters for getting a payment instruction.
 | Property | Type | Description |
 | ------ | ------ | ------ |
 | <a id="fee_token-1"></a> `fee_token` | `string` | Mint address of the token to calculate fees in |
+| <a id="sig_verify-1"></a> `sig_verify?` | `boolean` | Optional signer verification during transaction simulation (defaults to false) |
+| <a id="signer_key-1"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="source_wallet"></a> `source_wallet` | `string` | The wallet owner (not token account) that will be making the token payment |
 | <a id="token_program_id"></a> `token_program_id?` | `string` | The token program id to use for the payment (defaults to TOKEN_PROGRAM_ID) |
 | <a id="transaction-1"></a> `transaction` | `string` | Base64-encoded transaction to estimate fees for |
@@ -594,7 +597,8 @@ Parameters for signing and sending a transaction.
 
 | Property | Type | Description |
 | ------ | ------ | ------ |
-| <a id="signer_key-1"></a> `signer_key?` | `string` | Optional signer address for the transaction |
+| <a id="sig_verify-2"></a> `sig_verify?` | `boolean` | Optional signer verification during transaction simulation (defaults to false) |
+| <a id="signer_key-2"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="transaction-2"></a> `transaction` | `string` | Base64-encoded transaction to sign and send |
 
 ***
@@ -621,7 +625,8 @@ Parameters for conditionally signing a transaction based on payment.
 
 | Property | Type | Description |
 | ------ | ------ | ------ |
-| <a id="signer_key-2"></a> `signer_key?` | `string` | Optional signer address for the transaction |
+| <a id="sig_verify-3"></a> `sig_verify?` | `boolean` | Optional signer verification during transaction simulation (defaults to false) |
+| <a id="signer_key-3"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="transaction-3"></a> `transaction` | `string` | Base64-encoded transaction |
 
 ***
@@ -648,7 +653,8 @@ Parameters for signing a transaction.
 
 | Property | Type | Description |
 | ------ | ------ | ------ |
-| <a id="signer_key-3"></a> `signer_key?` | `string` | Optional signer address for the transaction |
+| <a id="sig_verify-4"></a> `sig_verify?` | `boolean` | Optional signer verification during transaction simulation (defaults to false) |
+| <a id="signer_key-4"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="transaction-5"></a> `transaction` | `string` | Base64-encoded transaction to sign |
 
 ***
@@ -690,7 +696,7 @@ Parameters for creating a token transfer transaction.
 | ------ | ------ | ------ |
 | <a id="amount"></a> `amount` | `number` | Amount to transfer in the token's smallest unit (e.g., lamports for SOL) |
 | <a id="destination"></a> `destination` | `string` | Public key of the destination wallet (not token account) |
-| <a id="signer_key-4"></a> `signer_key?` | `string` | Optional signer address for the transaction |
+| <a id="signer_key-5"></a> `signer_key?` | `string` | Optional signer address for the transaction |
 | <a id="source"></a> `source` | `string` | Public key of the source wallet (not token account) |
 | <a id="token"></a> `token` | `string` | Mint address of the token to transfer |
 

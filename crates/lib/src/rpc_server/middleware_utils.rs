@@ -2,6 +2,10 @@ use futures_util::TryStreamExt;
 use http::Request;
 use jsonrpsee::server::logger::Body;
 
+pub fn default_sig_verify() -> bool {
+    false
+}
+
 pub async fn extract_parts_and_body_bytes(
     request: Request<Body>,
 ) -> (http::request::Parts, Vec<u8>) {
