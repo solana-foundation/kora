@@ -3,7 +3,7 @@ use http::Request;
 use jsonrpsee::server::logger::Body;
 
 pub fn default_sig_verify() -> bool {
-    true
+    false
 }
 
 pub async fn extract_parts_and_body_bytes(
