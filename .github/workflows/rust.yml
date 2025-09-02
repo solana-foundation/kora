@@ -77,6 +77,11 @@ jobs:
           echo "🧪 Running RPC integration tests..."
           cargo llvm-cov test --no-report -p tests --test rpc
 
+      - name: Build transfer hook program for Token 2022 tests
+        run: |
+          echo "🔧 Building transfer hook program..."
+          make build-transfer-hook
+
       - name: Run token integration tests
         run: |
           echo "🧪 Running token integration tests..."

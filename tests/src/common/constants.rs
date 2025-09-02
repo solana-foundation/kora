@@ -38,6 +38,10 @@ pub const USDC_MINT_2022_KEYPAIR_PATH: &str =
 pub const INTEREST_BEARING_MINT_KEYPAIR_PATH: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/mint-2022-interest-bearing.json");
 
+/// Transfer hook mint keypair path (local testing only)
+pub const TRANSFER_HOOK_MINT_KEYPAIR_PATH: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/mint-transfer-hook-local.json");
+
 /// Second signer keypair path (for multi-signer tests)
 pub const SIGNER2_KEYPAIR_PATH: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/signer2-local.json");
@@ -61,6 +65,9 @@ pub const TEST_PAYMENT_ADDRESS: &str = "CWvWnVwqAb9HzqwCGkn4purGEUuu27aNsPQM252u
 
 /// PYUSD token mint on devnet
 pub const PYUSD_MINT: &str = "CXk2AMBfi3TwaEL2468s6zP8xq9NxTXjp9gjMgzeUynM";
+
+/// Transfer hook program ID
+pub const TRANSFER_HOOK_PROGRAM_ID: &str = "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA";
 
 // ============================================================================
 // Test Configuration

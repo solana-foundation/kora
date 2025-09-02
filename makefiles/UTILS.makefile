@@ -18,6 +18,7 @@ MULTI_SIGNERS_CONFIG := tests/src/common/fixtures/multi-signers.toml
 REGULAR_CONFIG := tests/src/common/fixtures/kora-test.toml
 AUTH_CONFIG := tests/src/common/fixtures/auth-test.toml
 PAYMENT_ADDRESS_CONFIG := tests/src/common/fixtures/paymaster-address-test.toml
+TRANSFER_HOOK_PROGRAM_ID := Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA
 
 # CI-aware timeouts
 VALIDATOR_TIMEOUT := $(if $(CI),20,30)
@@ -55,13 +56,21 @@ define print_error
 	@printf "  $(RED)✗$(RESET) $(1)\n"
 endef
 
+
 # Solana validator lifecycle management functions
 define start_solana_validator
 	$(call print_step,Starting Solana test validator...)
 	@pkill -f "solana-test-validator" 2>/dev/null || true
 	@sleep 2
 	@rm -rf test-ledger 2>/dev/null || true
-	@solana-test-validator --reset --quiet $(QUIET_OUTPUT) &
+	@if [ -f "tests/src/common/transfer-hook-example/transfer_hook_example.so" ]; then \
+		printf "    $(YELLOW)•$(RESET) Loading transfer hook program: $(TRANSFER_HOOK_PROGRAM_ID)\\n"; \
+		printf "    $(YELLOW)•$(RESET) Program file: tests/src/common/transfer-hook-example/transfer_hook_example.so\\n"; \
+		solana-test-validator --reset --quiet --bpf-program $(TRANSFER_HOOK_PROGRAM_ID) tests/src/common/transfer-hook-example/transfer_hook_example.so $(QUIET_OUTPUT) & \
+	else \
+		printf "    $(RED)✗$(RESET) Transfer hook program not found, starting validator without it\\n"; \
+		solana-test-validator --reset --quiet $(QUIET_OUTPUT) & \
+	fi
 	@echo $$! > .validator.pid
 	@counter=0; \
 	while [ $$counter -lt $(VALIDATOR_TIMEOUT) ]; do \

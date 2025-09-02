@@ -6,6 +6,8 @@
 *.pdb
 generated/
 
+/tests/src/common/transfer-hook-example/target
+
 # SDK
 node_modules/
 dist/

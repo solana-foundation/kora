@@ -1,18 +1,22 @@
+use crate::common::USDCMintTestHelper;
 use anyhow::Result;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
+    instruction::AccountMeta,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
+use solana_system_interface::instruction::create_account;
 use spl_token_2022::{
-    extension::{interest_bearing_mint::instruction::initialize, ExtensionType},
+    extension::{interest_bearing_mint::instruction::initialize, transfer_hook, ExtensionType},
     instruction as token_2022_instruction,
     state::{Account as Token2022Account, Mint as Token2022Mint},
 };
+use spl_transfer_hook_interface::{
+    get_extra_account_metas_address, instruction::initialize_extra_account_meta_list,
+};
 use std::sync::Arc;
-
-use crate::common::USDCMintTestHelper;
 
 /// Helper functions for creating Token 2022 accounts with specific extensions for testing
 pub struct ExtensionHelpers;
@@ -36,7 +40,7 @@ impl ExtensionHelpers {
 
         let rent = rpc_client.get_minimum_balance_for_rent_exemption(space).await?;
 
-        let create_account_instruction = solana_sdk::system_instruction::create_account(
+        let create_account_instruction = create_account(
             &payer.pubkey(),
             &mint_keypair.pubkey(),
             rent,
@@ -93,7 +97,7 @@ impl ExtensionHelpers {
         ])?;
         let rent = rpc_client.get_minimum_balance_for_rent_exemption(account_space).await?;
 
-        let create_account_instruction = solana_sdk::system_instruction::create_account(
+        let create_account_instruction = create_account(
             &payer.pubkey(),
             &token_account_keypair.pubkey(),
             rent,
@@ -163,6 +167,113 @@ impl ExtensionHelpers {
         );
 
         rpc_client.send_and_confirm_transaction(&transaction).await?;
+        Ok(())
+    }
+
+    /// Create a mint with TransferHook extension for testing
+    pub async fn create_mint_with_transfer_hook(
+        rpc_client: &Arc<RpcClient>,
+        payer: &Keypair,
+        mint_keypair: &Keypair,
+        hook_program_id: &Pubkey,
+    ) -> Result<()> {
+        if (rpc_client.get_account(&mint_keypair.pubkey()).await).is_ok() {
+            return Ok(());
+        }
+
+        // Calculate space for mint with TransferHook extension
+        let space = ExtensionType::try_calculate_account_len::<Token2022Mint>(&[
+            ExtensionType::TransferHook,
+        ])?;
+
+        let rent = rpc_client.get_minimum_balance_for_rent_exemption(space).await?;
+
+        let create_account_instruction = create_account(
+            &payer.pubkey(),
+            &mint_keypair.pubkey(),
+            rent,
+            space as u64,
+            &spl_token_2022::id(),
+        );
+
+        // Initialize the transfer hook extension
+        let initialize_hook_instruction = transfer_hook::instruction::initialize(
+            &spl_token_2022::id(),
+            &mint_keypair.pubkey(),
+            Some(payer.pubkey()),
+            Some(*hook_program_id),
+        )?;
+
+        let initialize_mint_instruction = token_2022_instruction::initialize_mint2(
+            &spl_token_2022::id(),
+            &mint_keypair.pubkey(),
+            &payer.pubkey(),
+            Some(&payer.pubkey()),
+            USDCMintTestHelper::get_test_usdc_mint_decimals(),
+        )?;
+
+        let recent_blockhash = rpc_client.get_latest_blockhash().await?;
+
+        let transaction = Transaction::new_signed_with_payer(
+            &[create_account_instruction, initialize_hook_instruction, initialize_mint_instruction],
+            Some(&payer.pubkey()),
+            &[payer, mint_keypair],
+            recent_blockhash,
+        );
+
+        rpc_client.send_and_confirm_transaction(&transaction).await?;
+
+        // After mint is created, we need to initialize the Extra Account Meta List
+        Self::initialize_extra_account_meta_list(
+            rpc_client,
+            payer,
+            &mint_keypair.pubkey(),
+            hook_program_id,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    /// Initialize Extra Account Meta List for transfer hook
+    async fn initialize_extra_account_meta_list(
+        rpc_client: &Arc<RpcClient>,
+        payer: &Keypair,
+        mint: &Pubkey,
+        hook_program_id: &Pubkey,
+    ) -> Result<()> {
+        let extra_account_metas_address = get_extra_account_metas_address(mint, hook_program_id);
+
+        if rpc_client.get_account(&extra_account_metas_address).await.is_ok() {
+            return Ok(());
+        }
+
+        // Create an empty list of extra account metas (our simple hook doesn't need any)
+        let extra_account_metas = vec![];
+
+        let mut initialize_instruction = initialize_extra_account_meta_list(
+            hook_program_id,
+            &extra_account_metas_address,
+            mint,
+            &payer.pubkey(),
+            &extra_account_metas,
+        );
+
+        // Add the system program account which is needed for PDA creation
+        initialize_instruction
+            .accounts
+            .push(AccountMeta::new_readonly(solana_sdk::system_program::id(), false));
+
+        let recent_blockhash = rpc_client.get_latest_blockhash().await?;
+        let transaction = Transaction::new_signed_with_payer(
+            &[initialize_instruction],
+            Some(&payer.pubkey()),
+            &[payer],
+            recent_blockhash,
+        );
+
+        rpc_client.send_and_confirm_transaction(&transaction).await?;
+
         Ok(())
     }
 }

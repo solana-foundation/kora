@@ -42,6 +42,7 @@ solana-client = { workspace = true }
 spl-token = { workspace = true }
 spl-token-2022 = { workspace = true }
 spl-associated-token-account = { workspace = true }
+spl-transfer-hook-interface = { version = "0.10.0" }
 solana-compute-budget-interface = "2.2.2"
 bincode = { workspace = true }
 bs58 = { workspace = true }

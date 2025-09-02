@@ -148,18 +148,13 @@ pub async fn transfer_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        state::update_config,
-        tests::{
-            common::{setup_or_get_test_signer, RpcMockBuilder},
-            config_mock::ConfigMockBuilder,
-        },
+    use crate::tests::common::{
+        setup_or_get_test_config, setup_or_get_test_signer, RpcMockBuilder,
     };
 
     #[tokio::test]
     async fn test_transfer_transaction_invalid_source() {
-        let config = ConfigMockBuilder::new().build();
-        update_config(config).expect("Failed to set clean config");
+        let _ = setup_or_get_test_config();
         let _ = setup_or_get_test_signer();
 
         let rpc_client = Arc::new(RpcMockBuilder::new().build());
@@ -187,8 +182,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_transfer_transaction_invalid_destination() {
-        let config = ConfigMockBuilder::new().build();
-        update_config(config).expect("Failed to set clean config");
+        let _ = setup_or_get_test_config();
         let _ = setup_or_get_test_signer();
 
         let rpc_client = Arc::new(RpcMockBuilder::new().build());
@@ -215,8 +209,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_transfer_transaction_invalid_token() {
-        let config = ConfigMockBuilder::new().build();
-        update_config(config).expect("Failed to set clean config");
+        let _ = setup_or_get_test_config();
         let _ = setup_or_get_test_signer();
 
         let rpc_client = Arc::new(RpcMockBuilder::new().build());

@@ -131,4 +131,19 @@ impl USDCMint2022TestHelper {
     pub fn get_test_interest_bearing_mint_pubkey() -> Pubkey {
         Self::get_test_interest_bearing_mint_keypair().pubkey()
     }
+
+    pub fn get_test_transfer_hook_mint_keypair() -> Keypair {
+        dotenv::dotenv().ok();
+        let mint_keypair = match std::env::var("TEST_TRANSFER_HOOK_MINT_KEYPAIR") {
+            Ok(key) => key,
+            Err(_) => std::fs::read_to_string(TRANSFER_HOOK_MINT_KEYPAIR_PATH)
+                .expect("Failed to read transfer hook mint private key file"),
+        };
+        parse_private_key_string(&mint_keypair)
+            .expect("Failed to parse test transfer hook mint private key")
+    }
+
+    pub fn get_test_transfer_hook_mint_pubkey() -> Pubkey {
+        Self::get_test_transfer_hook_mint_keypair().pubkey()
+    }
 }
