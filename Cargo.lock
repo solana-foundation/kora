@@ -2989,7 +2989,6 @@ dependencies = [
  "prometheus",
  "rand 0.9.2",
  "redis",
- "redis-test",
  "regex",
  "reqwest 0.12.23",
  "serde",
@@ -4209,18 +4208,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
-]
-
-[[package]]
-name = "redis-test"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b193b65f0e4d429e6caf18c7ca552f58df58079db6500cbb89b653ac371d0ef1"
-dependencies = [
- "rand 0.9.2",
- "redis",
- "socket2 0.6.0",
- "tempfile",
 ]
 
 [[package]]

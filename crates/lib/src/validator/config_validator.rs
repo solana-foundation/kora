@@ -334,7 +334,7 @@ mod tests {
     use crate::{
         config::{
             AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy, KoraConfig,
-            MetricsConfig, SplTokenConfig, ValidationConfig,
+            MetricsConfig, SplTokenConfig, UsageLimitConfig, ValidationConfig,
         },
         fee::price::PriceConfig,
         state::update_config,
@@ -449,6 +449,7 @@ mod tests {
                 auth: AuthConfig::default(),
                 payment_address: None,
                 cache: CacheConfig::default(),
+                usage_limit: UsageLimitConfig::default(),
             },
             metrics: MetricsConfig::default(),
         };

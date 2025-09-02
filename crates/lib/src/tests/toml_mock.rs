@@ -38,6 +38,7 @@ struct KoraSection {
     rate_limit: u64,
     enabled_methods: Option<String>,
     cache_config: Option<String>,
+    usage_limit_config: Option<String>,
 }
 
 impl Default for ValidationSection {
@@ -58,7 +59,12 @@ impl Default for ValidationSection {
 
 impl Default for KoraSection {
     fn default() -> Self {
-        Self { rate_limit: 100, enabled_methods: None, cache_config: None }
+        Self {
+            rate_limit: 100,
+            enabled_methods: None,
+            cache_config: None,
+            usage_limit_config: None,
+        }
     }
 }
 
@@ -156,6 +162,24 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn with_usage_limit_config(
+        mut self,
+        enabled: bool,
+        cache_url: Option<&str>,
+        default_max_transactions: u64,
+        fallback_if_unavailable: bool,
+    ) -> Self {
+        let cache_url_line = match cache_url {
+            Some(url) => format!("cache_url = \"{url}\"\n"),
+            None => String::new(),
+        };
+
+        self.kora.usage_limit_config = Some(format!(
+            "[kora.usage_limit]\nenabled = {enabled}\n{cache_url_line}default_max_transactions = {default_max_transactions}\nfallback_if_unavailable = {fallback_if_unavailable}\n"
+        ));
+        self
+    }
+
     pub fn build_toml(&self) -> String {
         let programs_list = self
             .validation
@@ -229,6 +253,10 @@ impl ConfigBuilder {
 
         if let Some(ref cache_config) = self.kora.cache_config {
             toml.push_str(&format!("{cache_config}\n"));
+        }
+
+        if let Some(ref usage_limit_config) = self.kora.usage_limit_config {
+            toml.push_str(&format!("{usage_limit_config}\n"));
         }
 
         for custom in &self.custom_sections {

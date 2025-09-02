@@ -17,6 +17,7 @@ pub mod signer;
 pub mod state;
 pub mod token;
 pub mod transaction;
+pub mod usage_limit;
 pub mod validator;
 pub use cache::CacheUtil;
 pub use config::Config;

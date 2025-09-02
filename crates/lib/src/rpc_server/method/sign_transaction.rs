@@ -2,6 +2,7 @@ use crate::{
     rpc_server::middleware_utils::default_sig_verify,
     state::get_request_signer_with_signer_key,
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
+    usage_limit::UsageTracker,
     KoraError,
 };
 use serde::{Deserialize, Serialize};
@@ -33,6 +34,10 @@ pub async fn sign_transaction(
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
+
+    // Check usage limit for transaction sender
+    UsageTracker::check_transaction_usage_limit(&transaction).await?;
+
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
 
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
@@ -58,7 +63,7 @@ pub async fn sign_transaction(
 mod tests {
     use super::*;
     use crate::tests::{
-        common::{setup_or_get_test_signer, RpcMockBuilder},
+        common::{setup_or_get_test_signer, setup_or_get_test_usage_limiter, RpcMockBuilder},
         config_mock::ConfigMockBuilder,
         transaction_mock::create_mock_encoded_transaction,
     };
@@ -67,6 +72,8 @@ mod tests {
     async fn test_sign_transaction_decode_error() {
         let _m = ConfigMockBuilder::new().build_and_setup();
         let _ = setup_or_get_test_signer();
+
+        let _ = setup_or_get_test_usage_limiter().await;
 
         let rpc_client = Arc::new(RpcMockBuilder::new().build());
 
@@ -85,6 +92,8 @@ mod tests {
     async fn test_sign_transaction_invalid_signer_key() {
         let _m = ConfigMockBuilder::new().build_and_setup();
         let _ = setup_or_get_test_signer();
+
+        let _ = setup_or_get_test_usage_limiter().await;
 
         let rpc_client = Arc::new(RpcMockBuilder::new().build());
 

@@ -5,12 +5,18 @@ use crate::{
     error::KoraError,
     fee::fee::FeeConfigUtil,
     rpc_server::middleware_utils::default_sig_verify,
-    state::{get_config, get_request_signer_with_signer_key},
+    state::get_request_signer_with_signer_key,
     transaction::{TransactionUtil, VersionedTransactionResolved},
 };
 
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
+
+#[cfg(not(test))]
+use crate::state::get_config;
+
+#[cfg(test)]
+use crate::tests::config_mock::mock_state::get_config;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EstimateTransactionFeeRequest {
