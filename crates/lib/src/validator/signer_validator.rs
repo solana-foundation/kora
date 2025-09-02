@@ -58,11 +58,7 @@ impl SignerValidator {
                         warnings.push(format!(
                             "Signer '{}' has weight specified but using {} strategy - weight will be ignored",
                             signer.name,
-                            match config.signer_pool.strategy {
-                                SelectionStrategy::RoundRobin => "round_robin",
-                                SelectionStrategy::Random => "random",
-                                _ => "unknown",
-                            }
+                            config.signer_pool.strategy
                         ));
                     }
                 }

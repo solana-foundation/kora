@@ -10,7 +10,7 @@ use crate::{
     },
 };
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{fmt, fs, path::Path};
 
 /// Configuration for a pool of signers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +36,17 @@ pub enum SelectionStrategy {
     RoundRobin,
     Random,
     Weighted,
+}
+
+impl fmt::Display for SelectionStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            SelectionStrategy::RoundRobin => "round_robin",
+            SelectionStrategy::Random => "random",
+            SelectionStrategy::Weighted => "weighted",
+        };
+        write!(f, "{s}")
+    }
 }
 
 fn default_strategy() -> SelectionStrategy {
