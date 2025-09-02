@@ -146,29 +146,27 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         source_address: &Pubkey,
         destination_address: &Pubkey,
-        mint: &Option<Pubkey>,
+        mint: &Pubkey,
     ) -> Result<(), KoraError> {
         let config = &get_config()?.validation.token_2022;
 
         let token_program = Token2022Program::new();
 
         // Get mint account data and validate mint extensions (force refresh in case extensions are added)
-        if let Some(mint) = mint {
-            let mint_account = CacheUtil::get_account(rpc_client, mint, true).await?;
-            let mint_data = mint_account.data;
+        let mint_account = CacheUtil::get_account(rpc_client, mint, true).await?;
+        let mint_data = mint_account.data;
 
-            // Unpack the mint state with extensions
-            let mint_state = token_program.unpack_mint(mint, &mint_data)?;
+        // Unpack the mint state with extensions
+        let mint_state = token_program.unpack_mint(mint, &mint_data)?;
 
-            let mint_with_extensions = mint_state.as_any().downcast_ref::<Token2022Mint>().unwrap();
+        let mint_with_extensions = mint_state.as_any().downcast_ref::<Token2022Mint>().unwrap();
 
-            // Check each extension type present on the mint
-            for extension_type in mint_with_extensions.get_extension_types() {
-                if config.is_mint_extension_blocked(*extension_type) {
-                    return Err(KoraError::ValidationError(format!(
-                        "Blocked mint extension found on mint account {mint}",
-                    )));
-                }
+        // Check each extension type present on the mint
+        for extension_type in mint_with_extensions.get_extension_types() {
+            if config.is_mint_extension_blocked(*extension_type) {
+                return Err(KoraError::ValidationError(format!(
+                    "Blocked mint extension found on mint account {mint}",
+                )));
             }
         }
 
@@ -210,11 +208,9 @@ impl TokenUtil {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn process_token_transfer(
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
-        total_lamport_value: &mut u64,
         required_lamports: u64,
         // Wallet address of the owner of the destination token account
         expected_destination_owner: &Pubkey,
@@ -241,17 +237,6 @@ impl TokenUtil {
                     Box::new(TokenProgram::new())
                 };
 
-                // For Token2022 payments, validate that blocked extensions are not used
-                if *is_2022 {
-                    TokenUtil::validate_token2022_extensions_for_payment(
-                        rpc_client,
-                        source_address,
-                        destination_address,
-                        mint,
-                    )
-                    .await?;
-                }
-
                 // Validate the destination account is that of the payment address (or signer if none provided)
                 let destination_account =
                     CacheUtil::get_account(rpc_client, destination_address, false)
@@ -263,83 +248,35 @@ impl TokenUtil {
                         KoraError::InvalidTransaction(format!("Invalid token account: {e}"))
                     })?;
 
+                // For Token2022 payments, validate that blocked extensions are not used
+                if *is_2022 {
+                    TokenUtil::validate_token2022_extensions_for_payment(
+                        rpc_client,
+                        source_address,
+                        destination_address,
+                        &mint.unwrap_or(token_state.mint()),
+                    )
+                    .await?;
+                }
+
                 // Skip transfer if destination isn't our expected payment address
                 if token_state.owner() != *expected_destination_owner {
                     continue;
                 }
 
-                // If we have a transfer checked and therefore the mint account, we don't need to check the source's account owner as TokenProgram,
-                // since we already know the instruction is with the system program,so if the source account is invalid, the instruction with the
-                // token program will fail. Same with the balance of the source account, if too low the instruction will fail.
-                // This might be useful if the token account is being created within the same transaction, since the source account is not yet created.
-                let (mint_address, actual_amount) = if let Some(mint_address) = *mint {
-                    // Force refresh in case extensions are modified
-                    let mint_account =
-                        CacheUtil::get_account(rpc_client, &mint_address, true).await?;
-                    let mint_state =
-                        token_program.unpack_mint(&mint_address, &mint_account.data)?;
-
-                    let actual_amount = token_program
-                        .get_and_validate_amount_for_payment(
-                            rpc_client,
-                            None,
-                            Some(&*mint_state),
-                            *amount,
-                        )
-                        .await
-                        .map_err(|e| {
-                            KoraError::TokenOperationError(format!(
-                                "Failed to validate amount for payment: {e}"
-                            ))
-                        })?;
-
-                    (mint_address, actual_amount)
-                } else {
-                    // Force refresh in case extensions are modified
-                    let source_account = CacheUtil::get_account(rpc_client, source_address, true)
-                        .await
-                        .map_err(|e| KoraError::RpcError(e.to_string()))?;
-
-                    let token_state =
-                        token_program.unpack_token_account(&source_account.data).map_err(|e| {
-                            KoraError::InvalidTransaction(format!("Invalid token account: {e}"))
-                        })?;
-
-                    if source_account.owner != token_program.program_id() {
-                        return Ok(false);
-                    }
-
-                    let actual_amount = token_program
-                        .get_and_validate_amount_for_payment(
-                            rpc_client,
-                            Some(&*token_state),
-                            None,
-                            *amount,
-                        )
-                        .await
-                        .map_err(|e| {
-                            KoraError::TokenOperationError(format!(
-                                "Failed to validate amount for payment: {e}"
-                            ))
-                        })?;
-
-                    (token_state.mint(), actual_amount)
-                };
-
-                if !config.validation.supports_token(&mint_address.to_string()) {
+                if !config.validation.supports_token(&token_state.mint().to_string()) {
                     return Ok(false);
                 }
 
                 let lamport_value = TokenUtil::calculate_token_value_in_lamports(
-                    actual_amount,
-                    &mint_address,
+                    *amount,
+                    &token_state.mint(),
                     config.validation.price_source.clone(),
                     rpc_client,
                 )
                 .await?;
 
-                *total_lamport_value += lamport_value;
-                if *total_lamport_value >= required_lamports {
+                if lamport_value >= required_lamports {
                     return Ok(true); // Payment satisfied
                 }
             }
@@ -782,7 +719,7 @@ mod tests_token {
             &rpc_client,
             &source_address,
             &destination_address,
-            &Some(mint_address),
+            &mint_address,
         )
         .await;
 
@@ -795,6 +732,7 @@ mod tests_token {
 
         let source_address = Pubkey::new_unique();
         let destination_address = Pubkey::new_unique();
+        let mint_address = Pubkey::new_unique();
 
         // Create accounts without any blocked extensions - test source account first
         let source_account = TokenAccountMockBuilder::new().build_token2022();
@@ -806,7 +744,7 @@ mod tests_token {
             &rpc_client,
             &source_address,
             &destination_address,
-            &None,
+            &mint_address,
         )
         .await;
 

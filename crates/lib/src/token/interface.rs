@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use mockall::automock;
-use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
 use std::any::Any;
 
@@ -76,14 +75,6 @@ pub trait TokenInterface: Send + Sync {
         mint: &Pubkey,
         mint_data: &[u8],
     ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>>;
-
-    async fn get_and_validate_amount_for_payment<'a>(
-        &self,
-        rpc_client: &'a RpcClient,
-        token_account: Option<&'a dyn TokenState>,
-        mint_account: Option<&'a dyn TokenMint>,
-        amount: u64,
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>>;
 
     /// Get the account size required for creating an ATA for this token program
     /// For SPL Token, this returns the standard size
