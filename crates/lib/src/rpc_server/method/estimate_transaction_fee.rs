@@ -6,11 +6,8 @@ use crate::{
     fee::fee::FeeConfigUtil,
     rpc_server::middleware_utils::default_sig_verify,
     state::{get_config, get_request_signer_with_signer_key},
-    token::token::TokenUtil,
     transaction::{TransactionUtil, VersionedTransactionResolved},
 };
-use solana_sdk::pubkey::Pubkey;
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -68,28 +65,14 @@ pub async fn estimate_transaction_fee(
     .await?;
 
     let fee_in_lamports = fee_calculation.total_fee_lamports;
-    let mut fee_in_token = None;
 
-    // If fee_token is provided, calculate the fee in that token
-    if let Some(fee_token) = &request.fee_token {
-        let token_mint = Pubkey::from_str(fee_token).map_err(|_| {
-            KoraError::InvalidTransaction("Invalid fee token mint address".to_string())
-        })?;
-
-        if !validation_config.supports_token(fee_token) {
-            return Err(KoraError::InvalidRequest(format!("Token {fee_token} is not supported")));
-        }
-
-        let fee_value_in_token = TokenUtil::calculate_lamports_value_in_token(
-            fee_in_lamports,
-            &token_mint,
-            &validation_config.price_source,
-            rpc_client,
-        )
-        .await?;
-
-        fee_in_token = Some(fee_value_in_token);
-    }
+    // Calculate fee in token if requested
+    let fee_in_token = FeeConfigUtil::calculate_fee_in_token(
+        rpc_client,
+        fee_in_lamports,
+        request.fee_token.as_deref(),
+    )
+    .await?;
 
     Ok(EstimateTransactionFeeResponse {
         fee_in_lamports,

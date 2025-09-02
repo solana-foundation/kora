@@ -1,8 +1,15 @@
+use std::str::FromStr;
+
 use crate::{
     constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
+    fee::price::PriceModel,
     oracle::PriceSource,
-    token::{spl_token_2022::Token2022Mint, token::TokenType},
+    token::{
+        spl_token_2022::Token2022Mint,
+        token::{TokenType, TokenUtil},
+        TokenState,
+    },
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
         ParsedSystemInstructionType, VersionedTransactionResolved,
@@ -127,12 +134,43 @@ impl FeeConfigUtil {
         Ok(total_lamports)
     }
 
+    /// Helper function to check if a token transfer instruction is a payment to Kora
+    /// Returns Some(token_account_data) if it's a payment, None otherwise
+    async fn get_payment_instruction_info(
+        rpc_client: &RpcClient,
+        destination_address: &Pubkey,
+        payment_destination: &Pubkey,
+        skip_missing_accounts: bool,
+    ) -> Result<Option<Box<dyn TokenState + Send + Sync>>, KoraError> {
+        // Get destination account - handle missing accounts based on skip_missing_accounts
+        let destination_account =
+            match CacheUtil::get_account(rpc_client, destination_address, false).await {
+                Ok(account) => account,
+                Err(_) if skip_missing_accounts => {
+                    return Ok(None);
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+
+        let token_program = TokenType::get_token_program_from_owner(&destination_account.owner)?;
+        let token_account = token_program.unpack_token_account(&destination_account.data)?;
+
+        // Check if this is a payment to Kora
+        if token_account.owner() == *payment_destination {
+            Ok(Some(token_account))
+        } else {
+            Ok(None)
+        }
+    }
+
     async fn has_payment_instruction(
         resolved_transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,
     ) -> Result<u64, KoraError> {
-        let payment_destination = &get_config()?.kora.get_payment_address(fee_payer)?;
+        let payment_destination = get_config()?.kora.get_payment_address(fee_payer)?;
 
         for instruction in resolved_transaction
             .get_or_parse_spl_instructions()?
@@ -142,16 +180,15 @@ impl FeeConfigUtil {
             if let ParsedSPLInstructionData::SplTokenTransfer { destination_address, .. } =
                 instruction
             {
-                let destination_account =
-                    CacheUtil::get_account(rpc_client, destination_address, false).await?;
-
-                let token_program =
-                    TokenType::get_token_program_from_owner(&destination_account.owner)?;
-
-                let token_account =
-                    token_program.unpack_token_account(&destination_account.data)?;
-
-                if token_account.owner() == *payment_destination {
+                if Self::get_payment_instruction_info(
+                    rpc_client,
+                    destination_address,
+                    &payment_destination,
+                    false, // Don't skip missing accounts for has_payment_instruction
+                )
+                .await?
+                .is_some()
+                {
                     return Ok(0);
                 }
             }
@@ -168,7 +205,6 @@ impl FeeConfigUtil {
         fee_payer: &Pubkey,
     ) -> Result<u64, KoraError> {
         let config = get_config()?;
-
         let payment_destination = config.kora.get_payment_address(fee_payer)?;
 
         let parsed_spl_instructions = transaction.get_or_parse_spl_instructions()?;
@@ -185,24 +221,17 @@ impl FeeConfigUtil {
                 ..
             } = instruction
             {
-                // Only calculate transfer fees for payments to Kora
+                // Check if this is a payment to Kora
                 // Skip if destination account doesn't exist (not a payment to existing Kora account)
-                let destination_account =
-                    match CacheUtil::get_account(rpc_client, destination_address, false).await {
-                        Ok(account) => account,
-                        Err(_) => {
-                            continue;
-                        }
-                    };
-
-                let destination_token_program =
-                    TokenType::get_token_program_from_owner(&destination_account.owner)?;
-
-                let destination_token_account =
-                    destination_token_program.unpack_token_account(&destination_account.data)?;
-
-                if destination_token_account.owner() != payment_destination {
-                    // This is not a transfer transaction to Kora, skip it
+                if Self::get_payment_instruction_info(
+                    rpc_client,
+                    destination_address,
+                    &payment_destination,
+                    true, // Skip missing accounts for transfer fee calculation
+                )
+                .await?
+                .is_none()
+                {
                     continue;
                 }
 
@@ -301,6 +330,21 @@ impl FeeConfigUtil {
         is_payment_required: bool,
         price_source: Option<PriceSource>,
     ) -> Result<TotalFeeCalculation, KoraError> {
+        let config = get_config()?;
+
+        // Check if the price is free, so that we can return early (and skip expensive RPC calls / estimation)
+        if matches!(&config.validation.price.model, PriceModel::Free) {
+            return Ok(TotalFeeCalculation {
+                total_fee_lamports: 0,
+                base_fee: 0,
+                account_creation_fee: 0,
+                kora_signature_fee: 0,
+                fee_payer_outflow: 0,
+                payment_instruction_fee: 0,
+                transfer_fee_amount: 0,
+            });
+        }
+
         // Get the raw transaction fees
         let mut fee_calculation =
             Self::estimate_transaction_fee(rpc_client, transaction, fee_payer, is_payment_required)
@@ -308,7 +352,6 @@ impl FeeConfigUtil {
 
         // Apply Kora's price model
         if let Some(price_source) = price_source {
-            let config = get_config()?;
             let adjusted_fee = config
                 .validation
                 .price
@@ -324,6 +367,40 @@ impl FeeConfigUtil {
         }
 
         Ok(fee_calculation)
+    }
+
+    /// Calculate the fee in a specific token if provided
+    pub async fn calculate_fee_in_token(
+        rpc_client: &RpcClient,
+        fee_in_lamports: u64,
+        fee_token: Option<&str>,
+    ) -> Result<Option<f64>, KoraError> {
+        if let Some(fee_token) = fee_token {
+            let token_mint = Pubkey::from_str(fee_token).map_err(|_| {
+                KoraError::InvalidTransaction("Invalid fee token mint address".to_string())
+            })?;
+
+            let config = get_config()?;
+            let validation_config = &config.validation;
+
+            if !validation_config.supports_token(fee_token) {
+                return Err(KoraError::InvalidRequest(format!(
+                    "Token {fee_token} is not supported"
+                )));
+            }
+
+            let fee_value_in_token = TokenUtil::calculate_lamports_value_in_token(
+                fee_in_lamports,
+                &token_mint,
+                &validation_config.price_source,
+                rpc_client,
+            )
+            .await?;
+
+            Ok(Some(fee_value_in_token))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Calculate the total outflow (SOL spending) that could occur for a fee payer account in a transaction.
