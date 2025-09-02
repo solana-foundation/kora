@@ -1,5 +1,5 @@
 # Kora Node Operator Guide
-*Last Updated: 2025-08-25*
+*Last Updated: 2025-09-02*
 
 ## What is a Kora Node Operator?
 
@@ -57,6 +57,8 @@ Maintain sufficient SOL to cover network fees for your expected transaction volu
 - **Balance monitoring**: Track SOL balance and set up low-balance alerts (Kora provides built-in Prometheus metrics - see [Monitoring](./MONITORING.md))
 - **Automation**: Implement automatic SOL top-up procedures for production environments
 - **Capacity planning**: Plan for expected use case, user volume, etc.
+
+It is important that you understand how Kora estimates fees and how to configure your node to maximize your revenue. See the [Fee Estimation Guide](./FEES.md) for more details.
 
 ### 4. Monitor Operations
 Continuously track your node's security, performance, and business metrics:
