@@ -1,13 +1,18 @@
 use crate::common::{
-    ExtensionHelpers, FeePayerTestHelper, TestContext, TransactionBuilder, USDCMint2022TestHelper,
+    ExtensionHelpers, FeePayerTestHelper, RecipientTestHelper, SenderTestHelper, TestContext,
+    TransactionBuilder, USDCMint2022TestHelper, TRANSFER_HOOK_PROGRAM_ID,
 };
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use jsonrpsee::rpc_params;
+use kora_lib::transaction::TransactionUtil;
 use solana_sdk::{
+    instruction::AccountMeta,
+    pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address_with_program_id;
-use tests::common::SenderTestHelper;
+use std::str::FromStr;
 
 #[tokio::test]
 async fn test_blocked_memo_transfer_extension() {
@@ -426,5 +431,285 @@ async fn test_transfer_fee_sufficient_payment() {
     assert!(
         response.get("signed_transaction").is_some(),
         "Response should contain signed_transaction"
+    );
+}
+
+// **************************************************************************************
+// Token 2022 Transfer Hook Tests
+// **************************************************************************************
+
+/// Test Token 2022 transfer with transfer hook that allows transfers
+#[tokio::test]
+async fn test_transfer_hook_allows_transfer() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let rpc_client = ctx.rpc_client();
+
+    let hook_program_id =
+        Pubkey::from_str(TRANSFER_HOOK_PROGRAM_ID).expect("Invalid transfer hook program ID");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let transfer_hook_mint_keypair = USDCMint2022TestHelper::get_test_transfer_hook_mint_keypair();
+
+    ExtensionHelpers::create_mint_with_transfer_hook(
+        rpc_client,
+        &fee_payer,
+        &transfer_hook_mint_keypair,
+        &hook_program_id,
+    )
+    .await
+    .expect("Failed to create mint with transfer hook");
+
+    // Create ATAs for sender and recipient for the transfer hook mint
+    let sender_ata = get_associated_token_address_with_program_id(
+        &sender.pubkey(),
+        &transfer_hook_mint_keypair.pubkey(),
+        &spl_token_2022::id(),
+    );
+
+    let recipient_ata = get_associated_token_address_with_program_id(
+        &recipient,
+        &transfer_hook_mint_keypair.pubkey(),
+        &spl_token_2022::id(),
+    );
+
+    // Create ATAs
+    let create_sender_ata =
+        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &sender.pubkey(),
+            &transfer_hook_mint_keypair.pubkey(),
+            &spl_token_2022::id(),
+        );
+
+    let create_recipient_ata =
+        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &recipient,
+            &transfer_hook_mint_keypair.pubkey(),
+            &spl_token_2022::id(),
+        );
+
+    let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
+    let create_atas_tx = Transaction::new_signed_with_payer(
+        &[create_sender_ata, create_recipient_ata],
+        Some(&fee_payer.pubkey()),
+        &[&fee_payer],
+        recent_blockhash,
+    );
+
+    rpc_client.send_and_confirm_transaction(&create_atas_tx).await.expect("Failed to create ATAs");
+
+    ExtensionHelpers::mint_tokens_to_account(
+        rpc_client,
+        &fee_payer,
+        &transfer_hook_mint_keypair.pubkey(),
+        &sender_ata,
+        &fee_payer,
+        Some(1_000_000), // 1M tokens
+    )
+    .await
+    .expect("Failed to mint tokens to sender");
+
+    let mut transfer_instruction = spl_token_2022::instruction::transfer_checked(
+        &spl_token_2022::id(),
+        &sender_ata,
+        &transfer_hook_mint_keypair.pubkey(),
+        &recipient_ata,
+        &sender.pubkey(),
+        &[],
+        10,
+        6,
+    )
+    .expect("Failed to create transfer_checked instruction");
+
+    // Get the Extra Account Meta List address for the transfer hook
+    let extra_account_metas_address = spl_transfer_hook_interface::get_extra_account_metas_address(
+        &transfer_hook_mint_keypair.pubkey(),
+        &hook_program_id,
+    );
+
+    // Add the extra account metas list as a read-only account
+    transfer_instruction
+        .accounts
+        .push(AccountMeta::new_readonly(extra_account_metas_address, false));
+
+    // Add the transfer hook program itself as a read-only account
+    transfer_instruction.accounts.push(AccountMeta::new_readonly(hook_program_id, false));
+
+    // Create transaction with manual instruction
+    let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
+    let test_transaction = Transaction::new_signed_with_payer(
+        &[transfer_instruction],
+        Some(&fee_payer.pubkey()),
+        &[&fee_payer, &sender],
+        recent_blockhash,
+    );
+
+    // Encode as base64 for Kora RPC
+    let serialized = bincode::serialize(&test_transaction).unwrap();
+    let test_tx = STANDARD.encode(serialized);
+
+    // Submit to Kora - should succeed because hook allows transfers
+    let response: serde_json::Value = ctx
+        .rpc_call("signTransaction", rpc_params![test_tx])
+        .await
+        .expect("Failed to sign transaction with transfer hook");
+
+    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+    assert!(
+        response["signed_transaction"].as_str().is_some(),
+        "Expected signed_transaction in response"
+    );
+
+    // Verify transaction would simulate successfully
+    let transaction_string = response["signed_transaction"].as_str().unwrap();
+    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
+        .expect("Failed to decode transaction from base64");
+
+    let simulated_tx = rpc_client
+        .simulate_transaction(&transaction)
+        .await
+        .expect("Failed to simulate transfer hook transaction");
+
+    // Transaction should succeed with transfer hook allowing transfer
+    assert!(
+        simulated_tx.value.err.is_none(),
+        "Transfer hook transaction simulation should succeed: {:?}",
+        simulated_tx.value.err
+    );
+}
+
+/// Test Token 2022 transfer with transfer hook that blocks transfers
+#[tokio::test]
+async fn test_transfer_hook_blocks_transfer() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let rpc_client = ctx.rpc_client();
+
+    let hook_program_id =
+        Pubkey::from_str(TRANSFER_HOOK_PROGRAM_ID).expect("Invalid transfer hook program ID");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let transfer_hook_mint_keypair = USDCMint2022TestHelper::get_test_transfer_hook_mint_keypair();
+
+    ExtensionHelpers::create_mint_with_transfer_hook(
+        rpc_client,
+        &fee_payer,
+        &transfer_hook_mint_keypair,
+        &hook_program_id,
+    )
+    .await
+    .expect("Failed to create mint with transfer hook");
+
+    // Create ATAs for sender and recipient for the transfer hook mint
+    let sender_ata = get_associated_token_address_with_program_id(
+        &sender.pubkey(),
+        &transfer_hook_mint_keypair.pubkey(),
+        &spl_token_2022::id(),
+    );
+
+    let recipient_ata = get_associated_token_address_with_program_id(
+        &recipient,
+        &transfer_hook_mint_keypair.pubkey(),
+        &spl_token_2022::id(),
+    );
+
+    // Create ATAs
+    let create_sender_ata =
+        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &sender.pubkey(),
+            &transfer_hook_mint_keypair.pubkey(),
+            &spl_token_2022::id(),
+        );
+
+    let create_recipient_ata =
+        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &recipient,
+            &transfer_hook_mint_keypair.pubkey(),
+            &spl_token_2022::id(),
+        );
+
+    let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
+    let create_atas_tx = Transaction::new_signed_with_payer(
+        &[create_sender_ata, create_recipient_ata],
+        Some(&fee_payer.pubkey()),
+        &[&fee_payer],
+        recent_blockhash,
+    );
+
+    rpc_client.send_and_confirm_transaction(&create_atas_tx).await.expect("Failed to create ATAs");
+
+    // Mint tokens to sender (more than the hook limit of 1M)
+    ExtensionHelpers::mint_tokens_to_account(
+        rpc_client,
+        &fee_payer,
+        &transfer_hook_mint_keypair.pubkey(),
+        &sender_ata,
+        &fee_payer,
+        Some(5_000_000), // 5M tokens - much more than needed
+    )
+    .await
+    .expect("Failed to mint tokens to sender");
+
+    // Create transfer instruction manually with transfer hook accounts - large amount that will be blocked
+    let mut transfer_instruction = spl_token_2022::instruction::transfer_checked(
+        &spl_token_2022::id(),
+        &sender_ata,
+        &transfer_hook_mint_keypair.pubkey(),
+        &recipient_ata,
+        &sender.pubkey(),
+        &[],
+        2_000_000, // Large amount that exceeds our 1M limit
+        6,
+    )
+    .expect("Failed to create transfer_checked instruction");
+
+    // Get the Extra Account Meta List address for the transfer hook
+    let extra_account_metas_address = spl_transfer_hook_interface::get_extra_account_metas_address(
+        &transfer_hook_mint_keypair.pubkey(),
+        &hook_program_id,
+    );
+
+    // Add the extra account metas list as a read-only account
+    transfer_instruction
+        .accounts
+        .push(AccountMeta::new_readonly(extra_account_metas_address, false));
+
+    // Add the transfer hook program itself as a read-only account
+    transfer_instruction.accounts.push(AccountMeta::new_readonly(hook_program_id, false));
+
+    // Create transaction with manual instruction
+    let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
+    let test_transaction = Transaction::new_signed_with_payer(
+        &[transfer_instruction],
+        Some(&fee_payer.pubkey()),
+        &[&fee_payer, &sender],
+        recent_blockhash,
+    );
+
+    let serialized = bincode::serialize(&test_transaction).unwrap();
+    let test_tx = STANDARD.encode(serialized);
+
+    // Submit to Kora - transaction should be rejected by transfer hook
+    let result: Result<serde_json::Value, anyhow::Error> =
+        ctx.rpc_call("signTransaction", rpc_params![test_tx]).await;
+
+    // The call should fail because the transfer hook blocks large transfers
+    assert!(
+        result.is_err(),
+        "Expected signTransaction to fail due to transfer hook blocking large transfer"
+    );
+
+    let error_message = format!("{:?}", result.unwrap_err());
+
+    // Verify the error contains the expected transfer hook error code
+    assert!(
+        error_message.contains("custom program error: 0x1") || error_message.contains("Custom(1)"),
+        "Expected error to contain transfer hook error code 0x1, got: {error_message}",
     );
 }

@@ -1,0 +1,20 @@
+[workspace]
+
+[package]
+name = "transfer-hook-example"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "transfer_hook_example"
+
+[features]
+no-entrypoint = []
+default = []
+
+[dependencies]
+solana-program = "1.18"
+spl-transfer-hook-interface = "0.6"
+spl-tlv-account-resolution = "0.6"
+spl-type-length-value = "0.4"

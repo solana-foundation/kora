@@ -2,6 +2,15 @@
 test:
 	@cargo test --lib --workspace --exclude tests --quiet 2>/dev/null || true
 
+# Build transfer hook program (is checked in, so only need to build if changes are made)
+build-transfer-hook:
+	$(call print_header,BUILDING TRANSFER HOOK PROGRAM)
+	$(call print_step,Building transfer hook program...)
+	cd tests/src/common/transfer-hook-example && \
+		chmod +x build.sh && \
+		./build.sh
+	$(call print_success,Transfer hook program built at tests/src/common/transfer-hook-example/target/deploy/)
+
 # Run all integration tests with clean output
 test-integration:
 	$(call print_header,KORA INTEGRATION TEST SUITE)
