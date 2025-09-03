@@ -108,6 +108,44 @@ impl UsageStore for InMemoryUsageStore {
     }
 }
 
+/// Mock store that simulates Redis errors for testing error handling
+#[cfg(test)]
+pub struct ErrorUsageStore {
+    should_error_get: bool,
+    should_error_increment: bool,
+}
+
+#[cfg(test)]
+impl ErrorUsageStore {
+    pub fn new(should_error_get: bool, should_error_increment: bool) -> Self {
+        Self { should_error_get, should_error_increment }
+    }
+}
+
+#[cfg(test)]
+#[async_trait]
+impl UsageStore for ErrorUsageStore {
+    async fn increment(&self, _key: &str) -> Result<u32, KoraError> {
+        if self.should_error_increment {
+            Err(KoraError::InternalServerError("Redis connection failed".to_string()))
+        } else {
+            Ok(1)
+        }
+    }
+
+    async fn get(&self, _key: &str) -> Result<u32, KoraError> {
+        if self.should_error_get {
+            Err(KoraError::InternalServerError("Redis connection failed".to_string()))
+        } else {
+            Ok(0)
+        }
+    }
+
+    async fn clear(&self) -> Result<(), KoraError> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

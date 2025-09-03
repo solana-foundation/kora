@@ -10,6 +10,7 @@ use crate::{
     token::{spl_token_2022_util, token::TokenUtil},
     validator::{
         account_validator::{validate_account, AccountType},
+        cache_validator::CacheValidator,
         signer_validator::SignerValidator,
     },
     KoraError,
@@ -206,6 +207,15 @@ impl ConfigValidator {
             }
             _ => {}
         };
+
+        // Validate usage limit configuration
+        let usage_config = &config.kora.usage_limit;
+        if usage_config.enabled {
+            let (usage_errors, usage_warnings) =
+                CacheValidator::validate(usage_config).await.unwrap();
+            errors.extend(usage_errors);
+            warnings.extend(usage_warnings);
+        }
 
         // RPC validation - only if not skipped
         if !skip_rpc_validation {
