@@ -82,6 +82,6 @@ blocked_account_extensions = [
 
 [kora.usage_limit]
 enabled = false
-# cache_url = "redis://redis:6379"
-# max_transactions = 2
-# fallback_if_unavailable = false
+cache_url = "redis://redis:6379"
+max_transactions = 2
+fallback_if_unavailable = false
