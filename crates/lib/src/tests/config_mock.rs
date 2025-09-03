@@ -2,7 +2,7 @@ use crate::{
     config::{
         AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerBalanceMetricsConfig,
         FeePayerPolicy, KoraConfig, MetricsConfig, SplTokenConfig, Token2022Config,
-        ValidationConfig,
+        UsageLimitConfig, ValidationConfig,
     },
     fee::price::PriceConfig,
     oracle::PriceSource,
@@ -106,6 +106,7 @@ impl ConfigMockBuilder {
                         default_ttl: 300,
                         account_ttl: 60,
                     },
+                    usage_limit: UsageLimitConfig::default(),
                 },
                 metrics: MetricsConfig::default(),
             },
@@ -193,6 +194,26 @@ impl ConfigMockBuilder {
 
     pub fn with_fee_payer_policy(mut self, policy: FeePayerPolicy) -> Self {
         self.config.validation.fee_payer_policy = policy;
+        self
+    }
+
+    pub fn with_usage_limit_enabled(mut self, enabled: bool) -> Self {
+        self.config.kora.usage_limit.enabled = enabled;
+        self
+    }
+
+    pub fn with_usage_limit_cache_url(mut self, cache_url: Option<String>) -> Self {
+        self.config.kora.usage_limit.cache_url = cache_url;
+        self
+    }
+
+    pub fn with_usage_limit_fallback(mut self, fallback_if_unavailable: bool) -> Self {
+        self.config.kora.usage_limit.fallback_if_unavailable = fallback_if_unavailable;
+        self
+    }
+
+    pub fn with_usage_limit_max_transactions(mut self, max_transactions: u64) -> Self {
+        self.config.kora.usage_limit.max_transactions = max_transactions;
         self
     }
 
@@ -312,6 +333,7 @@ impl KoraConfigBuilder {
                     default_ttl: 300,
                     account_ttl: 60,
                 },
+                usage_limit: UsageLimitConfig::default(),
             },
         }
     }

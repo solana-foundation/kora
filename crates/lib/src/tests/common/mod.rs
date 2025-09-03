@@ -8,7 +8,8 @@ use crate::{
     signer::{KoraSigner, SignerPool, SignerWithMetadata, SolanaMemorySigner},
     state::{get_config, update_config, update_signer_pool},
     tests::{account_mock, config_mock::ConfigMockBuilder, rpc_mock},
-    Config,
+    usage_limit::UsageTracker,
+    Config, KoraError,
 };
 use solana_sdk::{pubkey::Pubkey, signature::Keypair};
 
@@ -59,5 +60,21 @@ pub fn setup_or_get_test_config() -> Config {
         Err(e) => {
             panic!("Failed to initialize config: {e}");
         }
+    }
+}
+
+/// Initialize or update the global usage limiter (test only)
+///
+/// This function ignores "already initialized" errors for test flexibility.
+/// Usage limiter initialization is optional and will not fail tests if unavailable.
+pub async fn setup_or_get_test_usage_limiter() -> Result<(), KoraError> {
+    match UsageTracker::init_usage_limiter().await {
+        Ok(()) => Ok(()),
+        Err(KoraError::InternalServerError(ref msg)) if msg.contains("already initialized") => {
+            // In tests, ignore the already initialized error
+            // The limiter is already set up from a previous test
+            Ok(())
+        }
+        Err(e) => Err(e),
     }
 }

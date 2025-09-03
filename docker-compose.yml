@@ -5,8 +5,9 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: redis-server /usr/local/etc/redis/redis.conf
 
   kora:
     build:
@@ -20,13 +21,12 @@ services:
       - ./.env:/app/.env:ro
     environment:
       - RUST_LOG=info
-      - REDIS_URL=redis://redis:6379
     env_file:
       - .env
     command:
       - sh
       - -c
-      - "kora-rpc --config /app/kora.toml --signers-config /app/signers.toml"
+      - "kora --config /app/kora.toml --rpc-url ${RPC_URL:-http://127.0.0.1:8899} rpc start --signers-config /app/signers.toml"
     restart: unless-stopped
     depends_on:
       - redis

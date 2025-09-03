@@ -5,6 +5,7 @@ use crate::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
         rpc::KoraRpc,
     },
+    usage_limit::UsageTracker,
 };
 
 #[cfg(not(test))]
@@ -36,6 +37,12 @@ fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log::info!("RPC server started on {addr}, port {port}");
+
+    // Initialize usage limiter
+    if let Err(e) = UsageTracker::init_usage_limiter().await {
+        log::error!("Failed to initialize usage limiter: {e}");
+        return Err(anyhow::anyhow!("Usage limiter initialization failed: {e}"));
+    }
 
     // Build middleware stack with tracing and CORS
     let cors = CorsLayer::new()

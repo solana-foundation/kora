@@ -58,6 +58,9 @@ pub enum KoraError {
 
     #[error("Rate limit exceeded")]
     RateLimitExceeded,
+
+    #[error("Usage limit exceeded: {0}")]
+    UsageLimitExceeded(String),
 }
 
 impl From<ClientError> for KoraError {

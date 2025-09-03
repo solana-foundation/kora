@@ -25,6 +25,9 @@ pub const DEFAULT_CACHE_DEFAULT_TTL: u64 = 300; // 5 minutes
 pub const DEFAULT_CACHE_ACCOUNT_TTL: u64 = 60; // 1 minute for account data
 pub const DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS: u64 = 30; // 30 seconds
 
+pub const DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS: u64 = 0; // 0 = unlimited
+pub const DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE: bool = false;
+
 // Account Indexes within instructions
 // Instruction indexes for the instructions that we support to parse from the transaction
 pub mod instruction_indexes {

@@ -21,9 +21,7 @@ use solana_message::Message;
 use {crate::cache::CacheUtil, crate::state::get_config};
 
 #[cfg(test)]
-use crate::tests::{
-    config_mock::mock_state::get_config, redis_cache_mock::MockCacheUtil as CacheUtil,
-};
+use crate::tests::{cache_mock::MockCacheUtil as CacheUtil, config_mock::mock_state::get_config};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
 use solana_program::program_pack::Pack;
