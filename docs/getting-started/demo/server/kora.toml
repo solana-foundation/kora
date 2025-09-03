@@ -79,3 +79,9 @@ blocked_account_extensions = [
     # "immutable_owner",                # Account owner cannot be changed
     # "default_account_state",          # Default state for new accounts
 ]
+
+[kora.usage_limit]
+enabled = false
+# cache_url = "redis://redis:6379"
+# max_transactions = 2
+# fallback_if_unavailable = false
