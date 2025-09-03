@@ -134,7 +134,7 @@ impl ValidationConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
 pub struct FeePayerPolicy {
     pub allow_sol_transfers: bool,
     pub allow_spl_transfers: bool,
@@ -143,20 +143,6 @@ pub struct FeePayerPolicy {
     pub allow_burn: bool,
     pub allow_close_account: bool,
     pub allow_approve: bool,
-}
-
-impl Default for FeePayerPolicy {
-    fn default() -> Self {
-        Self {
-            allow_sol_transfers: true,
-            allow_spl_transfers: true,
-            allow_token2022_transfers: true,
-            allow_assign: true,
-            allow_burn: true,
-            allow_close_account: true,
-            allow_approve: true,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

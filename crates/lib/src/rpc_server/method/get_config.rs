@@ -89,13 +89,13 @@ mod tests {
         assert_eq!(response.validation_config.price_source, crate::oracle::PriceSource::Mock);
 
         // Assert FeePayerPolicy defaults
-        assert!(response.validation_config.fee_payer_policy.allow_sol_transfers);
-        assert!(response.validation_config.fee_payer_policy.allow_spl_transfers);
-        assert!(response.validation_config.fee_payer_policy.allow_token2022_transfers);
-        assert!(response.validation_config.fee_payer_policy.allow_assign);
-        assert!(response.validation_config.fee_payer_policy.allow_burn);
-        assert!(response.validation_config.fee_payer_policy.allow_close_account);
-        assert!(response.validation_config.fee_payer_policy.allow_approve);
+        assert!(!response.validation_config.fee_payer_policy.allow_sol_transfers);
+        assert!(!response.validation_config.fee_payer_policy.allow_spl_transfers);
+        assert!(!response.validation_config.fee_payer_policy.allow_token2022_transfers);
+        assert!(!response.validation_config.fee_payer_policy.allow_assign);
+        assert!(!response.validation_config.fee_payer_policy.allow_burn);
+        assert!(!response.validation_config.fee_payer_policy.allow_close_account);
+        assert!(!response.validation_config.fee_payer_policy.allow_approve);
 
         // Assert PriceConfig default (check margin value)
         match response.validation_config.price.model {
