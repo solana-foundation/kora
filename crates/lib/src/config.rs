@@ -10,7 +10,7 @@ use crate::{
         DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL,
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_TIMESTAMP_AGE,
         DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT, DEFAULT_METRICS_SCRAPE_INTERVAL,
-        DEFAULT_USAGE_LIMIT_DEFAULT_MAX_TRANSACTIONS, DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE,
+        DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE, DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
@@ -374,7 +374,7 @@ pub struct UsageLimitConfig {
     /// Cache URL for shared usage limiting across multiple Kora instances
     pub cache_url: Option<String>,
     /// Default maximum transactions per wallet (0 = unlimited)
-    pub default_max_transactions: u64,
+    pub max_transactions: u64,
     /// Fallback behavior when cache is unavailable
     pub fallback_if_unavailable: bool,
 }
@@ -384,7 +384,7 @@ impl Default for UsageLimitConfig {
         Self {
             enabled: false,
             cache_url: None,
-            default_max_transactions: DEFAULT_USAGE_LIMIT_DEFAULT_MAX_TRANSACTIONS,
+            max_transactions: DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
             fallback_if_unavailable: DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE,
         }
     }
@@ -708,7 +708,7 @@ mod tests {
 
         assert!(config.kora.usage_limit.enabled);
         assert_eq!(config.kora.usage_limit.cache_url, Some("redis://localhost:6379".to_string()));
-        assert_eq!(config.kora.usage_limit.default_max_transactions, 10);
+        assert_eq!(config.kora.usage_limit.max_transactions, 10);
         assert!(!config.kora.usage_limit.fallback_if_unavailable);
     }
 
@@ -718,10 +718,7 @@ mod tests {
 
         assert!(!config.kora.usage_limit.enabled);
         assert_eq!(config.kora.usage_limit.cache_url, None);
-        assert_eq!(
-            config.kora.usage_limit.default_max_transactions,
-            DEFAULT_USAGE_LIMIT_DEFAULT_MAX_TRANSACTIONS
-        );
+        assert_eq!(config.kora.usage_limit.max_transactions, DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS);
         assert_eq!(
             config.kora.usage_limit.fallback_if_unavailable,
             DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE
@@ -736,6 +733,6 @@ mod tests {
             .unwrap();
 
         assert!(config.kora.usage_limit.enabled);
-        assert_eq!(config.kora.usage_limit.default_max_transactions, 0); // 0 = unlimited
+        assert_eq!(config.kora.usage_limit.max_transactions, 0); // 0 = unlimited
     }
 }

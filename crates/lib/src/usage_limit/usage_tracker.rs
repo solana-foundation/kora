@@ -14,52 +14,51 @@ use crate::state::get_config;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
 
+const USAGE_CACHE_KEY: &str = "kora:usage_limit";
+
 /// Global usage limiter instance
 static USAGE_LIMITER: OnceCell<Option<UsageTracker>> = OnceCell::const_new();
 
 pub struct UsageTracker {
     store: Arc<dyn UsageStore>,
-    default_max_transactions: u64,
+    max_transactions: u64,
     kora_signers: HashSet<Pubkey>,
 }
 
 impl UsageTracker {
     pub fn new(
         store: Arc<dyn UsageStore>,
-        default_max_transactions: u64,
+        max_transactions: u64,
         kora_signers: HashSet<Pubkey>,
     ) -> Self {
-        Self { store, default_max_transactions, kora_signers }
+        Self { store, max_transactions, kora_signers }
     }
 
     fn get_usage_key(&self, wallet: &Pubkey) -> String {
-        format!("kora:usage_limit:{wallet}")
-    }
-
-    async fn increment_usage(&self, wallet: &Pubkey) -> Result<u32, KoraError> {
-        let key = self.get_usage_key(wallet);
-        self.store.increment(&key).await
+        format!("{USAGE_CACHE_KEY}:{wallet}")
     }
 
     async fn check_usage_limit(&self, wallet: &Pubkey) -> Result<(), KoraError> {
         // Skip check if unlimited (0)
-        if self.default_max_transactions == 0 {
+        if self.max_transactions == 0 {
             return Ok(());
         }
 
-        let current_count = self.increment_usage(wallet).await?;
+        // Check current count first, then increment only if allowed
+        let key = self.get_usage_key(wallet);
+        let current_count = self.store.get(&key).await.unwrap_or(0);
 
-        if current_count > self.default_max_transactions as u32 {
+        if current_count >= self.max_transactions as u32 {
             return Err(KoraError::UsageLimitExceeded(format!(
-                "Wallet {wallet} exceeded limit: {current_count}/{}",
-                self.default_max_transactions
+                "Wallet {wallet} exceeded limit: {}/{}",
+                current_count + 1,
+                self.max_transactions
             )));
         }
 
-        log::debug!(
-            "Usage check passed for {wallet}: {current_count}/{}",
-            self.default_max_transactions
-        );
+        let new_count = self.store.increment(&key).await?;
+
+        log::debug!("Usage check passed for {wallet}: {new_count}/{}", self.max_transactions);
 
         Ok(())
     }
@@ -77,7 +76,7 @@ impl UsageTracker {
     fn extract_transaction_sender(
         &self,
         transaction: &VersionedTransaction,
-    ) -> Result<Pubkey, KoraError> {
+    ) -> Result<Option<Pubkey>, KoraError> {
         let account_keys = transaction.message.static_account_keys();
 
         if account_keys.is_empty() {
@@ -86,17 +85,22 @@ impl UsageTracker {
             ));
         }
 
-        for signer in
-            account_keys.iter().take(transaction.message.header().num_required_signatures as usize)
-        {
+        let signers = account_keys
+            .iter()
+            .take(transaction.message.header().num_required_signatures as usize)
+            .collect::<Vec<_>>();
+
+        for signer in &signers {
             if !self.kora_signers.contains(signer) {
-                return Ok(*signer);
+                return Ok(Some(**signer));
             }
         }
 
-        Err(KoraError::InvalidTransaction(
-            "No user signers found (all signers are Kora fee payers)".to_string(),
-        ))
+        log::debug!(
+            "No user signers found when extracting transaction sender for usage limit: {signers:?}",
+        );
+
+        Ok(None)
     }
 
     /// Initialize the global usage limiter
@@ -130,18 +134,14 @@ impl UsageTracker {
             log::info!(
                 "Usage limiter initialized with Redis at {} (max: {} transactions)",
                 cache_url,
-                config.kora.usage_limit.default_max_transactions
+                config.kora.usage_limit.max_transactions
             );
 
             let kora_signers =
                 get_all_signers()?.iter().map(|signer| signer.signer.solana_pubkey()).collect();
 
             let store = Arc::new(RedisUsageStore::new(pool));
-            Some(UsageTracker::new(
-                store,
-                config.kora.usage_limit.default_max_transactions,
-                kora_signers,
-            ))
+            Some(UsageTracker::new(store, config.kora.usage_limit.max_transactions, kora_signers))
         } else {
             log::info!("Usage limiting enabled but no cache_url configured - disabled");
             None
@@ -162,7 +162,9 @@ impl UsageTracker {
 
         if let Some(limiter) = Self::get_usage_limiter()? {
             let sender = limiter.extract_transaction_sender(transaction)?;
-            limiter.check_usage_limit(&sender).await?;
+            if let Some(sender) = sender {
+                limiter.check_usage_limit(&sender).await?;
+            }
             Ok(())
         } else if config.kora.usage_limit.enabled
             && !config.kora.usage_limit.fallback_if_unavailable

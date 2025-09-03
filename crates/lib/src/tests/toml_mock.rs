@@ -166,7 +166,7 @@ impl ConfigBuilder {
         mut self,
         enabled: bool,
         cache_url: Option<&str>,
-        default_max_transactions: u64,
+        max_transactions: u64,
         fallback_if_unavailable: bool,
     ) -> Self {
         let cache_url_line = match cache_url {
@@ -175,7 +175,7 @@ impl ConfigBuilder {
         };
 
         self.kora.usage_limit_config = Some(format!(
-            "[kora.usage_limit]\nenabled = {enabled}\n{cache_url_line}default_max_transactions = {default_max_transactions}\nfallback_if_unavailable = {fallback_if_unavailable}\n"
+            "[kora.usage_limit]\nenabled = {enabled}\n{cache_url_line}max_transactions = {max_transactions}\nfallback_if_unavailable = {fallback_if_unavailable}\n"
         ));
         self
     }

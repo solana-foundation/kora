@@ -21,13 +21,12 @@ services:
       - ./.env:/app/.env:ro
     environment:
       - RUST_LOG=info
-      - REDIS_URL=redis://redis:6379
     env_file:
       - .env
     command:
       - sh
       - -c
-      - "kora-rpc --config /app/kora.toml --signers-config /app/signers.toml"
+      - "kora --config /app/kora.toml --rpc-url ${RPC_URL:-http://127.0.0.1:8899} rpc start --signers-config /app/signers.toml"
     restart: unless-stopped
     depends_on:
       - redis

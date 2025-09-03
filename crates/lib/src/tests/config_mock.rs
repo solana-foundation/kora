@@ -213,7 +213,7 @@ impl ConfigMockBuilder {
     }
 
     pub fn with_usage_limit_max_transactions(mut self, max_transactions: u64) -> Self {
-        self.config.kora.usage_limit.default_max_transactions = max_transactions;
+        self.config.kora.usage_limit.max_transactions = max_transactions;
         self
     }
 

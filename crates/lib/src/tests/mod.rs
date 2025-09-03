@@ -8,7 +8,7 @@ pub mod common;
 pub mod config_mock;
 
 #[cfg(test)]
-pub mod redis_cache_mock;
+pub mod cache_mock;
 
 #[cfg(test)]
 pub mod rpc_mock;

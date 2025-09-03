@@ -22,8 +22,8 @@ use {crate::cache::CacheUtil, crate::state::get_config};
 
 #[cfg(test)]
 use {
-    crate::config::SplTokenConfig, crate::tests::config_mock::mock_state::get_config,
-    crate::tests::redis_cache_mock::MockCacheUtil as CacheUtil,
+    crate::config::SplTokenConfig, crate::tests::cache_mock::MockCacheUtil as CacheUtil,
+    crate::tests::config_mock::mock_state::get_config,
 };
 
 /*
