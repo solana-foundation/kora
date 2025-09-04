@@ -15,7 +15,7 @@ use solana_sdk::{
 use spl_associated_token_account::{
     get_associated_token_address, instruction::create_associated_token_account,
 };
-use std::{str::FromStr, sync::Arc};
+use std::{fmt::Display, str::FromStr, sync::Arc};
 
 #[cfg(not(test))]
 use {crate::cache::CacheUtil, crate::state::get_config};
@@ -36,6 +36,12 @@ pub struct ATAToCreate {
     pub mint: Pubkey,
     pub ata: Pubkey,
     pub token_program: Pubkey,
+}
+
+impl Display for ATAToCreate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Token {}: ATA {} (Token program: {})", self.mint, self.ata, self.token_program)
+    }
 }
 
 /// Initialize ATAs for all allowed payment tokens for the paymaster
@@ -93,7 +99,7 @@ pub async fn initialize_atas_with_chunk_size(
 
         if atas_to_create.is_empty() {
             println!("✓ All required ATAs already exist for address: {address}");
-            return Ok(());
+            continue;
         }
 
         create_atas_for_signer(
@@ -204,12 +210,38 @@ async fn create_atas_for_signer(
                 created_atas_idx = chunk_end;
             }
             Err(e) => {
+                println!("✗ Chunk {chunk_num}/{num_chunks} failed: {e}");
+
+                if created_atas_idx > 0 {
+                    println!("\nSuccessfully created ATAs ({created_atas_idx}/{total_atas}):");
+                    println!(
+                        "{}",
+                        atas_to_create[0..created_atas_idx]
+                            .iter()
+                            .map(|ata| format!("  ✓ {ata}"))
+                            .collect::<Vec<String>>()
+                            .join("\n")
+                    );
+                    println!("\nRemaining ATAs to create: {}", total_atas - created_atas_idx);
+                } else {
+                    println!("No ATAs were successfully created.");
+                }
+
+                println!("This may be a temporary network issue. Please re-run the command to retry ATA creation.");
                 return Err(KoraError::RpcError(format!(
                     "Failed to send ATA creation transaction for chunk {chunk_num}/{num_chunks}: {e}"
                 )));
             }
         }
     }
+
+    // Show summary of all successfully created ATAs
+    println!("\n🎉 All ATA creation completed successfully!");
+    println!("Successfully created ATAs ({total_atas}/{total_atas}):");
+    println!(
+        "{}",
+        atas_to_create.iter().map(|ata| format!("  ✓ {ata}")).collect::<Vec<String>>().join("\n")
+    );
 
     Ok(total_atas)
 }
