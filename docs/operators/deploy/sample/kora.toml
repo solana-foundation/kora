@@ -37,7 +37,7 @@ allowed_spl_paid_tokens = [
 disallowed_accounts = []
 
 # Fee payer policy controls what actions the fee payer can perform
-# All default to true for backward compatibility
+# All default to false for security
 [validation.fee_payer_policy]
 allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
 allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
@@ -95,3 +95,9 @@ scrape_interval = 60
 [metrics.fee_payer_balance]
 enabled = true
 expiry_seconds = 30
+
+[kora.usage_limit]
+enabled = false
+cache_url = "redis://redis:6379"
+max_transactions = 2
+fallback_if_unavailable = false

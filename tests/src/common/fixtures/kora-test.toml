@@ -65,3 +65,9 @@ allow_assign = true
 allow_burn = true
 allow_close_account = true
 allow_approve = true
+
+[kora.usage_limit]
+enabled = false
+cache_url = "redis://redis:6379"
+max_transactions = 2
+fallback_if_unavailable = false

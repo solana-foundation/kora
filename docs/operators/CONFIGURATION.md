@@ -25,6 +25,7 @@ The `kora.toml` file is organized into sections, each with its own set of option
 - [Kora Core Policies](#kora-core-policies) - Core server settings
 - [Kora Authentication](#kora-authentication) - Authentication settings
 - [Kora Caching](#kora-caching-optional) - Redis caching for RPC calls
+- [Kora Usage Limits](#kora-usage-limits-optional) - Per-wallet transaction limiting
 - [Kora Enabled Methods](#kora-enabled-methods-optional) - Kora RPC methods to enable
 - [Validation Policies](#validation-policies) - Transaction validation and security
 - [Token-2022 Extension Blocking](#token-2022-extension-blocking) - Block risky Token-2022 extensions
@@ -44,6 +45,9 @@ Sample `kora.toml` file sections:
 
 [kora.cache]
 # Redis caching configuration
+
+[kora.usage_limit]
+# Per-wallet transaction limiting
 
 [kora.enabled_methods]
 # Kora RPC methods to enable
@@ -121,6 +125,28 @@ account_ttl = 60                    # Account data TTL in seconds (1 minute)
 | `account_ttl` | TTL for account data cache in seconds | ❌ (default: 60) | number |
 
 > *Note: When caching is enabled, a Redis instance must be available at the specified URL. The cache gracefully falls back to direct RPC calls if Redis is unavailable.*
+
+## Kora Usage Limits (optional)
+
+The `[kora.usage_limit]` section configures per-wallet transaction limiting to prevent abuse and ensure fair usage across your users. This could also be used to create rewards programs to subsidize users' transaction fees up to a certain limit.
+This feature requires Redis when enabled across multiple Kora instances:
+
+```toml
+[kora.usage_limit]
+enabled = true                      # Enable/disable usage limiting
+cache_url = "redis://localhost:6379" # Redis URL for shared state (required when enabled)
+max_transactions = 100              # Max transactions per wallet (0 = unlimited)
+fallback_if_unavailable = true      # Continue if Redis is unavailable
+```
+
+| Option | Description | Required | Type |
+|--------|-------------|---------|---------|
+| `enabled` | Enable per-wallet transaction limiting | ❌ (default: false) | boolean |
+| `cache_url` | Redis connection URL for shared usage tracking | ❌ | string |
+| `max_transactions` | Maximum transactions per wallet (0 = unlimited) | ❌ (default: 100) | number |
+| `fallback_if_unavailable` | Allow transactions if Redis is unavailable | ❌ (default: true) | boolean |
+
+> *Note: Usage limits are tracked per wallet address with automatic TTL-based expiration. When `fallback_if_unavailable` is true, the system allows transactions to proceed if Redis is temporarily unavailable, preventing service disruption. Setting `max_transactions` to 0 will allow unlimited transactions.*
 
 ### Kora Enabled Methods (optional)
 The `[kora.enabled_methods]` section controls which RPC methods are enabled. This section is optional and by default, all methods are enabled. Each method can be enabled or disabled by setting the value to `true` or `false`:
@@ -380,6 +406,13 @@ enabled = true
 url = "redis://localhost:6379"
 default_ttl = 300  # 5 minutes
 account_ttl = 60   # 1 minute
+
+# Usage limiting (optional, prevents abuse)
+[kora.usage_limit]
+enabled = true
+cache_url = "redis://localhost:6379"  # Can share same Redis instance as cache
+max_transactions = 100                # Per-wallet limit
+fallback_if_unavailable = true        # Don't block if Redis is down
 
 # Disable unnecessary RPC methods for security
 [kora.enabled_methods]
