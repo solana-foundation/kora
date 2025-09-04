@@ -93,8 +93,8 @@ scrape_interval = 60
 enabled = true
 expiry_seconds = 30
 
-# [kora.usage_limit]
-# enabled = true
-# cache_url = "redis://redis:6379"
-# max_transactions = 2
-# fallback_if_unavailable = false
+[kora.usage_limit]
+enabled = false
+cache_url = "redis://redis:6379"
+max_transactions = 2
+fallback_if_unavailable = false

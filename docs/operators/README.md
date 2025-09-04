@@ -38,6 +38,7 @@ Configure your node to accept only transactions that meet your business requirem
 - **Feepayer policies**: Control what operations your feepayer can perform (transfers, burns, approvals, etc.)
 - **Token-2022 extensions**: Block specific Token-2022 extensions for enhanced security
 - **Caching**: Enable Redis caching to improve performance by reducing RPC calls
+- **Usage limits**: Set per-wallet transaction limits to prevent abuse, ensure fair usage, or reward users with subsidized transactions up to a certain limit
 
 **[→ Complete Kora.toml Configuration Reference](CONFIGURATION.md)**
 **[→ Sample kora.toml](./deploy/sample/kora.toml)**
