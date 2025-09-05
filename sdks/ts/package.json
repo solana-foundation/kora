@@ -27,7 +27,9 @@
     "docs": "typedoc --readme none && node scripts/add-toc.js",
     "docs:html": "typedoc --options typedoc.html.json",
     "docs:watch": "typedoc --watch",
-    "docs:serve": "pnpm run docs:html && npx serve docs-html"
+    "docs:serve": "pnpm run docs:html && npx serve docs-html",
+    "docs:api": "node scripts/generate-api-docs.js",
+    "docs:all": "pnpm run docs && pnpm run docs:api"
   },
   "files": [
     "dist"
