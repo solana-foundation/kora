@@ -29,6 +29,7 @@ tests/src/common/fixtures/lookup_tables.json
 # Docs
 sdks/ts/docs-html/
 sdks/ts/docs-md/
+docs/api-reference-generated/
 
 # AI
 .claude/
