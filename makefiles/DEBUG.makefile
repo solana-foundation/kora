@@ -1,7 +1,3 @@
-# Include the original test targets
-include makefiles/RUST_TESTS.makefile
-include makefiles/TYPESCRIPT_TESTS.makefile
-
 # Debug test targets - override QUIET_OUTPUT to show all output
 debug-test: QUIET_OUTPUT :=
 debug-test: test
