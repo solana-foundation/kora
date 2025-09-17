@@ -8,7 +8,7 @@ use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use solana_sdk::transaction::VersionedTransaction;
 
 use crate::signer::{
-    turnkey::types::{ActivityResponse, SignParameters, SignRequest, TurnkeySigner},
+    turnkey::types::{ActivityResponse, SignParameters, SignRequest, TurnkeyError, TurnkeySigner},
     utils::{bytes_to_hex, hex_to_bytes},
 };
 
@@ -19,8 +19,8 @@ impl TurnkeySigner {
         organization_id: String,
         private_key_id: String,
         public_key: String,
-    ) -> Result<Self, anyhow::Error> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             api_public_key,
             api_private_key,
             organization_id,
@@ -28,10 +28,10 @@ impl TurnkeySigner {
             public_key,
             api_base_url: "https://api.turnkey.com".to_string(),
             client: Client::new(),
-        })
+        }
     }
 
-    pub async fn sign(&self, transaction: &VersionedTransaction) -> Result<Vec<u8>, anyhow::Error> {
+    pub async fn sign(&self, transaction: &VersionedTransaction) -> Result<Vec<u8>, TurnkeyError> {
         let hex_message = hex::encode(transaction.message.serialize());
 
         let request = SignRequest {
@@ -46,7 +46,7 @@ impl TurnkeySigner {
             },
         };
 
-        let body = serde_json::to_string(&request).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        let body = serde_json::to_string(&request).map_err(TurnkeyError::JsonError)?;
 
         let stamp = self.create_stamp(&body)?;
 
@@ -59,22 +59,33 @@ impl TurnkeySigner {
             .body(body)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            .map_err(TurnkeyError::RequestError)?;
 
-        let response = serde_json::from_str::<ActivityResponse>(&response.text().await.unwrap())
-            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+
+            log::error!("Turnkey API error - status: {status}, response: {error_text}");
+            return Err(TurnkeyError::ApiError(status));
+        }
+
+        let response_text = response.text().await.map_err(TurnkeyError::RequestError)?;
+
+        let response = serde_json::from_str::<ActivityResponse>(&response_text)
+            .map_err(TurnkeyError::JsonError)?;
 
         if let Some(result) = response.activity.result {
             if let Some(sign_result) = result.sign_raw_payload_result {
                 // Decode r and s components
-                let r_bytes = hex::decode(&sign_result.r)
-                    .map_err(|e| anyhow::anyhow!(format!("Invalid r component: {}", e)))?;
-                let s_bytes = hex::decode(&sign_result.s)
-                    .map_err(|e| anyhow::anyhow!(format!("Invalid s component: {}", e)))?;
+                let r_bytes = hex::decode(&sign_result.r).map_err(TurnkeyError::InvalidHex)?;
+                let s_bytes = hex::decode(&sign_result.s).map_err(TurnkeyError::InvalidHex)?;
 
                 // Ensure each component is exactly 32 bytes
                 if r_bytes.len() > 32 || s_bytes.len() > 32 {
-                    return Err(anyhow::anyhow!("Signature component too long"));
+                    return Err(TurnkeyError::InvalidSignature);
                 }
 
                 // Create properly padded 32-byte arrays
@@ -94,26 +105,25 @@ impl TurnkeySigner {
             }
         }
 
-        Err(anyhow::anyhow!("Failed to get signature from response"))
+        Err(TurnkeyError::InvalidResponse)
     }
 
     pub async fn sign_solana(
         &self,
         transaction: &VersionedTransaction,
-    ) -> Result<Signature, anyhow::Error> {
+    ) -> Result<Signature, TurnkeyError> {
         let sig = self.sign(transaction).await?;
         let sig_bytes: [u8; 64] = sig.try_into().unwrap();
         Ok(Signature::from(sig_bytes))
     }
 
-    fn create_stamp(&self, message: &str) -> Result<String, anyhow::Error> {
+    fn create_stamp(&self, message: &str) -> Result<String, TurnkeyError> {
         let private_key_bytes =
-            hex_to_bytes(&self.api_private_key).map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        let private_key_array: [u8; 32] = private_key_bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("Invalid private key length"))?;
+            hex_to_bytes(&self.api_private_key).map_err(TurnkeyError::InvalidStamp)?;
+        let private_key_array: [u8; 32] =
+            private_key_bytes.try_into().map_err(|_| TurnkeyError::InvalidPrivateKeyLength)?;
         let signing_key = p256::ecdsa::SigningKey::from_slice(&private_key_array)
-            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            .map_err(TurnkeyError::SigningKeyError)?;
 
         let signature: p256::ecdsa::Signature = signing_key.sign(message.as_bytes());
         let signature_der = signature.to_der().to_bytes();
@@ -125,8 +135,7 @@ impl TurnkeySigner {
             "scheme": "SIGNATURE_SCHEME_TK_API_P256"
         });
 
-        let json_stamp =
-            serde_json::to_string(&stamp).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        let json_stamp = serde_json::to_string(&stamp).map_err(TurnkeyError::JsonError)?;
 
         Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json_stamp.as_bytes()))
     }
@@ -151,7 +160,7 @@ mod tests {
         let private_key_id = "test_private_key_id".to_string();
         let public_key = "11111111111111111111111111111111".to_string();
 
-        let result = TurnkeySigner::new(
+        let signer = TurnkeySigner::new(
             api_public_key.clone(),
             api_private_key.clone(),
             organization_id.clone(),
@@ -159,8 +168,6 @@ mod tests {
             public_key.clone(),
         );
 
-        assert!(result.is_ok());
-        let signer = result.unwrap();
         assert_eq!(signer.api_public_key, api_public_key);
         assert_eq!(signer.api_private_key, api_private_key);
         assert_eq!(signer.organization_id, organization_id);
@@ -176,8 +183,7 @@ mod tests {
             "org".to_string(),
             "key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
-        )
-        .unwrap();
+        );
 
         let pubkey = signer.solana_pubkey();
         assert_eq!(pubkey.to_string(), "11111111111111111111111111111111");
@@ -220,8 +226,7 @@ mod tests {
             "test_org_id".to_string(),
             "test_private_key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
-        )
-        .unwrap();
+        );
         signer.api_base_url = server.url();
 
         let result = signer.sign(&test_transaction).await;
@@ -263,15 +268,57 @@ mod tests {
             "invalid_org_id".to_string(),
             "invalid_private_key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
-        )
-        .unwrap();
+        );
+
         signer.api_base_url = server.url();
 
         // Test API error handling
         let result = signer.sign(&test_transaction).await;
         assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("Failed to get signature from response"));
+        assert!(matches!(result.unwrap_err(), TurnkeyError::ApiError(_)));
+    }
+
+    #[tokio::test]
+    async fn test_sign_rate_limit_error() {
+        let mut server = Server::new_async().await;
+
+        let rate_limit_response = r#"{
+            "code": 8,
+            "message": "",
+            "details": [],
+            "turnkeyErrorCode": ""
+        }"#;
+
+        let _mock = server
+            .mock("POST", "/public/v1/submit/sign_raw_payload")
+            .with_status(429)
+            .with_header("content-type", "application/json")
+            .with_body(rate_limit_response)
+            .create_async()
+            .await;
+
+        let test_transaction = create_mock_transaction();
+
+        let mut signer = TurnkeySigner::new(
+            "test_api_public_key".to_string(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            "test_org_id".to_string(),
+            "test_private_key_id".to_string(),
+            "11111111111111111111111111111111".to_string(),
+        );
+
+        signer.api_base_url = server.url();
+
+        // Test that 429 rate limit is properly handled
+        let result = signer.sign(&test_transaction).await;
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            TurnkeyError::ApiError(status) => {
+                assert_eq!(status, 429);
+            }
+            _ => panic!("Expected ApiError with 429 status"),
+        }
     }
 
     #[tokio::test]
@@ -311,8 +358,8 @@ mod tests {
             "test_org_id".to_string(),
             "test_private_key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
-        )
-        .unwrap();
+        );
+
         signer.api_base_url = server.url();
 
         // Test successful signing returns Signature
@@ -331,8 +378,7 @@ mod tests {
             "test_org_id".to_string(),
             "test_private_key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
-        )
-        .unwrap();
+        );
 
         let test_message = r#"{"test": "message"}"#;
 

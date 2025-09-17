@@ -347,26 +347,6 @@ mod tests {
         update_config(config).unwrap();
     }
 
-    fn setup_spl_token_config() {
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
-    }
-
-    fn setup_token2022_config() {
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        update_config(config).unwrap();
-    }
-
     fn setup_config_with_policy(policy: FeePayerPolicy) {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
