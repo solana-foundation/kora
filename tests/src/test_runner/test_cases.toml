@@ -26,3 +26,31 @@ config = "tests/src/common/fixtures/kora-test.toml"
 signers = "tests/src/common/fixtures/multi-signers.toml"
 port = "8083"
 tests = ["multi_signer"]
+
+[test.typescript_basic]
+name = "TypeScript SDK Tests"
+config = "tests/src/common/fixtures/kora-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8084"
+tests = ["typescript_basic"]
+
+[test.typescript_auth]
+name = "TypeScript Auth Tests"
+config = "tests/src/common/fixtures/auth-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8085"
+tests = ["typescript_auth"]
+
+[test.typescript_turnkey]
+name = "TypeScript Turnkey Tests"
+config = "tests/src/common/fixtures/kora-test.toml"
+signers = "tests/src/common/fixtures/signers-turnkey.toml"
+port = "8086"
+tests = ["typescript_turnkey"]
+
+[test.typescript_privy]
+name = "TypeScript Privy Tests"
+config = "tests/src/common/fixtures/kora-test.toml"
+signers = "tests/src/common/fixtures/signers-privy.toml"
+port = "8087"
+tests = ["typescript_privy"]

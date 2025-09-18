@@ -9,6 +9,7 @@ pub struct PhaseOutput {
 pub enum OutputFilter {
     Test,
     CliCommand,
+    TypeScript,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -17,6 +18,10 @@ pub enum TestPhaseColor {
     Auth,
     Payment,
     MultiSigner,
+    TypeScriptBasic,
+    TypeScriptAuth,
+    TypeScriptTurnkey,
+    TypeScriptPrivy,
 }
 
 impl TestPhaseColor {
@@ -26,16 +31,24 @@ impl TestPhaseColor {
             "8081" => Self::Auth,
             "8082" => Self::Payment,
             "8083" => Self::MultiSigner,
+            "8084" => Self::TypeScriptBasic,
+            "8085" => Self::TypeScriptAuth,
+            "8086" => Self::TypeScriptTurnkey,
+            "8087" => Self::TypeScriptPrivy,
             _ => Self::Regular,
         }
     }
 
     pub fn ansi_code(&self) -> &'static str {
         match self {
-            Self::Regular => "\x1b[32m",     // Green
-            Self::Auth => "\x1b[34m",        // Blue
-            Self::Payment => "\x1b[33m",     // Yellow
-            Self::MultiSigner => "\x1b[35m", // Magenta
+            Self::Regular => "\x1b[32m",           // Green
+            Self::Auth => "\x1b[34m",              // Blue
+            Self::Payment => "\x1b[33m",           // Yellow
+            Self::MultiSigner => "\x1b[35m",       // Magenta
+            Self::TypeScriptBasic => "\x1b[36m",   // Cyan
+            Self::TypeScriptAuth => "\x1b[94m",    // Bright Blue
+            Self::TypeScriptTurnkey => "\x1b[93m", // Bright Yellow
+            Self::TypeScriptPrivy => "\x1b[95m",   // Bright Magenta
         }
     }
 
@@ -78,11 +91,43 @@ impl OutputFilter {
                     || line.contains("Created")
                     || (show_verbose && line.contains("INFO"))
             }
+            Self::TypeScript => {
+                // Jest and TypeScript test output patterns
+                line.contains("PASS")
+                    || line.contains("FAIL")
+                    || line.contains("✓")
+                    || line.contains("✗")
+                    || line.contains("Tests:")
+                    || line.contains("Test Suites:")
+                    || line.contains("Snapshots:")
+                    || line.contains("Time:")
+                    || line.contains("Ran all test suites")
+                    || line.contains("Test results:")
+                    || line.contains("expect")
+                    || line.contains("Error:")
+                    || line.contains("AssertionError")
+                    || line.contains("TypeError")
+                    || line.contains("ReferenceError")
+                    || line.contains("failed with exit code")
+                    || line.contains("npm ERR!")
+                    || line.contains("pnpm ERR!")
+                    || line.trim().is_empty()
+                    || (show_verbose
+                        && (line.contains("Running")
+                            || line.contains("Starting")
+                            || line.contains("Finished")))
+            }
         }
     }
 }
 
 pub fn filter_command_output(output: &str, filter: OutputFilter, show_verbose: bool) -> String {
+    // If verbose, show everything without filtering
+    if show_verbose {
+        return output.to_string();
+    }
+
+    // Otherwise apply pattern filtering
     output
         .lines()
         .filter(|line| filter.should_show_line(line, show_verbose))

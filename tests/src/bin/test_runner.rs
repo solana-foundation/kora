@@ -2,20 +2,16 @@ use clap::Parser;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::{fs, sync::Arc};
 use tests::{
-    common::{
-        constants::DEFAULT_RPC_URL, setup::TestAccountSetup, TestAccountInfo, TEST_SERVER_URL_ENV,
-    },
+    common::{constants::DEFAULT_RPC_URL, setup::TestAccountSetup, TestAccountInfo},
     test_runner::{
         accounts::{
             download_accounts, set_environment_variables, set_lookup_table_environment_variables,
             AccountFile,
         },
+        commands::{TestCommandHelper, TestLanguage},
         config::{TestPhaseConfig, TestRunnerConfig},
         kora::{is_kora_running, start_kora_rpc_server},
-        output::{
-            filter_and_colorize_output, filter_command_output, OutputFilter, PhaseOutput,
-            TestPhaseColor,
-        },
+        output::{filter_command_output, OutputFilter, PhaseOutput, TestPhaseColor},
         validator::start_test_validator,
     },
 };
@@ -266,7 +262,27 @@ pub async fn run_test_phase(
         for test_name in test_names {
             output
                 .push_str(&color.colorize(&format!("Running {test_name} tests on port {port}\n")));
-            run_tests_buffered(port, test_name, color, verbose, &mut output).await?
+            if test_name.starts_with("typescript_") {
+                TestCommandHelper::run_test(
+                    TestLanguage::TypeScript,
+                    test_name,
+                    port,
+                    color,
+                    verbose,
+                    &mut output,
+                )
+                .await?;
+            } else {
+                TestCommandHelper::run_test(
+                    TestLanguage::Rust,
+                    test_name,
+                    port,
+                    color,
+                    verbose,
+                    &mut output,
+                )
+                .await?
+            }
         }
 
         Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
@@ -336,45 +352,6 @@ pub async fn run_initialize_atas_for_kora_cli_tests_buffered(
     }
     output.push_str(&color.colorize("• Payment ATAs ready\n"));
 
-    Ok(())
-}
-
-pub async fn run_tests_buffered(
-    port: &str,
-    test_name: &str,
-    color: TestPhaseColor,
-    verbose: bool,
-    output: &mut String,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let server_url = format!("http://127.0.0.1:{port}");
-
-    let mut cmd = tokio::process::Command::new("cargo");
-
-    cmd.args(["test", "-p", "tests", "--test", test_name, "--", "--nocapture"])
-        .env(TEST_SERVER_URL_ENV, &server_url);
-
-    for account_file in AccountFile::required_test_accounts_env_vars() {
-        let (env_var, value) = account_file.get_as_env_var();
-        cmd.env(env_var, value);
-    }
-
-    let cmd_output = cmd.output().await?;
-
-    if !cmd_output.status.success() {
-        let stderr = String::from_utf8_lossy(&cmd_output.stderr);
-        let filtered_stderr =
-            filter_and_colorize_output(&stderr, OutputFilter::Test, verbose, color);
-        if !filtered_stderr.is_empty() {
-            output.push_str(&filtered_stderr);
-            output.push('\n');
-        }
-        return Err(format!("{test_name} tests failed").into());
-    }
-
-    let stdout = String::from_utf8_lossy(&cmd_output.stdout);
-    let filtered_stdout = filter_and_colorize_output(&stdout, OutputFilter::Test, verbose, color);
-    output.push_str(&filtered_stdout);
-    output.push('\n');
     Ok(())
 }
 
