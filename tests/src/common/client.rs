@@ -6,7 +6,9 @@ use jsonrpsee::{
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 
-use crate::common::{TransactionBuilder, DEFAULT_RPC_URL, TEST_SERVER_URL};
+use crate::common::{
+    TransactionBuilder, DEFAULT_RPC_URL, RPC_URL_ENV, TEST_SERVER_URL, TEST_SERVER_URL_ENV,
+};
 
 /// Unified test client that manages both HTTP and RPC clients
 #[derive(Clone)]
@@ -49,13 +51,13 @@ impl TestClient {
     /// Get the default test server URL (Kora RPC server)
     pub fn get_default_server_url() -> String {
         dotenv::dotenv().ok();
-        std::env::var("TEST_SERVER_URL").unwrap_or_else(|_| TEST_SERVER_URL.to_string())
+        std::env::var(TEST_SERVER_URL_ENV).unwrap_or_else(|_| TEST_SERVER_URL.to_string())
     }
 
     /// Get the default RPC URL (Solana RPC)
     pub fn get_default_rpc_url() -> String {
         dotenv::dotenv().ok();
-        std::env::var("RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string())
+        std::env::var(RPC_URL_ENV).unwrap_or_else(|_| DEFAULT_RPC_URL.to_string())
     }
 }
 

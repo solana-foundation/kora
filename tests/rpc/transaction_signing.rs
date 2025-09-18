@@ -4,7 +4,7 @@ use crate::common::*;
 use jsonrpsee::rpc_params;
 use kora_lib::transaction::TransactionUtil;
 use solana_sdk::{pubkey::Pubkey, signature::Signer};
-use spl_associated_token_account::get_associated_token_address;
+use tests::common::helpers::get_fee_for_default_transaction_in_usdc;
 
 // **************************************************************************************
 // Sign transaction tests
@@ -342,7 +342,8 @@ async fn test_sign_transaction_v0_with_invalid_lookup_table() {
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
         .with_transfer(
             &SenderTestHelper::get_test_sender_keypair().pubkey(),
-            &LookupTableHelper::get_test_disallowed_address(),
+            &LookupTableHelper::get_test_disallowed_address()
+                .expect("Failed to get test disallowed address"),
             10,
         )
         .build()

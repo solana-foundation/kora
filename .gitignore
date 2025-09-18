@@ -24,6 +24,7 @@ coverage/
 test-ledger/
 .local/
 tests/src/common/fixtures/lookup_tables.json
+tests/src/common/fixtures/test-accounts/
 
 # Docs
 sdks/ts/docs-html/

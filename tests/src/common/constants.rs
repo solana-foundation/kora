@@ -1,9 +1,3 @@
-use solana_sdk::pubkey::Pubkey;
-use std::str::FromStr;
-
-pub const LOOKUP_TABLES_FILE_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/fixtures/lookup_tables.json");
-
 // ============================================================================
 // Network URLs
 // ============================================================================
@@ -13,42 +7,6 @@ pub const DEFAULT_RPC_URL: &str = "http://127.0.0.1:8899";
 
 /// Default Kora test server URL
 pub const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
-
-// ============================================================================
-// Test Keypair Paths
-// ============================================================================
-
-/// Fee payer keypair path (local testing only)
-pub const FEE_PAYER_KEYPAIR_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/fee-payer-local.json");
-
-/// Sender keypair path (local testing only)
-pub const SENDER_KEYPAIR_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/sender-local.json");
-
-/// USDC mint keypair path (local testing only)
-pub const USDC_MINT_KEYPAIR_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/usdc-mint-local.json");
-
-/// USDC mint 2022 keypair path (local testing only)
-pub const USDC_MINT_2022_KEYPAIR_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/usdc-mint-2022-local.json");
-
-/// Interest bearing mint keypair path (local testing only)
-pub const INTEREST_BEARING_MINT_KEYPAIR_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/mint-2022-interest-bearing.json");
-
-/// Transfer hook mint keypair path (local testing only)
-pub const TRANSFER_HOOK_MINT_KEYPAIR_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/mint-transfer-hook-local.json");
-
-/// Second signer keypair path (for multi-signer tests)
-pub const SIGNER2_KEYPAIR_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/signer2-local.json");
-
-/// Payment address keypair path (for payment address tests)
-pub const PAYMENT_KEYPAIR_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/src/common/local-keys/payment-local.json");
 
 // ============================================================================
 // Test Public Keys
@@ -87,36 +45,50 @@ pub const TEST_API_KEY: &str = "test-api-key-123";
 pub const TEST_HMAC_SECRET: &str = "test-hmac-secret-456";
 
 // ============================================================================
-// Helper Functions
+// Test Environment Variables
 // ============================================================================
 
-/// Get recipient pubkey as Pubkey type
-pub fn get_recipient_pubkey() -> Pubkey {
-    Pubkey::from_str(RECIPIENT_PUBKEY).expect("Invalid recipient pubkey")
-}
+/// Test server URL environment variable
+pub const TEST_SERVER_URL_ENV: &str = "TEST_SERVER_URL";
 
-/// Get test disallowed address as Pubkey type
-pub fn get_test_disallowed_pubkey() -> Pubkey {
-    Pubkey::from_str(TEST_DISALLOWED_ADDRESS).expect("Invalid disallowed address")
-}
+/// RPC URL environment variable
+pub const RPC_URL_ENV: &str = "RPC_URL";
 
-/// Get test payment address as Pubkey type
-pub fn get_test_payment_pubkey() -> Pubkey {
-    Pubkey::from_str(TEST_PAYMENT_ADDRESS).expect("Invalid payment address")
-}
+/// KORA private key environment variable
+pub const KORA_PRIVATE_KEY_ENV: &str = "KORA_PRIVATE_KEY";
 
-/// Get PYUSD mint as Pubkey type
-pub fn get_pyusd_mint_pubkey() -> Pubkey {
-    Pubkey::from_str(PYUSD_MINT).expect("Invalid PYUSD mint")
-}
+/// Signer 2 private key environment variable
+pub const SIGNER_2_KEYPAIR_ENV: &str = "SIGNER_2_KEYPAIR";
 
-/// Default fee for a transaction with 2 signers (5000 lamports each)
-/// This is used for a lot of tests that only has sender and fee payer as signers
-pub fn get_fee_for_default_transaction_in_usdc() -> u64 {
-    // 10 000 USDC priced at default 0.001 SOL / USDC (Mock pricing) (6 decimals), so 0.01 USDC
-    // 10 000 lamports required (2 x 5000 for signatures) (9 decimals), so 0.00001 SOL
-    //
-    // Required SOL amount is 0.01 (usdc amount) * 0.001 (usdc price) = 0.00001 SOL
-    // Required lamports is 0.00001 SOL * 10^9 (lamports per SOL) = 10 000 lamports
-    10_000
-}
+/// Test sender private key environment variable
+pub const TEST_SENDER_KEYPAIR_ENV: &str = "TEST_SENDER_KEYPAIR";
+
+/// Test recipient public key environment variable
+pub const TEST_RECIPIENT_PUBKEY_ENV: &str = "TEST_RECIPIENT_PUBKEY";
+
+/// Test USDC mint private key environment variable
+pub const TEST_USDC_MINT_KEYPAIR_ENV: &str = "TEST_USDC_MINT_KEYPAIR";
+
+/// Test USDC mint decimals environment variable
+pub const TEST_USDC_MINT_DECIMALS_ENV: &str = "TEST_USDC_MINT_DECIMALS";
+
+/// Test USDC mint 2022 private key environment variable
+pub const TEST_USDC_MINT_2022_KEYPAIR_ENV: &str = "TEST_USDC_MINT_2022_KEYPAIR";
+
+/// Test interest bearing mint private key environment variable
+pub const TEST_INTEREST_BEARING_MINT_KEYPAIR_ENV: &str = "TEST_INTEREST_BEARING_MINT_KEYPAIR";
+
+/// Test transfer hook mint private key environment variable
+pub const TEST_TRANSFER_HOOK_MINT_KEYPAIR_ENV: &str = "TEST_TRANSFER_HOOK_MINT_KEYPAIR";
+
+/// Payment address keypair environment variable
+pub const PAYMENT_ADDRESS_KEYPAIR_ENV: &str = "PAYMENT_ADDRESS_KEYPAIR";
+
+/// Test allowed lookup table address environment variable
+pub const TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV: &str = "TEST_ALLOWED_LOOKUP_TABLE_ADDRESS";
+
+/// Test disallowed lookup table address environment variable
+pub const TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV: &str = "TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS";
+
+/// Test transaction lookup table address environment variable
+pub const TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS_ENV: &str = "TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS";

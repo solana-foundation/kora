@@ -4,8 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 
 [[bin]]
-name = "setup_test_env"
-path = "src/bin/setup_test_env.rs"
+name = "test_runner"
+path = "src/bin/test_runner.rs"
 
 
 [[test]]
