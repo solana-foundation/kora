@@ -51,7 +51,16 @@ impl PrivySigner {
             .await?;
 
         if !response.status().is_success() {
-            return Err(PrivyError::ApiError(response.status().as_u16()));
+            let status = response.status().as_u16();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+
+            log::error!(
+                "Privy API get_public_key error - status: {status}, response: {error_text}"
+            );
+            return Err(PrivyError::ApiError(status));
         }
 
         let wallet_info: WalletResponse = response.json().await?;
@@ -91,6 +100,12 @@ impl PrivySigner {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+
+            log::error!("Privy API sign_solana error - status: {status}, response: {error_text}");
             return Err(PrivyError::ApiError(status));
         }
 

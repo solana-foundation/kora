@@ -63,12 +63,7 @@ impl SignerConfigTrait for TurnkeySignerHandler {
             organization_id,
             private_key_id,
             public_key,
-        )
-        .map_err(|e| {
-            KoraError::ValidationError(format!(
-                "Failed to create Turnkey signer '{signer_name}': {e}"
-            ))
-        })?;
+        );
 
         Ok(KoraSigner::Turnkey(signer))
     }

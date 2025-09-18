@@ -199,6 +199,12 @@ impl From<crate::signer::privy::types::PrivyError> for KoraError {
     }
 }
 
+impl From<crate::signer::turnkey::types::TurnkeyError> for KoraError {
+    fn from(err: crate::signer::turnkey::types::TurnkeyError) -> Self {
+        KoraError::SigningError(err.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
