@@ -57,7 +57,7 @@ reqwest = { workspace = true }
 futures = { workspace = true }
 anyhow = { workspace = true }
 once_cell = "1.21.3"
-clap = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 toml = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }
 colored = "3.0"

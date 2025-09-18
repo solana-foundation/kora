@@ -1,0 +1,28 @@
+[test.regular]
+name = "Regular Integration Tests"
+config = "tests/src/common/fixtures/kora-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8080"
+tests = ["rpc", "tokens", "external"]
+
+[test.auth]
+name = "Auth Tests"
+config = "tests/src/common/fixtures/auth-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8081"
+tests = ["auth"]
+
+[test.payment_address]
+name = "Payment Address Tests"
+config = "tests/src/common/fixtures/paymaster-address-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8082"
+tests = ["payment_address"]
+initialize_payments_atas = true
+
+[test.multi_signer]
+name = "Multi-Signer Tests"
+config = "tests/src/common/fixtures/kora-test.toml"
+signers = "tests/src/common/fixtures/multi-signers.toml"
+port = "8083"
+tests = ["multi_signer"]

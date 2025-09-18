@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use anyhow::Result;
 use jsonrpsee::{
     core::{client::ClientT, traits::ToRpcParams},
