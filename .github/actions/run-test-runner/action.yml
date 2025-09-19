@@ -1,0 +1,45 @@
+name: "Run Test Runner"
+description: "Execute Kora integration tests using the test runner with specified filters"
+
+inputs:
+  filters:
+    description: "Test filters to apply (e.g., '--filter regular --filter auth')"
+    required: true
+  verbose:
+    description: "Enable verbose output"
+    required: false
+    default: "true"
+  rpc-url:
+    description: "Solana RPC URL to use"
+    required: false
+    default: "http://127.0.0.1:8899"
+  force-refresh:
+    description: "Force refresh of test accounts"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run integration tests with test runner
+      shell: bash
+      run: |
+        echo "🧪 Running integration tests with filters: ${{ inputs.filters }}"
+
+        # Build command arguments
+        ARGS=""
+        if [ "${{ inputs.verbose }}" = "true" ]; then
+          ARGS="$ARGS --verbose"
+        fi
+        if [ "${{ inputs.force-refresh }}" = "true" ]; then
+          ARGS="$ARGS --force-refresh"
+        fi
+        if [ "${{ inputs.rpc-url }}" != "http://127.0.0.1:8899" ]; then
+          ARGS="$ARGS --rpc-url ${{ inputs.rpc-url }}"
+        fi
+
+        # Add filters
+        ARGS="$ARGS ${{ inputs.filters }}"
+
+        # Run the test runner
+        cargo run -p tests --bin test_runner -- $ARGS

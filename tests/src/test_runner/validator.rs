@@ -33,7 +33,7 @@ pub async fn start_test_validator(
         for account_file in AccountFile::required_test_accounts() {
             let account_path = account_file.test_account_path();
             if account_path.exists() {
-                if let Ok(account_address) = get_account_address_from_file(&account_path) {
+                if let Ok(account_address) = get_account_address_from_file(&account_path).await {
                     cmd.arg("--account").arg(&account_address).arg(&account_path);
                     println!(
                         "Loading account: {} from {}",
@@ -49,12 +49,21 @@ pub async fn start_test_validator(
         cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn()?;
 
     let mut attempts = 0;
+    let mut delay = std::time::Duration::from_millis(100);
+    let max_delay = std::time::Duration::from_secs(2);
+    let max_attempts = 15;
+
     while !check_test_validator(DEFAULT_RPC_URL).await {
         attempts += 1;
-        if attempts > 30 {
-            return Err("Solana test validator failed to start within 60 seconds".into());
+        if attempts > max_attempts {
+            return Err(format!(
+                "Solana test validator failed to start within {max_attempts} attempts"
+            )
+            .into());
         }
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        tokio::time::sleep(delay).await;
+        delay = std::cmp::min(delay * 2, max_delay);
     }
 
     println!("Solana test validator started successfully");

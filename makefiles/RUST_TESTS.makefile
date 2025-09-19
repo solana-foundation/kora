@@ -24,3 +24,8 @@ test-integration-verbose:
 test-integration-fresh:
 	$(call print_header,KORA INTEGRATION TEST SUITE - FRESH SETUP)
 	@cargo run -p tests --bin test_runner -- --force-refresh
+
+# Run specific test phases with filters (for CI)
+test-integration-filtered:
+	$(call print_header,KORA INTEGRATION TEST SUITE - FILTERED)
+	@cargo run -p tests --bin test_runner -- $(FILTERS)

@@ -1,53 +1,15 @@
 name: 'Cleanup Test Environment'
-description: 'Stop all test processes (Kora RPC, Solana validator, etc.)'
+description: 'Kill any remaining test processes (safety net for test runner failures)'
 
 runs:
   using: 'composite'
   steps:
-    - name: Stop test processes
+    - name: Kill remaining processes
       shell: bash
       if: always()
       run: |
-        echo "🧹 Cleaning up test environment..."
-        
-        # Stop Kora RPC server using saved PID
-        if [ -f /tmp/kora_pid ]; then
-          KORA_PID=$(cat /tmp/kora_pid)
-          if [ ! -z "$KORA_PID" ]; then
-            echo "Stopping Kora RPC server (PID: $KORA_PID)"
-            kill $KORA_PID 2>/dev/null || true
-          fi
-          rm -f /tmp/kora_pid
-        fi
-        
-        # Stop using environment variable as fallback
-        if [ ! -z "$KORA_PID" ]; then
-          echo "Stopping Kora RPC server (ENV PID: $KORA_PID)"
-          kill $KORA_PID 2>/dev/null || true
-        fi
-        
-        # Stop Solana validator using saved PID
-        if [ -f /tmp/validator_pid ]; then
-          VALIDATOR_PID=$(cat /tmp/validator_pid)
-          if [ ! -z "$VALIDATOR_PID" ]; then
-            echo "Stopping Solana validator (PID: $VALIDATOR_PID)"
-            kill $VALIDATOR_PID 2>/dev/null || true
-          fi
-          rm -f /tmp/validator_pid
-        fi
-        
-        # Stop using environment variable as fallback
-        if [ ! -z "$VALIDATOR_PID" ]; then
-          echo "Stopping Solana validator (ENV PID: $VALIDATOR_PID)"
-          kill $VALIDATOR_PID 2>/dev/null || true
-        fi
-        
-        # Kill any remaining processes by name (nuclear option)
-        echo "Killing any remaining test processes..."
+        echo "🧹 Safety cleanup of any remaining processes..."
         pkill -f "solana-test-validator" 2>/dev/null || true
         pkill -f "kora" 2>/dev/null || true
-        
-        # Wait a moment for processes to stop
-        sleep 2
-        
+        sleep 1
         echo "✅ Cleanup completed"

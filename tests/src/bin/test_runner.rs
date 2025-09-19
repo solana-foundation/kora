@@ -1,6 +1,6 @@
 use clap::Parser;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use std::{fs, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 use tests::{
     common::{constants::DEFAULT_RPC_URL, setup::TestAccountSetup, TestAccountInfo},
     test_runner::{
@@ -10,8 +10,12 @@ use tests::{
         },
         commands::{TestCommandHelper, TestLanguage},
         config::{TestPhaseConfig, TestRunnerConfig},
-        kora::{is_kora_running, start_kora_rpc_server},
-        output::{filter_command_output, OutputFilter, PhaseOutput, TestPhaseColor},
+        kora::{
+            get_kora_binary_path, is_kora_running_with_client, release_port, start_kora_rpc_server,
+        },
+        output::{
+            filter_command_output, limit_output_size, OutputFilter, PhaseOutput, TestPhaseColor,
+        },
         validator::start_test_validator,
     },
 };
@@ -23,17 +27,37 @@ pub struct TestRunner {
     pub solana_test_validator_pid: Option<Child>,
     pub test_accounts: TestAccountInfo,
     pub kora_pids: Vec<Child>,
+    pub cached_keys: Arc<HashMap<AccountFile, String>>,
 }
 
 impl TestRunner {
-    pub fn new(rpc_url: String) -> Self {
-        Self {
+    pub async fn new(rpc_url: String) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let mut cached_keys = HashMap::new();
+
+        // Cache all required keys
+        for &account_file in AccountFile::required_for_kora() {
+            let key = tokio::fs::read_to_string(account_file.local_key_path()).await?;
+            cached_keys.insert(account_file, key);
+        }
+
+        Ok(Self {
             rpc_client: Arc::new(RpcClient::new(rpc_url)),
             reqwest_client: reqwest::Client::new(),
             solana_test_validator_pid: None,
             test_accounts: TestAccountInfo::default(),
             kora_pids: Vec::new(),
-        }
+            cached_keys: Arc::new(cached_keys),
+        })
+    }
+
+    pub fn get_cached_key(
+        &self,
+        account_file: AccountFile,
+    ) -> Result<&str, Box<dyn std::error::Error + Send + Sync>> {
+        self.cached_keys
+            .get(&account_file)
+            .map(|s| s.as_str())
+            .ok_or_else(|| format!("Key not found in cache: {account_file:?}").into())
     }
 }
 
@@ -67,23 +91,44 @@ pub struct Args {
         help = "Path to test configuration file"
     )]
     pub config: String,
+
+    /// Run only specific test phases (can be used multiple times)
+    #[arg(
+        long = "filter",
+        help = "Run only specific test phases (e.g., --filter regular --filter auth)"
+    )]
+    pub filters: Vec<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Args::parse();
+    let start_time = Instant::now();
 
-    let mut test_runner = TestRunner::new(args.rpc_url.clone());
+    println!("🚀 Starting test runner at {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"));
+
+    let mut test_runner = TestRunner::new(args.rpc_url.clone()).await?;
     let custom_rpc_url = args.rpc_url != DEFAULT_RPC_URL;
 
-    let result = async {
+    let (result, completed_phases) = async {
         setup_test_env(&mut test_runner, args.force_refresh, custom_rpc_url).await?;
-        run_all_test_phases(&test_runner, args.verbose, &args.config).await?;
-        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+        let phases =
+            run_all_test_phases(&test_runner, args.verbose, &args.config, &args.filters).await?;
+        Ok::<usize, Box<dyn std::error::Error + Send + Sync>>(phases)
     }
-    .await;
+    .await
+    .map_or_else(|e| (Err(e), 0), |phases| (Ok(()), phases));
 
     clean_up(&mut test_runner).await?;
+
+    let total_duration = start_time.elapsed();
+    println!(
+        "✅ Test runner completed at {} ({} phases, Total time: {:.2}s)",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+        completed_phases,
+        total_duration.as_secs_f64()
+    );
+
     result
 }
 
@@ -123,7 +168,7 @@ async fn setup_test_env(
         println!("Using external RPC, skipping local validator startup");
     }
 
-    set_environment_variables()?;
+    set_environment_variables(&test_runner.cached_keys)?;
 
     test_runner.test_accounts = setup_test_env_from_scratch().await?;
 
@@ -143,55 +188,89 @@ pub async fn run_all_test_phases(
     test_runner: &TestRunner,
     verbose: bool,
     config_path: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    filters: &[String],
+) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let rpc_url = test_runner.rpc_client.url();
 
     // Load test configuration
     let config = if std::path::Path::new(config_path).exists() {
         println!("Loading test configuration from: {config_path}");
-        TestRunnerConfig::load_from_file(config_path)?
+        TestRunnerConfig::load_from_file(config_path).await?
     } else {
         panic!("Test configuration file not found: {config_path}");
     };
 
     let mut join_set = JoinSet::new();
 
-    // Spawn all test phases from config
-    for (_, phase_config) in config.get_all_phases() {
+    // Spawn test phases from config (filtered if specified)
+    for (phase_name, phase_config) in config.get_all_phases() {
+        // Apply filter if specified
+        if !filters.is_empty() && !filters.contains(&phase_name) {
+            continue;
+        }
+
         join_set.spawn({
             let rpc_url = rpc_url.clone();
             let phase_config = phase_config.clone();
-            async move { run_test_phase_from_config(rpc_url, &phase_config, verbose).await }
+            let cached_keys = test_runner.cached_keys.clone();
+            let http_client = test_runner.reqwest_client.clone();
+            async move {
+                run_test_phase_from_config(
+                    rpc_url,
+                    &phase_config,
+                    verbose,
+                    cached_keys,
+                    http_client,
+                )
+                .await
+            }
         });
     }
 
-    let mut phase_outputs = Vec::new();
+    // Stream output as each test completes instead of waiting for all
+    let mut all_success = true;
+    let mut errors = Vec::new();
+    let mut completed_phases = 0;
+
     while let Some(result) = join_set.join_next().await {
-        let phase_output = result?;
-        phase_outputs.push(phase_output);
+        match result {
+            Ok(phase_output) => {
+                completed_phases += 1;
+                print!("{}", phase_output.output);
+
+                if phase_output.truncated {
+                    println!("⚠️  Output truncated for phase '{}'", phase_output.phase_name);
+                }
+
+                if !phase_output.success {
+                    all_success = false;
+                }
+            }
+            Err(e) => {
+                println!("❌ Task failed: {e}");
+                errors.push(e);
+                all_success = false;
+            }
+        }
     }
 
-    // Print all phase outputs in order
-    phase_outputs.sort_by_key(|p| p.phase_name.clone());
-    let mut all_success = true;
-    for phase_output in phase_outputs {
-        print!("{}", phase_output.output);
-        if !phase_output.success {
-            all_success = false;
-        }
+    if !errors.is_empty() {
+        return Err(format!("Multiple test phases failed: {errors:?}").into());
     }
 
     if !all_success {
         return Err("One or more test phases failed".into());
     }
 
-    Ok(())
+    Ok(completed_phases)
 }
 
 async fn run_test_phase_from_config(
     rpc_url: String,
     config: &TestPhaseConfig,
     verbose: bool,
+    cached_keys: Arc<HashMap<AccountFile, String>>,
+    http_client: reqwest::Client,
 ) -> PhaseOutput {
     let test_names: Vec<&str> = config.tests.iter().map(|s| s.as_str()).collect();
 
@@ -200,10 +279,11 @@ async fn run_test_phase_from_config(
         rpc_url,
         &config.config,
         &config.signers,
-        &config.port,
         test_names,
         config.initialize_payments_atas,
         verbose,
+        cached_keys,
+        http_client,
     )
     .await
 }
@@ -214,38 +294,68 @@ pub async fn run_test_phase(
     rpc_url: String,
     config_file: &str,
     signers_config: &str,
-    port: &str,
     test_names: Vec<&str>,
     initialize_payment_atas: bool,
     verbose: bool,
+    cached_keys: Arc<HashMap<AccountFile, String>>,
+    http_client: reqwest::Client,
 ) -> PhaseOutput {
-    let color = TestPhaseColor::from_port(port);
+    let color = TestPhaseColor::from_phase_name(phase_name);
     let mut output = String::new();
 
-    output.push_str(&color.colorize(&format!("=== Starting {phase_name} ===\n")));
+    output
+        .push_str(&color.colorize_with_controlled_flow(&format!("=== Starting {phase_name} ===")));
 
-    let mut kora_pid =
-        match start_kora_rpc_server(rpc_url.clone(), config_file, signers_config, port).await {
-            Ok(pid) => pid,
+    let (mut kora_pid, actual_port) =
+        match start_kora_rpc_server(rpc_url.clone(), config_file, signers_config, &cached_keys)
+            .await
+        {
+            Ok((pid, port)) => (pid, port),
             Err(e) => {
-                output.push_str(&color.colorize(&format!("Failed to start Kora server: {e}\n")));
-                return PhaseOutput { phase_name: phase_name.to_string(), output, success: false };
+                output.push_str(
+                    &color.colorize_with_controlled_flow(&format!(
+                        "Failed to start Kora server: {e}"
+                    )),
+                );
+                let (limited_output, truncated) = limit_output_size(output);
+                return PhaseOutput {
+                    phase_name: phase_name.to_string(),
+                    output: limited_output,
+                    success: false,
+                    truncated,
+                };
             }
         };
 
     let mut attempts = 0;
-    while !is_kora_running(port).await {
+    let mut delay = std::time::Duration::from_millis(50);
+    let max_delay = std::time::Duration::from_secs(1);
+    let max_attempts = 10;
+    let port_str = actual_port.to_string();
+
+    while !is_kora_running_with_client(&http_client, &port_str).await {
         attempts += 1;
-        if attempts > 30 {
-            output.push_str(&color.colorize(&format!(
-                "Kora server failed to start on port {port} within 30 seconds\n"
+        if attempts > max_attempts {
+            output.push_str(&color.colorize_with_controlled_flow(&format!(
+                "Kora server failed to start on port {actual_port} within {max_attempts} attempts"
             )));
             kora_pid.kill().await.ok();
-            return PhaseOutput { phase_name: phase_name.to_string(), output, success: false };
+            release_port(actual_port);
+            let (limited_output, truncated) = limit_output_size(output);
+            return PhaseOutput {
+                phase_name: phase_name.to_string(),
+                output: limited_output,
+                success: false,
+                truncated,
+            };
         }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        tokio::time::sleep(delay).await;
+        delay = std::cmp::min(delay * 2, max_delay);
     }
-    output.push_str(&color.colorize(&format!("Kora server started on port {port}\n")));
+    output.push_str(
+        &color.colorize_with_controlled_flow(&format!("Kora server started on port {actual_port}")),
+    );
 
     let result = async {
         if initialize_payment_atas {
@@ -255,18 +365,20 @@ pub async fn run_test_phase(
                 signers_config,
                 color,
                 &mut output,
+                &cached_keys,
             )
             .await?
         }
 
         for test_name in test_names {
-            output
-                .push_str(&color.colorize(&format!("Running {test_name} tests on port {port}\n")));
+            output.push_str(&color.colorize_with_controlled_flow(&format!(
+                "Running {test_name} tests on port {actual_port}"
+            )));
             if test_name.starts_with("typescript_") {
                 TestCommandHelper::run_test(
                     TestLanguage::TypeScript,
                     test_name,
-                    port,
+                    &port_str,
                     color,
                     verbose,
                     &mut output,
@@ -276,7 +388,7 @@ pub async fn run_test_phase(
                 TestCommandHelper::run_test(
                     TestLanguage::Rust,
                     test_name,
-                    port,
+                    &port_str,
                     color,
                     verbose,
                     &mut output,
@@ -290,16 +402,22 @@ pub async fn run_test_phase(
     .await;
 
     kora_pid.kill().await.ok();
+    release_port(actual_port);
 
     let success = result.is_ok();
     match &result {
-        Ok(_) => output.push_str(&color.colorize(&format!("=== Completed {phase_name} ===\n"))),
+        Ok(_) => output.push_str(
+            &color.colorize_with_controlled_flow(&format!("=== Completed {phase_name} ===")),
+        ),
         Err(e) => {
-            output.push_str(&color.colorize(&format!("=== Failed {phase_name} - Error: {e} ===\n")))
+            output.push_str(&color.colorize_with_controlled_flow(&format!(
+                "=== Failed {phase_name} - Error: {e} ==="
+            )))
         }
     }
 
-    PhaseOutput { phase_name: phase_name.to_string(), output, success }
+    let (limited_output, truncated) = limit_output_size(output);
+    PhaseOutput { phase_name: phase_name.to_string(), output: limited_output, success, truncated }
 }
 
 pub async fn run_initialize_atas_for_kora_cli_tests_buffered(
@@ -308,19 +426,17 @@ pub async fn run_initialize_atas_for_kora_cli_tests_buffered(
     signers_config: &str,
     color: TestPhaseColor,
     output: &mut String,
+    cached_keys: &Arc<HashMap<AccountFile, String>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    output.push_str(&color.colorize("• Initializing payment ATAs...\n"));
+    output.push_str(&color.colorize_with_controlled_flow("• Initializing payment ATAs..."));
 
-    let fee_payer_key = fs::read_to_string(AccountFile::FeePayer.local_key_path())?;
+    let fee_payer_key =
+        cached_keys.get(&AccountFile::FeePayer).ok_or("FeePayer key not found in cache")?;
 
-    let cmd_output = tokio::process::Command::new("cargo")
+    let kora_binary_path = get_kora_binary_path().await?;
+
+    let cmd_output = tokio::process::Command::new(kora_binary_path)
         .args([
-            "run",
-            "-p",
-            "kora-cli",
-            "--bin",
-            "kora",
-            "--",
             "--config",
             config_file,
             "--rpc-url",
@@ -339,7 +455,6 @@ pub async fn run_initialize_atas_for_kora_cli_tests_buffered(
         let filtered_stderr = filter_command_output(&stderr, OutputFilter::CliCommand, false);
         if !filtered_stderr.is_empty() {
             output.push_str(&filtered_stderr);
-            output.push('\n');
         }
         return Err("Failed to initialize payment ATAs".into());
     }
@@ -348,9 +463,8 @@ pub async fn run_initialize_atas_for_kora_cli_tests_buffered(
     let filtered_stdout = filter_command_output(&stdout, OutputFilter::CliCommand, false);
     if !filtered_stdout.is_empty() {
         output.push_str(&filtered_stdout);
-        output.push('\n');
     }
-    output.push_str(&color.colorize("• Payment ATAs ready\n"));
+    output.push_str(&color.colorize_with_controlled_flow("• Payment ATAs ready"));
 
     Ok(())
 }
@@ -364,12 +478,20 @@ pub async fn clean_up(
     println!("=== Cleaning up processes ===");
 
     if let Some(solana_test_validator_pid) = &mut test_runner.solana_test_validator_pid {
-        solana_test_validator_pid.kill().await.ok();
-        println!("Stopped Solana test validator");
+        if let Err(e) = solana_test_validator_pid.kill().await {
+            println!("Failed to stop Solana test validator: {e}");
+        } else {
+            println!("Stopped Solana test validator");
+        }
     }
 
+    // Kill tracked Kora processes (though they're managed locally in each test phase)
     for kora_pid in &mut test_runner.kora_pids {
-        kora_pid.kill().await.ok();
+        if let Err(e) = kora_pid.kill().await {
+            println!("Failed to stop Kora process: {e}");
+        } else {
+            println!("Stopped Kora process");
+        }
     }
 
     println!("=== Cleanup complete ===");

@@ -59,7 +59,6 @@ impl TestCommandHelper {
                 filter_and_colorize_output(&stderr, OutputFilter::Test, verbose, color);
             if !filtered_stderr.is_empty() {
                 output.push_str(&filtered_stderr);
-                output.push('\n');
             }
             return Err(format!("{test_name} tests failed").into());
         }
@@ -68,7 +67,6 @@ impl TestCommandHelper {
         let filtered_stdout =
             filter_and_colorize_output(&stdout, OutputFilter::Test, verbose, color);
         output.push_str(&filtered_stdout);
-        output.push('\n');
         Ok(())
     }
 
@@ -105,7 +103,6 @@ impl TestCommandHelper {
                 filter_and_colorize_output(&stderr, OutputFilter::TypeScript, verbose, color);
             if !filtered_stderr.is_empty() {
                 output.push_str(&filtered_stderr);
-                output.push('\n');
             }
             return Err(format!("{test_name} TypeScript tests failed").into());
         }
@@ -114,7 +111,6 @@ impl TestCommandHelper {
         let filtered_stdout =
             filter_and_colorize_output(&stdout, OutputFilter::TypeScript, verbose, color);
         output.push_str(&filtered_stdout);
-        output.push('\n');
         Ok(())
     }
 }

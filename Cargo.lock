@@ -7996,6 +7996,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "bs58 0.5.1",
+ "chrono",
  "clap",
  "colored",
  "dotenv",

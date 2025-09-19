@@ -63,3 +63,4 @@ solana-address-lookup-table-interface = { workspace = true }
 colored = "3.0"
 serde = { workspace = true }
 base64 = { workspace = true }
+chrono = { workspace = true }

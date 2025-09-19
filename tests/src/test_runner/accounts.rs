@@ -12,7 +12,7 @@ use std::{fs, path::Path};
 
 const TEST_ACCOUNTS_DIR: &str = "tests/src/common/fixtures/test-accounts";
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum AccountFile {
     FeePayer,
     Sender,
@@ -120,8 +120,17 @@ impl AccountFile {
         ]
     }
 
-    pub fn set_environment_variable(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        std::env::set_var(self.local_key_env_var(), fs::read_to_string(self.local_key_path())?);
+    pub fn required_for_kora() -> &'static [AccountFile] {
+        &[Self::FeePayer, Self::Signer2]
+    }
+
+    pub fn set_environment_variable_from_cache(
+        &self,
+        cached_keys: &std::collections::HashMap<AccountFile, String>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let key =
+            cached_keys.get(self).ok_or_else(|| format!("Key not found in cache: {self:?}"))?;
+        std::env::set_var(self.local_key_env_var(), key.trim());
         Ok(())
     }
 
@@ -146,9 +155,17 @@ impl AccountFile {
     }
 }
 
-pub fn set_environment_variables() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn set_environment_variables(
+    cached_keys: &std::collections::HashMap<AccountFile, String>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     for account_file in AccountFile::required_test_accounts_env_vars() {
-        account_file.set_environment_variable()?;
+        if cached_keys.contains_key(account_file) {
+            account_file.set_environment_variable_from_cache(cached_keys)?;
+        } else {
+            // For accounts not in cache, fallback to file read
+            let key = std::fs::read_to_string(account_file.local_key_path())?;
+            std::env::set_var(account_file.local_key_env_var(), key.trim());
+        }
     }
 
     Ok(())
@@ -166,10 +183,10 @@ pub async fn set_lookup_table_environment_variables(
     Ok(())
 }
 
-pub fn get_account_address_from_file(
+pub async fn get_account_address_from_file(
     account_path: &Path,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let account_json = fs::read_to_string(account_path)?;
+    let account_json = tokio::fs::read_to_string(account_path).await?;
     let account_data: serde_json::Value = serde_json::from_str(&account_json)?;
 
     if let Some(pubkey) = account_data["account"]["pubkey"].as_str() {

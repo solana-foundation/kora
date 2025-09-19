@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, path::Path};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TestPhaseConfig {
@@ -18,19 +18,15 @@ pub struct TestRunnerConfig {
 }
 
 impl TestRunnerConfig {
-    pub fn load_from_file<P: AsRef<Path>>(
+    pub async fn load_from_file<P: AsRef<Path>>(
         path: P,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let content = fs::read_to_string(path)?;
+        let content = tokio::fs::read_to_string(path).await?;
         let config: TestRunnerConfig = toml::from_str(&content)?;
         Ok(config)
     }
 
     pub fn get_all_phases(&self) -> Vec<(String, TestPhaseConfig)> {
         self.test.iter().map(|(key, config)| (key.clone(), config.clone())).collect()
-    }
-
-    pub fn get_phase(&self, phase_name: &str) -> Option<&TestPhaseConfig> {
-        self.test.get(phase_name)
     }
 }

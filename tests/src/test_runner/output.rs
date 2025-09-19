@@ -1,8 +1,11 @@
+pub const MAX_OUTPUT_SIZE: usize = 1024 * 1024; // 1MB limit
+
 #[derive(Debug)]
 pub struct PhaseOutput {
     pub phase_name: String,
     pub output: String,
     pub success: bool,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -25,17 +28,30 @@ pub enum TestPhaseColor {
 }
 
 impl TestPhaseColor {
-    pub fn from_port(port: &str) -> Self {
-        match port {
-            "8080" => Self::Regular,
-            "8081" => Self::Auth,
-            "8082" => Self::Payment,
-            "8083" => Self::MultiSigner,
-            "8084" => Self::TypeScriptBasic,
-            "8085" => Self::TypeScriptAuth,
-            "8086" => Self::TypeScriptTurnkey,
-            "8087" => Self::TypeScriptPrivy,
+    pub fn from_phase_name(phase_name: &str) -> Self {
+        match phase_name {
+            "Regular Integration Tests" => Self::Regular,
+            "Auth Tests" => Self::Auth,
+            "Payment Address Tests" => Self::Payment,
+            "Multi-Signer Tests" => Self::MultiSigner,
+            name if name.starts_with("TypeScript") => Self::from_typescript_phase(name),
+            name if name.starts_with("typescript_") => Self::from_typescript_phase(name),
+            // Fallback patterns
+            name if name.to_lowercase().contains("auth") => Self::Auth,
+            name if name.to_lowercase().contains("payment") => Self::Payment,
+            name if name.to_lowercase().contains("multi") => Self::MultiSigner,
+            name if name.to_lowercase().contains("typescript") => Self::TypeScriptBasic,
             _ => Self::Regular,
+        }
+    }
+
+    fn from_typescript_phase(name: &str) -> Self {
+        match name {
+            "typescript_basic" => Self::TypeScriptBasic,
+            "typescript_auth" => Self::TypeScriptAuth,
+            "typescript_turnkey" => Self::TypeScriptTurnkey,
+            "typescript_privy" => Self::TypeScriptPrivy,
+            _ => Self::TypeScriptBasic,
         }
     }
 
@@ -46,9 +62,9 @@ impl TestPhaseColor {
             Self::Payment => "\x1b[33m",           // Yellow
             Self::MultiSigner => "\x1b[35m",       // Magenta
             Self::TypeScriptBasic => "\x1b[36m",   // Cyan
-            Self::TypeScriptAuth => "\x1b[94m",    // Bright Blue
-            Self::TypeScriptTurnkey => "\x1b[93m", // Bright Yellow
-            Self::TypeScriptPrivy => "\x1b[95m",   // Bright Magenta
+            Self::TypeScriptAuth => "\x1b[31m",    // Red
+            Self::TypeScriptTurnkey => "\x1b[37m", // White
+            Self::TypeScriptPrivy => "\x1b[90m",   // Gray
         }
     }
 
@@ -59,23 +75,30 @@ impl TestPhaseColor {
     pub fn colorize(&self, text: &str) -> String {
         format!("{}{}{}", self.ansi_code(), text, Self::reset_code())
     }
+
+    pub fn colorize_with_controlled_flow(&self, text: &str) -> String {
+        // Remove all existing newlines and add controlled ones with proper spacing
+        let cleaned_text = text.replace('\n', "");
+        let controlled_text = format!("{cleaned_text}\n\n");
+        format!("{}{}{}", self.ansi_code(), controlled_text, Self::reset_code())
+    }
 }
 
 impl OutputFilter {
     pub fn should_show_line(&self, line: &str, show_verbose: bool) -> bool {
         match self {
             Self::Test => {
-                line.starts_with("test ")
-                    || line.contains("test result:")
-                    || line.contains("running ")
+                //
+                line.contains("test result:")
                     || line.contains("FAILED")
                     || line.contains("failures:")
                     || line.contains("panicked")
                     || line.contains("assertion")
                     || line.contains("ERROR")
-                    || line.trim().is_empty()
                     || (show_verbose
                         && (line.contains("Compiling")
+                            || line.contains("running ")
+                            || line.starts_with("test ")
                             || line.contains("Finished")
                             || line.contains("warning:")
                             || line.contains("error:")))
@@ -85,11 +108,12 @@ impl OutputFilter {
                     || line.contains("error")
                     || line.contains("Failed")
                     || line.contains("Success")
-                    || line.contains("✓")
                     || line.contains("✗")
-                    || line.contains("Initialized")
-                    || line.contains("Created")
-                    || (show_verbose && line.contains("INFO"))
+                    || (show_verbose
+                        && (line.contains("INFO")
+                            || line.contains("✓")
+                            || line.contains("Initialized")
+                            || line.contains("Created")))
             }
             Self::TypeScript => {
                 // Jest and TypeScript test output patterns
@@ -111,7 +135,6 @@ impl OutputFilter {
                     || line.contains("failed with exit code")
                     || line.contains("npm ERR!")
                     || line.contains("pnpm ERR!")
-                    || line.trim().is_empty()
                     || (show_verbose
                         && (line.contains("Running")
                             || line.contains("Starting")
@@ -124,15 +147,26 @@ impl OutputFilter {
 pub fn filter_command_output(output: &str, filter: OutputFilter, show_verbose: bool) -> String {
     // If verbose, show everything without filtering
     if show_verbose {
-        return output.to_string();
+        return clean_multiple_newlines(output);
     }
 
     // Otherwise apply pattern filtering
-    output
+    let filtered = output
         .lines()
         .filter(|line| filter.should_show_line(line, show_verbose))
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n");
+
+    clean_multiple_newlines(&filtered)
+}
+
+fn clean_multiple_newlines(text: &str) -> String {
+    // Replace multiple consecutive newlines with single newlines
+    let mut result = text.to_string();
+    while result.contains("\n\n\n") {
+        result = result.replace("\n\n\n", "\n\n");
+    }
+    result.trim_end().to_string()
 }
 
 pub fn filter_and_colorize_output(
@@ -146,5 +180,18 @@ pub fn filter_and_colorize_output(
         filtered
     } else {
         color.colorize(&filtered)
+    }
+}
+
+pub fn limit_output_size(output: String) -> (String, bool) {
+    if output.len() > MAX_OUTPUT_SIZE {
+        let truncated_output = format!(
+            "{}... (truncated {} bytes)",
+            &output[..MAX_OUTPUT_SIZE],
+            output.len() - MAX_OUTPUT_SIZE
+        );
+        (truncated_output, true)
+    } else {
+        (output, false)
     }
 }
