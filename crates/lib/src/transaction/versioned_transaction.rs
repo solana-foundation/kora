@@ -81,15 +81,6 @@ impl VersionedTransactionResolved {
         rpc_client: &RpcClient,
         sig_verify: bool,
     ) -> Result<Self, KoraError> {
-        log::error!(
-            "Transaction resolution starting: tx_type={:?}, sig_verify={}",
-            match &transaction.message {
-                VersionedMessage::Legacy(_) => "Legacy",
-                VersionedMessage::V0(_) => "V0",
-            },
-            sig_verify
-        );
-
         let mut resolved = Self {
             transaction: transaction.clone(),
             all_account_keys: vec![],
@@ -101,55 +92,33 @@ impl VersionedTransactionResolved {
         // 1. Resolve lookup table addresses based on transaction type
         let resolved_addresses = match &transaction.message {
             VersionedMessage::Legacy(_) => {
-                log::error!("Legacy transaction: no lookup tables to resolve");
+                // Legacy transactions don't have lookup tables
                 vec![]
             }
             VersionedMessage::V0(v0_message) => {
-                log::error!(
-                    "V0 transaction: resolving {} lookup table lookups",
-                    v0_message.address_table_lookups.len()
-                );
-                let addresses = LookupTableUtil::resolve_lookup_table_addresses(
+                // V0 transactions may have lookup tables
+                LookupTableUtil::resolve_lookup_table_addresses(
                     rpc_client,
                     &v0_message.address_table_lookups,
                 )
-                .await?;
-                log::error!("Resolved {} addresses from lookup tables", addresses.len());
-                addresses
+                .await?
             }
         };
 
         // Set all accout keys
-        let static_keys = transaction.message.static_account_keys();
-        log::error!("Static account keys: {}", static_keys.len());
-        let mut all_account_keys = static_keys.to_vec();
+        let mut all_account_keys = transaction.message.static_account_keys().to_vec();
         all_account_keys.extend(resolved_addresses.clone());
         resolved.all_account_keys = all_account_keys.clone();
-        log::error!("Total account keys after lookup resolution: {}", all_account_keys.len());
 
         // 2. Fetch all instructions
         let outer_instructions =
             IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys);
-        log::error!("Outer instructions: {}", outer_instructions.len());
 
-        log::error!("Fetching inner instructions via simulation");
-        let inner_instructions =
-            match resolved.fetch_inner_instructions(rpc_client, sig_verify).await {
-                Ok(instructions) => {
-                    log::error!("Inner instructions fetched: {}", instructions.len());
-                    instructions
-                }
-                Err(e) => {
-                    log::error!("Failed to fetch inner instructions: {e}");
-                    return Err(e);
-                }
-            };
+        let inner_instructions = resolved.fetch_inner_instructions(rpc_client, sig_verify).await?;
 
         resolved.all_instructions.extend(outer_instructions);
         resolved.all_instructions.extend(inner_instructions);
-        log::error!("Total instructions (outer + inner): {}", resolved.all_instructions.len());
 
-        log::error!("Transaction resolution completed successfully");
         Ok(resolved)
     }
 
@@ -173,13 +142,7 @@ impl VersionedTransactionResolved {
         rpc_client: &RpcClient,
         sig_verify: bool,
     ) -> Result<Vec<Instruction>, KoraError> {
-        log::error!(
-            "Starting transaction simulation: commitment={:?}, sig_verify={}",
-            rpc_client.commitment(),
-            sig_verify
-        );
-
-        let simulation_result = match rpc_client
+        let simulation_result = rpc_client
             .simulate_transaction_with_config(
                 &self.transaction,
                 RpcSimulateTransactionConfig {
@@ -189,28 +152,13 @@ impl VersionedTransactionResolved {
                 },
             )
             .await
-        {
-            Ok(result) => {
-                log::error!(
-                    "Transaction simulation completed: context_slot={}, accounts_data_len={}",
-                    result.context.slot,
-                    result.value.accounts.as_ref().map_or(0, |a| a.len())
-                );
-                result
-            }
-            Err(e) => {
-                log::error!("Transaction simulation failed: {e}");
-                return Err(KoraError::RpcError(format!("Failed to simulate transaction: {e}")));
-            }
-        };
+            .map_err(|e| KoraError::RpcError(format!("Failed to simulate transaction: {e}")))?;
 
-        if let Some(err) = &simulation_result.value.err {
-            log::error!("Transaction simulation returned error: {err:?}");
+        if let Some(err) = simulation_result.value.err {
             return Err(KoraError::InvalidTransaction(format!(
                 "Transaction simulation failed: {err}"
             )));
         }
-        log::error!("Transaction simulation successful");
 
         if let Some(inner_instructions) = simulation_result.value.inner_instructions {
             let mut compiled_inner_instructions: Vec<CompiledInstruction> = vec![];
@@ -360,35 +308,14 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         signer: &std::sync::Arc<KoraSigner>,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError> {
-        log::error!(
-            "VersionedTransactionOps: Starting sign and send transaction with commitment={:?}",
-            rpc_client.commitment()
-        );
+        let (transaction, encoded) = self.sign_transaction(signer, rpc_client).await?;
 
-        let (transaction, encoded) = match self.sign_transaction(signer, rpc_client).await {
-            Ok((tx, enc)) => {
-                log::error!("VersionedTransactionOps: Transaction signed successfully");
-                (tx, enc)
-            }
-            Err(e) => {
-                log::error!("VersionedTransactionOps: Transaction signing failed: {e}");
-                return Err(e);
-            }
-        };
+        // Send and confirm transaction
+        let signature = rpc_client
+            .send_and_confirm_transaction(&transaction)
+            .await
+            .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-        log::error!("VersionedTransactionOps: Sending and confirming transaction");
-        let signature = match rpc_client.send_and_confirm_transaction(&transaction).await {
-            Ok(sig) => {
-                log::error!("VersionedTransactionOps: Transaction sent and confirmed successfully: signature={sig}");
-                sig
-            }
-            Err(e) => {
-                log::error!("VersionedTransactionOps: Send and confirm transaction failed: {e}");
-                return Err(KoraError::RpcError(e.to_string()));
-            }
-        };
-
-        log::error!("VersionedTransactionOps: Sign and send transaction completed successfully");
         Ok((signature.to_string(), encoded))
     }
 }
@@ -401,64 +328,28 @@ impl LookupTableUtil {
         rpc_client: &RpcClient,
         lookup_table_lookups: &[MessageAddressTableLookup],
     ) -> Result<Vec<Pubkey>, KoraError> {
-        log::error!(
-            "LookupTableUtil: Starting lookup table resolution for {} lookups",
-            lookup_table_lookups.len()
-        );
         let mut resolved_addresses = Vec::new();
 
-        for (i, lookup) in lookup_table_lookups.iter().enumerate() {
-            log::error!("LookupTableUtil: Processing lookup table {}/{} - account_key={}, writable_indexes={}, readonly_indexes={}",
-                i + 1, lookup_table_lookups.len(), lookup.account_key, lookup.writable_indexes.len(), lookup.readonly_indexes.len());
-
+        // Maybe we can use caching here, there's a chance the lookup tables get updated though, so tbd
+        for lookup in lookup_table_lookups {
             let lookup_table_account =
-                match CacheUtil::get_account(rpc_client, &lookup.account_key, false).await {
-                    Ok(account) => {
-                        log::error!(
-                        "LookupTableUtil: Lookup table account fetched successfully: data_len={}",
-                        account.data.len()
-                    );
-                        account
-                    }
-                    Err(e) => {
-                        log::error!("LookupTableUtil: Failed to fetch lookup table account: {e}");
-                        return Err(KoraError::RpcError(format!(
-                            "Failed to fetch lookup table: {e}"
-                        )));
-                    }
-                };
+                CacheUtil::get_account(rpc_client, &lookup.account_key, false).await.map_err(
+                    |e| KoraError::RpcError(format!("Failed to fetch lookup table: {e}")),
+                )?;
 
             // Parse the lookup table account data to get the actual addresses
-            let address_lookup_table = match AddressLookupTable::deserialize(
-                &lookup_table_account.data,
-            ) {
-                Ok(table) => {
-                    log::error!("LookupTableUtil: Lookup table deserialized successfully: total_addresses={}", table.addresses.len());
-                    table
-                }
-                Err(e) => {
-                    log::error!("LookupTableUtil: Failed to deserialize lookup table: {e}");
-                    return Err(KoraError::InvalidTransaction(format!(
+            let address_lookup_table = AddressLookupTable::deserialize(&lookup_table_account.data)
+                .map_err(|e| {
+                    KoraError::InvalidTransaction(format!(
                         "Failed to deserialize lookup table: {e}"
-                    )));
-                }
-            };
+                    ))
+                })?;
 
             // Resolve writable addresses
-            log::error!(
-                "LookupTableUtil: Resolving {} writable indexes",
-                lookup.writable_indexes.len()
-            );
             for &index in &lookup.writable_indexes {
                 if let Some(address) = address_lookup_table.addresses.get(index as usize) {
-                    log::error!("LookupTableUtil: Resolved writable index {index} -> {address}");
                     resolved_addresses.push(*address);
                 } else {
-                    log::error!(
-                        "LookupTableUtil: Writable index {} out of bounds (total addresses: {})",
-                        index,
-                        address_lookup_table.addresses.len()
-                    );
                     return Err(KoraError::InvalidTransaction(format!(
                         "Lookup table index {index} out of bounds for writable addresses"
                     )));
@@ -466,20 +357,10 @@ impl LookupTableUtil {
             }
 
             // Resolve readonly addresses
-            log::error!(
-                "LookupTableUtil: Resolving {} readonly indexes",
-                lookup.readonly_indexes.len()
-            );
             for &index in &lookup.readonly_indexes {
                 if let Some(address) = address_lookup_table.addresses.get(index as usize) {
-                    log::error!("LookupTableUtil: Resolved readonly index {index} -> {address}");
                     resolved_addresses.push(*address);
                 } else {
-                    log::error!(
-                        "LookupTableUtil: Readonly index {} out of bounds (total addresses: {})",
-                        index,
-                        address_lookup_table.addresses.len()
-                    );
                     return Err(KoraError::InvalidTransaction(format!(
                         "Lookup table index {index} out of bounds for readonly addresses"
                     )));
@@ -487,10 +368,6 @@ impl LookupTableUtil {
             }
         }
 
-        log::error!(
-            "LookupTableUtil: Lookup table resolution completed: total_resolved_addresses={}",
-            resolved_addresses.len()
-        );
         Ok(resolved_addresses)
     }
 }

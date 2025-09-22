@@ -260,7 +260,7 @@ impl TransactionBuilder {
         let fee_payer = self.fee_payer.ok_or_else(|| anyhow::anyhow!("Fee payer is required"))?;
 
         let blockhash =
-            rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::confirmed()).await?;
+            rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
 
         let message =
             match self.version {

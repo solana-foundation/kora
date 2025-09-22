@@ -61,14 +61,14 @@ impl TestAccountSetup {
         dotenv::dotenv().ok();
         let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
         let rpc_client =
-            Arc::new(RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed()));
+            Arc::new(RpcClient::new_with_commitment(rpc_url, CommitmentConfig::finalized()));
         Self::new_with_client(rpc_client).await
     }
 
     pub async fn new_with_rpc_url(rpc_url: &str) -> Self {
         let rpc_client = Arc::new(RpcClient::new_with_commitment(
             rpc_url.to_string(),
-            CommitmentConfig::confirmed(),
+            CommitmentConfig::finalized(),
         ));
         Self::new_with_client(rpc_client).await
     }

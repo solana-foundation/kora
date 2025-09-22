@@ -17,14 +17,6 @@ inputs:
     description: "Force refresh of test accounts"
     required: false
     default: "false"
-  capture-kora-logs:
-    description: "Capture and display Kora RPC server logs during test execution"
-    required: false
-    default: "true"
-  verbose-kora-logs:
-    description: "Enable maximum verbosity for Kora logs (requires capture-kora-logs)"
-    required: false
-    default: "false"
 
 runs:
   using: "composite"
@@ -44,12 +36,6 @@ runs:
         fi
         if [ "${{ inputs.rpc-url }}" != "http://127.0.0.1:8899" ]; then
           ARGS="$ARGS --rpc-url ${{ inputs.rpc-url }}"
-        fi
-        if [ "${{ inputs.capture-kora-logs }}" = "true" ]; then
-          ARGS="$ARGS --capture-kora-logs"
-        fi
-        if [ "${{ inputs.verbose-kora-logs }}" = "true" ]; then
-          ARGS="$ARGS --verbose-kora-logs"
         fi
 
         # Add filters

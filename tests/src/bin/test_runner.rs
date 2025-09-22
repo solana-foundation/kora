@@ -12,7 +12,6 @@ use tests::{
         config::{TestPhaseConfig, TestRunnerConfig},
         kora::{
             get_kora_binary_path, is_kora_running_with_client, release_port, start_kora_rpc_server,
-            start_kora_rpc_server_with_logs,
         },
         output::{
             filter_command_output, limit_output_size, OutputFilter, PhaseOutput, TestPhaseColor,
@@ -99,14 +98,6 @@ pub struct Args {
         help = "Run only specific test phases (e.g., --filter regular --filter auth)"
     )]
     pub filters: Vec<String>,
-
-    /// Capture and stream Kora process logs in real-time
-    #[arg(long, help = "Capture and display Kora RPC server logs during test execution")]
-    pub capture_kora_logs: bool,
-
-    /// Show verbose Kora logs (includes all debug output)
-    #[arg(long, help = "Enable maximum verbosity for Kora logs (requires --capture-kora-logs)")]
-    pub verbose_kora_logs: bool,
 }
 
 #[tokio::main]
@@ -121,14 +112,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let (result, completed_phases) = async {
         setup_test_env(&mut test_runner, args.force_refresh, custom_rpc_url).await?;
-        let phases = run_all_test_phases(
-            &test_runner,
-            args.verbose,
-            &args.config,
-            &args.filters,
-            args.capture_kora_logs,
-        )
-        .await?;
+        let phases =
+            run_all_test_phases(&test_runner, args.verbose, &args.config, &args.filters).await?;
         Ok::<usize, Box<dyn std::error::Error + Send + Sync>>(phases)
     }
     .await
@@ -204,7 +189,6 @@ pub async fn run_all_test_phases(
     verbose: bool,
     config_path: &str,
     filters: &[String],
-    capture_kora_logs: bool,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let rpc_url = test_runner.rpc_client.url();
 
@@ -237,7 +221,6 @@ pub async fn run_all_test_phases(
                     verbose,
                     cached_keys,
                     http_client,
-                    capture_kora_logs,
                 )
                 .await
             }
@@ -288,7 +271,6 @@ async fn run_test_phase_from_config(
     verbose: bool,
     cached_keys: Arc<HashMap<AccountFile, String>>,
     http_client: reqwest::Client,
-    capture_kora_logs: bool,
 ) -> PhaseOutput {
     let test_names: Vec<&str> = config.tests.iter().map(|s| s.as_str()).collect();
     let preferred_port: u16 = config.port.parse().unwrap_or(8080);
@@ -304,7 +286,6 @@ async fn run_test_phase_from_config(
         cached_keys,
         http_client,
         preferred_port,
-        capture_kora_logs,
     )
     .await
 }
@@ -321,7 +302,6 @@ pub async fn run_test_phase(
     cached_keys: Arc<HashMap<AccountFile, String>>,
     http_client: reqwest::Client,
     preferred_port: u16,
-    capture_kora_logs: bool,
 ) -> PhaseOutput {
     let color = TestPhaseColor::from_phase_name(phase_name);
     let mut output = String::new();
@@ -329,60 +309,29 @@ pub async fn run_test_phase(
     output
         .push_str(&color.colorize_with_controlled_flow(&format!("=== Starting {phase_name} ===")));
 
-    // Start Kora server with or without log capture based on flag
-    let (mut kora_pid, actual_port, log_receiver) =
-        if capture_kora_logs {
-            output.push_str(&color.colorize_with_controlled_flow("• Capturing Kora logs enabled"));
-            match start_kora_rpc_server_with_logs(
-                rpc_url.clone(),
-                config_file,
-                signers_config,
-                &cached_keys,
-                preferred_port,
-            )
-            .await
-            {
-                Ok(kora_with_logs) => {
-                    (kora_with_logs.process, kora_with_logs.port, Some(kora_with_logs.log_receiver))
-                }
-                Err(e) => {
-                    output.push_str(&color.colorize_with_controlled_flow(&format!(
-                        "Failed to start Kora server with logs: {e}"
-                    )));
-                    let (limited_output, truncated) = limit_output_size(output);
-                    return PhaseOutput {
-                        phase_name: phase_name.to_string(),
-                        output: limited_output,
-                        success: false,
-                        truncated,
-                    };
-                }
-            }
-        } else {
-            match start_kora_rpc_server(
-                rpc_url.clone(),
-                config_file,
-                signers_config,
-                &cached_keys,
-                preferred_port,
-            )
-            .await
-            {
-                Ok((pid, port)) => (pid, port, None),
-                Err(e) => {
-                    output.push_str(&color.colorize_with_controlled_flow(&format!(
-                        "Failed to start Kora server: {e}"
-                    )));
-                    let (limited_output, truncated) = limit_output_size(output);
-                    return PhaseOutput {
-                        phase_name: phase_name.to_string(),
-                        output: limited_output,
-                        success: false,
-                        truncated,
-                    };
-                }
-            }
-        };
+    let (mut kora_pid, actual_port) = match start_kora_rpc_server(
+        rpc_url.clone(),
+        config_file,
+        signers_config,
+        &cached_keys,
+        preferred_port,
+    )
+    .await
+    {
+        Ok((pid, port)) => (pid, port),
+        Err(e) => {
+            output.push_str(
+                &color.colorize_with_controlled_flow(&format!("Failed to start Kora server: {e}")),
+            );
+            let (limited_output, truncated) = limit_output_size(output);
+            return PhaseOutput {
+                phase_name: phase_name.to_string(),
+                output: limited_output,
+                success: false,
+                truncated,
+            };
+        }
+    };
 
     let mut attempts = 0;
     let mut delay = std::time::Duration::from_millis(50);
@@ -413,22 +362,6 @@ pub async fn run_test_phase(
     output.push_str(
         &color.colorize_with_controlled_flow(&format!("Kora server started on port {actual_port}")),
     );
-
-    // Start log streaming task if capture is enabled
-    let log_stream_handle = if let Some(mut receiver) = log_receiver {
-        let output_color = color;
-        Some(tokio::spawn(async move {
-            let mut logs = Vec::new();
-            while let Some(log_line) = receiver.recv().await {
-                logs.push(
-                    output_color.colorize_with_controlled_flow(&format!("🔍 KORA: {log_line}")),
-                );
-            }
-            logs.join("")
-        }))
-    } else {
-        None
-    };
 
     let result = async {
         if initialize_payment_atas {
@@ -476,19 +409,6 @@ pub async fn run_test_phase(
 
     kora_pid.kill().await.ok();
     release_port(actual_port);
-
-    // Wait for log streaming to complete and append logs to output
-    if let Some(handle) = log_stream_handle {
-        if let Ok(captured_logs) = handle.await {
-            if !captured_logs.is_empty() {
-                output.push_str(&color.colorize_with_controlled_flow("\n=== Kora Server Logs ==="));
-                output.push_str(&captured_logs);
-                output.push_str(
-                    &color.colorize_with_controlled_flow("=== End Kora Server Logs ===\n"),
-                );
-            }
-        }
-    }
 
     let success = result.is_ok();
     match &result {
