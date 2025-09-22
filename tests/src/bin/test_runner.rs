@@ -447,7 +447,6 @@ pub async fn run_initialize_atas_for_kora_cli_tests_buffered(
             signers_config,
         ])
         .env("KORA_PRIVATE_KEY", fee_payer_key.trim())
-        .env("RUST_BACKTRACE", "1")
         .output()
         .await?;
 
