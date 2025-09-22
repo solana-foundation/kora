@@ -1,6 +1,6 @@
 # install
 install:
-	cargo install --path crates/cli
+	cargo install --path crates/cli --bin kora
 
 # Check code formatting
 check:
@@ -27,14 +27,6 @@ build-lib:
 # Build cli
 build-cli:
 	cargo build -p kora-cli
-
-# Build tk-rs
-build-tk:
-	cargo build -p tk-rs
-
-# Run presigned release binary
-run-presigned:
-	cargo run --bin presigned
 
 # Run with default configuration
 run:

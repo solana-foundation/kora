@@ -1,0 +1,39 @@
+name: Build Rust Artifacts
+
+on:
+  workflow_call:
+    inputs:
+      cache-key:
+        description: "Cache key suffix for rust cache"
+        required: true
+        type: string
+      artifact-name:
+        description: "Name for the uploaded artifact"
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build Rust Artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ inputs.cache-key }}
+
+      - name: Build workspace
+        run: make build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: |
+            target/debug/kora
+            target/debug/test_runner
+          retention-days: 1

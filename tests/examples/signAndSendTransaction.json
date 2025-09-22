@@ -1,8 +1,0 @@
-{
-	"jsonrpc": "2.0",
-	"id": 1,
-	"method": "signAndSendTransaction",
-	"params": [
-		"3md7BBV9wFjYGnMWcMNyAZcjca2HGfXWZkrU8vvho66z2sJMZFcx6HZdBiAddjo2kzgBv3uZoac3domBRjJJSXkbBvokxSKZJ1JkQwVSYyKhcnWsgMzvEfJBaSjk7jdz8updcXb8j1Ejz1yWaZgeuV6wy4pncAFHDybqUih4TmRgcbARs5t3ZXRNTDqedyMiJUg5Jz1Apt2ohLsffqjnAhrbC41xrphouRDPx356JNz5MjKi4iLkBnRHfUMJiDxtbXCYNTe257PoASUU2v12WDYFheGKzHP8ctmN7"
-	]
-}

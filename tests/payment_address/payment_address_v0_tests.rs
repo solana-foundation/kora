@@ -1,9 +1,6 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
-use kora_lib::{
-    token::{TokenInterface, TokenProgram},
-    transaction::{TransactionUtil, VersionedTransactionOps},
-};
+use kora_lib::token::{TokenInterface, TokenProgram};
 use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
@@ -12,6 +9,7 @@ use spl_associated_token_account::{
     get_associated_token_address, instruction::create_associated_token_account_idempotent,
 };
 use std::str::FromStr;
+use tests::common::helpers::get_fee_for_default_transaction_in_usdc;
 
 #[tokio::test]
 async fn test_sign_transaction_if_paid_with_payment_address_v0() {

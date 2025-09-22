@@ -112,7 +112,7 @@ pub async fn transfer_transaction(
     }
 
     let blockhash =
-        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
+        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::confirmed()).await?;
 
     let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &instructions,

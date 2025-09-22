@@ -1,20 +1,28 @@
-name: Rust CI
+name: Rust Integration Tests
 
 on:
   push:
     branches: [main, "release/*"]
     paths:
       - "crates/**"
+      - "tests/**"
       - "Cargo.*"
       - "Makefile"
+      - "makefiles/**"
       - ".github/workflows/rust.yml"
+      - ".github/workflows/build-rust.yml"
+      - ".github/actions/run-test-runner/**"
   pull_request:
     branches: [main, "release/*"]
     paths:
       - "crates/**"
+      - "tests/**"
       - "Cargo.*"
       - "Makefile"
+      - "makefiles/**"
       - ".github/workflows/rust.yml"
+      - ".github/workflows/build-rust.yml"
+      - ".github/actions/run-test-runner/**"
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,208 +30,47 @@ env:
   CI: true
 
 jobs:
-  test:
-    name: Rust Tests & Coverage
+  build:
+    name: Build Artifacts
+    uses: ./.github/workflows/build-rust.yml
+    with:
+      cache-key: "rust-integration-build"
+      artifact-name: "rust-binaries"
+
+  integration:
+    name: Integration Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      pull-requests: write
+    needs: build
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        test-group: [regular, auth, payment_address, multi_signer]
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy, llvm-tools-preview
+
       - uses: Swatinem/rust-cache@v2
-      - name: Check formatting
-        run: make check
-      - name: Run clippy
-        run: make lint
-      - name: Build
-        run: make build
-      
+        with:
+          shared-key: "rust-integration"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-binaries
+          path: target/debug/
+
+      - name: Make binaries executable
+        run: chmod +x target/debug/kora target/debug/test_runner
+
       - name: Setup Solana CLI
         uses: ./.github/actions/setup-solana
 
-      - name: Install cargo-llvm-cov for coverage
-        run: cargo install cargo-llvm-cov
-
-      - name: Run unit tests with coverage
-        run: |
-          echo "🧪 Running unit tests with coverage instrumentation..."
-          cargo llvm-cov clean --workspace
-          cargo llvm-cov test --no-report --workspace --lib
-
-      - name: Setup Solana test validator
-        uses: ./.github/actions/setup-solana-validator
-
-      - name: Setup test environment
-        run: |
-          echo "🔧 Setting up test environment..."
-          # Create second signer key for multi-signer tests
-          if [ ! -f "tests/src/common/local-keys/signer2-local.json" ]; then
-            echo "Creating second signer key..."
-            solana-keygen new --outfile tests/src/common/local-keys/signer2-local.json --no-bip39-passphrase --silent
-          fi
-          KORA_PRIVATE_KEY="$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p tests --bin setup_test_env
-
-      - name: Setup Kora RPC server (regular config)
-        uses: ./.github/actions/setup-kora-rpc
+      - name: Run integration tests
+        uses: ./.github/actions/run-test-runner
         with:
-          config-file: "tests/src/common/fixtures/kora-test.toml"
-
-      - name: Run RPC integration tests
-        run: |
-          echo "🧪 Running RPC integration tests..."
-          cargo llvm-cov test --no-report -p tests --test rpc
-
-      - name: Build transfer hook program for Token 2022 tests
-        run: |
-          echo "🔧 Building transfer hook program..."
-          make build-transfer-hook
-
-      - name: Run token integration tests
-        run: |
-          echo "🧪 Running token integration tests..."
-          cargo llvm-cov test --no-report -p tests --test tokens
-
-      - name: Run external integration tests
-        run: |
-          echo "🧪 Running external integration tests..."
-          cargo llvm-cov test --no-report -p tests --test external
-
-      - name: Stop Kora RPC server
-        run: |
-          if [ ! -z "$KORA_PID" ]; then
-            kill $KORA_PID || true
-          fi
-          sleep 2
-
-      - name: Setup Kora RPC server (auth config)
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          config-file: "tests/src/common/fixtures/auth-test.toml"
-
-      - name: Run auth integration tests
-        run: |
-          echo "🧪 Running auth integration tests..."
-          cargo llvm-cov test --no-report -p tests --test auth
-
-      - name: Stop Kora RPC server
-        run: |
-          if [ ! -z "$KORA_PID" ]; then
-            kill $KORA_PID || true
-          fi
-          sleep 2
-
-      - name: Setup Kora RPC server (payment address config)
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          config-file: "tests/src/common/fixtures/paymaster-address-test.toml"
-          initialize-atas: "true"
-
-      - name: Run payment address integration tests
-        run: |
-          echo "🧪 Running payment address integration tests..."
-          cargo llvm-cov test --no-report -p tests --test payment_address
-
-      - name: Stop Kora RPC server
-        run: |
-          if [ ! -z "$KORA_PID" ]; then
-            kill $KORA_PID || true
-          fi
-          sleep 2
-
-      - name: Setup multi-signer test environment
-        run: |
-          echo "🔧 Setting up multi-signer test environment..."
-          export KORA_PRIVATE_KEY="$(cat tests/src/common/local-keys/fee-payer-local.json)"
-          export KORA_PRIVATE_KEY_2="$(cat tests/src/common/local-keys/signer2-local.json)"
-          cargo run -p tests --bin setup_test_env
-
-      - name: Setup Kora RPC server (multi-signer config)
-        uses: ./.github/actions/setup-kora-rpc
-        with:
-          config-file: "tests/src/common/fixtures/kora-test.toml"
-          signers-config: "tests/src/common/fixtures/multi-signers.toml"
-
-      - name: Run multi-signer integration tests
-        run: |
-          echo "🧪 Running multi-signer integration tests..."
-          cargo llvm-cov test --no-report -p tests --test multi_signer
-
-      - name: Generate coverage reports
-        run: |
-          echo "📊 Generating coverage reports..."
-          mkdir -p coverage
-          cargo llvm-cov report --lcov --output-path coverage/lcov.info
-
-      - name: Display coverage summary
-        run: |
-          echo "📊 Coverage Summary:"
-          if [ -f "coverage/lcov.info" ]; then
-            echo "✅ Coverage report generated successfully"
-            echo "📄 Generated: coverage/lcov.info"
-          else
-            echo "❌ Coverage report not found"
-          fi
-
-      - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-coverage-report
-          path: coverage/
-          retention-days: 30
-
-      - name: Update PR description with coverage badge
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/github-script@v7
-        with:
-          script: |
-            // Extract coverage percentage from lcov.info
-            const fs = require('fs');
-            let coverage = '0';
-
-            try {
-              const lcov = fs.readFileSync('coverage/lcov.info', 'utf8');
-              const linesFound = lcov.match(/^LF:(\d+)$/gm)?.reduce((sum, line) => sum + parseInt(line.split(':')[1]), 0) || 0;
-              const linesHit = lcov.match(/^LH:(\d+)$/gm)?.reduce((sum, line) => sum + parseInt(line.split(':')[1]), 0) || 0;
-              coverage = linesFound > 0 ? ((linesHit / linesFound) * 100).toFixed(1) : '0';
-            } catch (error) {
-              console.log('Error reading coverage:', error);
-            }
-
-            // Determine badge color
-            let color = 'red';
-            if (parseFloat(coverage) >= 80) color = 'green';
-            else if (parseFloat(coverage) >= 60) color = 'yellow';
-
-            // Get current PR
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-            });
-
-            // Create coverage badge section
-            const coverageBadge = `![Coverage](https://img.shields.io/badge/coverage-${coverage}%25-${color})`;
-            const coverageSection = `\n\n## 📊 Test Coverage\n${coverageBadge}\n\n**Coverage: ${coverage}%**\n\n[View Detailed Coverage Report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
-
-            // Update PR body
-            let newBody = pr.body || '';
-            
-            // Remove existing coverage section if present
-            newBody = newBody.replace(/\n## 📊 Test Coverage[\s\S]*?(?=\n## |\n$|$)/g, '');
-            
-            // Add new coverage section
-            newBody += coverageSection;
-
-            await github.rest.pulls.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-              body: newBody
-            });
+          filters: "--filter ${{ matrix.test-group }}"
 
       - name: Cleanup test environment
         if: always()
@@ -233,4 +80,4 @@ jobs:
         if: failure()
         uses: ./.github/actions/show-failure-logs
         with:
-          test-type: "Rust integration"
+          test-type: "Rust integration (${{ matrix.test-group }})"

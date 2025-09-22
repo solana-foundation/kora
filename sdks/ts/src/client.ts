@@ -97,12 +97,7 @@ export class KoraClient {
         const response = await fetch(this.rpcUrl, {
             method: 'POST',
             headers: { ...headers, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method,
-                params,
-            } as RpcRequest<U>),
+            body,
         });
 
         const json = (await response.json()) as { error?: RpcError; result: T };

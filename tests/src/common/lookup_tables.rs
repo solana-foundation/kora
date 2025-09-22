@@ -4,62 +4,12 @@ use solana_address_lookup_table_interface::instruction::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer, transaction::Transaction};
-use std::{
-    str::FromStr,
-    sync::{Arc, OnceLock},
-};
+use std::{str::FromStr, sync::Arc};
 
 use crate::common::{constants::*, SenderTestHelper, USDCMintTestHelper};
 
-// Static cache for lookup table addresses - loaded once, reused everywhere
-pub static CACHED_ADDRESSES: OnceLock<LookupTablesAddresses> = OnceLock::new();
-
-#[derive(Default, serde::Serialize, serde::Deserialize)]
-pub struct LookupTablesAddresses {
-    pub allowed_lookup_table_address: String,
-    pub disallowed_lookup_table_address: String,
-    pub transaction_lookup_table_address: String,
-}
-
 /// Comprehensive helper for all lookup table operations in tests
 pub struct LookupTableHelper;
-
-impl LookupTablesAddresses {
-    /// Save lookup table addresses to JSON file
-    pub fn save(&self) -> Result<()> {
-        let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(LOOKUP_TABLES_FILE_PATH, json)?;
-        Ok(())
-    }
-
-    /// Load lookup table addresses from JSON file
-    pub fn load() -> Result<Self> {
-        let json = std::fs::read_to_string(LOOKUP_TABLES_FILE_PATH)?;
-        let addresses: LookupTablesAddresses = serde_json::from_str(&json)?;
-        Ok(addresses)
-    }
-
-    pub fn allowed_pubkey(&self) -> Result<Pubkey> {
-        Pubkey::from_str(&self.allowed_lookup_table_address).map_err(Into::into)
-    }
-
-    pub fn disallowed_pubkey(&self) -> Result<Pubkey> {
-        Pubkey::from_str(&self.disallowed_lookup_table_address).map_err(Into::into)
-    }
-
-    pub fn transaction_pubkey(&self) -> Result<Pubkey> {
-        Pubkey::from_str(&self.transaction_lookup_table_address).map_err(Into::into)
-    }
-
-    /// Create from Pubkeys for saving
-    pub fn from_pubkeys(allowed: Pubkey, disallowed: Pubkey, transaction: Pubkey) -> Self {
-        Self {
-            allowed_lookup_table_address: allowed.to_string(),
-            disallowed_lookup_table_address: disallowed.to_string(),
-            transaction_lookup_table_address: transaction.to_string(),
-        }
-    }
-}
 
 impl LookupTableHelper {
     // ============================================================================
@@ -67,7 +17,9 @@ impl LookupTableHelper {
     // ============================================================================
 
     /// Create all standard lookup tables and save addresses to fixtures
-    pub async fn setup_and_save_lookup_tables(rpc_client: Arc<RpcClient>) -> Result<()> {
+    pub async fn setup_and_save_lookup_tables(
+        rpc_client: Arc<RpcClient>,
+    ) -> Result<(Pubkey, Pubkey, Pubkey)> {
         let sender = SenderTestHelper::get_test_sender_keypair();
 
         // Create all standard lookup tables
@@ -78,50 +30,34 @@ impl LookupTableHelper {
         let transaction_lookup_table =
             Self::create_transaction_lookup_table(rpc_client.clone(), &sender).await?;
 
-        // Save addresses to JSON file
-        let addresses = LookupTablesAddresses::from_pubkeys(
-            allowed_lookup_table,
-            disallowed_lookup_table,
-            transaction_lookup_table,
-        );
-        addresses.save()?;
-
-        Ok(())
+        Ok((allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table))
     }
 
-    fn load_lookup_table_addresses() -> Result<&'static LookupTablesAddresses> {
-        if let Some(cached) = CACHED_ADDRESSES.get() {
-            return Ok(cached);
-        }
-
-        let addresses = LookupTablesAddresses::load()?;
-
-        let _ = CACHED_ADDRESSES.set(addresses);
-
-        Ok(CACHED_ADDRESSES.get().unwrap())
+    pub fn get_test_disallowed_address() -> Result<Pubkey> {
+        Pubkey::from_str(TEST_DISALLOWED_ADDRESS).map_err(Into::into)
     }
 
-    /// Get allowed lookup table address from fixtures
     pub fn get_allowed_lookup_table_address() -> Result<Pubkey> {
-        let addresses = Self::load_lookup_table_addresses()?;
-        addresses.allowed_pubkey()
+        dotenv::dotenv().ok();
+        let allowed_lookup_table_address = std::env::var(TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV)
+            .expect("TEST_ALLOWED_LOOKUP_TABLE_ADDRESS environment variable is not set");
+        Pubkey::from_str(&allowed_lookup_table_address).map_err(Into::into)
     }
 
-    /// Get disallowed lookup table address from fixtures
     pub fn get_disallowed_lookup_table_address() -> Result<Pubkey> {
-        let addresses = Self::load_lookup_table_addresses()?;
-        addresses.disallowed_pubkey()
+        dotenv::dotenv().ok();
+        let disallowed_lookup_table_address =
+            std::env::var(TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV)
+                .expect("TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS environment variable is not set");
+        Pubkey::from_str(&disallowed_lookup_table_address).map_err(Into::into)
     }
 
-    /// Get transaction lookup table address from fixtures, includes USDC mint and SPL token program
     pub fn get_transaction_lookup_table_address() -> Result<Pubkey> {
-        let addresses = Self::load_lookup_table_addresses()?;
-        addresses.transaction_pubkey()
-    }
-
-    /// Get test disallowed address (for creating custom lookup tables)
-    pub fn get_test_disallowed_address() -> Pubkey {
-        get_test_disallowed_pubkey()
+        dotenv::dotenv().ok();
+        let transaction_lookup_table_address =
+            std::env::var(TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS_ENV)
+                .expect("TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS environment variable is not set");
+        Pubkey::from_str(&transaction_lookup_table_address).map_err(Into::into)
     }
 
     // ============================================================================
@@ -172,8 +108,16 @@ impl LookupTableHelper {
             rpc_client.send_and_confirm_transaction(&extend_transaction).await?;
         }
 
-        // Wait for the lookup table to be fully initialized
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        // Wait for the lookup table to be activated
+        // Lookup tables need to be activated for at least one slot before they can be used
+        let creation_slot = rpc_client.get_slot().await?;
+        let mut current_slot = creation_slot;
+
+        // Wait until we're at least 2 slots past creation to ensure activation
+        while current_slot <= creation_slot + 1 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+            current_slot = rpc_client.get_slot().await?;
+        }
 
         Ok(lookup_table_key)
     }
@@ -197,7 +141,7 @@ impl LookupTableHelper {
         rpc_client: Arc<RpcClient>,
         authority: &Keypair,
     ) -> Result<Pubkey> {
-        let disallowed_address = get_test_disallowed_pubkey();
+        let disallowed_address = Self::get_test_disallowed_address()?;
         let blocked_lookup_table: Pubkey =
             Self::create_lookup_table(rpc_client, authority, vec![disallowed_address]).await?;
 

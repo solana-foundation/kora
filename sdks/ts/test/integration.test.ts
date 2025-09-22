@@ -29,6 +29,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
     let destinationAddress: Address;
     let usdcMint: Address;
     let koraAddress: Address;
+    let koraRpcUrl: string;
 
     beforeAll(async () => {
         const testSuite = await setupTestSuite();
@@ -38,11 +39,12 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         destinationAddress = testSuite.destinationAddress;
         usdcMint = testSuite.usdcMint;
         koraAddress = testSuite.koraAddress;
+        koraRpcUrl = testSuite.koraRpcUrl;
     }, 90000); // allow adequate time for airdrops and token initialization
 
     // Run authentication tests only when auth is enabled
     if (AUTH_ENABLED) {
-        runAuthenticationTests('http://localhost:8080/');
+        runAuthenticationTests();
     }
 
     describe('Configuration and Setup', () => {
