@@ -42,11 +42,12 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         koraRpcUrl = testSuite.koraRpcUrl;
     }, 90000); // allow adequate time for airdrops and token initialization
 
+    // Run authentication tests only when auth is enabled
+    if (AUTH_ENABLED) {
+        runAuthenticationTests();
+    }
+
     describe('Configuration and Setup', () => {
-        // Run authentication tests only when auth is enabled
-        if (AUTH_ENABLED) {
-            runAuthenticationTests(koraRpcUrl);
-        }
         it('should get config', async () => {
             const config = await client.getConfig();
             expect(config).toBeDefined();

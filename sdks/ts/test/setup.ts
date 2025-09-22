@@ -86,7 +86,7 @@ const createKeyPairSignerFromB58Secret = async (b58Secret: string) => {
     return await createKeyPairSignerFromBytes(b58SecretEncoded);
 };
 // TODO Add KORA_PRIVATE_KEY_2= support for multi-signer configs
-function loadEnvironmentVariables() {
+export function loadEnvironmentVariables() {
     const koraSignerType = process.env.KORA_SIGNER_TYPE || DEFAULTS.KORA_SIGNER_TYPE;
 
     let koraAddress = process.env.KORA_ADDRESS;
