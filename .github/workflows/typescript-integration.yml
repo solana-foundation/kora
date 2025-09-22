@@ -53,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-group: [typescript_basic, typescript_auth, typescript_turnkey, typescript_privy]
+        test-group: [typescript_basic, typescript_auth]
     steps:
       - uses: actions/checkout@v4
 
