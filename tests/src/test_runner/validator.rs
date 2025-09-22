@@ -49,7 +49,7 @@ pub async fn start_test_validator(
     }
 
     let validator_pid =
-        cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn()?;
+        cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn()?;
 
     let mut attempts = 0;
     let mut delay = std::time::Duration::from_millis(100);

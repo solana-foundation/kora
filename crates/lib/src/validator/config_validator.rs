@@ -355,6 +355,7 @@ mod tests {
         },
     };
     use serial_test::serial;
+    use solana_commitment_config::CommitmentConfig;
 
     use super::*;
 
