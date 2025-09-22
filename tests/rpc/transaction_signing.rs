@@ -389,12 +389,8 @@ async fn test_sign_and_send_transaction_legacy() {
         .await
         .expect("Failed to create signed test transaction");
 
-    let result: Result<serde_json::Value, _> = tokio::time::timeout(
-        std::time::Duration::from_secs(120),
-        ctx.rpc_call("signAndSendTransaction", rpc_params![test_tx]),
-    )
-    .await
-    .map_err(|_| anyhow::anyhow!("Request timeout after 120 seconds"))?;
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("signAndSendTransaction", rpc_params![test_tx]).await;
 
     assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
     let response = result.unwrap();

@@ -142,23 +142,17 @@ impl VersionedTransactionResolved {
         rpc_client: &RpcClient,
         sig_verify: bool,
     ) -> Result<Vec<Instruction>, KoraError> {
-        let simulation_result = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            rpc_client.simulate_transaction_with_config(
+        let simulation_result = rpc_client
+            .simulate_transaction_with_config(
                 &self.transaction,
                 RpcSimulateTransactionConfig {
                     commitment: Some(rpc_client.commitment()),
                     sig_verify,
                     ..Default::default()
                 },
-            ),
-        )
-        .await
-        .map_err(|_| {
-            log::error!("Transaction simulation timed out after 30 seconds");
-            KoraError::RpcError("Transaction simulation timeout after 30 seconds".to_string())
-        })?
-        .map_err(|e| KoraError::RpcError(format!("Failed to simulate transaction: {e}")))?;
+            )
+            .await
+            .map_err(|e| KoraError::RpcError(format!("Failed to simulate transaction: {e}")))?;
 
         if let Some(err) = simulation_result.value.err {
             return Err(KoraError::InvalidTransaction(format!(
@@ -247,16 +241,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let mut transaction = self.transaction.clone();
 
         if transaction.signatures.is_empty() {
-            let blockhash = tokio::time::timeout(
-                std::time::Duration::from_secs(30),
-                rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()),
-            )
-            .await
-            .map_err(|_| {
-                log::error!("Blockhash fetch timed out after 30 seconds");
-                KoraError::RpcError("Blockhash fetch timeout after 30 seconds".to_string())
-            })?
-            .map_err(|e| KoraError::RpcError(e.to_string()))?;
+            let blockhash = rpc_client
+                .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+                .await?;
             transaction.message.set_recent_blockhash(blockhash.0);
         }
 
@@ -324,16 +311,10 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let (transaction, encoded) = self.sign_transaction(signer, rpc_client).await?;
 
         // Send and confirm transaction
-        let signature = tokio::time::timeout(
-            std::time::Duration::from_secs(60),
-            rpc_client.send_and_confirm_transaction(&transaction),
-        )
-        .await
-        .map_err(|_| {
-            log::error!("Transaction send and confirm timed out after 60 seconds");
-            KoraError::RpcError("Transaction send and confirm timeout after 60 seconds".to_string())
-        })?
-        .map_err(|e| KoraError::RpcError(e.to_string()))?;
+        let signature = rpc_client
+            .send_and_confirm_transaction(&transaction)
+            .await
+            .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
         Ok((signature.to_string(), encoded))
     }
@@ -351,19 +332,10 @@ impl LookupTableUtil {
 
         // Maybe we can use caching here, there's a chance the lookup tables get updated though, so tbd
         for lookup in lookup_table_lookups {
-            let lookup_table_account = tokio::time::timeout(
-                std::time::Duration::from_secs(30),
-                CacheUtil::get_account(rpc_client, &lookup.account_key, false),
-            )
-            .await
-            .map_err(|_| {
-                log::error!(
-                    "Lookup table fetch timed out after 30 seconds for account: {}",
-                    lookup.account_key
-                );
-                KoraError::RpcError("Lookup table fetch timeout after 30 seconds".to_string())
-            })?
-            .map_err(|e| KoraError::RpcError(format!("Failed to fetch lookup table: {e}")))?;
+            let lookup_table_account =
+                CacheUtil::get_account(rpc_client, &lookup.account_key, false).await.map_err(
+                    |e| KoraError::RpcError(format!("Failed to fetch lookup table: {e}")),
+                )?;
 
             // Parse the lookup table account data to get the actual addresses
             let address_lookup_table = AddressLookupTable::deserialize(&lookup_table_account.data)

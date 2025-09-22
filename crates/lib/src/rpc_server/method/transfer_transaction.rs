@@ -41,7 +41,6 @@ pub async fn transfer_transaction(
     rpc_client: &Arc<RpcClient>,
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
-    log::error!("transfer_transaction: Starting request processing");
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.solana_pubkey();
 
@@ -112,10 +111,8 @@ pub async fn transfer_transaction(
         );
     }
 
-    log::error!("transfer_transaction: Getting latest blockhash");
     let blockhash =
         rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
-    log::error!("transfer_transaction: Blockhash obtained: {}", blockhash.0);
 
     let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &instructions,
@@ -124,10 +121,8 @@ pub async fn transfer_transaction(
     ));
     let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-    log::error!("transfer_transaction: Creating resolved transaction");
     let mut resolved_transaction =
         VersionedTransactionResolved::from_kora_built_transaction(&transaction);
-    log::error!("transfer_transaction: Resolved transaction created");
 
     // validate transaction before signing
     validator.validate_transaction(&mut resolved_transaction).await?;
