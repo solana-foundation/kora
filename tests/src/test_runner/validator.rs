@@ -11,7 +11,10 @@ const TRANSFER_HOOK_PROGRAM_PATH: &str =
     "tests/src/common/transfer-hook-example/transfer_hook_example.so";
 
 pub async fn check_test_validator(rpc_url: &str) -> bool {
-    let client = RpcClient::new(rpc_url.to_string());
+    let client = RpcClient::new_with_commitment(
+        rpc_url.to_string(),
+        solana_commitment_config::CommitmentConfig::confirmed(),
+    );
     client.get_health().await.is_ok()
 }
 

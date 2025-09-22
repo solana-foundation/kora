@@ -6,6 +6,7 @@ use jsonrpsee::{
     http_client::{HttpClient, HttpClientBuilder},
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_commitment_config::CommitmentConfig;
 use std::sync::Arc;
 
 use crate::common::{
@@ -33,7 +34,10 @@ impl TestClient {
             .build(&server_url)
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {}", e))?;
 
-        let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
+        let rpc_client = Arc::new(RpcClient::new_with_commitment(
+            rpc_url.clone(),
+            CommitmentConfig::confirmed(),
+        ));
 
         Ok(Self { http_client, rpc_client, server_url, rpc_url })
     }

@@ -1,5 +1,6 @@
 use clap::Parser;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_commitment_config::CommitmentConfig;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tests::{
     common::{constants::DEFAULT_RPC_URL, setup::TestAccountSetup, TestAccountInfo},
@@ -41,7 +42,10 @@ impl TestRunner {
         }
 
         Ok(Self {
-            rpc_client: Arc::new(RpcClient::new(rpc_url)),
+            rpc_client: Arc::new(RpcClient::new_with_commitment(
+                rpc_url,
+                CommitmentConfig::confirmed(),
+            )),
             reqwest_client: reqwest::Client::new(),
             solana_test_validator_pid: None,
             test_accounts: TestAccountInfo::default(),

@@ -385,7 +385,10 @@ mod tests {
         config.validation.allowed_tokens = vec![];
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate(&rpc_client).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), KoraError::InternalServerError(_)));
@@ -419,7 +422,10 @@ mod tests {
         // Initialize global config
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
@@ -467,7 +473,10 @@ mod tests {
         // Initialize global config
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
@@ -504,7 +513,10 @@ mod tests {
         // Initialize global config
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
@@ -539,7 +551,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -579,7 +594,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -616,7 +634,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -661,7 +682,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
@@ -693,7 +717,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -980,7 +1007,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
     }
@@ -1011,7 +1041,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -1046,7 +1079,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
