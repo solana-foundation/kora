@@ -2,16 +2,38 @@ use crate::test_runner::accounts::AccountFile;
 use std::{
     collections::HashSet,
     path::Path,
+    process::Stdio,
     sync::{LazyLock, Mutex},
 };
-use tokio::{net::TcpListener, process::Child};
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    net::TcpListener,
+    process::Child,
+    sync::mpsc,
+};
 
 // Global port tracker to prevent immediate reuse
 static USED_PORTS: LazyLock<Mutex<HashSet<u16>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
 pub const KORA_BINARY_PATH: &str = "target/debug/kora";
+
+pub struct KoraProcessWithLogs {
+    pub process: Child,
+    pub port: u16,
+    pub log_receiver: mpsc::Receiver<String>,
+}
 pub const PORT_RANGE_START: u16 = 8080;
 pub const PORT_RANGE_END: u16 = 8180;
+
+/// Determines the appropriate log level for Kora processes
+/// Checks KORA_DEBUG_TESTS environment variable and defaults to "error"
+fn determine_log_level() -> String {
+    if std::env::var("KORA_DEBUG_TESTS").is_ok() {
+        "debug".to_string()
+    } else {
+        "error".to_string()
+    }
+}
 
 pub async fn get_kora_binary_path() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     if !Path::new(KORA_BINARY_PATH).exists() {
@@ -88,9 +110,83 @@ pub async fn start_kora_rpc_server(
         ])
         .env("KORA_PRIVATE_KEY", fee_payer_key.trim())
         .env("KORA_PRIVATE_KEY_2", signer_2.trim())
+        .env("RUST_LOG", determine_log_level())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;
 
     Ok((kora_pid, port))
+}
+
+pub async fn start_kora_rpc_server_with_logs(
+    rpc_url: String,
+    config_file: &str,
+    signers_config: &str,
+    cached_keys: &std::collections::HashMap<AccountFile, String>,
+    preferred_port: u16,
+) -> Result<KoraProcessWithLogs, Box<dyn std::error::Error + Send + Sync>> {
+    let fee_payer_key =
+        cached_keys.get(&AccountFile::FeePayer).ok_or("FeePayer key not found in cache")?;
+    let signer_2 =
+        cached_keys.get(&AccountFile::Signer2).ok_or("Signer2 key not found in cache")?;
+
+    let port = if check_port_available(preferred_port).await {
+        let mut used_ports = USED_PORTS.lock().unwrap();
+        used_ports.insert(preferred_port);
+        preferred_port
+    } else {
+        find_available_port().await?
+    };
+    let kora_binary_path = get_kora_binary_path().await?;
+
+    let mut kora_process = tokio::process::Command::new(kora_binary_path)
+        .args([
+            "--config",
+            config_file,
+            "--rpc-url",
+            rpc_url.as_str(),
+            "rpc",
+            "start",
+            "--signers-config",
+            signers_config,
+            "--port",
+            &port.to_string(),
+        ])
+        .env("KORA_PRIVATE_KEY", fee_payer_key.trim())
+        .env("KORA_PRIVATE_KEY_2", signer_2.trim())
+        .env("RUST_LOG", determine_log_level())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    // Create channels for log streaming
+    let (log_sender, log_receiver) = mpsc::channel(1000);
+
+    // Capture stdout
+    if let Some(stdout) = kora_process.stdout.take() {
+        let sender = log_sender.clone();
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                if sender.send(format!("[STDOUT] {line}")).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+
+    // Capture stderr
+    if let Some(stderr) = kora_process.stderr.take() {
+        let sender = log_sender;
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                if sender.send(format!("[STDERR] {line}")).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+
+    Ok(KoraProcessWithLogs { process: kora_process, port, log_receiver })
 }

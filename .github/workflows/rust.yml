@@ -26,7 +26,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_LOG: info
+  RUST_LOG: error
   CI: true
 
 jobs:

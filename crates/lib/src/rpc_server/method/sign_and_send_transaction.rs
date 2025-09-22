@@ -33,22 +33,78 @@ pub async fn sign_and_send_transaction(
     rpc_client: &Arc<RpcClient>,
     request: SignAndSendTransactionRequest,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
-    let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
+    log::error!("RPC Method: signAndSendTransaction - Entry: transaction_len={}, signer_key={:?}, sig_verify={}",
+        request.transaction.len(), request.signer_key, request.sig_verify);
 
-    // Check usage limit for transaction sender
-    UsageTracker::check_transaction_usage_limit(&transaction).await?;
+    let transaction = match TransactionUtil::decode_b64_transaction(&request.transaction) {
+        Ok(tx) => {
+            log::error!("Transaction decoded successfully: signatures={}", tx.signatures.len());
+            tx
+        }
+        Err(e) => {
+            log::error!("Transaction decode failed: {e}");
+            return Err(e);
+        }
+    };
 
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    log::error!("Checking usage limit for transaction sender");
+    if let Err(e) = UsageTracker::check_transaction_usage_limit(&transaction).await {
+        log::error!("Usage limit check failed: {e}");
+        return Err(e);
+    }
+    log::error!("Usage limit check passed");
 
-    let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
+    let signer = match get_request_signer_with_signer_key(request.signer_key.as_deref()) {
+        Ok(s) => {
+            log::error!("Signer obtained: pubkey={}", s.solana_pubkey());
+            s
+        }
+        Err(e) => {
+            log::error!("Failed to get signer: {e}");
+            return Err(e);
+        }
+    };
+
+    log::error!("Resolving transaction with lookup tables");
+    let mut resolved_transaction = match VersionedTransactionResolved::from_transaction(
         &transaction,
         rpc_client,
         request.sig_verify,
     )
-    .await?;
+    .await
+    {
+        Ok(resolved) => {
+            log::error!(
+                "Transaction resolved successfully: total_accounts={}, total_instructions={}",
+                resolved.all_account_keys.len(),
+                resolved.all_instructions.len()
+            );
+            resolved
+        }
+        Err(e) => {
+            log::error!("Transaction resolution failed: {e}");
+            return Err(e);
+        }
+    };
 
+    log::error!("Signing and sending transaction");
     let (signature, signed_transaction) =
-        resolved_transaction.sign_and_send_transaction(&signer, rpc_client).await?;
+        match resolved_transaction.sign_and_send_transaction(&signer, rpc_client).await {
+            Ok((sig, tx)) => {
+                log::error!("Transaction signed and sent successfully: signature={sig}");
+                (sig, tx)
+            }
+            Err(e) => {
+                log::error!("Sign and send transaction failed: {e}");
+                return Err(e);
+            }
+        };
+
+    log::error!(
+        "RPC Method: signAndSendTransaction - Success: signature={}, signer_pubkey={}",
+        signature,
+        signer.solana_pubkey()
+    );
 
     Ok(SignAndSendTransactionResponse {
         signature,

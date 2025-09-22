@@ -45,40 +45,124 @@ pub async fn estimate_transaction_fee(
     rpc_client: &Arc<RpcClient>,
     request: EstimateTransactionFeeRequest,
 ) -> Result<EstimateTransactionFeeResponse, KoraError> {
-    let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
+    log::error!("RPC Method: estimateTransactionFee - Entry: transaction_len={}, fee_token={:?}, signer_key={:?}, sig_verify={}",
+        request.transaction.len(), request.fee_token, request.signer_key, request.sig_verify);
 
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
-    let config = get_config()?;
-    let payment_destination = config.kora.get_payment_address(&signer.solana_pubkey())?;
+    let transaction = match TransactionUtil::decode_b64_transaction(&request.transaction) {
+        Ok(tx) => {
+            log::error!("Transaction decoded successfully: signatures={}", tx.signatures.len());
+            tx
+        }
+        Err(e) => {
+            log::error!("Transaction decode failed: {e}");
+            return Err(e);
+        }
+    };
+
+    let signer = match get_request_signer_with_signer_key(request.signer_key.as_deref()) {
+        Ok(s) => {
+            log::error!("Signer obtained: pubkey={}", s.solana_pubkey());
+            s
+        }
+        Err(e) => {
+            log::error!("Failed to get signer: {e}");
+            return Err(e);
+        }
+    };
+
+    let config = match get_config() {
+        Ok(c) => {
+            log::error!("Config loaded successfully");
+            c
+        }
+        Err(e) => {
+            log::error!("Failed to get config: {e}");
+            return Err(e);
+        }
+    };
+
+    let fee_payer = signer.solana_pubkey();
+    let payment_destination = match config.kora.get_payment_address(&fee_payer) {
+        Ok(addr) => {
+            log::error!("Payment destination: {addr}");
+            addr
+        }
+        Err(e) => {
+            log::error!("Failed to get payment destination: {e}");
+            return Err(e);
+        }
+    };
 
     let validation_config = &config.validation;
-    let fee_payer = signer.solana_pubkey();
+    log::error!(
+        "Validation config: payment_required={}, price_source={:?}",
+        validation_config.is_payment_required(),
+        validation_config.price_source
+    );
 
-    let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
+    log::error!("Resolving transaction with lookup tables");
+    let mut resolved_transaction = match VersionedTransactionResolved::from_transaction(
         &transaction,
         rpc_client,
         request.sig_verify,
     )
-    .await?;
+    .await
+    {
+        Ok(resolved) => {
+            log::error!(
+                "Transaction resolved successfully: total_accounts={}, total_instructions={}",
+                resolved.all_account_keys.len(),
+                resolved.all_instructions.len()
+            );
+            resolved
+        }
+        Err(e) => {
+            log::error!("Transaction resolution failed: {e}");
+            return Err(e);
+        }
+    };
 
-    let fee_calculation = FeeConfigUtil::estimate_kora_fee(
+    log::error!("Estimating Kora fee");
+    let fee_calculation = match FeeConfigUtil::estimate_kora_fee(
         rpc_client,
         &mut resolved_transaction,
         &fee_payer,
         validation_config.is_payment_required(),
         Some(validation_config.price_source.clone()),
     )
-    .await?;
+    .await
+    {
+        Ok(calc) => {
+            log::error!("Fee estimation complete: total_fee_lamports={}", calc.total_fee_lamports);
+            calc
+        }
+        Err(e) => {
+            log::error!("Fee estimation failed: {e}");
+            return Err(e);
+        }
+    };
 
     let fee_in_lamports = fee_calculation.total_fee_lamports;
 
-    // Calculate fee in token if requested
-    let fee_in_token = FeeConfigUtil::calculate_fee_in_token(
+    log::error!("Calculating fee in token if requested");
+    let fee_in_token = match FeeConfigUtil::calculate_fee_in_token(
         rpc_client,
         fee_in_lamports,
         request.fee_token.as_deref(),
     )
-    .await?;
+    .await
+    {
+        Ok(token_fee) => {
+            log::error!("Token fee calculation result: {token_fee:?}");
+            token_fee
+        }
+        Err(e) => {
+            log::error!("Token fee calculation failed: {e}");
+            return Err(e);
+        }
+    };
+
+    log::error!("RPC Method: estimateTransactionFee - Success: fee_in_lamports={fee_in_lamports}, fee_in_token={fee_in_token:?}");
 
     Ok(EstimateTransactionFeeResponse {
         fee_in_lamports,
