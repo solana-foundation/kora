@@ -24,7 +24,7 @@ async fn test_transfer_transaction_spl_token_legacy() {
         ctx.rpc_call("transferTransaction", request_params).await;
 
     println!("DEBUG: Response: {response:?}");
-    assert!(response.is_ok(), "Failed to transfer SPL token");
+    assert!(response.is_ok(), "Failed to transfer SPL token {response:?}");
 
     // let response: serde_json::Value = ctx
     //     .rpc_call("transferTransaction", request_params)
