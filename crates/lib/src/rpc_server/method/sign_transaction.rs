@@ -33,40 +33,24 @@ pub async fn sign_transaction(
     rpc_client: &Arc<RpcClient>,
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResponse, KoraError> {
-    log::error!("sign_transaction: Starting request processing");
-
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
-    log::error!("sign_transaction: Transaction decoded successfully");
 
     // Check usage limit for transaction sender
-    log::error!("sign_transaction: Checking usage limit");
     UsageTracker::check_transaction_usage_limit(&transaction).await?;
-    log::error!("sign_transaction: Usage limit check passed");
 
-    log::error!("sign_transaction: Getting request signer");
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
-    log::error!("sign_transaction: Signer obtained: {}", signer.solana_pubkey());
 
-    log::error!(
-        "sign_transaction: Creating resolved transaction (sig_verify: {})",
-        request.sig_verify
-    );
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
         rpc_client,
         request.sig_verify,
     )
     .await?;
-    log::error!("sign_transaction: Transaction resolved successfully");
 
-    log::error!("sign_transaction: Signing transaction");
     let (signed_transaction, _) =
         resolved_transaction.sign_transaction(&signer, rpc_client).await?;
-    log::error!("sign_transaction: Transaction signed successfully");
 
-    log::error!("sign_transaction: Encoding transaction");
     let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction);
-    log::error!("sign_transaction: Transaction encoded, returning response");
 
     Ok(SignTransactionResponse {
         signature: transaction.signatures[0].to_string(),
