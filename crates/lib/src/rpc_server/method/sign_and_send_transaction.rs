@@ -33,19 +33,23 @@ pub async fn sign_and_send_transaction(
     rpc_client: &Arc<RpcClient>,
     request: SignAndSendTransactionRequest,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
+    log::error!("sign_and_send_transaction: Starting request processing");
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
+    log::error!("sign_and_send_transaction: Transaction decoded");
 
     // Check usage limit for transaction sender
     UsageTracker::check_transaction_usage_limit(&transaction).await?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
 
+    log::error!("sign_and_send_transaction: Creating resolved transaction");
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
         rpc_client,
         request.sig_verify,
     )
     .await?;
+    log::error!("sign_and_send_transaction: Resolved transaction created");
 
     let (signature, signed_transaction) =
         resolved_transaction.sign_and_send_transaction(&signer, rpc_client).await?;

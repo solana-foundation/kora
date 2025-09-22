@@ -3,7 +3,7 @@ name = "Regular Integration Tests"
 config = "tests/src/common/fixtures/kora-test.toml"
 signers = "tests/src/common/fixtures/signers.toml"
 port = "8080"
-tests = ["rpc"]                                     #, "tokens", "external"
+tests = ["rpc", "tokens", "external"]
 
 [test.auth]
 name = "Auth Tests"
