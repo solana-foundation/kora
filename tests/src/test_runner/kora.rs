@@ -88,8 +88,8 @@ pub async fn start_kora_rpc_server(
         ])
         .env("KORA_PRIVATE_KEY", fee_payer_key.trim())
         .env("KORA_PRIVATE_KEY_2", signer_2.trim())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()?;
 
     Ok((kora_pid, port))
