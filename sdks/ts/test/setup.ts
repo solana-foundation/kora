@@ -68,6 +68,7 @@ const DEFAULTS = {
 
 interface TestSuite {
     koraClient: KoraClient;
+    koraRpcUrl: string;
     testWallet: KeyPairSigner<string>;
     usdcMint: Address<string>;
     destinationAddress: Address<string>;
@@ -347,6 +348,7 @@ async function setupTestSuite(): Promise<TestSuite> {
 
     return {
         koraClient: new KoraClient({ rpcUrl: koraRpcUrl, ...authConfig }),
+        koraRpcUrl,
         testWallet,
         usdcMint: usdcMint.address,
         destinationAddress,
