@@ -90,11 +90,6 @@ impl TestCommandHelper {
         let mut cmd = tokio::process::Command::new("pnpm");
         cmd.current_dir("sdks/ts").args(["run", pnpm_command]).env("KORA_RPC_URL", server_url);
 
-        // Set auth flag based on test name
-        if test_name == "typescript_auth" {
-            cmd.env("ENABLE_AUTH", "true");
-        }
-
         let cmd_output = cmd.output().await?;
 
         if !cmd_output.status.success() {

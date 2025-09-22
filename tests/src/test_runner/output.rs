@@ -176,11 +176,7 @@ pub fn filter_and_colorize_output(
     color: TestPhaseColor,
 ) -> String {
     let filtered = filter_command_output(output, filter, show_verbose);
-    if filtered.is_empty() {
-        filtered
-    } else {
-        color.colorize(&filtered)
-    }
+    color.colorize(&filtered)
 }
 
 pub fn limit_output_size(output: String) -> (String, bool) {

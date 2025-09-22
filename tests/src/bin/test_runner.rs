@@ -417,13 +417,11 @@ pub async fn run_test_phase(
     let success = result.is_ok();
     match &result {
         Ok(_) => output.push_str(
-            &color.colorize_with_controlled_flow(&format!("=== Completed {phase_name} ===")),
+            &color.colorize_with_controlled_flow(&format!("\n\n=== Completed {phase_name} ===")),
         ),
-        Err(e) => {
-            output.push_str(&color.colorize_with_controlled_flow(&format!(
-                "=== Failed {phase_name} - Error: {e} ==="
-            )))
-        }
+        Err(e) => output.push_str(&color.colorize_with_controlled_flow(&format!(
+            "\n\n=== Failed {phase_name} - Error: {e} ==="
+        ))),
     }
 
     let (limited_output, truncated) = limit_output_size(output);
