@@ -333,11 +333,18 @@ pub async fn run_test_phase(
     let max_attempts = 10;
     let port_str = actual_port.to_string();
 
+    println!("DEBUG: Starting health check for Kora server on port {actual_port} (max_attempts: {max_attempts})");
+
+    let health_check_start = std::time::Instant::now();
     while !is_kora_running_with_client(&http_client, &port_str).await {
         attempts += 1;
+        println!("DEBUG: Health check attempt {attempts}/{max_attempts} on port {actual_port} failed, waiting {}ms", delay.as_millis());
+
         if attempts > max_attempts {
+            let total_time = health_check_start.elapsed();
+            println!("DEBUG: Health check timeout after {attempts} attempts in {total_time:?} for port {actual_port}");
             output.push_str(&color.colorize_with_controlled_flow(&format!(
-                "Kora server failed to start on port {actual_port} within {max_attempts} attempts"
+                "Kora server failed to start on port {actual_port} within {max_attempts} attempts (took {total_time:?})"
             )));
             kora_pid.kill().await.ok();
             release_port(actual_port);
@@ -353,6 +360,9 @@ pub async fn run_test_phase(
         tokio::time::sleep(delay).await;
         delay = std::cmp::min(delay * 2, max_delay);
     }
+
+    let health_check_time = health_check_start.elapsed();
+    println!("DEBUG: Health check successful for port {actual_port} after {attempts} attempts in {health_check_time:?}");
     output.push_str(
         &color.colorize_with_controlled_flow(&format!("Kora server started on port {actual_port}")),
     );
@@ -371,10 +381,14 @@ pub async fn run_test_phase(
         }
 
         for test_name in test_names {
+            println!("DEBUG: Starting test suite: {test_name} on port {actual_port}");
+            let test_start = std::time::Instant::now();
+
             output.push_str(&color.colorize_with_controlled_flow(&format!(
                 "Running {test_name} tests on port {actual_port}"
             )));
-            if test_name.starts_with("typescript_") {
+
+            let test_result = if test_name.starts_with("typescript_") {
                 TestCommandHelper::run_test(
                     TestLanguage::TypeScript,
                     test_name,
@@ -383,7 +397,7 @@ pub async fn run_test_phase(
                     verbose,
                     &mut output,
                 )
-                .await?;
+                .await
             } else {
                 TestCommandHelper::run_test(
                     TestLanguage::Rust,
@@ -393,26 +407,43 @@ pub async fn run_test_phase(
                     verbose,
                     &mut output,
                 )
-                .await?
+                .await
+            };
+
+            let test_duration = test_start.elapsed();
+            match &test_result {
+                Ok(_) => println!(
+                    "DEBUG: Test suite {test_name} completed successfully in {test_duration:?}"
+                ),
+                Err(e) => {
+                    println!("DEBUG: Test suite {test_name} failed after {test_duration:?}: {e}")
+                }
             }
+
+            test_result?;
         }
 
         Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
     }
     .await;
 
+    println!("DEBUG: Shutting down Kora server on port {actual_port}");
     kora_pid.kill().await.ok();
     release_port(actual_port);
 
     let success = result.is_ok();
     match &result {
-        Ok(_) => output.push_str(
-            &color.colorize_with_controlled_flow(&format!("=== Completed {phase_name} ===")),
-        ),
+        Ok(_) => {
+            println!("DEBUG: Phase {phase_name} completed successfully");
+            output.push_str(
+                &color.colorize_with_controlled_flow(&format!("=== Completed {phase_name} ===")),
+            );
+        }
         Err(e) => {
+            println!("DEBUG: Phase {phase_name} failed with error: {e}");
             output.push_str(&color.colorize_with_controlled_flow(&format!(
                 "=== Failed {phase_name} - Error: {e} ==="
-            )))
+            )));
         }
     }
 

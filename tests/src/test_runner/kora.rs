@@ -29,27 +29,44 @@ pub async fn check_port_available(port: u16) -> bool {
 }
 
 pub async fn find_available_port() -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
+    println!("DEBUG: Starting port search in range {PORT_RANGE_START}-{PORT_RANGE_END}");
     for port in PORT_RANGE_START..PORT_RANGE_END {
         // Check if port is available and not recently used
         if check_port_available(port).await {
             let mut used_ports = USED_PORTS.lock().unwrap();
             if !used_ports.contains(&port) {
                 used_ports.insert(port);
+                println!("DEBUG: Found available port: {port}");
                 return Ok(port);
+            } else {
+                println!("DEBUG: Port {port} is available but recently used, skipping");
             }
+        } else {
+            println!("DEBUG: Port {port} is not available");
         }
     }
+    println!("DEBUG: No available ports found in range {PORT_RANGE_START}-{PORT_RANGE_END}");
     Err(format!("No available ports found in range {PORT_RANGE_START}-{PORT_RANGE_END}").into())
 }
 
 pub fn release_port(port: u16) {
     let mut used_ports = USED_PORTS.lock().unwrap();
     used_ports.remove(&port);
+    println!("DEBUG: Released port: {port}");
 }
 
 pub async fn is_kora_running_with_client(client: &reqwest::Client, port: &str) -> bool {
     let url = format!("http://127.0.0.1:{port}/liveness");
-    client.get(&url).timeout(std::time::Duration::from_secs(5)).send().await.is_ok()
+    match client.get(&url).timeout(std::time::Duration::from_secs(5)).send().await {
+        Ok(response) => {
+            println!("DEBUG: Health check on port {port}: success (status: {})", response.status());
+            true
+        }
+        Err(e) => {
+            println!("DEBUG: Health check on port {port}: failed - {e}");
+            false
+        }
+    }
 }
 
 pub async fn start_kora_rpc_server(
@@ -58,32 +75,52 @@ pub async fn start_kora_rpc_server(
     signers_config: &str,
     cached_keys: &std::collections::HashMap<AccountFile, String>,
 ) -> Result<(Child, u16), Box<dyn std::error::Error + Send + Sync>> {
+    println!("DEBUG: Starting Kora RPC server with config: {config_file}, signers: {signers_config}, rpc_url: {rpc_url}");
+
     let fee_payer_key =
         cached_keys.get(&AccountFile::FeePayer).ok_or("FeePayer key not found in cache")?;
     let signer_2 =
         cached_keys.get(&AccountFile::Signer2).ok_or("Signer2 key not found in cache")?;
 
+    println!(
+        "DEBUG: Retrieved keys from cache: fee_payer length: {}, signer_2 length: {}",
+        fee_payer_key.len(),
+        signer_2.len()
+    );
+
     let port = find_available_port().await?;
     let kora_binary_path = get_kora_binary_path().await?;
 
+    println!("DEBUG: Using Kora binary: {kora_binary_path} on port {port}");
+
+    let args = [
+        "--config",
+        config_file,
+        "--rpc-url",
+        rpc_url.as_str(),
+        "rpc",
+        "start",
+        "--signers-config",
+        signers_config,
+        "--port",
+        &port.to_string(),
+    ];
+    println!("DEBUG: Kora command args: {args:?}");
+
     let kora_pid = tokio::process::Command::new(kora_binary_path)
-        .args([
-            "--config",
-            config_file,
-            "--rpc-url",
-            rpc_url.as_str(),
-            "rpc",
-            "start",
-            "--signers-config",
-            signers_config,
-            "--port",
-            &port.to_string(),
-        ])
+        .args(args)
         .env("KORA_PRIVATE_KEY", fee_payer_key.trim())
         .env("KORA_PRIVATE_KEY_2", signer_2.trim())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .spawn()?;
+        .spawn();
 
-    Ok((kora_pid, port))
+    match &kora_pid {
+        Ok(child) => {
+            println!("DEBUG: Kora server process spawned successfully with PID: {:?}", child.id())
+        }
+        Err(e) => println!("DEBUG: Failed to spawn Kora server process: {e}"),
+    }
+
+    Ok((kora_pid?, port))
 }
