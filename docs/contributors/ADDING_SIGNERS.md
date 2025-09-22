@@ -400,48 +400,74 @@ Define a `example-signer.toml` with your signer's configuration and necessary en
 
 ### Integration Tests
 
-Testing should utilize the existing `sdks/ts/test/integration.test.ts` file. We manage this with an environment variable `KORA_SIGNER_TYPE` that is set to the signer type you are testing.
+Kora uses a unified test runner (`tests/src/bin/test_runner.rs`) that manages all integration testing phases including TypeScript tests. To add tests for your new signer:
 
-Setup:
-- `sdks/ts/test/setup.ts`: You will need to add an environment variable to `loadEnvironmentVariables`  to set the signer type to your service.
-- `sdks/ts/package.json`: You will need to add a new test script that uses the signer type you added to the setup script: `"test:integration:your-service": "KORA_SIGNER_TYPE=your-service pnpm test integration.test.ts"`. When executed, the test will run with the signer type set to your service.
+#### 1. Add Test Configuration
 
-Integration testing requires a local Solana test validator and a local Kora node. We can use the [TypeScript Test Makefile](/makefiles/tests_ts.mk) to start a local Solana test validator and a local Kora node by adding a new script for your signer:
+Create a new signer configuration file in `tests/src/common/fixtures/` for your service:
 
-```makefile
-# Run TypeScript tests with YourService signer  
-test-ts-integration-your-service:
-	@$(call start_solana_validator)
-	@echo "🚀 Starting Kora node with YourService signer..."
-	@$(call stop_kora_server)
-	@cargo run -p kora-cli --bin kora -- --config $(REGULAR_CONFIG) --rpc-url $(TEST_RPC_URL) rpc start --signers-config $(TEST_SIGNERS_YOUR_SERVICE_CONFIG) --port $(TEST_PORT) $(QUIET_OUTPUT) &
-	@echo $$! > .kora.pid
-	@echo "⏳ Waiting for server to start..."
-	@sleep 5
-	@printf "Running TypeScript SDK tests with YourService signer...\n"
-	-@cd sdks/ts && pnpm test:integration:your-service
-	@$(call stop_kora_server)
-	@$(call stop_solana_validator)
+```toml
+# tests/src/common/fixtures/signers-your-service.toml
+[[signers]]
+name = "yourservice_main"
+type = "your_service"
+api_key_env = "YOUR_SERVICE_API_KEY"
+api_secret_env = "YOUR_SERVICE_API_SECRET"
+wallet_id_env = "YOUR_SERVICE_WALLET_ID"
 ```
 
-And add your new script to the `test-ts-signers` script:
+#### 2. Add Test Phase to Test Runner
 
-```makefile
-test-ts-signers: test-ts-integration-your-service # ... test-ts-existing-signer-tests
+Update `tests/src/test_runner/test_cases.toml` to include a test phase for your signer:
+
+```toml
+[test.your_service]
+name = "YourService Signer Tests"
+config = "tests/src/common/fixtures/kora-test.toml"
+signers = "tests/src/common/fixtures/signers-your-service.toml"
+port = "8090"  # Use a unique port
+tests = ["your_service"]
 ```
 
-Make sure your local environment is set up:
+#### 3. TypeScript SDK Integration
 
-```makefile
+For TypeScript SDK testing with your signer:
+
+1. Update `sdks/ts/test/setup.ts` to recognize your signer type:
+   - Add environment variable handling for `KORA_SIGNER_TYPE=your-service`
+
+2. Add a test script in `sdks/ts/package.json`:
+   ```json
+   "test:integration:your-service": "KORA_SIGNER_TYPE=your-service pnpm test integration.test.ts"
+   ```
+
+#### 4. Running Tests
+
+Make sure your environment is set up:
+
+```bash
+# Install binaries and dependencies
 make install
 make install-ts-sdk
 make build-ts-sdk
+
+# Set environment variables for your service
+export YOUR_SERVICE_API_KEY="your_key"
+export YOUR_SERVICE_API_SECRET="your_secret"
+export YOUR_SERVICE_WALLET_ID="your_wallet"
 ```
 
-Now you can test your integration by running:
+Run tests using the unified test runner:
 
 ```bash
-make test-ts-integration-your-service
+# Run all integration tests (includes your new signer phase)
+make test-integration
+
+# Run tests with verbose output
+make test-integration-verbose
+
+# Run specific test phase with filter
+cargo run -p tests --bin test_runner -- --phases your_service
 ```
 
 
