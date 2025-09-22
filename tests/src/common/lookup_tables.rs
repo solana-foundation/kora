@@ -108,8 +108,16 @@ impl LookupTableHelper {
             rpc_client.send_and_confirm_transaction(&extend_transaction).await?;
         }
 
-        // Wait for the lookup table to be fully initialized
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        // Wait for the lookup table to be activated
+        // Lookup tables need to be activated for at least one slot before they can be used
+        let creation_slot = rpc_client.get_slot().await?;
+        let mut current_slot = creation_slot;
+
+        // Wait until we're at least 2 slots past creation to ensure activation
+        while current_slot <= creation_slot + 1 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+            current_slot = rpc_client.get_slot().await?;
+        }
 
         Ok(lookup_table_key)
     }

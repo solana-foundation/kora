@@ -242,7 +242,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
         if transaction.signatures.is_empty() {
             let blockhash = rpc_client
-                .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+                .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
                 .await?;
             transaction.message.set_recent_blockhash(blockhash.0);
         }

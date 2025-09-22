@@ -57,13 +57,20 @@ pub async fn start_kora_rpc_server(
     config_file: &str,
     signers_config: &str,
     cached_keys: &std::collections::HashMap<AccountFile, String>,
+    preferred_port: u16,
 ) -> Result<(Child, u16), Box<dyn std::error::Error + Send + Sync>> {
     let fee_payer_key =
         cached_keys.get(&AccountFile::FeePayer).ok_or("FeePayer key not found in cache")?;
     let signer_2 =
         cached_keys.get(&AccountFile::Signer2).ok_or("Signer2 key not found in cache")?;
 
-    let port = find_available_port().await?;
+    let port = if check_port_available(preferred_port).await {
+        let mut used_ports = USED_PORTS.lock().unwrap();
+        used_ports.insert(preferred_port);
+        preferred_port
+    } else {
+        find_available_port().await?
+    };
     let kora_binary_path = get_kora_binary_path().await?;
 
     let kora_pid = tokio::process::Command::new(kora_binary_path)

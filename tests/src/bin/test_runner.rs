@@ -273,6 +273,7 @@ async fn run_test_phase_from_config(
     http_client: reqwest::Client,
 ) -> PhaseOutput {
     let test_names: Vec<&str> = config.tests.iter().map(|s| s.as_str()).collect();
+    let preferred_port: u16 = config.port.parse().unwrap_or(8080);
 
     run_test_phase(
         &config.name,
@@ -284,6 +285,7 @@ async fn run_test_phase_from_config(
         verbose,
         cached_keys,
         http_client,
+        preferred_port,
     )
     .await
 }
@@ -299,6 +301,7 @@ pub async fn run_test_phase(
     verbose: bool,
     cached_keys: Arc<HashMap<AccountFile, String>>,
     http_client: reqwest::Client,
+    preferred_port: u16,
 ) -> PhaseOutput {
     let color = TestPhaseColor::from_phase_name(phase_name);
     let mut output = String::new();
@@ -306,26 +309,29 @@ pub async fn run_test_phase(
     output
         .push_str(&color.colorize_with_controlled_flow(&format!("=== Starting {phase_name} ===")));
 
-    let (mut kora_pid, actual_port) =
-        match start_kora_rpc_server(rpc_url.clone(), config_file, signers_config, &cached_keys)
-            .await
-        {
-            Ok((pid, port)) => (pid, port),
-            Err(e) => {
-                output.push_str(
-                    &color.colorize_with_controlled_flow(&format!(
-                        "Failed to start Kora server: {e}"
-                    )),
-                );
-                let (limited_output, truncated) = limit_output_size(output);
-                return PhaseOutput {
-                    phase_name: phase_name.to_string(),
-                    output: limited_output,
-                    success: false,
-                    truncated,
-                };
-            }
-        };
+    let (mut kora_pid, actual_port) = match start_kora_rpc_server(
+        rpc_url.clone(),
+        config_file,
+        signers_config,
+        &cached_keys,
+        preferred_port,
+    )
+    .await
+    {
+        Ok((pid, port)) => (pid, port),
+        Err(e) => {
+            output.push_str(
+                &color.colorize_with_controlled_flow(&format!("Failed to start Kora server: {e}")),
+            );
+            let (limited_output, truncated) = limit_output_size(output);
+            return PhaseOutput {
+                phase_name: phase_name.to_string(),
+                output: limited_output,
+                success: false,
+                truncated,
+            };
+        }
+    };
 
     let mut attempts = 0;
     let mut delay = std::time::Duration::from_millis(50);
