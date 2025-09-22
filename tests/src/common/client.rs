@@ -30,6 +30,7 @@ impl TestClient {
     /// Create a test client with custom URLs
     pub async fn with_urls(server_url: String, rpc_url: String) -> Result<Self> {
         let http_client = HttpClientBuilder::default()
+            .request_timeout(std::time::Duration::from_secs(120)) // Increased timeout for CI environments
             .build(&server_url)
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {}", e))?;
 
