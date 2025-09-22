@@ -41,17 +41,26 @@ pub async fn transfer_transaction(
     rpc_client: &Arc<RpcClient>,
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
+    log::error!("transfer_transaction: Starting request processing (amount: {}, token: {}, source: {}, destination: {})",
+                request.amount, request.token, request.source, request.destination);
+
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.solana_pubkey();
+    log::error!("transfer_transaction: Signer obtained: {fee_payer}");
 
     let validator = TransactionValidator::new(fee_payer)?;
+    log::error!("transfer_transaction: Transaction validator created");
 
+    log::error!("transfer_transaction: Parsing addresses");
     let source = Pubkey::from_str(&request.source)
         .map_err(|e| KoraError::ValidationError(format!("Invalid source address: {e}")))?;
     let destination = Pubkey::from_str(&request.destination)
         .map_err(|e| KoraError::ValidationError(format!("Invalid destination address: {e}")))?;
     let token_mint = Pubkey::from_str(&request.token)
         .map_err(|e| KoraError::ValidationError(format!("Invalid token address: {e}")))?;
+    log::error!(
+        "transfer_transaction: Addresses parsed - source: {source}, destination: {destination}, token_mint: {token_mint}"
+    );
 
     // manually check disallowed account because we're creating the message
     if validator.is_disallowed_account(&source) {
@@ -70,29 +79,48 @@ pub async fn transfer_transaction(
 
     // Handle native SOL transfers
     if request.token == NATIVE_SOL {
+        log::error!("transfer_transaction: Creating native SOL transfer instruction");
         instructions.push(transfer(&source, &destination, request.amount));
+        log::error!("transfer_transaction: Native SOL transfer instruction created");
     } else {
         // Handle wrapped SOL and other SPL tokens
+        log::error!("transfer_transaction: Fetching and validating token mint");
         let token_mint = validator.fetch_and_validate_token_mint(&token_mint, rpc_client).await?;
+        log::error!(
+            "transfer_transaction: Token mint validated - decimals: {}",
+            token_mint.decimals()
+        );
         let token_program = token_mint.get_token_program();
         let decimals = token_mint.decimals();
 
         let source_ata = token_program.get_associated_token_address(&source, &token_mint.address());
         let dest_ata =
             token_program.get_associated_token_address(&destination, &token_mint.address());
+        log::error!(
+            "transfer_transaction: ATAs calculated - source_ata: {source_ata}, dest_ata: {dest_ata}"
+        );
 
+        log::error!("transfer_transaction: Checking source ATA existence");
         CacheUtil::get_account(rpc_client, &source_ata, false)
             .await
             .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
+        log::error!("transfer_transaction: Source ATA exists");
 
+        log::error!("transfer_transaction: Checking destination ATA existence");
         if CacheUtil::get_account(rpc_client, &dest_ata, false).await.is_err() {
+            log::error!(
+                "transfer_transaction: Destination ATA doesn't exist, creating instruction"
+            );
             instructions.push(token_program.create_associated_token_account_instruction(
                 &fee_payer,
                 &destination,
                 &token_mint.address(),
             ));
+        } else {
+            log::error!("transfer_transaction: Destination ATA already exists");
         }
 
+        log::error!("transfer_transaction: Creating transfer checked instruction");
         instructions.push(
             token_program
                 .create_transfer_checked_instruction(
@@ -109,33 +137,48 @@ pub async fn transfer_transaction(
                     ))
                 })?,
         );
+        log::error!("transfer_transaction: Transfer instruction created");
     }
 
+    log::error!("transfer_transaction: Getting latest blockhash");
     let blockhash =
         rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
+    log::error!("transfer_transaction: Blockhash obtained: {}", blockhash.0);
 
+    log::error!("transfer_transaction: Creating transaction message");
     let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &instructions,
         Some(&fee_payer),
         &blockhash.0,
     ));
     let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+    log::error!("transfer_transaction: Transaction message created");
 
+    log::error!("transfer_transaction: Creating resolved transaction");
     let mut resolved_transaction =
         VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+    log::error!("transfer_transaction: Resolved transaction created");
 
     // validate transaction before signing
+    log::error!("transfer_transaction: Validating transaction");
     validator.validate_transaction(&mut resolved_transaction).await?;
+    log::error!("transfer_transaction: Transaction validation passed");
 
     // Find the fee payer position in the account keys
+    log::error!("transfer_transaction: Finding fee payer position");
     let fee_payer_position = resolved_transaction.find_signer_position(&fee_payer)?;
+    log::error!("transfer_transaction: Fee payer position found: {fee_payer_position}");
 
+    log::error!("transfer_transaction: Signing transaction");
     let signature = signer.sign_solana(&resolved_transaction).await?;
+    log::error!("transfer_transaction: Transaction signed with signature: {signature}");
 
     resolved_transaction.transaction.signatures[fee_payer_position] = signature;
 
+    log::error!("transfer_transaction: Encoding transaction and message");
     let encoded = resolved_transaction.encode_b64_transaction()?;
     let message_encoded = transaction.message.encode_b64_message()?;
+    log::error!("transfer_transaction: Transaction and message encoded successfully");
 
     Ok(TransferTransactionResponse {
         transaction: encoded,
