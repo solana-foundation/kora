@@ -175,11 +175,11 @@ impl TransactionValidator {
     ) -> Result<(), KoraError> {
         let system_instructions = transaction_resolved.get_or_parse_system_instructions()?;
 
-        let check_if_allowed = |address: &Pubkey, policy_allowed: bool| {
+        let check_if_allowed = |address: &Pubkey, policy_allowed: bool, instruction_type: &str| {
             if *address == self.fee_payer_pubkey && !policy_allowed {
-                return Err(KoraError::InvalidTransaction(
-                    "Fee payer cannot be used as source account".to_string(),
-                ));
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Fee payer cannot be used for '{instruction_type}'",
+                )));
             }
             Ok(())
         };
@@ -189,7 +189,11 @@ impl TransactionValidator {
             system_instructions.get(&ParsedSystemInstructionType::SystemTransfer).unwrap_or(&vec![])
         {
             if let ParsedSystemInstructionData::SystemTransfer { sender, .. } = instruction {
-                check_if_allowed(sender, self.fee_payer_policy.allow_sol_transfers)?;
+                check_if_allowed(
+                    sender,
+                    self.fee_payer_policy.allow_sol_transfers,
+                    "System Transfer",
+                )?;
             }
         }
 
@@ -197,7 +201,7 @@ impl TransactionValidator {
             system_instructions.get(&ParsedSystemInstructionType::SystemAssign).unwrap_or(&vec![])
         {
             if let ParsedSystemInstructionData::SystemAssign { authority } = instruction {
-                check_if_allowed(authority, self.fee_payer_policy.allow_assign)?;
+                check_if_allowed(authority, self.fee_payer_policy.allow_assign, "System Assign")?;
             }
         }
 
@@ -209,9 +213,17 @@ impl TransactionValidator {
         {
             if let ParsedSPLInstructionData::SplTokenTransfer { owner, is_2022, .. } = instruction {
                 if *is_2022 {
-                    check_if_allowed(owner, self.fee_payer_policy.allow_token2022_transfers)?;
+                    check_if_allowed(
+                        owner,
+                        self.fee_payer_policy.allow_token2022_transfers,
+                        "Token2022 Token Transfer",
+                    )?;
                 } else {
-                    check_if_allowed(owner, self.fee_payer_policy.allow_spl_transfers)?;
+                    check_if_allowed(
+                        owner,
+                        self.fee_payer_policy.allow_spl_transfers,
+                        "SPL Token Transfer",
+                    )?;
                 }
             }
         }
@@ -220,7 +232,7 @@ impl TransactionValidator {
             spl_instructions.get(&ParsedSPLInstructionType::SplTokenApprove).unwrap_or(&vec![])
         {
             if let ParsedSPLInstructionData::SplTokenApprove { owner, .. } = instruction {
-                check_if_allowed(owner, self.fee_payer_policy.allow_approve)?;
+                check_if_allowed(owner, self.fee_payer_policy.allow_approve, "SPL Token Approve")?;
             }
         }
 
@@ -228,7 +240,7 @@ impl TransactionValidator {
             spl_instructions.get(&ParsedSPLInstructionType::SplTokenBurn).unwrap_or(&vec![])
         {
             if let ParsedSPLInstructionData::SplTokenBurn { owner, .. } = instruction {
-                check_if_allowed(owner, self.fee_payer_policy.allow_burn)?;
+                check_if_allowed(owner, self.fee_payer_policy.allow_burn, "SPL Token Burn")?;
             }
         }
 
@@ -236,7 +248,11 @@ impl TransactionValidator {
             spl_instructions.get(&ParsedSPLInstructionType::SplTokenCloseAccount).unwrap_or(&vec![])
         {
             if let ParsedSPLInstructionData::SplTokenCloseAccount { owner, .. } = instruction {
-                check_if_allowed(owner, self.fee_payer_policy.allow_close_account)?;
+                check_if_allowed(
+                    owner,
+                    self.fee_payer_policy.allow_close_account,
+                    "SPL Token Close Account",
+                )?;
             }
         }
 

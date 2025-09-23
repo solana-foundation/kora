@@ -149,6 +149,28 @@ impl TransactionBuilder {
         self
     }
 
+    /// Add an SPL payment instruction with specified token accounts
+    pub fn with_spl_payment_with_accounts(
+        mut self,
+        from_token_account: &Pubkey,
+        to_token_account: &Pubkey,
+        from_authority: &Pubkey,
+        amount: u64,
+    ) -> Self {
+        let instruction = spl_token::instruction::transfer(
+            &spl_token::ID,
+            from_token_account,
+            to_token_account,
+            from_authority,
+            &[],
+            amount,
+        )
+        .expect("Failed to create SPL payment instruction");
+
+        self.instructions.push(instruction);
+        self
+    }
+
     /// Add an SPL token transfer_checked instruction (includes mint address for lookup table testing)
     pub fn with_spl_transfer_checked(
         mut self,

@@ -3,7 +3,7 @@ name = "Regular Integration Tests"
 config = "tests/src/common/fixtures/kora-test.toml"
 signers = "tests/src/common/fixtures/signers.toml"
 port = "8080"
-tests = ["rpc", "tokens", "external"]
+tests = ["rpc", "tokens", "external", "adversarial"]
 
 [test.auth]
 name = "Auth Tests"
@@ -20,10 +20,17 @@ port = "8082"
 tests = ["payment_address"]
 initialize_payments_atas = true
 
+[test.fee_payer_policy]
+name = "Fee Payer Policy Tests"
+config = "tests/src/common/fixtures/fee-payer-policy-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8086"
+tests = ["fee_payer_policy"]
+
 [test.multi_signer]
 name = "Multi-Signer Tests"
 config = "tests/src/common/fixtures/kora-test.toml"
-signers = "tests/src/common/fixtures/multi-signers.toml"
+signers = "tests/src/common/fixtures/signers-multi.toml"
 port = "8083"
 tests = ["multi_signer"]
 

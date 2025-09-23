@@ -6,10 +6,7 @@ use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::common::{
-    client::TestClient,
-    constants::{TEST_API_KEY, TEST_HMAC_SECRET},
-};
+use crate::common::{client::TestClient, constants::TEST_HMAC_SECRET};
 
 pub static JSON_TEST_BODY: Lazy<Value> = Lazy::new(|| {
     json!({
