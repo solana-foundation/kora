@@ -32,7 +32,7 @@ async fn test_sol_transfer_policy_violation() {
 
     match result {
         Err(error) => {
-            error.assert_contains_message("Fee payer cannot be used as source account");
+            error.assert_contains_message("Fee payer cannot be used for 'System Transfer'");
         }
         Ok(_) => panic!("Expected error for SOL transfer policy violation"),
     }
@@ -79,7 +79,7 @@ async fn test_spl_transfer_policy_violation() {
 
     match result {
         Err(error) => {
-            error.assert_contains_message("Fee payer cannot be used as source account");
+            error.assert_contains_message("Fee payer cannot be used for 'SPL Token Transfer'");
         }
         Ok(_) => panic!("Expected error for SPL transfer policy violation"),
     }
@@ -134,7 +134,8 @@ async fn test_token2022_transfer_policy_violation() {
 
     match result {
         Err(error) => {
-            error.assert_contains_message("Fee payer cannot be used as source account");
+            error
+                .assert_contains_message("Fee payer cannot be used for 'Token2022 Token Transfer'");
         }
         Ok(_) => panic!("Expected error for Token2022 transfer policy violation"),
     }
@@ -177,7 +178,7 @@ async fn test_burn_policy_violation() {
 
     match result {
         Err(error) => {
-            error.assert_contains_message("Fee payer cannot be used as source account");
+            error.assert_contains_message("Fee payer cannot be used for 'SPL Token Burn'");
         }
         Ok(_) => panic!("Expected error for burn policy violation"),
     }
@@ -249,7 +250,7 @@ async fn test_close_account_policy_violation() {
 
     match result {
         Err(error) => {
-            error.assert_contains_message("Fee payer cannot be used as source account");
+            error.assert_contains_message("Fee payer cannot be used for 'SPL Token Close Account'");
         }
         Ok(_) => panic!("Expected error for close account policy violation"),
     }
@@ -293,7 +294,7 @@ async fn test_approve_policy_violation() {
 
     match result {
         Err(error) => {
-            error.assert_contains_message("Fee payer cannot be used as source account");
+            error.assert_contains_message("Fee payer cannot be used for 'SPL Token Approve'");
         }
         Ok(_) => panic!("Expected error for approve policy violation"),
     }
