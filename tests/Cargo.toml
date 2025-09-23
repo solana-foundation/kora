@@ -21,6 +21,14 @@ name = "auth"
 path = "auth/main.rs"
 
 [[test]]
+name = "adversarial"
+path = "adversarial/main.rs"
+
+[[test]]
+name = "fee_payer_policy"
+path = "fee_payer_policy/main.rs"
+
+[[test]]
 name = "multi_signer"
 path = "multi_signer/main.rs"
 

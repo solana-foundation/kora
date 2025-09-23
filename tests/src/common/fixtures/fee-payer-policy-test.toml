@@ -1,0 +1,65 @@
+# Adversarial testing configuration file with restrictive fee payer policies
+[kora]
+rate_limit = 100
+
+[kora.auth]
+
+# Cache configuration - disabled for testing
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60
+
+[kora.enabled_methods]
+liveness = true
+estimate_transaction_fee = true
+get_supported_tokens = true
+sign_transaction = true
+sign_and_send_transaction = true
+transfer_transaction = true
+get_blockhash = true
+get_config = true
+get_payer_signer = true
+sign_transaction_if_paid = true
+
+[validation]
+max_allowed_lamports = 1000000
+max_signatures = 10
+price_source = "Mock"
+allowed_programs = [
+    "11111111111111111111111111111111",             # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  # Token-2022 Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
+    "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
+]
+allowed_tokens = [
+    "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
+    "AtCGtK6HPgdpk2c2LcpZimbH8dtHXYmJdoKsawWNCh2m", # Test Interest Bearing mint 2022 for local testing
+]
+allowed_spl_paid_tokens = [
+    "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
+    "AtCGtK6HPgdpk2c2LcpZimbH8dtHXYmJdoKsawWNCh2m", # Test Interest Bearing mint 2022 for local testing
+]
+
+disallowed_accounts = [
+    "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek", # Test disallowed account for lookup table
+]
+
+# RESTRICTIVE fee payer policy - ALL SET TO FALSE
+[validation.fee_payer_policy]
+allow_sol_transfers = false
+allow_spl_transfers = false
+allow_token2022_transfers = false
+allow_assign = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+
+[kora.usage_limit]
+enabled = false
+cache_url = "redis://redis:6379"
+max_transactions = 2
+fallback_if_unavailable = false

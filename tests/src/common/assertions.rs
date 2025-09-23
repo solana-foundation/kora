@@ -1,3 +1,5 @@
+use anyhow::Error as AnyhowError;
+use jsonrpsee::core::Error as RpcError;
 use serde_json::Value;
 use solana_sdk::signature::Signature;
 use std::str::FromStr;
@@ -107,4 +109,76 @@ pub struct JsonRpcErrorCodes;
 
 impl JsonRpcErrorCodes {
     pub const METHOD_NOT_FOUND: i32 = -32601;
+}
+
+/// Trait for RPC error assertions
+pub trait RpcErrorAssertions {
+    /// Assert the RPC error contains a specific message
+    fn assert_contains_message(&self, expected_message: &str);
+
+    /// Assert the RPC error is of a specific type (e.g., "InvalidTransaction", "ValidationError")
+    fn assert_error_type(&self, expected_type: &str);
+
+    /// Assert both error type and message
+    fn assert_error_type_and_message(&self, expected_type: &str, expected_message: &str);
+}
+
+impl RpcErrorAssertions for RpcError {
+    fn assert_contains_message(&self, expected_message: &str) {
+        let error_str = self.to_string();
+        assert!(
+            error_str.contains(expected_message),
+            "Expected error to contain '{expected_message}', got: {error_str}",
+        );
+    }
+
+    fn assert_error_type(&self, expected_type: &str) {
+        let error_str = self.to_string();
+        assert!(
+            error_str.contains(expected_type),
+            "Expected error type '{expected_type}', got: {error_str}",
+        );
+    }
+
+    fn assert_error_type_and_message(&self, expected_type: &str, expected_message: &str) {
+        let error_str = self.to_string();
+        assert!(
+            error_str.contains(expected_type),
+            "Expected error type '{expected_type}', got: {error_str}",
+        );
+        assert!(
+            error_str.contains(expected_message),
+            "Expected error to contain '{expected_message}', got: {error_str}",
+        );
+    }
+}
+
+impl RpcErrorAssertions for AnyhowError {
+    fn assert_contains_message(&self, expected_message: &str) {
+        let error_str = self.to_string();
+        assert!(
+            error_str.contains(expected_message),
+            "Expected error to contain '{expected_message}', got: {error_str}",
+        );
+    }
+
+    fn assert_error_type(&self, expected_type: &str) {
+        let error_str = self.to_string();
+        assert!(
+            error_str.contains(expected_type),
+            "Expected error type '{expected_type}', got: {error_str}",
+        );
+    }
+
+    fn assert_error_type_and_message(&self, expected_type: &str, expected_message: &str) {
+        let error_str = self.to_string();
+        assert!(
+            error_str.contains(expected_type),
+            "Expected error type '{expected_type}', got: {error_str}",
+        );
+        assert!(
+            error_str.contains(expected_message),
+            "Expected error to contain '{expected_message}', got: {error_str}",
+        );
+    }
 }

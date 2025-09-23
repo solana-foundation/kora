@@ -113,7 +113,7 @@ make test-integration
 - Tests: Payment address validation and wrong destination rejection
 
 **Multi-Signer Tests**
-- Config: `tests/src/common/fixtures/multi-signers.toml`
+- Config: `tests/src/common/fixtures/signers-multi.toml`
 - Tests: Multiple signer configurations
 
 **TypeScript Tests**

@@ -391,7 +391,7 @@ impl TestAccountSetup {
         ))
     }
 
-    async fn mint_tokens_to_account(&self, token_account: &Pubkey, amount: u64) -> Result<()> {
+    pub async fn mint_tokens_to_account(&self, token_account: &Pubkey, amount: u64) -> Result<()> {
         let instruction = token_instruction::mint_to(
             &spl_token::id(),
             &self.usdc_mint.pubkey(),
@@ -413,7 +413,11 @@ impl TestAccountSetup {
         Ok(())
     }
 
-    async fn mint_tokens_2022_to_account(&self, token_account: &Pubkey, amount: u64) -> Result<()> {
+    pub async fn mint_tokens_2022_to_account(
+        &self,
+        token_account: &Pubkey,
+        amount: u64,
+    ) -> Result<()> {
         let instruction = token_2022_instruction::mint_to(
             &spl_token_2022::id(),
             &self.usdc_mint_2022.pubkey(),

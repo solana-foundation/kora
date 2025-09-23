@@ -21,6 +21,7 @@ pub enum TestPhaseColor {
     Auth,
     Payment,
     MultiSigner,
+    FeePayerPolicy,
     TypeScriptBasic,
     TypeScriptAuth,
     TypeScriptTurnkey,
@@ -34,6 +35,7 @@ impl TestPhaseColor {
             "Auth Tests" => Self::Auth,
             "Payment Address Tests" => Self::Payment,
             "Multi-Signer Tests" => Self::MultiSigner,
+            "Fee Payer Policy Tests" => Self::FeePayerPolicy,
             name if name.starts_with("TypeScript") => Self::from_typescript_phase(name),
             name if name.starts_with("typescript_") => Self::from_typescript_phase(name),
             // Fallback patterns
@@ -57,10 +59,11 @@ impl TestPhaseColor {
 
     pub fn ansi_code(&self) -> &'static str {
         match self {
-            Self::Regular => "\x1b[32m",           // Green
-            Self::Auth => "\x1b[34m",              // Blue
-            Self::Payment => "\x1b[33m",           // Yellow
-            Self::MultiSigner => "\x1b[35m",       // Magenta
+            Self::Regular => "\x1b[32m",     // Green
+            Self::Auth => "\x1b[34m",        // Blue
+            Self::Payment => "\x1b[33m",     // Yellow
+            Self::MultiSigner => "\x1b[35m", // Magenta
+            Self::FeePayerPolicy => "\x1b[39m",
             Self::TypeScriptBasic => "\x1b[36m",   // Cyan
             Self::TypeScriptAuth => "\x1b[31m",    // Red
             Self::TypeScriptTurnkey => "\x1b[37m", // White
