@@ -8,15 +8,21 @@ on:
         required: true
         type: string
       artifact-name:
-        description: "Name for the uploaded artifact"
+        description: "Base name for the uploaded artifact"
         required: true
         type: string
+    outputs:
+      artifact-name:
+        description: "The actual artifact name with hash suffix"
+        value: ${{ jobs.build.outputs.artifact-name }}
 
 jobs:
   build:
     name: Build Rust Artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      artifact-name: ${{ inputs.artifact-name }}-${{ steps.source-hash.outputs.hash }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,13 +32,20 @@ jobs:
         with:
           shared-key: ${{ inputs.cache-key }}
 
+      - name: Calculate source files hash
+        id: source-hash
+        run: |
+          SOURCE_HASH=$(find crates tests Cargo.toml Cargo.lock Makefile makefiles -type f \( -name "*.rs" -o -name "*.toml" -o -name "Makefile" \) -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1 | head -c 8)
+          echo "hash=$SOURCE_HASH" >> $GITHUB_OUTPUT
+          echo "Source files hash: $SOURCE_HASH"
+
       - name: Build workspace
         run: make build
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.artifact-name }}
+          name: ${{ inputs.artifact-name }}-${{ steps.source-hash.outputs.hash }}
           path: |
             target/debug/kora
             target/debug/test_runner
