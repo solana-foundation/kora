@@ -160,10 +160,14 @@ where
                 return Ok(unauthorized_response);
             }
 
-            let ts = parsed_timestamp.unwrap();
+            let ts = parsed_timestamp.expect("timestamp already validated");
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .map_err(|e| {
+                    log::error!("System time error: {e:?}");
+                    e
+                })
+                .unwrap_or_else(|_| std::time::Duration::from_secs(0))
                 .as_secs() as i64;
 
             if (now - ts).abs() > max_timestamp_age {
@@ -171,7 +175,8 @@ where
             }
 
             // Verify HMAC signature using timestamp + body
-            let message = format!("{}{}", timestamp, std::str::from_utf8(&body_bytes).unwrap());
+            let body_str = std::str::from_utf8(&body_bytes).unwrap_or("");
+            let message = format!("{}{}", timestamp, body_str);
 
             let mut mac = match Hmac::<Sha256>::new_from_slice(secret.as_bytes()) {
                 Ok(mac) => mac,

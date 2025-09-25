@@ -60,6 +60,15 @@
                         "type": "string",
                         "nullable": true
                       },
+                      "sig_verify": {
+                        "type": "boolean",
+                        "description": "Whether to verify signatures during simulation (defaults to true)"
+                      },
+                      "signer_key": {
+                        "type": "string",
+                        "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+                        "nullable": true
+                      },
                       "transaction": {
                         "type": "string"
                       }
@@ -79,7 +88,9 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "fee_in_lamports"
+                    "fee_in_lamports",
+                    "signer_pubkey",
+                    "payment_address"
                   ],
                   "properties": {
                     "fee_in_lamports": {
@@ -91,6 +102,14 @@
                       "type": "number",
                       "format": "double",
                       "nullable": true
+                    },
+                    "payment_address": {
+                      "type": "string",
+                      "description": "Public key of the payment destination"
+                    },
+                    "signer_pubkey": {
+                      "type": "string",
+                      "description": "Public key of the signer used for fee estimation (for client consistency)"
                     }
                   }
                 }
@@ -272,7 +291,7 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "fee_payer",
+                    "fee_payers",
                     "validation_config",
                     "enabled_methods"
                   ],
@@ -280,11 +299,113 @@
                     "enabled_methods": {
                       "$ref": "#/components/schemas/EnabledMethods"
                     },
-                    "fee_payer": {
-                      "type": "string"
+                    "fee_payers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
                     "validation_config": {
                       "$ref": "#/components/schemas/ValidationConfig"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getPayerSigner": {
+      "summary": "getPayerSigner",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "getPayerSigner"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "signer_address",
+                    "payment_address"
+                  ],
+                  "properties": {
+                    "payment_address": {
+                      "type": "string",
+                      "description": "The payment destination owner address (same as signer if no separate paymaster is configured)"
+                    },
+                    "signer_address": {
+                      "type": "string",
+                      "description": "The recommended signer's public key"
                     }
                   }
                 }
@@ -462,6 +583,15 @@
                       "transaction"
                     ],
                     "properties": {
+                      "sig_verify": {
+                        "type": "boolean",
+                        "description": "Whether to verify signatures during simulation (defaults to true)"
+                      },
+                      "signer_key": {
+                        "type": "string",
+                        "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+                        "nullable": true
+                      },
                       "transaction": {
                         "type": "string"
                       }
@@ -481,15 +611,16 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "signature",
-                    "signed_transaction"
+                    "signed_transaction",
+                    "signer_pubkey"
                   ],
                   "properties": {
-                    "signature": {
-                      "type": "string"
-                    },
                     "signed_transaction": {
                       "type": "string"
+                    },
+                    "signer_pubkey": {
+                      "type": "string",
+                      "description": "Public key of the signer used (for client consistency)"
                     }
                   }
                 }
@@ -571,6 +702,15 @@
                       "transaction"
                     ],
                     "properties": {
+                      "sig_verify": {
+                        "type": "boolean",
+                        "description": "Whether to verify signatures during simulation (defaults to true)"
+                      },
+                      "signer_key": {
+                        "type": "string",
+                        "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+                        "nullable": true
+                      },
                       "transaction": {
                         "type": "string"
                       }
@@ -590,15 +730,16 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "signature",
-                    "signed_transaction"
+                    "signed_transaction",
+                    "signer_pubkey"
                   ],
                   "properties": {
-                    "signature": {
-                      "type": "string"
-                    },
                     "signed_transaction": {
                       "type": "string"
+                    },
+                    "signer_pubkey": {
+                      "type": "string",
+                      "description": "Public key of the signer used (for client consistency)"
                     }
                   }
                 }
@@ -680,6 +821,15 @@
                       "transaction"
                     ],
                     "properties": {
+                      "sig_verify": {
+                        "type": "boolean",
+                        "description": "Whether to verify signatures during simulation (defaults to true)"
+                      },
+                      "signer_key": {
+                        "type": "string",
+                        "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+                        "nullable": true
+                      },
                       "transaction": {
                         "type": "string"
                       }
@@ -700,11 +850,16 @@
                   "type": "object",
                   "required": [
                     "transaction",
-                    "signed_transaction"
+                    "signed_transaction",
+                    "signer_pubkey"
                   ],
                   "properties": {
                     "signed_transaction": {
                       "type": "string"
+                    },
+                    "signer_pubkey": {
+                      "type": "string",
+                      "description": "Public key of the signer used (for client consistency)"
                     },
                     "transaction": {
                       "type": "string"
@@ -800,6 +955,11 @@
                       "destination": {
                         "type": "string"
                       },
+                      "signer_key": {
+                        "type": "string",
+                        "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+                        "nullable": true
+                      },
                       "source": {
                         "type": "string"
                       },
@@ -824,7 +984,8 @@
                   "required": [
                     "transaction",
                     "message",
-                    "blockhash"
+                    "blockhash",
+                    "signer_pubkey"
                   ],
                   "properties": {
                     "blockhash": {
@@ -832,6 +993,10 @@
                     },
                     "message": {
                       "type": "string"
+                    },
+                    "signer_pubkey": {
+                      "type": "string",
+                      "description": "Public key of the signer used (for client consistency)"
                     },
                     "transaction": {
                       "type": "string"
@@ -883,6 +1048,7 @@
           "liveness",
           "estimate_transaction_fee",
           "get_supported_tokens",
+          "get_payer_signer",
           "sign_transaction",
           "sign_and_send_transaction",
           "transfer_transaction",
@@ -898,6 +1064,9 @@
             "type": "boolean"
           },
           "get_config": {
+            "type": "boolean"
+          },
+          "get_payer_signer": {
             "type": "boolean"
           },
           "get_supported_tokens": {
@@ -969,7 +1138,7 @@
       "GetConfigResponse": {
         "type": "object",
         "required": [
-          "fee_payer",
+          "fee_payers",
           "validation_config",
           "enabled_methods"
         ],
@@ -977,11 +1146,31 @@
           "enabled_methods": {
             "$ref": "#/components/schemas/EnabledMethods"
           },
-          "fee_payer": {
-            "type": "string"
+          "fee_payers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "validation_config": {
             "$ref": "#/components/schemas/ValidationConfig"
+          }
+        }
+      },
+      "GetPayerSignerResponse": {
+        "type": "object",
+        "required": [
+          "signer_address",
+          "payment_address"
+        ],
+        "properties": {
+          "payment_address": {
+            "type": "string",
+            "description": "The payment destination owner address (same as signer if no separate paymaster is configured)"
+          },
+          "signer_address": {
+            "type": "string",
+            "description": "The recommended signer's public key"
           }
         }
       },
@@ -1086,6 +1275,15 @@
           "transaction"
         ],
         "properties": {
+          "sig_verify": {
+            "type": "boolean",
+            "description": "Whether to verify signatures during simulation (defaults to true)"
+          },
+          "signer_key": {
+            "type": "string",
+            "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+            "nullable": true
+          },
           "transaction": {
             "type": "string"
           }
@@ -1094,15 +1292,16 @@
       "SignAndSendTransactionResponse": {
         "type": "object",
         "required": [
-          "signature",
-          "signed_transaction"
+          "signed_transaction",
+          "signer_pubkey"
         ],
         "properties": {
-          "signature": {
-            "type": "string"
-          },
           "signed_transaction": {
             "type": "string"
+          },
+          "signer_pubkey": {
+            "type": "string",
+            "description": "Public key of the signer used (for client consistency)"
           }
         }
       },
@@ -1112,6 +1311,15 @@
           "transaction"
         ],
         "properties": {
+          "sig_verify": {
+            "type": "boolean",
+            "description": "Whether to verify signatures during simulation (defaults to true)"
+          },
+          "signer_key": {
+            "type": "string",
+            "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+            "nullable": true
+          },
           "transaction": {
             "type": "string"
           }
@@ -1121,11 +1329,16 @@
         "type": "object",
         "required": [
           "transaction",
-          "signed_transaction"
+          "signed_transaction",
+          "signer_pubkey"
         ],
         "properties": {
           "signed_transaction": {
             "type": "string"
+          },
+          "signer_pubkey": {
+            "type": "string",
+            "description": "Public key of the signer used (for client consistency)"
           },
           "transaction": {
             "type": "string"
@@ -1138,6 +1351,15 @@
           "transaction"
         ],
         "properties": {
+          "sig_verify": {
+            "type": "boolean",
+            "description": "Whether to verify signatures during simulation (defaults to true)"
+          },
+          "signer_key": {
+            "type": "string",
+            "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+            "nullable": true
+          },
           "transaction": {
             "type": "string"
           }
@@ -1146,15 +1368,16 @@
       "SignTransactionResponse": {
         "type": "object",
         "required": [
-          "signature",
-          "signed_transaction"
+          "signed_transaction",
+          "signer_pubkey"
         ],
         "properties": {
-          "signature": {
-            "type": "string"
-          },
           "signed_transaction": {
             "type": "string"
+          },
+          "signer_pubkey": {
+            "type": "string",
+            "description": "Public key of the signer used (for client consistency)"
           }
         }
       },
@@ -1196,6 +1419,11 @@
           "destination": {
             "type": "string"
           },
+          "signer_key": {
+            "type": "string",
+            "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+            "nullable": true
+          },
           "source": {
             "type": "string"
           },
@@ -1209,7 +1437,8 @@
         "required": [
           "transaction",
           "message",
-          "blockhash"
+          "blockhash",
+          "signer_pubkey"
         ],
         "properties": {
           "blockhash": {
@@ -1217,6 +1446,10 @@
           },
           "message": {
             "type": "string"
+          },
+          "signer_pubkey": {
+            "type": "string",
+            "description": "Public key of the signer used (for client consistency)"
           },
           "transaction": {
             "type": "string"
@@ -1242,10 +1475,7 @@
             }
           },
           "allowed_spl_paid_tokens": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "$ref": "#/components/schemas/SplTokenConfig"
           },
           "allowed_tokens": {
             "type": "array",
@@ -1277,6 +1507,9 @@
           },
           "price_source": {
             "$ref": "#/components/schemas/PriceSource"
+          },
+          "token_2022": {
+            "$ref": "#/components/schemas/Token2022Config"
           }
         }
       }

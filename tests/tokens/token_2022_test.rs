@@ -107,7 +107,6 @@ async fn test_sign_token_2022_transaction_legacy() {
         .await
         .expect("Failed to sign Token 2022 transaction");
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -147,7 +146,6 @@ async fn test_sign_token_2022_transaction_v0() {
         .await
         .expect("Failed to sign V0 Token 2022 transaction");
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -191,7 +189,6 @@ async fn test_sign_token_2022_transaction_v0_with_lookup() {
         .await
         .expect("Failed to sign V0 Token 2022 transaction with lookup table");
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -240,7 +237,7 @@ async fn test_sign_and_send_token_2022_transaction_legacy() {
 
     assert!(result.is_ok(), "Expected signAndSendTransaction to succeed for Token 2022");
     let response = result.unwrap();
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -270,7 +267,7 @@ async fn test_sign_and_send_token_2022_transaction_v0() {
 
     assert!(result.is_ok(), "Expected signAndSendTransaction to succeed for V0 Token 2022");
     let response = result.unwrap();
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -307,7 +304,7 @@ async fn test_sign_and_send_token_2022_transaction_v0_with_lookup() {
         "Expected signAndSendTransaction to succeed for V0 Token 2022 with lookup"
     );
     let response = result.unwrap();
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"

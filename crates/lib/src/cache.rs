@@ -34,7 +34,7 @@ impl CacheUtil {
         let config = get_config()?;
 
         let pool = if CacheUtil::is_cache_enabled() {
-            let redis_url = config.kora.cache.url.as_ref().unwrap();
+            let redis_url = config.kora.cache.url.as_ref().ok_or(KoraError::ConfigError)?;
 
             let cfg = deadpool_redis::Config::from_url(redis_url);
             let pool = cfg.create_pool(Some(Runtime::Tokio1)).map_err(|e| {

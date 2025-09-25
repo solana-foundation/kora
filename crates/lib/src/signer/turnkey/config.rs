@@ -1,10 +1,15 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
+use solana_sdk::pubkey::Pubkey;
 
 use crate::{
     error::KoraError,
     signer::{
-        config_trait::SignerConfigTrait, turnkey::types::TurnkeySigner,
-        utils::get_env_var_for_signer, KoraSigner,
+        config_trait::SignerConfigTrait,
+        turnkey::types::{TurnkeyError, TurnkeySigner},
+        utils::get_env_var_for_signer,
+        KoraSigner,
     },
 };
 
@@ -57,12 +62,16 @@ impl SignerConfigTrait for TurnkeySignerHandler {
         let private_key_id = get_env_var_for_signer(&config.private_key_id_env, signer_name)?;
         let public_key = get_env_var_for_signer(&config.public_key_env, signer_name)?;
 
+        let pubkey = Pubkey::from_str(&public_key)
+            .map_err(|e| TurnkeyError::InvalidPublicKey(e.to_string()))?;
+
         let signer = TurnkeySigner::new(
             api_public_key,
             api_private_key,
             organization_id,
             private_key_id,
             public_key,
+            pubkey,
         );
 
         Ok(KoraSigner::Turnkey(signer))
