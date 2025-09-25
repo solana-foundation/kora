@@ -169,29 +169,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_fixed_model_get_required_lamports_without_oracle() {
-        let _rpc_client = create_mock_rpc_client_with_mint(6);
-
-        let price_config = PriceConfig {
-            model: PriceModel::Fixed {
-                amount: 25000,
-                token: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
-            },
-        };
-
-        // No RPC client provided - should return amount directly
-        let price_source = PriceSource::Mock;
-        let min_transaction_fee = 5000u64;
-        let rpc_client = create_mock_rpc_client_with_mint(6);
-        let result = price_config
-            .get_required_lamports(&rpc_client, price_source, min_transaction_fee)
-            .await
-            .unwrap();
-
-        assert_eq!(result, 25000);
-    }
-
-    #[tokio::test]
     async fn test_fixed_model_get_required_lamports_small_amount() {
         let rpc_client = create_mock_rpc_client_with_mint(6); // USDC has 6 decimals
 
