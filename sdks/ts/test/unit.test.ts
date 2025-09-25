@@ -225,7 +225,6 @@ describe('KoraClient Unit Tests', () => {
                 transaction: 'base64_encoded_transaction',
             };
             const mockResponse: SignTransactionResponse = {
-                signature: 'test_signature',
                 signed_transaction: 'base64_signed_transaction',
                 signer_pubkey: 'test_signer_pubkey',
             };
@@ -245,7 +244,6 @@ describe('KoraClient Unit Tests', () => {
                 transaction: 'base64_encoded_transaction',
             };
             const mockResponse: SignAndSendTransactionResponse = {
-                signature: 'test_signature',
                 signed_transaction: 'base64_signed_transaction',
                 signer_pubkey: 'test_signer_pubkey',
             };

@@ -112,8 +112,6 @@ export interface TransferTransactionResponse {
  * Response from signing a transaction.
  */
 export interface SignTransactionResponse {
-    /** Base58-encoded signature */
-    signature: string;
     /** Base64-encoded signed transaction */
     signed_transaction: string;
     /** Public key of the signer used to sign the transaction */
@@ -124,8 +122,6 @@ export interface SignTransactionResponse {
  * Response from signing and sending a transaction.
  */
 export interface SignAndSendTransactionResponse {
-    /** Base58-encoded transaction signature */
-    signature: string;
     /** Base64-encoded signed transaction */
     signed_transaction: string;
     /** Public key of the signer used to send the transaction */
