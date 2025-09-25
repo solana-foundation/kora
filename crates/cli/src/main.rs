@@ -191,7 +191,7 @@ async fn main() -> Result<(), KoraError> {
                         run_rpc_server(kora_rpc, rpc_args.port).await?;
 
                     if let Err(e) = tokio::signal::ctrl_c().await {
-                        log::error!("Error waiting for Ctrl+C signal: {e:?}");
+                        panic!("Error waiting for Ctrl+C signal: {e:?}");
                     }
                     println!("Shutting down server...");
 
@@ -203,13 +203,13 @@ async fn main() -> Result<(), KoraError> {
 
                     // Stop the RPC server
                     if let Err(e) = rpc_handle.stop() {
-                        log::error!("Error stopping RPC server: {e:?}");
+                        panic!("Error stopping RPC server: {e:?}");
                     }
 
                     // Stop the metrics server if running
                     if let Some(handle) = metrics_handle {
                         if let Err(e) = handle.stop() {
-                            log::error!("Error stopping metrics server: {e:?}");
+                            panic!("Error stopping metrics server: {e:?}");
                         }
                     }
                 }

@@ -276,11 +276,7 @@ impl FeeConfigUtil {
         let adjusted_fee = config
             .validation
             .price
-            .get_required_lamports(
-                Some(rpc_client),
-                price_source,
-                fee_calculation.total_fee_lamports,
-            )
+            .get_required_lamports(rpc_client, price_source, fee_calculation.total_fee_lamports)
             .await?;
 
         // Update the total with the price model applied
