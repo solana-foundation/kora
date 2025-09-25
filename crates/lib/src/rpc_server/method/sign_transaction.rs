@@ -23,7 +23,6 @@ pub struct SignTransactionRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SignTransactionResponse {
-    pub signature: String,
     pub signed_transaction: String,
     /// Public key of the signer used (for client consistency)
     pub signer_pubkey: String,
@@ -53,7 +52,6 @@ pub async fn sign_transaction(
     let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction);
 
     Ok(SignTransactionResponse {
-        signature: transaction.signatures[0].to_string(),
         signed_transaction: encoded,
         signer_pubkey: signer.solana_pubkey().to_string(),
     })

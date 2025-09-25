@@ -66,7 +66,7 @@ pub async fn estimate_transaction_fee(
         &mut resolved_transaction,
         &fee_payer,
         validation_config.is_payment_required(),
-        Some(validation_config.price_source.clone()),
+        validation_config.price_source.clone(),
     )
     .await?;
 

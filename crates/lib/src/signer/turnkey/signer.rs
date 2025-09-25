@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use base64::Engine;
 use p256::ecdsa::signature::Signer;
 use reqwest::Client;
@@ -19,6 +17,7 @@ impl TurnkeySigner {
         organization_id: String,
         private_key_id: String,
         public_key: String,
+        pubkey: Pubkey,
     ) -> Self {
         Self {
             api_public_key,
@@ -26,6 +25,7 @@ impl TurnkeySigner {
             organization_id,
             private_key_id,
             public_key,
+            pubkey,
             api_base_url: "https://api.turnkey.com".to_string(),
             client: Client::new(),
         }
@@ -113,7 +113,8 @@ impl TurnkeySigner {
         transaction: &VersionedTransaction,
     ) -> Result<Signature, TurnkeyError> {
         let sig = self.sign(transaction).await?;
-        let sig_bytes: [u8; 64] = sig.try_into().unwrap();
+        let sig_bytes: [u8; 64] =
+            sig.try_into().map_err(|_| TurnkeyError::InvalidSignatureLength)?;
         Ok(Signature::from(sig_bytes))
     }
 
@@ -127,7 +128,7 @@ impl TurnkeySigner {
 
         let signature: p256::ecdsa::Signature = signing_key.sign(message.as_bytes());
         let signature_der = signature.to_der().to_bytes();
-        let signature_hex = bytes_to_hex(&signature_der).unwrap();
+        let signature_hex = bytes_to_hex(&signature_der).map_err(TurnkeyError::InvalidStamp)?;
 
         let stamp = serde_json::json!({
             "public_key": self.api_public_key,
@@ -141,12 +142,14 @@ impl TurnkeySigner {
     }
 
     pub fn solana_pubkey(&self) -> Pubkey {
-        Pubkey::from_str(&self.public_key).unwrap()
+        self.pubkey
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use crate::tests::transaction_mock::create_mock_transaction;
 
     use super::*;
@@ -166,6 +169,7 @@ mod tests {
             organization_id.clone(),
             private_key_id.clone(),
             public_key.clone(),
+            Pubkey::from_str(&public_key).unwrap(),
         );
 
         assert_eq!(signer.api_public_key, api_public_key);
@@ -183,6 +187,7 @@ mod tests {
             "org".to_string(),
             "key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
+            Pubkey::from_str(&"11111111111111111111111111111111").unwrap(),
         );
 
         let pubkey = signer.solana_pubkey();
@@ -226,6 +231,7 @@ mod tests {
             "test_org_id".to_string(),
             "test_private_key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
+            Pubkey::from_str(&"11111111111111111111111111111111").unwrap(),
         );
         signer.api_base_url = server.url();
 
@@ -268,6 +274,7 @@ mod tests {
             "invalid_org_id".to_string(),
             "invalid_private_key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
+            Pubkey::from_str(&"11111111111111111111111111111111").unwrap(),
         );
 
         signer.api_base_url = server.url();
@@ -305,6 +312,7 @@ mod tests {
             "test_org_id".to_string(),
             "test_private_key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
+            Pubkey::from_str(&"11111111111111111111111111111111").unwrap(),
         );
 
         signer.api_base_url = server.url();
@@ -358,6 +366,7 @@ mod tests {
             "test_org_id".to_string(),
             "test_private_key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
+            Pubkey::from_str(&"11111111111111111111111111111111").unwrap(),
         );
 
         signer.api_base_url = server.url();
@@ -378,6 +387,7 @@ mod tests {
             "test_org_id".to_string(),
             "test_private_key_id".to_string(),
             "11111111111111111111111111111111".to_string(),
+            Pubkey::from_str(&"11111111111111111111111111111111").unwrap(),
         );
 
         let test_message = r#"{"test": "message"}"#;

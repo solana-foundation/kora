@@ -61,6 +61,9 @@ pub enum KoraError {
 
     #[error("Usage limit exceeded: {0}")]
     UsageLimitExceeded(String),
+
+    #[error("Invalid configuration for Kora")]
+    ConfigError,
 }
 
 impl From<ClientError> for KoraError {

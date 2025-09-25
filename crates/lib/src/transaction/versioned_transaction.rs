@@ -278,7 +278,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             self,
             &fee_payer,
             config.validation.is_payment_required(),
-            Some(config.validation.price_source.clone()),
+            config.validation.price_source.clone(),
         )
         .await?;
 

@@ -3,7 +3,7 @@ use crate::token::interface::TokenMint;
 use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::{account::Account, instruction::Instruction, program_pack::Pack};
+use solana_sdk::{instruction::Instruction, program_pack::Pack};
 use spl_associated_token_account::{
     get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
@@ -204,15 +204,6 @@ impl TokenInterface for TokenProgram {
             freeze_authority: mint_state.freeze_authority.into(),
         }))
     }
-
-    async fn get_ata_account_size(
-        &self,
-        _mint_pubkey: &Pubkey,
-        _mint: &Account,
-    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
-        // SPL Token accounts always have the same size
-        Ok(TokenAccountState::LEN)
-    }
 }
 
 #[cfg(test)]
@@ -221,7 +212,7 @@ mod tests {
 
     use super::*;
     use solana_program::program_pack::Pack;
-    use solana_sdk::{account::Account, pubkey::Pubkey};
+    use solana_sdk::pubkey::Pubkey;
     use spl_token::state::{Account as SplTokenAccount, AccountState};
 
     #[test]
@@ -436,30 +427,6 @@ mod tests {
 
         assert_eq!(instruction.program_id, spl_associated_token_account::id());
         assert_eq!(instruction.accounts.len(), 6); // funding, ata, wallet, mint, system_program, token_program
-    }
-
-    #[tokio::test]
-    async fn test_get_ata_account_size() {
-        let program = TokenProgram::new();
-        let mint_pubkey = Pubkey::new_unique();
-        let mint_account = Account {
-            lamports: 1000000,
-            data: MintAccountMockBuilder::new()
-                .with_mint_authority(Some(Pubkey::new_unique()))
-                .with_supply(1000000)
-                .with_decimals(6)
-                .with_initialized(true)
-                .with_freeze_authority(None)
-                .build()
-                .data,
-            owner: spl_token::id(),
-            executable: false,
-            rent_epoch: 0,
-        };
-
-        let result = program.get_ata_account_size(&mint_pubkey, &mint_account).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), SplTokenAccount::LEN);
     }
 
     #[test]

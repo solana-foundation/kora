@@ -2,6 +2,7 @@ use hex::FromHexError;
 use p256::ecdsa::signature;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use solana_sdk::pubkey::Pubkey;
 
 #[derive(Clone, Debug)]
 pub struct TurnkeySigner {
@@ -10,6 +11,7 @@ pub struct TurnkeySigner {
     pub api_public_key: String,
     pub api_private_key: String,
     pub public_key: String,
+    pub pubkey: Pubkey,
     pub api_base_url: String,
     pub client: Client,
 }
@@ -69,7 +71,8 @@ pub enum TurnkeyError {
     SigningKeyError(signature::Error),
     InvalidResponse,
     InvalidPrivateKeyLength,
-    InvalidPublicKey,
+    InvalidSignatureLength,
+    InvalidPublicKey(String),
     Other(anyhow::Error),
 }
 
@@ -78,9 +81,10 @@ impl std::fmt::Display for TurnkeyError {
         match self {
             TurnkeyError::ApiError(status) => write!(f, "API error: {status}"),
             TurnkeyError::InvalidResponse => write!(f, "Invalid response"),
-            TurnkeyError::InvalidPublicKey => write!(f, "Invalid public key"),
+            TurnkeyError::InvalidPublicKey(msg) => write!(f, "Invalid public key: {msg}"),
             TurnkeyError::InvalidSignature => write!(f, "Invalid signature"),
             TurnkeyError::InvalidPrivateKeyLength => write!(f, "Invalid private key length"),
+            TurnkeyError::InvalidSignatureLength => write!(f, "Invalid signature length"),
             TurnkeyError::RequestError(e) => write!(f, "Request error: {e}"),
             TurnkeyError::JsonError(e) => write!(f, "JSON error: {e}"),
             TurnkeyError::InvalidStamp(e) => write!(f, "Invalid stamp: {e}"),
@@ -107,6 +111,9 @@ mod tests {
 
         let error = TurnkeyError::InvalidSignature;
         assert_eq!(error.to_string(), "Invalid signature");
+
+        let error = TurnkeyError::InvalidPublicKey("test error".to_string());
+        assert_eq!(error.to_string(), "Invalid public key: test error");
     }
 
     #[test]

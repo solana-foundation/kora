@@ -557,7 +557,6 @@ async fn test_transfer_hook_allows_transfer() {
         .await
         .expect("Failed to sign transaction with transfer hook");
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"

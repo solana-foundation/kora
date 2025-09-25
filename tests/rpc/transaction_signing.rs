@@ -30,7 +30,6 @@ async fn test_sign_transaction_legacy() {
         .await
         .expect("Failed to sign transaction");
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -76,7 +75,6 @@ async fn test_sign_transaction_v0() {
         .await
         .expect("Failed to sign V0 transaction");
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -125,7 +123,6 @@ async fn test_sign_transaction_v0_with_lookup() {
         .await
         .expect("Failed to sign V0 transaction with lookup table");
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -162,7 +159,6 @@ async fn test_sign_spl_transaction_legacy() {
         .await
         .expect("Failed to sign transaction");
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -208,7 +204,6 @@ async fn test_sign_spl_transaction_v0() {
         .await
         .expect("Failed to sign V0 SPL transaction");
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -257,7 +252,6 @@ async fn test_sign_spl_transaction_v0_with_lookup() {
         .await
         .expect("Failed to sign V0 SPL transaction with lookup table");
 
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -309,7 +303,7 @@ async fn test_sign_transaction_v0_with_valid_lookup_table() {
         .expect("Failed to sign V0 transaction with valid lookup table");
 
     response.assert_success();
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -394,7 +388,7 @@ async fn test_sign_and_send_transaction_legacy() {
 
     assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
     let response = result.unwrap();
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -430,7 +424,7 @@ async fn test_sign_and_send_transaction_v0() {
 
     assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
     let response = result.unwrap();
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
@@ -469,7 +463,7 @@ async fn test_sign_and_send_transaction_v0_with_lookup() {
 
     assert!(result.is_ok(), "Expected signAndSendTransaction to succeed");
     let response = result.unwrap();
-    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"

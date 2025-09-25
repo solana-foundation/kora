@@ -173,7 +173,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             const signResult = await client.signTransaction({ transaction });
 
             expect(signResult).toBeDefined();
-            expect(signResult.signature).toBeDefined();
             expect(signResult.signed_transaction).toBeDefined();
         });
 
@@ -195,7 +194,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             });
 
             expect(signResult).toBeDefined();
-            expect(signResult.signature).toBeDefined();
             expect(signResult.signed_transaction).toBeDefined();
         });
 
@@ -332,7 +330,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             const { transaction } = await client.transferTransaction(request);
             const signResult = await client.signTransaction({ transaction });
 
-            expect(signResult.signature).toBeDefined();
             expect(signResult.signed_transaction).toBeDefined();
         });
 

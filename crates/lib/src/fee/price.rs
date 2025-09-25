@@ -29,18 +29,38 @@ impl PriceConfig {
     pub async fn get_required_lamports(
         &self,
         rpc_client: Option<&RpcClient>,
-        price_source: Option<PriceSource>,
+        price_source: PriceSource,
         min_transaction_fee: u64,
     ) -> Result<u64, KoraError> {
         match &self.model {
             PriceModel::Margin { margin } => {
-                Ok((min_transaction_fee as f64 * (1.0 + margin)) as u64)
+                let multiplier = 1.0 + margin;
+                let result = min_transaction_fee as f64 * multiplier;
+
+                // Check for overflow/underflow before casting to u64
+                if result > u64::MAX as f64 || result < 0.0 {
+                    log::error!(
+                        "Margin calculation overflow: min_transaction_fee={}, margin={}, result={}",
+                        min_transaction_fee,
+                        margin,
+                        result
+                    );
+                    return Err(KoraError::ValidationError(
+                        "Margin calculation overflow".to_string(),
+                    ));
+                }
+
+                Ok(result as u64)
             }
             PriceModel::Fixed { amount, token } => {
-                if let (Some(price_source), Some(rpc_client)) = (price_source, rpc_client) {
+                if let Some(rpc_client) = rpc_client {
                     Ok(TokenUtil::calculate_token_value_in_lamports(
                         *amount,
-                        &Pubkey::from_str(token).unwrap(),
+                        &Pubkey::from_str(token).map_err(|e| {
+                            log::error!("Invalid Pubkey for price {e}");
+
+                            KoraError::ConfigError
+                        })?,
                         price_source,
                         rpc_client,
                     )
@@ -69,8 +89,10 @@ mod tests {
         let min_transaction_fee = 5000u64; // 5000 lamports base fee
         let expected_lamports = (5000.0 * 1.1) as u64; // 5500 lamports
 
-        let result =
-            price_config.get_required_lamports(None, None, min_transaction_fee).await.unwrap();
+        let result = price_config
+            .get_required_lamports(None, PriceSource::Mock, min_transaction_fee)
+            .await
+            .unwrap();
 
         assert_eq!(result, expected_lamports);
     }
@@ -82,8 +104,10 @@ mod tests {
 
         let min_transaction_fee = 5000u64;
 
-        let result =
-            price_config.get_required_lamports(None, None, min_transaction_fee).await.unwrap();
+        let result = price_config
+            .get_required_lamports(None, PriceSource::Mock, min_transaction_fee)
+            .await
+            .unwrap();
 
         assert_eq!(result, min_transaction_fee);
     }
@@ -101,7 +125,7 @@ mod tests {
         };
 
         // Use Mock price source which returns 0.0001 SOL per USDC
-        let price_source = Some(PriceSource::Mock);
+        let price_source = PriceSource::Mock;
         let min_transaction_fee = 5000u64;
 
         let result = price_config
@@ -129,7 +153,7 @@ mod tests {
         };
 
         // Mock oracle returns 1.0 SOL price for SOL mint
-        let price_source = Some(PriceSource::Mock);
+        let price_source = PriceSource::Mock;
         let min_transaction_fee = 5000u64;
 
         let result = price_config
@@ -146,7 +170,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_without_oracle() {
-        let rpc_client = create_mock_rpc_client_with_mint(6);
+        let _rpc_client = create_mock_rpc_client_with_mint(6);
 
         let price_config = PriceConfig {
             model: PriceModel::Fixed {
@@ -155,12 +179,12 @@ mod tests {
             },
         };
 
-        // No price source provided - should return amount directly
-        let price_source = None;
+        // No RPC client provided - should return amount directly
+        let price_source = PriceSource::Mock;
         let min_transaction_fee = 5000u64;
 
         let result = price_config
-            .get_required_lamports(Some(&rpc_client), price_source, min_transaction_fee)
+            .get_required_lamports(None, price_source, min_transaction_fee)
             .await
             .unwrap();
 
@@ -179,7 +203,7 @@ mod tests {
             },
         };
 
-        let price_source = Some(PriceSource::Mock);
+        let price_source = PriceSource::Mock;
         let min_transaction_fee = 5000u64;
 
         let result = price_config
@@ -203,7 +227,7 @@ mod tests {
         let min_transaction_fee = 10000u64;
 
         let result = price_config
-            .get_required_lamports(Some(&rpc_client), Some(PriceSource::Mock), min_transaction_fee)
+            .get_required_lamports(Some(&rpc_client), PriceSource::Mock, min_transaction_fee)
             .await
             .unwrap();
 
@@ -219,7 +243,7 @@ mod tests {
         let min_transaction_fee = 1000000u64;
 
         let result = price_config
-            .get_required_lamports(Some(&rpc_client), Some(PriceSource::Mock), min_transaction_fee)
+            .get_required_lamports(Some(&rpc_client), PriceSource::Mock, min_transaction_fee)
             .await
             .unwrap();
 
