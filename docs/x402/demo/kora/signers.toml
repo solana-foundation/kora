@@ -5,4 +5,3 @@ strategy = "round_robin"
 name = "main_signer"
 type = "memory"
 private_key_env = "KORA_SIGNER_PRIVATE_KEY"
-weight = 1

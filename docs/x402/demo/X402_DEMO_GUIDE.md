@@ -179,6 +179,14 @@ This script installs dependencies for:
 - The protected API server
 - The client demonstration app
 
+### Step 4: Build Kora SDK
+
+Build the Kora SDK so we can use the Kora TypeScript SDK in the Facilitator:
+
+```bash
+pnpm run build:kora-sdk
+```
+
 ### Step 4: Configure Environment
 
 The demo includes a `.env.example` file with the required environment variables. First, let's set up the basic configuration:
