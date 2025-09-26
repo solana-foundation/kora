@@ -15,7 +15,7 @@ async function main() {
 
   if (!PAYER_PRIVATE_KEY) {
     console.error("\n❌ ERROR: Missing required environment variables");
-    console.error("  → Please ensure TEST_SENDER_KEYPAIR is set in your .env file");
+    console.error("  → Ensure PAYER_PRIVATE_KEY is set in your .env file");
     process.exit(1);
   }
 

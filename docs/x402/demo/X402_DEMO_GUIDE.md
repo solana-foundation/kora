@@ -336,7 +336,7 @@ Here's what happens during a successful payment flow:
 5. **Settlement** → Facilitator settles via Kora's `signAndSendTransaction` (sending the payment transaction to Solana)
 6. **Access Granted** → Facilitator returns transaction signature and API returns protected content with payment receipt
 
-![Transaction Flow](./assets//x402-protocol-flow.png)
+![Transaction Flow](./assets/x402-protocol-flow.png)
 _Source: [x402 GitHub](https://github.com/coinbase/x402/)_
 
 Let's dive into how each component works:
