@@ -1,0 +1,13 @@
+{
+    "name": "kora-x402-demo",
+    "private": true,
+    "scripts": {
+        "setup": "cd client && pnpm run setup",
+        "build:kora-sdk": "cd ../../../sdks/ts && pnpm build",
+        "install:all": "cd api && pnpm install && cd ../client && pnpm install && cd ../facilitator && pnpm install && cd ../../../../sdks/ts && pnpm install",
+        "start:kora": "../../../target/release/kora --config kora/kora.toml --rpc-url https://api.devnet.solana.com rpc start --signers-config kora/signers.toml",
+        "start:facilitator": "cd facilitator && pnpm start",
+        "start:api": "cd api && pnpm start",
+        "demo": "cd client && pnpm start"
+    }
+}
