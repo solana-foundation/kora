@@ -187,7 +187,7 @@ Build the Kora SDK so we can use the Kora TypeScript SDK in the Facilitator:
 pnpm run build:kora-sdk
 ```
 
-### Step 4: Configure Environment
+### Step 5: Configure Environment
 
 The demo includes a `.env.example` file with the required environment variables. First, let's set up the basic configuration:
 
