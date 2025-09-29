@@ -13,6 +13,7 @@ use solana_sdk::{
     commitment_config::CommitmentConfig,
     compute_budget::ComputeBudgetInstruction,
     instruction::Instruction,
+    program_pack::Pack,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
@@ -313,7 +314,7 @@ impl TransactionBuilder {
             &self.fee_payer.expect("Fee payer must be set"),
             &account.pubkey(),
             rent_lamports,
-            165, // Token account size
+            spl_token::state::Account::LEN as u64,
             &spl_token::id(),
         );
 
