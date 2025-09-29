@@ -18,7 +18,7 @@ use solana_sdk::{
     signer::Signer,
     transaction::VersionedTransaction,
 };
-use solana_system_interface::instruction::transfer;
+use solana_system_interface::instruction::{create_account, transfer};
 use spl_associated_token_account::{
     get_associated_token_address, get_associated_token_address_with_program_id,
 };
@@ -271,6 +271,64 @@ impl TransactionBuilder {
             .expect("Failed to create Token 2022 transfer_checked instruction with accounts");
 
         self.instructions.push(instruction);
+        self
+    }
+
+    /// Add ATA creation instruction for SPL Token
+    pub fn with_create_ata(mut self, mint: &Pubkey, owner: &Pubkey) -> Self {
+        let instruction =
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &self.fee_payer.expect("Fee payer must be set before creating ATA"),
+                owner,
+                mint,
+                &spl_token::id(),
+            );
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add ATA creation instruction for Token2022
+    pub fn with_create_token2022_ata(mut self, mint: &Pubkey, owner: &Pubkey) -> Self {
+        let instruction =
+            spl_associated_token_account::instruction::create_associated_token_account(
+                &self.fee_payer.expect("Fee payer must be set before creating ATA"),
+                owner,
+                mint,
+                &spl_token_2022::id(),
+            );
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add manual token account creation and initialization for SPL Token
+    pub fn with_create_and_init_token_account(
+        mut self,
+        account: &Keypair,
+        mint: &Pubkey,
+        owner: &Pubkey,
+        rent_lamports: u64,
+    ) -> Self {
+        // Create account instruction
+        let create_instruction = create_account(
+            &self.fee_payer.expect("Fee payer must be set"),
+            &account.pubkey(),
+            rent_lamports,
+            165, // Token account size
+            &spl_token::id(),
+        );
+
+        // Initialize account instruction
+        let init_instruction = spl_token::instruction::initialize_account3(
+            &spl_token::id(),
+            &account.pubkey(),
+            mint,
+            owner,
+        )
+        .expect("Failed to create initialize account instruction");
+
+        self.instructions.push(create_instruction);
+        self.instructions.push(init_instruction);
+        self.signers.push(account.insecure_clone());
         self
     }
 

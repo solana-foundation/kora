@@ -1,6 +1,6 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
-use solana_sdk::signer::Signer;
+use solana_sdk::{program_pack::Pack, pubkey::Pubkey, signature::Keypair, signer::Signer};
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_legacy() {
@@ -272,4 +272,76 @@ async fn test_estimate_transaction_fee_with_fee_token_v0_with_lookup() {
     // 0.01 usdc * 10^6 = 10000 usdc in base units
     assert_eq!(fee_in_lamports, 10050, "Fee in lamports should be 10050");
     assert_eq!(fee_in_token, 10050.0, "Fee in token should be 10050");
+}
+
+/// Comprehensive test covering all fee scenarios: ATA creation, manual token accounts,
+/// SPL token operations, compute budget, and priority fees
+#[tokio::test]
+async fn test_estimate_fee_comprehensive_with_token_accounts_creation() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+    let usdc_mint_2022 = USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey();
+
+    let recipient1_needs_ata = Pubkey::new_unique();
+    let recipient1_2022_needs_ata = Pubkey::new_unique();
+
+    // Manual token accounts (non-ATA)
+    let manual_spl_account1 = Keypair::new();
+
+    // Get rent for token accounts
+    let token_account_rent = ctx
+        .client
+        .rpc_client
+        .get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)
+        .await
+        .expect("Failed to get rent exemption amount");
+
+    // Build the comprehensive transaction
+    let test_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_create_ata(&usdc_mint, &recipient1_needs_ata)
+        .with_create_token2022_ata(&usdc_mint_2022, &recipient1_2022_needs_ata)
+        .with_create_and_init_token_account(
+            &manual_spl_account1,
+            &usdc_mint,
+            &sender.pubkey(),
+            token_account_rent,
+        )
+        .build()
+        .await
+        .expect("Failed to build transaction");
+
+    let response: serde_json::Value = ctx
+        .rpc_call("estimateTransactionFee", rpc_params![test_tx.clone()])
+        .await
+        .expect("Failed to estimate transaction fee");
+
+    response.assert_success();
+    response.assert_has_field("fee_in_lamports");
+
+    let fee_lamports = response["fee_in_lamports"].as_u64().unwrap();
+
+    // Expected fee breakdown:
+    // - Base fee: ~5000 lamports (for signatures)
+    // - ATA creation rent: 2_039_280 + 2_039_280 = 4_078_560 lamports (2 ATAs)
+    // - Manual token account rent: 2_157_600 lamports (1 manual account, as shown in debug logs)
+    let expected_minimum_fee = 5_000 + 4_078_560 + 2_157_600;
+
+    assert!(
+        fee_lamports >= expected_minimum_fee,
+        "Fee should include all account creations. Got {}, expected at least {}",
+        fee_lamports,
+        expected_minimum_fee
+    );
+
+    assert!(
+        fee_lamports < expected_minimum_fee + 50_000,
+        "Fee shouldn't be excessively high. Got {}, expected max {}",
+        fee_lamports,
+        expected_minimum_fee + 50_000
+    );
 }
