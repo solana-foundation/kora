@@ -167,7 +167,7 @@ mod tests {
         let request = TransferTransactionRequest {
             amount: 1000,
             token: Pubkey::new_unique().to_string(),
-            source: "invalid_pubkey".to_string(),
+            source: "invalid".to_string(),
             destination: Pubkey::new_unique().to_string(),
             signer_key: None,
         };

@@ -36,6 +36,37 @@ pub struct TotalFeeCalculation {
     pub transfer_fee_amount: u64,
 }
 
+impl TotalFeeCalculation {
+    pub fn new(
+        total_fee_lamports: u64,
+        base_fee: u64,
+        kora_signature_fee: u64,
+        fee_payer_outflow: u64,
+        payment_instruction_fee: u64,
+        transfer_fee_amount: u64,
+    ) -> Self {
+        Self {
+            total_fee_lamports,
+            base_fee,
+            kora_signature_fee,
+            fee_payer_outflow,
+            payment_instruction_fee,
+            transfer_fee_amount,
+        }
+    }
+
+    pub fn new_fixed(total_fee_lamports: u64) -> Self {
+        Self {
+            total_fee_lamports,
+            base_fee: 0,
+            kora_signature_fee: 0,
+            fee_payer_outflow: 0,
+            payment_instruction_fee: 0,
+            transfer_fee_amount: 0,
+        }
+    }
+}
+
 pub struct FeeConfigUtil {}
 
 impl FeeConfigUtil {
@@ -255,34 +286,43 @@ impl FeeConfigUtil {
     ) -> Result<TotalFeeCalculation, KoraError> {
         let config = get_config()?;
 
-        // Check if the price is free, so that we can return early (and skip expensive RPC calls / estimation)
-        if matches!(&config.validation.price.model, PriceModel::Free) {
-            return Ok(TotalFeeCalculation {
-                total_fee_lamports: 0,
-                base_fee: 0,
-                kora_signature_fee: 0,
-                fee_payer_outflow: 0,
-                payment_instruction_fee: 0,
-                transfer_fee_amount: 0,
-            });
-        }
+        match &config.validation.price.model {
+            PriceModel::Free => Ok(TotalFeeCalculation::new_fixed(0)),
+            PriceModel::Fixed { .. } => {
+                let fixed_fee_lamports = config
+                    .validation
+                    .price
+                    .get_required_lamports_with_fixed(rpc_client, price_source)
+                    .await?;
 
-        // Get the raw transaction fees
-        let mut fee_calculation =
-            Self::estimate_transaction_fee(rpc_client, transaction, fee_payer, is_payment_required)
+                Ok(TotalFeeCalculation::new_fixed(fixed_fee_lamports))
+            }
+            PriceModel::Margin { .. } => {
+                // Get the raw transaction
+                let fee_calculation = Self::estimate_transaction_fee(
+                    rpc_client,
+                    transaction,
+                    fee_payer,
+                    is_payment_required,
+                )
                 .await?;
 
-        // Apply Kora's price model
-        let adjusted_fee = config
-            .validation
-            .price
-            .get_required_lamports(rpc_client, price_source, fee_calculation.total_fee_lamports)
-            .await?;
+                let total_fee_lamports = config
+                    .validation
+                    .price
+                    .get_required_lamports_with_margin(fee_calculation.total_fee_lamports)
+                    .await?;
 
-        // Update the total with the price model applied
-        fee_calculation.total_fee_lamports = adjusted_fee;
-
-        Ok(fee_calculation)
+                Ok(TotalFeeCalculation::new(
+                    total_fee_lamports,
+                    fee_calculation.base_fee,
+                    fee_calculation.kora_signature_fee,
+                    fee_calculation.fee_payer_outflow,
+                    fee_calculation.payment_instruction_fee,
+                    fee_calculation.transfer_fee_amount,
+                ))
+            }
+        }
     }
 
     /// Calculate the fee in a specific token if provided
