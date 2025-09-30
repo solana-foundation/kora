@@ -319,6 +319,7 @@ pub async fn run_test_phase(
         signers_config,
         &cached_keys,
         preferred_port,
+        verbose,
     )
     .await
     {

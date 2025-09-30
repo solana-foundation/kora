@@ -27,6 +27,7 @@ solana-message = { workspace = true }
 solana-system-interface = { workspace = true }
 solana-program = { workspace = true }
 solana-transaction-status-client-types = { workspace = true }
+solana-transaction-status = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }
 solana-client = { workspace = true }
 bs58 = { workspace = true }

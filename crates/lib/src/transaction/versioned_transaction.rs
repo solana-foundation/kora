@@ -10,7 +10,7 @@ use solana_sdk::{
 };
 use std::{collections::HashMap, ops::Deref};
 
-use solana_transaction_status_client_types::UiInstruction;
+use solana_transaction_status_client_types::{UiInstruction, UiTransactionEncoding};
 
 use crate::{
     error::KoraError,
@@ -148,7 +148,11 @@ impl VersionedTransactionResolved {
                 RpcSimulateTransactionConfig {
                     commitment: Some(rpc_client.commitment()),
                     sig_verify,
-                    ..Default::default()
+                    inner_instructions: true,
+                    replace_recent_blockhash: false,
+                    encoding: Some(UiTransactionEncoding::Base64),
+                    accounts: None,
+                    min_context_slot: None,
                 },
             )
             .await
@@ -164,13 +168,21 @@ impl VersionedTransactionResolved {
             let mut compiled_inner_instructions: Vec<CompiledInstruction> = vec![];
 
             inner_instructions.iter().for_each(|ix| {
-                ix.instructions.iter().for_each(|inner_ix| {
-                    if let UiInstruction::Compiled(ix) = inner_ix {
+                ix.instructions.iter().for_each(|inner_ix| match inner_ix {
+                    UiInstruction::Compiled(ix) => {
                         compiled_inner_instructions.push(CompiledInstruction {
                             program_id_index: ix.program_id_index,
                             accounts: ix.accounts.clone(),
                             data: bs58::decode(&ix.data).into_vec().unwrap_or_default(),
                         });
+                    }
+                    UiInstruction::Parsed(ui_parsed) => {
+                        if let Some(compiled) = IxUtils::reconstruct_instruction_from_ui(
+                            &UiInstruction::Parsed(ui_parsed.clone()),
+                            &self.all_account_keys,
+                        ) {
+                            compiled_inner_instructions.push(compiled);
+                        }
                     }
                 });
             });
