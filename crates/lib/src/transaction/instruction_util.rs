@@ -128,6 +128,76 @@ pub const PARSED_DATA_FIELD_RECIPIENT: &str = "recipient";
 pub const PARSED_DATA_FIELD_NONCE_AUTHORITY: &str = "nonceAuthority";
 
 impl IxUtils {
+    /// Helper method to extract a field as a string from JSON with proper error handling
+    fn get_field_as_str<'a>(
+        info: &'a serde_json::Value,
+        field_name: &str,
+    ) -> Result<&'a str, KoraError> {
+        info.get(field_name)
+            .ok_or_else(|| {
+                KoraError::SerializationError(format!("Missing field '{}'", field_name))
+            })?
+            .as_str()
+            .ok_or_else(|| {
+                KoraError::SerializationError(format!("Field '{}' is not a string", field_name))
+            })
+    }
+
+    /// Helper method to extract a field as a Pubkey from JSON with proper error handling
+    fn get_field_as_pubkey(
+        info: &serde_json::Value,
+        field_name: &str,
+    ) -> Result<Pubkey, KoraError> {
+        let pubkey_str = Self::get_field_as_str(info, field_name)?;
+        pubkey_str.parse::<Pubkey>().map_err(|e| {
+            KoraError::SerializationError(format!(
+                "Field '{}' is not a valid pubkey: {}",
+                field_name, e
+            ))
+        })
+    }
+
+    /// Helper method to extract a field as u64 from JSON string with proper error handling
+    fn get_field_as_u64(info: &serde_json::Value, field_name: &str) -> Result<u64, KoraError> {
+        let value = info.get(field_name).ok_or_else(|| {
+            KoraError::SerializationError(format!("Missing field '{}'", field_name))
+        })?;
+
+        // Try as native JSON number first
+        if let Some(num) = value.as_u64() {
+            return Ok(num);
+        }
+
+        // Fall back to string parsing
+        if let Some(str_val) = value.as_str() {
+            return str_val.parse::<u64>().map_err(|e| {
+                KoraError::SerializationError(format!(
+                    "Field '{}' is not a valid u64: {}",
+                    field_name, e
+                ))
+            });
+        }
+
+        Err(KoraError::SerializationError(format!(
+            "Field '{}' is neither a number nor a string",
+            field_name
+        )))
+    }
+
+    /// Helper method to get account index from hashmap with proper error handling
+    fn get_account_index(
+        account_keys_hashmap: &HashMap<Pubkey, u8>,
+        pubkey: &Pubkey,
+    ) -> Result<u8, KoraError> {
+        account_keys_hashmap.get(pubkey).copied().ok_or_else(|| {
+            KoraError::SerializationError(format!("{} not found in account keys", pubkey))
+        })
+    }
+
+    pub fn build_account_keys_hashmap(account_keys: &[Pubkey]) -> HashMap<Pubkey, u8> {
+        account_keys.iter().enumerate().map(|(idx, key)| (*key, idx as u8)).collect()
+    }
+
     pub fn get_account_key_if_present(ix: &Instruction, index: usize) -> Option<Pubkey> {
         if ix.accounts.is_empty() {
             return None;
@@ -164,6 +234,17 @@ impl IxUtils {
     }
 
     /// Reconstruct a CompiledInstruction from various UiInstruction formats
+    ///
+    /// This is required because when you simulate a transaction with inner instructions flag,
+    /// the RPC pre-parses some of the instructions (like for SPL program and System Program),
+    /// however this is an issue for Kora, as we expected "Compiled" instructions rather than "Parsed" instructions,
+    /// because we have our own parsing logic on our Kora's side.
+    ///
+    /// So we need to reconstruct the "Compiled" instructions from the "Parsed" instructions, by "unparsing" the "Parsed" instructions.
+    ///
+    /// There's no known way to force the RPC to not parsed the instructions, so we need this "hack" to reverse the process.
+    ///
+    /// Example: https://github.com/anza-xyz/agave/blob/68032b576dc4c14b31c15974c6734ae1513980a3/transaction-status/src/parse_system.rs#L11
     pub fn reconstruct_instruction_from_ui(
         ui_instruction: &UiInstruction,
         all_account_keys: &[Pubkey],
@@ -181,21 +262,34 @@ impl IxUtils {
                 UiParsedInstruction::Parsed(parsed) => {
                     // Reconstruct based on program type
                     if parsed.program_id == SYSTEM_PROGRAM_ID.to_string() {
-                        Self::reconstruct_system_instruction(parsed, all_account_keys)
+                        let account_keys_hashmap =
+                            Self::build_account_keys_hashmap(all_account_keys);
+                        Self::reconstruct_system_instruction(parsed, &account_keys_hashmap).ok()
                     } else if parsed.program == spl_token::ID.to_string()
                         || parsed.program == spl_token_2022::ID.to_string()
                     {
-                        Self::reconstruct_spl_token_instruction(parsed, all_account_keys)
+                        let account_keys_hashmap =
+                            Self::build_account_keys_hashmap(all_account_keys);
+                        Self::reconstruct_spl_token_instruction(parsed, &account_keys_hashmap).ok()
                     } else {
-                        log::error!("Unsupported parsed program: {}", parsed.program);
-                        None
+                        // For unsupported programs, create a stub instruction with just the program ID
+                        // This ensures the program ID is preserved for security validation
+                        let program_id = parsed.program_id.parse::<Pubkey>().ok()?;
+                        let account_keys_hashmap =
+                            Self::build_account_keys_hashmap(all_account_keys);
+                        let program_id_index = *account_keys_hashmap.get(&program_id)?;
+
+                        Some(CompiledInstruction {
+                            program_id_index,
+                            accounts: vec![],
+                            data: vec![],
+                        })
                     }
                 }
                 UiParsedInstruction::PartiallyDecoded(partial) => {
+                    let account_keys_hashmap = Self::build_account_keys_hashmap(all_account_keys);
                     if let Ok(program_id) = partial.program_id.parse::<Pubkey>() {
-                        if let Some(program_idx) =
-                            all_account_keys.iter().position(|k| k == &program_id)
-                        {
+                        if let Some(program_idx) = account_keys_hashmap.get(&program_id) {
                             // Convert account addresses to indices
                             let account_indices: Vec<u8> = partial
                                 .accounts
@@ -204,15 +298,13 @@ impl IxUtils {
                                     addr_str
                                         .parse::<Pubkey>()
                                         .ok()
-                                        .and_then(|pubkey| {
-                                            all_account_keys.iter().position(|k| k == &pubkey)
-                                        })
-                                        .map(|idx| idx as u8)
+                                        .and_then(|pubkey| account_keys_hashmap.get(&pubkey))
+                                        .copied()
                                 })
                                 .collect();
 
                             return Some(CompiledInstruction {
-                                program_id_index: program_idx as u8,
+                                program_id_index: *program_idx,
                                 accounts: account_indices,
                                 data: bs58::decode(&partial.data).into_vec().unwrap_or_default(),
                             });
@@ -229,140 +321,156 @@ impl IxUtils {
     /// Reconstruct system program instructions from parsed format
     fn reconstruct_system_instruction(
         parsed: &solana_transaction_status_client_types::ParsedInstruction,
-        all_account_keys: &[Pubkey],
-    ) -> Option<CompiledInstruction> {
-        let program_id_index = all_account_keys.iter().position(|k| k == &SYSTEM_PROGRAM_ID)? as u8;
+        account_keys_hashmap: &HashMap<Pubkey, u8>,
+    ) -> Result<CompiledInstruction, KoraError> {
+        let program_id_index = Self::get_account_index(account_keys_hashmap, &SYSTEM_PROGRAM_ID)?;
 
         let parsed_data = &parsed.parsed;
-        let instruction_type = parsed_data.get(PARSED_DATA_FIELD_TYPE)?.as_str()?;
-        let info = parsed_data.get(PARSED_DATA_FIELD_INFO)?;
+        let instruction_type = Self::get_field_as_str(parsed_data, PARSED_DATA_FIELD_TYPE)?;
+        let info = parsed_data
+            .get(PARSED_DATA_FIELD_INFO)
+            .ok_or_else(|| KoraError::SerializationError("Missing 'info' field".to_string()))?;
 
         match instruction_type {
             PARSED_DATA_FIELD_TRANSFER => {
-                let source =
-                    info.get(PARSED_DATA_FIELD_SOURCE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let destination =
-                    info.get(PARSED_DATA_FIELD_DESTINATION)?.as_str()?.parse::<Pubkey>().ok()?;
-                let lamports = info.get(PARSED_DATA_FIELD_LAMPORTS)?.as_u64()?;
+                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
+                let destination = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
+                let lamports = Self::get_field_as_u64(info, PARSED_DATA_FIELD_LAMPORTS)?;
 
-                let source_idx = all_account_keys.iter().position(|k| k == &source)? as u8;
-                let destination_idx =
-                    all_account_keys.iter().position(|k| k == &destination)? as u8;
+                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
+                let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
 
                 let transfer_ix = SystemInstruction::Transfer { lamports };
-                let data = bincode::serialize(&transfer_ix).ok()?;
+                let data = bincode::serialize(&transfer_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize Transfer instruction: {}",
+                        e
+                    ))
+                })?;
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![source_idx, destination_idx],
                     data,
                 })
             }
             PARSED_DATA_FIELD_CREATE_ACCOUNT => {
-                let source =
-                    info.get(PARSED_DATA_FIELD_SOURCE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let new_account =
-                    info.get(PARSED_DATA_FIELD_NEW_ACCOUNT)?.as_str()?.parse::<Pubkey>().ok()?;
-                let owner = info.get(PARSED_DATA_FIELD_OWNER)?.as_str()?.parse::<Pubkey>().ok()?;
-                let lamports = info.get(PARSED_DATA_FIELD_LAMPORTS)?.as_u64()?;
-                let space = info.get(PARSED_DATA_FIELD_SPACE)?.as_u64()?;
+                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
+                let new_account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NEW_ACCOUNT)?;
+                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
+                let lamports = Self::get_field_as_u64(info, PARSED_DATA_FIELD_LAMPORTS)?;
+                let space = Self::get_field_as_u64(info, PARSED_DATA_FIELD_SPACE)?;
 
-                let source_idx = all_account_keys.iter().position(|k| k == &source)? as u8;
-                let new_account_idx =
-                    all_account_keys.iter().position(|k| k == &new_account)? as u8;
+                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
+                let new_account_idx = Self::get_account_index(account_keys_hashmap, &new_account)?;
 
                 let create_ix = SystemInstruction::CreateAccount { lamports, space, owner };
-                let data = bincode::serialize(&create_ix).ok()?;
+                let data = bincode::serialize(&create_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize CreateAccount instruction: {}",
+                        e
+                    ))
+                })?;
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![source_idx, new_account_idx],
                     data,
                 })
             }
             PARSED_DATA_FIELD_ASSIGN => {
-                let authority =
-                    info.get(PARSED_DATA_FIELD_ACCOUNT)?.as_str()?.parse::<Pubkey>().ok()?;
-                let owner = info.get(PARSED_DATA_FIELD_OWNER)?.as_str()?.parse::<Pubkey>().ok()?;
+                let authority = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
 
-                let authority_idx = all_account_keys.iter().position(|k| k == &authority)? as u8;
+                let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
                 let assign_ix = SystemInstruction::Assign { owner };
-                let data = bincode::serialize(&assign_ix).ok()?;
+                let data = bincode::serialize(&assign_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize Assign instruction: {}",
+                        e
+                    ))
+                })?;
 
-                Some(CompiledInstruction { program_id_index, accounts: vec![authority_idx], data })
+                Ok(CompiledInstruction { program_id_index, accounts: vec![authority_idx], data })
             }
             PARSED_DATA_FIELD_TRANSFER_WITH_SEED => {
-                let source =
-                    info.get(PARSED_DATA_FIELD_SOURCE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let destination =
-                    info.get(PARSED_DATA_FIELD_DESTINATION)?.as_str()?.parse::<Pubkey>().ok()?;
-                let lamports = info.get(PARSED_DATA_FIELD_LAMPORTS)?.as_u64()?;
-                let source_base =
-                    info.get(PARSED_DATA_FIELD_SOURCE_BASE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let source_seed = info.get(PARSED_DATA_FIELD_SOURCE_SEED)?.as_str()?.to_string();
-                let source_owner =
-                    info.get(PARSED_DATA_FIELD_SOURCE_OWNER)?.as_str()?.parse::<Pubkey>().ok()?;
+                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
+                let destination = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
+                let lamports = Self::get_field_as_u64(info, PARSED_DATA_FIELD_LAMPORTS)?;
+                let source_base = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE_BASE)?;
+                let source_seed =
+                    Self::get_field_as_str(info, PARSED_DATA_FIELD_SOURCE_SEED)?.to_string();
+                let source_owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE_OWNER)?;
 
-                let source_idx = all_account_keys.iter().position(|k| k == &source)? as u8;
-                let destination_idx =
-                    all_account_keys.iter().position(|k| k == &destination)? as u8;
-                let source_base_idx =
-                    all_account_keys.iter().position(|k| k == &source_base)? as u8;
+                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
+                let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
+                let source_base_idx = Self::get_account_index(account_keys_hashmap, &source_base)?;
 
                 let transfer_ix = SystemInstruction::TransferWithSeed {
                     lamports,
                     from_seed: source_seed,
                     from_owner: source_owner,
                 };
-                let data = bincode::serialize(&transfer_ix).ok()?;
+                let data = bincode::serialize(&transfer_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize TransferWithSeed instruction: {}",
+                        e
+                    ))
+                })?;
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![source_idx, source_base_idx, destination_idx],
                     data,
                 })
             }
             PARSED_DATA_FIELD_CREATE_ACCOUNT_WITH_SEED => {
-                let source =
-                    info.get(PARSED_DATA_FIELD_SOURCE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let new_account =
-                    info.get(PARSED_DATA_FIELD_NEW_ACCOUNT)?.as_str()?.parse::<Pubkey>().ok()?;
-                let base = info.get(PARSED_DATA_FIELD_BASE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let seed = info.get(PARSED_DATA_FIELD_SEED)?.as_str()?.to_string();
-                let owner = info.get(PARSED_DATA_FIELD_OWNER)?.as_str()?.parse::<Pubkey>().ok()?;
-                let lamports = info.get(PARSED_DATA_FIELD_LAMPORTS)?.as_u64()?;
-                let space = info.get(PARSED_DATA_FIELD_SPACE)?.as_u64()?;
+                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
+                let new_account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NEW_ACCOUNT)?;
+                let base = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_BASE)?;
+                let seed = Self::get_field_as_str(info, PARSED_DATA_FIELD_SEED)?.to_string();
+                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
+                let lamports = Self::get_field_as_u64(info, PARSED_DATA_FIELD_LAMPORTS)?;
+                let space = Self::get_field_as_u64(info, PARSED_DATA_FIELD_SPACE)?;
 
-                let source_idx = all_account_keys.iter().position(|k| k == &source)? as u8;
-                let new_account_idx =
-                    all_account_keys.iter().position(|k| k == &new_account)? as u8;
-                let base_idx = all_account_keys.iter().position(|k| k == &base)? as u8;
+                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
+                let new_account_idx = Self::get_account_index(account_keys_hashmap, &new_account)?;
+                let base_idx = Self::get_account_index(account_keys_hashmap, &base)?;
 
                 let create_ix =
                     SystemInstruction::CreateAccountWithSeed { base, seed, lamports, space, owner };
-                let data = bincode::serialize(&create_ix).ok()?;
+                let data = bincode::serialize(&create_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize CreateAccountWithSeed instruction: {}",
+                        e
+                    ))
+                })?;
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![source_idx, new_account_idx, base_idx],
                     data,
                 })
             }
             PARSED_DATA_FIELD_ASSIGN_WITH_SEED => {
-                let account =
-                    info.get(PARSED_DATA_FIELD_ACCOUNT)?.as_str()?.parse::<Pubkey>().ok()?;
-                let base = info.get(PARSED_DATA_FIELD_BASE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let seed = info.get(PARSED_DATA_FIELD_SEED)?.as_str()?.to_string();
-                let owner = info.get(PARSED_DATA_FIELD_OWNER)?.as_str()?.parse::<Pubkey>().ok()?;
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let base = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_BASE)?;
+                let seed = Self::get_field_as_str(info, PARSED_DATA_FIELD_SEED)?.to_string();
+                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
 
-                let account_idx = all_account_keys.iter().position(|k| k == &account)? as u8;
-                let base_idx = all_account_keys.iter().position(|k| k == &base)? as u8;
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let base_idx = Self::get_account_index(account_keys_hashmap, &base)?;
 
                 let assign_ix = SystemInstruction::AssignWithSeed { base, seed, owner };
-                let data = bincode::serialize(&assign_ix).ok()?;
+                let data = bincode::serialize(&assign_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize AssignWithSeed instruction: {}",
+                        e
+                    ))
+                })?;
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![account_idx, base_idx],
                     data,
@@ -370,26 +478,27 @@ impl IxUtils {
             }
             PARSED_DATA_FIELD_WITHDRAW_NONCE_ACCOUNT => {
                 let nonce_account =
-                    info.get(PARSED_DATA_FIELD_NONCE_ACCOUNT)?.as_str()?.parse::<Pubkey>().ok()?;
-                let recipient =
-                    info.get(PARSED_DATA_FIELD_DESTINATION)?.as_str()?.parse::<Pubkey>().ok()?;
-                let nonce_authority = info
-                    .get(PARSED_DATA_FIELD_NONCE_AUTHORITY)?
-                    .as_str()?
-                    .parse::<Pubkey>()
-                    .ok()?;
-                let lamports = info.get(PARSED_DATA_FIELD_LAMPORTS)?.as_u64()?;
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
+                let recipient = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
+                let nonce_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
+                let lamports = Self::get_field_as_u64(info, PARSED_DATA_FIELD_LAMPORTS)?;
 
                 let nonce_account_idx =
-                    all_account_keys.iter().position(|k| k == &nonce_account)? as u8;
-                let recipient_idx = all_account_keys.iter().position(|k| k == &recipient)? as u8;
+                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
+                let recipient_idx = Self::get_account_index(account_keys_hashmap, &recipient)?;
                 let nonce_authority_idx =
-                    all_account_keys.iter().position(|k| k == &nonce_authority)? as u8;
+                    Self::get_account_index(account_keys_hashmap, &nonce_authority)?;
 
                 let withdraw_ix = SystemInstruction::WithdrawNonceAccount(lamports);
-                let data = bincode::serialize(&withdraw_ix).ok()?;
+                let data = bincode::serialize(&withdraw_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize WithdrawNonceAccount instruction: {}",
+                        e
+                    ))
+                })?;
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![nonce_account_idx, recipient_idx, nonce_authority_idx],
                     data,
@@ -397,7 +506,10 @@ impl IxUtils {
             }
             _ => {
                 log::error!("Unsupported system instruction type: {}", instruction_type);
-                None
+                Err(KoraError::SerializationError(format!(
+                    "Unsupported system instruction type: {}",
+                    instruction_type
+                )))
             }
         }
     }
@@ -405,29 +517,30 @@ impl IxUtils {
     /// Reconstruct SPL token program instructions from parsed format
     fn reconstruct_spl_token_instruction(
         parsed: &solana_transaction_status_client_types::ParsedInstruction,
-        all_account_keys: &[Pubkey],
-    ) -> Option<CompiledInstruction> {
-        let program_id_index =
-            all_account_keys.iter().position(|k| k.to_string() == parsed.program_id)? as u8;
+        account_keys_hashmap: &HashMap<Pubkey, u8>,
+    ) -> Result<CompiledInstruction, KoraError> {
+        let program_id = parsed
+            .program_id
+            .parse::<Pubkey>()
+            .map_err(|e| KoraError::SerializationError(format!("Invalid program ID: {}", e)))?;
+        let program_id_index = Self::get_account_index(account_keys_hashmap, &program_id)?;
 
         let parsed_data = &parsed.parsed;
-        let instruction_type = parsed_data.get(PARSED_DATA_FIELD_TYPE)?.as_str()?;
-        let info = parsed_data.get(PARSED_DATA_FIELD_INFO)?;
+        let instruction_type = Self::get_field_as_str(parsed_data, PARSED_DATA_FIELD_TYPE)?;
+        let info = parsed_data
+            .get(PARSED_DATA_FIELD_INFO)
+            .ok_or_else(|| KoraError::SerializationError("Missing 'info' field".to_string()))?;
 
         match instruction_type {
             PARSED_DATA_FIELD_TRANSFER => {
-                let source =
-                    info.get(PARSED_DATA_FIELD_SOURCE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let destination =
-                    info.get(PARSED_DATA_FIELD_DESTINATION)?.as_str()?.parse::<Pubkey>().ok()?;
-                let authority =
-                    info.get(PARSED_DATA_FIELD_AUTHORITY)?.as_str()?.parse::<Pubkey>().ok()?;
-                let amount = info.get(PARSED_DATA_FIELD_AMOUNT)?.as_str()?.parse::<u64>().ok()?;
+                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
+                let destination = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
+                let authority = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_AUTHORITY)?;
+                let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT)?;
 
-                let source_idx = all_account_keys.iter().position(|k| k == &source)? as u8;
-                let destination_idx =
-                    all_account_keys.iter().position(|k| k == &destination)? as u8;
-                let authority_idx = all_account_keys.iter().position(|k| k == &authority)? as u8;
+                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
+                let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
+                let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
                 let data = if parsed.program_id == spl_token::ID.to_string() {
                     spl_token::instruction::TokenInstruction::Transfer { amount }.pack()
@@ -436,31 +549,29 @@ impl IxUtils {
                     spl_token_2022::instruction::TokenInstruction::Transfer { amount }.pack()
                 };
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![source_idx, destination_idx, authority_idx],
                     data,
                 })
             }
             PARSED_DATA_FIELD_TRANSFER_CHECKED => {
-                let source =
-                    info.get(PARSED_DATA_FIELD_SOURCE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let destination =
-                    info.get(PARSED_DATA_FIELD_DESTINATION)?.as_str()?.parse::<Pubkey>().ok()?;
-                let authority =
-                    info.get(PARSED_DATA_FIELD_AUTHORITY)?.as_str()?.parse::<Pubkey>().ok()?;
-                let mint = info.get(PARSED_DATA_FIELD_MINT)?.as_str()?.parse::<Pubkey>().ok()?;
+                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
+                let destination = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
+                let authority = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_AUTHORITY)?;
+                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
 
-                let token_amount = info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT)?;
-                let amount =
-                    token_amount.get(PARSED_DATA_FIELD_AMOUNT)?.as_str()?.parse::<u64>().ok()?;
-                let decimals = token_amount.get(PARSED_DATA_FIELD_DECIMALS)?.as_u64()? as u8;
+                let token_amount = info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT).ok_or_else(|| {
+                    KoraError::SerializationError("Missing 'tokenAmount' field".to_string())
+                })?;
+                let amount = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_AMOUNT)?;
+                let decimals =
+                    Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_DECIMALS)? as u8;
 
-                let source_idx = all_account_keys.iter().position(|k| k == &source)? as u8;
-                let mint_idx = all_account_keys.iter().position(|k| k == &mint)? as u8;
-                let destination_idx =
-                    all_account_keys.iter().position(|k| k == &destination)? as u8;
-                let authority_idx = all_account_keys.iter().position(|k| k == &authority)? as u8;
+                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
+                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
+                let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
+                let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
                 let data = if parsed.program_id == spl_token::ID.to_string() {
                     spl_token::instruction::TokenInstruction::TransferChecked { amount, decimals }
@@ -473,40 +584,39 @@ impl IxUtils {
                     .pack()
                 };
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![source_idx, mint_idx, destination_idx, authority_idx],
                     data,
                 })
             }
             PARSED_DATA_FIELD_BURN | PARSED_DATA_FIELD_BURN_CHECKED => {
-                let account =
-                    info.get(PARSED_DATA_FIELD_ACCOUNT)?.as_str()?.parse::<Pubkey>().ok()?;
-                let authority =
-                    info.get(PARSED_DATA_FIELD_AUTHORITY)?.as_str()?.parse::<Pubkey>().ok()?;
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let authority = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_AUTHORITY)?;
 
                 let (amount, decimals) = if instruction_type == PARSED_DATA_FIELD_BURN_CHECKED {
-                    let token_amount = info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT)?;
-                    let amount = token_amount
-                        .get(PARSED_DATA_FIELD_AMOUNT)?
-                        .as_str()?
-                        .parse::<u64>()
-                        .ok()?;
-                    let decimals = token_amount.get(PARSED_DATA_FIELD_DECIMALS)?.as_u64()? as u8;
+                    let token_amount =
+                        info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT).ok_or_else(|| {
+                            KoraError::SerializationError(
+                                "Missing 'tokenAmount' field for burnChecked".to_string(),
+                            )
+                        })?;
+                    let amount = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_AMOUNT)?;
+                    let decimals =
+                        Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_DECIMALS)? as u8;
                     (amount, Some(decimals))
                 } else {
                     let amount =
-                        info.get(PARSED_DATA_FIELD_AMOUNT)?.as_str()?.parse::<u64>().unwrap_or(0);
+                        Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT).unwrap_or(0);
                     (amount, None)
                 };
 
-                let account_idx = all_account_keys.iter().position(|k| k == &account)? as u8;
-                let authority_idx = all_account_keys.iter().position(|k| k == &authority)? as u8;
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
                 let accounts = if instruction_type == PARSED_DATA_FIELD_BURN_CHECKED {
-                    let mint =
-                        info.get(PARSED_DATA_FIELD_MINT)?.as_str()?.parse::<Pubkey>().ok()?;
-                    let mint_idx = all_account_keys.iter().position(|k| k == &mint)? as u8;
+                    let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
+                    let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
                     vec![account_idx, mint_idx, authority_idx]
                 } else {
                     vec![account_idx, authority_idx]
@@ -530,20 +640,16 @@ impl IxUtils {
                     spl_token_2022::instruction::TokenInstruction::Burn { amount }.pack()
                 };
 
-                Some(CompiledInstruction { program_id_index, accounts, data })
+                Ok(CompiledInstruction { program_id_index, accounts, data })
             }
             PARSED_DATA_FIELD_CLOSE_ACCOUNT => {
-                let account =
-                    info.get(PARSED_DATA_FIELD_ACCOUNT)?.as_str()?.parse::<Pubkey>().ok()?;
-                let destination =
-                    info.get(PARSED_DATA_FIELD_DESTINATION)?.as_str()?.parse::<Pubkey>().ok()?;
-                let authority =
-                    info.get(PARSED_DATA_FIELD_OWNER)?.as_str()?.parse::<Pubkey>().ok()?;
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let destination = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DESTINATION)?;
+                let authority = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
 
-                let account_idx = all_account_keys.iter().position(|k| k == &account)? as u8;
-                let destination_idx =
-                    all_account_keys.iter().position(|k| k == &destination)? as u8;
-                let authority_idx = all_account_keys.iter().position(|k| k == &authority)? as u8;
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
+                let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
                 let data = if parsed.program_id == spl_token::ID.to_string() {
                     spl_token::instruction::TokenInstruction::CloseAccount.pack()
@@ -551,23 +657,21 @@ impl IxUtils {
                     spl_token_2022::instruction::TokenInstruction::CloseAccount.pack()
                 };
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![account_idx, destination_idx, authority_idx],
                     data,
                 })
             }
             PARSED_DATA_FIELD_APPROVE => {
-                let source =
-                    info.get(PARSED_DATA_FIELD_SOURCE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let delegate =
-                    info.get(PARSED_DATA_FIELD_DELEGATE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let owner = info.get(PARSED_DATA_FIELD_OWNER)?.as_str()?.parse::<Pubkey>().ok()?;
-                let amount = info.get(PARSED_DATA_FIELD_AMOUNT)?.as_str()?.parse::<u64>().ok()?;
+                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
+                let delegate = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DELEGATE)?;
+                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
+                let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT)?;
 
-                let source_idx = all_account_keys.iter().position(|k| k == &source)? as u8;
-                let delegate_idx = all_account_keys.iter().position(|k| k == &delegate)? as u8;
-                let owner_idx = all_account_keys.iter().position(|k| k == &owner)? as u8;
+                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
+                let delegate_idx = Self::get_account_index(account_keys_hashmap, &delegate)?;
+                let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
 
                 let data = if parsed.program_id == spl_token::ID.to_string() {
                     spl_token::instruction::TokenInstruction::Approve { amount }.pack()
@@ -575,29 +679,29 @@ impl IxUtils {
                     spl_token_2022::instruction::TokenInstruction::Approve { amount }.pack()
                 };
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![source_idx, delegate_idx, owner_idx],
                     data,
                 })
             }
             PARSED_DATA_FIELD_APPROVE_CHECKED => {
-                let source =
-                    info.get(PARSED_DATA_FIELD_SOURCE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let delegate =
-                    info.get(PARSED_DATA_FIELD_DELEGATE)?.as_str()?.parse::<Pubkey>().ok()?;
-                let owner = info.get(PARSED_DATA_FIELD_OWNER)?.as_str()?.parse::<Pubkey>().ok()?;
-                let mint = info.get(PARSED_DATA_FIELD_MINT)?.as_str()?.parse::<Pubkey>().ok()?;
+                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
+                let delegate = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_DELEGATE)?;
+                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
+                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
 
-                let token_amount = info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT)?;
-                let amount =
-                    token_amount.get(PARSED_DATA_FIELD_AMOUNT)?.as_str()?.parse::<u64>().ok()?;
-                let decimals = token_amount.get(PARSED_DATA_FIELD_DECIMALS)?.as_u64()? as u8;
+                let token_amount = info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT).ok_or_else(|| {
+                    KoraError::SerializationError("Missing 'tokenAmount' field".to_string())
+                })?;
+                let amount = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_AMOUNT)?;
+                let decimals =
+                    Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_DECIMALS)? as u8;
 
-                let source_idx = all_account_keys.iter().position(|k| k == &source)? as u8;
-                let mint_idx = all_account_keys.iter().position(|k| k == &mint)? as u8;
-                let delegate_idx = all_account_keys.iter().position(|k| k == &delegate)? as u8;
-                let owner_idx = all_account_keys.iter().position(|k| k == &owner)? as u8;
+                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
+                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
+                let delegate_idx = Self::get_account_index(account_keys_hashmap, &delegate)?;
+                let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
 
                 let data = if parsed.program_id == spl_token::ID.to_string() {
                     spl_token::instruction::TokenInstruction::ApproveChecked { amount, decimals }
@@ -610,7 +714,7 @@ impl IxUtils {
                     .pack()
                 };
 
-                Some(CompiledInstruction {
+                Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![source_idx, mint_idx, delegate_idx, owner_idx],
                     data,
@@ -618,7 +722,10 @@ impl IxUtils {
             }
             _ => {
                 log::error!("Unsupported token instruction type: {}", instruction_type);
-                None
+                Err(KoraError::SerializationError(format!(
+                    "Unsupported SPL token instruction type: {}",
+                    instruction_type
+                )))
             }
         }
     }
@@ -1385,6 +1492,7 @@ mod tests {
         amount: u64,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
+        #[allow(deprecated)]
         let solana_instruction = spl_token_2022::instruction::transfer(
             &spl_token_2022::ID,
             source,
@@ -1694,10 +1802,12 @@ mod tests {
         let solana_parsed_transfer = create_parsed_system_transfer(&source, &destination, lamports)
             .expect("Failed to create authentic parsed instruction");
 
-        let result =
-            IxUtils::reconstruct_system_instruction(&solana_parsed_transfer, &account_keys);
+        let result = IxUtils::reconstruct_system_instruction(
+            &solana_parsed_transfer,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2]); // source, destination indices
@@ -1733,9 +1843,12 @@ mod tests {
         )
         .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_system_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_system_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // source, source_base, destination indices
@@ -1764,9 +1877,12 @@ mod tests {
             create_parsed_system_create_account(&source, &new_account, lamports, space, &owner)
                 .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_system_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_system_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2]); // source, new_account indices
@@ -1805,9 +1921,12 @@ mod tests {
         )
         .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_system_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_system_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // source, new_account, base indices
@@ -1826,9 +1945,12 @@ mod tests {
         let solana_parsed = create_parsed_system_assign(&account, &owner)
             .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_system_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_system_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1]); // account index
@@ -1854,9 +1976,12 @@ mod tests {
             create_parsed_system_assign_with_seed(&account, &base, "test_assign_seed", &owner)
                 .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_system_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_system_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2]); // account, base indices
@@ -1887,9 +2012,12 @@ mod tests {
         )
         .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_system_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_system_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // nonce_account, recipient, nonce_authority indices
@@ -1919,10 +2047,12 @@ mod tests {
             create_parsed_spl_token_transfer(&source, &destination, &authority, amount)
                 .expect("Failed to create parsed instruction");
 
-        let result =
-            IxUtils::reconstruct_spl_token_instruction(&solana_parsed_transfer, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed_transfer,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // source, destination, authority indices
@@ -1962,9 +2092,12 @@ mod tests {
         )
         .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3, 4]); // source, mint, destination, authority indices
@@ -1987,9 +2120,12 @@ mod tests {
         let solana_parsed = create_parsed_spl_token_burn(&account, &mint, &authority, amount)
             .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 3]); // account, authority indices (mint at index 2 is skipped)
@@ -2021,9 +2157,12 @@ mod tests {
             create_parsed_spl_token_burn_checked(&account, &mint, &authority, amount, decimals)
                 .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // account, mint, authority indices
@@ -2051,9 +2190,12 @@ mod tests {
             create_parsed_spl_token_close_account(&account, &destination, &authority)
                 .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // account, destination, authority indices
@@ -2082,9 +2224,12 @@ mod tests {
         let solana_parsed = create_parsed_spl_token_approve(&source, &delegate, &owner, amount)
             .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // source, delegate, owner indices
@@ -2119,9 +2264,12 @@ mod tests {
         )
         .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3, 4]); // source, mint, delegate, owner indices
@@ -2137,6 +2285,7 @@ mod tests {
         let account_keys = vec![token_program_id, source, destination, authority];
         let amount = 1500000u64;
 
+        #[allow(deprecated)]
         let instruction = spl_token_2022::instruction::transfer(
             &spl_token_2022::ID,
             &source,
@@ -2151,9 +2300,12 @@ mod tests {
             create_parsed_token2022_transfer(&source, &destination, &authority, amount)
                 .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // source, destination, authority indices
@@ -2193,9 +2345,12 @@ mod tests {
         )
         .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3, 4]); // source, mint, destination, authority indices
@@ -2224,9 +2379,12 @@ mod tests {
         let solana_parsed = create_parsed_token2022_burn(&account, &mint, &authority, amount)
             .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 3]); // account, authority indices (mint at index 2 is skipped)
@@ -2258,9 +2416,12 @@ mod tests {
             create_parsed_token2022_burn_checked(&account, &mint, &authority, amount, decimals)
                 .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // account, mint, authority indices
@@ -2288,9 +2449,12 @@ mod tests {
             create_parsed_token2022_close_account(&account, &destination, &authority)
                 .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // account, destination, authority indices
@@ -2319,9 +2483,12 @@ mod tests {
         let solana_parsed = create_parsed_token2022_approve(&source, &delegate, &owner, amount)
             .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // source, delegate, owner indices
@@ -2356,12 +2523,44 @@ mod tests {
         )
         .expect("Failed to create parsed instruction");
 
-        let result = IxUtils::reconstruct_spl_token_instruction(&solana_parsed, &account_keys);
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3, 4]); // source, mint, delegate, owner indices
         assert_eq!(compiled.data, instruction.data);
+    }
+
+    #[test]
+    fn test_reconstruct_unsupported_program_creates_stub() {
+        let unsupported_program = Pubkey::new_unique();
+        let account_keys = vec![unsupported_program];
+
+        let parsed_instruction = solana_transaction_status_client_types::ParsedInstruction {
+            program: "unsupported".to_string(),
+            program_id: unsupported_program.to_string(),
+            parsed: serde_json::json!({
+                "type": "unknownInstruction",
+                "info": {
+                    "someField": "someValue"
+                }
+            }),
+            stack_height: None,
+        };
+
+        let ui_instruction = UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed_instruction));
+
+        let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &account_keys);
+
+        assert!(result.is_some());
+        let compiled = result.unwrap();
+
+        assert_eq!(compiled.program_id_index, 0);
+        assert!(compiled.accounts.is_empty());
+        assert!(compiled.data.is_empty());
     }
 }
