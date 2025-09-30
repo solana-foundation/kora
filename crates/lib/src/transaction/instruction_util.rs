@@ -210,6 +210,10 @@ impl IxUtils {
         Some(ix.accounts[index].pubkey)
     }
 
+    pub fn build_default_compiled_instruction(program_id_index: u8) -> CompiledInstruction {
+        CompiledInstruction { program_id_index, accounts: vec![], data: vec![] }
+    }
+
     pub fn uncompile_instructions(
         instructions: &[CompiledInstruction],
         account_keys: &[Pubkey],
@@ -260,30 +264,21 @@ impl IxUtils {
             }
             UiInstruction::Parsed(ui_parsed) => match ui_parsed {
                 UiParsedInstruction::Parsed(parsed) => {
+                    let account_keys_hashmap = Self::build_account_keys_hashmap(all_account_keys);
                     // Reconstruct based on program type
                     if parsed.program_id == SYSTEM_PROGRAM_ID.to_string() {
-                        let account_keys_hashmap =
-                            Self::build_account_keys_hashmap(all_account_keys);
                         Self::reconstruct_system_instruction(parsed, &account_keys_hashmap).ok()
                     } else if parsed.program == spl_token::ID.to_string()
                         || parsed.program == spl_token_2022::ID.to_string()
                     {
-                        let account_keys_hashmap =
-                            Self::build_account_keys_hashmap(all_account_keys);
                         Self::reconstruct_spl_token_instruction(parsed, &account_keys_hashmap).ok()
                     } else {
                         // For unsupported programs, create a stub instruction with just the program ID
                         // This ensures the program ID is preserved for security validation
                         let program_id = parsed.program_id.parse::<Pubkey>().ok()?;
-                        let account_keys_hashmap =
-                            Self::build_account_keys_hashmap(all_account_keys);
                         let program_id_index = *account_keys_hashmap.get(&program_id)?;
 
-                        Some(CompiledInstruction {
-                            program_id_index,
-                            accounts: vec![],
-                            data: vec![],
-                        })
+                        Some(Self::build_default_compiled_instruction(program_id_index))
                     }
                 }
                 UiParsedInstruction::PartiallyDecoded(partial) => {
@@ -506,10 +501,7 @@ impl IxUtils {
             }
             _ => {
                 log::error!("Unsupported system instruction type: {}", instruction_type);
-                Err(KoraError::SerializationError(format!(
-                    "Unsupported system instruction type: {}",
-                    instruction_type
-                )))
+                Ok(Self::build_default_compiled_instruction(program_id_index))
             }
         }
     }
@@ -722,10 +714,7 @@ impl IxUtils {
             }
             _ => {
                 log::error!("Unsupported token instruction type: {}", instruction_type);
-                Err(KoraError::SerializationError(format!(
-                    "Unsupported SPL token instruction type: {}",
-                    instruction_type
-                )))
+                Ok(Self::build_default_compiled_instruction(program_id_index))
             }
         }
     }
