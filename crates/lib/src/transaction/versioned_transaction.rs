@@ -157,21 +157,18 @@ impl VersionedTransactionResolved {
 
         if let Some(err) = simulation_result.value.err {
             let mut error_msg = format!("{}", err);
-            
+
             // Add detailed logs if available
             if let Some(logs) = &simulation_result.value.logs {
                 if !logs.is_empty() {
-                    let log_details = logs.iter()
-                        .map(|log| format!("  {}", log))
-                        .collect::<Vec<_>>()
-                        .join("\n");
+                    let log_details =
+                        logs.iter().map(|log| format!("  {}", log)).collect::<Vec<_>>().join("\n");
                     error_msg.push_str(&format!("\nLogs:\n{}", log_details));
                 }
             }
-            
+
             return Err(KoraError::TransactionSimulationFailed(error_msg));
         }
-
         if let Some(inner_instructions) = simulation_result.value.inner_instructions {
             let mut compiled_inner_instructions: Vec<CompiledInstruction> = vec![];
 
