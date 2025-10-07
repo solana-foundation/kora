@@ -148,6 +148,7 @@ impl VersionedTransactionResolved {
                 RpcSimulateTransactionConfig {
                     commitment: Some(rpc_client.commitment()),
                     sig_verify,
+                    inner_instructions: true,
                     ..Default::default()
                 },
             )
@@ -155,9 +156,20 @@ impl VersionedTransactionResolved {
             .map_err(|e| KoraError::RpcError(format!("Failed to simulate transaction: {e}")))?;
 
         if let Some(err) = simulation_result.value.err {
-            return Err(KoraError::InvalidTransaction(format!(
-                "Transaction simulation failed: {err}"
-            )));
+            let mut error_msg = format!("{}", err);
+            
+            // Add detailed logs if available
+            if let Some(logs) = &simulation_result.value.logs {
+                if !logs.is_empty() {
+                    let log_details = logs.iter()
+                        .map(|log| format!("  {}", log))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    error_msg.push_str(&format!("\nLogs:\n{}", log_details));
+                }
+            }
+            
+            return Err(KoraError::TransactionSimulationFailed(error_msg));
         }
 
         if let Some(inner_instructions) = simulation_result.value.inner_instructions {
@@ -827,10 +839,10 @@ mod tests {
             Err(KoraError::RpcError(msg)) => {
                 assert!(msg.contains("Failed to simulate transaction"));
             }
-            Err(KoraError::InvalidTransaction(msg)) => {
-                assert!(msg.contains("inner instructions fetching failed"));
+            Err(KoraError::TransactionSimulationFailed(msg)) => {
+                assert!(msg.contains("InstructionError"));
             }
-            _ => panic!("Expected RpcError or InvalidTransaction"),
+            _ => panic!("Expected RpcError or TransactionSimulationFailed"),
         }
     }
 

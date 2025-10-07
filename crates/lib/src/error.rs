@@ -20,6 +20,9 @@ pub enum KoraError {
     #[error("Invalid transaction: {0}")]
     InvalidTransaction(String),
 
+    #[error("Transaction simulation failed: {0}")]
+    TransactionSimulationFailed(String),
+
     #[error("Transaction execution failed: {0}")]
     TransactionExecutionFailed(String),
 
@@ -129,6 +132,7 @@ impl From<KoraError> for RpcError {
         match err {
             KoraError::AccountNotFound(_)
             | KoraError::InvalidTransaction(_)
+            | KoraError::TransactionSimulationFailed(_)
             | KoraError::ValidationError(_)
             | KoraError::UnsupportedFeeToken(_)
             | KoraError::InsufficientFunds(_) => invalid_request(err),
