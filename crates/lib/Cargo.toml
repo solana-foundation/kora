@@ -41,6 +41,9 @@ jup-ag = { workspace = true }
 spl-token = { workspace = true }
 spl-token-2022 = { workspace = true }
 spl-associated-token-account = { workspace = true }
+solana-signers = { git = "https://github.com/solana-foundation/solana-signers", features = [
+    "all",
+] }
 vaultrs = { workspace = true }
 deadpool-redis = { workspace = true }
 jsonrpsee = { workspace = true }

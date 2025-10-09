@@ -7,6 +7,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_signers::SolanaSigner;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
@@ -55,7 +56,7 @@ pub async fn sign_transaction_if_paid(
     Ok(SignTransactionIfPaidResponse {
         transaction: TransactionUtil::encode_versioned_transaction(&transaction),
         signed_transaction,
-        signer_pubkey: signer.solana_pubkey().to_string(),
+        signer_pubkey: signer.pubkey().to_string(),
     })
 }
 

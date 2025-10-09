@@ -196,14 +196,8 @@ impl From<anyhow::Error> for KoraError {
     }
 }
 
-impl From<crate::signer::privy::types::PrivyError> for KoraError {
-    fn from(err: crate::signer::privy::types::PrivyError) -> Self {
-        KoraError::SigningError(err.to_string())
-    }
-}
-
-impl From<crate::signer::turnkey::types::TurnkeyError> for KoraError {
-    fn from(err: crate::signer::turnkey::types::TurnkeyError) -> Self {
+impl From<solana_signers::SignerError> for KoraError {
+    fn from(err: solana_signers::SignerError) -> Self {
         KoraError::SigningError(err.to_string())
     }
 }

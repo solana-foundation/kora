@@ -1,3 +1,4 @@
+use solana_signers::SolanaSigner;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
@@ -49,10 +50,10 @@ pub async fn estimate_transaction_fee(
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let config = get_config()?;
-    let payment_destination = config.kora.get_payment_address(&signer.solana_pubkey())?;
+    let payment_destination = config.kora.get_payment_address(&signer.pubkey())?;
 
     let validation_config = &config.validation;
-    let fee_payer = signer.solana_pubkey();
+    let fee_payer = signer.pubkey();
 
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,

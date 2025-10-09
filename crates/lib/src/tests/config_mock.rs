@@ -7,14 +7,9 @@ use crate::{
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::PriceConfig,
     oracle::PriceSource,
-    signer::{
-        config::{
-            SelectionStrategy, SignerConfig, SignerPoolConfig, SignerPoolSettings, SignerTypeConfig,
-        },
-        memory_signer::config::MemorySignerConfig,
-        privy::config::PrivySignerConfig,
-        turnkey::config::TurnkeySignerConfig,
-        vault::config::VaultSignerConfig,
+    signer::config::{
+        MemorySignerConfig, PrivySignerConfig, SelectionStrategy, SignerConfig, SignerPoolConfig,
+        SignerPoolSettings, SignerTypeConfig, TurnkeySignerConfig, VaultSignerConfig,
     },
 };
 use solana_sdk::pubkey::Pubkey;
@@ -687,7 +682,12 @@ impl SignerPoolConfigBuilder {
             name,
             weight,
             config: SignerTypeConfig::Vault {
-                config: VaultSignerConfig { addr_env, token_env, key_name_env, pubkey_env },
+                config: VaultSignerConfig {
+                    vault_addr_env: addr_env,
+                    vault_token_env: token_env,
+                    key_name_env,
+                    pubkey_env,
+                },
             },
         };
         self.config.signers.push(signer);

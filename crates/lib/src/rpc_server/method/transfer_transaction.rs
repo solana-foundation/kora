@@ -3,6 +3,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_message::Message;
 use solana_sdk::{message::VersionedMessage, pubkey::Pubkey};
+use solana_signers::SolanaSigner;
 use solana_system_interface::instruction::transfer;
 use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;
@@ -14,7 +15,7 @@ use crate::{
         TransactionUtil, VersionedMessageExt, VersionedTransactionOps, VersionedTransactionResolved,
     },
     validator::transaction_validator::TransactionValidator,
-    CacheUtil, KoraError, Signer as _,
+    CacheUtil, KoraError,
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -42,7 +43,7 @@ pub async fn transfer_transaction(
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
-    let fee_payer = signer.solana_pubkey();
+    let fee_payer = signer.pubkey();
 
     let validator = TransactionValidator::new(fee_payer)?;
 
@@ -130,7 +131,11 @@ pub async fn transfer_transaction(
     // Find the fee payer position in the account keys
     let fee_payer_position = resolved_transaction.find_signer_position(&fee_payer)?;
 
-    let signature = signer.sign_solana(&resolved_transaction).await?;
+    let message_bytes = resolved_transaction.transaction.message.serialize();
+    let signature = signer
+        .sign_message(&message_bytes)
+        .await
+        .map_err(|e| KoraError::SigningError(e.to_string()))?;
 
     resolved_transaction.transaction.signatures[fee_payer_position] = signature;
 

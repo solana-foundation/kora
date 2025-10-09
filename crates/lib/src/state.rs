@@ -5,11 +5,7 @@ use std::sync::{
     Arc,
 };
 
-use crate::{
-    config::Config,
-    error::KoraError,
-    signer::{KoraSigner, SignerPool},
-};
+use crate::{config::Config, error::KoraError, signer::SignerPool};
 
 // Global signer pool (for multi-signer support)
 static GLOBAL_SIGNER_POOL: Lazy<RwLock<Option<Arc<SignerPool>>>> = Lazy::new(|| RwLock::new(None));
@@ -20,20 +16,20 @@ static GLOBAL_CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
 /// Get a request-scoped signer with optional signer_key for consistency across related calls
 pub fn get_request_signer_with_signer_key(
     signer_key: Option<&str>,
-) -> Result<Arc<KoraSigner>, KoraError> {
+) -> Result<Arc<solana_signers::Signer>, KoraError> {
     let pool = get_signer_pool()?;
 
     // If client provided a signer signer_key, try to use that specific signer
     if let Some(signer_key) = signer_key {
         let signer_meta = pool.get_signer_by_pubkey(signer_key)?;
-        return Ok(Arc::new(signer_meta.signer.clone()));
+        return Ok(Arc::clone(&signer_meta.signer));
     }
 
     // Default behavior: use next signer from round-robin
     let signer_meta = pool.get_next_signer().map_err(|e| {
         KoraError::InternalServerError(format!("Failed to get signer from pool: {e}"))
     })?;
-    Ok(Arc::new(signer_meta.signer.clone()))
+    Ok(Arc::clone(&signer_meta.signer))
 }
 
 /// Initialize the global signer pool with a SignerPool instance

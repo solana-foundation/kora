@@ -1,15 +1,16 @@
 use crate::{
     error::KoraError,
-    signer::{
-        config::{SelectionStrategy, SignerConfig, SignerPoolConfig},
-        KoraSigner,
-    },
+    signer::config::{SelectionStrategy, SignerConfig, SignerPoolConfig},
 };
 use rand::Rng;
 use solana_sdk::pubkey::Pubkey;
+use solana_signers::{Signer, SolanaSigner};
 use std::{
     str::FromStr,
-    sync::atomic::{AtomicU64, AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 const DEFAULT_WEIGHT: u32 = 1;
@@ -19,7 +20,7 @@ pub struct SignerWithMetadata {
     /// Human-readable name for this signer
     pub name: String,
     /// The actual signer instance
-    pub signer: KoraSigner,
+    pub signer: Arc<Signer>,
     /// Weight for weighted selection (higher = more likely to be selected)
     pub weight: u32,
     /// Timestamp of last use (Unix timestamp in seconds)
@@ -39,7 +40,7 @@ impl Clone for SignerWithMetadata {
 
 impl SignerWithMetadata {
     /// Create a new signer with metadata
-    pub fn new(name: String, signer: KoraSigner, weight: u32) -> Self {
+    pub fn new(name: String, signer: Arc<Signer>, weight: u32) -> Self {
         Self { name, signer, weight, last_used: AtomicU64::new(0) }
     }
 }
@@ -92,7 +93,11 @@ impl SignerPool {
             let signer = SignerConfig::build_signer_from_config(&signer_config).await?;
             let weight = signer_config.weight.unwrap_or(DEFAULT_WEIGHT);
 
-            signers.push(SignerWithMetadata::new(signer_config.name.clone(), signer, weight));
+            signers.push(SignerWithMetadata::new(
+                signer_config.name.clone(),
+                Arc::new(signer),
+                weight,
+            ));
 
             log::info!(
                 "Successfully initialized signer: {} (weight: {})",
@@ -171,7 +176,7 @@ impl SignerPool {
         self.signers
             .iter()
             .map(|s| SignerInfo {
-                public_key: s.signer.solana_pubkey().to_string(),
+                public_key: s.signer.pubkey().to_string(),
                 name: s.name.clone(),
                 weight: s.weight,
                 last_used: s.last_used.load(Ordering::Relaxed),
@@ -202,7 +207,7 @@ impl SignerPool {
         })?;
 
         // Find signer with matching public key
-        self.signers.iter().find(|s| s.signer.solana_pubkey() == target_pubkey).ok_or_else(|| {
+        self.signers.iter().find(|s| s.signer.pubkey() == target_pubkey).ok_or_else(|| {
             KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
         })
     }
@@ -218,18 +223,22 @@ mod tests {
     use solana_sdk::signature::Keypair;
 
     use super::*;
-    use crate::signer::memory_signer::solana_signer::SolanaMemorySigner;
     use std::collections::HashMap;
 
     fn create_test_pool() -> SignerPool {
-        // Create test signers directly
-        let signer1 = SolanaMemorySigner::new(Keypair::new());
-        let signer2 = SolanaMemorySigner::new(Keypair::new());
+        // Create test signers using external signer library
+        let keypair1 = Keypair::new();
+        let keypair2 = Keypair::new();
+
+        let external_signer1 =
+            solana_signers::Signer::from_memory(&keypair1.to_base58_string()).unwrap();
+        let external_signer2 =
+            solana_signers::Signer::from_memory(&keypair2.to_base58_string()).unwrap();
 
         SignerPool {
             signers: vec![
-                SignerWithMetadata::new("signer_1".to_string(), KoraSigner::Memory(signer1), 1),
-                SignerWithMetadata::new("signer_2".to_string(), KoraSigner::Memory(signer2), 2),
+                SignerWithMetadata::new("signer_1".to_string(), Arc::new(external_signer1), 1),
+                SignerWithMetadata::new("signer_2".to_string(), Arc::new(external_signer2), 2),
             ],
             strategy: SelectionStrategy::RoundRobin,
             current_index: AtomicUsize::new(0),
