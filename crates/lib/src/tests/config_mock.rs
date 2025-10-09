@@ -4,6 +4,7 @@ use crate::{
         FeePayerPolicy, KoraConfig, MetricsConfig, SplTokenConfig, Token2022Config,
         UsageLimitConfig, ValidationConfig,
     },
+    constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::PriceConfig,
     oracle::PriceSource,
     signer::{
@@ -97,6 +98,7 @@ impl ConfigMockBuilder {
                 },
                 kora: KoraConfig {
                     rate_limit: 100,
+                    max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                     enabled_methods: EnabledMethods::default(),
                     auth: AuthConfig::default(),
                     payment_address: None,
@@ -324,6 +326,7 @@ impl KoraConfigBuilder {
         Self {
             config: KoraConfig {
                 rate_limit: 100,
+                max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
                 payment_address: None,

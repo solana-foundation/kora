@@ -5,7 +5,9 @@
 //        - Program validation attacks (disallowed programs)
 //        - Invalid token states (frozen)
 //        - Fee payer exploitation
+//        - Request body size limit (DDOS protection)
 
+mod body_size_limit;
 mod fee_payer_exploitation;
 mod program_validation;
 mod token_states;

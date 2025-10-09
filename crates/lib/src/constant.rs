@@ -28,6 +28,9 @@ pub const DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS: u64 = 30; // 30 seco
 pub const DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS: u64 = 0; // 0 = unlimited
 pub const DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE: bool = false;
 
+// Request body size limit
+pub const DEFAULT_MAX_REQUEST_BODY_SIZE: usize = 2 * 1024 * 1024; // 2 MB
+
 // Account Indexes within instructions
 // Instruction indexes for the instructions that we support to parse from the transaction
 pub mod instruction_indexes {
