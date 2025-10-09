@@ -8,9 +8,10 @@ use utoipa::ToSchema;
 use crate::{
     constant::{
         DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL,
-        DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_TIMESTAMP_AGE,
-        DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT, DEFAULT_METRICS_SCRAPE_INTERVAL,
-        DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE, DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
+        DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
+        DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
+        DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE,
+        DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
@@ -302,6 +303,10 @@ fn default_max_timestamp_age() -> i64 {
     DEFAULT_MAX_TIMESTAMP_AGE
 }
 
+fn default_max_request_body_size() -> usize {
+    DEFAULT_MAX_REQUEST_BODY_SIZE
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CacheConfig {
     /// Redis URL for caching (e.g., "redis://localhost:6379")
@@ -328,6 +333,8 @@ impl Default for CacheConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct KoraConfig {
     pub rate_limit: u64,
+    #[serde(default = "default_max_request_body_size")]
+    pub max_request_body_size: usize,
     #[serde(default)]
     pub enabled_methods: EnabledMethods,
     #[serde(default)]
@@ -344,6 +351,7 @@ impl Default for KoraConfig {
     fn default() -> Self {
         Self {
             rate_limit: 100,
+            max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
             enabled_methods: EnabledMethods::default(),
             auth: AuthConfig::default(),
             payment_address: None,
@@ -720,5 +728,22 @@ mod tests {
 
         assert!(config.kora.usage_limit.enabled);
         assert_eq!(config.kora.usage_limit.max_transactions, 0); // 0 = unlimited
+    }
+
+    #[test]
+    fn test_max_request_body_size_default() {
+        let config = ConfigBuilder::new().build_config().unwrap();
+
+        assert_eq!(config.kora.max_request_body_size, DEFAULT_MAX_REQUEST_BODY_SIZE);
+        assert_eq!(config.kora.max_request_body_size, 2 * 1024 * 1024); // 2 MB
+    }
+
+    #[test]
+    fn test_max_request_body_size_custom() {
+        let custom_size = 10 * 1024 * 1024; // 10 MB
+        let config =
+            ConfigBuilder::new().with_max_request_body_size(custom_size).build_config().unwrap();
+
+        assert_eq!(config.kora.max_request_body_size, custom_size);
     }
 }

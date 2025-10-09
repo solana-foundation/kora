@@ -89,6 +89,7 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
     // Configure and build the server with HTTP support
     let server = ServerBuilder::default()
+        .max_request_body_size(config.kora.max_request_body_size as u32)
         .set_middleware(middleware)
         .http_only() // Explicitly enable HTTP
         .build(addr)

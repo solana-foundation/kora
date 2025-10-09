@@ -346,6 +346,7 @@ mod tests {
             AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy, KoraConfig,
             MetricsConfig, SplTokenConfig, UsageLimitConfig, ValidationConfig,
         },
+        constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
         fee::price::PriceConfig,
         state::update_config,
         tests::common::{
@@ -451,6 +452,7 @@ mod tests {
             },
             kora: KoraConfig {
                 rate_limit: 0, // Should warn
+                max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods {
                     liveness: false,
                     estimate_transaction_fee: false,
