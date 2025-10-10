@@ -7,7 +7,7 @@ use solana_signers::SolanaSigner;
 use tokio::sync::OnceCell;
 
 use super::usage_store::{RedisUsageStore, UsageStore};
-use crate::{error::KoraError, get_all_signers};
+use crate::{error::KoraError, get_all_signers, sanitize_error};
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -152,22 +152,30 @@ impl UsageTracker {
         let usage_limiter = if let Some(cache_url) = &config.kora.usage_limit.cache_url {
             let cfg = deadpool_redis::Config::from_url(cache_url);
             let pool = cfg.create_pool(Some(Runtime::Tokio1)).map_err(|e| {
-                KoraError::InternalServerError(format!("Failed to create Redis pool: {e}"))
+                KoraError::InternalServerError(format!(
+                    "Failed to create Redis pool: {}",
+                    sanitize_error!(e)
+                ))
             })?;
 
             // Test Redis connection
             let mut conn = pool.get().await.map_err(|e| {
-                KoraError::InternalServerError(format!("Failed to connect to Redis: {e}"))
+                KoraError::InternalServerError(format!(
+                    "Failed to connect to Redis: {}",
+                    sanitize_error!(e)
+                ))
             })?;
 
             // Simple connection test
             let _: Option<String> = conn.get("__usage_limiter_test__").await.map_err(|e| {
-                KoraError::InternalServerError(format!("Redis connection test failed: {e}"))
+                KoraError::InternalServerError(format!(
+                    "Redis connection test failed: {}",
+                    sanitize_error!(e)
+                ))
             })?;
 
             log::info!(
-                "Usage limiter initialized with Redis at {} (max: {} transactions)",
-                cache_url,
+                "Usage limiter initialized with max {} transactions",
                 config.kora.usage_limit.max_transactions
             );
 

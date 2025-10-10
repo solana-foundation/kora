@@ -13,6 +13,7 @@ pub mod metrics;
 pub mod oracle;
 pub mod rpc;
 pub mod rpc_server;
+pub mod sanitize;
 pub mod signer;
 pub mod state;
 pub mod token;

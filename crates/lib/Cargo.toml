@@ -83,6 +83,9 @@ regex = "1.11.1"
 [features]
 default = []
 docs = []
+# WARNING: unsafe-debug enables verbose error/debug output that may expose sensitive data
+# NEVER use this feature in production environments
+unsafe-debug = []
 
 [dev-dependencies]
 tempfile = "3.2"

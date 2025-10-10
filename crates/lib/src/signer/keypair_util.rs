@@ -1,4 +1,4 @@
-use crate::error::KoraError;
+use crate::{error::KoraError, sanitize_error};
 use serde_json;
 use solana_sdk::signature::Keypair;
 use std::fs;
@@ -29,9 +29,9 @@ impl KeypairUtil {
     /// Creates a new keypair from a base58-encoded private key string with proper error handling
     pub fn from_base58_safe(private_key: &str) -> Result<Keypair, KoraError> {
         // Try to decode as base58 first
-        let decoded = bs58::decode(private_key)
-            .into_vec()
-            .map_err(|e| KoraError::SigningError(format!("Invalid base58 string: {e}")))?;
+        let decoded = bs58::decode(private_key).into_vec().map_err(|e| {
+            KoraError::SigningError(format!("Invalid base58 string: {}", sanitize_error!(e)))
+        })?;
 
         if decoded.len() != 64 {
             return Err(KoraError::SigningError(format!(
@@ -40,8 +40,9 @@ impl KeypairUtil {
             )));
         }
 
-        let keypair = Keypair::try_from(&decoded[..])
-            .map_err(|e| KoraError::SigningError(format!("Invalid private key bytes: {e}")))?;
+        let keypair = Keypair::try_from(&decoded[..]).map_err(|e| {
+            KoraError::SigningError(format!("Invalid private key bytes: {}", sanitize_error!(e)))
+        })?;
 
         Ok(keypair)
     }
@@ -72,10 +73,17 @@ impl KeypairUtil {
                         byte_array.len()
                     )));
                 }
-                Keypair::try_from(&byte_array[..])
-                    .map_err(|e| KoraError::SigningError(format!("Invalid private key bytes: {e}")))
+                Keypair::try_from(&byte_array[..]).map_err(|e| {
+                    KoraError::SigningError(format!(
+                        "Invalid private key bytes: {}",
+                        sanitize_error!(e)
+                    ))
+                })
             }
-            Err(e) => Err(KoraError::SigningError(format!("Failed to parse U8Array: {e}"))),
+            Err(e) => Err(KoraError::SigningError(format!(
+                "Failed to parse U8Array: {}",
+                sanitize_error!(e)
+            ))),
         }
     }
 
@@ -89,8 +97,12 @@ impl KeypairUtil {
                     byte_array.len()
                 )));
             }
-            return Keypair::try_from(&byte_array[..])
-                .map_err(|e| KoraError::SigningError(format!("Invalid private key bytes: {e}")));
+            return Keypair::try_from(&byte_array[..]).map_err(|e| {
+                KoraError::SigningError(format!(
+                    "Invalid private key bytes: {}",
+                    sanitize_error!(e)
+                ))
+            });
         }
 
         Err(KoraError::SigningError(

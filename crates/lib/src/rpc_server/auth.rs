@@ -180,8 +180,8 @@ where
 
             let mut mac = match Hmac::<Sha256>::new_from_slice(secret.as_bytes()) {
                 Ok(mac) => mac,
-                Err(e) => {
-                    log::error!("Invalid HMAC secret: {e:?}");
+                Err(_) => {
+                    log::error!("HMAC authentication failed");
                     return Ok(unauthorized_response);
                 }
             };

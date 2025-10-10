@@ -3,7 +3,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 /// RPC server arguments
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 pub struct RpcArgs {
     /// HTTP port to listen on for RPC requests
     #[arg(short = 'p', long, default_value = "8080")]
@@ -26,7 +26,7 @@ pub struct RpcArgs {
     pub auth_args: AuthArgs,
 }
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 pub struct AuthArgs {
     /// API key for authenticating requests to the Kora server (optional) - can be set in `kora.toml`
     #[arg(long, env = "KORA_API_KEY", help_heading = "Authentication")]

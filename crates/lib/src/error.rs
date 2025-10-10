@@ -72,58 +72,128 @@ impl From<ClientError> for KoraError {
         if error_string.contains("AccountNotFound")
             || error_string.contains("could not find account")
         {
-            KoraError::AccountNotFound(error_string)
+            #[cfg(feature = "unsafe-debug")]
+            {
+                KoraError::AccountNotFound(error_string)
+            }
+            #[cfg(not(feature = "unsafe-debug"))]
+            {
+                KoraError::AccountNotFound("Account not found".to_string())
+            }
         } else {
-            KoraError::RpcError(error_string)
+            #[cfg(feature = "unsafe-debug")]
+            {
+                KoraError::RpcError(error_string)
+            }
+            #[cfg(not(feature = "unsafe-debug"))]
+            {
+                KoraError::RpcError("RPC operation failed".to_string())
+            }
         }
     }
 }
 
 impl From<SignerError> for KoraError {
-    fn from(e: SignerError) -> Self {
-        KoraError::SigningError(e.to_string())
+    fn from(_e: SignerError) -> Self {
+        #[cfg(feature = "unsafe-debug")]
+        {
+            KoraError::SigningError(_e.to_string())
+        }
+        #[cfg(not(feature = "unsafe-debug"))]
+        {
+            KoraError::SigningError("Signing operation failed".to_string())
+        }
     }
 }
 
 impl From<bincode::Error> for KoraError {
-    fn from(e: bincode::Error) -> Self {
-        KoraError::SerializationError(e.to_string())
+    fn from(_e: bincode::Error) -> Self {
+        #[cfg(feature = "unsafe-debug")]
+        {
+            KoraError::SerializationError(_e.to_string())
+        }
+        #[cfg(not(feature = "unsafe-debug"))]
+        {
+            KoraError::SerializationError("Serialization error".to_string())
+        }
     }
 }
 
 impl From<bs58::decode::Error> for KoraError {
-    fn from(e: bs58::decode::Error) -> Self {
-        KoraError::SerializationError(e.to_string())
+    fn from(_e: bs58::decode::Error) -> Self {
+        #[cfg(feature = "unsafe-debug")]
+        {
+            KoraError::SerializationError(_e.to_string())
+        }
+        #[cfg(not(feature = "unsafe-debug"))]
+        {
+            KoraError::SerializationError("Base58 decode error".to_string())
+        }
     }
 }
 
 impl From<bs58::encode::Error> for KoraError {
-    fn from(e: bs58::encode::Error) -> Self {
-        KoraError::SerializationError(e.to_string())
+    fn from(_e: bs58::encode::Error) -> Self {
+        #[cfg(feature = "unsafe-debug")]
+        {
+            KoraError::SerializationError(_e.to_string())
+        }
+        #[cfg(not(feature = "unsafe-debug"))]
+        {
+            KoraError::SerializationError("Base58 encode error".to_string())
+        }
     }
 }
 
 impl From<std::io::Error> for KoraError {
-    fn from(e: std::io::Error) -> Self {
-        KoraError::InternalServerError(e.to_string())
+    fn from(_e: std::io::Error) -> Self {
+        #[cfg(feature = "unsafe-debug")]
+        {
+            KoraError::InternalServerError(_e.to_string())
+        }
+        #[cfg(not(feature = "unsafe-debug"))]
+        {
+            KoraError::InternalServerError("IO operation failed".to_string())
+        }
     }
 }
 
 impl From<Box<dyn StdError>> for KoraError {
-    fn from(e: Box<dyn StdError>) -> Self {
-        KoraError::InternalServerError(e.to_string())
+    fn from(_e: Box<dyn StdError>) -> Self {
+        #[cfg(feature = "unsafe-debug")]
+        {
+            KoraError::InternalServerError(_e.to_string())
+        }
+        #[cfg(not(feature = "unsafe-debug"))]
+        {
+            KoraError::InternalServerError("Internal error".to_string())
+        }
     }
 }
 
 impl From<Box<dyn StdError + Send + Sync>> for KoraError {
-    fn from(e: Box<dyn StdError + Send + Sync>) -> Self {
-        KoraError::InternalServerError(e.to_string())
+    fn from(_e: Box<dyn StdError + Send + Sync>) -> Self {
+        #[cfg(feature = "unsafe-debug")]
+        {
+            KoraError::InternalServerError(_e.to_string())
+        }
+        #[cfg(not(feature = "unsafe-debug"))]
+        {
+            KoraError::InternalServerError("Internal error".to_string())
+        }
     }
 }
 
 impl From<ProgramError> for KoraError {
-    fn from(err: ProgramError) -> Self {
-        KoraError::InvalidTransaction(err.to_string())
+    fn from(_err: ProgramError) -> Self {
+        #[cfg(feature = "unsafe-debug")]
+        {
+            KoraError::InvalidTransaction(_err.to_string())
+        }
+        #[cfg(not(feature = "unsafe-debug"))]
+        {
+            KoraError::InvalidTransaction("Transaction validation failed".to_string())
+        }
     }
 }
 
@@ -191,14 +261,28 @@ impl<T, E: Into<KoraError>> IntoKoraResponse<T> for Result<T, E> {
 }
 
 impl From<anyhow::Error> for KoraError {
-    fn from(err: anyhow::Error) -> Self {
-        KoraError::SigningError(err.to_string())
+    fn from(_err: anyhow::Error) -> Self {
+        #[cfg(feature = "unsafe-debug")]
+        {
+            KoraError::SigningError(_err.to_string())
+        }
+        #[cfg(not(feature = "unsafe-debug"))]
+        {
+            KoraError::SigningError("Signing operation failed".to_string())
+        }
     }
 }
 
 impl From<solana_signers::SignerError> for KoraError {
-    fn from(err: solana_signers::SignerError) -> Self {
-        KoraError::SigningError(err.to_string())
+    fn from(_err: solana_signers::SignerError) -> Self {
+        #[cfg(feature = "unsafe-debug")]
+        {
+            KoraError::SigningError(_err.to_string())
+        }
+        #[cfg(not(feature = "unsafe-debug"))]
+        {
+            KoraError::SigningError("Signing operation failed".to_string())
+        }
     }
 }
 
@@ -254,8 +338,9 @@ mod tests {
         let client_error = ClientError::from(std::io::Error::other("test"));
         let kora_error: KoraError = client_error.into();
         assert!(matches!(kora_error, KoraError::RpcError(_)));
+        // With sanitization, generic error message is expected
         if let KoraError::RpcError(msg) = kora_error {
-            assert!(msg.contains("test"));
+            assert_eq!(msg, "RPC operation failed");
         }
     }
 
@@ -264,8 +349,9 @@ mod tests {
         let signer_error = SignerError::Custom("signing failed".to_string());
         let kora_error: KoraError = signer_error.into();
         assert!(matches!(kora_error, KoraError::SigningError(_)));
+        // With sanitization, generic error message is expected
         if let KoraError::SigningError(msg) = kora_error {
-            assert!(msg.contains("signing failed"));
+            assert_eq!(msg, "Signing operation failed");
         }
     }
 
@@ -295,8 +381,9 @@ mod tests {
         let io_error = std::io::Error::other("file not found");
         let kora_error: KoraError = io_error.into();
         assert!(matches!(kora_error, KoraError::InternalServerError(_)));
+        // With sanitization, generic error message is expected
         if let KoraError::InternalServerError(msg) = kora_error {
-            assert!(msg.contains("file not found"));
+            assert_eq!(msg, "IO operation failed");
         }
     }
 
@@ -331,8 +418,9 @@ mod tests {
         let anyhow_error = anyhow::anyhow!("something went wrong");
         let kora_error: KoraError = anyhow_error.into();
         assert!(matches!(kora_error, KoraError::SigningError(_)));
+        // With sanitization, generic error message is expected
         if let KoraError::SigningError(msg) = kora_error {
-            assert!(msg.contains("something went wrong"));
+            assert_eq!(msg, "Signing operation failed");
         }
     }
 
