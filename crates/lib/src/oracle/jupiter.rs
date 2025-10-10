@@ -2,6 +2,7 @@ use super::{PriceOracle, PriceSource, TokenPrice};
 use crate::{
     constant::{JUPITER_API_LITE_URL, JUPITER_API_PRO_URL, SOL_MINT},
     error::KoraError,
+    sanitize_error,
 };
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
@@ -120,10 +121,9 @@ impl JupiterPriceOracle {
             request = request.header(JUPITER_AUTH_HEADER, key);
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(|e| KoraError::RpcError(format!("Jupiter API request failed: {e}")))?;
+        let response = request.send().await.map_err(|e| {
+            KoraError::RpcError(format!("Jupiter API request failed: {}", sanitize_error!(e)))
+        })?;
 
         if !response.status().is_success() {
             match response.status() {
@@ -139,10 +139,9 @@ impl JupiterPriceOracle {
             }
         }
 
-        let jupiter_response: JupiterResponse = response
-            .json()
-            .await
-            .map_err(|e| KoraError::RpcError(format!("Failed to parse Jupiter response: {e}")))?;
+        let jupiter_response: JupiterResponse = response.json().await.map_err(|e| {
+            KoraError::RpcError(format!("Failed to parse Jupiter response: {}", sanitize_error!(e)))
+        })?;
 
         let sol_price = jupiter_response
             .get(SOL_MINT)

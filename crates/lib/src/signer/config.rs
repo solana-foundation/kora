@@ -1,10 +1,10 @@
-use crate::{error::KoraError, signer::utils::get_env_var_for_signer};
+use crate::{error::KoraError, sanitize_error, signer::utils::get_env_var_for_signer};
 use serde::{Deserialize, Serialize};
 use solana_signers::Signer;
 use std::{fmt, fs, path::Path};
 
 /// Configuration for a pool of signers
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SignerPoolConfig {
     /// Signer pool configuration
     pub signer_pool: SignerPoolSettings,
@@ -45,7 +45,7 @@ fn default_strategy() -> SelectionStrategy {
 }
 
 /// Configuration for an individual signer
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SignerConfig {
     /// Human-readable name for this signer
     pub name: String,
@@ -58,13 +58,13 @@ pub struct SignerConfig {
 }
 
 /// Memory signer configuration (local keypair)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MemorySignerConfig {
     pub private_key_env: String,
 }
 
 /// Turnkey signer configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TurnkeySignerConfig {
     pub api_public_key_env: String,
     pub api_private_key_env: String,
@@ -74,7 +74,7 @@ pub struct TurnkeySignerConfig {
 }
 
 /// Privy signer configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PrivySignerConfig {
     pub app_id_env: String,
     pub app_secret_env: String,
@@ -82,7 +82,7 @@ pub struct PrivySignerConfig {
 }
 
 /// Vault signer configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct VaultSignerConfig {
     pub vault_addr_env: String,
     pub vault_token_env: String,
@@ -91,7 +91,7 @@ pub struct VaultSignerConfig {
 }
 
 /// Signer type-specific configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SignerTypeConfig {
     /// Memory signer configuration
@@ -120,11 +120,17 @@ impl SignerPoolConfig {
     /// Load signer pool configuration from TOML file
     pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Self, KoraError> {
         let contents = fs::read_to_string(path).map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to read config file: {e}"))
+            KoraError::InternalServerError(format!(
+                "Failed to read signer config file: {}",
+                sanitize_error!(e)
+            ))
         })?;
 
         let config: SignerPoolConfig = toml::from_str(&contents).map_err(|e| {
-            KoraError::ValidationError(format!("Failed to parse signers config TOML: {e}"))
+            KoraError::ValidationError(format!(
+                "Failed to parse signers config TOML: {}",
+                sanitize_error!(e)
+            ))
         })?;
 
         config.validate_signer_config()?;
@@ -210,7 +216,10 @@ impl SignerConfig {
     ) -> Result<Signer, KoraError> {
         let private_key = get_env_var_for_signer(&config.private_key_env, signer_name)?;
         Signer::from_memory(&private_key).map_err(|e| {
-            KoraError::SigningError(format!("Failed to create memory signer '{signer_name}': {e}"))
+            KoraError::SigningError(format!(
+                "Failed to create memory signer '{signer_name}': {}",
+                sanitize_error!(e)
+            ))
         })
     }
 
@@ -232,7 +241,10 @@ impl SignerConfig {
             public_key,
         )
         .map_err(|e| {
-            KoraError::SigningError(format!("Failed to create Turnkey signer '{signer_name}': {e}"))
+            KoraError::SigningError(format!(
+                "Failed to create Turnkey signer '{signer_name}': {}",
+                sanitize_error!(e)
+            ))
         })
     }
 
@@ -245,7 +257,10 @@ impl SignerConfig {
         let wallet_id = get_env_var_for_signer(&config.wallet_id_env, signer_name)?;
 
         Signer::from_privy(app_id, app_secret, wallet_id).await.map_err(|e| {
-            KoraError::SigningError(format!("Failed to create Privy signer '{signer_name}': {e}"))
+            KoraError::SigningError(format!(
+                "Failed to create Privy signer '{signer_name}': {}",
+                sanitize_error!(e)
+            ))
         })
     }
 
@@ -259,7 +274,10 @@ impl SignerConfig {
         let pubkey = get_env_var_for_signer(&config.pubkey_env, signer_name)?;
 
         Signer::from_vault(vault_addr, vault_token, key_name, pubkey).map_err(|e| {
-            KoraError::SigningError(format!("Failed to create Vault signer '{signer_name}': {e}"))
+            KoraError::SigningError(format!(
+                "Failed to create Vault signer '{signer_name}': {}",
+                sanitize_error!(e)
+            ))
         })
     }
 

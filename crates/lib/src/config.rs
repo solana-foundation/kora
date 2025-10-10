@@ -16,9 +16,10 @@ use crate::{
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
     oracle::PriceSource,
+    sanitize_error,
 };
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Config {
     pub validation: ValidationConfig,
     pub kora: KoraConfig,
@@ -26,7 +27,7 @@ pub struct Config {
     pub metrics: MetricsConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct MetricsConfig {
     pub enabled: bool,
     pub endpoint: String,
@@ -48,7 +49,7 @@ impl Default for MetricsConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct FeePayerBalanceMetricsConfig {
     pub enabled: bool,
     pub expiry_seconds: u64,
@@ -307,7 +308,7 @@ fn default_max_request_body_size() -> usize {
     DEFAULT_MAX_REQUEST_BODY_SIZE
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct CacheConfig {
     /// Redis URL for caching (e.g., "redis://localhost:6379")
     pub url: Option<String>,
@@ -330,7 +331,7 @@ impl Default for CacheConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct KoraConfig {
     pub rate_limit: u64,
     #[serde(default = "default_max_request_body_size")]
@@ -361,7 +362,7 @@ impl Default for KoraConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct UsageLimitConfig {
     /// Enable per-wallet usage limiting
     pub enabled: bool,
@@ -384,7 +385,7 @@ impl Default for UsageLimitConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct AuthConfig {
     pub api_key: Option<String>,
     pub hmac_secret: Option<String>,
@@ -401,16 +402,25 @@ impl Default for AuthConfig {
 impl Config {
     pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
         let contents = fs::read_to_string(path).map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to read config file: {e}"))
+            KoraError::InternalServerError(format!(
+                "Failed to read config file: {}",
+                sanitize_error!(e)
+            ))
         })?;
 
         let mut config: Config = toml::from_str(&contents).map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to parse config file: {e}"))
+            KoraError::InternalServerError(format!(
+                "Failed to parse config file: {}",
+                sanitize_error!(e)
+            ))
         })?;
 
         // Initialize Token2022Config to parse and cache extensions
         config.validation.token_2022.initialize().map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to initialize Token2022 config: {e}"))
+            KoraError::InternalServerError(format!(
+                "Failed to initialize Token2022 config: {}",
+                sanitize_error!(e)
+            ))
         })?;
 
         Ok(config)
@@ -422,9 +432,7 @@ impl KoraConfig {
     pub fn get_payment_address(&self, signer_pubkey: &Pubkey) -> Result<Pubkey, KoraError> {
         if let Some(payment_address_str) = &self.payment_address {
             let payment_address = Pubkey::from_str(payment_address_str).map_err(|_| {
-                KoraError::InternalServerError(format!(
-                    "Invalid payment_address: {payment_address_str}"
-                ))
+                KoraError::InternalServerError("Invalid payment_address format".to_string())
             })?;
             Ok(payment_address)
         } else {

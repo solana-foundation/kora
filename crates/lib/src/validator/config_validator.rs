@@ -288,8 +288,6 @@ impl ConfigValidator {
         println!("=== Configuration Validation ===");
         if errors.is_empty() {
             println!("✓ Configuration validation successful!");
-            println!("\n=== Current Configuration ===");
-            println!("{config:#?}");
         } else {
             println!("✗ Configuration validation failed!");
             println!("\n❌ Errors:");
