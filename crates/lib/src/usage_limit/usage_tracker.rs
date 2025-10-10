@@ -3,6 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use deadpool_redis::Runtime;
 use redis::AsyncCommands;
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+use solana_signers::SolanaSigner;
 use tokio::sync::OnceCell;
 
 use super::usage_store::{RedisUsageStore, UsageStore};
@@ -171,7 +172,7 @@ impl UsageTracker {
             );
 
             let kora_signers =
-                get_all_signers()?.iter().map(|signer| signer.signer.solana_pubkey()).collect();
+                get_all_signers()?.iter().map(|signer| signer.signer.pubkey()).collect();
 
             let store = Arc::new(RedisUsageStore::new(pool));
             Some(UsageTracker::new(

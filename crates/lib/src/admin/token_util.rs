@@ -1,6 +1,5 @@
 use crate::{
     error::KoraError,
-    signer::{KoraSigner, Signer},
     state::{get_all_signers, get_request_signer_with_signer_key},
     token::token::TokenType,
     transaction::TransactionUtil,
@@ -9,8 +8,8 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::{Message, VersionedMessage};
 use solana_sdk::{
     compute_budget::ComputeBudgetInstruction, instruction::Instruction, pubkey::Pubkey,
-    signature::Signature,
 };
+use solana_signers::SolanaSigner;
 
 use spl_associated_token_account::{
     get_associated_token_address, instruction::create_associated_token_account,
@@ -65,10 +64,7 @@ pub async fn initialize_atas(
         vec![Pubkey::from_str(payment_address)
             .map_err(|e| KoraError::InternalServerError(format!("Invalid payment address: {e}")))?]
     } else {
-        get_all_signers()?
-            .iter()
-            .map(|signer| signer.signer.solana_pubkey())
-            .collect::<Vec<Pubkey>>()
+        get_all_signers()?.iter().map(|signer| signer.signer.pubkey()).collect::<Vec<Pubkey>>()
     };
 
     initialize_atas_with_chunk_size(
@@ -86,7 +82,7 @@ pub async fn initialize_atas(
 /// This function does not use cache and directly checks on-chain
 pub async fn initialize_atas_with_chunk_size(
     rpc_client: &RpcClient,
-    fee_payer: &Arc<KoraSigner>,
+    fee_payer: &Arc<solana_signers::Signer>,
     addresses_to_initialize_atas: &Vec<Pubkey>,
     compute_unit_price: Option<u64>,
     compute_unit_limit: Option<u32>,
@@ -122,7 +118,7 @@ pub async fn initialize_atas_with_chunk_size(
 /// Helper function to create ATAs for a single signer
 async fn create_atas_for_signer(
     rpc_client: &RpcClient,
-    fee_payer: &Arc<KoraSigner>,
+    fee_payer: &Arc<solana_signers::Signer>,
     address: &Pubkey,
     atas_to_create: &[ATAToCreate],
     compute_unit_price: Option<u64>,
@@ -133,7 +129,7 @@ async fn create_atas_for_signer(
         .iter()
         .map(|ata| {
             create_associated_token_account(
-                &fee_payer.solana_pubkey(),
+                &fee_payer.pubkey(),
                 address,
                 &ata.mint,
                 &ata.token_program,
@@ -177,22 +173,21 @@ async fn create_atas_for_signer(
             .await
             .map_err(|e| KoraError::RpcError(format!("Failed to get blockhash: {e}")))?;
 
+        let fee_payer_pubkey = fee_payer.pubkey();
         let message = VersionedMessage::Legacy(Message::new_with_blockhash(
             &chunk_instructions,
-            Some(&fee_payer.solana_pubkey()),
+            Some(&fee_payer_pubkey),
             &blockhash,
         ));
 
         let mut tx = TransactionUtil::new_unsigned_versioned_transaction(message);
-        let signature = fee_payer.sign(&tx).await?;
+        let message_bytes = tx.message.serialize();
+        let signature = fee_payer
+            .sign_message(&message_bytes)
+            .await
+            .map_err(|e| KoraError::SigningError(e.to_string()))?;
 
-        let sig_bytes: [u8; 64] = signature
-            .bytes
-            .try_into()
-            .map_err(|_| KoraError::SigningError("Invalid signature length".to_string()))?;
-
-        let sig = Signature::from(sig_bytes);
-        tx.signatures = vec![sig];
+        tx.signatures = vec![signature];
 
         match rpc_client.send_and_confirm_transaction_with_spinner(&tx).await {
             Ok(signature) => {

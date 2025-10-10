@@ -1,6 +1,7 @@
 use crate::{rpc_server::middleware_utils::default_sig_verify, usage_limit::UsageTracker};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_signers::SolanaSigner;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
@@ -51,7 +52,7 @@ pub async fn sign_and_send_transaction(
 
     Ok(SignAndSendTransactionResponse {
         signed_transaction,
-        signer_pubkey: signer.solana_pubkey().to_string(),
+        signer_pubkey: signer.pubkey().to_string(),
     })
 }
 

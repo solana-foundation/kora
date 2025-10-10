@@ -50,7 +50,7 @@ borsh = "1.5.3"
 async-std = "1.13.0"
 jsonrpsee-core = { version = "0.16.2", features = ["server"] }
 env_logger = "0.11.5"
-async-trait = "0.1.83"
+async-trait = "0.1.89"
 base64 = "0.22.1"
 log = "0.4.22"
 bytes = "1.9.0"

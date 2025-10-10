@@ -1,15 +1,6 @@
-use crate::{
-    error::KoraError,
-    signer::{
-        config_trait::SignerConfigTrait,
-        memory_signer::config::{MemorySignerConfig, MemorySignerHandler},
-        privy::config::{PrivySignerConfig, PrivySignerHandler},
-        turnkey::config::{TurnkeySignerConfig, TurnkeySignerHandler},
-        vault::config::{VaultSignerConfig, VaultSignerHandler},
-        KoraSigner,
-    },
-};
+use crate::{error::KoraError, signer::utils::get_env_var_for_signer};
 use serde::{Deserialize, Serialize};
+use solana_signers::Signer;
 use std::{fmt, fs, path::Path};
 
 /// Configuration for a pool of signers
@@ -66,6 +57,39 @@ pub struct SignerConfig {
     pub config: SignerTypeConfig,
 }
 
+/// Memory signer configuration (local keypair)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorySignerConfig {
+    pub private_key_env: String,
+}
+
+/// Turnkey signer configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnkeySignerConfig {
+    pub api_public_key_env: String,
+    pub api_private_key_env: String,
+    pub organization_id_env: String,
+    pub private_key_id_env: String,
+    pub public_key_env: String,
+}
+
+/// Privy signer configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrivySignerConfig {
+    pub app_id_env: String,
+    pub app_secret_env: String,
+    pub wallet_id_env: String,
+}
+
+/// Vault signer configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultSignerConfig {
+    pub vault_addr_env: String,
+    pub vault_token_env: String,
+    pub key_name_env: String,
+    pub pubkey_env: String,
+}
+
 /// Signer type-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -110,16 +134,13 @@ impl SignerPoolConfig {
 
     /// Validate the signer pool configuration
     pub fn validate_signer_config(&self) -> Result<(), KoraError> {
-        // Validate that at least one signer is configured
         self.validate_signer_not_empty()?;
 
-        // Validate each signer configuration
         for (index, signer) in self.signers.iter().enumerate() {
             signer.validate_individual_signer_config(index)?;
         }
 
         self.validate_signer_names()?;
-
         self.validate_strategy_weights()?;
 
         Ok(())
@@ -165,22 +186,81 @@ impl SignerPoolConfig {
 }
 
 impl SignerConfig {
-    /// Build a KoraSigner from configuration by resolving environment variables
-    pub async fn build_signer_from_config(config: &SignerConfig) -> Result<KoraSigner, KoraError> {
+    /// Build an external signer from configuration by resolving environment variables
+    pub async fn build_signer_from_config(config: &SignerConfig) -> Result<Signer, KoraError> {
         match &config.config {
             SignerTypeConfig::Memory { config: memory_config } => {
-                MemorySignerHandler::build_from_config(memory_config, &config.name)
+                Self::build_memory_signer(memory_config, &config.name)
             }
             SignerTypeConfig::Turnkey { config: turnkey_config } => {
-                TurnkeySignerHandler::build_from_config(turnkey_config, &config.name)
+                Self::build_turnkey_signer(turnkey_config, &config.name)
             }
             SignerTypeConfig::Privy { config: privy_config } => {
-                PrivySignerHandler::build_from_config(privy_config, &config.name)
+                Self::build_privy_signer(privy_config, &config.name).await
             }
             SignerTypeConfig::Vault { config: vault_config } => {
-                VaultSignerHandler::build_from_config(vault_config, &config.name)
+                Self::build_vault_signer(vault_config, &config.name)
             }
         }
+    }
+
+    fn build_memory_signer(
+        config: &MemorySignerConfig,
+        signer_name: &str,
+    ) -> Result<Signer, KoraError> {
+        let private_key = get_env_var_for_signer(&config.private_key_env, signer_name)?;
+        Signer::from_memory(&private_key).map_err(|e| {
+            KoraError::SigningError(format!("Failed to create memory signer '{signer_name}': {e}"))
+        })
+    }
+
+    fn build_turnkey_signer(
+        config: &TurnkeySignerConfig,
+        signer_name: &str,
+    ) -> Result<Signer, KoraError> {
+        let api_public_key = get_env_var_for_signer(&config.api_public_key_env, signer_name)?;
+        let api_private_key = get_env_var_for_signer(&config.api_private_key_env, signer_name)?;
+        let organization_id = get_env_var_for_signer(&config.organization_id_env, signer_name)?;
+        let private_key_id = get_env_var_for_signer(&config.private_key_id_env, signer_name)?;
+        let public_key = get_env_var_for_signer(&config.public_key_env, signer_name)?;
+
+        Signer::from_turnkey(
+            api_public_key,
+            api_private_key,
+            organization_id,
+            private_key_id,
+            public_key,
+        )
+        .map_err(|e| {
+            KoraError::SigningError(format!("Failed to create Turnkey signer '{signer_name}': {e}"))
+        })
+    }
+
+    async fn build_privy_signer(
+        config: &PrivySignerConfig,
+        signer_name: &str,
+    ) -> Result<Signer, KoraError> {
+        let app_id = get_env_var_for_signer(&config.app_id_env, signer_name)?;
+        let app_secret = get_env_var_for_signer(&config.app_secret_env, signer_name)?;
+        let wallet_id = get_env_var_for_signer(&config.wallet_id_env, signer_name)?;
+
+        Signer::from_privy(app_id, app_secret, wallet_id).await.map_err(|e| {
+            KoraError::SigningError(format!("Failed to create Privy signer '{signer_name}': {e}"))
+        })
+    }
+
+    fn build_vault_signer(
+        config: &VaultSignerConfig,
+        signer_name: &str,
+    ) -> Result<Signer, KoraError> {
+        let vault_addr = get_env_var_for_signer(&config.vault_addr_env, signer_name)?;
+        let vault_token = get_env_var_for_signer(&config.vault_token_env, signer_name)?;
+        let key_name = get_env_var_for_signer(&config.key_name_env, signer_name)?;
+        let pubkey = get_env_var_for_signer(&config.pubkey_env, signer_name)?;
+
+        Signer::from_vault(vault_addr, vault_token, key_name, pubkey).map_err(|e| {
+            KoraError::SigningError(format!("Failed to create Vault signer '{signer_name}': {e}"))
+        })
     }
 
     /// Validate an individual signer configuration
@@ -191,21 +271,89 @@ impl SignerConfig {
             )));
         }
 
-        // Delegate validation to signer-specific handlers
         match &self.config {
-            SignerTypeConfig::Memory { config: memory_config } => {
-                MemorySignerHandler::validate_config(memory_config, &self.name)
+            SignerTypeConfig::Memory { config } => Self::validate_memory_config(config, &self.name),
+            SignerTypeConfig::Turnkey { config } => {
+                Self::validate_turnkey_config(config, &self.name)
             }
-            SignerTypeConfig::Turnkey { config: turnkey_config } => {
-                TurnkeySignerHandler::validate_config(turnkey_config, &self.name)
-            }
-            SignerTypeConfig::Privy { config: privy_config } => {
-                PrivySignerHandler::validate_config(privy_config, &self.name)
-            }
-            SignerTypeConfig::Vault { config: vault_config } => {
-                VaultSignerHandler::validate_config(vault_config, &self.name)
+            SignerTypeConfig::Privy { config } => Self::validate_privy_config(config, &self.name),
+            SignerTypeConfig::Vault { config } => Self::validate_vault_config(config, &self.name),
+        }
+    }
+
+    fn validate_memory_config(
+        config: &MemorySignerConfig,
+        signer_name: &str,
+    ) -> Result<(), KoraError> {
+        if config.private_key_env.is_empty() {
+            return Err(KoraError::ValidationError(format!(
+                "Memory signer '{signer_name}' must specify non-empty private_key_env"
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_turnkey_config(
+        config: &TurnkeySignerConfig,
+        signer_name: &str,
+    ) -> Result<(), KoraError> {
+        let env_vars = [
+            ("api_public_key_env", &config.api_public_key_env),
+            ("api_private_key_env", &config.api_private_key_env),
+            ("organization_id_env", &config.organization_id_env),
+            ("private_key_id_env", &config.private_key_id_env),
+            ("public_key_env", &config.public_key_env),
+        ];
+
+        for (field_name, env_var) in env_vars {
+            if env_var.is_empty() {
+                return Err(KoraError::ValidationError(format!(
+                    "Turnkey signer '{signer_name}' must specify non-empty {field_name}"
+                )));
             }
         }
+        Ok(())
+    }
+
+    fn validate_privy_config(
+        config: &PrivySignerConfig,
+        signer_name: &str,
+    ) -> Result<(), KoraError> {
+        let env_vars = [
+            ("app_id_env", &config.app_id_env),
+            ("app_secret_env", &config.app_secret_env),
+            ("wallet_id_env", &config.wallet_id_env),
+        ];
+
+        for (field_name, env_var) in env_vars {
+            if env_var.is_empty() {
+                return Err(KoraError::ValidationError(format!(
+                    "Privy signer '{signer_name}' must specify non-empty {field_name}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_vault_config(
+        config: &VaultSignerConfig,
+        signer_name: &str,
+    ) -> Result<(), KoraError> {
+        let env_vars = [
+            ("vault_addr_env", &config.vault_addr_env),
+            ("vault_token_env", &config.vault_token_env),
+            ("key_name_env", &config.key_name_env),
+            ("pubkey_env", &config.pubkey_env),
+        ];
+
+        for (field_name, env_var) in env_vars {
+            if env_var.is_empty() {
+                return Err(KoraError::ValidationError(format!(
+                    "Vault signer '{signer_name}' must specify non-empty {field_name}"
+                )));
+            }
+        }
+        Ok(())
     }
 }
 
