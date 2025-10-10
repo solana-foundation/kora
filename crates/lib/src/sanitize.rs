@@ -60,6 +60,8 @@ mod tests {
         assert!(sanitized.contains("[REDACTED_URL]"));
         assert!(!sanitized.contains("password"));
         assert!(!sanitized.contains("redis://user:"));
+        // Ensure the error message context remains
+        assert!(sanitized.contains("Failed to connect to"));
     }
 
     #[test]

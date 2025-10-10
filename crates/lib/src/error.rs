@@ -1,3 +1,4 @@
+use crate::sanitize::sanitize_message;
 use jsonrpsee::{core::Error as RpcError, types::error::CallError};
 use serde::{Deserialize, Serialize};
 use solana_client::client_error::ClientError;
@@ -78,7 +79,7 @@ impl From<ClientError> for KoraError {
             }
             #[cfg(not(feature = "unsafe-debug"))]
             {
-                KoraError::AccountNotFound("Account not found".to_string())
+                KoraError::AccountNotFound(sanitize_message(&error_string))
             }
         } else {
             #[cfg(feature = "unsafe-debug")]
@@ -87,7 +88,7 @@ impl From<ClientError> for KoraError {
             }
             #[cfg(not(feature = "unsafe-debug"))]
             {
-                KoraError::RpcError("RPC operation failed".to_string())
+                KoraError::RpcError(sanitize_message(&error_string))
             }
         }
     }
@@ -101,7 +102,7 @@ impl From<SignerError> for KoraError {
         }
         #[cfg(not(feature = "unsafe-debug"))]
         {
-            KoraError::SigningError("Signing operation failed".to_string())
+            KoraError::SigningError(sanitize_message(&_e.to_string()))
         }
     }
 }
@@ -114,7 +115,7 @@ impl From<bincode::Error> for KoraError {
         }
         #[cfg(not(feature = "unsafe-debug"))]
         {
-            KoraError::SerializationError("Serialization error".to_string())
+            KoraError::SerializationError(sanitize_message(&_e.to_string()))
         }
     }
 }
@@ -127,7 +128,7 @@ impl From<bs58::decode::Error> for KoraError {
         }
         #[cfg(not(feature = "unsafe-debug"))]
         {
-            KoraError::SerializationError("Base58 decode error".to_string())
+            KoraError::SerializationError(sanitize_message(&_e.to_string()))
         }
     }
 }
@@ -140,7 +141,7 @@ impl From<bs58::encode::Error> for KoraError {
         }
         #[cfg(not(feature = "unsafe-debug"))]
         {
-            KoraError::SerializationError("Base58 encode error".to_string())
+            KoraError::SerializationError(sanitize_message(&_e.to_string()))
         }
     }
 }
@@ -153,7 +154,7 @@ impl From<std::io::Error> for KoraError {
         }
         #[cfg(not(feature = "unsafe-debug"))]
         {
-            KoraError::InternalServerError("IO operation failed".to_string())
+            KoraError::InternalServerError(sanitize_message(&_e.to_string()))
         }
     }
 }
@@ -166,7 +167,7 @@ impl From<Box<dyn StdError>> for KoraError {
         }
         #[cfg(not(feature = "unsafe-debug"))]
         {
-            KoraError::InternalServerError("Internal error".to_string())
+            KoraError::InternalServerError(sanitize_message(&_e.to_string()))
         }
     }
 }
@@ -179,7 +180,7 @@ impl From<Box<dyn StdError + Send + Sync>> for KoraError {
         }
         #[cfg(not(feature = "unsafe-debug"))]
         {
-            KoraError::InternalServerError("Internal error".to_string())
+            KoraError::InternalServerError(sanitize_message(&_e.to_string()))
         }
     }
 }
@@ -192,7 +193,7 @@ impl From<ProgramError> for KoraError {
         }
         #[cfg(not(feature = "unsafe-debug"))]
         {
-            KoraError::InvalidTransaction("Transaction validation failed".to_string())
+            KoraError::InvalidTransaction(sanitize_message(&_err.to_string()))
         }
     }
 }
@@ -268,7 +269,7 @@ impl From<anyhow::Error> for KoraError {
         }
         #[cfg(not(feature = "unsafe-debug"))]
         {
-            KoraError::SigningError("Signing operation failed".to_string())
+            KoraError::SigningError(sanitize_message(&_err.to_string()))
         }
     }
 }
@@ -281,7 +282,7 @@ impl From<solana_signers::SignerError> for KoraError {
         }
         #[cfg(not(feature = "unsafe-debug"))]
         {
-            KoraError::SigningError("Signing operation failed".to_string())
+            KoraError::SigningError(sanitize_message(&_err.to_string()))
         }
     }
 }
@@ -338,9 +339,9 @@ mod tests {
         let client_error = ClientError::from(std::io::Error::other("test"));
         let kora_error: KoraError = client_error.into();
         assert!(matches!(kora_error, KoraError::RpcError(_)));
-        // With sanitization, generic error message is expected
+        // With sanitization, error message context is preserved unless it contains sensitive data
         if let KoraError::RpcError(msg) = kora_error {
-            assert_eq!(msg, "RPC operation failed");
+            assert!(msg.contains("test"));
         }
     }
 
@@ -349,9 +350,9 @@ mod tests {
         let signer_error = SignerError::Custom("signing failed".to_string());
         let kora_error: KoraError = signer_error.into();
         assert!(matches!(kora_error, KoraError::SigningError(_)));
-        // With sanitization, generic error message is expected
+        // With sanitization, error message context is preserved unless it contains sensitive data
         if let KoraError::SigningError(msg) = kora_error {
-            assert_eq!(msg, "Signing operation failed");
+            assert!(msg.contains("signing failed"));
         }
     }
 
@@ -381,9 +382,9 @@ mod tests {
         let io_error = std::io::Error::other("file not found");
         let kora_error: KoraError = io_error.into();
         assert!(matches!(kora_error, KoraError::InternalServerError(_)));
-        // With sanitization, generic error message is expected
+        // With sanitization, error message context is preserved unless it contains sensitive data
         if let KoraError::InternalServerError(msg) = kora_error {
-            assert_eq!(msg, "IO operation failed");
+            assert!(msg.contains("file not found"));
         }
     }
 
@@ -418,9 +419,9 @@ mod tests {
         let anyhow_error = anyhow::anyhow!("something went wrong");
         let kora_error: KoraError = anyhow_error.into();
         assert!(matches!(kora_error, KoraError::SigningError(_)));
-        // With sanitization, generic error message is expected
+        // With sanitization, error message context is preserved unless it contains sensitive data
         if let KoraError::SigningError(msg) = kora_error {
-            assert_eq!(msg, "Signing operation failed");
+            assert!(msg.contains("something went wrong"));
         }
     }
 
