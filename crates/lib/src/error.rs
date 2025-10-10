@@ -70,6 +70,7 @@ pub enum KoraError {
 impl From<ClientError> for KoraError {
     fn from(e: ClientError) -> Self {
         let error_string = e.to_string();
+        let sanitized_error_string = sanitize_message(&error_string);
         if error_string.contains("AccountNotFound")
             || error_string.contains("could not find account")
         {
@@ -79,7 +80,7 @@ impl From<ClientError> for KoraError {
             }
             #[cfg(not(feature = "unsafe-debug"))]
             {
-                KoraError::AccountNotFound(sanitize_message(&error_string))
+                KoraError::AccountNotFound(sanitized_error_string)
             }
         } else {
             #[cfg(feature = "unsafe-debug")]
@@ -88,7 +89,7 @@ impl From<ClientError> for KoraError {
             }
             #[cfg(not(feature = "unsafe-debug"))]
             {
-                KoraError::RpcError(sanitize_message(&error_string))
+                KoraError::RpcError(sanitized_error_string)
             }
         }
     }
