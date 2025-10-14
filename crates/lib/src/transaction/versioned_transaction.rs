@@ -248,7 +248,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let validator = TransactionValidator::new(fee_payer)?;
 
         // Validate transaction and accounts (already resolved)
-        validator.validate_transaction(self).await?;
+        validator.validate_transaction(self, rpc_client).await?;
 
         // Get latest blockhash and update transaction
         let mut transaction = self.transaction.clone();

@@ -81,13 +81,29 @@ impl PriceOracle for JupiterPriceOracle {
         client: &Client,
         mint_address: &str,
     ) -> Result<TokenPrice, KoraError> {
+        let prices = self.get_prices(client, &[mint_address.to_string()]).await?;
+
+        prices.get(mint_address).cloned().ok_or_else(|| {
+            KoraError::RpcError(format!("No price data from Jupiter for mint {mint_address}"))
+        })
+    }
+
+    async fn get_prices(
+        &self,
+        client: &Client,
+        mint_addresses: &[String],
+    ) -> Result<HashMap<String, TokenPrice>, KoraError> {
+        if mint_addresses.is_empty() {
+            return Ok(HashMap::new());
+        }
+
         // Try pro API first if API key is available, then fallback to free API
         if let Some(api_key) = &self.api_key {
             match self
-                .fetch_price_from_url(client, &self.pro_api_url, mint_address, Some(api_key))
+                .fetch_prices_from_url(client, &self.pro_api_url, mint_addresses, Some(api_key))
                 .await
             {
-                Ok(price) => return Ok(price),
+                Ok(prices) => return Ok(prices),
                 Err(e) => {
                     if e == KoraError::RateLimitExceeded {
                         log::warn!("Pro Jupiter API rate limit exceeded, falling back to free API");
@@ -99,20 +115,27 @@ impl PriceOracle for JupiterPriceOracle {
         }
 
         // Use free API (either as fallback or primary if no API key)
-        self.fetch_price_from_url(client, &self.lite_api_url, mint_address, None).await
+        self.fetch_prices_from_url(client, &self.lite_api_url, mint_addresses, None).await
     }
 }
 
 impl JupiterPriceOracle {
-    async fn fetch_price_from_url(
+    async fn fetch_prices_from_url(
         &self,
         client: &Client,
         api_url: &str,
-        mint_address: &str,
+        mint_addresses: &[String],
         api_key: Option<&String>,
-    ) -> Result<TokenPrice, KoraError> {
-        // Always fetch SOL price as well so we can convert to SOL
-        let url = format!("{api_url}?ids={SOL_MINT},{mint_address}");
+    ) -> Result<HashMap<String, TokenPrice>, KoraError> {
+        if mint_addresses.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut all_mints = vec![SOL_MINT.to_string()];
+        all_mints.extend_from_slice(mint_addresses);
+        let ids = all_mints.join(",");
+
+        let url = format!("{api_url}?ids={ids}");
 
         let mut request = client.get(&url);
 
@@ -143,16 +166,33 @@ impl JupiterPriceOracle {
             KoraError::RpcError(format!("Failed to parse Jupiter response: {}", sanitize_error!(e)))
         })?;
 
+        // Get SOL price for conversion
         let sol_price = jupiter_response
             .get(SOL_MINT)
             .ok_or_else(|| KoraError::RpcError("No SOL price data from Jupiter".to_string()))?;
-        let price_data = jupiter_response
-            .get(mint_address)
-            .ok_or_else(|| KoraError::RpcError("No price data from Jupiter".to_string()))?;
 
-        let price = price_data.usd_price / sol_price.usd_price;
+        // Convert all prices to SOL-denominated
+        let mut result = HashMap::new();
+        for mint_address in mint_addresses {
+            if let Some(price_data) = jupiter_response.get(mint_address.as_str()) {
+                let price = price_data.usd_price / sol_price.usd_price;
+                result.insert(
+                    mint_address.clone(),
+                    TokenPrice { price, confidence: 0.95, source: PriceSource::Jupiter },
+                );
+            } else {
+                log::error!("No price data for mint {mint_address} from Jupiter");
+                return Err(KoraError::RpcError(format!(
+                    "No price data from Jupiter for mint {mint_address}"
+                )));
+            }
+        }
 
-        Ok(TokenPrice { price, confidence: 0.95, source: PriceSource::Jupiter })
+        if result.is_empty() {
+            return Err(KoraError::RpcError("No price data from Jupiter".to_string()));
+        }
+
+        Ok(result)
     }
 }
 
@@ -260,7 +300,10 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.err(),
-            Some(KoraError::RpcError("No price data from Jupiter".to_string()))
+            Some(KoraError::RpcError(
+                "No price data from Jupiter for mint JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
+                    .to_string()
+            ))
         );
     }
 }

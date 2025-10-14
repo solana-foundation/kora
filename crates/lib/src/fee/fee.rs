@@ -241,8 +241,14 @@ impl FeeConfigUtil {
         }
 
         // Calculate fee payer outflow if fee payer is provided, to better estimate the potential fee
-        let fee_payer_outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(fee_payer, transaction).await?;
+        let config = get_config()?;
+        let fee_payer_outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            fee_payer,
+            transaction,
+            rpc_client,
+            &config.validation.price_source,
+        )
+        .await?;
 
         // If the transaction for paying the gasless relayer is not included, but we expect a payment, we need to add the fee for the payment instruction
         // for a better approximation of the fee
@@ -359,14 +365,17 @@ impl FeeConfigUtil {
         }
     }
 
-    /// Calculate the total outflow (SOL spending) that could occur for a fee payer account in a transaction.
-    /// This includes transfers, account creation, and other operations that could drain the fee payer's balance.
+    /// Calculate the total outflow (SOL + SPL token value) that could occur for a fee payer account in a transaction.
+    /// This includes SOL transfers, account creation, SPL token transfers, and other operations that could drain the fee payer's balance.
     pub async fn calculate_fee_payer_outflow(
         fee_payer_pubkey: &Pubkey,
         transaction: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        price_source: &PriceSource,
     ) -> Result<u64, KoraError> {
         let mut total = 0u64;
 
+        // Calculate SOL outflow from System Program instructions
         let parsed_system_instructions = transaction.get_or_parse_system_instructions()?;
 
         for instruction in parsed_system_instructions
@@ -415,6 +424,27 @@ impl FeeConfigUtil {
                     total = total.saturating_sub(*lamports);
                 }
             }
+        }
+
+        // Calculate SPL token transfer outflow (converted to lamports value)
+        let spl_instructions = transaction.get_or_parse_spl_instructions()?;
+        let empty_vec = vec![];
+        let spl_transfers =
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer).unwrap_or(&empty_vec);
+
+        if !spl_transfers.is_empty() {
+            let spl_outflow = TokenUtil::calculate_spl_transfers_value_in_lamports(
+                spl_transfers,
+                fee_payer_pubkey,
+                price_source,
+                rpc_client,
+            )
+            .await?;
+
+            total = total.checked_add(spl_outflow).ok_or_else(|| {
+                log::error!("Fee payer outflow overflow: sol={}, spl={}", total, spl_outflow);
+                KoraError::ValidationError("Fee payer outflow calculation overflow".to_string())
+            })?;
         }
 
         Ok(total)
@@ -580,6 +610,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_transfer() {
+        setup_or_get_test_config();
+        let mocked_rpc_client = RpcMockBuilder::new().build();
         let fee_payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
@@ -590,10 +622,14 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(outflow, 100_000, "Transfer from fee payer should add to outflow");
 
         // Test 2: Fee payer as recipient - should subtract from outflow
@@ -603,10 +639,14 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(outflow, 0, "Transfer to fee payer should subtract from outflow (saturating)");
 
         // Test 3: Other account as sender - should not affect outflow
@@ -616,15 +656,21 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(outflow, 0, "Transfer from other account should not affect outflow");
     }
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_transfer_with_seed() {
+        setup_or_get_test_config();
+        let mocked_rpc_client = RpcMockBuilder::new().build();
         let fee_payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
@@ -641,10 +687,14 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(outflow, 150_000, "TransferWithSeed from fee payer should add to outflow");
 
         // Test 2: Fee payer as recipient (index 2 for TransferWithSeed)
@@ -661,10 +711,14 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             outflow, 0,
             "TransferWithSeed to fee payer should subtract from outflow (saturating)"
@@ -673,6 +727,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_create_account() {
+        setup_or_get_test_config();
+        let mocked_rpc_client = RpcMockBuilder::new().build();
         let fee_payer = Pubkey::new_unique();
         let new_account = Pubkey::new_unique();
 
@@ -683,10 +739,14 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(outflow, 200_000, "CreateAccount funded by fee payer should add to outflow");
 
         // Test 2: Other account funding CreateAccount
@@ -697,15 +757,21 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(outflow, 0, "CreateAccount funded by other account should not affect outflow");
     }
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_create_account_with_seed() {
+        setup_or_get_test_config();
+        let mocked_rpc_client = RpcMockBuilder::new().build();
         let fee_payer = Pubkey::new_unique();
         let new_account = Pubkey::new_unique();
 
@@ -723,10 +789,14 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             outflow, 300_000,
             "CreateAccountWithSeed funded by fee payer should add to outflow"
@@ -735,6 +805,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_nonce_withdraw() {
+        setup_or_get_test_config();
+        let mocked_rpc_client = RpcMockBuilder::new().build();
         let nonce_account = Pubkey::new_unique();
         let fee_payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
@@ -746,10 +818,14 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             outflow, 50_000,
             "WithdrawNonceAccount from fee payer nonce should add to outflow"
@@ -763,10 +839,14 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             outflow, 0,
             "WithdrawNonceAccount to fee payer should subtract from outflow (saturating)"
@@ -775,6 +855,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_multiple_instructions() {
+        setup_or_get_test_config();
+        let mocked_rpc_client = RpcMockBuilder::new().build();
         let fee_payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
         let sender = Pubkey::new_unique();
@@ -789,10 +871,14 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             outflow, 120_000,
             "Multiple instructions should sum correctly: 100000 - 30000 + 50000 = 120000"
@@ -801,6 +887,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_non_system_program() {
+        setup_or_get_test_config();
+        let mocked_rpc_client = RpcMockBuilder::new().build();
         let fee_payer = Pubkey::new_unique();
         let fake_program = Pubkey::new_unique();
 
@@ -813,10 +901,14 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
-        let outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(&fee_payer, &mut resolved_transaction)
-                .await
-                .unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &crate::oracle::PriceSource::Mock,
+        )
+        .await
+        .unwrap();
         assert_eq!(outflow, 0, "Non-system program should not affect outflow");
     }
 

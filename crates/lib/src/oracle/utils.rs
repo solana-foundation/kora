@@ -1,5 +1,5 @@
 use crate::oracle::{MockPriceOracle, PriceOracle, PriceSource, TokenPrice};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 pub const DEFAULT_MOCKED_PRICE: f64 = 0.001;
 pub const DEFAULT_MOCKED_USDC_PRICE: f64 = 0.0001;
@@ -23,6 +23,24 @@ impl OracleUtil {
                     _ => DEFAULT_MOCKED_PRICE, // Default price for unknown tokens
                 };
                 Ok(TokenPrice { price, confidence: 1.0, source: PriceSource::Mock })
+            });
+
+        mock.expect_get_prices()
+            .times(..) // Allow unlimited calls
+            .returning(|_, mint_addresses| {
+                let mut result = HashMap::new();
+                for mint_address in mint_addresses {
+                    let price = match mint_address.as_str() {
+                        USDC_DEVNET_MINT => DEFAULT_MOCKED_USDC_PRICE, // USDC
+                        WSOL_DEVNET_MINT => DEFAULT_MOCKED_WSOL_PRICE, // SOL
+                        _ => DEFAULT_MOCKED_PRICE, // Default price for unknown tokens
+                    };
+                    result.insert(
+                        mint_address.clone(),
+                        TokenPrice { price, confidence: 1.0, source: PriceSource::Mock },
+                    );
+                }
+                Ok(result)
             });
         Arc::new(mock)
     }
