@@ -47,9 +47,13 @@ impl TransactionUtil {
         VersionedTransactionResolved::from_kora_built_transaction(&transaction)
     }
 
-    pub fn encode_versioned_transaction(transaction: &VersionedTransaction) -> String {
-        let serialized = bincode::serialize(transaction).unwrap();
-        STANDARD.encode(serialized)
+    pub fn encode_versioned_transaction(
+        transaction: &VersionedTransaction,
+    ) -> Result<String, KoraError> {
+        let serialized = bincode::serialize(transaction).map_err(|_| {
+            KoraError::SerializationError("Failed to serialize transaction.".to_string())
+        })?;
+        Ok(STANDARD.encode(serialized))
     }
 }
 

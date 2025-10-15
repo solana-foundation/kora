@@ -3,6 +3,7 @@ use crate::{
     constant::{JUPITER_API_LITE_URL, JUPITER_API_PRO_URL, SOL_MINT},
     error::KoraError,
     sanitize_error,
+    validator::math_validator,
 };
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
@@ -170,6 +171,8 @@ impl JupiterPriceOracle {
         let sol_price = jupiter_response
             .get(SOL_MINT)
             .ok_or_else(|| KoraError::RpcError("No SOL price data from Jupiter".to_string()))?;
+
+        math_validator::validate_division(sol_price.usd_price)?;
 
         // Convert all prices to SOL-denominated
         let mut result = HashMap::new();

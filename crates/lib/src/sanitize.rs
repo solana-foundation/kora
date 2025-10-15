@@ -12,12 +12,13 @@ use std::sync::LazyLock;
 static URL_WITH_CREDENTIALS_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     // Generic URL pattern with embedded credentials: protocol://user:password@host
     // Matches any protocol (redis, http, https, postgres, mysql, mongodb, etc.)
-    Regex::new(r"[a-z][a-z0-9+.-]*://[^:@\s]+:[^@\s]+@[^\s]+").unwrap()
+    Regex::new(r"[a-z][a-z0-9+.-]*://[^:@\s]+:[^@\s]+@[^\s]+")
+        .expect("Failed to create url regex pattern")
 });
 
 static HEX_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     // Long hex strings (likely keys/hashes) - 32+ chars, with optional 0x prefix
-    Regex::new(r"(?:0x)?[0-9a-fA-F]{32,}").unwrap()
+    Regex::new(r"(?:0x)?[0-9a-fA-F]{32,}").expect("Failed to create hex regex pattern")
 });
 
 /// Sanitizes a message by redacting sensitive information

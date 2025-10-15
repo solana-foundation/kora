@@ -402,6 +402,10 @@ async fn test_estimate_fee_with_spl_token_transfer_from_fee_payer() {
             &usdc_mint, &fee_payer, // Fee payer owns the source token account
             &recipient, 1_000_000, 6,
         )
+        .with_spl_transfer_checked(
+            &usdc_mint, &fee_payer, // Fee payer owns the source token account
+            &recipient, 3_000_000, 6,
+        )
         .build()
         .await
         .expect("Failed to build transaction");
@@ -418,13 +422,14 @@ async fn test_estimate_fee_with_spl_token_transfer_from_fee_payer() {
 
     // Expected fee breakdown:
     // - Base signature fee: ~5,000 lamports
-    // - SPL token outflow: 1 USDC × 0.001 SOL/USDC = 1,000,000 lamports
+    // - SPL token outflow #1: 1 USDC × 0.001 SOL/USDC = 1,000,000 lamports
+    // - SPL token outflow #2: 3 USDC × 0.001 SOL/USDC = 3,000,000 lamports
     // - Payment instruction: ~50 lamports
-    // Total: ~1,005,050 lamports
+    // Total: ~4,005,050 lamports
 
     println!("fee_lamports: {fee_lamports}");
     assert_eq!(
-        fee_lamports, 1_005_050,
-        "Fee should include SPL token outflow value. Got {fee_lamports} expected 1_005_050",
+        fee_lamports, 4_005_050,
+        "Fee should include SPL token outflow value. Got {fee_lamports} expected 4_005_050",
     );
 }

@@ -13,6 +13,7 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
+use spl_associated_token_account::get_associated_token_address_with_program_id;
 use std::{collections::HashMap, str::FromStr, time::Duration};
 
 #[cfg(not(test))]
@@ -188,9 +189,38 @@ impl TokenUtil {
                                     }
                                 }
                             }
-                            Err(_) => {
-                                // Skip if destination account doesn't exist or can't be fetched
-                                continue;
+                            Err(e) => {
+                                // If we get Account not found error, we try to match it to the ATA derivation for the fee payer
+                                // in case that ATA is being created in the current instruction
+                                if matches!(e, KoraError::AccountNotFound(_)) {
+                                    let spl_ata =
+                                        spl_associated_token_account::get_associated_token_address(
+                                            fee_payer,
+                                            mint_pubkey,
+                                        );
+                                    let token2022_ata =
+                                        get_associated_token_address_with_program_id(
+                                            fee_payer,
+                                            mint_pubkey,
+                                            &spl_token_2022::id(),
+                                        );
+
+                                    // If destination matches a valid ATA for fee payer, count as inflow
+                                    if *destination_address == spl_ata
+                                        || *destination_address == token2022_ata
+                                    {
+                                        mint_to_transfers
+                                            .entry(*mint_pubkey)
+                                            .or_default()
+                                            .push((*amount, false)); // inflow
+                                    }
+                                    // Otherwise, it's not fee payer's account, continue to next transfer
+                                } else {
+                                    // Skip if destination account doesn't exist or can't be fetched
+                                    // This could be problematic for non ATA token accounts created
+                                    // during the transaction
+                                    continue;
+                                }
                             }
                         }
                     }
@@ -272,7 +302,10 @@ impl TokenUtil {
         // Unpack the mint state with extensions
         let mint_state = token_program.unpack_mint(mint, &mint_data)?;
 
-        let mint_with_extensions = mint_state.as_any().downcast_ref::<Token2022Mint>().unwrap();
+        let mint_with_extensions =
+            mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast mint state.".to_string())
+            })?;
 
         // Check each extension type present on the mint
         for extension_type in mint_with_extensions.get_extension_types() {
@@ -290,7 +323,9 @@ impl TokenUtil {
         let source_state = token_program.unpack_token_account(&source_data)?;
 
         let source_with_extensions =
-            source_state.as_any().downcast_ref::<Token2022Account>().unwrap();
+            source_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast source state.".to_string())
+            })?;
 
         for extension_type in source_with_extensions.get_extension_types() {
             if config.is_account_extension_blocked(*extension_type) {
@@ -308,7 +343,9 @@ impl TokenUtil {
         let destination_state = token_program.unpack_token_account(&destination_data)?;
 
         let destination_with_extensions =
-            destination_state.as_any().downcast_ref::<Token2022Account>().unwrap();
+            destination_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast destination state.".to_string())
+            })?;
 
         for extension_type in destination_with_extensions.get_extension_types() {
             if config.is_account_extension_blocked(*extension_type) {
