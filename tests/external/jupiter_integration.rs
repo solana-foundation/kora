@@ -1,3 +1,4 @@
+use jsonrpsee::core::Error;
 use kora_lib::oracle::{get_price_oracle, PriceSource, RetryingPriceOracle};
 use std::time::Duration;
 
@@ -75,4 +76,28 @@ async fn test_jupiter_integration_sol() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn test_jupiter_integration_unknown_token() {
+    const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
+    // Invalid token mint
+    const UNKNOWN_TOKEN_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1w";
+
+    let oracle = get_price_oracle(PriceSource::Jupiter);
+    let retrying_oracle = RetryingPriceOracle::new(3, Duration::from_millis(500), oracle);
+
+    let result = retrying_oracle
+        .get_token_prices(&[SOL_MINT.to_string(), UNKNOWN_TOKEN_MINT.to_string()])
+        .await;
+
+    assert!(result.is_err(), "Expected error for unknown token");
+    let error = result.unwrap_err();
+    assert!(
+        error.to_string().contains(
+            "No price data from Jupiter for mint EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1w"
+        ),
+        "Expected error message about unknown mint, got: {}",
+        error
+    );
 }

@@ -61,14 +61,14 @@ where
                             .status(StatusCode::OK)
                             .header("content-type", "text/plain; version=0.0.4")
                             .body(Body::from(metrics))
-                            .unwrap();
+                            .expect("Failed to build response");
                         Ok(response)
                     }
                     Err(e) => {
                         let response = Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
                             .body(Body::from(format!("Error gathering metrics: {e}")))
-                            .unwrap();
+                            .expect("Failed to build response");
                         Ok(response)
                     }
                 }

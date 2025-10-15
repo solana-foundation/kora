@@ -13,7 +13,8 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
-use std::{str::FromStr, time::Duration};
+use spl_associated_token_account::get_associated_token_address_with_program_id;
+use std::{collections::HashMap, str::FromStr, time::Duration};
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -140,6 +141,148 @@ impl TokenUtil {
         Ok(fee_in_token.ceil())
     }
 
+    /// Calculate the total lamports value of SPL token transfers where the fee payer is involved
+    /// This includes both outflow (fee payer as owner/source) and inflow (fee payer owns destination)
+    pub async fn calculate_spl_transfers_value_in_lamports(
+        spl_transfers: &[ParsedSPLInstructionData],
+        fee_payer: &Pubkey,
+        price_source: &PriceSource,
+        rpc_client: &RpcClient,
+    ) -> Result<u64, KoraError> {
+        // Collect all unique mints that need price lookups
+        let mut mint_to_transfers: HashMap<
+            Pubkey,
+            Vec<(u64, bool)>, // (amount, is_outflow)
+        > = HashMap::new();
+
+        for transfer in spl_transfers {
+            if let ParsedSPLInstructionData::SplTokenTransfer {
+                amount,
+                owner,
+                mint,
+                destination_address,
+                ..
+            } = transfer
+            {
+                // Check if fee payer is the source (outflow)
+                if *owner == *fee_payer {
+                    if let Some(mint_pubkey) = mint {
+                        mint_to_transfers.entry(*mint_pubkey).or_default().push((*amount, true));
+                    }
+                } else {
+                    // Check if fee payer owns the destination (inflow)
+                    // We need to check the destination token account owner
+                    if let Some(mint_pubkey) = mint {
+                        // Get destination account to check owner
+                        match CacheUtil::get_account(rpc_client, destination_address, false).await {
+                            Ok(dest_account) => {
+                                let token_program =
+                                    TokenType::get_token_program_from_owner(&dest_account.owner)?;
+                                if let Ok(token_account) =
+                                    token_program.unpack_token_account(&dest_account.data)
+                                {
+                                    if token_account.owner() == *fee_payer {
+                                        mint_to_transfers
+                                            .entry(*mint_pubkey)
+                                            .or_default()
+                                            .push((*amount, false)); // inflow
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                // If we get Account not found error, we try to match it to the ATA derivation for the fee payer
+                                // in case that ATA is being created in the current instruction
+                                if matches!(e, KoraError::AccountNotFound(_)) {
+                                    let spl_ata =
+                                        spl_associated_token_account::get_associated_token_address(
+                                            fee_payer,
+                                            mint_pubkey,
+                                        );
+                                    let token2022_ata =
+                                        get_associated_token_address_with_program_id(
+                                            fee_payer,
+                                            mint_pubkey,
+                                            &spl_token_2022::id(),
+                                        );
+
+                                    // If destination matches a valid ATA for fee payer, count as inflow
+                                    if *destination_address == spl_ata
+                                        || *destination_address == token2022_ata
+                                    {
+                                        mint_to_transfers
+                                            .entry(*mint_pubkey)
+                                            .or_default()
+                                            .push((*amount, false)); // inflow
+                                    }
+                                    // Otherwise, it's not fee payer's account, continue to next transfer
+                                } else {
+                                    // Skip if destination account doesn't exist or can't be fetched
+                                    // This could be problematic for non ATA token accounts created
+                                    // during the transaction
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if mint_to_transfers.is_empty() {
+            return Ok(0);
+        }
+
+        // Batch fetch all prices and decimals
+        let mint_addresses: Vec<String> =
+            mint_to_transfers.keys().map(|mint| mint.to_string()).collect();
+
+        let oracle = RetryingPriceOracle::new(
+            3,
+            Duration::from_secs(1),
+            get_price_oracle(price_source.clone()),
+        );
+
+        let prices = oracle.get_token_prices(&mint_addresses).await?;
+
+        let mut mint_decimals = std::collections::HashMap::new();
+        for mint in mint_to_transfers.keys() {
+            let decimals = Self::get_mint_decimals(rpc_client, mint).await?;
+            mint_decimals.insert(*mint, decimals);
+        }
+
+        // Calculate total value
+        let mut total_lamports = 0u64;
+
+        for (mint, transfers) in mint_to_transfers.iter() {
+            let price = prices
+                .get(&mint.to_string())
+                .ok_or_else(|| KoraError::RpcError(format!("No price data for mint {mint}")))?;
+            let decimals = mint_decimals
+                .get(mint)
+                .ok_or_else(|| KoraError::RpcError(format!("No decimals data for mint {mint}")))?;
+
+            for (amount, is_outflow) in transfers {
+                // Convert token amount to lamports value
+                let token_amount = *amount as f64 / 10f64.powi(*decimals as i32);
+                let sol_amount = token_amount * price.price;
+                let lamports = (sol_amount * LAMPORTS_PER_SOL as f64).floor() as u64;
+
+                if *is_outflow {
+                    // Add outflow to total
+                    total_lamports = total_lamports.checked_add(lamports).ok_or_else(|| {
+                        log::error!("SPL outflow calculation overflow");
+                        KoraError::ValidationError("SPL outflow calculation overflow".to_string())
+                    })?;
+                } else {
+                    // Subtract inflow from total (using saturating_sub to prevent underflow)
+                    total_lamports = total_lamports.saturating_sub(lamports);
+                }
+            }
+        }
+
+        Ok(total_lamports)
+    }
+
     /// Validate Token2022 extensions for payment instructions
     /// This checks if any blocked extensions are present on the payment accounts
     pub async fn validate_token2022_extensions_for_payment(
@@ -159,7 +302,10 @@ impl TokenUtil {
         // Unpack the mint state with extensions
         let mint_state = token_program.unpack_mint(mint, &mint_data)?;
 
-        let mint_with_extensions = mint_state.as_any().downcast_ref::<Token2022Mint>().unwrap();
+        let mint_with_extensions =
+            mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast mint state.".to_string())
+            })?;
 
         // Check each extension type present on the mint
         for extension_type in mint_with_extensions.get_extension_types() {
@@ -177,7 +323,9 @@ impl TokenUtil {
         let source_state = token_program.unpack_token_account(&source_data)?;
 
         let source_with_extensions =
-            source_state.as_any().downcast_ref::<Token2022Account>().unwrap();
+            source_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast source state.".to_string())
+            })?;
 
         for extension_type in source_with_extensions.get_extension_types() {
             if config.is_account_extension_blocked(*extension_type) {
@@ -195,7 +343,9 @@ impl TokenUtil {
         let destination_state = token_program.unpack_token_account(&destination_data)?;
 
         let destination_with_extensions =
-            destination_state.as_any().downcast_ref::<Token2022Account>().unwrap();
+            destination_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast destination state.".to_string())
+            })?;
 
         for extension_type in destination_with_extensions.get_extension_types() {
             if config.is_account_extension_blocked(*extension_type) {

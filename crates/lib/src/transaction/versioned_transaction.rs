@@ -203,7 +203,10 @@ impl VersionedTransactionResolved {
         if self.parsed_system_instructions.is_none() {
             self.parsed_system_instructions = Some(IxUtils::parse_system_instructions(self)?);
         }
-        Ok(self.parsed_system_instructions.as_ref().unwrap())
+
+        self.parsed_system_instructions.as_ref().ok_or_else(|| {
+            KoraError::SerializationError("Parsed system instructions not found".to_string())
+        })
     }
 
     pub fn get_or_parse_spl_instructions(
@@ -212,7 +215,10 @@ impl VersionedTransactionResolved {
         if self.parsed_spl_instructions.is_none() {
             self.parsed_spl_instructions = Some(IxUtils::parse_token_instructions(self)?);
         }
-        Ok(self.parsed_spl_instructions.as_ref().unwrap())
+
+        self.parsed_spl_instructions.as_ref().ok_or_else(|| {
+            KoraError::SerializationError("Parsed SPL instructions not found".to_string())
+        })
     }
 }
 
@@ -248,7 +254,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let validator = TransactionValidator::new(fee_payer)?;
 
         // Validate transaction and accounts (already resolved)
-        validator.validate_transaction(self).await?;
+        validator.validate_transaction(self, rpc_client).await?;
 
         // Get latest blockhash and update transaction
         let mut transaction = self.transaction.clone();

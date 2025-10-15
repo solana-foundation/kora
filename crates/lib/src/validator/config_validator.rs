@@ -211,10 +211,13 @@ impl ConfigValidator {
         // Validate usage limit configuration
         let usage_config = &config.kora.usage_limit;
         if usage_config.enabled {
-            let (usage_errors, usage_warnings) =
-                CacheValidator::validate(usage_config).await.unwrap();
-            errors.extend(usage_errors);
-            warnings.extend(usage_warnings);
+            if let Ok((usage_errors, usage_warnings)) = CacheValidator::validate(usage_config).await
+            {
+                errors.extend(usage_errors);
+                warnings.extend(usage_warnings);
+            } else {
+                errors.push("Failed to validate usage limit cache configuration".to_string());
+            }
         }
 
         // RPC validation - only if not skipped
@@ -255,14 +258,19 @@ impl ConfigValidator {
 
             // Validate missing ATAs for payment address
             if let Some(payment_address) = &config.kora.payment_address {
-                let payment_address = Pubkey::from_str(payment_address).unwrap();
-
-                let atas_to_create = find_missing_atas(rpc_client, &payment_address).await;
-
-                if let Err(e) = atas_to_create {
-                    errors.push(format!("Failed to find missing ATAs: {e}"));
-                } else if !atas_to_create.unwrap().is_empty() {
-                    errors.push(format!("Missing ATAs for payment address: {payment_address}"));
+                if let Ok(payment_address) = Pubkey::from_str(payment_address) {
+                    match find_missing_atas(rpc_client, &payment_address).await {
+                        Ok(atas_to_create) => {
+                            if !atas_to_create.is_empty() {
+                                errors.push(format!(
+                                    "Missing ATAs for payment address: {payment_address}"
+                                ));
+                            }
+                        }
+                        Err(e) => errors.push(format!("Failed to find missing ATAs: {e}")),
+                    }
+                } else {
+                    errors.push(format!("Invalid payment address: {payment_address}"));
                 }
             }
         }

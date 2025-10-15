@@ -126,7 +126,7 @@ pub async fn transfer_transaction(
         VersionedTransactionResolved::from_kora_built_transaction(&transaction);
 
     // validate transaction before signing
-    validator.validate_transaction(&mut resolved_transaction).await?;
+    validator.validate_transaction(&mut resolved_transaction, rpc_client).await?;
 
     // Find the fee payer position in the account keys
     let fee_payer_position = resolved_transaction.find_signer_position(&fee_payer)?;
@@ -167,7 +167,7 @@ mod tests {
         let _ = update_config(config);
         let _ = setup_or_get_test_signer();
 
-        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());
 
         let request = TransferTransactionRequest {
             amount: 1000,
@@ -196,7 +196,7 @@ mod tests {
         let _ = update_config(config);
         let _ = setup_or_get_test_signer();
 
-        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());
 
         let request = TransferTransactionRequest {
             amount: 1000,
@@ -224,7 +224,7 @@ mod tests {
         let _ = update_config(config);
         let _ = setup_or_get_test_signer();
 
-        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());
 
         let request = TransferTransactionRequest {
             amount: 1000,

@@ -54,8 +54,10 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let unauthorized_response =
-                Response::builder().status(StatusCode::UNAUTHORIZED).body(Body::empty()).unwrap();
+            let unauthorized_response = Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Body::empty())
+                .expect("Failed to build unauthorized response");
 
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
             if get_jsonrpc_method(&body_bytes) == Some("liveness".to_string()) {
@@ -131,8 +133,10 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let unauthorized_response =
-                Response::builder().status(StatusCode::UNAUTHORIZED).body(Body::empty()).unwrap();
+            let unauthorized_response = Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Body::empty())
+                .expect("Failed to build unauthorized response");
 
             let signature_header = request.headers().get(X_HMAC_SIGNATURE).cloned();
             let timestamp_header = request.headers().get(X_TIMESTAMP).cloned();
