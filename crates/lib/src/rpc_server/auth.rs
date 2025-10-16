@@ -191,9 +191,17 @@ where
             };
 
             mac.update(message.as_bytes());
-            let expected_signature = hex::encode(mac.finalize().into_bytes());
 
-            if signature != expected_signature {
+            let signature_bytes = match hex::decode(signature) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    log::error!("HMAC signature hex decode failed");
+                    return Ok(unauthorized_response);
+                }
+            };
+
+            // Constant time comparaison prevent timing attacks
+            if mac.verify_slice(&signature_bytes).is_err() {
                 return Ok(unauthorized_response);
             }
 
