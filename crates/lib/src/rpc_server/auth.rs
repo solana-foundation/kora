@@ -227,7 +227,7 @@ where
                 }
             };
 
-            // Constant time comparaison prevent timing attacks
+            // Constant time comparison prevents timing attacks
             if mac.verify_slice(&signature_bytes).is_err() {
                 return Ok(unauthorized_response);
             }
