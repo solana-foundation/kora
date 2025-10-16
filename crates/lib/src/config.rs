@@ -260,6 +260,42 @@ impl EnabledMethods {
         ]
         .into_iter()
     }
+
+    /// Returns a Vec of enabled JSON-RPC method names
+    pub fn get_enabled_method_names(&self) -> Vec<String> {
+        let mut methods = Vec::new();
+        if self.liveness {
+            methods.push("liveness".to_string());
+        }
+        if self.estimate_transaction_fee {
+            methods.push("estimateTransactionFee".to_string());
+        }
+        if self.get_supported_tokens {
+            methods.push("getSupportedTokens".to_string());
+        }
+        if self.get_payer_signer {
+            methods.push("getPayerSigner".to_string());
+        }
+        if self.sign_transaction {
+            methods.push("signTransaction".to_string());
+        }
+        if self.sign_and_send_transaction {
+            methods.push("signAndSendTransaction".to_string());
+        }
+        if self.transfer_transaction {
+            methods.push("transferTransaction".to_string());
+        }
+        if self.get_blockhash {
+            methods.push("getBlockhash".to_string());
+        }
+        if self.get_config {
+            methods.push("getConfig".to_string());
+        }
+        if self.sign_transaction_if_paid {
+            methods.push("signTransactionIfPaid".to_string());
+        }
+        methods
+    }
 }
 
 impl IntoIterator for &EnabledMethods {

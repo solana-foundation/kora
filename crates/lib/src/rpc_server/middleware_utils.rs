@@ -1,6 +1,10 @@
+use std::collections::HashSet;
+
 use futures_util::TryStreamExt;
 use http::Request;
 use jsonrpsee::server::logger::Body;
+
+use crate::KoraError;
 
 pub fn default_sig_verify() -> bool {
     false
@@ -25,4 +29,17 @@ pub fn get_jsonrpc_method(body_bytes: &[u8]) -> Option<String> {
         Ok(val) => val.get("method").and_then(|m| m.as_str()).map(|s| s.to_string()),
         Err(_) => None,
     }
+}
+
+pub fn verify_jsonrpc_method(
+    body_bytes: &[u8],
+    allowed_methods: &HashSet<String>,
+) -> Result<String, KoraError> {
+    let method = get_jsonrpc_method(body_bytes);
+    if let Some(method) = method {
+        if allowed_methods.contains(&method) {
+            return Ok(method);
+        }
+    }
+    Err(KoraError::InvalidRequest("Method not allowed".to_string()))
 }

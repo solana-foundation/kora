@@ -64,6 +64,9 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
     let (metrics_handle, metrics_layers, balance_tracker_handle) =
         run_metrics_server_if_required(port, rpc_client).await?;
 
+    // Build whitelist of allowed methods from enabled_methods config
+    let allowed_methods = config.kora.enabled_methods.get_enabled_method_names();
+
     let middleware = tower::ServiceBuilder::new()
         // Add metrics handler first (before other layers) so it can intercept /metrics
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
@@ -78,12 +81,18 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         // Add authentication layer for API key if configured
         .option_layer(
             (get_value_by_priority("KORA_API_KEY", config.kora.auth.api_key.clone()))
-                .map(|key| ApiKeyAuthLayer::new(key.clone())),
+                .map(|key| ApiKeyAuthLayer::new(key, allowed_methods.clone())),
         )
         // Add authentication layer for HMAC if configured
         .option_layer(
             (get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone())).map(
-                |secret| HmacAuthLayer::new(secret.clone(), config.kora.auth.max_timestamp_age),
+                |secret| {
+                    HmacAuthLayer::new(
+                        secret,
+                        config.kora.auth.max_timestamp_age,
+                        allowed_methods.clone(),
+                    )
+                },
             ),
         );
 
