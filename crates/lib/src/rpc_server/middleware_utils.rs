@@ -99,11 +99,11 @@ where
                 Ok(_) => {}
                 Err(_) => {
                     // Method not allowed
-                    let unauthorized_response = Response::builder()
-                        .status(StatusCode::UNAUTHORIZED)
+                    let method_not_allowed_response = Response::builder()
+                        .status(StatusCode::METHOD_NOT_ALLOWED)
                         .body(Body::empty())
-                        .expect("Failed to build unauthorized response");
-                    return Ok(unauthorized_response);
+                        .expect("Failed to build METHOD_NOT_ALLOWED response");
+                    return Ok(method_not_allowed_response);
                 }
             }
 
@@ -153,7 +153,7 @@ mod tests {
             Request::builder().method(Method::POST).uri("/test").body(Body::from(body)).unwrap();
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
     #[tokio::test]
@@ -167,7 +167,7 @@ mod tests {
             Request::builder().method(Method::POST).uri("/test").body(Body::from(body)).unwrap();
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
     #[tokio::test]
@@ -181,7 +181,7 @@ mod tests {
             Request::builder().method(Method::POST).uri("/test").body(Body::from(body)).unwrap();
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
     #[tokio::test]
