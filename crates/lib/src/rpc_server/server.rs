@@ -3,6 +3,7 @@ use crate::{
     metrics::run_metrics_server_if_required,
     rpc_server::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
+        middleware_utils::MethodValidationLayer,
         rpc::KoraRpc,
     },
     usage_limit::UsageTracker,
@@ -76,24 +77,19 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
             metrics_layers.as_ref().and_then(|layers| layers.metrics_handler_layer.clone()),
         )
         .layer(cors)
+        // Method validation layer -  to fail fast
+        .layer(MethodValidationLayer::new(allowed_methods.clone()))
         // Add metrics collection layer
         .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
         // Add authentication layer for API key if configured
         .option_layer(
             (get_value_by_priority("KORA_API_KEY", config.kora.auth.api_key.clone()))
-                .map(|key| ApiKeyAuthLayer::new(key, allowed_methods.clone())),
+                .map(ApiKeyAuthLayer::new),
         )
         // Add authentication layer for HMAC if configured
         .option_layer(
-            (get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone())).map(
-                |secret| {
-                    HmacAuthLayer::new(
-                        secret,
-                        config.kora.auth.max_timestamp_age,
-                        allowed_methods.clone(),
-                    )
-                },
-            ),
+            (get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone()))
+                .map(|secret| HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)),
         );
 
     // Configure and build the server with HTTP support

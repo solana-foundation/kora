@@ -137,9 +137,11 @@ async fn test_fee_payer_policy_is_present() {
 async fn test_liveness_is_disabled() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
-    // The jsonrpsee client will return an error for METHOD_NOT_FOUND
-    // rather than a successful response with error content
+    // With MethodValidationLayer, disabled methods return 405 METHOD_NOT_ALLOWED at middleware level
+    // before reaching jsonrpsee's method dispatcher
     let result = ctx.rpc_call::<serde_json::Value, _>("liveness", rpc_params![]).await;
     assert!(result.is_err());
-    assert!(result.err().unwrap().to_string().contains("Method not found"));
+    let error_msg = result.err().unwrap().to_string();
+    // The error should be HTTP 405 (caught by MethodValidationLayer middleware)
+    assert!(error_msg.contains("405"), "Expected 405 METHOD_NOT_ALLOWED, got: {}", error_msg);
 }
