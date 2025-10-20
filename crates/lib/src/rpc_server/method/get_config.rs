@@ -88,15 +88,28 @@ mod tests {
         assert_eq!(response.validation_config.disallowed_accounts.len(), 0);
         assert_eq!(response.validation_config.price_source, crate::oracle::PriceSource::Mock);
 
-        // Assert FeePayerPolicy defaults
-        assert!(!response.validation_config.fee_payer_policy.allow_sol_transfers);
-        assert!(!response.validation_config.fee_payer_policy.allow_spl_transfers);
-        assert!(!response.validation_config.fee_payer_policy.allow_token2022_transfers);
-        assert!(!response.validation_config.fee_payer_policy.allow_assign);
-        assert!(!response.validation_config.fee_payer_policy.allow_burn);
-        assert!(!response.validation_config.fee_payer_policy.allow_close_account);
-        assert!(!response.validation_config.fee_payer_policy.allow_approve);
+        // Assert FeePayerPolicy defaults - System
+        assert!(response.validation_config.fee_payer_policy.system.allow_transfer);
+        assert!(response.validation_config.fee_payer_policy.system.allow_assign);
+        assert!(response.validation_config.fee_payer_policy.system.allow_create_account);
+        assert!(response.validation_config.fee_payer_policy.system.allow_allocate);
+        assert!(response.validation_config.fee_payer_policy.system.nonce.allow_initialize);
+        assert!(response.validation_config.fee_payer_policy.system.nonce.allow_advance);
+        assert!(response.validation_config.fee_payer_policy.system.nonce.allow_withdraw);
+        assert!(response.validation_config.fee_payer_policy.system.nonce.allow_authorize);
+        // Note: allow_upgrade removed - no authority parameter to validate
 
+        // Assert FeePayerPolicy defaults - SPL Token
+        assert!(response.validation_config.fee_payer_policy.spl_token.allow_transfer);
+        assert!(response.validation_config.fee_payer_policy.spl_token.allow_burn);
+        assert!(response.validation_config.fee_payer_policy.spl_token.allow_close_account);
+        assert!(response.validation_config.fee_payer_policy.spl_token.allow_approve);
+
+        // Assert FeePayerPolicy defaults - Token2022
+        assert!(response.validation_config.fee_payer_policy.token_2022.allow_transfer);
+        assert!(response.validation_config.fee_payer_policy.token_2022.allow_burn);
+        assert!(response.validation_config.fee_payer_policy.token_2022.allow_close_account);
+        assert!(response.validation_config.fee_payer_policy.token_2022.allow_approve);
         // Assert PriceConfig default (check margin value)
         match response.validation_config.price.model {
             crate::fee::price::PriceModel::Margin { margin } => assert_eq!(margin, 0.0),

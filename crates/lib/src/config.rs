@@ -138,13 +138,109 @@ impl ValidationConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
 pub struct FeePayerPolicy {
-    pub allow_sol_transfers: bool,
-    pub allow_spl_transfers: bool,
-    pub allow_token2022_transfers: bool,
+    #[serde(default)]
+    pub system: SystemInstructionPolicy,
+    #[serde(default)]
+    pub spl_token: SplTokenInstructionPolicy,
+    #[serde(default)]
+    pub token_2022: Token2022InstructionPolicy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SystemInstructionPolicy {
+    /// Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions
+    pub allow_transfer: bool,
+    /// Allow fee payer to be the authority in System Assign/AssignWithSeed instructions
     pub allow_assign: bool,
+    /// Allow fee payer to be the payer in System CreateAccount/CreateAccountWithSeed instructions
+    pub allow_create_account: bool,
+    /// Allow fee payer to be the account in System Allocate/AllocateWithSeed instructions
+    pub allow_allocate: bool,
+    /// Nested policy for nonce account operations
+    #[serde(default)]
+    pub nonce: NonceInstructionPolicy,
+}
+
+impl Default for SystemInstructionPolicy {
+    fn default() -> Self {
+        Self {
+            allow_transfer: true,
+            allow_assign: true,
+            allow_create_account: true,
+            allow_allocate: true,
+            nonce: NonceInstructionPolicy::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct NonceInstructionPolicy {
+    /// Allow fee payer to be set as the nonce authority in InitializeNonceAccount instructions
+    pub allow_initialize: bool,
+    /// Allow fee payer to be the nonce authority in AdvanceNonceAccount instructions
+    pub allow_advance: bool,
+    /// Allow fee payer to be the nonce authority in WithdrawNonceAccount instructions
+    pub allow_withdraw: bool,
+    /// Allow fee payer to be the current nonce authority in AuthorizeNonceAccount instructions
+    pub allow_authorize: bool,
+    // Note: UpgradeNonceAccount not included - has no authority parameter, cannot validate fee payer involvement
+}
+
+impl Default for NonceInstructionPolicy {
+    fn default() -> Self {
+        Self {
+            allow_initialize: true,
+            allow_advance: true,
+            allow_withdraw: true,
+            allow_authorize: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SplTokenInstructionPolicy {
+    /// Allow fee payer to be the owner in SPL Token Transfer/TransferChecked instructions
+    pub allow_transfer: bool,
+    /// Allow fee payer to be the owner in SPL Token Burn/BurnChecked instructions
     pub allow_burn: bool,
+    /// Allow fee payer to be the owner in SPL Token CloseAccount instructions
     pub allow_close_account: bool,
+    /// Allow fee payer to be the owner in SPL Token Approve/ApproveChecked instructions
     pub allow_approve: bool,
+}
+
+impl Default for SplTokenInstructionPolicy {
+    fn default() -> Self {
+        Self {
+            allow_transfer: true,
+            allow_burn: true,
+            allow_close_account: true,
+            allow_approve: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct Token2022InstructionPolicy {
+    /// Allow fee payer to be the owner in Token2022 Transfer/TransferChecked instructions
+    pub allow_transfer: bool,
+    /// Allow fee payer to be the owner in Token2022 Burn/BurnChecked instructions
+    pub allow_burn: bool,
+    /// Allow fee payer to be the owner in Token2022 CloseAccount instructions
+    pub allow_close_account: bool,
+    /// Allow fee payer to be the owner in Token2022 Approve/ApproveChecked instructions
+    pub allow_approve: bool,
+}
+
+impl Default for Token2022InstructionPolicy {
+    fn default() -> Self {
+        Self {
+            allow_transfer: true,
+            allow_burn: true,
+            allow_close_account: true,
+            allow_approve: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

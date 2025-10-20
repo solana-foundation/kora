@@ -48,13 +48,30 @@ disallowed_accounts = []
 # but those programs have a lot of instructions that can be used to perform actions that could be problematic
 # for the fee payer, therefore we allow more granular control over what the fee payer can do with those programs.
 [validation.fee_payer_policy]
-allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
-allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
-allow_token2022_transfers = true # Allow fee payer to be source in Token2022 transfers
-allow_assign = true             # Allow fee payer to use Assign instruction
-allow_burn = true               # Allow fee payer to burn tokens
-allow_close_account = true      # Allow fee payer to close token accounts
-allow_approve = true            # Allow fee payer to approve tokens
+
+[validation.fee_payer_policy.system]
+allow_transfer = true           # Allow fee payer to be sender in System Transfer/TransferWithSeed
+allow_assign = true             # Allow fee payer to be authority in System Assign/AssignWithSeed
+allow_create_account = true     # Allow fee payer to be payer in System CreateAccount/CreateAccountWithSeed
+allow_allocate = true           # Allow fee payer to be account in System Allocate/AllocateWithSeed
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = true         # Allow fee payer to initialize nonce accounts
+allow_advance = true            # Allow fee payer to advance nonce accounts
+allow_authorize = true          # Allow fee payer to authorize nonce accounts
+allow_withdraw = true           # Allow fee payer to withdraw from nonce accounts
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = true           # Allow fee payer to be source in SPL token transfers
+allow_burn = true               # Allow fee payer to burn SPL tokens
+allow_close_account = true      # Allow fee payer to close SPL token accounts
+allow_approve = true            # Allow fee payer to approve SPL token delegates
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = true           # Allow fee payer to be source in Token2022 transfers
+allow_burn = true               # Allow fee payer to burn Token2022 tokens
+allow_close_account = true      # Allow fee payer to close Token2022 accounts
+allow_approve = true            # Allow fee payer to approve Token2022 delegates
 
 [validation.price]
 type = "margin" # free / margin / fixed

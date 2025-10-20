@@ -176,86 +176,67 @@ impl TransactionValidator {
     ) -> Result<(), KoraError> {
         let system_instructions = transaction_resolved.get_or_parse_system_instructions()?;
 
-        let check_if_allowed = |address: &Pubkey, policy_allowed: bool, instruction_type: &str| {
-            if *address == self.fee_payer_pubkey && !policy_allowed {
-                return Err(KoraError::InvalidTransaction(format!(
-                    "Fee payer cannot be used for '{instruction_type}'",
-                )));
-            }
-            Ok(())
-        };
-
         // Validate system program instructions
-        for instruction in
-            system_instructions.get(&ParsedSystemInstructionType::SystemTransfer).unwrap_or(&vec![])
-        {
-            if let ParsedSystemInstructionData::SystemTransfer { sender, .. } = instruction {
-                check_if_allowed(
-                    sender,
-                    self.fee_payer_policy.allow_sol_transfers,
-                    "System Transfer",
-                )?;
-            }
-        }
+        validate_system!(self, system_instructions, SystemTransfer,
+            ParsedSystemInstructionData::SystemTransfer { sender, .. } => sender,
+            self.fee_payer_policy.system.allow_transfer, "System Transfer");
 
-        for instruction in
-            system_instructions.get(&ParsedSystemInstructionType::SystemAssign).unwrap_or(&vec![])
-        {
-            if let ParsedSystemInstructionData::SystemAssign { authority } = instruction {
-                check_if_allowed(authority, self.fee_payer_policy.allow_assign, "System Assign")?;
-            }
-        }
+        validate_system!(self, system_instructions, SystemAssign,
+            ParsedSystemInstructionData::SystemAssign { authority } => authority,
+            self.fee_payer_policy.system.allow_assign, "System Assign");
+
+        validate_system!(self, system_instructions, SystemAllocate,
+            ParsedSystemInstructionData::SystemAllocate { account } => account,
+            self.fee_payer_policy.system.allow_allocate, "System Allocate");
+
+        validate_system!(self, system_instructions, SystemCreateAccount,
+            ParsedSystemInstructionData::SystemCreateAccount { payer, .. } => payer,
+            self.fee_payer_policy.system.allow_create_account, "System Create Account");
+
+        validate_system!(self, system_instructions, SystemInitializeNonceAccount,
+            ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_authority, .. } => nonce_authority,
+            self.fee_payer_policy.system.nonce.allow_initialize, "System Initialize Nonce Account");
+
+        validate_system!(self, system_instructions, SystemAdvanceNonceAccount,
+            ParsedSystemInstructionData::SystemAdvanceNonceAccount { nonce_authority, .. } => nonce_authority,
+            self.fee_payer_policy.system.nonce.allow_advance, "System Advance Nonce Account");
+
+        validate_system!(self, system_instructions, SystemAuthorizeNonceAccount,
+            ParsedSystemInstructionData::SystemAuthorizeNonceAccount { nonce_authority, .. } => nonce_authority,
+            self.fee_payer_policy.system.nonce.allow_authorize, "System Authorize Nonce Account");
+
+        // Note: SystemUpgradeNonceAccount not validated - no authority parameter
+
+        validate_system!(self, system_instructions, SystemWithdrawNonceAccount,
+            ParsedSystemInstructionData::SystemWithdrawNonceAccount { nonce_authority, .. } => nonce_authority,
+            self.fee_payer_policy.system.nonce.allow_withdraw, "System Withdraw Nonce Account");
 
         // Validate SPL instructions
         let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
 
-        for instruction in
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer).unwrap_or(&vec![])
-        {
-            if let ParsedSPLInstructionData::SplTokenTransfer { owner, is_2022, .. } = instruction {
-                if *is_2022 {
-                    check_if_allowed(
-                        owner,
-                        self.fee_payer_policy.allow_token2022_transfers,
-                        "Token2022 Token Transfer",
-                    )?;
-                } else {
-                    check_if_allowed(
-                        owner,
-                        self.fee_payer_policy.allow_spl_transfers,
-                        "SPL Token Transfer",
-                    )?;
-                }
-            }
-        }
+        validate_spl!(self, spl_instructions, SplTokenTransfer,
+            ParsedSPLInstructionData::SplTokenTransfer { owner, is_2022, .. } => { owner, is_2022 },
+            self.fee_payer_policy.spl_token.allow_transfer,
+            self.fee_payer_policy.token_2022.allow_transfer,
+            "SPL Token Transfer", "Token2022 Token Transfer");
 
-        for instruction in
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenApprove).unwrap_or(&vec![])
-        {
-            if let ParsedSPLInstructionData::SplTokenApprove { owner, .. } = instruction {
-                check_if_allowed(owner, self.fee_payer_policy.allow_approve, "SPL Token Approve")?;
-            }
-        }
+        validate_spl!(self, spl_instructions, SplTokenApprove,
+            ParsedSPLInstructionData::SplTokenApprove { owner, is_2022, .. } => { owner, is_2022 },
+            self.fee_payer_policy.spl_token.allow_approve,
+            self.fee_payer_policy.token_2022.allow_approve,
+            "SPL Token Approve", "Token2022 Token Approve");
 
-        for instruction in
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenBurn).unwrap_or(&vec![])
-        {
-            if let ParsedSPLInstructionData::SplTokenBurn { owner, .. } = instruction {
-                check_if_allowed(owner, self.fee_payer_policy.allow_burn, "SPL Token Burn")?;
-            }
-        }
+        validate_spl!(self, spl_instructions, SplTokenBurn,
+            ParsedSPLInstructionData::SplTokenBurn { owner, is_2022 } => { owner, is_2022 },
+            self.fee_payer_policy.spl_token.allow_burn,
+            self.fee_payer_policy.token_2022.allow_burn,
+            "SPL Token Burn", "Token2022 Token Burn");
 
-        for instruction in
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenCloseAccount).unwrap_or(&vec![])
-        {
-            if let ParsedSPLInstructionData::SplTokenCloseAccount { owner, .. } = instruction {
-                check_if_allowed(
-                    owner,
-                    self.fee_payer_policy.allow_close_account,
-                    "SPL Token Close Account",
-                )?;
-            }
-        }
+        validate_spl!(self, spl_instructions, SplTokenCloseAccount,
+            ParsedSPLInstructionData::SplTokenCloseAccount { owner, is_2022 } => { owner, is_2022 },
+            self.fee_payer_policy.spl_token.allow_close_account,
+            self.fee_payer_policy.token_2022.allow_close_account,
+            "SPL Token Close Account", "Token2022 Token Close Account");
 
         Ok(())
     }
@@ -582,10 +563,9 @@ mod tests {
 
         // Test with allow_sol_transfers = true
         let rpc_client = RpcMockBuilder::new().build();
-        setup_config_with_policy(FeePayerPolicy {
-            allow_sol_transfers: true,
-            ..Default::default()
-        });
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_transfer = true;
+        setup_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -597,10 +577,9 @@ mod tests {
 
         // Test with allow_sol_transfers = false
         let rpc_client = RpcMockBuilder::new().build();
-        setup_config_with_policy(FeePayerPolicy {
-            allow_sol_transfers: false,
-            ..Default::default()
-        });
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_transfer = false;
+        setup_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -617,8 +596,12 @@ mod tests {
         let new_owner = Pubkey::new_unique();
 
         // Test with allow_assign = true
+
         let rpc_client = RpcMockBuilder::new().build();
-        setup_config_with_policy(FeePayerPolicy { allow_assign: true, ..Default::default() });
+
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_assign = true;
+        setup_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -628,8 +611,12 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_assign = false
+
         let rpc_client = RpcMockBuilder::new().build();
-        setup_config_with_policy(FeePayerPolicy { allow_assign: false, ..Default::default() });
+
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_assign = false;
+        setup_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -649,10 +636,10 @@ mod tests {
 
         // Test with allow_spl_transfers = true
         let rpc_client = RpcMockBuilder::new().build();
-        setup_spl_config_with_policy(FeePayerPolicy {
-            allow_spl_transfers: true,
-            ..Default::default()
-        });
+
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_transfer = true;
+        setup_spl_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -672,10 +659,10 @@ mod tests {
 
         // Test with allow_spl_transfers = false
         let rpc_client = RpcMockBuilder::new().build();
-        setup_spl_config_with_policy(FeePayerPolicy {
-            allow_spl_transfers: false,
-            ..Default::default()
-        });
+
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_transfer = false;
+        setup_spl_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -723,10 +710,10 @@ mod tests {
         let rpc_client = RpcMockBuilder::new()
             .with_mint_account(2) // Mock mint with 2 decimals for SPL outflow calculation
             .build();
-        setup_token2022_config_with_policy(FeePayerPolicy {
-            allow_token2022_transfers: true,
-            ..Default::default()
-        });
+        // Test with token_2022.allow_transfer = true
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_transfer = true;
+        setup_token2022_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -750,10 +737,9 @@ mod tests {
         let rpc_client = RpcMockBuilder::new()
             .with_mint_account(2) // Mock mint with 2 decimals for SPL outflow calculation
             .build();
-        setup_token2022_config_with_policy(FeePayerPolicy {
-            allow_token2022_transfers: false,
-            ..Default::default()
-        });
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_transfer = false;
+        setup_token2022_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -933,8 +919,11 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         // Test with allow_burn = true
+
         let rpc_client = RpcMockBuilder::new().build();
-        setup_spl_config_with_policy(FeePayerPolicy { allow_burn: true, ..Default::default() });
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_burn = true;
+        setup_spl_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -954,8 +943,11 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_burn = false
+
         let rpc_client = RpcMockBuilder::new().build();
-        setup_spl_config_with_policy(FeePayerPolicy { allow_burn: false, ..Default::default() });
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_burn = false;
+        setup_spl_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1002,11 +994,11 @@ mod tests {
         let destination = Pubkey::new_unique();
 
         // Test with allow_close_account = true
+
         let rpc_client = RpcMockBuilder::new().build();
-        setup_spl_config_with_policy(FeePayerPolicy {
-            allow_close_account: true,
-            ..Default::default()
-        });
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_close_account = true;
+        setup_spl_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1026,10 +1018,9 @@ mod tests {
 
         // Test with allow_close_account = false
         let rpc_client = RpcMockBuilder::new().build();
-        setup_spl_config_with_policy(FeePayerPolicy {
-            allow_close_account: false,
-            ..Default::default()
-        });
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_close_account = false;
+        setup_spl_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1057,8 +1048,11 @@ mod tests {
         let delegate = Pubkey::new_unique();
 
         // Test with allow_approve = true
+
         let rpc_client = RpcMockBuilder::new().build();
-        setup_spl_config_with_policy(FeePayerPolicy { allow_approve: true, ..Default::default() });
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_approve = true;
+        setup_spl_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1079,7 +1073,9 @@ mod tests {
 
         // Test with allow_approve = false
         let rpc_client = RpcMockBuilder::new().build();
-        setup_spl_config_with_policy(FeePayerPolicy { allow_approve: false, ..Default::default() });
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_approve = false;
+        setup_spl_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1129,11 +1125,11 @@ mod tests {
         let mint = Pubkey::new_unique();
 
         // Test with allow_burn = false for Token2022
+
         let rpc_client = RpcMockBuilder::new().build();
-        setup_token2022_config_with_policy(FeePayerPolicy {
-            allow_burn: false,
-            ..Default::default()
-        });
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_burn = false;
+        setup_token2022_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1161,11 +1157,11 @@ mod tests {
         let destination = Pubkey::new_unique();
 
         // Test with allow_close_account = false for Token2022
+
         let rpc_client = RpcMockBuilder::new().build();
-        setup_token2022_config_with_policy(FeePayerPolicy {
-            allow_close_account: false,
-            ..FeePayerPolicy::default()
-        });
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_close_account = false;
+        setup_token2022_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1192,11 +1188,11 @@ mod tests {
         let delegate = Pubkey::new_unique();
 
         // Test with allow_approve = true
+
         let rpc_client = RpcMockBuilder::new().build();
-        setup_token2022_config_with_policy(FeePayerPolicy {
-            allow_approve: true,
-            ..Default::default()
-        });
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_approve = true;
+        setup_token2022_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1216,11 +1212,11 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_approve = false
+
         let rpc_client = RpcMockBuilder::new().build();
-        setup_token2022_config_with_policy(FeePayerPolicy {
-            allow_approve: false,
-            ..Default::default()
-        });
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_approve = false;
+        setup_token2022_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
@@ -1259,6 +1255,203 @@ mod tests {
         let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
         // Should also fail for approve_checked
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_create_account() {
+        use solana_system_interface::instruction::create_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let new_account = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+
+        // Test with allow_create_account = true (default)
+        let rpc_client = RpcMockBuilder::new().build();
+        let policy = FeePayerPolicy::default();
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instruction = create_account(&fee_payer, &new_account, 1000, 100, &owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
+
+        // Test with allow_create_account = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = false;
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instruction = create_account(&fee_payer, &new_account, 1000, 100, &owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_allocate() {
+        use solana_sdk::system_instruction::allocate;
+
+        let fee_payer = Pubkey::new_unique();
+
+        // Test with allow_allocate = true (default)
+        let rpc_client = RpcMockBuilder::new().build();
+        let policy = FeePayerPolicy::default();
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instruction = allocate(&fee_payer, 100);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
+
+        // Test with allow_allocate = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_allocate = false;
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instruction = allocate(&fee_payer, 100);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_nonce_initialize() {
+        use solana_sdk::system_instruction::create_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+
+        // Test with allow_initialize = true (default)
+        let rpc_client = RpcMockBuilder::new().build();
+        let policy = FeePayerPolicy::default();
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instructions = create_nonce_account(&fee_payer, &nonce_account, &fee_payer, 1_000_000);
+        // Only test the InitializeNonceAccount instruction (second one)
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instructions[1].clone()], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
+
+        // Test with allow_initialize = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_initialize = false;
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instructions = create_nonce_account(&fee_payer, &nonce_account, &fee_payer, 1_000_000);
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instructions[1].clone()], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_nonce_advance() {
+        use solana_sdk::system_instruction::advance_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+
+        // Test with allow_advance = true (default)
+        let rpc_client = RpcMockBuilder::new().build();
+        let policy = FeePayerPolicy::default();
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instruction = advance_nonce_account(&nonce_account, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
+
+        // Test with allow_advance = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_advance = false;
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instruction = advance_nonce_account(&nonce_account, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_nonce_withdraw() {
+        use solana_sdk::system_instruction::withdraw_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        // Test with allow_withdraw = true (default)
+        let rpc_client = RpcMockBuilder::new().build();
+        let policy = FeePayerPolicy::default();
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instruction = withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 1000);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
+
+        // Test with allow_withdraw = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_withdraw = false;
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instruction = withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 1000);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_nonce_authorize() {
+        use solana_sdk::system_instruction::authorize_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let new_authority = Pubkey::new_unique();
+
+        // Test with allow_authorize = true (default)
+        let rpc_client = RpcMockBuilder::new().build();
+        let policy = FeePayerPolicy::default();
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
+
+        // Test with allow_authorize = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_authorize = false;
+        setup_config_with_policy(policy);
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 }

@@ -19,6 +19,11 @@ pub enum ParsedSystemInstructionType {
     SystemCreateAccount,
     SystemWithdrawNonceAccount,
     SystemAssign,
+    SystemAllocate,
+    SystemInitializeNonceAccount,
+    SystemAdvanceNonceAccount,
+    SystemAuthorizeNonceAccount,
+    // Note: SystemUpgradeNonceAccount not included - no authority parameter
 }
 
 // Instruction type that we support to parse from the transaction
@@ -32,6 +37,15 @@ pub enum ParsedSystemInstructionData {
     SystemWithdrawNonceAccount { lamports: u64, nonce_authority: Pubkey, recipient: Pubkey },
     // Includes assign and assign with seed
     SystemAssign { authority: Pubkey },
+    // Includes allocate and allocate with seed
+    SystemAllocate { account: Pubkey },
+    // Initialize nonce account
+    SystemInitializeNonceAccount { nonce_account: Pubkey, nonce_authority: Pubkey },
+    // Advance nonce account
+    SystemAdvanceNonceAccount { nonce_account: Pubkey, nonce_authority: Pubkey },
+    // Authorize nonce account
+    SystemAuthorizeNonceAccount { nonce_account: Pubkey, nonce_authority: Pubkey },
+    // Note: SystemUpgradeNonceAccount not included - no authority parameter
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -83,6 +97,59 @@ macro_rules! validate_number_accounts {
     };
 }
 
+/// Macro to parse system instructions with validation and account extraction
+/// Usage: parse_system_instruction!(parsed_instructions, instruction, validate_module, EnumVariant, DataVariant { fields })
+macro_rules! parse_system_instruction {
+    // Simple version: separate constant module path and enum variant names
+    ($parsed:ident, $ix:ident, $const_mod:ident, $enum_variant:ident, $data_variant:ident { $($field:ident: $account_path:expr),* $(,)? }) => {
+        validate_number_accounts!($ix, instruction_indexes::$const_mod::REQUIRED_NUMBER_OF_ACCOUNTS);
+        $parsed
+            .entry(ParsedSystemInstructionType::$enum_variant)
+            .or_default()
+            .push(ParsedSystemInstructionData::$data_variant {
+                $($field: $ix.accounts[$account_path].pubkey,)*
+            });
+    };
+    // Version with extra fields (like lamports) that come from instruction data
+    ($parsed:ident, $ix:ident, $const_mod:ident, $enum_variant:ident, $data_variant:ident { $($data_field:ident: $data_val:expr),* ; $($field:ident: $account_path:expr),* $(,)? }) => {
+        validate_number_accounts!($ix, instruction_indexes::$const_mod::REQUIRED_NUMBER_OF_ACCOUNTS);
+        $parsed
+            .entry(ParsedSystemInstructionType::$enum_variant)
+            .or_default()
+            .push(ParsedSystemInstructionData::$data_variant {
+                $($data_field: $data_val,)*
+                $($field: $ix.accounts[$account_path].pubkey,)*
+            });
+    };
+}
+
+/// Macro to parse SPL token instructions with validation and account extraction
+/// Usage: parse_spl_instruction!(parsed_instructions, instruction, is_2022_flag, InstructionType, DataVariant { fields })
+macro_rules! parse_spl_instruction {
+    ($parsed:ident, $ix:ident, $is_2022:expr, $ix_type:ident, $data_variant:ident { $($field:ident: $account_path:expr),* $(,)? }) => {
+        validate_number_accounts!($ix, instruction_indexes::$ix_type::REQUIRED_NUMBER_OF_ACCOUNTS);
+        $parsed
+            .entry(ParsedSPLInstructionType::$ix_type)
+            .or_default()
+            .push(ParsedSPLInstructionData::$data_variant {
+                $($field: $ix.accounts[$account_path].pubkey,)*
+                is_2022: $is_2022,
+            });
+    };
+    // Version with extra fields from instruction data
+    ($parsed:ident, $ix:ident, $is_2022:expr, $ix_type:ident, $data_variant:ident { $($data_field:ident: $data_val:expr),* ; $($field:ident: $account_path:expr),* $(,)? }) => {
+        validate_number_accounts!($ix, instruction_indexes::$ix_type::REQUIRED_NUMBER_OF_ACCOUNTS);
+        $parsed
+            .entry(ParsedSPLInstructionType::$ix_type)
+            .or_default()
+            .push(ParsedSPLInstructionData::$data_variant {
+                $($data_field: $data_val,)*
+                $($field: $ix.accounts[$account_path].pubkey,)*
+                is_2022: $is_2022,
+            });
+    };
+}
+
 pub struct IxUtils;
 
 pub const PARSED_DATA_FIELD_TYPE: &str = "type";
@@ -99,6 +166,11 @@ pub const PARSED_DATA_FIELD_TRANSFER_WITH_SEED: &str = "transferWithSeed";
 pub const PARSED_DATA_FIELD_CREATE_ACCOUNT_WITH_SEED: &str = "createAccountWithSeed";
 pub const PARSED_DATA_FIELD_ASSIGN_WITH_SEED: &str = "assignWithSeed";
 pub const PARSED_DATA_FIELD_WITHDRAW_NONCE_ACCOUNT: &str = "withdrawFromNonce";
+pub const PARSED_DATA_FIELD_ALLOCATE: &str = "allocate";
+pub const PARSED_DATA_FIELD_ALLOCATE_WITH_SEED: &str = "allocateWithSeed";
+pub const PARSED_DATA_FIELD_INITIALIZE_NONCE_ACCOUNT: &str = "initializeNonce";
+pub const PARSED_DATA_FIELD_ADVANCE_NONCE_ACCOUNT: &str = "advanceNonce";
+pub const PARSED_DATA_FIELD_AUTHORIZE_NONCE_ACCOUNT: &str = "authorizeNonce";
 pub const PARSED_DATA_FIELD_BURN: &str = "burn";
 pub const PARSED_DATA_FIELD_BURN_CHECKED: &str = "burnChecked";
 pub const PARSED_DATA_FIELD_CLOSE_ACCOUNT: &str = "closeAccount";
@@ -126,6 +198,7 @@ pub const PARSED_DATA_FIELD_SOURCE_OWNER: &str = "sourceOwner";
 pub const PARSED_DATA_FIELD_NONCE_ACCOUNT: &str = "nonceAccount";
 pub const PARSED_DATA_FIELD_RECIPIENT: &str = "recipient";
 pub const PARSED_DATA_FIELD_NONCE_AUTHORITY: &str = "nonceAuthority";
+pub const PARSED_DATA_FIELD_NEW_AUTHORITY: &str = "newAuthority";
 
 impl IxUtils {
     /// Helper method to extract a field as a string from JSON with proper error handling
@@ -499,6 +572,126 @@ impl IxUtils {
                     data,
                 })
             }
+            PARSED_DATA_FIELD_ALLOCATE => {
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let space = Self::get_field_as_u64(info, PARSED_DATA_FIELD_SPACE)?;
+
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+
+                let allocate_ix = SystemInstruction::Allocate { space };
+                let data = bincode::serialize(&allocate_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize Allocate instruction: {}",
+                        e
+                    ))
+                })?;
+
+                Ok(CompiledInstruction { program_id_index, accounts: vec![account_idx], data })
+            }
+            PARSED_DATA_FIELD_ALLOCATE_WITH_SEED => {
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let base = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_BASE)?;
+                let seed = Self::get_field_as_str(info, PARSED_DATA_FIELD_SEED)?.to_string();
+                let space = Self::get_field_as_u64(info, PARSED_DATA_FIELD_SPACE)?;
+                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
+
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let base_idx = Self::get_account_index(account_keys_hashmap, &base)?;
+
+                let allocate_ix = SystemInstruction::AllocateWithSeed { base, seed, space, owner };
+                let data = bincode::serialize(&allocate_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize AllocateWithSeed instruction: {}",
+                        e
+                    ))
+                })?;
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![account_idx, base_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_INITIALIZE_NONCE_ACCOUNT => {
+                let nonce_account =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
+                let nonce_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
+
+                let nonce_account_idx =
+                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
+
+                let initialize_ix = SystemInstruction::InitializeNonceAccount(nonce_authority);
+                let data = bincode::serialize(&initialize_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize InitializeNonceAccount instruction: {}",
+                        e
+                    ))
+                })?;
+
+                // Accounts: [nonce_account, recent_blockhashes_sysvar, rent_sysvar]
+                // We only have nonce_account in the hashmap for inner instructions
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![nonce_account_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_ADVANCE_NONCE_ACCOUNT => {
+                let nonce_account =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
+                let nonce_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
+
+                let nonce_account_idx =
+                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
+                let nonce_authority_idx =
+                    Self::get_account_index(account_keys_hashmap, &nonce_authority)?;
+
+                let advance_ix = SystemInstruction::AdvanceNonceAccount;
+                let data = bincode::serialize(&advance_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize AdvanceNonceAccount instruction: {}",
+                        e
+                    ))
+                })?;
+
+                // Accounts: [nonce_account, recent_blockhashes_sysvar, nonce_authority]
+                // We only include accounts that are in the hashmap (from inner instructions)
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![nonce_account_idx, nonce_authority_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_AUTHORIZE_NONCE_ACCOUNT => {
+                let nonce_account =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
+                let nonce_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
+                let new_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NEW_AUTHORITY)?;
+
+                let nonce_account_idx =
+                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
+                let nonce_authority_idx =
+                    Self::get_account_index(account_keys_hashmap, &nonce_authority)?;
+
+                let authorize_ix = SystemInstruction::AuthorizeNonceAccount(new_authority);
+                let data = bincode::serialize(&authorize_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize AuthorizeNonceAccount instruction: {}",
+                        e
+                    ))
+                })?;
+
+                // Accounts: [nonce_account, nonce_authority]
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![nonce_account_idx, nonce_authority_idx],
+                    data,
+                })
+            }
             _ => {
                 log::error!("Unsupported system instruction type: {}", instruction_type);
                 Ok(Self::build_default_compiled_instruction(program_id_index))
@@ -734,49 +927,23 @@ impl IxUtils {
             // Handle System Program transfers and account creation
             if program_id == SYSTEM_PROGRAM_ID {
                 match bincode::deserialize::<SystemInstruction>(&instruction.data) {
-                    // Account creation instructions - funding account pays lamports
                     Ok(SystemInstruction::CreateAccount { lamports, .. })
                     | Ok(SystemInstruction::CreateAccountWithSeed { lamports, .. }) => {
-                        validate_number_accounts!(
-                            instruction,
-                            instruction_indexes::system_create_account::REQUIRED_NUMBER_OF_ACCOUNTS
-                        );
-
-                        let payer = instruction.accounts
-                            [instruction_indexes::system_create_account::PAYER_INDEX]
-                            .pubkey;
-
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemCreateAccount)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemCreateAccount {
-                                lamports,
-                                payer,
-                            });
+                        parse_system_instruction!(parsed_instructions, instruction, system_create_account, SystemCreateAccount, SystemCreateAccount {
+                            lamports: lamports;
+                            payer: instruction_indexes::system_create_account::PAYER_INDEX
+                        });
                     }
-                    // Transfer instructions
                     Ok(SystemInstruction::Transfer { lamports }) => {
-                        validate_number_accounts!(
-                            instruction,
-                            instruction_indexes::system_transfer::REQUIRED_NUMBER_OF_ACCOUNTS
-                        );
-
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemTransfer)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemTransfer {
-                                lamports,
-                                sender: instruction.accounts
-                                    [instruction_indexes::system_transfer::SENDER_INDEX]
-                                    .pubkey,
-                                receiver: instruction.accounts
-                                    [instruction_indexes::system_transfer::RECEIVER_INDEX]
-                                    .pubkey,
-                            });
+                        parse_system_instruction!(parsed_instructions, instruction, system_transfer, SystemTransfer, SystemTransfer {
+                            lamports: lamports;
+                            sender: instruction_indexes::system_transfer::SENDER_INDEX,
+                            receiver: instruction_indexes::system_transfer::RECEIVER_INDEX
+                        });
                     }
                     Ok(SystemInstruction::TransferWithSeed { lamports, .. }) => {
+                        // Note: uses system_transfer_with_seed for validation but maps to SystemTransfer type
                         validate_number_accounts!(instruction, instruction_indexes::system_transfer_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
-
                         parsed_instructions
                             .entry(ParsedSystemInstructionType::SystemTransfer)
                             .or_default()
@@ -786,37 +953,27 @@ impl IxUtils {
                                 receiver: instruction.accounts[instruction_indexes::system_transfer_with_seed::RECEIVER_INDEX].pubkey,
                             });
                     }
-                    // Nonce account withdrawal
                     Ok(SystemInstruction::WithdrawNonceAccount(lamports)) => {
-                        validate_number_accounts!(instruction, instruction_indexes::system_withdraw_nonce_account::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemWithdrawNonceAccount)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemWithdrawNonceAccount {
-                                lamports,
-                                nonce_authority: instruction.accounts[instruction_indexes::system_withdraw_nonce_account::NONCE_AUTHORITY_INDEX].pubkey,
-                                recipient: instruction.accounts[instruction_indexes::system_withdraw_nonce_account::RECIPIENT_INDEX].pubkey,
-                            });
+                        parse_system_instruction!(parsed_instructions, instruction, system_withdraw_nonce_account, SystemWithdrawNonceAccount, SystemWithdrawNonceAccount {
+                            lamports: lamports;
+                            nonce_authority: instruction_indexes::system_withdraw_nonce_account::NONCE_AUTHORITY_INDEX,
+                            recipient: instruction_indexes::system_withdraw_nonce_account::RECIPIENT_INDEX
+                        });
                     }
                     Ok(SystemInstruction::Assign { .. }) => {
-                        validate_number_accounts!(
+                        parse_system_instruction!(
+                            parsed_instructions,
                             instruction,
-                            instruction_indexes::system_assign::REQUIRED_NUMBER_OF_ACCOUNTS
+                            system_assign,
+                            SystemAssign,
+                            SystemAssign {
+                                authority: instruction_indexes::system_assign::AUTHORITY_INDEX
+                            }
                         );
-
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemAssign)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemAssign {
-                                authority: instruction.accounts
-                                    [instruction_indexes::system_assign::AUTHORITY_INDEX]
-                                    .pubkey,
-                            });
                     }
                     Ok(SystemInstruction::AssignWithSeed { .. }) => {
+                        // Note: uses system_assign_with_seed for validation but maps to SystemAssign type
                         validate_number_accounts!(instruction, instruction_indexes::system_assign_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
-
                         parsed_instructions
                             .entry(ParsedSystemInstructionType::SystemAssign)
                             .or_default()
@@ -825,6 +982,52 @@ impl IxUtils {
                                     [instruction_indexes::system_assign_with_seed::AUTHORITY_INDEX]
                                     .pubkey,
                             });
+                    }
+                    Ok(SystemInstruction::Allocate { .. }) => {
+                        parse_system_instruction!(
+                            parsed_instructions,
+                            instruction,
+                            system_allocate,
+                            SystemAllocate,
+                            SystemAllocate {
+                                account: instruction_indexes::system_allocate::ACCOUNT_INDEX
+                            }
+                        );
+                    }
+                    Ok(SystemInstruction::AllocateWithSeed { .. }) => {
+                        // Note: uses system_allocate_with_seed for validation but maps to SystemAllocate type
+                        validate_number_accounts!(instruction, instruction_indexes::system_allocate_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
+                        parsed_instructions
+                            .entry(ParsedSystemInstructionType::SystemAllocate)
+                            .or_default()
+                            .push(ParsedSystemInstructionData::SystemAllocate {
+                                account: instruction.accounts
+                                    [instruction_indexes::system_allocate_with_seed::ACCOUNT_INDEX]
+                                    .pubkey,
+                            });
+                    }
+                    Ok(SystemInstruction::InitializeNonceAccount(authority)) => {
+                        parse_system_instruction!(parsed_instructions, instruction, system_initialize_nonce_account, SystemInitializeNonceAccount, SystemInitializeNonceAccount {
+                            nonce_authority: authority;
+                            nonce_account: instruction_indexes::system_initialize_nonce_account::NONCE_ACCOUNT_INDEX
+                        });
+                    }
+                    Ok(SystemInstruction::AdvanceNonceAccount) => {
+                        parse_system_instruction!(parsed_instructions, instruction, system_advance_nonce_account, SystemAdvanceNonceAccount, SystemAdvanceNonceAccount {
+                            nonce_account: instruction_indexes::system_advance_nonce_account::NONCE_ACCOUNT_INDEX,
+                            nonce_authority: instruction_indexes::system_advance_nonce_account::NONCE_AUTHORITY_INDEX
+                        });
+                    }
+                    Ok(SystemInstruction::AuthorizeNonceAccount(_new_authority)) => {
+                        parse_system_instruction!(parsed_instructions, instruction, system_authorize_nonce_account, SystemAuthorizeNonceAccount, SystemAuthorizeNonceAccount {
+                            nonce_account: instruction_indexes::system_authorize_nonce_account::NONCE_ACCOUNT_INDEX,
+                            nonce_authority: instruction_indexes::system_authorize_nonce_account::NONCE_AUTHORITY_INDEX
+                        });
+                    }
+                    // UpgradeNonceAccount: Not parsed - no authority parameter, cannot validate fee payer involvement
+                    // Anyone can upgrade any nonce account without signing
+                    Ok(SystemInstruction::UpgradeNonceAccount) => {
+                        // Skip parsing
                     }
                     _ => {}
                 }

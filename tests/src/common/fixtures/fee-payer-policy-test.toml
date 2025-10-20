@@ -50,10 +50,27 @@ disallowed_accounts = [
 
 # RESTRICTIVE fee payer policy - ALL SET TO FALSE
 [validation.fee_payer_policy]
-allow_sol_transfers = false
-allow_spl_transfers = false
-allow_token2022_transfers = false
+
+[validation.fee_payer_policy.system]
+allow_transfer = false
 allow_assign = false
+allow_create_account = false
+allow_allocate = false
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false
+allow_advance = false
+allow_authorize = false
+allow_withdraw = false
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = false
 allow_burn = false
 allow_close_account = false
 allow_approve = false

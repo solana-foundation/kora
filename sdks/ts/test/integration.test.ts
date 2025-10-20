@@ -63,11 +63,34 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.validation_config.price).toBeDefined();
             expect(config.validation_config.price.type).toBeDefined();
             expect(config.validation_config.fee_payer_policy).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.allow_sol_transfers).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.allow_spl_transfers).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.allow_token2022_transfers).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.allow_assign).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.allow_burn).toBeDefined();
+
+            // System policy
+            expect(config.validation_config.fee_payer_policy.system).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.allow_transfer).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.allow_assign).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.allow_create_account).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.allow_allocate).toBeDefined();
+
+            // System nonce policy
+            expect(config.validation_config.fee_payer_policy.system.nonce).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.nonce.allow_initialize).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.nonce.allow_advance).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.nonce.allow_authorize).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.nonce.allow_withdraw).toBeDefined();
+
+            // SPL token policy
+            expect(config.validation_config.fee_payer_policy.spl_token).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_transfer).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_burn).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_close_account).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_approve).toBeDefined();
+
+            // Token2022 policy
+            expect(config.validation_config.fee_payer_policy.token_2022).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_transfer).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_burn).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_close_account).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_approve).toBeDefined();
             expect(config.enabled_methods).toBeDefined();
             expect(config.enabled_methods.liveness).toBeDefined();
             expect(config.enabled_methods.estimate_transaction_fee).toBeDefined();

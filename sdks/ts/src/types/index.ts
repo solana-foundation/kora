@@ -293,23 +293,73 @@ export interface Config {
 }
 
 /**
+ * Nonce instruction policy
+ */
+export interface NonceInstructionPolicy {
+    /** Allow fee payer to initialize nonce accounts */
+    allow_initialize: boolean;
+    /** Allow fee payer to advance nonce accounts */
+    allow_advance: boolean;
+    /** Allow fee payer to authorize nonce accounts */
+    allow_authorize: boolean;
+    /** Allow fee payer to withdraw from nonce accounts */
+    allow_withdraw: boolean;
+}
+
+/**
+ * System instruction policy
+ */
+export interface SystemInstructionPolicy {
+    /** Allow fee payer to be the sender in System Transfer/TransferWithSeed */
+    allow_transfer: boolean;
+    /** Allow fee payer to be the authority in System Assign/AssignWithSeed */
+    allow_assign: boolean;
+    /** Allow fee payer to be the payer in System CreateAccount/CreateAccountWithSeed */
+    allow_create_account: boolean;
+    /** Allow fee payer to be the account in System Allocate/AllocateWithSeed */
+    allow_allocate: boolean;
+    /** Nested policy for nonce account operations */
+    nonce: NonceInstructionPolicy;
+}
+
+/**
+ * SPL Token instruction policy
+ */
+export interface SplTokenInstructionPolicy {
+    /** Allow fee payer to be source in SPL token transfers */
+    allow_transfer: boolean;
+    /** Allow fee payer to burn SPL tokens */
+    allow_burn: boolean;
+    /** Allow fee payer to close SPL token accounts */
+    allow_close_account: boolean;
+    /** Allow fee payer to approve SPL token delegates */
+    allow_approve: boolean;
+}
+
+/**
+ * Token2022 instruction policy
+ */
+export interface Token2022InstructionPolicy {
+    /** Allow fee payer to be source in Token2022 transfers */
+    allow_transfer: boolean;
+    /** Allow fee payer to burn Token2022 tokens */
+    allow_burn: boolean;
+    /** Allow fee payer to close Token2022 accounts */
+    allow_close_account: boolean;
+    /** Allow fee payer to approve Token2022 delegates */
+    allow_approve: boolean;
+}
+
+/**
  * Policy controlling what actions the fee payer can perform.
  */
 export interface FeePayerPolicy {
-    /** Allow fee payer to be source in SOL transfers */
-    allow_sol_transfers: boolean;
-    /** Allow fee payer to be source in SPL token transfers */
-    allow_spl_transfers: boolean;
-    /** Allow fee payer to be source in Token2022 transfers */
-    allow_token2022_transfers: boolean;
-    /** Allow fee payer to use Assign instruction */
-    allow_assign: boolean;
-    /** Allow fee payer to use Burn instruction */
-    allow_burn: boolean;
-    /** Allow fee payer to use CloseAccount instruction */
-    allow_close_account: boolean;
-    /** Allow fee payer to use Approve instruction */
-    allow_approve: boolean;
+    /** System program instruction policies */
+    system: SystemInstructionPolicy;
+    /** SPL Token program instruction policies */
+    spl_token: SplTokenInstructionPolicy;
+    /** Token2022 program instruction policies */
+    token_2022: Token2022InstructionPolicy;
 }
 
 /**

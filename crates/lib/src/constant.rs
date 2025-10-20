@@ -67,6 +67,36 @@ pub mod instruction_indexes {
         pub const AUTHORITY_INDEX: usize = 1;
     }
 
+    pub mod system_allocate {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 1;
+        pub const ACCOUNT_INDEX: usize = 0;
+    }
+
+    pub mod system_allocate_with_seed {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const ACCOUNT_INDEX: usize = 1;
+    }
+
+    pub mod system_initialize_nonce_account {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const NONCE_ACCOUNT_INDEX: usize = 0;
+        pub const NONCE_AUTHORITY_INDEX: usize = 0; // From instruction data
+    }
+
+    pub mod system_advance_nonce_account {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const NONCE_ACCOUNT_INDEX: usize = 0;
+        pub const NONCE_AUTHORITY_INDEX: usize = 2;
+    }
+
+    pub mod system_authorize_nonce_account {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const NONCE_ACCOUNT_INDEX: usize = 0;
+        pub const NONCE_AUTHORITY_INDEX: usize = 1;
+    }
+
+    // Note: system_upgrade_nonce_account not included - no authority parameter, cannot validate
+
     pub mod spl_token_transfer {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
         pub const OWNER_INDEX: usize = 2;
