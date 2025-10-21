@@ -81,6 +81,13 @@ pub const TEST_INTEREST_BEARING_MINT_KEYPAIR_ENV: &str = "TEST_INTEREST_BEARING_
 /// Test transfer hook mint private key environment variable
 pub const TEST_TRANSFER_HOOK_MINT_KEYPAIR_ENV: &str = "TEST_TRANSFER_HOOK_MINT_KEYPAIR";
 
+/// Fee payer policy mint private key environment variable
+pub const TEST_FEE_PAYER_POLICY_MINT_KEYPAIR_ENV: &str = "TEST_FEE_PAYER_POLICY_MINT_KEYPAIR";
+
+/// Fee payer policy mint 2022 private key environment variable
+pub const TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR_ENV: &str =
+    "TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR";
+
 /// Payment address keypair environment variable
 pub const PAYMENT_ADDRESS_KEYPAIR_ENV: &str = "PAYMENT_ADDRESS_KEYPAIR";
 

@@ -119,17 +119,78 @@ async fn test_fee_payer_policy_is_present() {
         .as_object()
         .expect("Expected fee_payer_policy in validation_config");
 
-    // Validate policy structure
-    assert!(fee_payer_policy.contains_key("allow_sol_transfers"));
-    assert!(fee_payer_policy.contains_key("allow_spl_transfers"));
-    assert!(fee_payer_policy.contains_key("allow_token2022_transfers"));
-    assert!(fee_payer_policy.contains_key("allow_assign"));
+    // Validate nested policy structure
+    assert!(fee_payer_policy.contains_key("system"));
+    assert!(fee_payer_policy.contains_key("spl_token"));
+    assert!(fee_payer_policy.contains_key("token_2022"));
 
-    // Validate default values
-    assert_eq!(fee_payer_policy["allow_sol_transfers"], true);
-    assert_eq!(fee_payer_policy["allow_spl_transfers"], true);
-    assert_eq!(fee_payer_policy["allow_token2022_transfers"], true);
-    assert_eq!(fee_payer_policy["allow_assign"], true);
+    // Validate system policy structure
+    let system = fee_payer_policy["system"].as_object().expect("Expected system policy object");
+    assert!(system.contains_key("allow_transfer"));
+    assert!(system.contains_key("allow_assign"));
+    assert!(system.contains_key("allow_create_account"));
+    assert!(system.contains_key("allow_allocate"));
+    assert!(system.contains_key("nonce"));
+    assert_eq!(system["allow_transfer"], true);
+    assert_eq!(system["allow_assign"], true);
+    assert_eq!(system["allow_create_account"], true);
+    assert_eq!(system["allow_allocate"], true);
+
+    // Validate nonce nested policy
+    let nonce = system["nonce"].as_object().expect("Expected nonce policy object");
+    assert!(nonce.contains_key("allow_initialize"));
+    assert!(nonce.contains_key("allow_advance"));
+    assert!(nonce.contains_key("allow_withdraw"));
+    assert!(nonce.contains_key("allow_authorize"));
+    assert!(!nonce.contains_key("allow_upgrade"), "allow_upgrade should not exist");
+    assert_eq!(nonce["allow_initialize"], true);
+    assert_eq!(nonce["allow_advance"], true);
+    assert_eq!(nonce["allow_withdraw"], true);
+    assert_eq!(nonce["allow_authorize"], true);
+
+    // Validate spl_token policy structure
+    let spl_token =
+        fee_payer_policy["spl_token"].as_object().expect("Expected spl_token policy object");
+    assert!(spl_token.contains_key("allow_transfer"));
+    assert!(spl_token.contains_key("allow_burn"));
+    assert!(spl_token.contains_key("allow_close_account"));
+    assert!(spl_token.contains_key("allow_approve"));
+    assert!(spl_token.contains_key("allow_revoke"));
+    assert!(spl_token.contains_key("allow_set_authority"));
+    assert!(spl_token.contains_key("allow_mint_to"));
+    assert!(spl_token.contains_key("allow_freeze_account"));
+    assert!(spl_token.contains_key("allow_thaw_account"));
+    assert_eq!(spl_token["allow_transfer"], true);
+    assert_eq!(spl_token["allow_burn"], true);
+    assert_eq!(spl_token["allow_close_account"], true);
+    assert_eq!(spl_token["allow_approve"], true);
+    assert_eq!(spl_token["allow_revoke"], true);
+    assert_eq!(spl_token["allow_set_authority"], true);
+    assert_eq!(spl_token["allow_mint_to"], true);
+    assert_eq!(spl_token["allow_freeze_account"], true);
+    assert_eq!(spl_token["allow_thaw_account"], true);
+
+    // Validate token_2022 policy structure
+    let token_2022 =
+        fee_payer_policy["token_2022"].as_object().expect("Expected token_2022 policy object");
+    assert!(token_2022.contains_key("allow_transfer"));
+    assert!(token_2022.contains_key("allow_burn"));
+    assert!(token_2022.contains_key("allow_close_account"));
+    assert!(token_2022.contains_key("allow_approve"));
+    assert!(token_2022.contains_key("allow_revoke"));
+    assert!(token_2022.contains_key("allow_set_authority"));
+    assert!(token_2022.contains_key("allow_mint_to"));
+    assert!(token_2022.contains_key("allow_freeze_account"));
+    assert!(token_2022.contains_key("allow_thaw_account"));
+    assert_eq!(token_2022["allow_transfer"], true);
+    assert_eq!(token_2022["allow_burn"], true);
+    assert_eq!(token_2022["allow_close_account"], true);
+    assert_eq!(token_2022["allow_approve"], true);
+    assert_eq!(token_2022["allow_revoke"], true);
+    assert_eq!(token_2022["allow_set_authority"], true);
+    assert_eq!(token_2022["allow_mint_to"], true);
+    assert_eq!(token_2022["allow_freeze_account"], true);
+    assert_eq!(token_2022["allow_thaw_account"], true);
 }
 
 /// Test that liveness endpoint is disabled (returns error)

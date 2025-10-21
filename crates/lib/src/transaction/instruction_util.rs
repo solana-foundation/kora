@@ -19,6 +19,11 @@ pub enum ParsedSystemInstructionType {
     SystemCreateAccount,
     SystemWithdrawNonceAccount,
     SystemAssign,
+    SystemAllocate,
+    SystemInitializeNonceAccount,
+    SystemAdvanceNonceAccount,
+    SystemAuthorizeNonceAccount,
+    // Note: SystemUpgradeNonceAccount not included - no authority parameter
 }
 
 // Instruction type that we support to parse from the transaction
@@ -32,6 +37,15 @@ pub enum ParsedSystemInstructionData {
     SystemWithdrawNonceAccount { lamports: u64, nonce_authority: Pubkey, recipient: Pubkey },
     // Includes assign and assign with seed
     SystemAssign { authority: Pubkey },
+    // Includes allocate and allocate with seed
+    SystemAllocate { account: Pubkey },
+    // Initialize nonce account
+    SystemInitializeNonceAccount { nonce_account: Pubkey, nonce_authority: Pubkey },
+    // Advance nonce account
+    SystemAdvanceNonceAccount { nonce_account: Pubkey, nonce_authority: Pubkey },
+    // Authorize nonce account
+    SystemAuthorizeNonceAccount { nonce_account: Pubkey, nonce_authority: Pubkey },
+    // Note: SystemUpgradeNonceAccount not included - no authority parameter
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -40,6 +54,14 @@ pub enum ParsedSPLInstructionType {
     SplTokenBurn,
     SplTokenCloseAccount,
     SplTokenApprove,
+    SplTokenRevoke,
+    SplTokenSetAuthority,
+    SplTokenMintTo,
+    SplTokenInitializeMint,
+    SplTokenInitializeAccount,
+    SplTokenInitializeMultisig,
+    SplTokenFreezeAccount,
+    SplTokenThawAccount,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -68,6 +90,46 @@ pub enum ParsedSPLInstructionData {
         owner: Pubkey,
         is_2022: bool,
     },
+    // Revoke
+    SplTokenRevoke {
+        owner: Pubkey,
+        is_2022: bool,
+    },
+    // SetAuthority
+    SplTokenSetAuthority {
+        authority: Pubkey,
+        is_2022: bool,
+    },
+    // MintTo and MintToChecked
+    SplTokenMintTo {
+        mint_authority: Pubkey,
+        is_2022: bool,
+    },
+    // InitializeMint and InitializeMint2
+    SplTokenInitializeMint {
+        mint_authority: Pubkey,
+        is_2022: bool,
+    },
+    // InitializeAccount, InitializeAccount2, InitializeAccount3
+    SplTokenInitializeAccount {
+        owner: Pubkey,
+        is_2022: bool,
+    },
+    // InitializeMultisig and InitializeMultisig2
+    SplTokenInitializeMultisig {
+        signers: Vec<Pubkey>,
+        is_2022: bool,
+    },
+    // FreezeAccount
+    SplTokenFreezeAccount {
+        freeze_authority: Pubkey,
+        is_2022: bool,
+    },
+    // ThawAccount
+    SplTokenThawAccount {
+        freeze_authority: Pubkey,
+        is_2022: bool,
+    },
 }
 
 /// Macro to validate that an instruction has the required number of accounts
@@ -80,6 +142,32 @@ macro_rules! validate_number_accounts {
                 "Instruction doesn't have the required number of accounts",
             )));
         }
+    };
+}
+
+/// Macro to parse system instructions with validation and account extraction
+/// Usage: parse_system_instruction!(parsed_instructions, instruction, validate_module, EnumVariant, DataVariant { fields })
+macro_rules! parse_system_instruction {
+    // Simple version: separate constant module path and enum variant names
+    ($parsed:ident, $ix:ident, $const_mod:ident, $enum_variant:ident, $data_variant:ident { $($field:ident: $account_path:expr),* $(,)? }) => {
+        validate_number_accounts!($ix, instruction_indexes::$const_mod::REQUIRED_NUMBER_OF_ACCOUNTS);
+        $parsed
+            .entry(ParsedSystemInstructionType::$enum_variant)
+            .or_default()
+            .push(ParsedSystemInstructionData::$data_variant {
+                $($field: $ix.accounts[$account_path].pubkey,)*
+            });
+    };
+    // Version with extra fields (like lamports) that come from instruction data
+    ($parsed:ident, $ix:ident, $const_mod:ident, $enum_variant:ident, $data_variant:ident { $($data_field:ident: $data_val:expr),* ; $($field:ident: $account_path:expr),* $(,)? }) => {
+        validate_number_accounts!($ix, instruction_indexes::$const_mod::REQUIRED_NUMBER_OF_ACCOUNTS);
+        $parsed
+            .entry(ParsedSystemInstructionType::$enum_variant)
+            .or_default()
+            .push(ParsedSystemInstructionData::$data_variant {
+                $($data_field: $data_val,)*
+                $($field: $ix.accounts[$account_path].pubkey,)*
+            });
     };
 }
 
@@ -99,6 +187,11 @@ pub const PARSED_DATA_FIELD_TRANSFER_WITH_SEED: &str = "transferWithSeed";
 pub const PARSED_DATA_FIELD_CREATE_ACCOUNT_WITH_SEED: &str = "createAccountWithSeed";
 pub const PARSED_DATA_FIELD_ASSIGN_WITH_SEED: &str = "assignWithSeed";
 pub const PARSED_DATA_FIELD_WITHDRAW_NONCE_ACCOUNT: &str = "withdrawFromNonce";
+pub const PARSED_DATA_FIELD_ALLOCATE: &str = "allocate";
+pub const PARSED_DATA_FIELD_ALLOCATE_WITH_SEED: &str = "allocateWithSeed";
+pub const PARSED_DATA_FIELD_INITIALIZE_NONCE_ACCOUNT: &str = "initializeNonce";
+pub const PARSED_DATA_FIELD_ADVANCE_NONCE_ACCOUNT: &str = "advanceNonce";
+pub const PARSED_DATA_FIELD_AUTHORIZE_NONCE_ACCOUNT: &str = "authorizeNonce";
 pub const PARSED_DATA_FIELD_BURN: &str = "burn";
 pub const PARSED_DATA_FIELD_BURN_CHECKED: &str = "burnChecked";
 pub const PARSED_DATA_FIELD_CLOSE_ACCOUNT: &str = "closeAccount";
@@ -126,6 +219,29 @@ pub const PARSED_DATA_FIELD_SOURCE_OWNER: &str = "sourceOwner";
 pub const PARSED_DATA_FIELD_NONCE_ACCOUNT: &str = "nonceAccount";
 pub const PARSED_DATA_FIELD_RECIPIENT: &str = "recipient";
 pub const PARSED_DATA_FIELD_NONCE_AUTHORITY: &str = "nonceAuthority";
+pub const PARSED_DATA_FIELD_NEW_AUTHORITY: &str = "newAuthority";
+
+// SPL Token instruction type constants
+pub const PARSED_DATA_FIELD_REVOKE: &str = "revoke";
+pub const PARSED_DATA_FIELD_SET_AUTHORITY: &str = "setAuthority";
+pub const PARSED_DATA_FIELD_MINT_TO: &str = "mintTo";
+pub const PARSED_DATA_FIELD_MINT_TO_CHECKED: &str = "mintToChecked";
+pub const PARSED_DATA_FIELD_INITIALIZE_MINT: &str = "initializeMint";
+pub const PARSED_DATA_FIELD_INITIALIZE_MINT2: &str = "initializeMint2";
+pub const PARSED_DATA_FIELD_INITIALIZE_ACCOUNT: &str = "initializeAccount";
+pub const PARSED_DATA_FIELD_INITIALIZE_ACCOUNT2: &str = "initializeAccount2";
+pub const PARSED_DATA_FIELD_INITIALIZE_ACCOUNT3: &str = "initializeAccount3";
+pub const PARSED_DATA_FIELD_INITIALIZE_MULTISIG: &str = "initializeMultisig";
+pub const PARSED_DATA_FIELD_INITIALIZE_MULTISIG2: &str = "initializeMultisig2";
+pub const PARSED_DATA_FIELD_FREEZE_ACCOUNT: &str = "freezeAccount";
+pub const PARSED_DATA_FIELD_THAW_ACCOUNT: &str = "thawAccount";
+
+// Additional field names for new instructions
+pub const PARSED_DATA_FIELD_MINT_AUTHORITY: &str = "mintAuthority";
+pub const PARSED_DATA_FIELD_FREEZE_AUTHORITY: &str = "freezeAuthority";
+pub const PARSED_DATA_FIELD_AUTHORITY_TYPE: &str = "authorityType";
+pub const PARSED_DATA_FIELD_MULTISIG_ACCOUNT: &str = "multisig";
+pub const PARSED_DATA_FIELD_SIGNERS: &str = "signers";
 
 impl IxUtils {
     /// Helper method to extract a field as a string from JSON with proper error handling
@@ -499,6 +615,126 @@ impl IxUtils {
                     data,
                 })
             }
+            PARSED_DATA_FIELD_ALLOCATE => {
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let space = Self::get_field_as_u64(info, PARSED_DATA_FIELD_SPACE)?;
+
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+
+                let allocate_ix = SystemInstruction::Allocate { space };
+                let data = bincode::serialize(&allocate_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize Allocate instruction: {}",
+                        e
+                    ))
+                })?;
+
+                Ok(CompiledInstruction { program_id_index, accounts: vec![account_idx], data })
+            }
+            PARSED_DATA_FIELD_ALLOCATE_WITH_SEED => {
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let base = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_BASE)?;
+                let seed = Self::get_field_as_str(info, PARSED_DATA_FIELD_SEED)?.to_string();
+                let space = Self::get_field_as_u64(info, PARSED_DATA_FIELD_SPACE)?;
+                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
+
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let base_idx = Self::get_account_index(account_keys_hashmap, &base)?;
+
+                let allocate_ix = SystemInstruction::AllocateWithSeed { base, seed, space, owner };
+                let data = bincode::serialize(&allocate_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize AllocateWithSeed instruction: {}",
+                        e
+                    ))
+                })?;
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![account_idx, base_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_INITIALIZE_NONCE_ACCOUNT => {
+                let nonce_account =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
+                let nonce_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
+
+                let nonce_account_idx =
+                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
+
+                let initialize_ix = SystemInstruction::InitializeNonceAccount(nonce_authority);
+                let data = bincode::serialize(&initialize_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize InitializeNonceAccount instruction: {}",
+                        e
+                    ))
+                })?;
+
+                // Accounts: [nonce_account, recent_blockhashes_sysvar, rent_sysvar]
+                // We only have nonce_account in the hashmap for inner instructions
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![nonce_account_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_ADVANCE_NONCE_ACCOUNT => {
+                let nonce_account =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
+                let nonce_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
+
+                let nonce_account_idx =
+                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
+                let nonce_authority_idx =
+                    Self::get_account_index(account_keys_hashmap, &nonce_authority)?;
+
+                let advance_ix = SystemInstruction::AdvanceNonceAccount;
+                let data = bincode::serialize(&advance_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize AdvanceNonceAccount instruction: {}",
+                        e
+                    ))
+                })?;
+
+                // Accounts: [nonce_account, recent_blockhashes_sysvar, nonce_authority]
+                // We only include accounts that are in the hashmap (from inner instructions)
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![nonce_account_idx, nonce_authority_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_AUTHORIZE_NONCE_ACCOUNT => {
+                let nonce_account =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_ACCOUNT)?;
+                let nonce_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NONCE_AUTHORITY)?;
+                let new_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_NEW_AUTHORITY)?;
+
+                let nonce_account_idx =
+                    Self::get_account_index(account_keys_hashmap, &nonce_account)?;
+                let nonce_authority_idx =
+                    Self::get_account_index(account_keys_hashmap, &nonce_authority)?;
+
+                let authorize_ix = SystemInstruction::AuthorizeNonceAccount(new_authority);
+                let data = bincode::serialize(&authorize_ix).map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to serialize AuthorizeNonceAccount instruction: {}",
+                        e
+                    ))
+                })?;
+
+                // Accounts: [nonce_account, nonce_authority]
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![nonce_account_idx, nonce_authority_idx],
+                    data,
+                })
+            }
             _ => {
                 log::error!("Unsupported system instruction type: {}", instruction_type);
                 Ok(Self::build_default_compiled_instruction(program_id_index))
@@ -712,6 +948,215 @@ impl IxUtils {
                     data,
                 })
             }
+            PARSED_DATA_FIELD_REVOKE => {
+                let source = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_SOURCE)?;
+                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
+
+                let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
+                let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
+
+                let data = if parsed.program_id == spl_token::ID.to_string() {
+                    spl_token::instruction::TokenInstruction::Revoke.pack()
+                } else {
+                    spl_token_2022::instruction::TokenInstruction::Revoke.pack()
+                };
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![source_idx, owner_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_SET_AUTHORITY => {
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let current_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_AUTHORITY)?;
+
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let current_authority_idx =
+                    Self::get_account_index(account_keys_hashmap, &current_authority)?;
+
+                // SetAuthority has variable data - we reconstruct minimal version
+                // Real validation happens when checking if fee payer is the authority
+                let data = vec![6];
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![account_idx, current_authority_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_MINT_TO => {
+                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let mint_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT_AUTHORITY)?;
+                let amount = Self::get_field_as_u64(info, PARSED_DATA_FIELD_AMOUNT)?;
+
+                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let mint_authority_idx =
+                    Self::get_account_index(account_keys_hashmap, &mint_authority)?;
+
+                let data = if parsed.program_id == spl_token::ID.to_string() {
+                    spl_token::instruction::TokenInstruction::MintTo { amount }.pack()
+                } else {
+                    spl_token_2022::instruction::TokenInstruction::MintTo { amount }.pack()
+                };
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![mint_idx, account_idx, mint_authority_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_MINT_TO_CHECKED => {
+                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let mint_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT_AUTHORITY)?;
+
+                let token_amount = info.get(PARSED_DATA_FIELD_TOKEN_AMOUNT).ok_or_else(|| {
+                    KoraError::SerializationError("Missing 'tokenAmount' field".to_string())
+                })?;
+                let amount = Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_AMOUNT)?;
+                let decimals =
+                    Self::get_field_as_u64(token_amount, PARSED_DATA_FIELD_DECIMALS)? as u8;
+
+                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let mint_authority_idx =
+                    Self::get_account_index(account_keys_hashmap, &mint_authority)?;
+
+                let data = if parsed.program_id == spl_token::ID.to_string() {
+                    spl_token::instruction::TokenInstruction::MintToChecked { amount, decimals }
+                        .pack()
+                } else {
+                    spl_token_2022::instruction::TokenInstruction::MintToChecked {
+                        amount,
+                        decimals,
+                    }
+                    .pack()
+                };
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![mint_idx, account_idx, mint_authority_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_INITIALIZE_MINT | PARSED_DATA_FIELD_INITIALIZE_MINT2 => {
+                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
+                // mint_authority is in instruction data, not used for reconstruction
+                let _mint_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT_AUTHORITY)?;
+
+                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
+
+                // InitializeMint has discriminator only, authority is in data
+                let data = if instruction_type == PARSED_DATA_FIELD_INITIALIZE_MINT {
+                    vec![0] // InitializeMint discriminator
+                } else {
+                    vec![20] // InitializeMint2 discriminator
+                };
+
+                Ok(CompiledInstruction { program_id_index, accounts: vec![mint_idx], data })
+            }
+            PARSED_DATA_FIELD_INITIALIZE_ACCOUNT
+            | PARSED_DATA_FIELD_INITIALIZE_ACCOUNT2
+            | PARSED_DATA_FIELD_INITIALIZE_ACCOUNT3 => {
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
+                let owner = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_OWNER)?;
+
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
+
+                // Different variants have different account structures and discriminators
+                let (data, accounts) = match instruction_type {
+                    PARSED_DATA_FIELD_INITIALIZE_ACCOUNT => {
+                        // InitializeAccount: [account, mint, owner, rent]
+                        // Owner is in accounts, not data
+                        let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
+                        (vec![1], vec![account_idx, mint_idx, owner_idx])
+                    }
+                    PARSED_DATA_FIELD_INITIALIZE_ACCOUNT2 => {
+                        // InitializeAccount2: [account, mint, rent], owner in data
+                        (vec![16], vec![account_idx, mint_idx])
+                    }
+                    PARSED_DATA_FIELD_INITIALIZE_ACCOUNT3 => {
+                        // InitializeAccount3: [account, mint], owner in data
+                        (vec![18], vec![account_idx, mint_idx])
+                    }
+                    _ => unreachable!(),
+                };
+
+                Ok(CompiledInstruction { program_id_index, accounts, data })
+            }
+            PARSED_DATA_FIELD_INITIALIZE_MULTISIG | PARSED_DATA_FIELD_INITIALIZE_MULTISIG2 => {
+                let multisig = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MULTISIG_ACCOUNT)?;
+                let multisig_idx = Self::get_account_index(account_keys_hashmap, &multisig)?;
+
+                // Extract signer pubkeys from signers array (not currently used for reconstruction)
+                let _signers_value = info.get(PARSED_DATA_FIELD_SIGNERS).ok_or_else(|| {
+                    KoraError::SerializationError("Missing 'signers' field".to_string())
+                })?;
+
+                // Discriminator based on instruction variant
+                let data = if instruction_type == PARSED_DATA_FIELD_INITIALIZE_MULTISIG {
+                    vec![2] // InitializeMultisig discriminator
+                } else {
+                    vec![19] // InitializeMultisig2 discriminator
+                };
+
+                Ok(CompiledInstruction { program_id_index, accounts: vec![multisig_idx], data })
+            }
+            PARSED_DATA_FIELD_FREEZE_ACCOUNT => {
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
+                let freeze_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_FREEZE_AUTHORITY)?;
+
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
+                let freeze_authority_idx =
+                    Self::get_account_index(account_keys_hashmap, &freeze_authority)?;
+
+                let data = if parsed.program_id == spl_token::ID.to_string() {
+                    spl_token::instruction::TokenInstruction::FreezeAccount.pack()
+                } else {
+                    spl_token_2022::instruction::TokenInstruction::FreezeAccount.pack()
+                };
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![account_idx, mint_idx, freeze_authority_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_THAW_ACCOUNT => {
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
+                let freeze_authority =
+                    Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_FREEZE_AUTHORITY)?;
+
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
+                let freeze_authority_idx =
+                    Self::get_account_index(account_keys_hashmap, &freeze_authority)?;
+
+                let data = if parsed.program_id == spl_token::ID.to_string() {
+                    spl_token::instruction::TokenInstruction::ThawAccount.pack()
+                } else {
+                    spl_token_2022::instruction::TokenInstruction::ThawAccount.pack()
+                };
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![account_idx, mint_idx, freeze_authority_idx],
+                    data,
+                })
+            }
             _ => {
                 log::error!("Unsupported token instruction type: {}", instruction_type);
                 Ok(Self::build_default_compiled_instruction(program_id_index))
@@ -734,49 +1179,23 @@ impl IxUtils {
             // Handle System Program transfers and account creation
             if program_id == SYSTEM_PROGRAM_ID {
                 match bincode::deserialize::<SystemInstruction>(&instruction.data) {
-                    // Account creation instructions - funding account pays lamports
                     Ok(SystemInstruction::CreateAccount { lamports, .. })
                     | Ok(SystemInstruction::CreateAccountWithSeed { lamports, .. }) => {
-                        validate_number_accounts!(
-                            instruction,
-                            instruction_indexes::system_create_account::REQUIRED_NUMBER_OF_ACCOUNTS
-                        );
-
-                        let payer = instruction.accounts
-                            [instruction_indexes::system_create_account::PAYER_INDEX]
-                            .pubkey;
-
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemCreateAccount)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemCreateAccount {
-                                lamports,
-                                payer,
-                            });
+                        parse_system_instruction!(parsed_instructions, instruction, system_create_account, SystemCreateAccount, SystemCreateAccount {
+                            lamports: lamports;
+                            payer: instruction_indexes::system_create_account::PAYER_INDEX
+                        });
                     }
-                    // Transfer instructions
                     Ok(SystemInstruction::Transfer { lamports }) => {
-                        validate_number_accounts!(
-                            instruction,
-                            instruction_indexes::system_transfer::REQUIRED_NUMBER_OF_ACCOUNTS
-                        );
-
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemTransfer)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemTransfer {
-                                lamports,
-                                sender: instruction.accounts
-                                    [instruction_indexes::system_transfer::SENDER_INDEX]
-                                    .pubkey,
-                                receiver: instruction.accounts
-                                    [instruction_indexes::system_transfer::RECEIVER_INDEX]
-                                    .pubkey,
-                            });
+                        parse_system_instruction!(parsed_instructions, instruction, system_transfer, SystemTransfer, SystemTransfer {
+                            lamports: lamports;
+                            sender: instruction_indexes::system_transfer::SENDER_INDEX,
+                            receiver: instruction_indexes::system_transfer::RECEIVER_INDEX
+                        });
                     }
                     Ok(SystemInstruction::TransferWithSeed { lamports, .. }) => {
+                        // Note: uses system_transfer_with_seed for validation but maps to SystemTransfer type
                         validate_number_accounts!(instruction, instruction_indexes::system_transfer_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
-
                         parsed_instructions
                             .entry(ParsedSystemInstructionType::SystemTransfer)
                             .or_default()
@@ -786,37 +1205,27 @@ impl IxUtils {
                                 receiver: instruction.accounts[instruction_indexes::system_transfer_with_seed::RECEIVER_INDEX].pubkey,
                             });
                     }
-                    // Nonce account withdrawal
                     Ok(SystemInstruction::WithdrawNonceAccount(lamports)) => {
-                        validate_number_accounts!(instruction, instruction_indexes::system_withdraw_nonce_account::REQUIRED_NUMBER_OF_ACCOUNTS);
-
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemWithdrawNonceAccount)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemWithdrawNonceAccount {
-                                lamports,
-                                nonce_authority: instruction.accounts[instruction_indexes::system_withdraw_nonce_account::NONCE_AUTHORITY_INDEX].pubkey,
-                                recipient: instruction.accounts[instruction_indexes::system_withdraw_nonce_account::RECIPIENT_INDEX].pubkey,
-                            });
+                        parse_system_instruction!(parsed_instructions, instruction, system_withdraw_nonce_account, SystemWithdrawNonceAccount, SystemWithdrawNonceAccount {
+                            lamports: lamports;
+                            nonce_authority: instruction_indexes::system_withdraw_nonce_account::NONCE_AUTHORITY_INDEX,
+                            recipient: instruction_indexes::system_withdraw_nonce_account::RECIPIENT_INDEX
+                        });
                     }
                     Ok(SystemInstruction::Assign { .. }) => {
-                        validate_number_accounts!(
+                        parse_system_instruction!(
+                            parsed_instructions,
                             instruction,
-                            instruction_indexes::system_assign::REQUIRED_NUMBER_OF_ACCOUNTS
+                            system_assign,
+                            SystemAssign,
+                            SystemAssign {
+                                authority: instruction_indexes::system_assign::AUTHORITY_INDEX
+                            }
                         );
-
-                        parsed_instructions
-                            .entry(ParsedSystemInstructionType::SystemAssign)
-                            .or_default()
-                            .push(ParsedSystemInstructionData::SystemAssign {
-                                authority: instruction.accounts
-                                    [instruction_indexes::system_assign::AUTHORITY_INDEX]
-                                    .pubkey,
-                            });
                     }
                     Ok(SystemInstruction::AssignWithSeed { .. }) => {
+                        // Note: uses system_assign_with_seed for validation but maps to SystemAssign type
                         validate_number_accounts!(instruction, instruction_indexes::system_assign_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
-
                         parsed_instructions
                             .entry(ParsedSystemInstructionType::SystemAssign)
                             .or_default()
@@ -825,6 +1234,52 @@ impl IxUtils {
                                     [instruction_indexes::system_assign_with_seed::AUTHORITY_INDEX]
                                     .pubkey,
                             });
+                    }
+                    Ok(SystemInstruction::Allocate { .. }) => {
+                        parse_system_instruction!(
+                            parsed_instructions,
+                            instruction,
+                            system_allocate,
+                            SystemAllocate,
+                            SystemAllocate {
+                                account: instruction_indexes::system_allocate::ACCOUNT_INDEX
+                            }
+                        );
+                    }
+                    Ok(SystemInstruction::AllocateWithSeed { .. }) => {
+                        // Note: uses system_allocate_with_seed for validation but maps to SystemAllocate type
+                        validate_number_accounts!(instruction, instruction_indexes::system_allocate_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
+                        parsed_instructions
+                            .entry(ParsedSystemInstructionType::SystemAllocate)
+                            .or_default()
+                            .push(ParsedSystemInstructionData::SystemAllocate {
+                                account: instruction.accounts
+                                    [instruction_indexes::system_allocate_with_seed::ACCOUNT_INDEX]
+                                    .pubkey,
+                            });
+                    }
+                    Ok(SystemInstruction::InitializeNonceAccount(authority)) => {
+                        parse_system_instruction!(parsed_instructions, instruction, system_initialize_nonce_account, SystemInitializeNonceAccount, SystemInitializeNonceAccount {
+                            nonce_authority: authority;
+                            nonce_account: instruction_indexes::system_initialize_nonce_account::NONCE_ACCOUNT_INDEX
+                        });
+                    }
+                    Ok(SystemInstruction::AdvanceNonceAccount) => {
+                        parse_system_instruction!(parsed_instructions, instruction, system_advance_nonce_account, SystemAdvanceNonceAccount, SystemAdvanceNonceAccount {
+                            nonce_account: instruction_indexes::system_advance_nonce_account::NONCE_ACCOUNT_INDEX,
+                            nonce_authority: instruction_indexes::system_advance_nonce_account::NONCE_AUTHORITY_INDEX
+                        });
+                    }
+                    Ok(SystemInstruction::AuthorizeNonceAccount(_new_authority)) => {
+                        parse_system_instruction!(parsed_instructions, instruction, system_authorize_nonce_account, SystemAuthorizeNonceAccount, SystemAuthorizeNonceAccount {
+                            nonce_account: instruction_indexes::system_authorize_nonce_account::NONCE_ACCOUNT_INDEX,
+                            nonce_authority: instruction_indexes::system_authorize_nonce_account::NONCE_AUTHORITY_INDEX
+                        });
+                    }
+                    // UpgradeNonceAccount: Not parsed - no authority parameter, cannot validate fee payer involvement
+                    // Anyone can upgrade any nonce account without signing
+                    Ok(SystemInstruction::UpgradeNonceAccount) => {
+                        // Skip parsing
                     }
                     _ => {}
                 }
@@ -939,6 +1394,173 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
+                        spl_token::instruction::TokenInstruction::Revoke => {
+                            validate_number_accounts!(
+                                instruction,
+                                instruction_indexes::spl_token_revoke::REQUIRED_NUMBER_OF_ACCOUNTS
+                            );
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenRevoke)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenRevoke {
+                                    owner: instruction.accounts
+                                        [instruction_indexes::spl_token_revoke::OWNER_INDEX]
+                                        .pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::SetAuthority { .. } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_set_authority::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenSetAuthority)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenSetAuthority {
+                                    authority: instruction.accounts[instruction_indexes::spl_token_set_authority::CURRENT_AUTHORITY_INDEX].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::MintTo { .. } => {
+                            validate_number_accounts!(
+                                instruction,
+                                instruction_indexes::spl_token_mint_to::REQUIRED_NUMBER_OF_ACCOUNTS
+                            );
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenMintTo)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenMintTo {
+                                    mint_authority: instruction.accounts[instruction_indexes::spl_token_mint_to::MINT_AUTHORITY_INDEX].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::MintToChecked { .. } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_mint_to_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenMintTo)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenMintTo {
+                                    mint_authority: instruction.accounts[instruction_indexes::spl_token_mint_to_checked::MINT_AUTHORITY_INDEX].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::InitializeMint {
+                            mint_authority,
+                            ..
+                        } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeMint)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeMint {
+                                    mint_authority,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::InitializeMint2 {
+                            mint_authority,
+                            ..
+                        } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint2::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeMint)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeMint {
+                                    mint_authority,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::InitializeAccount => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
+                                    owner: instruction.accounts[instruction_indexes::spl_token_initialize_account::OWNER_INDEX].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::InitializeAccount2 { owner } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account2::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
+                                    owner,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::InitializeAccount3 { owner } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account3::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
+                                    owner,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::InitializeMultisig { .. } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            // Extract signers from accounts (skip first 2: multisig + rent sysvar)
+                            let signers: Vec<Pubkey> =
+                                instruction.accounts.iter().skip(2).map(|a| a.pubkey).collect();
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeMultisig {
+                                    signers,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::InitializeMultisig2 {
+                            ..
+                        } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig2::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            // Extract signers from accounts (skip first: multisig only)
+                            let signers: Vec<Pubkey> =
+                                instruction.accounts.iter().skip(1).map(|a| a.pubkey).collect();
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeMultisig {
+                                    signers,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::FreezeAccount => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_freeze_account::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenFreezeAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenFreezeAccount {
+                                    freeze_authority: instruction.accounts[instruction_indexes::spl_token_freeze_account::FREEZE_AUTHORITY_INDEX].pubkey,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token::instruction::TokenInstruction::ThawAccount => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_thaw_account::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenThawAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenThawAccount {
+                                    freeze_authority: instruction.accounts[instruction_indexes::spl_token_thaw_account::FREEZE_AUTHORITY_INDEX].pubkey,
+                                    is_2022: false,
+                                });
+                        }
                         _ => {}
                     };
                 }
@@ -1037,6 +1659,179 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenApprove {
                                     owner: instruction.accounts[instruction_indexes::spl_token_approve_checked::OWNER_INDEX].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::Revoke => {
+                            validate_number_accounts!(
+                                instruction,
+                                instruction_indexes::spl_token_revoke::REQUIRED_NUMBER_OF_ACCOUNTS
+                            );
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenRevoke)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenRevoke {
+                                    owner: instruction.accounts
+                                        [instruction_indexes::spl_token_revoke::OWNER_INDEX]
+                                        .pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::SetAuthority { .. } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_set_authority::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenSetAuthority)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenSetAuthority {
+                                    authority: instruction.accounts[instruction_indexes::spl_token_set_authority::CURRENT_AUTHORITY_INDEX].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::MintTo { .. } => {
+                            validate_number_accounts!(
+                                instruction,
+                                instruction_indexes::spl_token_mint_to::REQUIRED_NUMBER_OF_ACCOUNTS
+                            );
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenMintTo)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenMintTo {
+                                    mint_authority: instruction.accounts[instruction_indexes::spl_token_mint_to::MINT_AUTHORITY_INDEX].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::MintToChecked { .. } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_mint_to_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenMintTo)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenMintTo {
+                                    mint_authority: instruction.accounts[instruction_indexes::spl_token_mint_to_checked::MINT_AUTHORITY_INDEX].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::InitializeMint {
+                            mint_authority,
+                            ..
+                        } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeMint)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeMint {
+                                    mint_authority,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::InitializeMint2 {
+                            mint_authority,
+                            ..
+                        } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint2::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeMint)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeMint {
+                                    mint_authority,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::InitializeAccount => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
+                                    owner: instruction.accounts[instruction_indexes::spl_token_initialize_account::OWNER_INDEX].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::InitializeAccount2 {
+                            owner,
+                        } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account2::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
+                                    owner,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::InitializeAccount3 {
+                            owner,
+                        } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account3::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeAccount {
+                                    owner,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::InitializeMultisig {
+                            ..
+                        } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            // Extract signers from accounts (skip first 2: multisig + rent sysvar)
+                            let signers: Vec<Pubkey> =
+                                instruction.accounts.iter().skip(2).map(|a| a.pubkey).collect();
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeMultisig {
+                                    signers,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::InitializeMultisig2 {
+                            ..
+                        } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig2::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            // Extract signers from accounts (skip first: multisig only)
+                            let signers: Vec<Pubkey> =
+                                instruction.accounts.iter().skip(1).map(|a| a.pubkey).collect();
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenInitializeMultisig {
+                                    signers,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::FreezeAccount => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_freeze_account::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenFreezeAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenFreezeAccount {
+                                    freeze_authority: instruction.accounts[instruction_indexes::spl_token_freeze_account::FREEZE_AUTHORITY_INDEX].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022::instruction::TokenInstruction::ThawAccount => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_thaw_account::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenThawAccount)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenThawAccount {
+                                    freeze_authority: instruction.accounts[instruction_indexes::spl_token_thaw_account::FREEZE_AUTHORITY_INDEX].pubkey,
                                     is_2022: true,
                                 });
                         }

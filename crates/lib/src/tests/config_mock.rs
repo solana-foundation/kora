@@ -1,8 +1,9 @@
 use crate::{
     config::{
         AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerBalanceMetricsConfig,
-        FeePayerPolicy, KoraConfig, MetricsConfig, SplTokenConfig, Token2022Config,
-        UsageLimitConfig, ValidationConfig,
+        FeePayerPolicy, KoraConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
+        SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
+        Token2022InstructionPolicy, UsageLimitConfig, ValidationConfig,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::PriceConfig,
@@ -473,51 +474,152 @@ impl FeePayerPolicyBuilder {
     }
 
     pub fn with_sol_transfers(mut self, allow: bool) -> Self {
-        self.config.allow_sol_transfers = allow;
+        self.config.system.allow_transfer = allow;
         self
     }
 
     pub fn with_spl_transfers(mut self, allow: bool) -> Self {
-        self.config.allow_spl_transfers = allow;
+        self.config.spl_token.allow_transfer = allow;
         self
     }
 
     pub fn with_token2022_transfers(mut self, allow: bool) -> Self {
-        self.config.allow_token2022_transfers = allow;
+        self.config.token_2022.allow_transfer = allow;
         self
     }
 
     pub fn with_assign(mut self, allow: bool) -> Self {
-        self.config.allow_assign = allow;
+        self.config.system.allow_assign = allow;
+        self
+    }
+
+    pub fn with_create_account(mut self, allow: bool) -> Self {
+        self.config.system.allow_create_account = allow;
+        self
+    }
+
+    pub fn with_allocate(mut self, allow: bool) -> Self {
+        self.config.system.allow_allocate = allow;
+        self
+    }
+
+    pub fn with_nonce_initialize(mut self, allow: bool) -> Self {
+        self.config.system.nonce.allow_initialize = allow;
+        self
+    }
+
+    pub fn with_nonce_advance(mut self, allow: bool) -> Self {
+        self.config.system.nonce.allow_advance = allow;
+        self
+    }
+
+    pub fn with_nonce_withdraw(mut self, allow: bool) -> Self {
+        self.config.system.nonce.allow_withdraw = allow;
+        self
+    }
+
+    pub fn with_nonce_authorize(mut self, allow: bool) -> Self {
+        self.config.system.nonce.allow_authorize = allow;
+        self
+    }
+
+    pub fn with_spl_burn(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_burn = allow;
+        self.config.token_2022.allow_burn = allow;
+        self
+    }
+
+    pub fn with_spl_close_account(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_close_account = allow;
+        self.config.token_2022.allow_close_account = allow;
+        self
+    }
+
+    pub fn with_spl_approve(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_approve = allow;
+        self.config.token_2022.allow_approve = allow;
+        self
+    }
+
+    pub fn with_spl_revoke(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_revoke = allow;
+        self.config.token_2022.allow_revoke = allow;
+        self
+    }
+
+    pub fn with_spl_set_authority(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_set_authority = allow;
+        self.config.token_2022.allow_set_authority = allow;
+        self
+    }
+
+    pub fn with_spl_mint_to(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_mint_to = allow;
+        self.config.token_2022.allow_mint_to = allow;
+        self
+    }
+
+    pub fn with_spl_freeze_account(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_freeze_account = allow;
+        self.config.token_2022.allow_freeze_account = allow;
+        self
+    }
+
+    pub fn with_spl_thaw_account(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_thaw_account = allow;
+        self.config.token_2022.allow_thaw_account = allow;
         self
     }
 
     pub fn restrictive() -> Self {
         Self {
             config: FeePayerPolicy {
-                allow_sol_transfers: false,
-                allow_spl_transfers: false,
-                allow_token2022_transfers: false,
-                allow_assign: false,
-                allow_burn: false,
-                allow_close_account: false,
-                allow_approve: false,
+                system: SystemInstructionPolicy {
+                    allow_transfer: false,
+                    allow_assign: false,
+                    allow_create_account: false,
+                    allow_allocate: false,
+                    nonce: NonceInstructionPolicy {
+                        allow_initialize: false,
+                        allow_advance: false,
+                        allow_withdraw: false,
+                        allow_authorize: false,
+                    },
+                },
+                spl_token: SplTokenInstructionPolicy {
+                    allow_transfer: false,
+                    allow_burn: false,
+                    allow_close_account: false,
+                    allow_approve: false,
+                    allow_revoke: false,
+                    allow_set_authority: false,
+                    allow_mint_to: false,
+                    allow_freeze_account: false,
+                    allow_thaw_account: false,
+                    allow_initialize_mint: false,
+                    allow_initialize_account: false,
+                    allow_initialize_multisig: false,
+                },
+                token_2022: Token2022InstructionPolicy {
+                    allow_transfer: false,
+                    allow_burn: false,
+                    allow_close_account: false,
+                    allow_approve: false,
+                    allow_revoke: false,
+                    allow_set_authority: false,
+                    allow_mint_to: false,
+                    allow_freeze_account: false,
+                    allow_thaw_account: false,
+                    allow_initialize_mint: false,
+                    allow_initialize_account: false,
+                    allow_initialize_multisig: false,
+                },
             },
         }
     }
 
     pub fn permissive() -> Self {
-        Self {
-            config: FeePayerPolicy {
-                allow_sol_transfers: true,
-                allow_spl_transfers: true,
-                allow_token2022_transfers: true,
-                allow_assign: true,
-                allow_burn: true,
-                allow_close_account: true,
-                allow_approve: true,
-            },
-        }
+        Self { config: FeePayerPolicy::default() }
     }
 }
 

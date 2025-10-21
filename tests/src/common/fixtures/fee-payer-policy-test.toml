@@ -37,11 +37,15 @@ allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
     "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
     "AtCGtK6HPgdpk2c2LcpZimbH8dtHXYmJdoKsawWNCh2m", # Test Interest Bearing mint 2022 for local testing
+    "G77RviT7Q7nrr6yx2Hzz4j8rxoMUspqzn9sGy2FZ6Zmt", # Fee payer policy test mint (SPL Token)
+    "3KgNtQwmrAbxW7HsApDdUH2d8ar9eaPtLZqQdZfhsR6o", # Fee payer policy test mint (Token-2022)
 ]
 allowed_spl_paid_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
     "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
     "AtCGtK6HPgdpk2c2LcpZimbH8dtHXYmJdoKsawWNCh2m", # Test Interest Bearing mint 2022 for local testing
+    "G77RviT7Q7nrr6yx2Hzz4j8rxoMUspqzn9sGy2FZ6Zmt", # Fee payer policy test mint (SPL Token)
+    "3KgNtQwmrAbxW7HsApDdUH2d8ar9eaPtLZqQdZfhsR6o", # Fee payer policy test mint (Token-2022)
 ]
 
 disallowed_accounts = [
@@ -50,13 +54,46 @@ disallowed_accounts = [
 
 # RESTRICTIVE fee payer policy - ALL SET TO FALSE
 [validation.fee_payer_policy]
-allow_sol_transfers = false
-allow_spl_transfers = false
-allow_token2022_transfers = false
+
+[validation.fee_payer_policy.system]
+allow_transfer = false
 allow_assign = false
+allow_create_account = false
+allow_allocate = false
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false
+allow_advance = false
+allow_authorize = false
+allow_withdraw = false
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = false
 allow_burn = false
 allow_close_account = false
 allow_approve = false
+allow_revoke = false
+allow_set_authority = false
+allow_mint_to = false
+allow_initialize_mint = false
+allow_initialize_account = false
+allow_initialize_multisig = false
+allow_freeze_account = false
+allow_thaw_account = false
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+allow_revoke = false
+allow_set_authority = false
+allow_mint_to = false
+allow_initialize_mint = false
+allow_initialize_account = false
+allow_initialize_multisig = false
+allow_freeze_account = false
+allow_thaw_account = false
 
 [kora.usage_limit]
 enabled = false

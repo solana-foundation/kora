@@ -20,8 +20,8 @@ use spl_token_2022::{
 use std::sync::Arc;
 
 use crate::common::{
-    FeePayerTestHelper, LookupTableHelper, RecipientTestHelper, SenderTestHelper,
-    USDCMint2022TestHelper, USDCMintTestHelper, DEFAULT_RPC_URL,
+    FeePayerPolicyMintTestHelper, FeePayerTestHelper, LookupTableHelper, RecipientTestHelper,
+    SenderTestHelper, USDCMint2022TestHelper, USDCMintTestHelper, DEFAULT_RPC_URL,
 };
 
 /// Test account information for outputting to the user
@@ -40,6 +40,16 @@ pub struct TestAccountInfo {
     pub sender_token_2022_account: Pubkey,
     pub recipient_token_2022_account: Pubkey,
     pub fee_payer_token_2022_account: Pubkey,
+    // Fee payer policy mint fields
+    pub fee_payer_policy_mint_pubkey: Pubkey,
+    pub fee_payer_policy_sender_token_account: Pubkey,
+    pub fee_payer_policy_recipient_token_account: Pubkey,
+    pub fee_payer_policy_fee_payer_token_account: Pubkey,
+    // Fee payer policy Token 2022 fields
+    pub fee_payer_policy_mint_2022_pubkey: Pubkey,
+    pub fee_payer_policy_sender_token_2022_account: Pubkey,
+    pub fee_payer_policy_recipient_token_2022_account: Pubkey,
+    pub fee_payer_policy_fee_payer_token_2022_account: Pubkey,
     // Lookup tables
     pub allowed_lookup_table: Pubkey,
     pub disallowed_lookup_table: Pubkey,
@@ -54,6 +64,8 @@ pub struct TestAccountSetup {
     pub recipient_pubkey: Pubkey,
     pub usdc_mint: Keypair,
     pub usdc_mint_2022: Keypair,
+    pub fee_payer_policy_mint: Keypair,
+    pub fee_payer_policy_mint_2022: Keypair,
 }
 
 impl TestAccountSetup {
@@ -80,6 +92,10 @@ impl TestAccountSetup {
 
         let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_keypair();
         let usdc_mint_2022 = USDCMint2022TestHelper::get_test_usdc_mint_2022_keypair();
+        let fee_payer_policy_mint =
+            FeePayerPolicyMintTestHelper::get_fee_payer_policy_mint_keypair();
+        let fee_payer_policy_mint_2022 =
+            FeePayerPolicyMintTestHelper::get_fee_payer_policy_mint_2022_keypair();
 
         Self {
             rpc_client,
@@ -88,6 +104,8 @@ impl TestAccountSetup {
             recipient_pubkey,
             usdc_mint,
             usdc_mint_2022,
+            fee_payer_policy_mint,
+            fee_payer_policy_mint_2022,
         }
     }
 
@@ -104,6 +122,12 @@ impl TestAccountSetup {
 
         let usdc_mint_2022_pubkey = self.create_usdc_mint_2022().await?;
         account_infos.usdc_mint_2022_pubkey = usdc_mint_2022_pubkey;
+
+        let fee_payer_policy_mint_pubkey = self.create_fee_payer_policy_mint().await?;
+        account_infos.fee_payer_policy_mint_pubkey = fee_payer_policy_mint_pubkey;
+
+        let fee_payer_policy_mint_2022_pubkey = self.create_fee_payer_policy_mint_2022().await?;
+        account_infos.fee_payer_policy_mint_2022_pubkey = fee_payer_policy_mint_2022_pubkey;
 
         let (allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table) =
             self.create_lookup_tables().await?;
@@ -125,6 +149,26 @@ impl TestAccountSetup {
         account_infos.sender_token_2022_account = sender_token_2022_account;
         account_infos.recipient_token_2022_account = recipient_token_2022_account;
         account_infos.fee_payer_token_2022_account = fee_payer_token_2022_account;
+
+        let (
+            fee_payer_policy_sender_token_account,
+            fee_payer_policy_recipient_token_account,
+            fee_payer_policy_fee_payer_token_account,
+            fee_payer_policy_sender_token_2022_account,
+            fee_payer_policy_recipient_token_2022_account,
+            fee_payer_policy_fee_payer_token_2022_account,
+        ) = self.setup_fee_payer_policy_token_accounts().await?;
+        account_infos.fee_payer_policy_sender_token_account = fee_payer_policy_sender_token_account;
+        account_infos.fee_payer_policy_recipient_token_account =
+            fee_payer_policy_recipient_token_account;
+        account_infos.fee_payer_policy_fee_payer_token_account =
+            fee_payer_policy_fee_payer_token_account;
+        account_infos.fee_payer_policy_sender_token_2022_account =
+            fee_payer_policy_sender_token_2022_account;
+        account_infos.fee_payer_policy_recipient_token_2022_account =
+            fee_payer_policy_recipient_token_2022_account;
+        account_infos.fee_payer_policy_fee_payer_token_2022_account =
+            fee_payer_policy_fee_payer_token_2022_account;
 
         // Wait for the accounts to be fully initialized (lookup tables, etc.)
         let await_for_slot = self.rpc_client.get_slot().await? + 30;
@@ -444,5 +488,336 @@ impl TestAccountSetup {
             LookupTableHelper::setup_and_save_lookup_tables(self.rpc_client.clone()).await?;
 
         Ok((allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table))
+    }
+
+    pub async fn create_fee_payer_policy_mint(&self) -> Result<Pubkey> {
+        if (self.rpc_client.get_account(&self.fee_payer_policy_mint.pubkey()).await).is_ok() {
+            return Ok(self.fee_payer_policy_mint.pubkey());
+        }
+
+        let rent = self
+            .rpc_client
+            .get_minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN)
+            .await?;
+
+        let create_account_instruction = solana_sdk::system_instruction::create_account(
+            &self.fee_payer_keypair.pubkey(),
+            &self.fee_payer_policy_mint.pubkey(),
+            rent,
+            spl_token::state::Mint::LEN as u64,
+            &spl_token::id(),
+        );
+
+        let initialize_mint_instruction = spl_token::instruction::initialize_mint2(
+            &spl_token::id(),
+            &self.fee_payer_policy_mint.pubkey(),
+            &self.fee_payer_keypair.pubkey(),
+            Some(&self.fee_payer_keypair.pubkey()),
+            USDCMintTestHelper::get_test_usdc_mint_decimals(),
+        )?;
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+
+        let transaction = Transaction::new_signed_with_payer(
+            &[create_account_instruction, initialize_mint_instruction],
+            Some(&self.fee_payer_keypair.pubkey()),
+            &[&self.fee_payer_keypair, &self.fee_payer_policy_mint],
+            recent_blockhash,
+        );
+
+        self.rpc_client.send_and_confirm_transaction(&transaction).await?;
+
+        Ok(self.fee_payer_policy_mint.pubkey())
+    }
+
+    pub async fn create_fee_payer_policy_mint_2022(&self) -> Result<Pubkey> {
+        if (self.rpc_client.get_account(&self.fee_payer_policy_mint_2022.pubkey()).await).is_ok() {
+            return Ok(self.fee_payer_policy_mint_2022.pubkey());
+        }
+
+        let decimals = USDCMintTestHelper::get_test_usdc_mint_decimals();
+
+        let space = spl_token_2022::extension::ExtensionType::try_calculate_account_len::<
+            Token2022Mint,
+        >(&[])?;
+
+        let rent = self.rpc_client.get_minimum_balance_for_rent_exemption(space).await?;
+
+        let create_account_instruction = solana_sdk::system_instruction::create_account(
+            &self.fee_payer_keypair.pubkey(),
+            &self.fee_payer_policy_mint_2022.pubkey(),
+            rent,
+            space as u64,
+            &spl_token_2022::id(),
+        );
+
+        let initialize_mint_instruction = token_2022_instruction::initialize_mint2(
+            &spl_token_2022::id(),
+            &self.fee_payer_policy_mint_2022.pubkey(),
+            &self.fee_payer_keypair.pubkey(),
+            Some(&self.fee_payer_keypair.pubkey()),
+            decimals,
+        )?;
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+
+        let transaction = Transaction::new_signed_with_payer(
+            &[create_account_instruction, initialize_mint_instruction],
+            Some(&self.fee_payer_keypair.pubkey()),
+            &[&self.fee_payer_keypair, &self.fee_payer_policy_mint_2022],
+            recent_blockhash,
+        );
+
+        self.rpc_client.send_and_confirm_transaction(&transaction).await?;
+
+        Ok(self.fee_payer_policy_mint_2022.pubkey())
+    }
+
+    pub async fn setup_fee_payer_policy_token_accounts(
+        &self,
+    ) -> Result<(Pubkey, Pubkey, Pubkey, Pubkey, Pubkey, Pubkey)> {
+        // SPL Token accounts
+        let sender_token_account = get_associated_token_address(
+            &self.sender_keypair.pubkey(),
+            &self.fee_payer_policy_mint.pubkey(),
+        );
+        let recipient_token_account = get_associated_token_address(
+            &self.recipient_pubkey,
+            &self.fee_payer_policy_mint.pubkey(),
+        );
+        let fee_payer_token_account = get_associated_token_address(
+            &self.fee_payer_keypair.pubkey(),
+            &self.fee_payer_policy_mint.pubkey(),
+        );
+
+        // Token 2022 accounts
+        let sender_token_2022_account = get_associated_token_address_with_program_id(
+            &self.sender_keypair.pubkey(),
+            &self.fee_payer_policy_mint_2022.pubkey(),
+            &spl_token_2022::id(),
+        );
+        let recipient_token_2022_account = get_associated_token_address_with_program_id(
+            &self.recipient_pubkey,
+            &self.fee_payer_policy_mint_2022.pubkey(),
+            &spl_token_2022::id(),
+        );
+        let fee_payer_token_2022_account = get_associated_token_address_with_program_id(
+            &self.fee_payer_keypair.pubkey(),
+            &self.fee_payer_policy_mint_2022.pubkey(),
+            &spl_token_2022::id(),
+        );
+
+        // Create regular SPL Token accounts
+        let create_associated_token_account_instruction =
+            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+                &self.fee_payer_keypair.pubkey(),
+                &self.sender_keypair.pubkey(),
+                &self.fee_payer_policy_mint.pubkey(),
+                &spl_token::id(),
+            );
+
+        let create_associated_token_account_instruction_recipient =
+            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+                &self.fee_payer_keypair.pubkey(),
+                &self.recipient_pubkey,
+                &self.fee_payer_policy_mint.pubkey(),
+                &spl_token::id(),
+            );
+
+        let create_associated_token_account_instruction_fee_payer =
+            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+                &self.fee_payer_keypair.pubkey(),
+                &self.fee_payer_keypair.pubkey(),
+                &self.fee_payer_policy_mint.pubkey(),
+                &spl_token::id(),
+            );
+
+        // Create Token 2022 accounts
+        let create_token_2022_account_instruction_sender =
+            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+                &self.fee_payer_keypair.pubkey(),
+                &self.sender_keypair.pubkey(),
+                &self.fee_payer_policy_mint_2022.pubkey(),
+                &spl_token_2022::id(),
+            );
+
+        let create_token_2022_account_instruction_recipient =
+            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+                &self.fee_payer_keypair.pubkey(),
+                &self.recipient_pubkey,
+                &self.fee_payer_policy_mint_2022.pubkey(),
+                &spl_token_2022::id(),
+            );
+
+        let create_token_2022_account_instruction_fee_payer =
+            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+                &self.fee_payer_keypair.pubkey(),
+                &self.fee_payer_keypair.pubkey(),
+                &self.fee_payer_policy_mint_2022.pubkey(),
+                &spl_token_2022::id(),
+            );
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+
+        let all_instructions = vec![
+            create_associated_token_account_instruction,
+            create_associated_token_account_instruction_recipient,
+            create_associated_token_account_instruction_fee_payer,
+            create_token_2022_account_instruction_sender,
+            create_token_2022_account_instruction_recipient,
+            create_token_2022_account_instruction_fee_payer,
+        ];
+
+        let transaction = Transaction::new_signed_with_payer(
+            &all_instructions,
+            Some(&self.fee_payer_keypair.pubkey()),
+            &[&self.fee_payer_keypair],
+            recent_blockhash,
+        );
+
+        self.rpc_client.send_and_confirm_transaction(&transaction).await?;
+
+        let mint_amount =
+            1_000_000 * 10_u64.pow(USDCMintTestHelper::get_test_usdc_mint_decimals() as u32);
+
+        // Mint regular SPL tokens
+        self.mint_fee_payer_policy_tokens_to_account(&sender_token_account, mint_amount).await?;
+
+        // Mint Token 2022 tokens
+        self.mint_fee_payer_policy_tokens_2022_to_account(&sender_token_2022_account, mint_amount)
+            .await?;
+
+        Ok((
+            sender_token_account,
+            recipient_token_account,
+            fee_payer_token_account,
+            sender_token_2022_account,
+            recipient_token_2022_account,
+            fee_payer_token_2022_account,
+        ))
+    }
+
+    pub async fn mint_fee_payer_policy_tokens_to_account(
+        &self,
+        token_account: &Pubkey,
+        amount: u64,
+    ) -> Result<()> {
+        let instruction = token_instruction::mint_to(
+            &spl_token::id(),
+            &self.fee_payer_policy_mint.pubkey(),
+            token_account,
+            &self.fee_payer_keypair.pubkey(),
+            &[],
+            amount,
+        )?;
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let transaction = Transaction::new_signed_with_payer(
+            &[instruction],
+            Some(&self.fee_payer_keypair.pubkey()),
+            &[&self.fee_payer_keypair],
+            recent_blockhash,
+        );
+
+        self.rpc_client.send_and_confirm_transaction(&transaction).await?;
+        Ok(())
+    }
+
+    pub async fn mint_fee_payer_policy_tokens_2022_to_account(
+        &self,
+        token_account: &Pubkey,
+        amount: u64,
+    ) -> Result<()> {
+        let instruction = token_2022_instruction::mint_to(
+            &spl_token_2022::id(),
+            &self.fee_payer_policy_mint_2022.pubkey(),
+            token_account,
+            &self.fee_payer_keypair.pubkey(),
+            &[],
+            amount,
+        )?;
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let transaction = Transaction::new_signed_with_payer(
+            &[instruction],
+            Some(&self.fee_payer_keypair.pubkey()),
+            &[&self.fee_payer_keypair],
+            recent_blockhash,
+        );
+
+        self.rpc_client.send_and_confirm_transaction(&transaction).await?;
+        Ok(())
+    }
+
+    /// Create a new unique token account for the fee payer (not an ATA)
+    pub async fn create_fee_payer_token_account_spl(&self, mint: &Pubkey) -> Result<Keypair> {
+        let token_account = Keypair::new();
+
+        let rent = self
+            .rpc_client
+            .get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)
+            .await?;
+
+        let create_account_ix = solana_sdk::system_instruction::create_account(
+            &self.fee_payer_keypair.pubkey(),
+            &token_account.pubkey(),
+            rent,
+            spl_token::state::Account::LEN as u64,
+            &spl_token::id(),
+        );
+
+        let initialize_account_ix = spl_token::instruction::initialize_account(
+            &spl_token::id(),
+            &token_account.pubkey(),
+            mint,
+            &self.fee_payer_keypair.pubkey(),
+        )?;
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let transaction = Transaction::new_signed_with_payer(
+            &[create_account_ix, initialize_account_ix],
+            Some(&self.fee_payer_keypair.pubkey()),
+            &[&self.fee_payer_keypair, &token_account],
+            recent_blockhash,
+        );
+
+        self.rpc_client.send_and_confirm_transaction(&transaction).await?;
+        Ok(token_account)
+    }
+
+    /// Create a new unique token account for the fee payer (Token2022, not an ATA)
+    pub async fn create_fee_payer_token_account_2022(&self, mint: &Pubkey) -> Result<Keypair> {
+        let token_account = Keypair::new();
+
+        let rent = self
+            .rpc_client
+            .get_minimum_balance_for_rent_exemption(spl_token_2022::state::Account::LEN)
+            .await?;
+
+        let create_account_ix = solana_sdk::system_instruction::create_account(
+            &self.fee_payer_keypair.pubkey(),
+            &token_account.pubkey(),
+            rent,
+            spl_token_2022::state::Account::LEN as u64,
+            &spl_token_2022::id(),
+        );
+
+        let initialize_account_ix = spl_token_2022::instruction::initialize_account(
+            &spl_token_2022::id(),
+            &token_account.pubkey(),
+            mint,
+            &self.fee_payer_keypair.pubkey(),
+        )?;
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let transaction = Transaction::new_signed_with_payer(
+            &[create_account_ix, initialize_account_ix],
+            Some(&self.fee_payer_keypair.pubkey()),
+            &[&self.fee_payer_keypair, &token_account],
+            recent_blockhash,
+        );
+
+        self.rpc_client.send_and_confirm_transaction(&transaction).await?;
+        Ok(token_account)
     }
 }
