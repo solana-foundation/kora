@@ -57,12 +57,28 @@ allow_transfer = true           # Allow fee payer to be source in SPL token tran
 allow_burn = true               # Allow fee payer to burn SPL tokens from their accounts
 allow_close_account = true      # Allow fee payer to close their SPL token accounts
 allow_approve = true            # Allow fee payer to approve SPL tokens from their accounts
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
 
 [validation.fee_payer_policy.token_2022]
 allow_transfer = true           # Allow fee payer to be source in Token2022 transfers
 allow_burn = true               # Allow fee payer to burn Token2022 tokens from their accounts
 allow_close_account = true      # Allow fee payer to close their Token2022 accounts
 allow_approve = true            # Allow fee payer to approve Token2022 tokens from their accounts
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
 
 [kora.enabled_methods]
 liveness = false

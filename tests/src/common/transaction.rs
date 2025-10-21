@@ -100,6 +100,35 @@ impl TransactionBuilder {
         self
     }
 
+    /// Add a system assign instruction
+    pub fn with_system_assign(mut self, account: &Pubkey, owner: &Pubkey) -> Self {
+        let instruction = solana_system_interface::instruction::assign(account, owner);
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add a system create_account instruction
+    pub fn with_system_create_account(
+        mut self,
+        from: &Pubkey,
+        to: &Pubkey,
+        lamports: u64,
+        space: u64,
+        owner: &Pubkey,
+    ) -> Self {
+        let instruction =
+            solana_system_interface::instruction::create_account(from, to, lamports, space, owner);
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add a system allocate instruction
+    pub fn with_system_allocate(mut self, account: &Pubkey, space: u64) -> Self {
+        let instruction = solana_system_interface::instruction::allocate(account, space);
+        self.instructions.push(instruction);
+        self
+    }
+
     /// Add an SPL token transfer instruction
     pub fn with_spl_transfer(
         mut self,
@@ -330,6 +359,184 @@ impl TransactionBuilder {
         self.instructions.push(create_instruction);
         self.instructions.push(init_instruction);
         self.signers.push(account.insecure_clone());
+        self
+    }
+
+    /// Add SPL token revoke instruction
+    pub fn with_spl_revoke(mut self, token_account: &Pubkey, owner: &Pubkey) -> Self {
+        let instruction =
+            spl_token::instruction::revoke(&spl_token::id(), token_account, owner, &[])
+                .expect("Failed to create revoke instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add Token2022 revoke instruction
+    pub fn with_token2022_revoke(mut self, token_account: &Pubkey, owner: &Pubkey) -> Self {
+        let instruction =
+            spl_token_2022::instruction::revoke(&spl_token_2022::id(), token_account, owner, &[])
+                .expect("Failed to create Token2022 revoke instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add SPL token set_authority instruction
+    pub fn with_spl_set_authority(
+        mut self,
+        account: &Pubkey,
+        new_authority: Option<&Pubkey>,
+        authority_type: spl_token::instruction::AuthorityType,
+        current_authority: &Pubkey,
+    ) -> Self {
+        let instruction = spl_token::instruction::set_authority(
+            &spl_token::id(),
+            account,
+            new_authority,
+            authority_type,
+            current_authority,
+            &[],
+        )
+        .expect("Failed to create set_authority instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add Token2022 set_authority instruction
+    pub fn with_token2022_set_authority(
+        mut self,
+        account: &Pubkey,
+        new_authority: Option<&Pubkey>,
+        authority_type: spl_token_2022::instruction::AuthorityType,
+        current_authority: &Pubkey,
+    ) -> Self {
+        let instruction = spl_token_2022::instruction::set_authority(
+            &spl_token_2022::id(),
+            account,
+            new_authority,
+            authority_type,
+            current_authority,
+            &[],
+        )
+        .expect("Failed to create Token2022 set_authority instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add SPL token mint_to instruction
+    pub fn with_spl_mint_to(
+        mut self,
+        mint: &Pubkey,
+        destination: &Pubkey,
+        mint_authority: &Pubkey,
+        amount: u64,
+    ) -> Self {
+        let instruction = spl_token::instruction::mint_to(
+            &spl_token::id(),
+            mint,
+            destination,
+            mint_authority,
+            &[],
+            amount,
+        )
+        .expect("Failed to create mint_to instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add Token2022 mint_to instruction
+    pub fn with_token2022_mint_to(
+        mut self,
+        mint: &Pubkey,
+        destination: &Pubkey,
+        mint_authority: &Pubkey,
+        amount: u64,
+    ) -> Self {
+        let instruction = spl_token_2022::instruction::mint_to(
+            &spl_token_2022::id(),
+            mint,
+            destination,
+            mint_authority,
+            &[],
+            amount,
+        )
+        .expect("Failed to create Token2022 mint_to instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add SPL token freeze_account instruction
+    pub fn with_spl_freeze_account(
+        mut self,
+        token_account: &Pubkey,
+        mint: &Pubkey,
+        freeze_authority: &Pubkey,
+    ) -> Self {
+        let instruction = spl_token::instruction::freeze_account(
+            &spl_token::id(),
+            token_account,
+            mint,
+            freeze_authority,
+            &[],
+        )
+        .expect("Failed to create freeze_account instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add Token2022 freeze_account instruction
+    pub fn with_token2022_freeze_account(
+        mut self,
+        token_account: &Pubkey,
+        mint: &Pubkey,
+        freeze_authority: &Pubkey,
+    ) -> Self {
+        let instruction = spl_token_2022::instruction::freeze_account(
+            &spl_token_2022::id(),
+            token_account,
+            mint,
+            freeze_authority,
+            &[],
+        )
+        .expect("Failed to create Token2022 freeze_account instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add SPL token thaw_account instruction
+    pub fn with_spl_thaw_account(
+        mut self,
+        token_account: &Pubkey,
+        mint: &Pubkey,
+        freeze_authority: &Pubkey,
+    ) -> Self {
+        let instruction = spl_token::instruction::thaw_account(
+            &spl_token::id(),
+            token_account,
+            mint,
+            freeze_authority,
+            &[],
+        )
+        .expect("Failed to create thaw_account instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add Token2022 thaw_account instruction
+    pub fn with_token2022_thaw_account(
+        mut self,
+        token_account: &Pubkey,
+        mint: &Pubkey,
+        freeze_authority: &Pubkey,
+    ) -> Self {
+        let instruction = spl_token_2022::instruction::thaw_account(
+            &spl_token_2022::id(),
+            token_account,
+            mint,
+            freeze_authority,
+            &[],
+        )
+        .expect("Failed to create Token2022 thaw_account instruction");
+        self.instructions.push(instruction);
         self
     }
 

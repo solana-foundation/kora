@@ -155,10 +155,20 @@ async fn test_fee_payer_policy_is_present() {
     assert!(spl_token.contains_key("allow_burn"));
     assert!(spl_token.contains_key("allow_close_account"));
     assert!(spl_token.contains_key("allow_approve"));
+    assert!(spl_token.contains_key("allow_revoke"));
+    assert!(spl_token.contains_key("allow_set_authority"));
+    assert!(spl_token.contains_key("allow_mint_to"));
+    assert!(spl_token.contains_key("allow_freeze_account"));
+    assert!(spl_token.contains_key("allow_thaw_account"));
     assert_eq!(spl_token["allow_transfer"], true);
     assert_eq!(spl_token["allow_burn"], true);
     assert_eq!(spl_token["allow_close_account"], true);
     assert_eq!(spl_token["allow_approve"], true);
+    assert_eq!(spl_token["allow_revoke"], true);
+    assert_eq!(spl_token["allow_set_authority"], true);
+    assert_eq!(spl_token["allow_mint_to"], true);
+    assert_eq!(spl_token["allow_freeze_account"], true);
+    assert_eq!(spl_token["allow_thaw_account"], true);
 
     // Validate token_2022 policy structure
     let token_2022 =
@@ -167,10 +177,20 @@ async fn test_fee_payer_policy_is_present() {
     assert!(token_2022.contains_key("allow_burn"));
     assert!(token_2022.contains_key("allow_close_account"));
     assert!(token_2022.contains_key("allow_approve"));
+    assert!(token_2022.contains_key("allow_revoke"));
+    assert!(token_2022.contains_key("allow_set_authority"));
+    assert!(token_2022.contains_key("allow_mint_to"));
+    assert!(token_2022.contains_key("allow_freeze_account"));
+    assert!(token_2022.contains_key("allow_thaw_account"));
     assert_eq!(token_2022["allow_transfer"], true);
     assert_eq!(token_2022["allow_burn"], true);
     assert_eq!(token_2022["allow_close_account"], true);
     assert_eq!(token_2022["allow_approve"], true);
+    assert_eq!(token_2022["allow_revoke"], true);
+    assert_eq!(token_2022["allow_set_authority"], true);
+    assert_eq!(token_2022["allow_mint_to"], true);
+    assert_eq!(token_2022["allow_freeze_account"], true);
+    assert_eq!(token_2022["allow_thaw_account"], true);
 }
 
 /// Test that liveness endpoint is disabled (returns error)

@@ -541,6 +541,36 @@ impl FeePayerPolicyBuilder {
         self
     }
 
+    pub fn with_spl_revoke(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_revoke = allow;
+        self.config.token_2022.allow_revoke = allow;
+        self
+    }
+
+    pub fn with_spl_set_authority(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_set_authority = allow;
+        self.config.token_2022.allow_set_authority = allow;
+        self
+    }
+
+    pub fn with_spl_mint_to(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_mint_to = allow;
+        self.config.token_2022.allow_mint_to = allow;
+        self
+    }
+
+    pub fn with_spl_freeze_account(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_freeze_account = allow;
+        self.config.token_2022.allow_freeze_account = allow;
+        self
+    }
+
+    pub fn with_spl_thaw_account(mut self, allow: bool) -> Self {
+        self.config.spl_token.allow_thaw_account = allow;
+        self.config.token_2022.allow_thaw_account = allow;
+        self
+    }
+
     pub fn restrictive() -> Self {
         Self {
             config: FeePayerPolicy {
@@ -561,12 +591,28 @@ impl FeePayerPolicyBuilder {
                     allow_burn: false,
                     allow_close_account: false,
                     allow_approve: false,
+                    allow_revoke: false,
+                    allow_set_authority: false,
+                    allow_mint_to: false,
+                    allow_freeze_account: false,
+                    allow_thaw_account: false,
+                    allow_initialize_mint: false,
+                    allow_initialize_account: false,
+                    allow_initialize_multisig: false,
                 },
                 token_2022: Token2022InstructionPolicy {
                     allow_transfer: false,
                     allow_burn: false,
                     allow_close_account: false,
                     allow_approve: false,
+                    allow_revoke: false,
+                    allow_set_authority: false,
+                    allow_mint_to: false,
+                    allow_freeze_account: false,
+                    allow_thaw_account: false,
+                    allow_initialize_mint: false,
+                    allow_initialize_account: false,
+                    allow_initialize_multisig: false,
                 },
             },
         }

@@ -207,6 +207,22 @@ pub struct SplTokenInstructionPolicy {
     pub allow_close_account: bool,
     /// Allow fee payer to be the owner in SPL Token Approve/ApproveChecked instructions
     pub allow_approve: bool,
+    /// Allow fee payer to be the owner in SPL Token Revoke instructions
+    pub allow_revoke: bool,
+    /// Allow fee payer to be the current authority in SPL Token SetAuthority instructions
+    pub allow_set_authority: bool,
+    /// Allow fee payer to be the mint authority in SPL Token MintTo/MintToChecked instructions
+    pub allow_mint_to: bool,
+    /// Allow fee payer to be the mint authority in SPL Token InitializeMint/InitializeMint2 instructions
+    pub allow_initialize_mint: bool,
+    /// Allow fee payer to be set as the owner in SPL Token InitializeAccount instructions
+    pub allow_initialize_account: bool,
+    /// Allow fee payer to be a signer in SPL Token InitializeMultisig instructions
+    pub allow_initialize_multisig: bool,
+    /// Allow fee payer to be the freeze authority in SPL Token FreezeAccount instructions
+    pub allow_freeze_account: bool,
+    /// Allow fee payer to be the freeze authority in SPL Token ThawAccount instructions
+    pub allow_thaw_account: bool,
 }
 
 impl Default for SplTokenInstructionPolicy {
@@ -216,6 +232,14 @@ impl Default for SplTokenInstructionPolicy {
             allow_burn: true,
             allow_close_account: true,
             allow_approve: true,
+            allow_revoke: true,
+            allow_set_authority: true,
+            allow_mint_to: true,
+            allow_initialize_mint: true,
+            allow_initialize_account: true,
+            allow_initialize_multisig: true,
+            allow_freeze_account: true,
+            allow_thaw_account: true,
         }
     }
 }
@@ -230,6 +254,22 @@ pub struct Token2022InstructionPolicy {
     pub allow_close_account: bool,
     /// Allow fee payer to be the owner in Token2022 Approve/ApproveChecked instructions
     pub allow_approve: bool,
+    /// Allow fee payer to be the owner in Token2022 Revoke instructions
+    pub allow_revoke: bool,
+    /// Allow fee payer to be the current authority in Token2022 SetAuthority instructions
+    pub allow_set_authority: bool,
+    /// Allow fee payer to be the mint authority in Token2022 MintTo/MintToChecked instructions
+    pub allow_mint_to: bool,
+    /// Allow fee payer to be the mint authority in Token2022 InitializeMint/InitializeMint2 instructions
+    pub allow_initialize_mint: bool,
+    /// Allow fee payer to be set as the owner in Token2022 InitializeAccount instructions
+    pub allow_initialize_account: bool,
+    /// Allow fee payer to be a signer in Token2022 InitializeMultisig instructions
+    pub allow_initialize_multisig: bool,
+    /// Allow fee payer to be the freeze authority in Token2022 FreezeAccount instructions
+    pub allow_freeze_account: bool,
+    /// Allow fee payer to be the freeze authority in Token2022 ThawAccount instructions
+    pub allow_thaw_account: bool,
 }
 
 impl Default for Token2022InstructionPolicy {
@@ -239,6 +279,14 @@ impl Default for Token2022InstructionPolicy {
             allow_burn: true,
             allow_close_account: true,
             allow_approve: true,
+            allow_revoke: true,
+            allow_set_authority: true,
+            allow_mint_to: true,
+            allow_initialize_mint: true,
+            allow_initialize_account: true,
+            allow_initialize_multisig: true,
+            allow_freeze_account: true,
+            allow_thaw_account: true,
         }
     }
 }

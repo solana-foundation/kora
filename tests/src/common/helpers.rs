@@ -177,3 +177,33 @@ impl PYUSDTestHelper {
         Pubkey::from_str(PYUSD_MINT).expect("Invalid PYUSD mint")
     }
 }
+
+pub struct FeePayerPolicyMintTestHelper;
+
+impl FeePayerPolicyMintTestHelper {
+    pub fn get_fee_payer_policy_mint_keypair() -> Keypair {
+        dotenv::dotenv().ok();
+        parse_private_key_string(
+            &std::env::var(TEST_FEE_PAYER_POLICY_MINT_KEYPAIR_ENV)
+                .expect("TEST_FEE_PAYER_POLICY_MINT_KEYPAIR environment variable is not set"),
+        )
+        .expect("Failed to parse fee payer policy mint private key")
+    }
+
+    pub fn get_fee_payer_policy_mint_pubkey() -> Pubkey {
+        Self::get_fee_payer_policy_mint_keypair().pubkey()
+    }
+
+    pub fn get_fee_payer_policy_mint_2022_keypair() -> Keypair {
+        dotenv::dotenv().ok();
+        parse_private_key_string(
+            &std::env::var(TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR_ENV)
+                .expect("TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR environment variable is not set"),
+        )
+        .expect("Failed to parse fee payer policy mint 2022 private key")
+    }
+
+    pub fn get_fee_payer_policy_mint_2022_pubkey() -> Pubkey {
+        Self::get_fee_payer_policy_mint_2022_keypair().pubkey()
+    }
+}

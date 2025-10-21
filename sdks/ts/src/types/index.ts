@@ -334,6 +334,16 @@ export interface SplTokenInstructionPolicy {
     allow_close_account: boolean;
     /** Allow fee payer to approve SPL token delegates */
     allow_approve: boolean;
+    /** Allow fee payer to revoke SPL token delegates */
+    allow_revoke: boolean;
+    /** Allow fee payer to set authority on SPL token accounts */
+    allow_set_authority: boolean;
+    /** Allow fee payer to mint SPL tokens */
+    allow_mint_to: boolean;
+    /** Allow fee payer to freeze SPL token accounts */
+    allow_freeze_account: boolean;
+    /** Allow fee payer to thaw SPL token accounts */
+    allow_thaw_account: boolean;
 }
 
 /**
@@ -348,6 +358,16 @@ export interface Token2022InstructionPolicy {
     allow_close_account: boolean;
     /** Allow fee payer to approve Token2022 delegates */
     allow_approve: boolean;
+    /** Allow fee payer to revoke Token2022 delegates */
+    allow_revoke: boolean;
+    /** Allow fee payer to set authority on Token2022 accounts */
+    allow_set_authority: boolean;
+    /** Allow fee payer to mint Token2022 tokens */
+    allow_mint_to: boolean;
+    /** Allow fee payer to freeze Token2022 accounts */
+    allow_freeze_account: boolean;
+    /** Allow fee payer to thaw Token2022 accounts */
+    allow_thaw_account: boolean;
 }
 
 /**

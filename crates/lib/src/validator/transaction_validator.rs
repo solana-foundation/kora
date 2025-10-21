@@ -238,6 +238,54 @@ impl TransactionValidator {
             self.fee_payer_policy.token_2022.allow_close_account,
             "SPL Token Close Account", "Token2022 Token Close Account");
 
+        validate_spl!(self, spl_instructions, SplTokenRevoke,
+            ParsedSPLInstructionData::SplTokenRevoke { owner, is_2022 } => { owner, is_2022 },
+            self.fee_payer_policy.spl_token.allow_revoke,
+            self.fee_payer_policy.token_2022.allow_revoke,
+            "SPL Token Revoke", "Token2022 Token Revoke");
+
+        validate_spl!(self, spl_instructions, SplTokenSetAuthority,
+            ParsedSPLInstructionData::SplTokenSetAuthority { authority, is_2022 } => { authority, is_2022 },
+            self.fee_payer_policy.spl_token.allow_set_authority,
+            self.fee_payer_policy.token_2022.allow_set_authority,
+            "SPL Token SetAuthority", "Token2022 Token SetAuthority");
+
+        validate_spl!(self, spl_instructions, SplTokenMintTo,
+            ParsedSPLInstructionData::SplTokenMintTo { mint_authority, is_2022 } => { mint_authority, is_2022 },
+            self.fee_payer_policy.spl_token.allow_mint_to,
+            self.fee_payer_policy.token_2022.allow_mint_to,
+            "SPL Token MintTo", "Token2022 Token MintTo");
+
+        validate_spl!(self, spl_instructions, SplTokenInitializeMint,
+            ParsedSPLInstructionData::SplTokenInitializeMint { mint_authority, is_2022 } => { mint_authority, is_2022 },
+            self.fee_payer_policy.spl_token.allow_initialize_mint,
+            self.fee_payer_policy.token_2022.allow_initialize_mint,
+            "SPL Token InitializeMint", "Token2022 Token InitializeMint");
+
+        validate_spl!(self, spl_instructions, SplTokenInitializeAccount,
+            ParsedSPLInstructionData::SplTokenInitializeAccount { owner, is_2022 } => { owner, is_2022 },
+            self.fee_payer_policy.spl_token.allow_initialize_account,
+            self.fee_payer_policy.token_2022.allow_initialize_account,
+            "SPL Token InitializeAccount", "Token2022 Token InitializeAccount");
+
+        validate_spl_multisig!(self, spl_instructions, SplTokenInitializeMultisig,
+            ParsedSPLInstructionData::SplTokenInitializeMultisig { signers, is_2022 } => { signers, is_2022 },
+            self.fee_payer_policy.spl_token.allow_initialize_multisig,
+            self.fee_payer_policy.token_2022.allow_initialize_multisig,
+            "SPL Token InitializeMultisig", "Token2022 Token InitializeMultisig");
+
+        validate_spl!(self, spl_instructions, SplTokenFreezeAccount,
+            ParsedSPLInstructionData::SplTokenFreezeAccount { freeze_authority, is_2022 } => { freeze_authority, is_2022 },
+            self.fee_payer_policy.spl_token.allow_freeze_account,
+            self.fee_payer_policy.token_2022.allow_freeze_account,
+            "SPL Token FreezeAccount", "Token2022 Token FreezeAccount");
+
+        validate_spl!(self, spl_instructions, SplTokenThawAccount,
+            ParsedSPLInstructionData::SplTokenThawAccount { freeze_authority, is_2022 } => { freeze_authority, is_2022 },
+            self.fee_payer_policy.spl_token.allow_thaw_account,
+            self.fee_payer_policy.token_2022.allow_thaw_account,
+            "SPL Token ThawAccount", "Token2022 Token ThawAccount");
+
         Ok(())
     }
 

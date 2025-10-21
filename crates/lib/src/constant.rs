@@ -80,7 +80,7 @@ pub mod instruction_indexes {
     pub mod system_initialize_nonce_account {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
         pub const NONCE_ACCOUNT_INDEX: usize = 0;
-        pub const NONCE_AUTHORITY_INDEX: usize = 0; // From instruction data
+        // Authority is in instruction data, not accounts
     }
 
     pub mod system_advance_nonce_account {
@@ -130,5 +130,71 @@ pub mod instruction_indexes {
     pub mod spl_token_approve_checked {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 4;
         pub const OWNER_INDEX: usize = 3;
+    }
+
+    pub mod spl_token_revoke {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const OWNER_INDEX: usize = 1;
+    }
+
+    pub mod spl_token_set_authority {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const CURRENT_AUTHORITY_INDEX: usize = 1;
+    }
+
+    pub mod spl_token_mint_to {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const MINT_AUTHORITY_INDEX: usize = 2;
+    }
+
+    pub mod spl_token_mint_to_checked {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const MINT_AUTHORITY_INDEX: usize = 2;
+    }
+
+    pub mod spl_token_initialize_mint {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        // Authority is in instruction data, not accounts
+    }
+
+    pub mod spl_token_initialize_mint2 {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 1;
+        // Authority is in instruction data, not accounts
+    }
+
+    pub mod spl_token_initialize_account {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 4;
+        // Owner is in account data at index 2
+        pub const OWNER_INDEX: usize = 2;
+    }
+
+    pub mod spl_token_initialize_account2 {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        // Owner is in instruction data, not accounts
+    }
+
+    pub mod spl_token_initialize_account3 {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        // Owner is in instruction data, not accounts
+    }
+
+    pub mod spl_token_initialize_multisig {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2; // Minimum
+                                                          // Signers are accounts from index 2 onwards (after multisig account and rent sysvar)
+    }
+
+    pub mod spl_token_initialize_multisig2 {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 1; // Minimum
+                                                          // Signers are accounts from index 1 onwards (after multisig account)
+    }
+
+    pub mod spl_token_freeze_account {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const FREEZE_AUTHORITY_INDEX: usize = 2;
+    }
+
+    pub mod spl_token_thaw_account {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const FREEZE_AUTHORITY_INDEX: usize = 2;
     }
 }

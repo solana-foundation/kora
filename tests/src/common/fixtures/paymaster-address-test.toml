@@ -62,12 +62,28 @@ allow_transfer = true
 allow_burn = true
 allow_close_account = true
 allow_approve = true
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
 
 [validation.fee_payer_policy.token_2022]
 allow_transfer = true
 allow_burn = true
 allow_close_account = true
 allow_approve = true
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
 
 [kora.usage_limit]
 enabled = false

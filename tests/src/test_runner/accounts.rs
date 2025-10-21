@@ -1,6 +1,7 @@
 use crate::common::{
     TestAccountInfo, KORA_PRIVATE_KEY_ENV, PAYMENT_ADDRESS_KEYPAIR_ENV, SIGNER_2_KEYPAIR_ENV,
     TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV, TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV,
+    TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR_ENV, TEST_FEE_PAYER_POLICY_MINT_KEYPAIR_ENV,
     TEST_INTEREST_BEARING_MINT_KEYPAIR_ENV, TEST_RECIPIENT_PUBKEY_ENV, TEST_SENDER_KEYPAIR_ENV,
     TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS_ENV, TEST_TRANSFER_HOOK_MINT_KEYPAIR_ENV,
     TEST_USDC_MINT_2022_KEYPAIR_ENV, TEST_USDC_MINT_KEYPAIR_ENV,
@@ -25,6 +26,14 @@ pub enum AccountFile {
     SenderToken2022Account,
     RecipientToken2022Account,
     FeePayerToken2022Account,
+    FeePayerPolicyMint,
+    FeePayerPolicySenderTokenAccount,
+    FeePayerPolicyRecipientTokenAccount,
+    FeePayerPolicyFeePayerTokenAccount,
+    FeePayerPolicyMint2022,
+    FeePayerPolicySenderToken2022Account,
+    FeePayerPolicyRecipientToken2022Account,
+    FeePayerPolicyFeePayerToken2022Account,
     AllowedLookupTable,
     DisallowedLookupTable,
     TransactionLookupTable,
@@ -48,6 +57,26 @@ impl AccountFile {
             Self::SenderToken2022Account => "sender-token-2022-account-local.json",
             Self::RecipientToken2022Account => "recipient-token-2022-account-local.json",
             Self::FeePayerToken2022Account => "fee-payer-token-2022-account-local.json",
+            Self::FeePayerPolicyMint => "fee-payer-policy-mint-local.json",
+            Self::FeePayerPolicySenderTokenAccount => {
+                "fee-payer-policy-sender-token-account-local.json"
+            }
+            Self::FeePayerPolicyRecipientTokenAccount => {
+                "fee-payer-policy-recipient-token-account-local.json"
+            }
+            Self::FeePayerPolicyFeePayerTokenAccount => {
+                "fee-payer-policy-fee-payer-token-account-local.json"
+            }
+            Self::FeePayerPolicyMint2022 => "fee-payer-policy-mint-local-2022.json",
+            Self::FeePayerPolicySenderToken2022Account => {
+                "fee-payer-policy-sender-token-2022-account-local.json"
+            }
+            Self::FeePayerPolicyRecipientToken2022Account => {
+                "fee-payer-policy-recipient-token-2022-account-local.json"
+            }
+            Self::FeePayerPolicyFeePayerToken2022Account => {
+                "fee-payer-policy-fee-payer-token-2022-account-local.json"
+            }
             Self::AllowedLookupTable => "allowed-lookup-table-local.json",
             Self::DisallowedLookupTable => "disallowed-lookup-table-local.json",
             Self::TransactionLookupTable => "transaction-lookup-table-local.json",
@@ -65,6 +94,8 @@ impl AccountFile {
             Self::Recipient => TEST_RECIPIENT_PUBKEY_ENV,
             Self::UsdcMint => TEST_USDC_MINT_KEYPAIR_ENV,
             Self::UsdcMint2022 => TEST_USDC_MINT_2022_KEYPAIR_ENV,
+            Self::FeePayerPolicyMint => TEST_FEE_PAYER_POLICY_MINT_KEYPAIR_ENV,
+            Self::FeePayerPolicyMint2022 => TEST_FEE_PAYER_POLICY_MINT_2022_KEYPAIR_ENV,
             Self::AllowedLookupTable => TEST_ALLOWED_LOOKUP_TABLE_ADDRESS_ENV,
             Self::DisallowedLookupTable => TEST_DISALLOWED_LOOKUP_TABLE_ADDRESS_ENV,
             Self::TransactionLookupTable => TEST_TRANSACTION_LOOKUP_TABLE_ADDRESS_ENV,
@@ -97,6 +128,14 @@ impl AccountFile {
             Self::SenderToken2022Account,
             Self::RecipientToken2022Account,
             Self::FeePayerToken2022Account,
+            Self::FeePayerPolicyMint,
+            Self::FeePayerPolicySenderTokenAccount,
+            Self::FeePayerPolicyRecipientTokenAccount,
+            Self::FeePayerPolicyFeePayerTokenAccount,
+            Self::FeePayerPolicyMint2022,
+            Self::FeePayerPolicySenderToken2022Account,
+            Self::FeePayerPolicyRecipientToken2022Account,
+            Self::FeePayerPolicyFeePayerToken2022Account,
             Self::AllowedLookupTable,
             Self::DisallowedLookupTable,
             Self::TransactionLookupTable,
@@ -114,6 +153,8 @@ impl AccountFile {
             Self::Sender,
             Self::UsdcMint,
             Self::UsdcMint2022,
+            Self::FeePayerPolicyMint,
+            Self::FeePayerPolicyMint2022,
             Self::InterestBearingMint,
             Self::TransferHookMint,
             Self::Payment,
@@ -231,6 +272,30 @@ pub async fn download_accounts(
         .await?;
     AccountFile::FeePayerToken2022Account
         .save_account_for_file(client, &test_accounts.fee_payer_token_2022_account)
+        .await?;
+    AccountFile::FeePayerPolicyMint
+        .save_account_for_file(client, &test_accounts.fee_payer_policy_mint_pubkey)
+        .await?;
+    AccountFile::FeePayerPolicySenderTokenAccount
+        .save_account_for_file(client, &test_accounts.fee_payer_policy_sender_token_account)
+        .await?;
+    AccountFile::FeePayerPolicyRecipientTokenAccount
+        .save_account_for_file(client, &test_accounts.fee_payer_policy_recipient_token_account)
+        .await?;
+    AccountFile::FeePayerPolicyFeePayerTokenAccount
+        .save_account_for_file(client, &test_accounts.fee_payer_policy_fee_payer_token_account)
+        .await?;
+    AccountFile::FeePayerPolicyMint2022
+        .save_account_for_file(client, &test_accounts.fee_payer_policy_mint_2022_pubkey)
+        .await?;
+    AccountFile::FeePayerPolicySenderToken2022Account
+        .save_account_for_file(client, &test_accounts.fee_payer_policy_sender_token_2022_account)
+        .await?;
+    AccountFile::FeePayerPolicyRecipientToken2022Account
+        .save_account_for_file(client, &test_accounts.fee_payer_policy_recipient_token_2022_account)
+        .await?;
+    AccountFile::FeePayerPolicyFeePayerToken2022Account
+        .save_account_for_file(client, &test_accounts.fee_payer_policy_fee_payer_token_2022_account)
         .await?;
     AccountFile::AllowedLookupTable
         .save_account_for_file(client, &test_accounts.allowed_lookup_table)
