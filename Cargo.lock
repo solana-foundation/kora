@@ -6850,7 +6850,7 @@ dependencies = [
 [[package]]
 name = "solana-signers"
 version = "0.1.0"
-source = "git+https://github.com/solana-foundation/solana-signers#285df1ca312a479282703c3b63af14fb50244f9d"
+source = "git+https://github.com/solana-foundation/solana-signers#f98cf96fd451ea4da38c6a425364147a4731fd4d"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6866,7 +6866,6 @@ dependencies = [
  "solana-sdk 2.3.1",
  "thiserror 2.0.17",
  "tokio",
- "vaultrs",
 ]
 
 [[package]]
