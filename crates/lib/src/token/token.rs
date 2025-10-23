@@ -366,6 +366,7 @@ impl TokenUtil {
         expected_destination_owner: &Pubkey,
     ) -> Result<bool, KoraError> {
         let config = get_config()?;
+        let mut total_lamport_value = 0u64;
 
         for instruction in transaction_resolved
             .get_or_parse_spl_instructions()?
@@ -426,13 +427,19 @@ impl TokenUtil {
                 )
                 .await?;
 
-                if lamport_value >= required_lamports {
-                    return Ok(true); // Payment satisfied
-                }
+                total_lamport_value =
+                    total_lamport_value.checked_add(lamport_value).ok_or_else(|| {
+                        log::error!(
+                            "Payment accumulation overflow: total={}, new_payment={}",
+                            total_lamport_value,
+                            lamport_value
+                        );
+                        KoraError::ValidationError("Payment accumulation overflow".to_string())
+                    })?;
             }
         }
 
-        Ok(false)
+        Ok(total_lamport_value >= required_lamports)
     }
 }
 

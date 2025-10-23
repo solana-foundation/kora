@@ -34,9 +34,11 @@ allowed_programs = [
 ]
 allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC 2022 mint for local testing
 ]
 allowed_spl_paid_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC 2022 mint for local testing
 ]
 
 disallowed_accounts = [

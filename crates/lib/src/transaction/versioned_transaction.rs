@@ -605,8 +605,10 @@ mod tests {
                 AccountMeta::new_readonly(Pubkey::new_unique(), false),
             ],
         );
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction.clone()], Some(&keypair.pubkey())));
+        let message = VersionedMessage::Legacy(Message::new(
+            std::slice::from_ref(&instruction),
+            Some(&keypair.pubkey()),
+        ));
         let transaction = VersionedTransaction::try_new(message.clone(), &[&keypair]).unwrap();
 
         let resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
@@ -671,8 +673,10 @@ mod tests {
             &[1, 2, 3],
             vec![AccountMeta::new(keypair.pubkey(), true)],
         );
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction.clone()], Some(&keypair.pubkey())));
+        let message = VersionedMessage::Legacy(Message::new(
+            std::slice::from_ref(&instruction),
+            Some(&keypair.pubkey()),
+        ));
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
         // Mock RPC client that will be used for inner instructions

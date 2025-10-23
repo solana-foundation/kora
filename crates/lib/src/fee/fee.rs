@@ -121,49 +121,19 @@ impl FeeConfigUtil {
         }
     }
 
-    async fn has_payment_instruction(
+    /// Analyze payment instructions in transaction
+    /// Returns (has_payment, total_transfer_fees)
+    async fn analyze_payment_instructions(
         resolved_transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,
-    ) -> Result<u64, KoraError> {
-        let payment_destination = get_config()?.kora.get_payment_address(fee_payer)?;
-
-        for instruction in resolved_transaction
-            .get_or_parse_spl_instructions()?
-            .get(&ParsedSPLInstructionType::SplTokenTransfer)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSPLInstructionData::SplTokenTransfer { destination_address, .. } =
-                instruction
-            {
-                if Self::get_payment_instruction_info(
-                    rpc_client,
-                    destination_address,
-                    &payment_destination,
-                    false, // Don't skip missing accounts for has_payment_instruction
-                )
-                .await?
-                .is_some()
-                {
-                    return Ok(0);
-                }
-            }
-        }
-
-        // For now we estimate the fee for a payment instruction to be hardcoded, simulation / estimation isn't support yet
-        Ok(ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION)
-    }
-
-    /// Calculate transfer fees for token transfers in the transaction
-    async fn calculate_transfer_fees(
-        rpc_client: &RpcClient,
-        transaction: &mut VersionedTransactionResolved,
-        fee_payer: &Pubkey,
-    ) -> Result<u64, KoraError> {
+    ) -> Result<(bool, u64), KoraError> {
         let config = get_config()?;
         let payment_destination = config.kora.get_payment_address(fee_payer)?;
+        let mut has_payment = false;
+        let mut total_transfer_fees = 0u64;
 
-        let parsed_spl_instructions = transaction.get_or_parse_spl_instructions()?;
+        let parsed_spl_instructions = resolved_transaction.get_or_parse_spl_instructions()?;
 
         for instruction in parsed_spl_instructions
             .get(&ParsedSPLInstructionType::SplTokenTransfer)
@@ -178,39 +148,49 @@ impl FeeConfigUtil {
             } = instruction
             {
                 // Check if this is a payment to Kora
-                // Skip if destination account doesn't exist (not a payment to existing Kora account)
-                if Self::get_payment_instruction_info(
+                let payment_info = Self::get_payment_instruction_info(
                     rpc_client,
                     destination_address,
                     &payment_destination,
-                    true, // Skip missing accounts for transfer fee calculation
+                    true, // Skip missing accounts
                 )
-                .await?
-                .is_none()
-                {
-                    continue;
-                }
+                .await?;
 
-                if let Some(mint_pubkey) = mint {
-                    // Get mint account to calculate transfer fees
-                    let mint_account =
-                        CacheUtil::get_account(rpc_client, mint_pubkey, true).await?;
+                if payment_info.is_some() {
+                    has_payment = true;
 
-                    let token_program =
-                        TokenType::get_token_program_from_owner(&mint_account.owner)?;
-                    let mint_state = token_program.unpack_mint(mint_pubkey, &mint_account.data)?;
-
+                    // Calculate Token2022 transfer fees if applicable
                     if *is_2022 {
-                        // For Token2022, check for transfer fees
-                        if let Some(token2022_mint) =
-                            mint_state.as_any().downcast_ref::<Token2022Mint>()
-                        {
-                            let current_epoch = rpc_client.get_epoch_info().await?.epoch;
+                        if let Some(mint_pubkey) = mint {
+                            let mint_account =
+                                CacheUtil::get_account(rpc_client, mint_pubkey, true).await?;
 
-                            if let Some(fee_amount) =
-                                token2022_mint.calculate_transfer_fee(*amount, current_epoch)?
+                            let token_program =
+                                TokenType::get_token_program_from_owner(&mint_account.owner)?;
+                            let mint_state =
+                                token_program.unpack_mint(mint_pubkey, &mint_account.data)?;
+
+                            if let Some(token2022_mint) =
+                                mint_state.as_any().downcast_ref::<Token2022Mint>()
                             {
-                                return Ok(fee_amount);
+                                let current_epoch = rpc_client.get_epoch_info().await?.epoch;
+
+                                if let Some(fee_amount) =
+                                    token2022_mint.calculate_transfer_fee(*amount, current_epoch)?
+                                {
+                                    total_transfer_fees = total_transfer_fees
+                                        .checked_add(fee_amount)
+                                        .ok_or_else(|| {
+                                            log::error!(
+                                                "Transfer fee accumulation overflow: total={}, new_fee={}",
+                                                total_transfer_fees,
+                                                fee_amount
+                                            );
+                                            KoraError::ValidationError(
+                                                "Transfer fee accumulation overflow".to_string(),
+                                            )
+                                        })?;
+                                }
                             }
                         }
                     }
@@ -218,7 +198,7 @@ impl FeeConfigUtil {
             }
         }
 
-        Ok(0)
+        Ok((has_payment, total_transfer_fees))
     }
 
     async fn estimate_transaction_fee(
@@ -250,16 +230,16 @@ impl FeeConfigUtil {
         )
         .await?;
 
-        // If the transaction for paying the gasless relayer is not included, but we expect a payment, we need to add the fee for the payment instruction
-        // for a better approximation of the fee
-        let fee_for_payment_instruction = if is_payment_required {
-            FeeConfigUtil::has_payment_instruction(transaction, rpc_client, fee_payer).await?
+        // Analyze payment instructions (checks if payment exists + calculates Token2022 fees)
+        let (has_payment, transfer_fee_config_amount) =
+            FeeConfigUtil::analyze_payment_instructions(transaction, rpc_client, fee_payer).await?;
+
+        // If payment is required but not found, add estimated payment instruction fee
+        let fee_for_payment_instruction = if is_payment_required && !has_payment {
+            ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION
         } else {
             0
         };
-
-        let transfer_fee_config_amount =
-            FeeConfigUtil::calculate_transfer_fees(rpc_client, transaction, fee_payer).await?;
 
         let total_fee_lamports = base_fee
             .checked_add(kora_signature_fee)
@@ -913,7 +893,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_has_payment_instruction_with_payment() {
+    async fn test_analyze_payment_instructions_with_payment() {
         let _m = ConfigMockBuilder::new().build_and_setup();
         let cache_ctx = CacheUtil::get_account_context();
         cache_ctx.checkpoint();
@@ -945,8 +925,7 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        // Test: Should return 0 because payment instruction exists
-        let result = FeeConfigUtil::has_payment_instruction(
+        let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
@@ -954,11 +933,12 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(result, 0, "Should return 0 when payment instruction exists");
+        assert!(has_payment, "Should detect payment instruction");
+        assert_eq!(transfer_fees, 0, "Should have no transfer fees for SPL token");
     }
 
     #[tokio::test]
-    async fn test_has_payment_instruction_without_payment() {
+    async fn test_analyze_payment_instructions_without_payment() {
         let signer = setup_or_get_test_signer();
         setup_or_get_test_config();
         let mocked_rpc_client = create_mock_rpc_client_with_account(&Account::default());
@@ -974,8 +954,7 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        // Test: Should return fee estimate because no payment instruction exists
-        let result = FeeConfigUtil::has_payment_instruction(
+        let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
@@ -983,14 +962,12 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(
-            result, ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
-            "Should return fee estimate when no payment instruction exists"
-        );
+        assert!(!has_payment, "Should not detect payment instruction");
+        assert_eq!(transfer_fees, 0, "Should have no transfer fees");
     }
 
     #[tokio::test]
-    async fn test_has_payment_instruction_with_spl_transfer_to_different_destination() {
+    async fn test_analyze_payment_instructions_with_wrong_destination() {
         let _m = ConfigMockBuilder::new().build_and_setup();
         let cache_ctx = CacheUtil::get_account_context();
         cache_ctx.checkpoint();
@@ -1023,8 +1000,7 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
 
-        // Test: Should return fee estimate because SPL transfer is to different destination
-        let result = FeeConfigUtil::has_payment_instruction(
+        let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
@@ -1032,10 +1008,8 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(
-            result, ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
-            "Should return fee estimate when SPL transfer is to different destination"
-        );
+        assert!(!has_payment, "Should not detect payment to wrong destination");
+        assert_eq!(transfer_fees, 0, "Should have no transfer fees");
     }
 
     #[tokio::test]
@@ -1139,6 +1113,57 @@ mod tests {
             result.total_fee_lamports, expected,
             "Should include payment instruction fee when required"
         );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_payment_instructions_with_multiple_payments() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+        let signer = setup_or_get_test_signer();
+        let mint = Pubkey::new_unique();
+
+        let mocked_account = create_mock_token_account(&signer, &mint);
+        let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
+
+        cache_ctx.expect().times(2).returning(move |_, _, _| Ok(mocked_account.clone()));
+
+        let sender = Keypair::new();
+        let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
+        let payment_token_account = get_associated_token_address(&signer, &mint);
+
+        let transfer_1 = TokenProgram::new()
+            .create_transfer_instruction(
+                &sender_token_account,
+                &payment_token_account,
+                &sender.pubkey(),
+                500,
+            )
+            .unwrap();
+
+        let transfer_2 = TokenProgram::new()
+            .create_transfer_instruction(
+                &sender_token_account,
+                &payment_token_account,
+                &sender.pubkey(),
+                500,
+            )
+            .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_1, transfer_2], None));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+
+        let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &signer,
+        )
+        .await
+        .unwrap();
+
+        assert!(has_payment, "Should detect payment instructions");
+        assert_eq!(transfer_fees, 0, "Should have no transfer fees for SPL tokens");
     }
 
     #[tokio::test]
