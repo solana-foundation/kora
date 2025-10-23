@@ -8,6 +8,7 @@
 //        - Fee payer policy enforcement for payment scenarios
 
 mod payment_address_legacy_tests;
+mod payment_address_multi_payment_tests;
 mod payment_address_v0_lut_tests;
 mod payment_address_v0_tests;
 
