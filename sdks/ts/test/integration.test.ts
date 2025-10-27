@@ -247,7 +247,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             });
 
             expect(signResult).toBeDefined();
-            expect(signResult.transaction).toBeDefined();
             expect(signResult.signed_transaction).toBeDefined();
         });
 

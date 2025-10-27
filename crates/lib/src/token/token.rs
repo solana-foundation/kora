@@ -11,6 +11,10 @@ use crate::{
     },
     CacheUtil,
 };
+use rust_decimal::{
+    prelude::{FromPrimitive, ToPrimitive},
+    Decimal,
+};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 use spl_associated_token_account::get_associated_token_address_with_program_id;
@@ -20,7 +24,7 @@ use std::{collections::HashMap, str::FromStr, time::Duration};
 use crate::state::get_config;
 
 #[cfg(test)]
-use crate::tests::config_mock::mock_state::get_config;
+use {crate::tests::config_mock::mock_state::get_config, rust_decimal_macros::dec};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType {
@@ -112,12 +116,25 @@ impl TokenUtil {
         let (token_price, decimals) =
             Self::get_token_price_and_decimals(mint, price_source, rpc_client).await?;
 
-        // Convert token amount to its real value based on decimals and multiply by SOL price
-        let token_amount = amount as f64 / 10f64.powi(decimals as i32);
-        let sol_amount = token_amount * token_price.price;
+        // Convert amount to Decimal with proper scaling
+        let amount_decimal = Decimal::from_u64(amount)
+            .ok_or_else(|| KoraError::ValidationError("Invalid token amount".to_string()))?;
+        let decimals_scale = Decimal::from_u64(10u64.pow(decimals as u32))
+            .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
 
-        // Convert SOL to lamports and round down
-        let lamports = (sol_amount * LAMPORTS_PER_SOL as f64).floor() as u64;
+        // Calculate: (amount / 10^decimals) * price * LAMPORTS_PER_SOL
+        let token_value = amount_decimal / decimals_scale;
+        let sol_value = token_value * token_price.price;
+        let lamports_decimal = sol_value
+            * Decimal::from_u64(LAMPORTS_PER_SOL).ok_or_else(|| {
+                KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string())
+            })?;
+
+        // Floor and convert to u64
+        let lamports = lamports_decimal
+            .floor()
+            .to_u64()
+            .ok_or_else(|| KoraError::ValidationError("Lamports value overflow".to_string()))?;
 
         Ok(lamports)
     }
@@ -127,18 +144,30 @@ impl TokenUtil {
         mint: &Pubkey,
         price_source: &PriceSource,
         rpc_client: &RpcClient,
-    ) -> Result<f64, KoraError> {
+    ) -> Result<u64, KoraError> {
         let (token_price, decimals) =
             Self::get_token_price_and_decimals(mint, price_source.clone(), rpc_client).await?;
 
-        // Convert lamports to SOL, then to token amount
-        let fee_in_sol = lamports as f64 / LAMPORTS_PER_SOL as f64;
-        let fee_in_token_base_units = fee_in_sol / token_price.price;
-        let fee_in_token = fee_in_token_base_units * 10f64.powi(decimals as i32);
+        // Convert lamports to SOL using Decimal
+        let lamports_decimal = Decimal::from_u64(lamports)
+            .ok_or_else(|| KoraError::ValidationError("Invalid lamports value".to_string()))?;
+        let lamports_per_sol_decimal = Decimal::from_u64(LAMPORTS_PER_SOL)
+            .ok_or_else(|| KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string()))?;
+        let sol_value = lamports_decimal / lamports_per_sol_decimal;
 
-        // Round up to the next integer to fix floating point precision errors
-        // This ensures values like 1010049.9999999999 become 1010050
-        Ok(fee_in_token.ceil())
+        // Convert SOL to token base units
+        let token_value = sol_value / token_price.price;
+        let scale = Decimal::from_u64(10u64.pow(decimals as u32))
+            .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
+        let token_amount = token_value * scale;
+
+        // Ceil and convert to u64
+        let result = token_amount
+            .ceil()
+            .to_u64()
+            .ok_or_else(|| KoraError::ValidationError("Token amount overflow".to_string()))?;
+
+        Ok(result)
     }
 
     /// Calculate the total lamports value of SPL token transfers where the fee payer is involved
@@ -262,10 +291,23 @@ impl TokenUtil {
                 .ok_or_else(|| KoraError::RpcError(format!("No decimals data for mint {mint}")))?;
 
             for (amount, is_outflow) in transfers {
-                // Convert token amount to lamports value
-                let token_amount = *amount as f64 / 10f64.powi(*decimals as i32);
-                let sol_amount = token_amount * price.price;
-                let lamports = (sol_amount * LAMPORTS_PER_SOL as f64).floor() as u64;
+                // Convert token amount to lamports value using Decimal
+                let amount_decimal = Decimal::from_u64(*amount).ok_or_else(|| {
+                    KoraError::ValidationError("Invalid transfer amount".to_string())
+                })?;
+                let decimals_scale = Decimal::from_u64(10u64.pow(*decimals as u32))
+                    .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
+
+                let token_value = amount_decimal / decimals_scale;
+                let sol_value = token_value * price.price;
+                let lamports_decimal = sol_value
+                    * Decimal::from_u64(LAMPORTS_PER_SOL).ok_or_else(|| {
+                        KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string())
+                    })?;
+
+                let lamports = lamports_decimal.floor().to_u64().ok_or_else(|| {
+                    KoraError::ValidationError("Lamports value overflow".to_string())
+                })?;
 
                 if *is_outflow {
                     // Add outflow to total
@@ -358,7 +400,7 @@ impl TokenUtil {
         Ok(())
     }
 
-    pub async fn process_token_transfer(
+    pub async fn verify_token_payment(
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         required_lamports: u64,
@@ -416,7 +458,7 @@ impl TokenUtil {
                 }
 
                 if !config.validation.supports_token(&token_state.mint().to_string()) {
-                    return Ok(false);
+                    continue;
                 }
 
                 let lamport_value = TokenUtil::calculate_token_value_in_lamports(
@@ -571,7 +613,7 @@ mod tests_token {
                 .unwrap();
 
         assert_eq!(decimals, 9);
-        assert_eq!(token_price.price, 1.0);
+        assert_eq!(token_price.price, Decimal::from(1));
     }
 
     #[tokio::test]
@@ -586,7 +628,7 @@ mod tests_token {
                 .unwrap();
 
         assert_eq!(decimals, 6);
-        assert_eq!(token_price.price, 0.0001);
+        assert_eq!(token_price.price, dec!(0.0001));
     }
 
     #[tokio::test]
@@ -694,7 +736,7 @@ mod tests_token {
         .await
         .unwrap();
 
-        assert_eq!(result, 1_000_000_000.0); // Should equal input since SOL price is 1.0
+        assert_eq!(result, 1_000_000_000); // Should equal input since SOL price is 1.0
     }
 
     #[tokio::test]
@@ -714,7 +756,7 @@ mod tests_token {
         .unwrap();
 
         // 0.0001 SOL / 0.0001 SOL/USDC = 1 USDC = 1,000,000 base units
-        assert_eq!(result, 1_000_000.0);
+        assert_eq!(result, 1_000_000);
     }
 
     #[tokio::test]
@@ -733,7 +775,7 @@ mod tests_token {
         .await
         .unwrap();
 
-        assert_eq!(result, 0.0);
+        assert_eq!(result, 0);
     }
 
     #[tokio::test]
@@ -771,7 +813,7 @@ mod tests_token {
         .await;
 
         if let Ok(recovered_amount) = recovered_amount_result {
-            assert_eq!(recovered_amount, original_amount as f64);
+            assert_eq!(recovered_amount, original_amount);
         }
     }
 
@@ -821,20 +863,20 @@ mod tests_token {
 
         let test_cases = vec![
             // Low priority fees
-            (5_000u64, 50_000.0, "low priority base case"),
-            (10_001u64, 100_010.0, "odd number precision"),
+            (5_000u64, 50_000u64, "low priority base case"),
+            (10_001u64, 100_010u64, "odd number precision"),
             // High priority fees
-            (1_010_050u64, 10_100_500.0, "high priority problematic case"),
+            (1_010_050u64, 10_100_500u64, "high priority problematic case"),
             // High compute unit scenarios
-            (5_000_000u64, 50_000_000.0, "very high CU limit"),
-            (2_500_050u64, 25_000_501.0, "odd high amount"), // round up
-            (10_000_000u64, 100_000_000.0, "maximum CU cost"),
+            (5_000_000u64, 50_000_000u64, "very high CU limit"),
+            (2_500_050u64, 25_000_500u64, "odd high amount"), // exact result with Decimal
+            (10_000_000u64, 100_000_000u64, "maximum CU cost"),
             // Edge cases
-            (1_010_049u64, 10_100_490.0, "precision edge case -1"),
-            (1_010_051u64, 10_100_510.0, "precision edge case +1"),
-            (999_999u64, 9_999_990.0, "near million boundary"),
-            (1_000_001u64, 10_000_010.0, "over million boundary"),
-            (1_333_337u64, 13_333_370.0, "repeating digits edge case"),
+            (1_010_049u64, 10_100_490u64, "precision edge case -1"),
+            (1_010_051u64, 10_100_510u64, "precision edge case +1"),
+            (999_999u64, 9_999_990u64, "near million boundary"),
+            (1_000_001u64, 10_000_010u64, "over million boundary"),
+            (1_333_337u64, 13_333_370u64, "repeating digits edge case"),
         ];
 
         for (lamports, expected, description) in test_cases {
@@ -851,13 +893,6 @@ mod tests_token {
             assert_eq!(
                 result, expected,
                 "Failed for {description}: lamports={lamports}, expected={expected}, got={result}",
-            );
-
-            // Must be proper integers (no fractional part)
-            assert_eq!(
-                result.fract(),
-                0.0,
-                "Result should be integer for {lamports} lamports: got {result}",
             );
         }
     }

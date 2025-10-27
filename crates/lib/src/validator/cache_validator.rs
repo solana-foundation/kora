@@ -26,36 +26,37 @@ impl CacheValidator {
         Ok(())
     }
 
-    pub async fn validate(
-        usage_config: &UsageLimitConfig,
-    ) -> Result<(Vec<String>, Vec<String>), String> {
+    pub async fn validate(usage_config: &UsageLimitConfig) -> (Vec<String>, Vec<String>) {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
 
         // Skip validation if usage limiting is disabled
         if !usage_config.enabled {
-            return Ok((errors, warnings));
+            return (errors, warnings);
         }
 
         // Check if cache_url is provided when enabled
-        if usage_config.cache_url.is_none() {
-            if !usage_config.fallback_if_unavailable {
-                errors.push(
-            "Usage limiting enabled without cache_url and fallback disabled - service will fail"
-                .to_string(),
-        );
-            } else {
-                warnings.push(
-                    "Usage limiting enabled without cache_url - fallback mode will disable limits"
-                        .to_string(),
-                );
+        match &usage_config.cache_url {
+            None => {
+                if !usage_config.fallback_if_unavailable {
+                    errors.push(
+                        "Usage limiting enabled without cache_url and fallback disabled - service will fail"
+                            .to_string(),
+                    );
+                } else {
+                    warnings.push(
+                        "Usage limiting enabled without cache_url - fallback mode will disable limits"
+                            .to_string(),
+                    );
+                }
             }
-        } else if let Some(cache_url) = &usage_config.cache_url {
-            // Validate cache_url format
-            if !cache_url.starts_with("redis://") && !cache_url.starts_with("rediss://") {
-                errors.push(format!(
-                    "Invalid cache_url format: '{cache_url}' - must start with redis:// or rediss://"
-                ));
+            Some(cache_url) => {
+                // Validate cache_url format
+                if !cache_url.starts_with("redis://") && !cache_url.starts_with("rediss://") {
+                    errors.push(format!(
+                        "Invalid cache_url format: '{cache_url}' - must start with redis:// or rediss://"
+                    ));
+                }
             }
         }
 
@@ -87,7 +88,7 @@ impl CacheValidator {
             }
         }
 
-        Ok((errors, warnings))
+        (errors, warnings)
     }
 }
 
@@ -102,9 +103,7 @@ mod tests {
     async fn test_validate_usage_limit_disabled() {
         let config = ConfigMockBuilder::new().with_usage_limit_enabled(false).build();
 
-        let result = CacheValidator::validate(&config.kora.usage_limit).await;
-        assert!(result.is_ok());
-        let (errors, warnings) = result.unwrap();
+        let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
         assert!(errors.is_empty());
         assert!(warnings.is_empty());
@@ -119,9 +118,7 @@ mod tests {
             .with_usage_limit_fallback(true)
             .build();
 
-        let result = CacheValidator::validate(&config.kora.usage_limit).await;
-        assert!(result.is_ok());
-        let (errors, warnings) = result.unwrap();
+        let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
         assert!(errors.is_empty());
         assert!(warnings.iter().any(|w| w.contains(
@@ -138,9 +135,7 @@ mod tests {
             .with_usage_limit_fallback(false)
             .build();
 
-        let result = CacheValidator::validate(&config.kora.usage_limit).await;
-        assert!(result.is_ok());
-        let (errors, warnings) = result.unwrap();
+        let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
         // Should error when no cache_url and fallback disabled
         assert!(errors.iter().any(|e| e.contains(
@@ -160,9 +155,7 @@ mod tests {
             .with_usage_limit_fallback(true)
             .build();
 
-        let result = CacheValidator::validate(&config.kora.usage_limit).await;
-        assert!(result.is_ok());
-        let (errors, warnings) = result.unwrap();
+        let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
         // Should error for invalid cache_url format
         assert!(errors.iter().any(|e| e.contains("Invalid cache_url format")
@@ -182,9 +175,7 @@ mod tests {
             .with_usage_limit_fallback(false)
             .build();
 
-        let result = CacheValidator::validate(&config.kora.usage_limit).await;
-        assert!(result.is_ok());
-        let (errors, warnings) = result.unwrap();
+        let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
         // Should error about Redis connection failure with fallback disabled
         assert!(errors
@@ -204,9 +195,7 @@ mod tests {
             .with_usage_limit_fallback(true)
             .build();
 
-        let result = CacheValidator::validate(&config.kora.usage_limit).await;
-        assert!(result.is_ok());
-        let (errors, warnings) = result.unwrap();
+        let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
         // Should get warnings because Redis connection fails (unit tests don't run Redis) but fallback is enabled
         assert!(errors.is_empty());

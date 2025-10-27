@@ -25,7 +25,7 @@ pub fn get_request_signer_with_signer_key(
         return Ok(Arc::clone(&signer_meta.signer));
     }
 
-    // Default behavior: use next signer from round-robin
+    // Use configured selection strategy (defaults to round-robin if not specified)
     let signer_meta = pool.get_next_signer().map_err(|e| {
         KoraError::InternalServerError(format!("Failed to get signer from pool: {e}"))
     })?;

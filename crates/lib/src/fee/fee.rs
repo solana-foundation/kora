@@ -316,7 +316,7 @@ impl FeeConfigUtil {
         rpc_client: &RpcClient,
         fee_in_lamports: u64,
         fee_token: Option<&str>,
-    ) -> Result<Option<f64>, KoraError> {
+    ) -> Result<Option<u64>, KoraError> {
         if let Some(fee_token) = fee_token {
             let token_mint = Pubkey::from_str(fee_token).map_err(|_| {
                 KoraError::InvalidTransaction("Invalid fee token mint address".to_string())

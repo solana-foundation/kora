@@ -18,7 +18,7 @@ use crate::{
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, system_program::ID as SYSTEM_PROGRAM_ID};
 use spl_token::ID as SPL_TOKEN_PROGRAM_ID;
-use spl_token_2022::ID as TOKEN_2022_PROGRAM_ID;
+use spl_token_2022::{extension::ExtensionType, ID as TOKEN_2022_PROGRAM_ID};
 
 pub struct ConfigValidator {}
 
@@ -151,6 +151,19 @@ impl ConfigValidator {
             errors.push(format!("Token2022 extension validation failed: {e}"));
         }
 
+        // Warn if PermanentDelegate is not blocked
+        if !config.validation.token_2022.is_mint_extension_blocked(ExtensionType::PermanentDelegate)
+        {
+            warnings.push(
+                "⚠️  SECURITY: PermanentDelegate extension is NOT blocked. Tokens with this extension \
+                allow the delegate to transfer/burn tokens at any time without owner approval. \
+                This creates significant risks:\n\
+                  - Payment tokens: Funds can be seized after payment\n\
+                Consider adding \"permanent_delegate\" to blocked_mint_extensions in [validation.token2022] \
+                unless explicitly needed for your use case.".to_string()
+            );
+        }
+
         // Check if fees are enabled (not Free pricing)
         let fees_enabled = !matches!(config.validation.price.model, PriceModel::Free);
 
@@ -197,6 +210,45 @@ impl ConfigValidator {
                         "Token address for fixed price is not in allowed spl paid tokens: {token}"
                     ));
                 }
+
+                // Warn about dangerous configurations with fixed pricing
+                let has_auth =
+                    config.kora.auth.api_key.is_some() || config.kora.auth.hmac_secret.is_some();
+                if !has_auth {
+                    warnings.push(
+                        "⚠️  SECURITY: Fixed pricing with NO authentication enabled. \
+                        Without authentication, anyone can spam transactions at your expense. \
+                        Consider enabling api_key or hmac_secret in [kora.auth]."
+                            .to_string(),
+                    );
+                }
+
+                if config.validation.fee_payer_policy.system.allow_transfer {
+                    warnings.push(
+                        "⚠️  SECURITY: Fixed pricing with allow_transfer=true for System instructions. \
+                        Users can make the fee payer transfer arbitrary SOL amounts at fixed cost. \
+                        This can drain your fee payer account. \
+                        Consider setting [validation.fee_payer_policy.system] allow_transfer=false.".to_string()
+                    );
+                }
+
+                if config.validation.fee_payer_policy.spl_token.allow_transfer {
+                    warnings.push(
+                        "⚠️  SECURITY: Fixed pricing with allow_transfer=true for SPL Token instructions. \
+                        Users can make the fee payer transfer arbitrary token amounts at fixed cost. \
+                        This can drain your fee payer token accounts. \
+                        Consider setting [validation.fee_payer_policy.spl_token] allow_transfer=false.".to_string()
+                    );
+                }
+
+                if config.validation.fee_payer_policy.token_2022.allow_transfer {
+                    warnings.push(
+                        "⚠️  SECURITY: Fixed pricing with allow_transfer=true for Token2022 instructions. \
+                        Users can make the fee payer transfer arbitrary token amounts at fixed cost. \
+                        This can drain your fee payer token accounts. \
+                        Consider setting [validation.fee_payer_policy.token_2022] allow_transfer=false.".to_string()
+                    );
+                }
             }
             PriceModel::Margin { margin } => {
                 if *margin < 0.0 {
@@ -208,16 +260,23 @@ impl ConfigValidator {
             _ => {}
         };
 
+        // General authentication warning
+        let has_auth = config.kora.auth.api_key.is_some() || config.kora.auth.hmac_secret.is_some();
+        if !has_auth {
+            warnings.push(
+                "⚠️  SECURITY: No authentication configured (neither api_key nor hmac_secret). \
+                Authentication is strongly recommended for production deployments. \
+                Consider enabling api_key or hmac_secret in [kora.auth]."
+                    .to_string(),
+            );
+        }
+
         // Validate usage limit configuration
         let usage_config = &config.kora.usage_limit;
         if usage_config.enabled {
-            if let Ok((usage_errors, usage_warnings)) = CacheValidator::validate(usage_config).await
-            {
-                errors.extend(usage_errors);
-                warnings.extend(usage_warnings);
-            } else {
-                errors.push("Failed to validate usage limit cache configuration".to_string());
-            }
+            let (usage_errors, usage_warnings) = CacheValidator::validate(usage_config).await;
+            errors.extend(usage_errors);
+            warnings.extend(usage_warnings);
         }
 
         // RPC validation - only if not skipped
@@ -437,7 +496,10 @@ mod tests {
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
-        assert!(warnings.is_empty());
+        // Expect warnings about PermanentDelegate and no authentication
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings.iter().any(|w| w.contains("PermanentDelegate")));
+        assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
     }
 
     #[tokio::test]

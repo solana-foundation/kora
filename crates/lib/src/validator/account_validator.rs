@@ -92,7 +92,8 @@ impl AccountType {
         if let Some(should_be_executable) = should_be_executable {
             if account.executable != should_be_executable {
                 return Err(KoraError::InternalServerError(format!(
-                    "Account {account_pubkey} is not executable, cannot be a Program"
+                    "Account {account_pubkey} executable flag mismatch: expected {should_be_executable}, found {}",
+                    account.executable
                 )));
             }
         }
@@ -181,7 +182,7 @@ mod tests {
 
         let result = AccountType::Mint.validate_account_type(&account, &account_pubkey);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("is not executable, cannot be a Program"));
+        assert!(result.unwrap_err().to_string().contains("executable flag mismatch"));
     }
 
     #[test]
@@ -247,7 +248,7 @@ mod tests {
 
         let result = AccountType::TokenAccount.validate_account_type(&account, &account_pubkey);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("is not executable, cannot be a Program"));
+        assert!(result.unwrap_err().to_string().contains("executable flag mismatch"));
     }
 
     #[test]
@@ -302,7 +303,7 @@ mod tests {
 
         let result = AccountType::Program.validate_account_type(&account, &account_pubkey);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("is not executable, cannot be a Program"));
+        assert!(result.unwrap_err().to_string().contains("executable flag mismatch"));
     }
 
     #[test]

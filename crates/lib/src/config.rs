@@ -146,7 +146,7 @@ pub struct FeePayerPolicy {
     pub token_2022: Token2022InstructionPolicy,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
 pub struct SystemInstructionPolicy {
     /// Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions
     pub allow_transfer: bool,
@@ -161,19 +161,7 @@ pub struct SystemInstructionPolicy {
     pub nonce: NonceInstructionPolicy,
 }
 
-impl Default for SystemInstructionPolicy {
-    fn default() -> Self {
-        Self {
-            allow_transfer: true,
-            allow_assign: true,
-            allow_create_account: true,
-            allow_allocate: true,
-            nonce: NonceInstructionPolicy::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
 pub struct NonceInstructionPolicy {
     /// Allow fee payer to be set as the nonce authority in InitializeNonceAccount instructions
     pub allow_initialize: bool,
@@ -186,18 +174,7 @@ pub struct NonceInstructionPolicy {
     // Note: UpgradeNonceAccount not included - has no authority parameter, cannot validate fee payer involvement
 }
 
-impl Default for NonceInstructionPolicy {
-    fn default() -> Self {
-        Self {
-            allow_initialize: true,
-            allow_advance: true,
-            allow_withdraw: true,
-            allow_authorize: true,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
 pub struct SplTokenInstructionPolicy {
     /// Allow fee payer to be the owner in SPL Token Transfer/TransferChecked instructions
     pub allow_transfer: bool,
@@ -225,26 +202,7 @@ pub struct SplTokenInstructionPolicy {
     pub allow_thaw_account: bool,
 }
 
-impl Default for SplTokenInstructionPolicy {
-    fn default() -> Self {
-        Self {
-            allow_transfer: true,
-            allow_burn: true,
-            allow_close_account: true,
-            allow_approve: true,
-            allow_revoke: true,
-            allow_set_authority: true,
-            allow_mint_to: true,
-            allow_initialize_mint: true,
-            allow_initialize_account: true,
-            allow_initialize_multisig: true,
-            allow_freeze_account: true,
-            allow_thaw_account: true,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
 pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be the owner in Token2022 Transfer/TransferChecked instructions
     pub allow_transfer: bool,
@@ -270,25 +228,6 @@ pub struct Token2022InstructionPolicy {
     pub allow_freeze_account: bool,
     /// Allow fee payer to be the freeze authority in Token2022 ThawAccount instructions
     pub allow_thaw_account: bool,
-}
-
-impl Default for Token2022InstructionPolicy {
-    fn default() -> Self {
-        Self {
-            allow_transfer: true,
-            allow_burn: true,
-            allow_close_account: true,
-            allow_approve: true,
-            allow_revoke: true,
-            allow_set_authority: true,
-            allow_mint_to: true,
-            allow_initialize_mint: true,
-            allow_initialize_account: true,
-            allow_initialize_multisig: true,
-            allow_freeze_account: true,
-            allow_thaw_account: true,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -8,10 +8,16 @@ use crate::{
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use reqwest::{Client, StatusCode};
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::{collections::HashMap, sync::Arc};
 
 const JUPITER_AUTH_HEADER: &str = "x-api-key";
+
+const JUPITER_DEFAULT_CONFIDENCE: f64 = 0.95;
+
+const MAX_REASONABLE_PRICE: f64 = 1_000_000.0;
+const MIN_REASONABLE_PRICE: f64 = 0.000_000_001;
 
 static GLOBAL_JUPITER_API_KEY: Lazy<Arc<RwLock<Option<String>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
@@ -121,6 +127,41 @@ impl PriceOracle for JupiterPriceOracle {
 }
 
 impl JupiterPriceOracle {
+    fn validate_price_data(price_data: &JupiterPriceData, mint: &str) -> Result<(), KoraError> {
+        let price = price_data.usd_price;
+
+        math_validator::validate_division(price)?;
+
+        // Sanity check: price should be within reasonable bounds
+        if price > MAX_REASONABLE_PRICE {
+            log::error!(
+                "Price data for mint {} exceeds reasonable bounds: {} > {}",
+                mint,
+                price,
+                MAX_REASONABLE_PRICE
+            );
+            return Err(KoraError::RpcError(format!(
+                "Price data for mint {} exceeds reasonable bounds",
+                mint
+            )));
+        }
+
+        if price < MIN_REASONABLE_PRICE {
+            log::error!(
+                "Price data for mint {} below reasonable bounds: {} < {}",
+                mint,
+                price,
+                MIN_REASONABLE_PRICE
+            );
+            return Err(KoraError::RpcError(format!(
+                "Price data for mint {} below reasonable bounds",
+                mint
+            )));
+        }
+
+        Ok(())
+    }
+
     async fn fetch_prices_from_url(
         &self,
         client: &Client,
@@ -172,16 +213,32 @@ impl JupiterPriceOracle {
             .get(SOL_MINT)
             .ok_or_else(|| KoraError::RpcError("No SOL price data from Jupiter".to_string()))?;
 
-        math_validator::validate_division(sol_price.usd_price)?;
+        Self::validate_price_data(sol_price, SOL_MINT)?;
 
         // Convert all prices to SOL-denominated
         let mut result = HashMap::new();
         for mint_address in mint_addresses {
             if let Some(price_data) = jupiter_response.get(mint_address.as_str()) {
-                let price = price_data.usd_price / sol_price.usd_price;
+                Self::validate_price_data(price_data, mint_address)?;
+
+                // Convert f64 USD prices to Decimal at API boundary
+                let token_usd =
+                    Decimal::from_f64_retain(price_data.usd_price).ok_or_else(|| {
+                        KoraError::RpcError(format!("Invalid token price for mint {mint_address}"))
+                    })?;
+                let sol_usd = Decimal::from_f64_retain(sol_price.usd_price).ok_or_else(|| {
+                    KoraError::RpcError("Invalid SOL price from Jupiter".to_string())
+                })?;
+
+                let price_in_sol = token_usd / sol_usd;
+
                 result.insert(
                     mint_address.clone(),
-                    TokenPrice { price, confidence: 0.95, source: PriceSource::Jupiter },
+                    TokenPrice {
+                        price: price_in_sol,
+                        confidence: JUPITER_DEFAULT_CONFIDENCE,
+                        source: PriceSource::Jupiter,
+                    },
                 );
             } else {
                 log::error!("No price data for mint {mint_address} from Jupiter");
@@ -243,7 +300,7 @@ mod tests {
         let result = oracle.get_price(&client, "So11111111111111111111111111111111111111112").await;
         assert!(result.is_ok());
         let price = result.unwrap();
-        assert_eq!(price.price, 1.0);
+        assert_eq!(price.price, Decimal::from(1));
         assert_eq!(price.source, PriceSource::Jupiter);
 
         // Test case 2: With API key - should use pro API
@@ -269,7 +326,7 @@ mod tests {
             oracle2.get_price(&client, "So11111111111111111111111111111111111111112").await;
         assert!(result.is_ok());
         let price = result.unwrap();
-        assert_eq!(price.price, 1.0);
+        assert_eq!(price.price, Decimal::from(1));
         assert_eq!(price.source, PriceSource::Jupiter);
 
         // Test case 3: No price data available - should return error

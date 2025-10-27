@@ -24,7 +24,6 @@ pub struct SignTransactionIfPaidRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SignTransactionIfPaidResponse {
-    pub transaction: String,
     pub signed_transaction: String,
     /// Public key of the signer used (for client consistency)
     pub signer_pubkey: String,
@@ -48,13 +47,12 @@ pub async fn sign_transaction_if_paid(
     )
     .await?;
 
-    let (transaction, signed_transaction) = resolved_transaction
+    let (_, signed_transaction) = resolved_transaction
         .sign_transaction_if_paid(&signer, rpc_client)
         .await
         .map_err(|e| KoraError::TokenOperationError(e.to_string()))?;
 
     Ok(SignTransactionIfPaidResponse {
-        transaction: TransactionUtil::encode_versioned_transaction(&transaction)?,
         signed_transaction,
         signer_pubkey: signer.pubkey().to_string(),
     })

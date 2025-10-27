@@ -1,9 +1,11 @@
 use crate::oracle::{MockPriceOracle, PriceOracle, PriceSource, TokenPrice};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::{collections::HashMap, sync::Arc};
 
-pub const DEFAULT_MOCKED_PRICE: f64 = 0.001;
-pub const DEFAULT_MOCKED_USDC_PRICE: f64 = 0.0001;
-pub const DEFAULT_MOCKED_WSOL_PRICE: f64 = 1.0;
+pub const DEFAULT_MOCKED_PRICE: Decimal = dec!(0.001);
+pub const DEFAULT_MOCKED_USDC_PRICE: Decimal = dec!(0.0001);
+pub const DEFAULT_MOCKED_WSOL_PRICE: Decimal = dec!(1.0);
 
 pub const USDC_DEVNET_MINT: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 pub const WSOL_DEVNET_MINT: &str = "So11111111111111111111111111111111111111112";
