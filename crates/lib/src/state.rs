@@ -64,12 +64,6 @@ pub fn get_signers_info() -> Result<Vec<crate::signer::SignerInfo>, KoraError> {
     Ok(pool.get_signers_info())
 }
 
-/// Get all signers from the pool (for operations that need to iterate over all signers)
-pub fn get_all_signers() -> Result<Vec<crate::signer::SignerWithMetadata>, KoraError> {
-    let pool = get_signer_pool()?;
-    Ok(pool.get_all_signers().to_vec())
-}
-
 /// Update the global signer configs with a new config (test only)
 #[cfg(test)]
 pub fn update_signer_pool(new_pool: SignerPool) -> Result<(), KoraError> {

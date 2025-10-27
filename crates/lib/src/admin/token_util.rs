@@ -1,6 +1,6 @@
 use crate::{
     error::KoraError,
-    state::{get_all_signers, get_request_signer_with_signer_key},
+    state::{get_request_signer_with_signer_key, get_signer_pool},
     token::token::TokenType,
     transaction::TransactionUtil,
 };
@@ -64,7 +64,11 @@ pub async fn initialize_atas(
         vec![Pubkey::from_str(payment_address)
             .map_err(|e| KoraError::InternalServerError(format!("Invalid payment address: {e}")))?]
     } else {
-        get_all_signers()?.iter().map(|signer| signer.signer.pubkey()).collect::<Vec<Pubkey>>()
+        get_signer_pool()?
+            .get_signers_info()
+            .iter()
+            .filter_map(|info| info.public_key.parse().ok())
+            .collect::<Vec<Pubkey>>()
     };
 
     initialize_atas_with_chunk_size(
