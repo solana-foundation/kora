@@ -48,9 +48,6 @@ pub enum KoraError {
     #[error("Token operation failed: {0}")]
     TokenOperationError(String),
 
-    #[error("Thread safety error: {0}")]
-    ThreadSafetyError(String),
-
     #[error("Invalid request: {0}")]
     InvalidRequest(String),
 
@@ -464,7 +461,6 @@ mod tests {
             KoraError::FeeEstimationFailed("test".to_string()),
             KoraError::SwapError("test".to_string()),
             KoraError::TokenOperationError("test".to_string()),
-            KoraError::ThreadSafetyError("test".to_string()),
             KoraError::InvalidRequest("test".to_string()),
             KoraError::Unauthorized("test".to_string()),
             KoraError::RateLimitExceeded,

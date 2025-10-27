@@ -35,7 +35,7 @@ pub struct EstimateTransactionFeeRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EstimateTransactionFeeResponse {
     pub fee_in_lamports: u64,
-    pub fee_in_token: Option<f64>,
+    pub fee_in_token: Option<u64>,
     /// Public key of the signer used for fee estimation (for client consistency)
     pub signer_pubkey: String,
     /// Public key of the payment destination

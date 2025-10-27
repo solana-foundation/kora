@@ -3,11 +3,10 @@ use std::{collections::HashSet, sync::Arc};
 use deadpool_redis::Runtime;
 use redis::AsyncCommands;
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
-use solana_signers::SolanaSigner;
 use tokio::sync::OnceCell;
 
 use super::usage_store::{RedisUsageStore, UsageStore};
-use crate::{error::KoraError, get_all_signers, sanitize_error};
+use crate::{error::KoraError, sanitize_error, state::get_signer_pool};
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -179,8 +178,11 @@ impl UsageTracker {
                 config.kora.usage_limit.max_transactions
             );
 
-            let kora_signers =
-                get_all_signers()?.iter().map(|signer| signer.signer.pubkey()).collect();
+            let kora_signers = get_signer_pool()?
+                .get_signers_info()
+                .iter()
+                .filter_map(|info| info.public_key.parse().ok())
+                .collect();
 
             let store = Arc::new(RedisUsageStore::new(pool));
             Some(UsageTracker::new(

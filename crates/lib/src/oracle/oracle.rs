@@ -4,6 +4,7 @@ use crate::{
 };
 use mockall::automock;
 use reqwest::Client;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::time::sleep;
@@ -11,7 +12,7 @@ use tokio::time::sleep;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "docs", derive(utoipa::ToSchema))]
 pub struct TokenPrice {
-    pub price: f64,
+    pub price: Decimal,
     pub confidence: f64,
     pub source: PriceSource,
 }
@@ -113,7 +114,11 @@ mod tests {
             for mint in mint_addresses {
                 result.insert(
                     mint.clone(),
-                    TokenPrice { price: 1.0, confidence: 0.95, source: PriceSource::Jupiter },
+                    TokenPrice {
+                        price: Decimal::from(1),
+                        confidence: 0.95,
+                        source: PriceSource::Jupiter,
+                    },
                 );
             }
             Ok(result)

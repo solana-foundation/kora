@@ -6,6 +6,7 @@ use hmac::{Hmac, Mac};
 use http::{Request, Response, StatusCode};
 use jsonrpsee::server::logger::Body;
 use sha2::Sha256;
+use subtle::ConstantTimeEq;
 
 #[derive(Clone)]
 pub struct ApiKeyAuthLayer {
@@ -73,7 +74,8 @@ where
             // Check for API key header
             let req = Request::from_parts(parts, Body::from(body_bytes));
             if let Some(provided_key) = req.headers().get(X_API_KEY) {
-                if provided_key.to_str().unwrap_or("") == api_key {
+                // Constant-time comparison prevents timing attacks
+                if provided_key.as_bytes().ct_eq(api_key.as_bytes()).into() {
                     return inner.call(req).await;
                 }
             }
@@ -187,7 +189,13 @@ where
             }
 
             // Verify HMAC signature using timestamp + body
-            let body_str = std::str::from_utf8(&body_bytes).unwrap_or("");
+            let body_str = match std::str::from_utf8(&body_bytes) {
+                Ok(s) => s,
+                Err(_) => {
+                    log::error!("HMAC authentication failed: invalid UTF-8 in request body");
+                    return Ok(unauthorized_response);
+                }
+            };
             let message = format!("{}{}", timestamp, body_str);
 
             let mut mac = match Hmac::<Sha256>::new_from_slice(secret.as_bytes()) {

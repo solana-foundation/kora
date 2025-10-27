@@ -355,7 +355,7 @@ impl TransactionValidator {
         rpc_client: &RpcClient,
         expected_payment_destination: &Pubkey,
     ) -> Result<(), KoraError> {
-        if TokenUtil::process_token_transfer(
+        if TokenUtil::verify_token_payment(
             transaction_resolved,
             rpc_client,
             required_lamports,
@@ -1315,9 +1315,10 @@ mod tests {
         let new_account = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
 
-        // Test with allow_create_account = true (default)
+        // Test with allow_create_account = true
         let rpc_client = RpcMockBuilder::new().build();
-        let policy = FeePayerPolicy::default();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = true;
         setup_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1346,9 +1347,10 @@ mod tests {
 
         let fee_payer = Pubkey::new_unique();
 
-        // Test with allow_allocate = true (default)
+        // Test with allow_allocate = true
         let rpc_client = RpcMockBuilder::new().build();
-        let policy = FeePayerPolicy::default();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_allocate = true;
         setup_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1378,9 +1380,10 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let nonce_account = Pubkey::new_unique();
 
-        // Test with allow_initialize = true (default)
+        // Test with allow_initialize = true
         let rpc_client = RpcMockBuilder::new().build();
-        let policy = FeePayerPolicy::default();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_initialize = true;
         setup_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1413,9 +1416,10 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let nonce_account = Pubkey::new_unique();
 
-        // Test with allow_advance = true (default)
+        // Test with allow_advance = true
         let rpc_client = RpcMockBuilder::new().build();
-        let policy = FeePayerPolicy::default();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_advance = true;
         setup_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1446,9 +1450,10 @@ mod tests {
         let nonce_account = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Test with allow_withdraw = true (default)
+        // Test with allow_withdraw = true
         let rpc_client = RpcMockBuilder::new().build();
-        let policy = FeePayerPolicy::default();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_withdraw = true;
         setup_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
@@ -1479,9 +1484,10 @@ mod tests {
         let nonce_account = Pubkey::new_unique();
         let new_authority = Pubkey::new_unique();
 
-        // Test with allow_authorize = true (default)
+        // Test with allow_authorize = true
         let rpc_client = RpcMockBuilder::new().build();
-        let policy = FeePayerPolicy::default();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_authorize = true;
         setup_config_with_policy(policy);
 
         let validator = TransactionValidator::new(fee_payer).unwrap();

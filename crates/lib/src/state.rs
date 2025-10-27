@@ -25,7 +25,7 @@ pub fn get_request_signer_with_signer_key(
         return Ok(Arc::clone(&signer_meta.signer));
     }
 
-    // Default behavior: use next signer from round-robin
+    // Use configured selection strategy (defaults to round-robin if not specified)
     let signer_meta = pool.get_next_signer().map_err(|e| {
         KoraError::InternalServerError(format!("Failed to get signer from pool: {e}"))
     })?;
@@ -62,12 +62,6 @@ pub fn get_signer_pool() -> Result<Arc<SignerPool>, KoraError> {
 pub fn get_signers_info() -> Result<Vec<crate::signer::SignerInfo>, KoraError> {
     let pool = get_signer_pool()?;
     Ok(pool.get_signers_info())
-}
-
-/// Get all signers from the pool (for operations that need to iterate over all signers)
-pub fn get_all_signers() -> Result<Vec<crate::signer::SignerWithMetadata>, KoraError> {
-    let pool = get_signer_pool()?;
-    Ok(pool.get_all_signers().to_vec())
 }
 
 /// Update the global signer configs with a new config (test only)

@@ -211,11 +211,6 @@ impl SignerPool {
             KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
         })
     }
-
-    /// Get all signers in the pool
-    pub fn get_all_signers(&self) -> &[SignerWithMetadata] {
-        &self.signers
-    }
 }
 
 #[cfg(test)]
