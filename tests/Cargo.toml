@@ -72,3 +72,5 @@ colored = "3.0"
 serde = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }

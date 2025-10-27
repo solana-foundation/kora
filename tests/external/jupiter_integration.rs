@@ -1,5 +1,5 @@
-use jsonrpsee::core::Error;
 use kora_lib::oracle::{get_price_oracle, PriceSource, RetryingPriceOracle};
+use rust_decimal_macros::dec;
 use std::time::Duration;
 
 #[tokio::test]
@@ -13,8 +13,16 @@ async fn test_jupiter_integration_usdc() {
 
     match result {
         Ok(token_price) => {
-            assert!(token_price.price > 0.001, "USDC price too low: {} SOL", token_price.price);
-            assert!(token_price.price < 0.01, "USDC price too high: {} SOL", token_price.price);
+            assert!(
+                token_price.price > dec!(0.001),
+                "USDC price too low: {} SOL",
+                token_price.price
+            );
+            assert!(
+                token_price.price < dec!(0.01),
+                "USDC price too high: {} SOL",
+                token_price.price
+            );
             assert_eq!(token_price.source, PriceSource::Jupiter);
         }
         Err(e) => {
@@ -37,8 +45,16 @@ async fn test_jupiter_integration_cbtc() {
 
     match result {
         Ok(token_price) => {
-            assert!(token_price.price > 200.0, "cBTC price too low: {} SOL", token_price.price);
-            assert!(token_price.price < 1_000.0, "cBTC price too high: {} SOL", token_price.price);
+            assert!(
+                token_price.price > dec!(200.0),
+                "cBTC price too low: {} SOL",
+                token_price.price
+            );
+            assert!(
+                token_price.price < dec!(1_000.0),
+                "cBTC price too high: {} SOL",
+                token_price.price
+            );
             assert_eq!(token_price.source, PriceSource::Jupiter);
         }
         Err(e) => {
@@ -62,7 +78,7 @@ async fn test_jupiter_integration_sol() {
     match result {
         Ok(token_price) => {
             assert!(
-                (token_price.price - 1.0).abs() < 0.001,
+                (token_price.price - dec!(1.0)).abs() < dec!(0.001),
                 "SOL price should be ~1.0, got: {}",
                 token_price.price
             );

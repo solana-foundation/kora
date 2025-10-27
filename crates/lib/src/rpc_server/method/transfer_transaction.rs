@@ -192,8 +192,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_transfer_transaction_invalid_destination() {
-        let config = ConfigMockBuilder::new().build();
-        let _ = update_config(config);
+        let _m = ConfigMockBuilder::new().build_and_setup();
         let _ = setup_or_get_test_signer();
 
         let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());
@@ -220,8 +219,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_transfer_transaction_invalid_token() {
-        let config = ConfigMockBuilder::new().build();
-        let _ = update_config(config);
+        let _m = ConfigMockBuilder::new().build_and_setup();
         let _ = setup_or_get_test_signer();
 
         let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());
