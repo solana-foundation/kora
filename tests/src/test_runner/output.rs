@@ -34,6 +34,7 @@ impl TestPhaseColor {
             "Regular Integration Tests" => Self::Regular,
             "Auth Tests" => Self::Auth,
             "Payment Address Tests" => Self::Payment,
+            "Free Signing Tests" => Self::Regular,
             "Multi-Signer Tests" => Self::MultiSigner,
             "Fee Payer Policy Tests" => Self::FeePayerPolicy,
             name if name.starts_with("TypeScript") => Self::from_typescript_phase(name),

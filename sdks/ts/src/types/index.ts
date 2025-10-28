@@ -45,18 +45,6 @@ export interface SignAndSendTransactionRequest {
 }
 
 /**
- * Parameters for conditionally signing a transaction based on payment.
- */
-export interface SignTransactionIfPaidRequest {
-    /** Base64-encoded transaction */
-    transaction: string;
-    /** Optional signer address for the transaction */
-    signer_key?: string;
-    /** Optional signer verification during transaction simulation (defaults to false) */
-    sig_verify?: boolean;
-}
-
-/**
  * Parameters for estimating transaction fees.
  */
 export interface EstimateTransactionFeeRequest {
@@ -125,18 +113,6 @@ export interface SignAndSendTransactionResponse {
     /** Base64-encoded signed transaction */
     signed_transaction: string;
     /** Public key of the signer used to send the transaction */
-    signer_pubkey: string;
-}
-
-/**
- * Response from conditionally signing a transaction.
- */
-export interface SignTransactionIfPaidResponse {
-    /** Base64-encoded original transaction */
-    transaction: string;
-    /** Base64-encoded signed transaction */
-    signed_transaction: string;
-    /** Public key of the signer used to sign the transaction */
     signer_pubkey: string;
 }
 
@@ -276,8 +252,6 @@ export interface EnabledMethods {
     get_blockhash: boolean;
     /** Whether the get_config method is enabled */
     get_config: boolean;
-    /** Whether the sign_transaction_if_paid method is enabled */
-    sign_transaction_if_paid: boolean;
 }
 
 /**

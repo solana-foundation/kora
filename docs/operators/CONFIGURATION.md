@@ -161,7 +161,6 @@ sign_and_send_transaction = false
 transfer_transaction = false
 get_blockhash = true
 get_config = true
-sign_transaction_if_paid = true
 get_payer_signer = true
 ```
 
@@ -175,7 +174,6 @@ get_payer_signer = true
 | `transfer_transaction` | Handle token transfers | ✅ | boolean |
 | `get_blockhash` | Get a recent blockhash | ✅ | boolean |
 | `get_config` | Return the Kora server config | ✅ | boolean |
-| `sign_transaction_if_paid` | Conditional signing if token payment instruction is provided | ✅ | boolean |
 
 
 > *Note: if this section is included in your `kora.toml` file, all methods must explicitly be set to `true` or `false`.*
@@ -424,7 +422,6 @@ sign_and_send_transaction = false
 transfer_transaction = false
 get_blockhash = true
 get_config = true
-sign_transaction_if_paid = true
 get_payer_signer = true
 
 [validation]

@@ -1,9 +1,6 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
-use kora_lib::{
-    token::{TokenInterface, TokenProgram},
-    transaction::{TransactionUtil, VersionedTransactionOps},
-};
+use kora_lib::token::{TokenInterface, TokenProgram};
 use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
@@ -45,9 +42,9 @@ async fn test_sign_transaction_if_paid_with_payment_address_legacy() {
         .await
         .expect("Failed to create signed legacy transaction");
 
-    // Call signTransactionIfPaid endpoint - should succeed when payment goes to correct address
+    // Call signTransaction endpoint - should succeed when payment goes to correct address
     let response: serde_json::Value = ctx
-        .rpc_call("signTransactionIfPaid", rpc_params![encoded_tx])
+        .rpc_call("signTransaction", rpc_params![encoded_tx])
         .await
         .expect("Failed to sign transaction");
 
@@ -97,9 +94,9 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_legacy() {
         .await
         .expect("Failed to create signed legacy transaction");
 
-    // Call signTransactionIfPaid endpoint - should fail when payment goes to wrong address
+    // Call signTransaction endpoint - should fail when payment goes to wrong address
     let response: Result<serde_json::Value, _> =
-        ctx.rpc_call("signTransactionIfPaid", rpc_params![encoded_tx]).await;
+        ctx.rpc_call("signTransaction", rpc_params![encoded_tx]).await;
 
     assert!(response.is_err(), "Expected payment validation to fail for wrong destination");
 }

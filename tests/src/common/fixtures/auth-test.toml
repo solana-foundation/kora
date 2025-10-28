@@ -22,7 +22,6 @@ transfer_transaction = true
 get_blockhash = true
 get_config = true
 get_payer_signer = true
-sign_transaction_if_paid = true
 
 [validation]
 max_allowed_lamports = 1000000
@@ -45,6 +44,10 @@ allowed_spl_paid_tokens = [
 disallowed_accounts = [
     "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek", # Test disallowed account for lookup table
 ]
+
+[validation.price]
+type = "margin"
+margin = 0.0
 
 [validation.fee_payer_policy]
 

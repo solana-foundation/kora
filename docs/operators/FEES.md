@@ -2,7 +2,7 @@
 
 *Last updated: 2025-09-02*
 
-Kora estimates transaction fees when performing `estimate_transaction_fee` and `sign_transaction_if_paid` RPC methods. To estimate fees, Kora calculates the total cost for executing transactions on Solana, including network fees, account creation costs, and optional payment processing fees. This guide breaks down each component of the fee calculation.
+Kora estimates transaction fees when performing `estimate_transaction_fee`, `sign_transaction` and `sign_and_send_transaction` RPC methods. To estimate fees, Kora calculates the total cost for executing transactions on Solana, including network fees, account creation costs, and optional payment processing fees. This guide breaks down each component of the fee calculation.
 
 ## Fee Calculation Formula
 

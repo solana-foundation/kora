@@ -324,7 +324,6 @@ pub struct EnabledMethods {
     pub transfer_transaction: bool,
     pub get_blockhash: bool,
     pub get_config: bool,
-    pub sign_transaction_if_paid: bool,
 }
 
 impl EnabledMethods {
@@ -339,7 +338,6 @@ impl EnabledMethods {
             self.transfer_transaction,
             self.get_blockhash,
             self.get_config,
-            self.sign_transaction_if_paid,
         ]
         .into_iter()
     }
@@ -374,16 +372,13 @@ impl EnabledMethods {
         if self.get_config {
             methods.push("getConfig".to_string());
         }
-        if self.sign_transaction_if_paid {
-            methods.push("signTransactionIfPaid".to_string());
-        }
         methods
     }
 }
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 10>;
+    type IntoIter = std::array::IntoIter<bool, 9>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
@@ -396,7 +391,6 @@ impl IntoIterator for &EnabledMethods {
             self.transfer_transaction,
             self.get_blockhash,
             self.get_config,
-            self.sign_transaction_if_paid,
         ]
         .into_iter()
     }
@@ -414,7 +408,6 @@ impl Default for EnabledMethods {
             transfer_transaction: true,
             get_blockhash: true,
             get_config: true,
-            sign_transaction_if_paid: true,
         }
     }
 }
@@ -610,7 +603,6 @@ mod tests {
                 ("transfer_transaction", true),
                 ("get_blockhash", true),
                 ("get_config", true),
-                ("sign_transaction_if_paid", true),
                 ("get_payer_signer", true),
             ])
             .build_config()
@@ -625,7 +617,6 @@ mod tests {
         assert!(config.kora.enabled_methods.transfer_transaction);
         assert!(config.kora.enabled_methods.get_blockhash);
         assert!(config.kora.enabled_methods.get_config);
-        assert!(config.kora.enabled_methods.sign_transaction_if_paid);
     }
 
     #[test]

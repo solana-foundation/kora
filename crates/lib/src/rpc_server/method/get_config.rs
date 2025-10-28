@@ -140,6 +140,5 @@ mod tests {
         assert!(response.enabled_methods.transfer_transaction);
         assert!(response.enabled_methods.get_blockhash);
         assert!(response.enabled_methods.get_config);
-        assert!(response.enabled_methods.sign_transaction_if_paid);
     }
 }

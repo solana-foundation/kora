@@ -316,7 +316,6 @@ function generateAPIDocs() {
     'getSupportedTokens',
     'signAndSendTransaction',
     'signTransaction',
-    'signTransactionIfPaid',
     'transferTransaction'
   ];
 

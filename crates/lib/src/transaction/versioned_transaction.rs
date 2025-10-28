@@ -63,11 +63,6 @@ pub trait VersionedTransactionOps {
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError>;
-    async fn sign_transaction_if_paid(
-        &mut self,
-        signer: &std::sync::Arc<Signer>,
-        rpc_client: &RpcClient,
-    ) -> Result<(VersionedTransaction, String), KoraError>;
     async fn sign_and_send_transaction(
         &mut self,
         signer: &std::sync::Arc<Signer>,
@@ -251,10 +246,39 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError> {
         let fee_payer = signer.pubkey();
+        let config = &get_config()?;
         let validator = TransactionValidator::new(fee_payer)?;
 
         // Validate transaction and accounts (already resolved)
         validator.validate_transaction(self, rpc_client).await?;
+
+        // Calculate fee and validate payment if price model requires it
+        let fee_calculation = FeeConfigUtil::estimate_kora_fee(
+            rpc_client,
+            self,
+            &fee_payer,
+            config.validation.is_payment_required(),
+            config.validation.price_source.clone(),
+        )
+        .await?;
+
+        let required_lamports = fee_calculation.total_fee_lamports;
+
+        // Validate payment if price model is not Free
+        if required_lamports > 0 {
+            log::error!("Payment validation: required_lamports={}", required_lamports);
+            // Get the expected payment destination
+            let payment_destination = config.kora.get_payment_address(&fee_payer)?;
+
+            // Validate token payment using the resolved transaction
+            TransactionValidator::validate_token_payment(
+                self,
+                required_lamports,
+                rpc_client,
+                &payment_destination,
+            )
+            .await?;
+        }
 
         // Get latest blockhash and update transaction
         let mut transaction = self.transaction.clone();
@@ -288,49 +312,12 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         Ok((transaction, encoded))
     }
 
-    async fn sign_transaction_if_paid(
-        &mut self,
-        signer: &std::sync::Arc<Signer>,
-        rpc_client: &RpcClient,
-    ) -> Result<(VersionedTransaction, String), KoraError> {
-        let fee_payer = signer.pubkey();
-        let config = &get_config()?;
-
-        let fee_calculation = FeeConfigUtil::estimate_kora_fee(
-            rpc_client,
-            self,
-            &fee_payer,
-            config.validation.is_payment_required(),
-            config.validation.price_source.clone(),
-        )
-        .await?;
-
-        let required_lamports = fee_calculation.total_fee_lamports;
-
-        // Only validate payment if not free
-        if required_lamports > 0 {
-            // Get the expected payment destination
-            let payment_destination = config.kora.get_payment_address(&fee_payer)?;
-
-            // Validate token payment using the resolved transaction
-            TransactionValidator::validate_token_payment(
-                self,
-                required_lamports,
-                rpc_client,
-                &payment_destination,
-            )
-            .await?;
-        }
-
-        // Sign the transaction
-        self.sign_transaction(signer, rpc_client).await
-    }
-
     async fn sign_and_send_transaction(
         &mut self,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError> {
+        // Payment validation is handled in sign_transaction
         let (transaction, encoded) = self.sign_transaction(signer, rpc_client).await?;
 
         // Send and confirm transaction

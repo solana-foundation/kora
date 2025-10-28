@@ -1,4 +1,4 @@
-# This file is used for integration testing
+# This file is used for free pricing tests (no payment validation)
 [kora]
 rate_limit = 100
 
@@ -49,8 +49,7 @@ disallowed_accounts = [
 ]
 
 [validation.price]
-type = "margin"
-margin = 0.0
+type = "free"
 
 # Block specific extensions for testing (only affects extension test accounts)
 [validation.token_2022]

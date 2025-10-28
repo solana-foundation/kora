@@ -17,7 +17,6 @@ sign_and_send_transaction = true
 transfer_transaction = true
 get_blockhash = true
 get_config = true
-sign_transaction_if_paid = true
 get_payer_signer = true
 
 [validation]
@@ -30,7 +29,7 @@ allowed_programs = [
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
     "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
     "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",  # Memo Program
-    "ComputeBudget111111111111111111111111111111", # Compute Budget Program
+    "ComputeBudget111111111111111111111111111111",  # Compute Budget Program
 ]
 allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Update this based on the USDC_LOCAL_KEY public key comment in your .env
@@ -87,7 +86,7 @@ allow_thaw_account = true
 
 [validation.price]
 type = "margin" # free / margin / fixed
-margin = 0.1  # Default margin (10%) for paid transaction validation
+margin = 0.1    # Default margin (10%) for paid transaction validation
 
 
 [validation.token2022]

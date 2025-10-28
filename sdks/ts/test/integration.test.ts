@@ -110,7 +110,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.enabled_methods.transfer_transaction).toBeDefined();
             expect(config.enabled_methods.get_blockhash).toBeDefined();
             expect(config.enabled_methods.get_config).toBeDefined();
-            expect(config.enabled_methods.sign_transaction_if_paid).toBeDefined();
         });
 
         it('should get payer signer', async () => {
@@ -195,42 +194,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
 
         it('should sign transaction', async () => {
-            const transferRequest = {
-                amount: 1000000,
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: destinationAddress,
-            };
-
-            const { transaction } = await client.transferTransaction(transferRequest);
-            const signResult = await client.signTransaction({ transaction });
-
-            expect(signResult).toBeDefined();
-            expect(signResult.signed_transaction).toBeDefined();
-        });
-
-        it('should sign and send transaction', async () => {
-            const transferRequest = {
-                amount: 1000000,
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: destinationAddress,
-            };
-
-            const { transaction: transactionString } = await client.transferTransaction(transferRequest);
-            const transaction = transactionFromBase64(transactionString);
-            // Sign transaction with test wallet before sending
-            const signedTransaction = await signTransaction([testWallet.keyPair], transaction);
-            const base64SignedTransaction = getBase64EncodedWireTransaction(signedTransaction);
-            const signResult = await client.signAndSendTransaction({
-                transaction: base64SignedTransaction,
-            });
-
-            expect(signResult).toBeDefined();
-            expect(signResult.signed_transaction).toBeDefined();
-        });
-
-        it('should sign transaction if paid', async () => {
             const config = await client.getConfig();
             const paymentAddress = config.fee_payers[0];
             const transferRequest = {
@@ -242,8 +205,32 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
             const { transaction } = await client.transferTransaction(transferRequest);
 
-            const signResult = await client.signTransactionIfPaid({
+            const signResult = await client.signTransaction({
                 transaction,
+            });
+
+            expect(signResult).toBeDefined();
+            expect(signResult.signed_transaction).toBeDefined();
+        });
+
+        it('should sign and send transaction', async () => {
+            const config = await client.getConfig();
+            const paymentAddress = config.fee_payers[0];
+            const transferRequest = {
+                amount: 1000000,
+                token: usdcMint,
+                source: testWalletAddress,
+                destination: paymentAddress,
+            };
+
+            const { transaction: transactionString } = await client.transferTransaction(transferRequest);
+
+            const transaction = transactionFromBase64(transactionString);
+            // Sign transaction with test wallet before sending
+            const signedTransaction = await signTransaction([testWallet.keyPair], transaction);
+            const base64SignedTransaction = getBase64EncodedWireTransaction(signedTransaction);
+            const signResult = await client.signAndSendTransaction({
+                transaction: base64SignedTransaction,
             });
 
             expect(signResult).toBeDefined();
@@ -351,11 +338,13 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
     describe('End-to-End Flows', () => {
         it('should handle transfer and sign flow', async () => {
+            const config = await client.getConfig();
+            const paymentAddress = config.fee_payers[0];
             const request = {
                 amount: 1000000,
                 token: usdcMint,
                 source: testWalletAddress,
-                destination: destinationAddress,
+                destination: paymentAddress,
             };
 
             // Create and sign the transaction

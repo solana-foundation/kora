@@ -40,6 +40,10 @@ path = "external/main.rs"
 name = "payment_address"
 path = "payment_address/main.rs"
 
+[[test]]
+name = "free_signing"
+path = "free_signing/main.rs"
+
 [dependencies]
 kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }

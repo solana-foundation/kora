@@ -779,129 +779,6 @@
         }
       }
     },
-    "/signTransactionIfPaid": {
-      "summary": "signTransactionIfPaid",
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "jsonrpc",
-                  "id",
-                  "method",
-                  "params"
-                ],
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "description": "An ID to identify the request.",
-                    "enum": [
-                      "test-account"
-                    ]
-                  },
-                  "jsonrpc": {
-                    "type": "string",
-                    "description": "The version of the JSON-RPC protocol.",
-                    "enum": [
-                      "2.0"
-                    ]
-                  },
-                  "method": {
-                    "type": "string",
-                    "description": "The name of the method to invoke.",
-                    "enum": [
-                      "signTransactionIfPaid"
-                    ]
-                  },
-                  "params": {
-                    "type": "object",
-                    "required": [
-                      "transaction"
-                    ],
-                    "properties": {
-                      "sig_verify": {
-                        "type": "boolean",
-                        "description": "Whether to verify signatures during simulation (defaults to true)"
-                      },
-                      "signer_key": {
-                        "type": "string",
-                        "description": "Optional signer signer_key to ensure consistency across related RPC calls",
-                        "nullable": true
-                      },
-                      "transaction": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "transaction",
-                    "signed_transaction",
-                    "signer_pubkey"
-                  ],
-                  "properties": {
-                    "signed_transaction": {
-                      "type": "string"
-                    },
-                    "signer_pubkey": {
-                      "type": "string",
-                      "description": "Public key of the signer used (for client consistency)"
-                    },
-                    "transaction": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Exceeded rate limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/transferTransaction": {
       "summary": "transferTransaction",
       "post": {
@@ -1053,8 +930,7 @@
           "sign_and_send_transaction",
           "transfer_transaction",
           "get_blockhash",
-          "get_config",
-          "sign_transaction_if_paid"
+          "get_config"
         ],
         "properties": {
           "estimate_transaction_fee": {
@@ -1079,9 +955,6 @@
             "type": "boolean"
           },
           "sign_transaction": {
-            "type": "boolean"
-          },
-          "sign_transaction_if_paid": {
             "type": "boolean"
           },
           "transfer_transaction": {
@@ -1302,46 +1175,6 @@
           "signer_pubkey": {
             "type": "string",
             "description": "Public key of the signer used (for client consistency)"
-          }
-        }
-      },
-      "SignTransactionIfPaidRequest": {
-        "type": "object",
-        "required": [
-          "transaction"
-        ],
-        "properties": {
-          "sig_verify": {
-            "type": "boolean",
-            "description": "Whether to verify signatures during simulation (defaults to true)"
-          },
-          "signer_key": {
-            "type": "string",
-            "description": "Optional signer signer_key to ensure consistency across related RPC calls",
-            "nullable": true
-          },
-          "transaction": {
-            "type": "string"
-          }
-        }
-      },
-      "SignTransactionIfPaidResponse": {
-        "type": "object",
-        "required": [
-          "transaction",
-          "signed_transaction",
-          "signer_pubkey"
-        ],
-        "properties": {
-          "signed_transaction": {
-            "type": "string"
-          },
-          "signer_pubkey": {
-            "type": "string",
-            "description": "Public key of the signer used (for client consistency)"
-          },
-          "transaction": {
-            "type": "string"
           }
         }
       },
