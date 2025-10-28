@@ -321,6 +321,8 @@ margin = 0.1  # 10% margin (0.1 = 10%, 1.0 = 100%)
 
 ### Fixed Pricing
 
+**SECURITY WARNING:** Fixed pricing does **NOT** include fee payer outflow in the charged amount. This can allow users to drain your fee payer account if not properly configured.
+
 Charge a fixed amount in a specific token regardless of network fees:
 
 ```toml
@@ -329,7 +331,7 @@ type = "fixed"
 amount = 1000000  # Amount in token's base units
 token = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC mint
 ```
-
+   
 ### Free Transactions
 
 Sponsor all transaction fees (no charge to users):
@@ -338,6 +340,35 @@ Sponsor all transaction fees (no charge to users):
 [validation.price]
 type = "free"
 ```
+
+#### Security Measures When Using Fixed/Free Pricing
+
+1. **Disable Transfer Operations** - Prevent fee payer from being used as source in transfers:
+   ```toml
+   [validation.fee_payer_policy.system]
+   allow_transfer = false              # Critical: Block SOL transfers
+   allow_create_account = false        # Block account creation
+
+   [validation.fee_payer_policy.spl_token]
+   allow_transfer = false              # Block SPL transfers
+
+   [validation.fee_payer_policy.token_2022]
+   allow_transfer = false              # Block Token2022 transfers
+   ```
+
+2. **Enable Authentication** - Use authentication to prevent abuse:
+   ```toml
+   [kora.auth]
+   api_key = "your-secure-api-key"
+   # or
+   hmac_secret = "your-minimum-32-character-hmac-secret"
+   ```
+
+3. **Set Conservative Limits** - Minimize exposure:
+   ```toml
+   [validation]
+   max_allowed_lamports = 1000000  # 0.001 SOL maximum
+   ```
 
 ## Performance Monitoring (optional)
 
