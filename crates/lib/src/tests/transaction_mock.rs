@@ -3,9 +3,9 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::Keypair,
     signer::Signer,
-    system_instruction::transfer,
     transaction::{Transaction, VersionedTransaction},
 };
+use solana_system_interface::instruction::transfer;
 
 use crate::transaction::TransactionUtil;
 

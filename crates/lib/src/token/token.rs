@@ -3,8 +3,9 @@ use crate::{
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
     token::{
         interface::TokenMint,
-        spl_token_2022::{Token2022Extensions, Token2022Mint},
-        Token2022Account, Token2022Program, TokenInterface, TokenProgram,
+        spl_token::TokenProgram,
+        spl_token_2022::{Token2022Account, Token2022Extensions, Token2022Mint, Token2022Program},
+        TokenInterface,
     },
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
@@ -17,7 +18,7 @@ use rust_decimal::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
-use spl_associated_token_account::get_associated_token_address_with_program_id;
+use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use std::{collections::HashMap, str::FromStr, time::Duration};
 
 #[cfg(not(test))]
@@ -36,9 +37,9 @@ impl TokenType {
     pub fn get_token_program_from_owner(
         owner: &Pubkey,
     ) -> Result<Box<dyn TokenInterface>, KoraError> {
-        if *owner == spl_token::id() {
+        if *owner == spl_token_interface::id() {
             Ok(Box::new(TokenProgram::new()))
-        } else if *owner == spl_token_2022::id() {
+        } else if *owner == spl_token_2022_interface::id() {
             Ok(Box::new(Token2022Program::new()))
         } else {
             Err(KoraError::TokenOperationError(format!("Invalid token program owner: {owner}")))
@@ -223,7 +224,7 @@ impl TokenUtil {
                                 // in case that ATA is being created in the current instruction
                                 if matches!(e, KoraError::AccountNotFound(_)) {
                                     let spl_ata =
-                                        spl_associated_token_account::get_associated_token_address(
+                                        spl_associated_token_account_interface::address::get_associated_token_address(
                                             fee_payer,
                                             mint_pubkey,
                                         );
@@ -231,7 +232,7 @@ impl TokenUtil {
                                         get_associated_token_address_with_program_id(
                                             fee_payer,
                                             mint_pubkey,
-                                            &spl_token_2022::id(),
+                                            &spl_token_2022_interface::id(),
                                         );
 
                                     // If destination matches a valid ATA for fee payer, count as inflow
@@ -499,16 +500,16 @@ mod tests_token {
 
     #[test]
     fn test_token_type_get_token_program_from_owner_spl() {
-        let spl_token_owner = spl_token::id();
+        let spl_token_owner = spl_token_interface::id();
         let result = TokenType::get_token_program_from_owner(&spl_token_owner).unwrap();
-        assert_eq!(result.program_id(), spl_token::id());
+        assert_eq!(result.program_id(), spl_token_interface::id());
     }
 
     #[test]
     fn test_token_type_get_token_program_from_owner_token2022() {
-        let token2022_owner = spl_token_2022::id();
+        let token2022_owner = spl_token_2022_interface::id();
         let result = TokenType::get_token_program_from_owner(&token2022_owner).unwrap();
-        assert_eq!(result.program_id(), spl_token_2022::id());
+        assert_eq!(result.program_id(), spl_token_2022_interface::id());
     }
 
     #[test]
@@ -525,14 +526,14 @@ mod tests_token {
     fn test_token_type_get_token_program_spl() {
         let token_type = TokenType::Spl;
         let result = token_type.get_token_program();
-        assert_eq!(result.program_id(), spl_token::id());
+        assert_eq!(result.program_id(), spl_token_interface::id());
     }
 
     #[test]
     fn test_token_type_get_token_program_token2022() {
         let token_type = TokenType::Token2022;
         let result = token_type.get_token_program();
-        assert_eq!(result.program_id(), spl_token_2022::id());
+        assert_eq!(result.program_id(), spl_token_2022_interface::id());
     }
 
     #[test]
@@ -948,7 +949,7 @@ mod tests_token {
 
     #[test]
     fn test_config_token2022_extension_blocking() {
-        use spl_token_2022::extension::ExtensionType;
+        use spl_token_2022_interface::extension::ExtensionType;
 
         let mut config_builder = ConfigMockBuilder::new();
         config_builder = config_builder
@@ -999,7 +1000,7 @@ mod tests_token {
 
     #[test]
     fn test_config_token2022_empty_extension_blocking() {
-        use spl_token_2022::extension::ExtensionType;
+        use spl_token_2022_interface::extension::ExtensionType;
 
         let _lock = ConfigMockBuilder::new().build_and_setup();
         let config = crate::tests::config_mock::mock_state::get_config().unwrap();

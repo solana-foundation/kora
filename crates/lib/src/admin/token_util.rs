@@ -5,14 +5,13 @@ use crate::{
     transaction::TransactionUtil,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::{Message, VersionedMessage};
-use solana_sdk::{
-    compute_budget::ComputeBudgetInstruction, instruction::Instruction, pubkey::Pubkey,
-};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use solana_signers::SolanaSigner;
 
-use spl_associated_token_account::{
-    get_associated_token_address, instruction::create_associated_token_account,
+use spl_associated_token_account_interface::{
+    address::get_associated_token_address, instruction::create_associated_token_account,
 };
 use std::{fmt::Display, str::FromStr, sync::Arc};
 
@@ -389,13 +388,17 @@ mod tests {
         let atas_to_create = vec![
             ATAToCreate {
                 mint: mint1,
-                ata: spl_associated_token_account::get_associated_token_address(&address, &mint1),
-                token_program: spl_token::id(),
+                ata: spl_associated_token_account_interface::address::get_associated_token_address(
+                    &address, &mint1,
+                ),
+                token_program: spl_token_interface::id(),
             },
             ATAToCreate {
                 mint: mint2,
-                ata: spl_associated_token_account::get_associated_token_address(&address, &mint2),
-                token_program: spl_token::id(),
+                ata: spl_associated_token_account_interface::address::get_associated_token_address(
+                    &address, &mint2,
+                ),
+                token_program: spl_token_interface::id(),
             },
         ];
 

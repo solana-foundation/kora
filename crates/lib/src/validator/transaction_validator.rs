@@ -15,7 +15,7 @@ use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 use std::str::FromStr;
 
 #[allow(unused_imports)]
-use spl_token_2022::{
+use spl_token_2022_interface::{
     extension::{
         cpi_guard::CpiGuard,
         interest_bearing_mint::InterestBearingConfig,
@@ -416,7 +416,7 @@ mod tests {
     fn setup_spl_config_with_policy(policy: FeePayerPolicy) {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token::id().to_string()])
+            .with_allowed_programs(vec![spl_token_interface::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(policy)
             .build();
@@ -426,7 +426,7 @@ mod tests {
     fn setup_token2022_config_with_policy(policy: FeePayerPolicy) {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token_2022::id().to_string()])
+            .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(policy)
             .build();
@@ -691,8 +691,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let transfer_ix = spl_token::instruction::transfer(
-            &spl_token::id(),
+        let transfer_ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &recipient_token_account,
             &fee_payer, // fee payer is the signer
@@ -714,8 +714,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let transfer_ix = spl_token::instruction::transfer(
-            &spl_token::id(),
+        let transfer_ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &recipient_token_account,
             &fee_payer, // fee payer is the signer
@@ -730,8 +730,8 @@ mod tests {
 
         // Test with other account as source - should always pass
         let other_signer = Pubkey::new_unique();
-        let transfer_ix = spl_token::instruction::transfer(
-            &spl_token::id(),
+        let transfer_ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &recipient_token_account,
             &other_signer, // other account is the signer
@@ -765,8 +765,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let transfer_ix = spl_token_2022::instruction::transfer_checked(
-            &spl_token_2022::id(),
+        let transfer_ix = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
             &fee_payer_token_account,
             &mint,
             &recipient_token_account,
@@ -791,8 +791,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let transfer_ix = spl_token_2022::instruction::transfer_checked(
-            &spl_token_2022::id(),
+        let transfer_ix = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
             &fee_payer_token_account,
             &mint,
             &recipient_token_account,
@@ -811,8 +811,8 @@ mod tests {
 
         // Test with other account as source - should always pass
         let other_signer = Pubkey::new_unique();
-        let transfer_ix = spl_token_2022::instruction::transfer_checked(
-            &spl_token_2022::id(),
+        let transfer_ix = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
             &fee_payer_token_account,
             &mint,
             &recipient_token_account,
@@ -975,8 +975,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let burn_ix = spl_token::instruction::burn(
-            &spl_token::id(),
+        let burn_ix = spl_token_interface::instruction::burn(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &mint,
             &fee_payer,
@@ -999,8 +999,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let burn_ix = spl_token::instruction::burn(
-            &spl_token::id(),
+        let burn_ix = spl_token_interface::instruction::burn(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &mint,
             &fee_payer,
@@ -1016,8 +1016,8 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
 
         // Test burn_checked instruction
-        let burn_checked_ix = spl_token::instruction::burn_checked(
-            &spl_token::id(),
+        let burn_checked_ix = spl_token_interface::instruction::burn_checked(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &mint,
             &fee_payer,
@@ -1050,8 +1050,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let close_ix = spl_token::instruction::close_account(
-            &spl_token::id(),
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &destination,
             &fee_payer,
@@ -1072,8 +1072,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let close_ix = spl_token::instruction::close_account(
-            &spl_token::id(),
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &destination,
             &fee_payer,
@@ -1104,8 +1104,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let approve_ix = spl_token::instruction::approve(
-            &spl_token::id(),
+        let approve_ix = spl_token_interface::instruction::approve(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &delegate,
             &fee_payer,
@@ -1127,8 +1127,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let approve_ix = spl_token::instruction::approve(
-            &spl_token::id(),
+        let approve_ix = spl_token_interface::instruction::approve(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &delegate,
             &fee_payer,
@@ -1145,8 +1145,8 @@ mod tests {
 
         // Test approve_checked instruction
         let mint = Pubkey::new_unique();
-        let approve_checked_ix = spl_token::instruction::approve_checked(
-            &spl_token::id(),
+        let approve_checked_ix = spl_token_interface::instruction::approve_checked(
+            &spl_token_interface::id(),
             &fee_payer_token_account,
             &mint,
             &delegate,
@@ -1181,8 +1181,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let burn_ix = spl_token_2022::instruction::burn(
-            &spl_token_2022::id(),
+        let burn_ix = spl_token_2022_interface::instruction::burn(
+            &spl_token_2022_interface::id(),
             &fee_payer_token_account,
             &mint,
             &fee_payer,
@@ -1213,8 +1213,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let close_ix = spl_token_2022::instruction::close_account(
-            &spl_token_2022::id(),
+        let close_ix = spl_token_2022_interface::instruction::close_account(
+            &spl_token_2022_interface::id(),
             &fee_payer_token_account,
             &destination,
             &fee_payer,
@@ -1244,8 +1244,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let approve_ix = spl_token_2022::instruction::approve(
-            &spl_token_2022::id(),
+        let approve_ix = spl_token_2022_interface::instruction::approve(
+            &spl_token_2022_interface::id(),
             &fee_payer_token_account,
             &delegate,
             &fee_payer,
@@ -1268,8 +1268,8 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let approve_ix = spl_token_2022::instruction::approve(
-            &spl_token_2022::id(),
+        let approve_ix = spl_token_2022_interface::instruction::approve(
+            &spl_token_2022_interface::id(),
             &fee_payer_token_account,
             &delegate,
             &fee_payer,
@@ -1286,8 +1286,8 @@ mod tests {
 
         // Test approve_checked instruction
         let mint = Pubkey::new_unique();
-        let approve_checked_ix = spl_token_2022::instruction::approve_checked(
-            &spl_token_2022::id(),
+        let approve_checked_ix = spl_token_2022_interface::instruction::approve_checked(
+            &spl_token_2022_interface::id(),
             &fee_payer_token_account,
             &mint,
             &delegate,
@@ -1343,7 +1343,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_allocate() {
-        use solana_sdk::system_instruction::allocate;
+        use solana_system_interface::instruction::allocate;
 
         let fee_payer = Pubkey::new_unique();
 
@@ -1375,7 +1375,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_nonce_initialize() {
-        use solana_sdk::system_instruction::create_nonce_account;
+        use solana_system_interface::instruction::create_nonce_account;
 
         let fee_payer = Pubkey::new_unique();
         let nonce_account = Pubkey::new_unique();
@@ -1411,7 +1411,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_nonce_advance() {
-        use solana_sdk::system_instruction::advance_nonce_account;
+        use solana_system_interface::instruction::advance_nonce_account;
 
         let fee_payer = Pubkey::new_unique();
         let nonce_account = Pubkey::new_unique();
@@ -1444,7 +1444,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_nonce_withdraw() {
-        use solana_sdk::system_instruction::withdraw_nonce_account;
+        use solana_system_interface::instruction::withdraw_nonce_account;
 
         let fee_payer = Pubkey::new_unique();
         let nonce_account = Pubkey::new_unique();
@@ -1478,7 +1478,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_nonce_authorize() {
-        use solana_sdk::system_instruction::authorize_nonce_account;
+        use solana_system_interface::instruction::authorize_nonce_account;
 
         let fee_payer = Pubkey::new_unique();
         let nonce_account = Pubkey::new_unique();

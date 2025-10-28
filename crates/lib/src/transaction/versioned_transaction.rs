@@ -2,12 +2,10 @@ use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcSimulateTransactionConfig};
 use solana_commitment_config::CommitmentConfig;
-use solana_message::{v0::MessageAddressTableLookup, VersionedMessage};
-use solana_sdk::{
-    instruction::{CompiledInstruction, Instruction},
-    pubkey::Pubkey,
-    transaction::VersionedTransaction,
+use solana_message::{
+    compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup, VersionedMessage,
 };
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
 use solana_signers::{Signer, SolanaSigner};
 use std::{collections::HashMap, ops::Deref};
 
@@ -399,11 +397,11 @@ mod tests {
 
     use super::*;
     use solana_address_lookup_table_interface::state::LookupTableMeta;
-    use solana_message::{v0, Message};
+    use solana_message::{compiled_instruction::CompiledInstruction, v0, Message};
     use solana_sdk::{
         account::Account,
         hash::Hash,
-        instruction::{AccountMeta, CompiledInstruction, Instruction},
+        instruction::{AccountMeta, Instruction},
         signature::Keypair,
         signer::Signer,
     };
@@ -962,7 +960,7 @@ mod tests {
 
         // Create a system transfer instruction
         let instruction =
-            solana_sdk::system_instruction::transfer(&keypair.pubkey(), &recipient, 1000000);
+            solana_system_interface::instruction::transfer(&keypair.pubkey(), &recipient, 1000000);
         let message =
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();

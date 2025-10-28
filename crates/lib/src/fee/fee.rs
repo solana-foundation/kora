@@ -491,7 +491,7 @@ mod tests {
             config_mock::ConfigMockBuilder,
             rpc_mock::RpcMockBuilder,
         },
-        token::{interface::TokenInterface, TokenProgram},
+        token::{interface::TokenInterface, spl_token::TokenProgram},
         transaction::TransactionUtil,
     };
     use solana_message::{v0, Message, VersionedMessage};
@@ -509,7 +509,7 @@ mod tests {
         },
         program::ID as SYSTEM_PROGRAM_ID,
     };
-    use spl_associated_token_account::get_associated_token_address;
+    use spl_associated_token_account_interface::address::get_associated_token_address;
 
     #[test]
     fn test_is_fee_payer_in_signers_legacy_fee_payer_is_signer() {

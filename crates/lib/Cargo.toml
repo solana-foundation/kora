@@ -26,6 +26,8 @@ solana-commitment-config = { workspace = true }
 solana-message = { workspace = true }
 solana-system-interface = { workspace = true }
 solana-program = { workspace = true }
+solana-program-pack = { workspace = true }
+solana-compute-budget-interface = { workspace = true }
 solana-transaction-status-client-types = { workspace = true }
 solana-transaction-status = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }
@@ -37,11 +39,12 @@ base64 = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 reqwest = { workspace = true }
-spl-token = { workspace = true }
-spl-token-2022 = { workspace = true }
-spl-associated-token-account = { workspace = true }
-solana-signers = { git = "https://github.com/solana-foundation/solana-signers", features = [
+spl-token-interface = { workspace = true }
+spl-token-2022-interface = { workspace = true }
+spl-associated-token-account-interface = { workspace = true }
+solana-signers = { git = "https://github.com/solana-foundation/solana-signers", default-features = false, features = [
     "all",
+    "sdk-v3",
 ] }
 vaultrs = { workspace = true }
 deadpool-redis = { workspace = true }
@@ -56,7 +59,7 @@ rand = "0.9.2"
 utoipa = { workspace = true }
 dirs = "6.0.0"
 mockall = "0.13.1"
-spl-pod = "0.5.0"
+spl-pod = "0.7.1"
 p256 = { version = "0.13", features = ["ecdsa"] }
 chrono = { workspace = true }
 hex = { workspace = true }

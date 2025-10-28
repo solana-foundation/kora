@@ -1,22 +1,22 @@
 use anyhow::Result;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_commitment_config::CommitmentConfig;
+use solana_program_pack::Pack;
 use solana_sdk::{
-    commitment_config::CommitmentConfig,
     native_token::LAMPORTS_PER_SOL,
-    program_pack::Pack,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
-use spl_associated_token_account::{
+use spl_associated_token_account_interface::address::{
     get_associated_token_address, get_associated_token_address_with_program_id,
 };
-use spl_token::instruction as token_instruction;
-use spl_token_2022::{
+use spl_token_2022_interface::{
     extension::{transfer_fee::instruction::initialize_transfer_fee_config, ExtensionType},
     instruction as token_2022_instruction,
     state::Mint as Token2022Mint,
 };
+use spl_token_interface::instruction as token_instruction;
 use std::sync::Arc;
 
 use crate::common::{
@@ -225,19 +225,19 @@ impl TestAccountSetup {
 
         let rent = self
             .rpc_client
-            .get_minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN)
+            .get_minimum_balance_for_rent_exemption(spl_token_interface::state::Mint::LEN)
             .await?;
 
-        let create_account_instruction = solana_sdk::system_instruction::create_account(
+        let create_account_instruction = solana_system_interface::instruction::create_account(
             &self.sender_keypair.pubkey(),
             &self.usdc_mint.pubkey(),
             rent,
-            spl_token::state::Mint::LEN as u64,
-            &spl_token::id(),
+            spl_token_interface::state::Mint::LEN as u64,
+            &spl_token_interface::id(),
         );
 
-        let initialize_mint_instruction = spl_token::instruction::initialize_mint2(
-            &spl_token::id(),
+        let initialize_mint_instruction = spl_token_interface::instruction::initialize_mint2(
+            &spl_token_interface::id(),
             &self.usdc_mint.pubkey(),
             &self.sender_keypair.pubkey(),
             Some(&self.sender_keypair.pubkey()),
@@ -266,22 +266,22 @@ impl TestAccountSetup {
         let decimals = USDCMintTestHelper::get_test_usdc_mint_decimals();
 
         // Calculate space required for mint with transfer fee extension
-        let space = spl_token_2022::extension::ExtensionType::try_calculate_account_len::<
+        let space = spl_token_2022_interface::extension::ExtensionType::try_calculate_account_len::<
             Token2022Mint,
         >(&[ExtensionType::TransferFeeConfig])?;
 
         let rent = self.rpc_client.get_minimum_balance_for_rent_exemption(space).await?;
 
-        let create_account_instruction = solana_sdk::system_instruction::create_account(
+        let create_account_instruction = solana_system_interface::instruction::create_account(
             &self.sender_keypair.pubkey(),
             &self.usdc_mint_2022.pubkey(),
             rent,
             space as u64,
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
         let initialize_transfer_fee_config_instruction = initialize_transfer_fee_config(
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
             &self.usdc_mint_2022.pubkey(),
             Some(&self.sender_keypair.pubkey()),
             Some(&self.sender_keypair.pubkey()),
@@ -290,7 +290,7 @@ impl TestAccountSetup {
         )?;
 
         let initialize_mint_instruction = token_2022_instruction::initialize_mint2(
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
             &self.usdc_mint_2022.pubkey(),
             &self.sender_keypair.pubkey(),
             Some(&self.sender_keypair.pubkey()),
@@ -332,67 +332,67 @@ impl TestAccountSetup {
         let sender_token_2022_account = get_associated_token_address_with_program_id(
             &self.sender_keypair.pubkey(),
             &self.usdc_mint_2022.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
         let recipient_token_2022_account = get_associated_token_address_with_program_id(
             &self.recipient_pubkey,
             &self.usdc_mint_2022.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
         let fee_payer_token_2022_account = get_associated_token_address_with_program_id(
             &self.fee_payer_keypair.pubkey(),
             &self.usdc_mint_2022.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
         // Create regular SPL Token accounts
         let create_associated_token_account_instruction =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.sender_keypair.pubkey(),
                 &self.sender_keypair.pubkey(),
                 &self.usdc_mint.pubkey(),
-                &spl_token::id(),
+                &spl_token_interface::id(),
             );
 
         let create_associated_token_account_instruction_recipient =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.sender_keypair.pubkey(),
                 &self.recipient_pubkey,
                 &self.usdc_mint.pubkey(),
-                &spl_token::id(),
+                &spl_token_interface::id(),
             );
 
         let create_associated_token_account_instruction_fee_payer =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.sender_keypair.pubkey(),
                 &self.fee_payer_keypair.pubkey(),
                 &self.usdc_mint.pubkey(),
-                &spl_token::id(),
+                &spl_token_interface::id(),
             );
 
         // Create Token 2022 accounts using associated token account instructions
         let create_token_2022_account_instruction_sender =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.sender_keypair.pubkey(),
                 &self.sender_keypair.pubkey(),
                 &self.usdc_mint_2022.pubkey(),
-                &spl_token_2022::id(),
+                &spl_token_2022_interface::id(),
             );
 
         let create_token_2022_account_instruction_recipient =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.sender_keypair.pubkey(),
                 &self.recipient_pubkey,
                 &self.usdc_mint_2022.pubkey(),
-                &spl_token_2022::id(),
+                &spl_token_2022_interface::id(),
             );
 
         let create_token_2022_account_instruction_fee_payer =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.sender_keypair.pubkey(),
                 &self.fee_payer_keypair.pubkey(),
                 &self.usdc_mint_2022.pubkey(),
-                &spl_token_2022::id(),
+                &spl_token_2022_interface::id(),
             );
 
         let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
@@ -437,7 +437,7 @@ impl TestAccountSetup {
 
     pub async fn mint_tokens_to_account(&self, token_account: &Pubkey, amount: u64) -> Result<()> {
         let instruction = token_instruction::mint_to(
-            &spl_token::id(),
+            &spl_token_interface::id(),
             &self.usdc_mint.pubkey(),
             token_account,
             &self.sender_keypair.pubkey(),
@@ -463,7 +463,7 @@ impl TestAccountSetup {
         amount: u64,
     ) -> Result<()> {
         let instruction = token_2022_instruction::mint_to(
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
             &self.usdc_mint_2022.pubkey(),
             token_account,
             &self.sender_keypair.pubkey(),
@@ -497,19 +497,19 @@ impl TestAccountSetup {
 
         let rent = self
             .rpc_client
-            .get_minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN)
+            .get_minimum_balance_for_rent_exemption(spl_token_interface::state::Mint::LEN)
             .await?;
 
-        let create_account_instruction = solana_sdk::system_instruction::create_account(
+        let create_account_instruction = solana_system_interface::instruction::create_account(
             &self.fee_payer_keypair.pubkey(),
             &self.fee_payer_policy_mint.pubkey(),
             rent,
-            spl_token::state::Mint::LEN as u64,
-            &spl_token::id(),
+            spl_token_interface::state::Mint::LEN as u64,
+            &spl_token_interface::id(),
         );
 
-        let initialize_mint_instruction = spl_token::instruction::initialize_mint2(
-            &spl_token::id(),
+        let initialize_mint_instruction = spl_token_interface::instruction::initialize_mint2(
+            &spl_token_interface::id(),
             &self.fee_payer_policy_mint.pubkey(),
             &self.fee_payer_keypair.pubkey(),
             Some(&self.fee_payer_keypair.pubkey()),
@@ -537,22 +537,22 @@ impl TestAccountSetup {
 
         let decimals = USDCMintTestHelper::get_test_usdc_mint_decimals();
 
-        let space = spl_token_2022::extension::ExtensionType::try_calculate_account_len::<
+        let space = spl_token_2022_interface::extension::ExtensionType::try_calculate_account_len::<
             Token2022Mint,
         >(&[])?;
 
         let rent = self.rpc_client.get_minimum_balance_for_rent_exemption(space).await?;
 
-        let create_account_instruction = solana_sdk::system_instruction::create_account(
+        let create_account_instruction = solana_system_interface::instruction::create_account(
             &self.fee_payer_keypair.pubkey(),
             &self.fee_payer_policy_mint_2022.pubkey(),
             rent,
             space as u64,
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
         let initialize_mint_instruction = token_2022_instruction::initialize_mint2(
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
             &self.fee_payer_policy_mint_2022.pubkey(),
             &self.fee_payer_keypair.pubkey(),
             Some(&self.fee_payer_keypair.pubkey()),
@@ -594,67 +594,67 @@ impl TestAccountSetup {
         let sender_token_2022_account = get_associated_token_address_with_program_id(
             &self.sender_keypair.pubkey(),
             &self.fee_payer_policy_mint_2022.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
         let recipient_token_2022_account = get_associated_token_address_with_program_id(
             &self.recipient_pubkey,
             &self.fee_payer_policy_mint_2022.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
         let fee_payer_token_2022_account = get_associated_token_address_with_program_id(
             &self.fee_payer_keypair.pubkey(),
             &self.fee_payer_policy_mint_2022.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
         // Create regular SPL Token accounts
         let create_associated_token_account_instruction =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.fee_payer_keypair.pubkey(),
                 &self.sender_keypair.pubkey(),
                 &self.fee_payer_policy_mint.pubkey(),
-                &spl_token::id(),
+                &spl_token_interface::id(),
             );
 
         let create_associated_token_account_instruction_recipient =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.fee_payer_keypair.pubkey(),
                 &self.recipient_pubkey,
                 &self.fee_payer_policy_mint.pubkey(),
-                &spl_token::id(),
+                &spl_token_interface::id(),
             );
 
         let create_associated_token_account_instruction_fee_payer =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.fee_payer_keypair.pubkey(),
                 &self.fee_payer_keypair.pubkey(),
                 &self.fee_payer_policy_mint.pubkey(),
-                &spl_token::id(),
+                &spl_token_interface::id(),
             );
 
         // Create Token 2022 accounts
         let create_token_2022_account_instruction_sender =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.fee_payer_keypair.pubkey(),
                 &self.sender_keypair.pubkey(),
                 &self.fee_payer_policy_mint_2022.pubkey(),
-                &spl_token_2022::id(),
+                &spl_token_2022_interface::id(),
             );
 
         let create_token_2022_account_instruction_recipient =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.fee_payer_keypair.pubkey(),
                 &self.recipient_pubkey,
                 &self.fee_payer_policy_mint_2022.pubkey(),
-                &spl_token_2022::id(),
+                &spl_token_2022_interface::id(),
             );
 
         let create_token_2022_account_instruction_fee_payer =
-            spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
                 &self.fee_payer_keypair.pubkey(),
                 &self.fee_payer_keypair.pubkey(),
                 &self.fee_payer_policy_mint_2022.pubkey(),
-                &spl_token_2022::id(),
+                &spl_token_2022_interface::id(),
             );
 
         let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
@@ -703,7 +703,7 @@ impl TestAccountSetup {
         amount: u64,
     ) -> Result<()> {
         let instruction = token_instruction::mint_to(
-            &spl_token::id(),
+            &spl_token_interface::id(),
             &self.fee_payer_policy_mint.pubkey(),
             token_account,
             &self.fee_payer_keypair.pubkey(),
@@ -729,7 +729,7 @@ impl TestAccountSetup {
         amount: u64,
     ) -> Result<()> {
         let instruction = token_2022_instruction::mint_to(
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
             &self.fee_payer_policy_mint_2022.pubkey(),
             token_account,
             &self.fee_payer_keypair.pubkey(),
@@ -755,19 +755,19 @@ impl TestAccountSetup {
 
         let rent = self
             .rpc_client
-            .get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)
+            .get_minimum_balance_for_rent_exemption(spl_token_interface::state::Account::LEN)
             .await?;
 
-        let create_account_ix = solana_sdk::system_instruction::create_account(
+        let create_account_ix = solana_system_interface::instruction::create_account(
             &self.fee_payer_keypair.pubkey(),
             &token_account.pubkey(),
             rent,
-            spl_token::state::Account::LEN as u64,
-            &spl_token::id(),
+            spl_token_interface::state::Account::LEN as u64,
+            &spl_token_interface::id(),
         );
 
-        let initialize_account_ix = spl_token::instruction::initialize_account(
-            &spl_token::id(),
+        let initialize_account_ix = spl_token_interface::instruction::initialize_account(
+            &spl_token_interface::id(),
             &token_account.pubkey(),
             mint,
             &self.fee_payer_keypair.pubkey(),
@@ -791,19 +791,19 @@ impl TestAccountSetup {
 
         let rent = self
             .rpc_client
-            .get_minimum_balance_for_rent_exemption(spl_token_2022::state::Account::LEN)
+            .get_minimum_balance_for_rent_exemption(spl_token_2022_interface::state::Account::LEN)
             .await?;
 
-        let create_account_ix = solana_sdk::system_instruction::create_account(
+        let create_account_ix = solana_system_interface::instruction::create_account(
             &self.fee_payer_keypair.pubkey(),
             &token_account.pubkey(),
             rent,
-            spl_token_2022::state::Account::LEN as u64,
-            &spl_token_2022::id(),
+            spl_token_2022_interface::state::Account::LEN as u64,
+            &spl_token_2022_interface::id(),
         );
 
-        let initialize_account_ix = spl_token_2022::instruction::initialize_account(
-            &spl_token_2022::id(),
+        let initialize_account_ix = spl_token_2022_interface::instruction::initialize_account(
+            &spl_token_2022_interface::id(),
             &token_account.pubkey(),
             mint,
             &self.fee_payer_keypair.pubkey(),

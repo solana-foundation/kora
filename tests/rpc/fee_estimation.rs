@@ -4,7 +4,7 @@ use solana_sdk::{
     program_pack::Pack, pubkey::Pubkey, signature::Keypair, signer::Signer,
     transaction::Transaction,
 };
-use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account_interface::address::get_associated_token_address;
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_legacy() {
@@ -299,7 +299,7 @@ async fn test_estimate_fee_comprehensive_with_token_accounts_creation() {
     let token_account_rent = ctx
         .client
         .rpc_client
-        .get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)
+        .get_minimum_balance_for_rent_exemption(spl_token_interface::state::Account::LEN)
         .await
         .expect("Failed to get rent exemption amount");
 
@@ -363,15 +363,15 @@ async fn test_estimate_fee_with_spl_token_transfer_from_fee_payer() {
     let sender = SenderTestHelper::get_test_sender_keypair();
 
     let create_recipient_ata_ix =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &sender.pubkey(), // payer
             &recipient,       // owner
             &usdc_mint,       // mint
-            &spl_token::id(),
+            &spl_token_interface::id(),
         );
 
-    let mint_instruction = spl_token::instruction::mint_to(
-        &spl_token::id(),
+    let mint_instruction = spl_token_interface::instruction::mint_to(
+        &spl_token_interface::id(),
         &usdc_mint,
         &fee_payer_ata,
         &sender.pubkey(), // mint authority is sender

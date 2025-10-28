@@ -130,9 +130,12 @@ impl LookupTableHelper {
         rpc_client: Arc<RpcClient>,
         authority: &Keypair,
     ) -> Result<Pubkey> {
-        let allowed_lookup_table =
-            Self::create_lookup_table(rpc_client, authority, vec![solana_sdk::system_program::ID])
-                .await?;
+        let allowed_lookup_table = Self::create_lookup_table(
+            rpc_client,
+            authority,
+            vec![solana_system_interface::program::ID],
+        )
+        .await?;
 
         Ok(allowed_lookup_table)
     }
@@ -157,7 +160,7 @@ impl LookupTableHelper {
     ) -> Result<Pubkey> {
         let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-        let addresses = vec![usdc_mint, spl_token::ID];
+        let addresses = vec![usdc_mint, spl_token_interface::ID];
 
         Self::create_lookup_table(rpc_client, authority, addresses).await
     }

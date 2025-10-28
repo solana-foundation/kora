@@ -61,10 +61,10 @@ impl TransactionUtil {
 mod tests {
     use super::*;
     use crate::error::KoraError;
-    use solana_message::{v0, Message};
+    use solana_message::{compiled_instruction::CompiledInstruction, v0, Message};
     use solana_sdk::{
         hash::Hash,
-        instruction::{AccountMeta, CompiledInstruction, Instruction},
+        instruction::{AccountMeta, Instruction},
         pubkey::Pubkey,
         signature::Keypair,
         signer::Signer as _,
