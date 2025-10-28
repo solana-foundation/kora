@@ -153,10 +153,12 @@ pub async fn transfer_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{
-        common::{setup_or_get_test_signer, RpcMockBuilder},
-        config_mock::ConfigMockBuilder,
+    use crate::{
         state::update_config,
+        tests::{
+            common::{setup_or_get_test_signer, RpcMockBuilder},
+            config_mock::ConfigMockBuilder,
+        },
     };
 
     #[tokio::test]
