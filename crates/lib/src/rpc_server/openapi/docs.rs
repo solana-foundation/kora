@@ -22,7 +22,6 @@ use crate::rpc_server::{
             SignAndSendTransactionRequest, SignAndSendTransactionResponse,
         },
         sign_transaction::{SignTransactionRequest, SignTransactionResponse},
-        sign_transaction_if_paid::{SignTransactionIfPaidRequest, SignTransactionIfPaidResponse},
         transfer_transaction::{TransferTransactionRequest, TransferTransactionResponse},
     },
     KoraRpc,
@@ -56,8 +55,6 @@ const JSON_CONTENT_TYPE: &str = "application/json";
         SignAndSendTransactionResponse,
         SignTransactionRequest,
         SignTransactionResponse,
-        SignTransactionIfPaidRequest,
-        SignTransactionIfPaidResponse,
         TransferTransactionRequest,
         TransferTransactionResponse,
     ))

@@ -224,7 +224,7 @@ explore additional Kora RPC methods:
 - `signTransaction` - Sign transactions with the Kora feepayer
 - `transferTransaction` - Create transfer SOL or SPL token transfer transactions (signed by the Kora feepayer)
 - `signAndSendTransaction` - Signs a transaction with the Kora feepayer and sends it to the configured Solana RPC
-- `signTransactionIfPaid` - Conditionally sign transactions when fees are covered
+- `signTransaction` - Conditionally sign transactions when fees are covered
 - `getPaymentInstruction` - Get a payment instruction for a transaction
 
 **Got questions?** Ask questions the [Solana Stack Exchange](https://solana.stackexchange.com/) with a `Kora` tag.

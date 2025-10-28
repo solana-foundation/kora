@@ -1,6 +1,6 @@
 use crate::common::{
     ExtensionHelpers, FeePayerTestHelper, RecipientTestHelper, SenderTestHelper, TestContext,
-    TransactionBuilder, USDCMint2022TestHelper, TRANSFER_HOOK_PROGRAM_ID,
+    TransactionBuilder, USDCMint2022TestHelper, USDCMintTestHelper, TRANSFER_HOOK_PROGRAM_ID,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use jsonrpsee::rpc_params;
@@ -105,7 +105,7 @@ async fn test_blocked_memo_transfer_extension() {
 
     // Try to sign the transaction if paid - should fail due to blocked MemoTransfer on token accounts
     let result: Result<serde_json::Value, anyhow::Error> =
-        ctx.rpc_call("signTransactionIfPaid", rpc_params![transaction]).await;
+        ctx.rpc_call("signTransaction", rpc_params![transaction]).await;
 
     // This should fail when disallowed_token_extensions includes "MemoTransfer"
     assert!(result.is_err(), "Transaction should have failed");
@@ -213,7 +213,7 @@ async fn test_blocked_interest_bearing_config_extension() {
 
     // Try to sign the transaction if paid - should fail due to blocked InterestBearingConfig on mint
     let result: Result<serde_json::Value, anyhow::Error> =
-        ctx.rpc_call("signTransactionIfPaid", rpc_params![transaction]).await;
+        ctx.rpc_call("signTransaction", rpc_params![transaction]).await;
 
     // This should fail when disallowed_mint_extensions includes "InterestBearingConfig"
     assert!(result.is_err(), "Transaction should have failed");
@@ -228,7 +228,7 @@ async fn test_blocked_interest_bearing_config_extension() {
 
 #[tokio::test]
 async fn test_transfer_fee_insufficient_payment() {
-    // Test that signTransactionIfPaid fails when payment amount doesn't account for transfer fee
+    // Test that signTransaction fails when payment amount doesn't account for transfer fee
     // With 1% transfer fee: sending 1000 tokens results in recipient getting 990 tokens
     // If Kora expects 1000 tokens, the payment should fail validation
 
@@ -316,7 +316,7 @@ async fn test_transfer_fee_insufficient_payment() {
 
     // Try to sign the transaction if paid - should fail due to insufficient payment after fees
     let result: Result<serde_json::Value, anyhow::Error> =
-        ctx.rpc_call("signTransactionIfPaid", rpc_params![transaction]).await;
+        ctx.rpc_call("signTransaction", rpc_params![transaction]).await;
 
     assert!(result.is_err(), "Transaction should have failed due to insufficient payment");
 
@@ -333,7 +333,7 @@ async fn test_transfer_fee_insufficient_payment() {
 
 #[tokio::test]
 async fn test_transfer_fee_sufficient_payment() {
-    // Test that signTransactionIfPaid succeeds when payment amount accounts for transfer fee
+    // Test that signTransaction succeeds when payment amount accounts for transfer fee
     // To receive 10,000 micro-USDC after 1% fee, sender must send ~10,101 micro-USDC
 
     let ctx = TestContext::new().await.expect("Failed to create test context");
@@ -418,7 +418,7 @@ async fn test_transfer_fee_sufficient_payment() {
         .expect("Failed to build transaction");
 
     let result: Result<serde_json::Value, anyhow::Error> =
-        ctx.rpc_call("signTransactionIfPaid", rpc_params![transaction]).await;
+        ctx.rpc_call("signTransaction", rpc_params![transaction]).await;
 
     assert!(
         result.is_ok(),
@@ -538,10 +538,29 @@ async fn test_transfer_hook_allows_transfer() {
     // Add the transfer hook program itself as a read-only account
     transfer_instruction.accounts.push(AccountMeta::new_readonly(hook_program_id, false));
 
-    // Create transaction with manual instruction
+    // Add payment instruction for Kora fee
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+    let sender_usdc_ata =
+        spl_associated_token_account::get_associated_token_address(&sender.pubkey(), &token_mint);
+    let fee_payer_usdc_ata = spl_associated_token_account::get_associated_token_address(
+        &fee_payer.pubkey(),
+        &token_mint,
+    );
+
+    let payment_instruction = spl_token::instruction::transfer(
+        &spl_token::id(),
+        &sender_usdc_ata,
+        &fee_payer_usdc_ata,
+        &sender.pubkey(),
+        &[],
+        tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+    )
+    .expect("Failed to create payment instruction");
+
+    // Create transaction with payment and transfer instructions
     let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
     let test_transaction = Transaction::new_signed_with_payer(
-        &[transfer_instruction],
+        &[payment_instruction, transfer_instruction],
         Some(&fee_payer.pubkey()),
         &[&fee_payer, &sender],
         recent_blockhash,

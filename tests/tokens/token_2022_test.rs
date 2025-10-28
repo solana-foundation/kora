@@ -91,12 +91,20 @@ async fn test_sign_token_2022_transaction_legacy() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let token_mint_2022 = USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey();
 
     let test_tx = ctx
         .transaction_builder()
-        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+        .with_fee_payer(fee_payer)
         .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
         .with_spl_token_2022_transfer_checked(&token_mint_2022, &sender.pubkey(), &recipient, 10, 6)
         .build()
         .await
@@ -130,12 +138,21 @@ async fn test_sign_token_2022_transaction_v0() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let token_mint_2022 = USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey();
 
     let test_tx = ctx
         .v0_transaction_builder()
-        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+        .with_fee_payer(fee_payer)
         .with_signer(&sender)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+            TEST_USDC_MINT_DECIMALS,
+        )
         .with_spl_token_2022_transfer_checked(&token_mint_2022, &sender.pubkey(), &recipient, 10, 6)
         .build()
         .await
@@ -169,6 +186,8 @@ async fn test_sign_token_2022_transaction_v0_with_lookup() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let token_mint_2022 = USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey();
 
     // Use the transaction lookup table which contains the mint address and the spl token program
@@ -177,8 +196,15 @@ async fn test_sign_token_2022_transaction_v0_with_lookup() {
 
     let test_tx = ctx
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
-        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+        .with_fee_payer(fee_payer)
         .with_signer(&sender)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+            TEST_USDC_MINT_DECIMALS,
+        )
         .with_spl_token_2022_transfer_checked(&token_mint_2022, &sender.pubkey(), &recipient, 10, 6)
         .build()
         .await
@@ -219,6 +245,7 @@ async fn test_sign_and_send_token_2022_transaction_legacy() {
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let token_mint_2022 = USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey();
 
     let ctx = TestContext::new().await.expect("Failed to create test context");
@@ -227,6 +254,12 @@ async fn test_sign_and_send_token_2022_transaction_legacy() {
         .transaction_builder()
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
         .with_spl_token_2022_transfer_checked(&token_mint_2022, &sender.pubkey(), &recipient, 10, 6)
         .build()
         .await
@@ -249,6 +282,7 @@ async fn test_sign_and_send_token_2022_transaction_v0() {
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let token_mint_2022 = USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey();
 
     let ctx = TestContext::new().await.expect("Failed to create test context");
@@ -257,6 +291,13 @@ async fn test_sign_and_send_token_2022_transaction_v0() {
         .v0_transaction_builder()
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+            TEST_USDC_MINT_DECIMALS,
+        )
         .with_spl_token_2022_transfer_checked(&token_mint_2022, &sender.pubkey(), &recipient, 10, 6)
         .build()
         .await
@@ -279,6 +320,7 @@ async fn test_sign_and_send_token_2022_transaction_v0_with_lookup() {
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let token_mint_2022 = USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey();
 
     let ctx = TestContext::new().await.expect("Failed to create test context");
@@ -291,6 +333,13 @@ async fn test_sign_and_send_token_2022_transaction_v0_with_lookup() {
         .v0_transaction_builder_with_lookup(vec![transaction_lookup_table])
         .with_fee_payer(fee_payer)
         .with_signer(&sender)
+        .with_spl_transfer_checked(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+            TEST_USDC_MINT_DECIMALS,
+        )
         .with_spl_token_2022_transfer_checked(&token_mint_2022, &sender.pubkey(), &recipient, 10, 6)
         .build()
         .await
@@ -353,9 +402,9 @@ async fn test_sign_token_2022_transaction_if_paid_legacy() {
         .await
         .expect("Failed to create signed Token 2022 transaction");
 
-    // Test signTransactionIfPaid
+    // Test signTransaction
     let response: serde_json::Value = ctx
-        .rpc_call("signTransactionIfPaid", rpc_params![base64_transaction])
+        .rpc_call("signTransaction", rpc_params![base64_transaction])
         .await
         .expect("Failed to sign Token 2022 transaction");
 
@@ -416,9 +465,9 @@ async fn test_sign_token_2022_transaction_if_paid_v0() {
         .await
         .expect("Failed to create V0 signed Token 2022 transaction");
 
-    // Test signTransactionIfPaid
+    // Test signTransaction
     let response: serde_json::Value = ctx
-        .rpc_call("signTransactionIfPaid", rpc_params![base64_transaction])
+        .rpc_call("signTransaction", rpc_params![base64_transaction])
         .await
         .expect("Failed to sign V0 Token 2022 transaction");
 
@@ -484,9 +533,9 @@ async fn test_sign_token_2022_transaction_if_paid_v0_with_lookup() {
         .await
         .expect("Failed to create V0 signed Token 2022 transaction with lookup table");
 
-    // Test signTransactionIfPaid
+    // Test signTransaction
     let response: serde_json::Value = ctx
-        .rpc_call("signTransactionIfPaid", rpc_params![base64_transaction])
+        .rpc_call("signTransaction", rpc_params![base64_transaction])
         .await
         .expect("Failed to sign V0 Token 2022 transaction with lookup table");
 

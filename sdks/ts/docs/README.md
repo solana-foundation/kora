@@ -34,7 +34,6 @@ const config = await client.getConfig();
 - [getSupportedTokens()](#getsupportedtokens)
 - [signAndSendTransaction()](#signandsendtransaction)
 - [signTransaction()](#signtransaction)
-- [signTransactionIfPaid()](#signtransactionifpaid)
 - [transferTransaction()](#transfertransaction)
 
 #### Constructors
@@ -301,39 +300,6 @@ console.log('Signature:', result.signature);
 console.log('Signed tx:', result.signed_transaction);
 ```
 
-##### signTransactionIfPaid()
-
-```ts
-signTransactionIfPaid(request: SignTransactionIfPaidRequest): Promise<SignTransactionIfPaidResponse>;
-```
-
-Signs a transaction only if it includes proper payment to the fee payer.
-
-###### Parameters
-
-| Parameter | Type | Description |
-| ------ | ------ | ------ |
-| `request` | [`SignTransactionIfPaidRequest`](#signtransactionifpaidrequest) | Conditional sign request parameters |
-
-###### Returns
-
-`Promise`\<[`SignTransactionIfPaidResponse`](#signtransactionifpaidresponse)\>
-
-The original and signed transaction
-
-###### Throws
-
-When the RPC call fails or payment validation fails
-
-###### Example
-
-```typescript
-const result = await client.signTransactionIfPaid({
-  transaction: 'base64EncodedTransaction'
-});
-console.log('Signed transaction:', result.signed_transaction);
-```
-
 ##### transferTransaction()
 
 ```ts
@@ -417,7 +383,6 @@ Enabled status for methods for the Kora server.
 | <a id="liveness"></a> `liveness` | `boolean` | Whether the liveness method is enabled |
 | <a id="sign_and_send_transaction"></a> `sign_and_send_transaction` | `boolean` | Whether the sign_and_send_transaction method is enabled |
 | <a id="sign_transaction"></a> `sign_transaction` | `boolean` | Whether the sign_transaction method is enabled |
-| <a id="sign_transaction_if_paid"></a> `sign_transaction_if_paid` | `boolean` | Whether the sign_transaction_if_paid method is enabled |
 | <a id="transfer_transaction"></a> `transfer_transaction` | `boolean` | Whether the transfer_transaction method is enabled |
 
 ***
@@ -614,34 +579,6 @@ Response from signing and sending a transaction.
 | <a id="signature"></a> `signature` | `string` | Base58-encoded transaction signature |
 | <a id="signed_transaction"></a> `signed_transaction` | `string` | Base64-encoded signed transaction |
 | <a id="signer_pubkey-1"></a> `signer_pubkey` | `string` | Public key of the signer used to send the transaction |
-
-***
-
-### SignTransactionIfPaidRequest
-
-Parameters for conditionally signing a transaction based on payment.
-
-#### Properties
-
-| Property | Type | Description |
-| ------ | ------ | ------ |
-| <a id="sig_verify-3"></a> `sig_verify?` | `boolean` | Optional signer verification during transaction simulation (defaults to false) |
-| <a id="signer_key-3"></a> `signer_key?` | `string` | Optional signer address for the transaction |
-| <a id="transaction-3"></a> `transaction` | `string` | Base64-encoded transaction |
-
-***
-
-### SignTransactionIfPaidResponse
-
-Response from conditionally signing a transaction.
-
-#### Properties
-
-| Property | Type | Description |
-| ------ | ------ | ------ |
-| <a id="signed_transaction-1"></a> `signed_transaction` | `string` | Base64-encoded signed transaction |
-| <a id="signer_pubkey-2"></a> `signer_pubkey` | `string` | Public key of the signer used to sign the transaction |
-| <a id="transaction-4"></a> `transaction` | `string` | Base64-encoded original transaction |
 
 ***
 

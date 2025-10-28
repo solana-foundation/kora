@@ -5,6 +5,13 @@ signers = "tests/src/common/fixtures/signers.toml"
 port = "8080"
 tests = ["rpc", "tokens", "external", "adversarial"]
 
+[test.free_signing]
+name = "Free Signing Tests"
+config = "tests/src/common/fixtures/kora-free-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8087"
+tests = ["free_signing"]
+
 [test.auth]
 name = "Auth Tests"
 config = "tests/src/common/fixtures/auth-test.toml"

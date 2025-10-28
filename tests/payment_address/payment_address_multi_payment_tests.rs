@@ -52,7 +52,7 @@ async fn test_sign_transaction_if_paid_with_multiple_payments_legacy() {
         .expect("Failed to create signed legacy transaction");
 
     let response: serde_json::Value = ctx
-        .rpc_call("signTransactionIfPaid", rpc_params![encoded_tx])
+        .rpc_call("signTransaction", rpc_params![encoded_tx])
         .await
         .expect("Failed to sign transaction");
 
@@ -107,7 +107,7 @@ async fn test_sign_transaction_if_paid_with_multiple_payments_insufficient_legac
         .expect("Failed to create signed legacy transaction");
 
     let response: Result<serde_json::Value, _> =
-        ctx.rpc_call("signTransactionIfPaid", rpc_params![encoded_tx]).await;
+        ctx.rpc_call("signTransaction", rpc_params![encoded_tx]).await;
 
     assert!(response.is_err(), "Should fail with insufficient payment");
 }
@@ -150,7 +150,7 @@ async fn test_sign_transaction_if_paid_with_multiple_sources_legacy() {
         .expect("Failed to create signed legacy transaction");
 
     let response: serde_json::Value = ctx
-        .rpc_call("signTransactionIfPaid", rpc_params![encoded_tx])
+        .rpc_call("signTransaction", rpc_params![encoded_tx])
         .await
         .expect("Failed to sign transaction");
 

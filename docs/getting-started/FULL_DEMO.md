@@ -417,7 +417,7 @@ We then call the same `partiallySignTransactionMessageWithSigners` function to g
 
 ### Step 6: Submit Transaction
 
-Finally, we need to get the Kora node to sign the transaction so we can send a fully signed transaction to the network. We do this by calling the `signTransactionIfPaid` method on the Kora client.
+Finally, we need to get the Kora node to sign the transaction so we can send a fully signed transaction to the network. We do this by calling the `signTransaction` method on the Kora client.
 
 ```ts
 
@@ -431,7 +431,7 @@ async function submitTransaction(
     console.log('\n[6/6] Signing transaction with Kora and sending to Solana cluster');
     
     // Get Kora's signature
-    const { signed_transaction } = await client.signTransactionIfPaid({
+    const { signed_transaction } = await client.signTransaction({
         transaction: signedTransaction,
         signer_key: signer_address
     });
@@ -463,7 +463,7 @@ async function submitTransaction(
 ```
 
 Here we are doing three things: 
-1. We call the `signTransactionIfPaid` method on the Kora client to get the Kora node to sign the transaction. The node will introspect the transaction to ensure the payment is sufficient and then sign the transaction. _Note: some Kora nodes may enable `signTransaction` that do not require payment. You can check your node's configuration to see if this is enabled by running `getConfig()`._ 
+1. We call the `signTransaction` method on the Kora client to get the Kora node to sign the transaction. The node will introspect the transaction to ensure the payment is sufficient and then sign the transaction. _Note: some Kora nodes may enable `signTransaction` that do not require payment. You can check your node's configuration to see if this is enabled by running `getConfig()`._ 
 2. We send the fully signed transaction to the Solana network using the Solana RPC client.
 3. We wait for the transaction to be confirmed on the network.
 

@@ -197,14 +197,6 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         get_blockhash
     );
     register_method_if_enabled!(module, enabled_methods, get_config, "getConfig", get_config);
-    register_method_if_enabled!(
-        module,
-        enabled_methods,
-        sign_transaction_if_paid,
-        "signTransactionIfPaid",
-        sign_transaction_if_paid,
-        with_params
-    );
 
     Ok(module)
 }
@@ -267,7 +259,7 @@ mod tests {
         // Verify that the module has the expected methods
         let module = result.unwrap();
         let method_names: Vec<&str> = module.method_names().collect();
-        assert_eq!(method_names.len(), 10);
+        assert_eq!(method_names.len(), 9);
         assert!(method_names.contains(&"liveness"));
         assert!(method_names.contains(&"estimateTransactionFee"));
         assert!(method_names.contains(&"getSupportedTokens"));
@@ -277,7 +269,6 @@ mod tests {
         assert!(method_names.contains(&"transferTransaction"));
         assert!(method_names.contains(&"getBlockhash"));
         assert!(method_names.contains(&"getConfig"));
-        assert!(method_names.contains(&"signTransactionIfPaid"));
     }
 
     #[test]
@@ -292,7 +283,6 @@ mod tests {
             transfer_transaction: false,
             get_blockhash: false,
             get_config: false,
-            sign_transaction_if_paid: false,
             liveness: false,
         };
 
@@ -324,7 +314,6 @@ mod tests {
             sign_and_send_transaction: false,
             transfer_transaction: false,
             get_blockhash: false,
-            sign_transaction_if_paid: false,
         };
 
         let kora_config = KoraConfigBuilder::new().with_enabled_methods(enabled_methods).build();

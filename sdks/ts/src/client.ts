@@ -8,8 +8,6 @@ import {
     GetSupportedTokensResponse,
     SignAndSendTransactionRequest,
     SignAndSendTransactionResponse,
-    SignTransactionIfPaidRequest,
-    SignTransactionIfPaidResponse,
     SignTransactionRequest,
     SignTransactionResponse,
     TransferTransactionRequest,
@@ -231,28 +229,6 @@ export class KoraClient {
     async signAndSendTransaction(request: SignAndSendTransactionRequest): Promise<SignAndSendTransactionResponse> {
         return this.rpcRequest<SignAndSendTransactionResponse, SignAndSendTransactionRequest>(
             'signAndSendTransaction',
-            request,
-        );
-    }
-
-    /**
-     * Signs a transaction only if it includes proper payment to the fee payer.
-     * @param request - Conditional sign request parameters
-     * @param request.transaction - Base64-encoded transaction to conditionally sign
-     * @returns The original and signed transaction
-     * @throws {Error} When the RPC call fails or payment validation fails
-     *
-     * @example
-     * ```typescript
-     * const result = await client.signTransactionIfPaid({
-     *   transaction: 'base64EncodedTransaction'
-     * });
-     * console.log('Signed transaction:', result.signed_transaction);
-     * ```
-     */
-    async signTransactionIfPaid(request: SignTransactionIfPaidRequest): Promise<SignTransactionIfPaidResponse> {
-        return this.rpcRequest<SignTransactionIfPaidResponse, SignTransactionIfPaidRequest>(
-            'signTransactionIfPaid',
             request,
         );
     }

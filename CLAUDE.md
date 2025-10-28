@@ -269,7 +269,6 @@ pnpm run format
   - `getBlockhash` - Get recent blockhash
   - `getConfig` - Return server configuration
   - `getSupportedTokens` - List accepted payment tokens
-  - `signTransactionIfPaid` - Conditional signing based on payment verification
   - `getPayerSigner` - Get the payer signer and payment destination
   - (client-only) `getPaymentInstruction` - Get a payment instruction for a transaction
 

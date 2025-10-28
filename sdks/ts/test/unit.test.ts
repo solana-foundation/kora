@@ -9,8 +9,6 @@ import {
     SignTransactionResponse,
     SignAndSendTransactionRequest,
     SignAndSendTransactionResponse,
-    SignTransactionIfPaidRequest,
-    SignTransactionIfPaidResponse,
     TransferTransactionRequest,
     TransferTransactionResponse,
     EstimateTransactionFeeResponse,
@@ -175,7 +173,6 @@ describe('KoraClient Unit Tests', () => {
                     transfer_transaction: true,
                     get_blockhash: true,
                     get_config: true,
-                    sign_transaction_if_paid: true,
                 },
             };
 
@@ -282,30 +279,6 @@ describe('KoraClient Unit Tests', () => {
                 request,
             );
         });
-    });
-
-    describe('signTransactionIfPaid', () => {
-        const testSignTransactionIfPaid = async (margin?: number) => {
-            const request: SignTransactionIfPaidRequest = {
-                transaction: 'base64_encoded_transaction',
-                ...(margin !== undefined && { margin }),
-            };
-            const mockResponse: SignTransactionIfPaidResponse = {
-                transaction: 'base64_encoded_transaction',
-                signed_transaction: 'base64_signed_transaction',
-                signer_pubkey: 'test_signer_pubkey',
-            };
-
-            await testSuccessfulRpcMethod(
-                'signTransactionIfPaid',
-                () => client.signTransactionIfPaid(request),
-                mockResponse,
-                request,
-            );
-        };
-
-        it('should sign transaction if paid', () => testSignTransactionIfPaid(10));
-        it('should handle request without margin', () => testSignTransactionIfPaid());
     });
 
     describe('transferTransaction', () => {
@@ -452,7 +425,6 @@ describe('KoraClient Unit Tests', () => {
                 transfer_transaction: true,
                 get_blockhash: true,
                 get_config: true,
-                sign_transaction_if_paid: true,
             },
         };
 
