@@ -4,10 +4,11 @@ use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
 use solana_program::pubkey::Pubkey;
 use solana_sdk::{instruction::Instruction, program_pack::Pack};
-use spl_associated_token_account::{
-    get_associated_token_address_with_program_id, instruction::create_associated_token_account,
+use spl_associated_token_account_interface::{
+    address::get_associated_token_address_with_program_id,
+    instruction::create_associated_token_account,
 };
-use spl_token::{
+use spl_token_interface::{
     self,
     state::{Account as TokenAccountState, AccountState, Mint as MintState},
 };
@@ -103,7 +104,7 @@ impl TokenProgram {
 #[async_trait]
 impl TokenInterface for TokenProgram {
     fn program_id(&self) -> Pubkey {
-        spl_token::id()
+        spl_token_interface::id()
     }
 
     fn unpack_token_account(
@@ -134,7 +135,12 @@ impl TokenInterface for TokenProgram {
         mint: &Pubkey,
         owner: &Pubkey,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token::instruction::initialize_account(&self.program_id(), account, mint, owner)?)
+        Ok(spl_token_interface::instruction::initialize_account(
+            &self.program_id(),
+            account,
+            mint,
+            owner,
+        )?)
     }
 
     fn create_transfer_instruction(
@@ -144,7 +150,7 @@ impl TokenInterface for TokenProgram {
         authority: &Pubkey,
         amount: u64,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token::instruction::transfer(
+        Ok(spl_token_interface::instruction::transfer(
             &self.program_id(),
             source,
             destination,
@@ -163,7 +169,7 @@ impl TokenInterface for TokenProgram {
         amount: u64,
         decimals: u8,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token::instruction::transfer_checked(
+        Ok(spl_token_interface::instruction::transfer_checked(
             &self.program_id(),
             source,
             mint,
@@ -213,12 +219,12 @@ mod tests {
     use super::*;
     use solana_program::program_pack::Pack;
     use solana_sdk::pubkey::Pubkey;
-    use spl_token::state::{Account as SplTokenAccount, AccountState};
+    use spl_token_interface::state::{Account as SplTokenAccount, AccountState};
 
     #[test]
     fn test_token_program_creation_and_program_id() {
         let program = TokenProgram::new();
-        assert_eq!(program.program_id(), spl_token::id());
+        assert_eq!(program.program_id(), spl_token_interface::id());
     }
 
     #[test]
@@ -357,7 +363,7 @@ mod tests {
         assert!(result.is_ok());
 
         let instruction = result.unwrap();
-        assert_eq!(instruction.program_id, spl_token::id());
+        assert_eq!(instruction.program_id, spl_token_interface::id());
         assert_eq!(instruction.accounts.len(), 4); // account, mint, owner, rent sysvar
     }
 
@@ -373,7 +379,7 @@ mod tests {
         assert!(result.is_ok());
 
         let instruction = result.unwrap();
-        assert_eq!(instruction.program_id, spl_token::id());
+        assert_eq!(instruction.program_id, spl_token_interface::id());
         assert_eq!(instruction.accounts.len(), 3); // source, destination, authority
     }
 
@@ -398,7 +404,7 @@ mod tests {
         assert!(result.is_ok());
 
         let instruction = result.unwrap();
-        assert_eq!(instruction.program_id, spl_token::id());
+        assert_eq!(instruction.program_id, spl_token_interface::id());
         assert_eq!(instruction.accounts.len(), 4); // source, mint, destination, authority
     }
 
@@ -410,7 +416,11 @@ mod tests {
 
         let ata = program.get_associated_token_address(&wallet, &mint);
 
-        let ata2 = get_associated_token_address_with_program_id(&wallet, &mint, &spl_token::id());
+        let ata2 = get_associated_token_address_with_program_id(
+            &wallet,
+            &mint,
+            &spl_token_interface::id(),
+        );
 
         assert_eq!(ata, ata2);
     }
@@ -425,7 +435,7 @@ mod tests {
         let instruction =
             program.create_associated_token_account_instruction(&funding_account, &wallet, &mint);
 
-        assert_eq!(instruction.program_id, spl_associated_token_account::id());
+        assert_eq!(instruction.program_id, spl_associated_token_account_interface::program::id());
         assert_eq!(instruction.accounts.len(), 6); // funding, ata, wallet, mint, system_program, token_program
     }
 
@@ -441,7 +451,7 @@ mod tests {
         };
 
         let token_program = spl_mint.get_token_program();
-        assert_eq!(token_program.program_id(), spl_token::id());
+        assert_eq!(token_program.program_id(), spl_token_interface::id());
     }
 
     #[test]

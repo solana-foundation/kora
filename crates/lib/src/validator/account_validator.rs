@@ -1,14 +1,14 @@
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    account::Account, program_pack::Pack, pubkey::Pubkey, system_program::ID as SYSTEM_PROGRAM_ID,
-};
-use spl_token::{
-    state::{Account as SplTokenAccount, Mint},
-    ID as SPL_TOKEN_PROGRAM_ID,
-};
-use spl_token_2022::{
+use solana_program_pack::Pack;
+use solana_sdk::{account::Account, pubkey::Pubkey};
+use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
+use spl_token_2022_interface::{
     state::{Account as Token2022Account, Mint as Token2022Mint},
     ID as TOKEN_2022_PROGRAM_ID,
+};
+use spl_token_interface::{
+    state::{Account as SplTokenAccount, Mint},
+    ID as SPL_TOKEN_PROGRAM_ID,
 };
 
 use crate::{CacheUtil, KoraError};
@@ -32,19 +32,29 @@ impl AccountType {
 
         match self {
             AccountType::Mint => match account.owner {
-                SPL_TOKEN_PROGRAM_ID => {
+                ref owner if *owner == SPL_TOKEN_PROGRAM_ID => {
                     should_be_executable = Some(false);
 
-                    Mint::unpack(&account.data).map_err(|e| {
+                    if account.data.len() < Mint::LEN {
+                        return Err(KoraError::InternalServerError(format!(
+                            "Account {account_pubkey} has invalid data for a Mint account: data too short"
+                        )));
+                    }
+                    Mint::unpack_from_slice(&account.data).map_err(|e| {
                         KoraError::InternalServerError(format!(
                             "Account {account_pubkey} has invalid data for a Mint account: {e}"
                         ))
                     })?;
                 }
-                TOKEN_2022_PROGRAM_ID => {
+                ref owner if *owner == TOKEN_2022_PROGRAM_ID => {
                     should_be_executable = Some(false);
 
-                    Token2022Mint::unpack(&account.data).map_err(|e| {
+                    if account.data.len() < Token2022Mint::LEN {
+                        return Err(KoraError::InternalServerError(format!(
+                            "Account {account_pubkey} has invalid data for a Mint account: data too short"
+                        )));
+                    }
+                    Token2022Mint::unpack_from_slice(&account.data).map_err(|e| {
                         KoraError::InternalServerError(format!(
                             "Account {account_pubkey} has invalid data for a Mint account: {e}"
                         ))
@@ -57,19 +67,29 @@ impl AccountType {
                 }
             },
             AccountType::TokenAccount => match account.owner {
-                SPL_TOKEN_PROGRAM_ID => {
+                ref owner if *owner == SPL_TOKEN_PROGRAM_ID => {
                     should_be_executable = Some(false);
 
-                    SplTokenAccount::unpack(&account.data).map_err(|e| {
+                    if account.data.len() < SplTokenAccount::LEN {
+                        return Err(KoraError::InternalServerError(format!(
+                            "Account {account_pubkey} has invalid data for a TokenAccount account: data too short"
+                        )));
+                    }
+                    SplTokenAccount::unpack_from_slice(&account.data).map_err(|e| {
                         KoraError::InternalServerError(format!(
                             "Account {account_pubkey} has invalid data for a TokenAccount account: {e}"
                         ))
                     })?;
                 }
-                TOKEN_2022_PROGRAM_ID => {
+                ref owner if *owner == TOKEN_2022_PROGRAM_ID => {
                     should_be_executable = Some(false);
 
-                    Token2022Account::unpack(&account.data).map_err(|e| {
+                    if account.data.len() < Token2022Account::LEN {
+                        return Err(KoraError::InternalServerError(format!(
+                            "Account {account_pubkey} has invalid data for a TokenAccount account: data too short"
+                        )));
+                    }
+                    Token2022Account::unpack_from_slice(&account.data).map_err(|e| {
                         KoraError::InternalServerError(format!(
                             "Account {account_pubkey} has invalid data for a TokenAccount account: {e}"
                         ))

@@ -1,8 +1,8 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
-use kora_lib::token::{TokenInterface, TokenProgram};
+use kora_lib::token::{spl_token::TokenProgram, TokenInterface};
 use solana_sdk::{pubkey::Pubkey, signature::Signer};
-use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account_interface::address::get_associated_token_address;
 use std::str::FromStr;
 
 #[tokio::test]

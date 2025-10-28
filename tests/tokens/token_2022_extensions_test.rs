@@ -11,7 +11,7 @@ use solana_sdk::{
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
-use spl_associated_token_account::get_associated_token_address_with_program_id;
+use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use std::str::FromStr;
 
 #[tokio::test]
@@ -40,24 +40,24 @@ async fn test_blocked_memo_transfer_extension() {
     let fee_payer_token_account = get_associated_token_address_with_program_id(
         &fee_payer.pubkey(),
         &mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     // Create recipient ATA for custom mint (normal ATA without MemoTransfer extension)
     let create_fee_payer_ata_instruction =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &fee_payer.pubkey(),
             &mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let create_fee_payer_payment_ata_instruction =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &fee_payer.pubkey(),
             &mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let recent_blockhash = ctx.rpc_client().get_latest_blockhash().await.unwrap();
@@ -143,29 +143,29 @@ async fn test_blocked_interest_bearing_config_extension() {
     let sender_ata = get_associated_token_address_with_program_id(
         &sender.pubkey(),
         &mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     let fee_payer_ata = get_associated_token_address_with_program_id(
         &fee_payer.pubkey(),
         &mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     let create_sender_ata_instruction =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &sender.pubkey(),
             &mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let create_fee_payer_ata_instruction =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &fee_payer.pubkey(),
             &mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let recent_blockhash = ctx.rpc_client().get_latest_blockhash().await.unwrap();
@@ -241,30 +241,30 @@ async fn test_transfer_fee_insufficient_payment() {
     let sender_ata = get_associated_token_address_with_program_id(
         &sender.pubkey(),
         &mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     let fee_payer_ata = get_associated_token_address_with_program_id(
         &fee_payer.pubkey(),
         &mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     // Create ATAs if they don't exist
     let create_sender_ata_instruction =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &sender.pubkey(),
             &mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let create_fee_payer_ata_instruction =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &fee_payer.pubkey(),
             &mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let recent_blockhash = ctx.rpc_client().get_latest_blockhash().await.unwrap();
@@ -345,30 +345,30 @@ async fn test_transfer_fee_sufficient_payment() {
     let sender_ata = get_associated_token_address_with_program_id(
         &sender.pubkey(),
         &mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     let fee_payer_ata = get_associated_token_address_with_program_id(
         &fee_payer.pubkey(),
         &mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     // Create ATAs if they don't exist
     let create_sender_ata_instruction =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &sender.pubkey(),
             &mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let create_fee_payer_ata_instruction =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &fee_payer.pubkey(),
             &mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let recent_blockhash = ctx.rpc_client().get_latest_blockhash().await.unwrap();
@@ -465,30 +465,30 @@ async fn test_transfer_hook_allows_transfer() {
     let sender_ata = get_associated_token_address_with_program_id(
         &sender.pubkey(),
         &transfer_hook_mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     let recipient_ata = get_associated_token_address_with_program_id(
         &recipient,
         &transfer_hook_mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     // Create ATAs
     let create_sender_ata =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &sender.pubkey(),
             &transfer_hook_mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let create_recipient_ata =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &recipient,
             &transfer_hook_mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
@@ -512,8 +512,8 @@ async fn test_transfer_hook_allows_transfer() {
     .await
     .expect("Failed to mint tokens to sender");
 
-    let mut transfer_instruction = spl_token_2022::instruction::transfer_checked(
-        &spl_token_2022::id(),
+    let mut transfer_instruction = spl_token_2022_interface::instruction::transfer_checked(
+        &spl_token_2022_interface::id(),
         &sender_ata,
         &transfer_hook_mint_keypair.pubkey(),
         &recipient_ata,
@@ -541,14 +541,18 @@ async fn test_transfer_hook_allows_transfer() {
     // Add payment instruction for Kora fee
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let sender_usdc_ata =
-        spl_associated_token_account::get_associated_token_address(&sender.pubkey(), &token_mint);
-    let fee_payer_usdc_ata = spl_associated_token_account::get_associated_token_address(
-        &fee_payer.pubkey(),
-        &token_mint,
-    );
+        spl_associated_token_account_interface::address::get_associated_token_address(
+            &sender.pubkey(),
+            &token_mint,
+        );
+    let fee_payer_usdc_ata =
+        spl_associated_token_account_interface::address::get_associated_token_address(
+            &fee_payer.pubkey(),
+            &token_mint,
+        );
 
-    let payment_instruction = spl_token::instruction::transfer(
-        &spl_token::id(),
+    let payment_instruction = spl_token_interface::instruction::transfer(
+        &spl_token_interface::id(),
         &sender_usdc_ata,
         &fee_payer_usdc_ata,
         &sender.pubkey(),
@@ -626,30 +630,30 @@ async fn test_transfer_hook_blocks_transfer() {
     let sender_ata = get_associated_token_address_with_program_id(
         &sender.pubkey(),
         &transfer_hook_mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     let recipient_ata = get_associated_token_address_with_program_id(
         &recipient,
         &transfer_hook_mint_keypair.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     // Create ATAs
     let create_sender_ata =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &sender.pubkey(),
             &transfer_hook_mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let create_recipient_ata =
-        spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &recipient,
             &transfer_hook_mint_keypair.pubkey(),
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
     let recent_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
@@ -675,8 +679,8 @@ async fn test_transfer_hook_blocks_transfer() {
     .expect("Failed to mint tokens to sender");
 
     // Create transfer instruction manually with transfer hook accounts - large amount that will be blocked
-    let mut transfer_instruction = spl_token_2022::instruction::transfer_checked(
-        &spl_token_2022::id(),
+    let mut transfer_instruction = spl_token_2022_interface::instruction::transfer_checked(
+        &spl_token_2022_interface::id(),
         &sender_ata,
         &transfer_hook_mint_keypair.pubkey(),
         &recipient_ata,

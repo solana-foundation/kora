@@ -16,9 +16,10 @@ use crate::{
     KoraError,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{pubkey::Pubkey, system_program::ID as SYSTEM_PROGRAM_ID};
-use spl_token::ID as SPL_TOKEN_PROGRAM_ID;
-use spl_token_2022::{extension::ExtensionType, ID as TOKEN_2022_PROGRAM_ID};
+use solana_sdk::pubkey::Pubkey;
+use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
+use spl_token_2022_interface::{extension::ExtensionType, ID as TOKEN_2022_PROGRAM_ID};
+use spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID;
 
 pub struct ConfigValidator {}
 

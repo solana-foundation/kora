@@ -35,7 +35,7 @@
 //! get_all_account_extension_names() -> &["memo_transfer", "cpi_guard", ...]
 //! ```
 
-use spl_token_2022::{
+use spl_token_2022_interface::{
     extension::{
         confidential_mint_burn::ConfidentialMintBurn,
         confidential_transfer::{ConfidentialTransferAccount, ConfidentialTransferMint},
@@ -229,7 +229,7 @@ pub fn get_all_account_extension_names() -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spl_token_2022::extension::ExtensionType;
+    use spl_token_2022_interface::extension::ExtensionType;
 
     #[test]
     fn test_mint_extension_from_string() {

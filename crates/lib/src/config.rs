@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
-use spl_token_2022::extension::ExtensionType;
+use spl_token_2022_interface::extension::ExtensionType;
 use std::{fs, path::Path, str::FromStr};
 use toml;
 use utoipa::ToSchema;

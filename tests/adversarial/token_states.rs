@@ -4,8 +4,8 @@ use solana_sdk::{
     program_pack::Pack, signature::Keypair, signer::Signer, transaction::Transaction,
 };
 use solana_system_interface::instruction::create_account;
-use spl_associated_token_account::get_associated_token_address;
-use spl_token::instruction as token_instruction;
+use spl_associated_token_account_interface::address::get_associated_token_address;
+use spl_token_interface::instruction as token_instruction;
 
 #[tokio::test]
 async fn test_frozen_token_account_as_fee_payment() {
@@ -16,7 +16,7 @@ async fn test_frozen_token_account_as_fee_payment() {
 
     let rent = setup
         .rpc_client
-        .get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)
+        .get_minimum_balance_for_rent_exemption(spl_token_interface::state::Account::LEN)
         .await
         .expect("Failed to get rent exemption");
 
@@ -24,12 +24,12 @@ async fn test_frozen_token_account_as_fee_payment() {
         &setup.sender_keypair.pubkey(),
         &frozen_token_account_keypair.pubkey(),
         rent,
-        spl_token::state::Account::LEN as u64,
-        &spl_token::id(),
+        spl_token_interface::state::Account::LEN as u64,
+        &spl_token_interface::id(),
     );
 
-    let create_frozen_token_account_ix = spl_token::instruction::initialize_account(
-        &spl_token::id(),
+    let create_frozen_token_account_ix = spl_token_interface::instruction::initialize_account(
+        &spl_token_interface::id(),
         &frozen_token_account_keypair.pubkey(),
         &setup.usdc_mint.pubkey(),
         &setup.sender_keypair.pubkey(),
@@ -37,7 +37,7 @@ async fn test_frozen_token_account_as_fee_payment() {
     .expect("Failed to create initialize account instruction");
 
     let mint_tokens_ix = token_instruction::mint_to(
-        &spl_token::id(),
+        &spl_token_interface::id(),
         &setup.usdc_mint.pubkey(),
         &frozen_token_account_keypair.pubkey(),
         &setup.sender_keypair.pubkey(),
@@ -47,7 +47,7 @@ async fn test_frozen_token_account_as_fee_payment() {
     .expect("Failed to create mint instruction");
 
     let freeze_instruction = token_instruction::freeze_account(
-        &spl_token::id(),
+        &spl_token_interface::id(),
         &frozen_token_account_keypair.pubkey(),
         &setup.usdc_mint.pubkey(),
         &setup.sender_keypair.pubkey(),

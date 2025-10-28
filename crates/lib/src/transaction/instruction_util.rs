@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
+use solana_message::compiled_instruction::CompiledInstruction;
 use solana_sdk::{
-    instruction::{AccountMeta, CompiledInstruction, Instruction},
+    instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
-    system_instruction::SystemInstruction,
-    system_program::ID as SYSTEM_PROGRAM_ID,
 };
+use solana_system_interface::{instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID};
 use solana_transaction_status_client_types::{UiInstruction, UiParsedInstruction};
 
 use crate::{
@@ -384,8 +384,8 @@ impl IxUtils {
                     // Reconstruct based on program type
                     if parsed.program_id == SYSTEM_PROGRAM_ID.to_string() {
                         Self::reconstruct_system_instruction(parsed, &account_keys_hashmap).ok()
-                    } else if parsed.program == spl_token::ID.to_string()
-                        || parsed.program == spl_token_2022::ID.to_string()
+                    } else if parsed.program == spl_token_interface::ID.to_string()
+                        || parsed.program == spl_token_2022_interface::ID.to_string()
                     {
                         Self::reconstruct_spl_token_instruction(parsed, &account_keys_hashmap).ok()
                     } else {
@@ -770,11 +770,12 @@ impl IxUtils {
                 let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
                 let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
-                let data = if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::Transfer { amount }.pack()
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::Transfer { amount }.pack()
                 } else {
                     #[allow(deprecated)]
-                    spl_token_2022::instruction::TokenInstruction::Transfer { amount }.pack()
+                    spl_token_2022_interface::instruction::TokenInstruction::Transfer { amount }
+                        .pack()
                 };
 
                 Ok(CompiledInstruction {
@@ -801,11 +802,14 @@ impl IxUtils {
                 let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
                 let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
-                let data = if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::TransferChecked { amount, decimals }
-                        .pack()
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::TransferChecked {
+                        amount,
+                        decimals,
+                    }
+                    .pack()
                 } else {
-                    spl_token_2022::instruction::TokenInstruction::TransferChecked {
+                    spl_token_2022_interface::instruction::TokenInstruction::TransferChecked {
                         amount,
                         decimals,
                     }
@@ -852,20 +856,23 @@ impl IxUtils {
 
                 let data = if instruction_type == PARSED_DATA_FIELD_BURN_CHECKED {
                     let decimals = decimals.unwrap(); // Safe because we set it above for burnChecked
-                    if parsed.program_id == spl_token::ID.to_string() {
-                        spl_token::instruction::TokenInstruction::BurnChecked { amount, decimals }
-                            .pack()
+                    if parsed.program_id == spl_token_interface::ID.to_string() {
+                        spl_token_interface::instruction::TokenInstruction::BurnChecked {
+                            amount,
+                            decimals,
+                        }
+                        .pack()
                     } else {
-                        spl_token_2022::instruction::TokenInstruction::BurnChecked {
+                        spl_token_2022_interface::instruction::TokenInstruction::BurnChecked {
                             amount,
                             decimals,
                         }
                         .pack()
                     }
-                } else if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::Burn { amount }.pack()
+                } else if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::Burn { amount }.pack()
                 } else {
-                    spl_token_2022::instruction::TokenInstruction::Burn { amount }.pack()
+                    spl_token_2022_interface::instruction::TokenInstruction::Burn { amount }.pack()
                 };
 
                 Ok(CompiledInstruction { program_id_index, accounts, data })
@@ -879,10 +886,10 @@ impl IxUtils {
                 let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
                 let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
-                let data = if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::CloseAccount.pack()
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::CloseAccount.pack()
                 } else {
-                    spl_token_2022::instruction::TokenInstruction::CloseAccount.pack()
+                    spl_token_2022_interface::instruction::TokenInstruction::CloseAccount.pack()
                 };
 
                 Ok(CompiledInstruction {
@@ -901,10 +908,11 @@ impl IxUtils {
                 let delegate_idx = Self::get_account_index(account_keys_hashmap, &delegate)?;
                 let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
 
-                let data = if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::Approve { amount }.pack()
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::Approve { amount }.pack()
                 } else {
-                    spl_token_2022::instruction::TokenInstruction::Approve { amount }.pack()
+                    spl_token_2022_interface::instruction::TokenInstruction::Approve { amount }
+                        .pack()
                 };
 
                 Ok(CompiledInstruction {
@@ -931,11 +939,14 @@ impl IxUtils {
                 let delegate_idx = Self::get_account_index(account_keys_hashmap, &delegate)?;
                 let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
 
-                let data = if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::ApproveChecked { amount, decimals }
-                        .pack()
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::ApproveChecked {
+                        amount,
+                        decimals,
+                    }
+                    .pack()
                 } else {
-                    spl_token_2022::instruction::TokenInstruction::ApproveChecked {
+                    spl_token_2022_interface::instruction::TokenInstruction::ApproveChecked {
                         amount,
                         decimals,
                     }
@@ -955,10 +966,10 @@ impl IxUtils {
                 let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
                 let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
 
-                let data = if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::Revoke.pack()
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::Revoke.pack()
                 } else {
-                    spl_token_2022::instruction::TokenInstruction::Revoke.pack()
+                    spl_token_2022_interface::instruction::TokenInstruction::Revoke.pack()
                 };
 
                 Ok(CompiledInstruction {
@@ -998,10 +1009,11 @@ impl IxUtils {
                 let mint_authority_idx =
                     Self::get_account_index(account_keys_hashmap, &mint_authority)?;
 
-                let data = if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::MintTo { amount }.pack()
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::MintTo { amount }.pack()
                 } else {
-                    spl_token_2022::instruction::TokenInstruction::MintTo { amount }.pack()
+                    spl_token_2022_interface::instruction::TokenInstruction::MintTo { amount }
+                        .pack()
                 };
 
                 Ok(CompiledInstruction {
@@ -1028,11 +1040,14 @@ impl IxUtils {
                 let mint_authority_idx =
                     Self::get_account_index(account_keys_hashmap, &mint_authority)?;
 
-                let data = if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::MintToChecked { amount, decimals }
-                        .pack()
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::MintToChecked {
+                        amount,
+                        decimals,
+                    }
+                    .pack()
                 } else {
-                    spl_token_2022::instruction::TokenInstruction::MintToChecked {
+                    spl_token_2022_interface::instruction::TokenInstruction::MintToChecked {
                         amount,
                         decimals,
                     }
@@ -1122,10 +1137,10 @@ impl IxUtils {
                 let freeze_authority_idx =
                     Self::get_account_index(account_keys_hashmap, &freeze_authority)?;
 
-                let data = if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::FreezeAccount.pack()
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::FreezeAccount.pack()
                 } else {
-                    spl_token_2022::instruction::TokenInstruction::FreezeAccount.pack()
+                    spl_token_2022_interface::instruction::TokenInstruction::FreezeAccount.pack()
                 };
 
                 Ok(CompiledInstruction {
@@ -1145,10 +1160,10 @@ impl IxUtils {
                 let freeze_authority_idx =
                     Self::get_account_index(account_keys_hashmap, &freeze_authority)?;
 
-                let data = if parsed.program_id == spl_token::ID.to_string() {
-                    spl_token::instruction::TokenInstruction::ThawAccount.pack()
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::ThawAccount.pack()
                 } else {
-                    spl_token_2022::instruction::TokenInstruction::ThawAccount.pack()
+                    spl_token_2022_interface::instruction::TokenInstruction::ThawAccount.pack()
                 };
 
                 Ok(CompiledInstruction {
@@ -1299,12 +1314,12 @@ impl IxUtils {
         for instruction in &transaction.all_instructions {
             let program_id = instruction.program_id;
 
-            if program_id == spl_token::ID {
+            if program_id == spl_token_interface::ID {
                 if let Ok(spl_ix) =
-                    spl_token::instruction::TokenInstruction::unpack(&instruction.data)
+                    spl_token_interface::instruction::TokenInstruction::unpack(&instruction.data)
                 {
                     match spl_ix {
-                        spl_token::instruction::TokenInstruction::Transfer { amount } => {
+                        spl_token_interface::instruction::TokenInstruction::Transfer { amount } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1319,7 +1334,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::TransferChecked {
+                        spl_token_interface::instruction::TokenInstruction::TransferChecked {
                             amount,
                             ..
                         } => {
@@ -1337,8 +1352,8 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::Burn { .. }
-                        | spl_token::instruction::TokenInstruction::BurnChecked { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::Burn { .. }
+                        | spl_token_interface::instruction::TokenInstruction::BurnChecked { .. } => {
                             validate_number_accounts!(
                                 instruction,
                                 instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
@@ -1354,7 +1369,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::CloseAccount { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::CloseAccount { .. } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_close_account::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1367,7 +1382,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::Approve { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::Approve { .. } => {
                             validate_number_accounts!(
                                 instruction,
                                 instruction_indexes::spl_token_approve::REQUIRED_NUMBER_OF_ACCOUNTS
@@ -1383,7 +1398,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::ApproveChecked { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::ApproveChecked { .. } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_approve_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1394,7 +1409,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::Revoke => {
+                        spl_token_interface::instruction::TokenInstruction::Revoke => {
                             validate_number_accounts!(
                                 instruction,
                                 instruction_indexes::spl_token_revoke::REQUIRED_NUMBER_OF_ACCOUNTS
@@ -1410,7 +1425,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::SetAuthority { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::SetAuthority { .. } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_set_authority::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1421,7 +1436,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::MintTo { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::MintTo { .. } => {
                             validate_number_accounts!(
                                 instruction,
                                 instruction_indexes::spl_token_mint_to::REQUIRED_NUMBER_OF_ACCOUNTS
@@ -1435,7 +1450,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::MintToChecked { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::MintToChecked { .. } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_mint_to_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1446,7 +1461,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::InitializeMint {
+                        spl_token_interface::instruction::TokenInstruction::InitializeMint {
                             mint_authority,
                             ..
                         } => {
@@ -1460,7 +1475,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::InitializeMint2 {
+                        spl_token_interface::instruction::TokenInstruction::InitializeMint2 {
                             mint_authority,
                             ..
                         } => {
@@ -1474,7 +1489,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::InitializeAccount => {
+                        spl_token_interface::instruction::TokenInstruction::InitializeAccount => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1485,7 +1500,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::InitializeAccount2 { owner } => {
+                        spl_token_interface::instruction::TokenInstruction::InitializeAccount2 { owner } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account2::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1496,7 +1511,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::InitializeAccount3 { owner } => {
+                        spl_token_interface::instruction::TokenInstruction::InitializeAccount3 { owner } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account3::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1507,7 +1522,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::InitializeMultisig { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::InitializeMultisig { .. } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             // Extract signers from accounts (skip first 2: multisig + rent sysvar)
@@ -1522,7 +1537,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::InitializeMultisig2 {
+                        spl_token_interface::instruction::TokenInstruction::InitializeMultisig2 {
                             ..
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig2::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -1539,7 +1554,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::FreezeAccount => {
+                        spl_token_interface::instruction::TokenInstruction::FreezeAccount => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_freeze_account::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1550,7 +1565,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token::instruction::TokenInstruction::ThawAccount => {
+                        spl_token_interface::instruction::TokenInstruction::ThawAccount => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_thaw_account::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1564,13 +1579,13 @@ impl IxUtils {
                         _ => {}
                     };
                 }
-            } else if program_id == spl_token_2022::ID {
-                if let Ok(spl_ix) =
-                    spl_token_2022::instruction::TokenInstruction::unpack(&instruction.data)
-                {
+            } else if program_id == spl_token_2022_interface::ID {
+                if let Ok(spl_ix) = spl_token_2022_interface::instruction::TokenInstruction::unpack(
+                    &instruction.data,
+                ) {
                     match spl_ix {
                         #[allow(deprecated)]
-                        spl_token_2022::instruction::TokenInstruction::Transfer { amount } => {
+                        spl_token_2022_interface::instruction::TokenInstruction::Transfer { amount } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1585,7 +1600,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::TransferChecked {
+                        spl_token_2022_interface::instruction::TokenInstruction::TransferChecked {
                             amount,
                             ..
                         } => {
@@ -1603,8 +1618,8 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::Burn { .. }
-                        | spl_token_2022::instruction::TokenInstruction::BurnChecked { .. } => {
+                        spl_token_2022_interface::instruction::TokenInstruction::Burn { .. }
+                        | spl_token_2022_interface::instruction::TokenInstruction::BurnChecked { .. } => {
                             validate_number_accounts!(
                                 instruction,
                                 instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
@@ -1620,7 +1635,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::CloseAccount { .. } => {
+                        spl_token_2022_interface::instruction::TokenInstruction::CloseAccount { .. } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_close_account::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1633,7 +1648,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::Approve { .. } => {
+                        spl_token_2022_interface::instruction::TokenInstruction::Approve { .. } => {
                             validate_number_accounts!(
                                 instruction,
                                 instruction_indexes::spl_token_approve::REQUIRED_NUMBER_OF_ACCOUNTS
@@ -1649,7 +1664,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::ApproveChecked {
+                        spl_token_2022_interface::instruction::TokenInstruction::ApproveChecked {
                             ..
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_approve_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -1662,7 +1677,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::Revoke => {
+                        spl_token_2022_interface::instruction::TokenInstruction::Revoke => {
                             validate_number_accounts!(
                                 instruction,
                                 instruction_indexes::spl_token_revoke::REQUIRED_NUMBER_OF_ACCOUNTS
@@ -1678,7 +1693,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::SetAuthority { .. } => {
+                        spl_token_2022_interface::instruction::TokenInstruction::SetAuthority { .. } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_set_authority::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1689,7 +1704,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::MintTo { .. } => {
+                        spl_token_2022_interface::instruction::TokenInstruction::MintTo { .. } => {
                             validate_number_accounts!(
                                 instruction,
                                 instruction_indexes::spl_token_mint_to::REQUIRED_NUMBER_OF_ACCOUNTS
@@ -1703,7 +1718,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::MintToChecked { .. } => {
+                        spl_token_2022_interface::instruction::TokenInstruction::MintToChecked { .. } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_mint_to_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1714,7 +1729,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::InitializeMint {
+                        spl_token_2022_interface::instruction::TokenInstruction::InitializeMint {
                             mint_authority,
                             ..
                         } => {
@@ -1728,7 +1743,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::InitializeMint2 {
+                        spl_token_2022_interface::instruction::TokenInstruction::InitializeMint2 {
                             mint_authority,
                             ..
                         } => {
@@ -1742,7 +1757,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::InitializeAccount => {
+                        spl_token_2022_interface::instruction::TokenInstruction::InitializeAccount => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1753,7 +1768,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::InitializeAccount2 {
+                        spl_token_2022_interface::instruction::TokenInstruction::InitializeAccount2 {
                             owner,
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account2::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -1766,7 +1781,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::InitializeAccount3 {
+                        spl_token_2022_interface::instruction::TokenInstruction::InitializeAccount3 {
                             owner,
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_account3::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -1779,7 +1794,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::InitializeMultisig {
+                        spl_token_2022_interface::instruction::TokenInstruction::InitializeMultisig {
                             ..
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -1796,7 +1811,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::InitializeMultisig2 {
+                        spl_token_2022_interface::instruction::TokenInstruction::InitializeMultisig2 {
                             ..
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig2::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -1813,7 +1828,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::FreezeAccount => {
+                        spl_token_2022_interface::instruction::TokenInstruction::FreezeAccount => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_freeze_account::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1824,7 +1839,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022::instruction::TokenInstruction::ThawAccount => {
+                        spl_token_2022_interface::instruction::TokenInstruction::ThawAccount => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_thaw_account::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1858,7 +1873,7 @@ mod tests {
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
         let solana_instruction =
-            solana_sdk::system_instruction::transfer(source, destination, lamports);
+            solana_system_interface::instruction::transfer(source, destination, lamports);
 
         let message = Message::new(&[solana_instruction], None);
         let compiled_instruction = &message.instructions[0];
@@ -1884,7 +1899,7 @@ mod tests {
         source_owner: &Pubkey,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = solana_sdk::system_instruction::transfer_with_seed(
+        let solana_instruction = solana_system_interface::instruction::transfer_with_seed(
             source,
             source_base,
             seed.to_string(),
@@ -1916,7 +1931,7 @@ mod tests {
         owner: &Pubkey,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = solana_sdk::system_instruction::create_account(
+        let solana_instruction = solana_system_interface::instruction::create_account(
             source,
             new_account,
             lamports,
@@ -1949,7 +1964,7 @@ mod tests {
         owner: &Pubkey,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = solana_sdk::system_instruction::create_account_with_seed(
+        let solana_instruction = solana_system_interface::instruction::create_account_with_seed(
             source,
             new_account,
             base,
@@ -1979,7 +1994,7 @@ mod tests {
         owner: &Pubkey,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = solana_sdk::system_instruction::assign(account, owner);
+        let solana_instruction = solana_system_interface::instruction::assign(account, owner);
 
         let message = Message::new(&[solana_instruction], None);
         let compiled_instruction = &message.instructions[0];
@@ -2004,7 +2019,7 @@ mod tests {
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
         let solana_instruction =
-            solana_sdk::system_instruction::assign_with_seed(account, base, seed, owner);
+            solana_system_interface::instruction::assign_with_seed(account, base, seed, owner);
 
         let message = Message::new(&[solana_instruction], None);
         let compiled_instruction = &message.instructions[0];
@@ -2028,7 +2043,7 @@ mod tests {
         lamports: u64,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = solana_sdk::system_instruction::withdraw_nonce_account(
+        let solana_instruction = solana_system_interface::instruction::withdraw_nonce_account(
             nonce_account,
             nonce_authority,
             recipient,
@@ -2057,8 +2072,8 @@ mod tests {
         amount: u64,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token::instruction::transfer(
-            &spl_token::ID,
+        let solana_instruction = spl_token_interface::instruction::transfer(
+            &spl_token_interface::ID,
             source,
             destination,
             authority,
@@ -2072,7 +2087,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token::ID,
+            &spl_token_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2090,8 +2105,8 @@ mod tests {
         decimals: u8,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token::instruction::transfer_checked(
-            &spl_token::ID,
+        let solana_instruction = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::ID,
             source,
             mint,
             destination,
@@ -2107,7 +2122,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token::ID,
+            &spl_token_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2123,8 +2138,14 @@ mod tests {
         amount: u64,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction =
-            spl_token::instruction::burn(&spl_token::ID, account, mint, authority, &[], amount)?;
+        let solana_instruction = spl_token_interface::instruction::burn(
+            &spl_token_interface::ID,
+            account,
+            mint,
+            authority,
+            &[],
+            amount,
+        )?;
 
         let message = Message::new(&[solana_instruction], None);
         let compiled_instruction = &message.instructions[0];
@@ -2132,7 +2153,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token::ID,
+            &spl_token_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2149,8 +2170,8 @@ mod tests {
         decimals: u8,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token::instruction::burn_checked(
-            &spl_token::ID,
+        let solana_instruction = spl_token_interface::instruction::burn_checked(
+            &spl_token_interface::ID,
             account,
             mint,
             authority,
@@ -2165,7 +2186,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token::ID,
+            &spl_token_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2180,8 +2201,8 @@ mod tests {
         authority: &Pubkey,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token::instruction::close_account(
-            &spl_token::ID,
+        let solana_instruction = spl_token_interface::instruction::close_account(
+            &spl_token_interface::ID,
             account,
             destination,
             authority,
@@ -2194,7 +2215,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token::ID,
+            &spl_token_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2210,8 +2231,8 @@ mod tests {
         amount: u64,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token::instruction::approve(
-            &spl_token::ID,
+        let solana_instruction = spl_token_interface::instruction::approve(
+            &spl_token_interface::ID,
             source,
             delegate,
             authority,
@@ -2225,7 +2246,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token::ID,
+            &spl_token_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2243,8 +2264,8 @@ mod tests {
         decimals: u8,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token::instruction::approve_checked(
-            &spl_token::ID,
+        let solana_instruction = spl_token_interface::instruction::approve_checked(
+            &spl_token_interface::ID,
             source,
             mint,
             delegate,
@@ -2260,7 +2281,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token::ID,
+            &spl_token_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2277,8 +2298,8 @@ mod tests {
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
         #[allow(deprecated)]
-        let solana_instruction = spl_token_2022::instruction::transfer(
-            &spl_token_2022::ID,
+        let solana_instruction = spl_token_2022_interface::instruction::transfer(
+            &spl_token_2022_interface::ID,
             source,
             destination,
             authority,
@@ -2292,7 +2313,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token_2022::ID,
+            &spl_token_2022_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2310,8 +2331,8 @@ mod tests {
         decimals: u8,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token_2022::instruction::transfer_checked(
-            &spl_token_2022::ID,
+        let solana_instruction = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::ID,
             source,
             mint,
             destination,
@@ -2327,7 +2348,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token_2022::ID,
+            &spl_token_2022_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2343,8 +2364,8 @@ mod tests {
         amount: u64,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token_2022::instruction::burn(
-            &spl_token_2022::ID,
+        let solana_instruction = spl_token_2022_interface::instruction::burn(
+            &spl_token_2022_interface::ID,
             account,
             mint,
             authority,
@@ -2358,7 +2379,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token_2022::ID,
+            &spl_token_2022_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2375,8 +2396,8 @@ mod tests {
         decimals: u8,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token_2022::instruction::burn_checked(
-            &spl_token_2022::ID,
+        let solana_instruction = spl_token_2022_interface::instruction::burn_checked(
+            &spl_token_2022_interface::ID,
             account,
             mint,
             authority,
@@ -2391,7 +2412,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token_2022::ID,
+            &spl_token_2022_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2406,8 +2427,8 @@ mod tests {
         authority: &Pubkey,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token_2022::instruction::close_account(
-            &spl_token_2022::ID,
+        let solana_instruction = spl_token_2022_interface::instruction::close_account(
+            &spl_token_2022_interface::ID,
             account,
             destination,
             authority,
@@ -2420,7 +2441,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token_2022::ID,
+            &spl_token_2022_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2436,8 +2457,8 @@ mod tests {
         amount: u64,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token_2022::instruction::approve(
-            &spl_token_2022::ID,
+        let solana_instruction = spl_token_2022_interface::instruction::approve(
+            &spl_token_2022_interface::ID,
             source,
             delegate,
             authority,
@@ -2451,7 +2472,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token_2022::ID,
+            &spl_token_2022_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2469,8 +2490,8 @@ mod tests {
         decimals: u8,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
-        let solana_instruction = spl_token_2022::instruction::approve_checked(
-            &spl_token_2022::ID,
+        let solana_instruction = spl_token_2022_interface::instruction::approve_checked(
+            &spl_token_2022_interface::ID,
             source,
             mint,
             delegate,
@@ -2486,7 +2507,7 @@ mod tests {
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
-            &spl_token_2022::ID,
+            &spl_token_2022_interface::ID,
             compiled_instruction,
             &account_keys_for_parsing,
             None,
@@ -2581,7 +2602,7 @@ mod tests {
         let lamports = 1000000u64;
 
         let transfer_instruction =
-            solana_sdk::system_instruction::transfer(&source, &destination, lamports);
+            solana_system_interface::instruction::transfer(&source, &destination, lamports);
 
         let solana_parsed_transfer = create_parsed_system_transfer(&source, &destination, lamports)
             .expect("Failed to create authentic parsed instruction");
@@ -2608,7 +2629,7 @@ mod tests {
         let account_keys = vec![system_program_id, source, source_base, destination];
         let lamports = 5000000u64;
 
-        let instruction = solana_sdk::system_instruction::transfer_with_seed(
+        let instruction = solana_system_interface::instruction::transfer_with_seed(
             &source,
             &source_base,
             "test_seed".to_string(),
@@ -2649,7 +2670,7 @@ mod tests {
         let lamports = 2000000u64;
         let space = 165u64;
 
-        let instruction = solana_sdk::system_instruction::create_account(
+        let instruction = solana_system_interface::instruction::create_account(
             &source,
             &new_account,
             lamports,
@@ -2684,7 +2705,7 @@ mod tests {
         let lamports = 3000000u64;
         let space = 200u64;
 
-        let instruction = solana_sdk::system_instruction::create_account_with_seed(
+        let instruction = solana_system_interface::instruction::create_account_with_seed(
             &source,
             &new_account,
             &base,
@@ -2724,7 +2745,7 @@ mod tests {
         let system_program_id = SYSTEM_PROGRAM_ID;
         let account_keys = vec![system_program_id, account];
 
-        let instruction = solana_sdk::system_instruction::assign(&account, &owner);
+        let instruction = solana_system_interface::instruction::assign(&account, &owner);
 
         let solana_parsed = create_parsed_system_assign(&account, &owner)
             .expect("Failed to create parsed instruction");
@@ -2749,7 +2770,7 @@ mod tests {
         let system_program_id = SYSTEM_PROGRAM_ID;
         let account_keys = vec![system_program_id, account, base];
 
-        let instruction = solana_sdk::system_instruction::assign_with_seed(
+        let instruction = solana_system_interface::instruction::assign_with_seed(
             &account,
             &base,
             "test_assign_seed",
@@ -2781,7 +2802,7 @@ mod tests {
         let account_keys = vec![system_program_id, nonce_account, recipient, nonce_authority];
         let lamports = 1500000u64;
 
-        let instruction = solana_sdk::system_instruction::withdraw_nonce_account(
+        let instruction = solana_system_interface::instruction::withdraw_nonce_account(
             &nonce_account,
             &nonce_authority,
             &recipient,
@@ -2813,12 +2834,12 @@ mod tests {
         let source = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
-        let token_program_id = spl_token::ID;
+        let token_program_id = spl_token_interface::ID;
         let account_keys = vec![token_program_id, source, destination, authority];
         let amount = 1000000u64;
 
-        let transfer_instruction = spl_token::instruction::transfer(
-            &spl_token::ID,
+        let transfer_instruction = spl_token_interface::instruction::transfer(
+            &spl_token_interface::ID,
             &source,
             &destination,
             &authority,
@@ -2849,13 +2870,13 @@ mod tests {
         let destination = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
-        let token_program_id = spl_token::ID;
+        let token_program_id = spl_token_interface::ID;
         let account_keys = vec![token_program_id, source, mint, destination, authority];
         let amount = 2000000u64;
         let decimals = 6u8;
 
-        let instruction = spl_token::instruction::transfer_checked(
-            &spl_token::ID,
+        let instruction = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::ID,
             &source,
             &mint,
             &destination,
@@ -2893,13 +2914,19 @@ mod tests {
         let account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
-        let token_program_id = spl_token::ID;
+        let token_program_id = spl_token_interface::ID;
         let account_keys = vec![token_program_id, account, mint, authority];
         let amount = 500000u64;
 
-        let instruction =
-            spl_token::instruction::burn(&spl_token::ID, &account, &mint, &authority, &[], amount)
-                .expect("Failed to create burn instruction");
+        let instruction = spl_token_interface::instruction::burn(
+            &spl_token_interface::ID,
+            &account,
+            &mint,
+            &authority,
+            &[],
+            amount,
+        )
+        .expect("Failed to create burn instruction");
 
         let solana_parsed = create_parsed_spl_token_burn(&account, &mint, &authority, amount)
             .expect("Failed to create parsed instruction");
@@ -2921,13 +2948,13 @@ mod tests {
         let account = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
-        let token_program_id = spl_token::ID;
+        let token_program_id = spl_token_interface::ID;
         let account_keys = vec![token_program_id, account, mint, authority];
         let amount = 750000u64;
         let decimals = 6u8;
 
-        let instruction = spl_token::instruction::burn_checked(
-            &spl_token::ID,
+        let instruction = spl_token_interface::instruction::burn_checked(
+            &spl_token_interface::ID,
             &account,
             &mint,
             &authority,
@@ -2958,11 +2985,11 @@ mod tests {
         let account = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
-        let token_program_id = spl_token::ID;
+        let token_program_id = spl_token_interface::ID;
         let account_keys = vec![token_program_id, account, destination, authority];
 
-        let instruction = spl_token::instruction::close_account(
-            &spl_token::ID,
+        let instruction = spl_token_interface::instruction::close_account(
+            &spl_token_interface::ID,
             &account,
             &destination,
             &authority,
@@ -2991,12 +3018,12 @@ mod tests {
         let source = Pubkey::new_unique();
         let delegate = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
-        let token_program_id = spl_token::ID;
+        let token_program_id = spl_token_interface::ID;
         let account_keys = vec![token_program_id, source, delegate, owner];
         let amount = 1000000u64;
 
-        let instruction = spl_token::instruction::approve(
-            &spl_token::ID,
+        let instruction = spl_token_interface::instruction::approve(
+            &spl_token_interface::ID,
             &source,
             &delegate,
             &owner,
@@ -3026,13 +3053,13 @@ mod tests {
         let delegate = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
-        let token_program_id = spl_token::ID;
+        let token_program_id = spl_token_interface::ID;
         let account_keys = vec![token_program_id, source, mint, delegate, owner];
         let amount = 2500000u64;
         let decimals = 6u8;
 
-        let instruction = spl_token::instruction::approve_checked(
-            &spl_token::ID,
+        let instruction = spl_token_interface::instruction::approve_checked(
+            &spl_token_interface::ID,
             &source,
             &mint,
             &delegate,
@@ -3065,13 +3092,13 @@ mod tests {
         let source = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
-        let token_program_id = spl_token_2022::ID;
+        let token_program_id = spl_token_2022_interface::ID;
         let account_keys = vec![token_program_id, source, destination, authority];
         let amount = 1500000u64;
 
         #[allow(deprecated)]
-        let instruction = spl_token_2022::instruction::transfer(
-            &spl_token_2022::ID,
+        let instruction = spl_token_2022_interface::instruction::transfer(
+            &spl_token_2022_interface::ID,
             &source,
             &destination,
             &authority,
@@ -3102,13 +3129,13 @@ mod tests {
         let destination = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
-        let token_program_id = spl_token_2022::ID;
+        let token_program_id = spl_token_2022_interface::ID;
         let account_keys = vec![token_program_id, source, mint, destination, authority];
         let amount = 3000000u64;
         let decimals = 6u8;
 
-        let instruction = spl_token_2022::instruction::transfer_checked(
-            &spl_token_2022::ID,
+        let instruction = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::ID,
             &source,
             &mint,
             &destination,
@@ -3146,12 +3173,12 @@ mod tests {
         let account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
-        let token_program_id = spl_token_2022::ID;
+        let token_program_id = spl_token_2022_interface::ID;
         let account_keys = vec![token_program_id, account, mint, authority];
         let amount = 800000u64;
 
-        let instruction = spl_token_2022::instruction::burn(
-            &spl_token_2022::ID,
+        let instruction = spl_token_2022_interface::instruction::burn(
+            &spl_token_2022_interface::ID,
             &account,
             &mint,
             &authority,
@@ -3180,13 +3207,13 @@ mod tests {
         let account = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
-        let token_program_id = spl_token_2022::ID;
+        let token_program_id = spl_token_2022_interface::ID;
         let account_keys = vec![token_program_id, account, mint, authority];
         let amount = 900000u64;
         let decimals = 6u8;
 
-        let instruction = spl_token_2022::instruction::burn_checked(
-            &spl_token_2022::ID,
+        let instruction = spl_token_2022_interface::instruction::burn_checked(
+            &spl_token_2022_interface::ID,
             &account,
             &mint,
             &authority,
@@ -3217,11 +3244,11 @@ mod tests {
         let account = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
         let authority = Pubkey::new_unique();
-        let token_program_id = spl_token_2022::ID;
+        let token_program_id = spl_token_2022_interface::ID;
         let account_keys = vec![token_program_id, account, destination, authority];
 
-        let instruction = spl_token_2022::instruction::close_account(
-            &spl_token_2022::ID,
+        let instruction = spl_token_2022_interface::instruction::close_account(
+            &spl_token_2022_interface::ID,
             &account,
             &destination,
             &authority,
@@ -3250,12 +3277,12 @@ mod tests {
         let source = Pubkey::new_unique();
         let delegate = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
-        let token_program_id = spl_token_2022::ID;
+        let token_program_id = spl_token_2022_interface::ID;
         let account_keys = vec![token_program_id, source, delegate, owner];
         let amount = 1200000u64;
 
-        let instruction = spl_token_2022::instruction::approve(
-            &spl_token_2022::ID,
+        let instruction = spl_token_2022_interface::instruction::approve(
+            &spl_token_2022_interface::ID,
             &source,
             &delegate,
             &owner,
@@ -3285,13 +3312,13 @@ mod tests {
         let delegate = Pubkey::new_unique();
         let owner = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
-        let token_program_id = spl_token_2022::ID;
+        let token_program_id = spl_token_2022_interface::ID;
         let account_keys = vec![token_program_id, source, mint, delegate, owner];
         let amount = 3500000u64;
         let decimals = 6u8;
 
-        let instruction = spl_token_2022::instruction::approve_checked(
-            &spl_token_2022::ID,
+        let instruction = spl_token_2022_interface::instruction::approve_checked(
+            &spl_token_2022_interface::ID,
             &source,
             &mint,
             &delegate,

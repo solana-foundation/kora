@@ -5,11 +5,11 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use solana_system_interface::instruction::{create_account, transfer};
-use spl_associated_token_account::{
+use spl_associated_token_account_interface::address::{
     get_associated_token_address, get_associated_token_address_with_program_id,
 };
-use spl_token::instruction as token_instruction;
-use spl_token_2022::instruction as token_2022_instruction;
+use spl_token_2022_interface::instruction as token_2022_instruction;
+use spl_token_interface::instruction as token_instruction;
 
 #[tokio::test]
 async fn test_sol_transfer_policy_violation() {
@@ -138,7 +138,7 @@ async fn test_spl_transfer_policy_violation() {
         .expect("Failed to mint tokens");
 
     let spl_transfer_instruction = token_instruction::transfer(
-        &spl_token::id(),
+        &spl_token_interface::id(),
         &fee_payer_token_account.pubkey(),
         &recipient_token_account,
         &fee_payer_pubkey,
@@ -181,7 +181,7 @@ async fn test_token2022_transfer_policy_violation() {
     let recipient_token_2022_account = get_associated_token_address_with_program_id(
         &recipient_pubkey,
         &setup.fee_payer_policy_mint_2022.pubkey(),
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
     );
 
     setup
@@ -193,7 +193,7 @@ async fn test_token2022_transfer_policy_violation() {
         .expect("Failed to mint tokens");
 
     let token_2022_transfer_instruction = token_2022_instruction::transfer_checked(
-        &spl_token_2022::id(),
+        &spl_token_2022_interface::id(),
         &fee_payer_token_2022_account.pubkey(),
         &setup.fee_payer_policy_mint_2022.pubkey(),
         &recipient_token_2022_account,
@@ -241,7 +241,7 @@ async fn test_burn_policy_violation() {
         .expect("Failed to mint SPL");
 
     let burn_instruction = token_instruction::burn(
-        &spl_token::id(),
+        &spl_token_interface::id(),
         &fee_payer_token_account.pubkey(),
         &setup.fee_payer_policy_mint.pubkey(),
         &fee_payer_pubkey,
@@ -280,7 +280,7 @@ async fn test_close_account_policy_violation() {
         .expect("Failed to create token account");
 
     let close_account_instruction = token_instruction::close_account(
-        &spl_token::id(),
+        &spl_token_interface::id(),
         &fee_payer_token_account.pubkey(),
         &setup.recipient_pubkey,
         &setup.fee_payer_keypair.pubkey(),
@@ -325,7 +325,7 @@ async fn test_approve_policy_violation() {
         .expect("Failed to mint tokens");
 
     let approve_instruction = token_instruction::approve(
-        &spl_token::id(),
+        &spl_token_interface::id(),
         &fee_payer_token_account.pubkey(),
         &recipient_pubkey,
         &fee_payer_pubkey,
@@ -668,8 +668,8 @@ async fn test_thaw_account_policy_violation() {
         .expect("Failed to create token account");
 
     // Freeze the account first (directly on-chain, bypassing Kora validator)
-    let freeze_ix = spl_token::instruction::freeze_account(
-        &spl_token::id(),
+    let freeze_ix = spl_token_interface::instruction::freeze_account(
+        &spl_token_interface::id(),
         &fee_payer_token_account.pubkey(),
         &setup.fee_payer_policy_mint.pubkey(),
         &fee_payer_pubkey,
@@ -726,8 +726,8 @@ async fn test_thaw_account_token2022_policy_violation() {
         .expect("Failed to create token account");
 
     // Freeze the account first (directly on-chain, bypassing Kora validator)
-    let freeze_ix = spl_token_2022::instruction::freeze_account(
-        &spl_token_2022::id(),
+    let freeze_ix = spl_token_2022_interface::instruction::freeze_account(
+        &spl_token_2022_interface::id(),
         &fee_payer_token_2022_account.pubkey(),
         &setup.fee_payer_policy_mint_2022.pubkey(),
         &fee_payer_pubkey,

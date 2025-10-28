@@ -6,8 +6,7 @@ use spl_pod::{
     optional_keys::OptionalNonZeroPubkey,
     primitives::{PodU16, PodU64},
 };
-use spl_token::state::{Account as TokenAccount, AccountState as SplAccountState, Mint};
-use spl_token_2022::{
+use spl_token_2022_interface::{
     extension::{
         self,
         transfer_fee::{TransferFee, TransferFeeConfig},
@@ -18,9 +17,11 @@ use spl_token_2022::{
         Account as Token2022AccountState, AccountState as Token2022AccountState_, Mint as Mint2022,
     },
 };
+use spl_token_interface::state::{Account as TokenAccount, AccountState as SplAccountState, Mint};
 
 use crate::token::{
-    spl_token_2022::Token2022Mint, spl_token_2022_util::ParsedExtension, Token2022Account,
+    spl_token_2022::{Token2022Account, Token2022Mint},
+    spl_token_2022_util::ParsedExtension,
 };
 
 // Common default values used across mock builders
@@ -242,7 +243,7 @@ impl TokenAccountMockBuilder {
         Account {
             lamports: self.lamports,
             data,
-            owner: spl_token::id(),
+            owner: spl_token_interface::id(),
             executable: false,
             rent_epoch: self.rent_epoch,
         }
@@ -267,7 +268,7 @@ impl TokenAccountMockBuilder {
         Account {
             lamports: self.lamports,
             data,
-            owner: spl_token_2022::id(),
+            owner: spl_token_2022_interface::id(),
             executable: false,
             rent_epoch: self.rent_epoch,
         }
@@ -397,7 +398,7 @@ impl MintAccountMockBuilder {
         Account {
             lamports: self.lamports,
             data,
-            owner: spl_token::id(),
+            owner: spl_token_interface::id(),
             executable: false,
             rent_epoch: self.rent_epoch,
         }
@@ -421,7 +422,7 @@ impl MintAccountMockBuilder {
             Account {
                 lamports: self.lamports,
                 data,
-                owner: spl_token_2022::id(),
+                owner: spl_token_2022_interface::id(),
                 executable: false,
                 rent_epoch: self.rent_epoch,
             }
@@ -484,7 +485,7 @@ impl MintAccountMockBuilder {
         Ok(Account {
             lamports: self.lamports,
             data,
-            owner: spl_token_2022::id(),
+            owner: spl_token_2022_interface::id(),
             executable: false,
             rent_epoch: self.rent_epoch,
         })
@@ -588,10 +589,14 @@ pub fn create_mock_token2022_mint_with_extensions(
 /// Helper to create Transfer Fee Config for testing
 pub fn create_transfer_fee_config(basis_points: u16, max_fee: u64) -> TransferFeeConfig {
     TransferFeeConfig {
-        transfer_fee_config_authority: OptionalNonZeroPubkey::try_from(Some(Pubkey::new_unique()))
-            .unwrap(),
-        withdraw_withheld_authority: OptionalNonZeroPubkey::try_from(Some(Pubkey::new_unique()))
-            .unwrap(),
+        transfer_fee_config_authority: OptionalNonZeroPubkey::try_from(Some(
+            spl_pod::solana_pubkey::Pubkey::new_unique(),
+        ))
+        .unwrap(),
+        withdraw_withheld_authority: OptionalNonZeroPubkey::try_from(Some(
+            spl_pod::solana_pubkey::Pubkey::new_unique(),
+        ))
+        .unwrap(),
         withheld_amount: PodU64::from(0),
         newer_transfer_fee: TransferFee {
             epoch: PodU64::from(0),
