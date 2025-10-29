@@ -466,6 +466,14 @@ impl MintAccountMockBuilder {
                     ExtensionType::TransferFeeConfig => {
                         state.init_extension::<extension::transfer_fee::TransferFeeConfig>(true)?;
                     }
+                    ExtensionType::PermanentDelegate => {
+                        state.init_extension::<extension::permanent_delegate::PermanentDelegate>(
+                            true,
+                        )?;
+                    }
+                    ExtensionType::TransferHook => {
+                        state.init_extension::<extension::transfer_hook::TransferHook>(true)?;
+                    }
                     // Add other extension types as needed
                     _ => {}
                 }
