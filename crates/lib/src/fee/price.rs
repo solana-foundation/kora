@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum PriceModel {
     Margin { margin: f64 },
-    Fixed { amount: u64, token: String },
+    Fixed { amount: u64, token: String, strict: bool },
     Free,
 }
 
@@ -31,7 +31,7 @@ impl PriceConfig {
         rpc_client: &RpcClient,
         price_source: PriceSource,
     ) -> Result<u64, KoraError> {
-        if let PriceModel::Fixed { amount, token } = &self.model {
+        if let PriceModel::Fixed { amount, token, .. } = &self.model {
             return TokenUtil::calculate_token_value_in_lamports(
                 *amount,
                 &Pubkey::from_str(token).map_err(|e| {
@@ -117,6 +117,7 @@ mod tests {
             model: PriceModel::Fixed {
                 amount: 1_000_000, // 1 USDC (1,000,000 base units with 6 decimals)
                 token: usdc_mint.to_string(),
+                strict: false,
             },
         };
 
@@ -143,6 +144,7 @@ mod tests {
             model: PriceModel::Fixed {
                 amount: 500000000, // 0.5 tokens (500,000,000 base units with 9 decimals)
                 token: custom_token.to_string(),
+                strict: false,
             },
         };
 
@@ -169,6 +171,7 @@ mod tests {
             model: PriceModel::Fixed {
                 amount: 1000, // 0.001 USDC (1,000 base units with 6 decimals)
                 token: usdc_mint.to_string(),
+                strict: false,
             },
         };
 

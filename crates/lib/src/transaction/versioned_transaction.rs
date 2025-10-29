@@ -276,6 +276,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                 &payment_destination,
             )
             .await?;
+
+            // Validate strict pricing if enabled
+            TransactionValidator::validate_strict_pricing_with_fee(&fee_calculation)?;
         }
 
         // Get latest blockhash and update transaction
