@@ -1,5 +1,5 @@
 # Kora Configuration Reference
-*Last Updated: 2025-08-25*
+*Last Updated: 2025-10-28*
 
 Your Kora node will be signing transactions for your users, so it is important to configure it to only sign transactions that meet your business requirements. Kora gives you a lot of flexibility in how you configure your node, but it is important to understand the implications of your configuration. `kora.toml` is the control center for your Kora configuration. This document provides a comprehensive reference for configuring your Kora paymaster node through the `kora.toml` configuration file.
 
