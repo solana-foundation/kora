@@ -123,7 +123,7 @@ pub async fn transfer_transaction(
     let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
     let mut resolved_transaction =
-        VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        VersionedTransactionResolved::from_kora_built_transaction(&transaction)?;
 
     // validate transaction before signing
     validator.validate_transaction(&mut resolved_transaction, rpc_client).await?;

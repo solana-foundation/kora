@@ -464,7 +464,8 @@ mod tests {
         let sender = Pubkey::new_unique();
         let instruction = transfer(&sender, &recipient, 100_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
     }
@@ -483,7 +484,8 @@ mod tests {
         // Test transaction with amount over limit
         let instruction = transfer(&sender, &recipient, 2_000_000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
@@ -491,7 +493,8 @@ mod tests {
         let instructions =
             vec![transfer(&sender, &recipient, 500_000), transfer(&sender, &recipient, 500_000)];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
     }
 
@@ -509,7 +512,8 @@ mod tests {
         // Test allowed program (system program)
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test disallowed program
@@ -521,7 +525,8 @@ mod tests {
             vec![], // no accounts needed for this test
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 
@@ -550,7 +555,8 @@ mod tests {
             transfer(&sender, &recipient, 1000),
         ];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         transaction.transaction.signatures = vec![Default::default(); 3]; // Add 3 dummy signatures
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
@@ -569,13 +575,15 @@ mod tests {
         // Test SignAndSend mode with fee payer already set should not error
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test SignAndSend mode without fee payer (should succeed)
         let instruction = transfer(&sender, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], None)); // No fee payer specified
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
     }
 
@@ -590,7 +598,8 @@ mod tests {
 
         // Create an empty message using Message::new with empty instructions
         let message = VersionedMessage::Legacy(Message::new(&[], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 
@@ -617,7 +626,8 @@ mod tests {
             1000,
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 
@@ -638,7 +648,8 @@ mod tests {
         let instruction = transfer(&fee_payer, &recipient, 1000);
 
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_sol_transfers = false
@@ -651,7 +662,8 @@ mod tests {
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 
@@ -673,7 +685,8 @@ mod tests {
 
         let instruction = assign(&fee_payer, &new_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_assign = false
@@ -688,7 +701,8 @@ mod tests {
 
         let instruction = assign(&fee_payer, &new_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 
@@ -720,7 +734,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_spl_transfers = false
@@ -743,7 +758,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
 
         // Test with other account as source - should always pass
@@ -759,7 +775,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
     }
 
@@ -796,7 +813,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_token2022_transfers = false
@@ -822,7 +840,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should fail because fee payer is not allowed to be source
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
@@ -842,7 +861,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should pass because fee payer is not the source
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
@@ -868,7 +888,8 @@ mod tests {
         let transfer_instruction = transfer(&fee_payer, &recipient, 100_000);
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
             validator.calculate_total_outflow(&mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 100_000, "Transfer from fee payer should add to outflow");
@@ -878,7 +899,8 @@ mod tests {
         let transfer_instruction = transfer(&sender, &fee_payer, 50_000);
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let outflow =
             validator.calculate_total_outflow(&mut transaction, &rpc_client).await.unwrap();
@@ -895,7 +917,8 @@ mod tests {
         );
         let message =
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
             validator.calculate_total_outflow(&mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 200_000, "CreateAccount funded by fee payer should add to outflow");
@@ -914,7 +937,8 @@ mod tests {
             &[create_with_seed_instruction],
             Some(&fee_payer),
         ));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
             validator.calculate_total_outflow(&mut transaction, &rpc_client).await.unwrap();
         assert_eq!(
@@ -935,7 +959,8 @@ mod tests {
             &[transfer_with_seed_instruction],
             Some(&fee_payer),
         ));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
             validator.calculate_total_outflow(&mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 150_000, "TransferWithSeed from fee payer should add to outflow");
@@ -947,7 +972,8 @@ mod tests {
             create_account(&fee_payer, &new_account, 50_000, 100, &SYSTEM_PROGRAM_ID), // +50_000
         ];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
             validator.calculate_total_outflow(&mut transaction, &rpc_client).await.unwrap();
         assert_eq!(
@@ -960,7 +986,8 @@ mod tests {
         let transfer_instruction = transfer(&other_sender, &recipient, 500_000);
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
             validator.calculate_total_outflow(&mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 0, "Transfer from other account should not affect outflow");
@@ -971,7 +998,8 @@ mod tests {
             create_account(&other_funder, &new_account, 1_000_000, 100, &SYSTEM_PROGRAM_ID);
         let message =
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow =
             validator.calculate_total_outflow(&mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 0, "CreateAccount funded by other account should not affect outflow");
@@ -1004,7 +1032,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         // Should pass because allow_burn is true by default
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
@@ -1028,7 +1057,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should fail because fee payer cannot burn tokens when allow_burn is false
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
@@ -1046,7 +1076,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_checked_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should also fail for burn_checked
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
@@ -1078,7 +1109,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         // Should pass because allow_close_account is true by default
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
@@ -1100,7 +1132,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should fail because fee payer cannot close accounts when allow_close_account is false
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
@@ -1133,7 +1166,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         // Should pass because allow_approve is true by default
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
@@ -1156,7 +1190,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should fail because fee payer cannot approve when allow_approve is false
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
@@ -1177,7 +1212,8 @@ mod tests {
 
         let message =
             VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should also fail for approve_checked
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
@@ -1210,7 +1246,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[burn_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         // Should fail for Token2022 burn
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
@@ -1241,7 +1278,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         // Should fail for Token2022 close account
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
@@ -1273,7 +1311,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         // Should pass because allow_approve is true by default
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
@@ -1297,7 +1336,8 @@ mod tests {
         .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[approve_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should fail because fee payer cannot approve when allow_approve is false
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
@@ -1318,7 +1358,8 @@ mod tests {
 
         let message =
             VersionedMessage::Legacy(Message::new(&[approve_checked_ix], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should also fail for approve_checked
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
@@ -1342,7 +1383,8 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = create_account(&fee_payer, &new_account, 1000, 100, &owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_create_account = false
@@ -1354,7 +1396,8 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = create_account(&fee_payer, &new_account, 1000, 100, &owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 
@@ -1374,7 +1417,8 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = allocate(&fee_payer, 100);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_allocate = false
@@ -1386,7 +1430,8 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = allocate(&fee_payer, 100);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 
@@ -1409,7 +1454,8 @@ mod tests {
         // Only test the InitializeNonceAccount instruction (second one)
         let message =
             VersionedMessage::Legacy(Message::new(&[instructions[1].clone()], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_initialize = false
@@ -1422,7 +1468,8 @@ mod tests {
         let instructions = create_nonce_account(&fee_payer, &nonce_account, &fee_payer, 1_000_000);
         let message =
             VersionedMessage::Legacy(Message::new(&[instructions[1].clone()], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 
@@ -1443,7 +1490,8 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = advance_nonce_account(&nonce_account, &fee_payer);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_advance = false
@@ -1455,7 +1503,8 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = advance_nonce_account(&nonce_account, &fee_payer);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 
@@ -1477,7 +1526,8 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_withdraw = false
@@ -1489,7 +1539,8 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 
@@ -1511,7 +1562,8 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_authorize = false
@@ -1523,7 +1575,8 @@ mod tests {
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
     }
 

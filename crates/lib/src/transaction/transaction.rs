@@ -42,7 +42,7 @@ impl TransactionUtil {
 
     pub fn new_unsigned_versioned_transaction_resolved(
         message: VersionedMessage,
-    ) -> VersionedTransactionResolved {
+    ) -> Result<VersionedTransactionResolved, KoraError> {
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         VersionedTransactionResolved::from_kora_built_transaction(&transaction)
     }

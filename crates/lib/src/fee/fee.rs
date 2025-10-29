@@ -554,7 +554,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
 
         let resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         assert!(FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction, &fee_payer).unwrap());
     }
@@ -571,7 +571,7 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&sender.pubkey())));
 
         let resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         assert!(!FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction, &fee_payer_pubkey)
             .unwrap());
@@ -593,7 +593,7 @@ mod tests {
 
         let message = VersionedMessage::V0(v0_message);
         let resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         assert!(FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction, &fee_payer).unwrap());
     }
@@ -614,7 +614,7 @@ mod tests {
 
         let message = VersionedMessage::V0(v0_message);
         let resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         assert!(!FeeConfigUtil::is_fee_payer_in_signers(&resolved_transaction, &fee_payer_pubkey)
             .unwrap());
@@ -632,7 +632,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
@@ -650,7 +650,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -667,7 +667,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -698,7 +698,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -722,7 +722,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -750,7 +750,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -768,7 +768,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -800,7 +800,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -829,7 +829,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -850,7 +850,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -882,7 +882,7 @@ mod tests {
         ];
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -912,7 +912,7 @@ mod tests {
         );
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
@@ -955,7 +955,7 @@ mod tests {
         // Create message with the payment instruction
         let message = VersionedMessage::Legacy(Message::new(&[transfer_instruction], None));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
             &mut resolved_transaction,
@@ -984,7 +984,7 @@ mod tests {
         // Create message without payment instruction
         let message = VersionedMessage::Legacy(Message::new(&[sol_transfer], None));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
             &mut resolved_transaction,
@@ -1030,7 +1030,7 @@ mod tests {
         // Create message with non-payment transfer
         let message = VersionedMessage::Legacy(Message::new(&[transfer_instruction], None));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
             &mut resolved_transaction,
@@ -1061,7 +1061,7 @@ mod tests {
             Some(&fee_payer.pubkey()),
         ));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let result = FeeConfigUtil::estimate_transaction_fee(
             &mocked_rpc_client,
@@ -1091,7 +1091,7 @@ mod tests {
         let message =
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&sender.pubkey())));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let result = FeeConfigUtil::estimate_transaction_fee(
             &mocked_rpc_client,
@@ -1128,7 +1128,7 @@ mod tests {
             Some(&fee_payer.pubkey()),
         ));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let result = FeeConfigUtil::estimate_transaction_fee(
             &mocked_rpc_client,
@@ -1184,7 +1184,7 @@ mod tests {
 
         let message = VersionedMessage::Legacy(Message::new(&[transfer_1, transfer_2], None));
         let mut resolved_transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
             &mut resolved_transaction,

@@ -326,6 +326,15 @@ impl IxUtils {
         Some(ix.accounts[index].pubkey)
     }
 
+    pub fn get_account_key_required(
+        account_keys: &[Pubkey],
+        index: usize,
+    ) -> Result<Pubkey, KoraError> {
+        account_keys.get(index).copied().ok_or_else(|| {
+            KoraError::SerializationError(format!("Account key at index {} not found", index))
+        })
+    }
+
     pub fn build_default_compiled_instruction(program_id_index: u8) -> CompiledInstruction {
         CompiledInstruction { program_id_index, accounts: vec![], data: vec![] }
     }
@@ -333,22 +342,25 @@ impl IxUtils {
     pub fn uncompile_instructions(
         instructions: &[CompiledInstruction],
         account_keys: &[Pubkey],
-    ) -> Vec<Instruction> {
+    ) -> Result<Vec<Instruction>, KoraError> {
         instructions
             .iter()
             .map(|ix| {
-                let program_id = account_keys[ix.program_id_index as usize];
-                let accounts = ix
+                let program_id =
+                    Self::get_account_key_required(account_keys, ix.program_id_index as usize)?;
+                let accounts: Result<Vec<AccountMeta>, KoraError> = ix
                     .accounts
                     .iter()
-                    .map(|idx| AccountMeta {
-                        pubkey: account_keys[*idx as usize],
-                        is_signer: false,
-                        is_writable: true,
+                    .map(|idx| {
+                        Ok(AccountMeta {
+                            pubkey: Self::get_account_key_required(account_keys, *idx as usize)?,
+                            is_signer: false,
+                            is_writable: true,
+                        })
                     })
                     .collect();
 
-                Instruction { program_id, accounts, data: ix.data.clone() }
+                Ok(Instruction { program_id, accounts: accounts?, data: ix.data.clone() })
             })
             .collect()
     }
@@ -2529,7 +2541,7 @@ mod tests {
             data: vec![1, 2, 3],
         };
 
-        let instructions = IxUtils::uncompile_instructions(&[compiled_ix], &account_keys);
+        let instructions = IxUtils::uncompile_instructions(&[compiled_ix], &account_keys).unwrap();
 
         assert_eq!(instructions.len(), 1);
         let uncompiled = &instructions[0];
