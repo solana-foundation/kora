@@ -128,8 +128,11 @@ account_ttl = 60                    # Account data TTL in seconds (1 minute)
 
 ## Kora Usage Limits (optional)
 
-The `[kora.usage_limit]` section configures per-wallet transaction limiting to prevent abuse and ensure fair usage across your users. This could also be used to create rewards programs to subsidize users' transaction fees up to a certain limit.
-This feature requires Redis when enabled across multiple Kora instances:
+The `[kora.usage_limit]` section configures per-wallet transaction limiting to prevent abuse and ensure fair usage across your users. This could also be used to create rewards programs to subsidize users' transaction fees up to a certain limit. 
+
+**Important**: Currently, the only form of usage limiting supported by Kora is a **permanent limit**. Once a wallet reaches its transaction limit, it cannot be reset and the user will no longer be able to submit any more transactions using that same wallet. This limit persists until manually cleared from Redis or the Redis data is reset.
+
+**Note**: This feature requires Redis when enabled across multiple Kora instances:
 
 ```toml
 [kora.usage_limit]
