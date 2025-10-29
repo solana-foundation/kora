@@ -257,35 +257,7 @@ impl ConfigValidator {
                     warnings.push(format!("Margin is {}% - this is very high", margin * 100.0));
                 }
             }
-            PriceModel::Free => {
-                // Warn about dangerous exposure with Free pricing
-                if config.validation.fee_payer_policy.system.allow_transfer {
-                    warnings.push(
-                        "⚠️  SECURITY: Free pricing with allow_transfer=true for System instructions. \
-                        Users can make the fee payer transfer arbitrary SOL amounts at fixed cost. \
-                        This can drain your fee payer account. \
-                        Consider setting [validation.fee_payer_policy.system] allow_transfer=false.".to_string()
-                    );
-                }
-
-                if config.validation.fee_payer_policy.spl_token.allow_transfer {
-                    warnings.push(
-                        "⚠️  SECURITY: Free pricing with allow_transfer=true for SPL Token instructions. \
-                        Users can make the fee payer transfer arbitrary token amounts at fixed cost. \
-                        Consider setting [validation.fee_payer_policy.spl_token] allow_transfer=false \
-                        to limit exposure.".to_string()
-                    );
-                }
-
-                if config.validation.fee_payer_policy.token_2022.allow_transfer {
-                    warnings.push(
-                        "⚠️  SECURITY: Free pricing with allow_transfer=true for Token2022 instructions. \
-                        Users can make the fee payer transfer arbitrary token amounts at fixed cost. \
-                        Consider setting [validation.fee_payer_policy.token_2022] allow_transfer=false \
-                        to limit exposure.".to_string()
-                    );
-                }
-            }
+            _ => {}
         };
 
         // General authentication warning
@@ -1228,65 +1200,5 @@ mod tests {
 
         let result = validate_token2022_extensions(&config);
         assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_validate_with_result_free_price_with_allow_transfer_warnings() {
-        use crate::config::{
-            SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022InstructionPolicy,
-        };
-
-        let config = Config {
-            validation: ValidationConfig {
-                max_allowed_lamports: 1_000_000,
-                max_signatures: 10,
-                allowed_programs: vec![
-                    SYSTEM_PROGRAM_ID.to_string(),
-                    SPL_TOKEN_PROGRAM_ID.to_string(),
-                ],
-                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
-                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
-                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
-                ]),
-                disallowed_accounts: vec![],
-                price_source: PriceSource::Jupiter,
-                fee_payer_policy: FeePayerPolicy {
-                    system: SystemInstructionPolicy {
-                        allow_transfer: true, // Should warn
-                        ..Default::default()
-                    },
-                    spl_token: SplTokenInstructionPolicy {
-                        allow_transfer: true, // Should warn
-                        ..Default::default()
-                    },
-                    token_2022: Token2022InstructionPolicy {
-                        allow_transfer: true, // Should warn
-                        ..Default::default()
-                    },
-                },
-                price: PriceConfig { model: PriceModel::Free },
-                token_2022: Token2022Config::default(),
-            },
-            metrics: MetricsConfig::default(),
-            kora: KoraConfig::default(),
-        };
-
-        let _ = update_config(config);
-
-        let rpc_client = RpcMockBuilder::new().build();
-        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
-        assert!(result.is_ok());
-        let warnings = result.unwrap();
-
-        // Should have 3 NOTICE warnings for Free pricing + allow_transfer
-        assert!(warnings.iter().any(|w| w
-            .contains("SECURITY: Free pricing with allow_transfer=true for System instructions")));
-        assert!(warnings.iter().any(|w| w.contains(
-            "SECURITY: Free pricing with allow_transfer=true for SPL Token instructions"
-        )));
-        assert!(warnings.iter().any(|w| w.contains(
-            "SECURITY: Free pricing with allow_transfer=true for Token2022 instructions"
-        )));
     }
 }
