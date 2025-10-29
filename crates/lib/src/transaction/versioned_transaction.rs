@@ -105,7 +105,7 @@ impl VersionedTransactionResolved {
 
         // 2. Fetch all instructions
         let outer_instructions =
-            IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys);
+            IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys)?;
 
         let inner_instructions = resolved.fetch_inner_instructions(rpc_client, sig_verify).await?;
 
@@ -116,17 +116,19 @@ impl VersionedTransactionResolved {
     }
 
     /// Only use this is we built the transaction ourselves, because it won't do any checks for resolving LUT, etc.
-    pub fn from_kora_built_transaction(transaction: &VersionedTransaction) -> Self {
-        Self {
+    pub fn from_kora_built_transaction(
+        transaction: &VersionedTransaction,
+    ) -> Result<Self, KoraError> {
+        Ok(Self {
             transaction: transaction.clone(),
             all_account_keys: transaction.message.static_account_keys().to_vec(),
             all_instructions: IxUtils::uncompile_instructions(
                 transaction.message.instructions(),
                 transaction.message.static_account_keys(),
-            ),
+            )?,
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
-        }
+        })
     }
 
     /// Fetch inner instructions via simulation
@@ -180,10 +182,10 @@ impl VersionedTransactionResolved {
                 });
             });
 
-            return Ok(IxUtils::uncompile_instructions(
+            return IxUtils::uncompile_instructions(
                 &compiled_inner_instructions,
                 &self.all_account_keys,
-            ));
+            );
         }
 
         Ok(vec![])
@@ -432,7 +434,7 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx);
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let encoded = resolved.encode_b64_transaction().unwrap();
         assert!(!encoded.is_empty());
         assert!(encoded
@@ -452,7 +454,7 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx);
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let encoded = resolved.encode_b64_transaction().unwrap();
         let decoded = TransactionUtil::decode_b64_transaction(&encoded).unwrap();
 
@@ -470,7 +472,8 @@ mod tests {
         );
         let message =
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let position = transaction.find_signer_position(&keypair.pubkey()).unwrap();
         assert_eq!(position, 0); // Fee payer is typically at position 0
@@ -498,7 +501,8 @@ mod tests {
             address_table_lookups: vec![],
         };
         let message = VersionedMessage::V0(v0_message);
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let position = transaction.find_signer_position(&keypair.pubkey()).unwrap();
         assert_eq!(position, 0);
@@ -530,7 +534,8 @@ mod tests {
             address_table_lookups: vec![],
         };
         let message = VersionedMessage::V0(v0_message);
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         assert_eq!(transaction.find_signer_position(&keypair1.pubkey()).unwrap(), 0);
         assert_eq!(transaction.find_signer_position(&keypair2.pubkey()).unwrap(), 1);
@@ -548,7 +553,8 @@ mod tests {
         );
         let message =
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let result = transaction.find_signer_position(&missing_keypair.pubkey());
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
@@ -574,7 +580,8 @@ mod tests {
             address_table_lookups: vec![],
         };
         let message = VersionedMessage::V0(v0_message);
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let search_key = Pubkey::new_unique();
 
         let result = transaction.find_signer_position(&search_key);
@@ -599,7 +606,8 @@ mod tests {
         ));
         let transaction = VersionedTransaction::try_new(message.clone(), &[&keypair]).unwrap();
 
-        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
 
         assert_eq!(resolved.transaction, transaction);
         assert_eq!(resolved.all_account_keys, transaction.message.static_account_keys());
@@ -640,7 +648,8 @@ mod tests {
         let message = VersionedMessage::V0(v0_message);
         let transaction = VersionedTransaction::try_new(message.clone(), &[&keypair]).unwrap();
 
-        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
 
         assert_eq!(resolved.transaction, transaction);
         assert_eq!(resolved.all_account_keys, vec![keypair.pubkey(), other_account, program_id]);
@@ -893,7 +902,8 @@ mod tests {
         );
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let mut resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
         let inner_instructions =
             resolved.fetch_inner_instructions(&rpc_client, true).await.unwrap();
 
@@ -945,7 +955,8 @@ mod tests {
         );
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let mut resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
         let inner_instructions =
             resolved.fetch_inner_instructions(&rpc_client, false).await.unwrap();
 
@@ -968,7 +979,8 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let mut resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
 
         // First call should parse and cache
         let parsed1_len = {
