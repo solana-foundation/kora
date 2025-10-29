@@ -301,7 +301,10 @@ allow_approve = false
 | `allow_close_account` | Allow closing token accounts where the Kora node's fee payer is the signer/authority | ✅ | boolean |
 | `allow_approve` | Allow token delegation/approval where the Kora node's fee payer is the signer/authority | ✅ | boolean |
 
-> *Note: For security reasons, it is recommended to set all of these to `false` and only enable as needed.*
+
+### Security Considerations
+
+**SECURITY WARNING:** For security reasons, it is recommended to set all of these to `false` and only enable as needed. This will prevent unwanted behavior such as users draining your fee payer account or burning tokens from your fee payer account.
 
 ## Price Configuration (optional)
 
