@@ -103,7 +103,7 @@ impl ConfigBuilder {
 
     pub fn with_fixed_price(mut self, amount: u64, token: &str) -> Self {
         self.validation.price_config = Some(format!(
-            "[validation.price]\ntype = \"fixed\"\namount = {amount}\ntoken = \"{token}\"\n"
+            "[validation.price]\ntype = \"fixed\"\namount = {amount}\ntoken = \"{token}\"\nstrict = false\n"
         ));
         self
     }

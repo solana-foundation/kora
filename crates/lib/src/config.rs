@@ -659,9 +659,10 @@ mod tests {
             .unwrap();
 
         match &config.validation.price.model {
-            PriceModel::Fixed { amount, token } => {
+            PriceModel::Fixed { amount, token, strict } => {
                 assert_eq!(*amount, 1000000);
                 assert_eq!(token, "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+                assert!(!strict);
             }
             _ => panic!("Expected Fixed price model"),
         }

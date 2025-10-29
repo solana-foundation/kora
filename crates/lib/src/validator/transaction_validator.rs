@@ -1,7 +1,7 @@
 use crate::{
     config::FeePayerPolicy,
     error::KoraError,
-    fee::fee::FeeConfigUtil,
+    fee::fee::{FeeConfigUtil, TotalFeeCalculation},
     oracle::PriceSource,
     state::get_config,
     token::{interface::TokenMint, token::TokenUtil},
@@ -14,17 +14,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 use std::str::FromStr;
 
-#[allow(unused_imports)]
-use spl_token_2022_interface::{
-    extension::{
-        cpi_guard::CpiGuard,
-        interest_bearing_mint::InterestBearingConfig,
-        non_transferable::NonTransferable,
-        transfer_fee::{TransferFee, TransferFeeConfig},
-        BaseStateWithExtensions, StateWithExtensions,
-    },
-    state::Account as Token2022AccountState,
-};
+use crate::fee::price::PriceModel;
 
 pub struct TransactionValidator {
     fee_payer_pubkey: Pubkey,
@@ -369,6 +359,34 @@ impl TransactionValidator {
         Err(KoraError::InvalidTransaction(format!(
             "Insufficient token payment. Required {required_lamports} lamports"
         )))
+    }
+
+    pub fn validate_strict_pricing_with_fee(
+        fee_calculation: &TotalFeeCalculation,
+    ) -> Result<(), KoraError> {
+        let config = get_config()?;
+
+        if !matches!(&config.validation.price.model, PriceModel::Fixed { strict: true, .. }) {
+            return Ok(());
+        }
+
+        let fixed_price_lamports = fee_calculation.total_fee_lamports;
+        let total_fee_lamports = fee_calculation.get_total_fee_lamports()?;
+
+        if fixed_price_lamports < total_fee_lamports {
+            log::error!(
+                "Strict pricing violation: fixed_price_lamports={} < total_fee_lamports={}",
+                fixed_price_lamports,
+                total_fee_lamports
+            );
+            return Err(KoraError::ValidationError(format!(
+                    "Strict pricing violation: total fee ({} lamports) exceeds fixed price ({} lamports)",
+                    total_fee_lamports,
+                    fixed_price_lamports
+                )));
+        }
+
+        Ok(())
     }
 }
 
@@ -1507,5 +1525,108 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_strict_pricing_total_exceeds_fixed() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = PriceModel::Fixed {
+            amount: 5000,
+            token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
+            strict: true,
+        };
+        let _ = update_config(config);
+
+        // Fixed price = 5000, but total = 3000 + 2000 + 5000 = 10000 > 5000
+        let fee_calc = TotalFeeCalculation::new(5000, 3000, 2000, 5000, 0, 0);
+
+        let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
+
+        assert!(result.is_err());
+        if let Err(KoraError::ValidationError(msg)) = result {
+            assert!(msg.contains("Strict pricing violation"));
+            assert!(msg.contains("exceeds fixed price"));
+        } else {
+            panic!("Expected ValidationError");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_strict_pricing_total_within_fixed() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = PriceModel::Fixed {
+            amount: 5000,
+            token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
+            strict: true,
+        };
+        let _ = update_config(config);
+
+        // Fixed price = 5000, total = 1000 + 1000 + 1000 = 3000 < 5000
+        let fee_calc = TotalFeeCalculation::new(5000, 1000, 1000, 1000, 0, 0);
+
+        let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_strict_pricing_disabled() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = PriceModel::Fixed {
+            amount: 5000,
+            token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
+            strict: false, // Disabled
+        };
+        let _ = update_config(config);
+
+        let fee_calc = TotalFeeCalculation::new(5000, 10000, 0, 0, 0, 0);
+
+        let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
+
+        assert!(result.is_ok(), "Should pass when strict=false");
+    }
+
+    #[test]
+    #[serial]
+    fn test_strict_pricing_with_margin_pricing() {
+        use crate::{
+            fee::price::PriceModel, state::update_config, tests::config_mock::ConfigMockBuilder,
+        };
+
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = PriceModel::Margin { margin: 0.1 };
+        let _ = update_config(config);
+
+        let fee_calc = TotalFeeCalculation::new(5000, 10000, 0, 0, 0, 0);
+
+        let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_strict_pricing_exact_match() {
+        use crate::{
+            fee::price::PriceModel, state::update_config, tests::config_mock::ConfigMockBuilder,
+        };
+
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = PriceModel::Fixed {
+            amount: 5000,
+            token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
+            strict: true,
+        };
+        let _ = update_config(config);
+
+        // Total exactly equals fixed price (5000 = 5000)
+        let fee_calc = TotalFeeCalculation::new(5000, 2000, 1000, 2000, 0, 0);
+
+        let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
+
+        assert!(result.is_ok(), "Should pass when total equals fixed price");
     }
 }

@@ -65,6 +65,19 @@ impl TotalFeeCalculation {
             transfer_fee_amount: 0,
         }
     }
+
+    pub fn get_total_fee_lamports(&self) -> Result<u64, KoraError> {
+        self.base_fee
+            .checked_add(self.kora_signature_fee)
+            .and_then(|sum| sum.checked_add(self.fee_payer_outflow))
+            .and_then(|sum| sum.checked_add(self.payment_instruction_fee))
+            .and_then(|sum| sum.checked_add(self.transfer_fee_amount))
+            .ok_or_else(|| {
+                log::error!("Fee calculation overflow: base_fee={}, kora_signature_fee={}, fee_payer_outflow={}, payment_instruction_fee={}, transfer_fee_amount={}",
+                    self.base_fee, self.kora_signature_fee, self.fee_payer_outflow, self.payment_instruction_fee, self.transfer_fee_amount);
+                KoraError::ValidationError("Fee calculation overflow".to_string())
+            })
+    }
 }
 
 pub struct FeeConfigUtil {}
@@ -274,14 +287,33 @@ impl FeeConfigUtil {
 
         match &config.validation.price.model {
             PriceModel::Free => Ok(TotalFeeCalculation::new_fixed(0)),
-            PriceModel::Fixed { .. } => {
+            PriceModel::Fixed { strict, .. } => {
                 let fixed_fee_lamports = config
                     .validation
                     .price
                     .get_required_lamports_with_fixed(rpc_client, price_source)
                     .await?;
 
-                Ok(TotalFeeCalculation::new_fixed(fixed_fee_lamports))
+                if *strict {
+                    let fee_calculation = Self::estimate_transaction_fee(
+                        rpc_client,
+                        transaction,
+                        fee_payer,
+                        is_payment_required,
+                    )
+                    .await?;
+
+                    Ok(TotalFeeCalculation::new(
+                        fixed_fee_lamports,
+                        fee_calculation.base_fee,
+                        fee_calculation.kora_signature_fee,
+                        fee_calculation.fee_payer_outflow,
+                        fee_calculation.payment_instruction_fee,
+                        fee_calculation.transfer_fee_amount,
+                    ))
+                } else {
+                    Ok(TotalFeeCalculation::new_fixed(fixed_fee_lamports))
+                }
             }
             PriceModel::Margin { .. } => {
                 // Get the raw transaction

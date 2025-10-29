@@ -403,7 +403,7 @@ impl ConfigValidator {
 
         // Validate margin (error if negative)
         match &config.validation.price.model {
-            PriceModel::Fixed { amount, token } => {
+            PriceModel::Fixed { amount, token, strict } => {
                 if *amount == 0 {
                     warnings
                         .push("Fixed price amount is 0 - transactions will be free".to_string());
@@ -425,6 +425,15 @@ impl ConfigValidator {
                         "⚠️  SECURITY: Fixed pricing with NO authentication enabled. \
                         Without authentication, anyone can spam transactions at your expense. \
                         Consider enabling api_key or hmac_secret in [kora.auth]."
+                            .to_string(),
+                    );
+                }
+
+                // Warn about strict mode
+                if *strict {
+                    warnings.push(
+                        "Strict pricing mode enabled. \
+                        Transactions where fee payer outflow exceeds the fixed price will be rejected."
                             .to_string(),
                     );
                 }
@@ -848,6 +857,7 @@ mod tests {
                     model: PriceModel::Fixed {
                         amount: 0,                                  // Should warn
                         token: "invalid_token_address".to_string(), // Should error
+                        strict: false,
                     },
                 },
                 token_2022: Token2022Config::default(),
@@ -888,6 +898,7 @@ mod tests {
                     model: PriceModel::Fixed {
                         amount: 1000,
                         token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(), // Valid but not in allowed
+                        strict: false,
                     },
                 },
                 token_2022: Token2022Config::default(),
@@ -936,6 +947,7 @@ mod tests {
                     model: PriceModel::Fixed {
                         amount: 0, // Should warn
                         token: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                        strict: false,
                     },
                 },
                 token_2022: Token2022Config::default(),
