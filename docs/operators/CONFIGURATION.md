@@ -266,6 +266,11 @@ blocked_account_extensions = [
 
 > *Note: Blocking extensions helps prevent interactions with tokens that have complex or potentially risky behaviors. For example, blocking `transfer_hook` prevents signing transactions for tokens with custom transfer logic.*
 
+### Security Considerations
+
+**PermanentDelegate Extension** - Tokens with this extension allow the delegate to transfer/burn tokens at any time without owner approval. This creates significant risks for the Kora node operator as payment funds can be seized after payment. 
+- Consider adding "permanent_delegate" to `blocked_mint_extensions` in [validation.token2022] unless explicitly needed for your use case.
+- Avoid using payment tokens with the `permanent_delegate` extension.
 
 ## Fee Payer Policy
 
