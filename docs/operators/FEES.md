@@ -59,30 +59,35 @@ Kora supports three pricing models that determine how users are charged for tran
 
 ## ⚠️ Security Warning: Fixed/Free Pricing Models
 
-**CRITICAL:** The fixed/free pricing models do **NOT** include fee payer outflow in the charged amount. This creates a significant security risk if not properly configured: If your fee payer policy allows transfers or other outflow operations, attackers can exploit this to drain your fee payer account:
+**CRITICAL:** The fixed/free pricing models do **NOT** include fee payer outflow in the charged amount. This creates a significant security risk if not properly configured. If your fee payer policy allows transfers or other outflow operations, attackers can exploit this to drain your fee payer account.
 
 ### Required Security Controls
 
-When using fixed/free pricing, you **MUST** configure restrictive fee payer policies:
+When using fixed/free pricing, you **MUST** configure restrictive fee payer policies to block ALL monetary and authority-changing operations:
 
 ```toml
 [validation.fee_payer_policy.system]
 allow_transfer = false              # Block SOL transfers
 allow_create_account = false        # Block account creation with lamports
+allow_allocate = false              # Block space allocation
 
-[validation.fee_payer_policy.spl_token]
-allow_transfer = false              # Block SPL token transfers
+[validation.fee_payer_policy.system.nonce]
+allow_withdraw = false              # Block nonce account withdrawals
 
-[validation.fee_payer_policy.token_2022]
-allow_transfer = false              # Block Token2022 transfers
+[validation.fee_payer_policy.spl_token] # and for [validation.fee_payer_policy.token_2022]
+allow_transfer = false              # Block SPL transfers
+allow_burn = false                  # Block SPL token burning
+allow_close_account = false         # Block SPL token account closures (returns rent)
+allow_mint_to = false               # Block unauthorized SPL token minting
+allow_initialize_account = false    # Block account initialization
 ```
 
 ### Additional Protections
 
-1. **Enable Authentication:** Always require API key or HMAC authentication with fixed pricing
+1. **Enable Authentication:** Always require API key or HMAC authentication with fixed/free pricing
 2. **Set Low Limits:** Use conservative `max_allowed_lamports` values
 3. **Monitor Usage:** Track unusual patterns of high-outflow transactions
-4. **Consider Margin Pricing:** Margin pricing automatically includes outflow costs
+4. **Consider Margin Pricing:** Margin pricing automatically includes outflow costs in fees
 
 ### Validation Warnings
 
@@ -94,7 +99,7 @@ kora --config kora.toml config validate
 
 Expected warnings for vulnerable configs:
 ```
-⚠️  SECURITY: Fixed pricing with allow_transfer=true for System instructions.
+⚠️  SECURITY: Fixed pricing with system.allow_transfer=true.
     Users can make the fee payer transfer arbitrary SOL amounts at fixed cost.
     This can drain your fee payer account.
 ```

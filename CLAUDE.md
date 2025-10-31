@@ -348,12 +348,47 @@ allowed_spl_paid_tokens = [
 disallowed_accounts = []  # Blocked account addresses
 
 # Fee payer policy controls what actions the fee payer can perform
-# All default to true for backward compatibility
-[validation.fee_payer_policy]
-allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
-allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
-allow_token2022_transfers = true # Allow fee payer to be source in Token2022 transfers
-allow_assign = true             # Allow fee payer to use Assign instruction
+# Organized by program type with 28 granular controls
+# All default to false for security
+[validation.fee_payer_policy.system]
+allow_transfer = false           # System Transfer/TransferWithSeed
+allow_assign = false             # System Assign/AssignWithSeed
+allow_create_account = false     # System CreateAccount/CreateAccountWithSeed
+allow_allocate = false           # System Allocate/AllocateWithSeed
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false         # InitializeNonceAccount
+allow_advance = false            # AdvanceNonceAccount
+allow_authorize = false          # AuthorizeNonceAccount
+allow_withdraw = false           # WithdrawNonceAccount
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = false           # Transfer/TransferChecked
+allow_burn = false               # Burn/BurnChecked
+allow_close_account = false      # CloseAccount
+allow_approve = false            # Approve/ApproveChecked
+allow_revoke = false             # Revoke
+allow_set_authority = false      # SetAuthority
+allow_mint_to = false            # MintTo/MintToChecked
+allow_initialize_mint = false    # InitializeMint/InitializeMint2
+allow_initialize_account = false # InitializeAccount/InitializeAccount3
+allow_initialize_multisig = false # InitializeMultisig/InitializeMultisig2
+allow_freeze_account = false     # FreezeAccount
+allow_thaw_account = false       # ThawAccount
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = false           # Transfer/TransferChecked
+allow_burn = false               # Burn/BurnChecked
+allow_close_account = false      # CloseAccount
+allow_approve = false            # Approve/ApproveChecked
+allow_revoke = false             # Revoke
+allow_set_authority = false      # SetAuthority
+allow_mint_to = false            # MintTo/MintToChecked
+allow_initialize_mint = false    # InitializeMint/InitializeMint2
+allow_initialize_account = false # InitializeAccount/InitializeAccount3
+allow_initialize_multisig = false # InitializeMultisig/InitializeMultisig2
+allow_freeze_account = false     # FreezeAccount
+allow_thaw_account = false       # ThawAccount
 ```
 
 ### Environment Variables set in `signers.toml`
@@ -367,29 +402,60 @@ RUST_LOG=debug  # Logging level
 
 ### Overview
 
-The fee payer policy system provides fine-grained control over what actions the fee payer can perform in transactions. By default, all actions are permitted to maintain backward compatibility with existing behavior.
+The fee payer policy system provides granular control over what actions the fee payer can perform in transactions. The policy is organized by program type (System, SPL Token, Token-2022) and covers 28 different instruction types. By default, all actions are permitted to maintain backward compatibility with existing behavior.
 
 ### Policy Configuration
 
-The fee payer policy is configured via the `[validation.fee_payer_policy]` section in `kora.toml`:
+The fee payer policy is configured via nested sections in `kora.toml`:
+- `[validation.fee_payer_policy.system]` - System program instructions (4 fields)
+- `[validation.fee_payer_policy.system.nonce]` - Nonce account operations (4 fields)
+- `[validation.fee_payer_policy.spl_token]` - SPL Token program instructions (12 fields)
+- `[validation.fee_payer_policy.token_2022]` - Token-2022 program instructions (12 fields)
 
 ### Implementation Details
 
 **Core Structure** (`crates/lib/src/config.rs`):
-- `FeePayerPolicy` struct with 4 boolean fields
-- `Default` implementation sets all fields to `true` (permissive)
+- `FeePayerPolicy` struct with nested policy structs for each program type
+- `SystemInstructionPolicy` - Controls System program operations including nested `NonceInstructionPolicy`
+- `SplTokenInstructionPolicy` - Controls SPL Token program operations
+- `Token2022InstructionPolicy` - Controls Token-2022 program operations
+- All `Default` implementations set fields to `true` (permissive) for backward compatibility
 - `#[serde(default)]` attribute ensures backward compatibility
 
 **Validation Logic** (`crates/lib/src/transaction/validator.rs`):
 - `TransactionValidator` stores the policy configuration
-- `is_fee_payer_source()` method checks policy flags before validating restrictions
+- Program-specific validation methods check policy flags before validating restrictions
+- Uses macro-based validation patterns for consistent enforcement across instruction types
 - Different validation logic for each program type (System, SPL Token, Token2022)
 
-**Supported Actions**:
-1. **SOL Transfers** - System program Transfer and TransferWithSeed instructions
-2. **SPL Token Transfers** - SPL Token program Transfer and TransferChecked instructions
-3. **Token2022 Transfers** - Token2022 program Transfer and TransferChecked instructions
-4. **Assign** - System program Assign instruction (changes account owner)
+**Supported Actions by Program Type**:
+
+**System Program (8 controls)**:
+1. **Transfer** - Transfer and TransferWithSeed instructions (fee payer as sender)
+2. **Assign** - Assign and AssignWithSeed instructions (fee payer as authority)
+3. **CreateAccount** - CreateAccount and CreateAccountWithSeed instructions (fee payer as funding source)
+4. **Allocate** - Allocate and AllocateWithSeed instructions (fee payer as account owner)
+5. **Nonce Initialize** - InitializeNonceAccount instruction (fee payer set as authority)
+6. **Nonce Advance** - AdvanceNonceAccount instruction (fee payer as authority)
+7. **Nonce Authorize** - AuthorizeNonceAccount instruction (fee payer as current authority)
+8. **Nonce Withdraw** - WithdrawNonceAccount instruction (fee payer as authority)
+
+**SPL Token Program (12 controls)**:
+1. **Transfer** - Transfer and TransferChecked instructions (fee payer as owner)
+2. **Burn** - Burn and BurnChecked instructions (fee payer as owner)
+3. **CloseAccount** - CloseAccount instruction (fee payer as owner)
+4. **Approve** - Approve and ApproveChecked instructions (fee payer as owner)
+5. **Revoke** - Revoke instruction (fee payer as owner)
+6. **SetAuthority** - SetAuthority instruction (fee payer as current authority)
+7. **MintTo** - MintTo and MintToChecked instructions (fee payer as mint authority)
+8. **InitializeMint** - InitializeMint and InitializeMint2 instructions (fee payer as mint authority)
+9. **InitializeAccount** - InitializeAccount and InitializeAccount3 instructions (fee payer as owner)
+10. **InitializeMultisig** - InitializeMultisig and InitializeMultisig2 instructions (fee payer as signer)
+11. **FreezeAccount** - FreezeAccount instruction (fee payer as freeze authority)
+12. **ThawAccount** - ThawAccount instruction (fee payer as freeze authority)
+
+**Token-2022 Program (12 controls)**:
+- Identical instruction set and controls as SPL Token Program
 
 ## Private Key Formats
 
