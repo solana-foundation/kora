@@ -6,397 +6,250 @@ This guide is for wallet service providers who want to integrate their key manag
 
 ## Architecture Overview
 
-Kora uses an enum-based architecture where all signers are wrapped in a unified `KoraSigner` enum. Your signer will be added as a new variant to this enum, allowing Kora to switch between different signing providers at runtime based on CLI flags.
+Kora uses the external [`solana-signers`](https://github.com/solana-foundation/solana-signers) crate for all signing operations. This architecture provides a unified signing interface for signing Solana transactions. To add a new signer to Kora, you'll need to:
+
+1. **First**: Add your signer implementation to the `solana-signers` crate
+2. **Second**: Add configuration support for your signer in Kora
 
 ## Step-by-Step Integration Guide
 
 ### Quick Integration Checklist
 
-- [ ] Create your Signer Module
-    - Define types and configuration
-    - Implement `KoraSigner`'s core signing methods (`sign` and `sign_solana`)
-    - Add initialization logic based on your API's requirements
-- [ ] Update the `KoraSigner` enum
-- [ ] Update `SignerTypeConfig` enum in `config.rs` for multi-signer support
-- [ ] Add initialization logic in `init.rs`
-- [ ] Add CLI arguments
+**Part 1: Add Signer to `solana-signers` Crate**
+- [ ] Implement your signer following the [solana-signers integration guide](https://github.com/solana-foundation/solana-signers/blob/main/docs/ADDING_SIGNERS.md)
+- [ ] Wait for PR approval and crate publication
+
+**Part 2: Add Kora Configuration Support**
+- [ ] Update Cargo.toml's dependency so that `solana-signers` crate uses the latest version (that includes your signer)
+- [ ] Add configuration struct for your signer's environment variables
+- [ ] Update `SignerTypeConfig` enum in `crates/lib/src/signer/config.rs`
+- [ ] Add validation logic for your signer's config
+- [ ] Add build logic to construct your signer from config
+- [ ] Export configuration struct in `crates/lib/src/signer/mod.rs`
+- [ ] (Optional) Add test mock builder in `crates/lib/src/tests/config_mock.rs`
+- [ ] Update example configuration files
 - [ ] Update test scripts to include your signer (see below)
 - [ ] Update documentation to include your signer (see below)
-- [ ] Submit PR
+- [ ] Submit PR to Kora repository
 
-### Step 1: Create Your Signer Module
+### Add Signer Support in Kora
 
-Create a new directory under `crates/lib/src/signer/` for your implementation:
+First, ensure your signer is supported in the `solana-signers` crate. If it is not, follow the guide at:
+**[https://github.com/solana-foundation/solana-signers/blob/main/docs/ADDING_SIGNERS.md](https://github.com/solana-foundation/solana-signers/blob/main/docs/ADDING_SIGNERS.md)**
 
-```bash
-crates/lib/src/signer/
-├── your_service/
-│   ├── mod.rs      # Module exports
-│   ├── signer.rs   # Main implementation
-│   ├── config.rs   # Configuration
-│   └── types.rs    # Types and configuration
+#### Step 1: Update Cargo.toml
+
+Update Cargo.toml's dependency so that `solana-signers` crate uses the latest version (that includes your signer):
+
+```toml
+[dependencies]
+solana-signers = { version = "X.Y.Z", default-features = false, features = [
+    "all",
+    "sdk-v3",
+] }
 ```
 
-Export each of the files in `mod.rs`:
+#### Step 2: Define Your Configuration Struct
+
+In `crates/lib/src/signer/config.rs`, add a new configuration struct for your signer that defines which environment variables are needed. For example:
 
 ```rust
-pub mod config;
-pub mod signer;
-pub mod types;
-```
-
-### Step 2: Define Your Types
-
-In `your_service/types.rs`, define your signer struct and any necessary types (e.g. error types, config, API request/response types, etc.):
-
-```rust
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use solana_sdk::pubkey::Pubkey;
-
-#[derive(Clone, Debug)]
-pub struct YourServiceSigner {
-    // Your API credentials
-    pub api_key: String,
-    pub api_secret: String,
-    pub wallet_id: String,
-    
-    // HTTP client for API calls
-    pub client: Client,
-    
-    // Cache the public key
-    pub public_key: Pubkey,
-    
-    // Your API base URL
-    pub api_base_url: String,
-}
-
-// Error types for your signer
-#[derive(Debug)]
-pub enum YourServiceError {
-    MissingConfig(&'static str),
-    ApiError(u16),
-    InvalidSignature,
-    RateLimitExceeded,
-    // Add more as needed
-}
-
-// Implement Display and Error traits
-impl std::fmt::Display for YourServiceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Implementation
-    }
-}
-
-impl std::error::Error for YourServiceError {}
-
-// API request/response types
-#[derive(Serialize)]
-pub struct SignTransactionRequest {
-    pub method: &'static str,
-    pub params: SignTransactionParams,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct SignTransactionResponse {
-    pub method: String,
-    pub data: SignTransactionData,
+/// YourService signer configuration
+#[derive(Clone, Serialize, Deserialize)]
+pub struct YourServiceSignerConfig {
+    pub api_key_env: String,
+    pub api_secret_env: String,
+    pub wallet_id_env: String,
 }
 ```
 
-Consider implementing your error types as a `KoraError` variant in `crates/lib/src/error.rs`.
+#### Step 2: Add Your Signer to `SignerTypeConfig` Enum
 
-### Step 3: Implement the Signer Methods
-
-In `your_service/signer.rs`, implement the core signing logic. Some methods you should implement are:
-
-- `new`: Create a new instance of your signer
-- `solana_pubkey`: Get the Solana public key for this signer (as a Solana `Pubkey`)
-- `sign`: Sign a `VersionedTransaction` and return `Vec<u8>` (raw bytes)
-- `sign_solana`: Sign a `VersionedTransaction` and return a Solana `Signature`
-- other methods core to your signer's implementation (e.g., `init`, `call_signing_api`, etc.)
+Add your signer variant to the `SignerTypeConfig` enum in `crates/lib/src/signer/config.rs`:
 
 ```rust
-use crate::signer::Signature as KoraSignature;
-use solana_sdk::{
-    signature::Signature,
-    transaction::VersionedTransaction,
-};
-
-impl YourServiceSigner {
-    /// Create a new instance of your signer
-    pub fn new(
-        api_key: String,
-        api_secret: String,
-        wallet_id: String,
-    ) -> Result<Self, YourServiceError> {
-        Ok(Self {
-            api_key,
-            api_secret,
-            wallet_id,
-            client: reqwest::Client::new(),
-            public_key: Pubkey::default(), // Will be initialized later
-            api_base_url: "https://api.yourservice.com/v1".to_string(),
-        })
-    }
-    
-    /// Get the Solana public key for this signer
-    pub fn solana_pubkey(&self) -> Pubkey {
-        self.public_key
-    }
-       
-    /// Sign a transaction and return raw bytes
-    pub async fn sign(
-        &self,
-        transaction: &VersionedTransaction,
-    ) -> Result<Vec<u8>, YourServiceError> {
-        // 1. Serialize the transaction message
-        let message_bytes = transaction.message.serialize();
-        
-        // 2. Call your API to sign
-        let signature = self.call_signing_api(&message_bytes).await?;
-        
-        // 3. Return the signature bytes
-        Ok(signature)
-    }
-    
-    /// Sign and return a Solana signature
-    pub async fn sign_solana(
-        &self,
-        transaction: &VersionedTransaction,
-    ) -> Result<Signature, YourServiceError> {
-        let sig_bytes = self.sign(transaction).await?;
-        
-        // Convert to Solana signature (must be exactly 64 bytes)
-        let sig_array: [u8; 64] = sig_bytes
-            .try_into()
-            .map_err(|_| YourServiceError::InvalidSignature)?;
-            
-        Ok(Signature::from(sig_array))
-    }
-    
-    // Private helper methods    
-    async fn call_signing_api(
-        &self,
-        message: &[u8],
-    ) -> Result<Vec<u8>, YourServiceError> {
-        // Implementation specific to your API
-    }
-}
-```
-
-### Step 4: Update the KoraSigner Enum
-
-Add your signer to the `KoraSigner` enum in `crates/lib/src/signer/signer.rs`:
-
-```rust
-#[derive(Clone)]
-pub enum KoraSigner {
-    Memory(SolanaMemorySigner),
-    Turnkey(TurnkeySigner),
-    Vault(VaultSigner),
-    Privy(PrivySigner),
-    YourService(YourServiceSigner), // Add your signer here
-}
-
-// Update the trait implementation
-impl KoraSigner {
-    pub fn solana_pubkey(&self) -> Pubkey {
-        match self {
-            // ... existing implementations
-            KoraSigner::YourService(signer) => signer.solana_pubkey(),
-        }
-    }
-}
-
-impl super::Signer for KoraSigner {
-    type Error = KoraError;
-    
-    async fn sign(
-        &self,
-        transaction: &VersionedTransaction,
-    ) -> Result<super::Signature, Self::Error> {
-        match self {
-            // ... existing implementations
-            KoraSigner::YourService(signer) => {
-                let sig = signer.sign(transaction).await?;
-                Ok(super::Signature {
-                    bytes: sig,
-                    is_partial: false,
-                })
-            }
-        }
-    }
-    
-    async fn sign_solana(
-        &self,
-        transaction: &VersionedTransaction,
-    ) -> Result<SolanaSignature, Self::Error> {
-        match self {
-            // ... existing implementations
-            KoraSigner::YourService(signer) => {
-                signer.sign_solana(transaction)
-                    .await
-                    .map_err(KoraError::from)
-            }
-        }
-    }
-}
-```
-
-### Step 5: Update the SignerTypeConfig Enum
-
-Add your signer to the `SignerTypeConfig` enum in `crates/lib/src/signer/config.rs`:
-
-```rust
-/// Signer type-specific configuration with environment variable references
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Signer type-specific configuration
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SignerTypeConfig {
-    // ... existing variants
-    
-    /// YourService signer configuration
+    // Existing signer variants
+    Memory { #[serde(flatten)] config: MemorySignerConfig },
+    // ... existing variants ...
+
+    // Add your signer here
     YourService {
-        /// Environment variable for YourService API key
-        api_key_env: String,
-        /// Environment variable for YourService API secret
-        api_secret_env: String,
-        /// Environment variable for YourService wallet ID
-        wallet_id_env: String,
+        #[serde(flatten)]
+        config: YourServiceSignerConfig,
     },
 }
 ```
 
-Also update the `build_signer_from_config` method in the same file:
+#### Step 3: Add Build Logic
+
+In the same file (`config.rs`), add a method to build your signer from configuration in the `SignerConfig` implementation:
 
 ```rust
 impl SignerConfig {
-    pub async fn build_signer_from_config(config: &SignerConfig) -> Result<KoraSigner, KoraError> {
+    pub async fn build_signer_from_config(config: &SignerConfig) -> Result<Signer, KoraError> {
         match &config.config {
             // ... existing cases
-            
-            SignerTypeConfig::YourService { api_key_env, api_secret_env, wallet_id_env } => {
-                let api_key = get_env_var_for_signer(api_key_env, &config.name)?;
-                let api_secret = get_env_var_for_signer(api_secret_env, &config.name)?;
-                let wallet_id = get_env_var_for_signer(wallet_id_env, &config.name)?;
 
-                let signer = YourServiceSigner::new(api_key, api_secret, wallet_id)
-                    .map_err(|e| {
-                        KoraError::ValidationError(format!(
-                            "Failed to create YourService signer '{}': {}",
-                            config.name, e
-                        ))
-                    })?;
-
-                Ok(KoraSigner::YourService(signer))
+            SignerTypeConfig::YourService { config: your_service_config } => {
+                Self::build_your_service_signer(your_service_config, &config.name).await
             }
         }
     }
+
+    // Add this new method
+    async fn build_your_service_signer(
+        config: &YourServiceSignerConfig,
+        signer_name: &str,
+    ) -> Result<Signer, KoraError> {
+        // Update the environment variable names to match your signer's configuration
+        let api_key = get_env_var_for_signer(&config.api_key_env, signer_name)?;
+        let api_secret = get_env_var_for_signer(&config.api_secret_env, signer_name)?;
+        let wallet_id = get_env_var_for_signer(&config.wallet_id_env, signer_name)?;
+
+        // Call the constructor from solana-signers crate
+        Signer::from_your_service(api_key, api_secret, wallet_id)
+            .await
+            .map_err(|e| {
+                KoraError::SigningError(format!(
+                    "Failed to create YourService signer '{signer_name}': {}",
+                    sanitize_error!(e)
+                ))
+            })
+    }
 }
 ```
 
-And update the validation method:
+**Note**: The method name `Signer::from_your_service()` should match what you implemented in the `solana-signers` crate.
+
+#### Step 4: Add Validation Logic
+
+Add validation for your signer's configuration in the `validate_individual_signer_config` method:
 
 ```rust
-fn validate_individual_signer_config(&self, index: usize) -> Result<(), KoraError> {
-    match &self.config {
-        // ... existing cases
-        
-        SignerTypeConfig::YourService { api_key_env, api_secret_env, wallet_id_env } => {
-            let env_vars = [
-                ("api_key_env", api_key_env),
-                ("api_secret_env", api_secret_env),
-                ("wallet_id_env", wallet_id_env),
-            ];
-            for (field_name, env_var) in env_vars {
-                if env_var.is_empty() {
-                    return Err(KoraError::ValidationError(format!(
-                        "YourService signer '{}' must specify non-empty {}",
-                        self.name, field_name
-                    )));
-                }
+impl SignerConfig {
+    pub fn validate_individual_signer_config(&self, index: usize) -> Result<(), KoraError> {
+        // ... existing validation
+
+        match &self.config {
+            // ... existing cases
+
+            SignerTypeConfig::YourService { config } => {
+                Self::validate_your_service_config(config, &self.name)
             }
         }
     }
-    Ok(())
-}
-```
 
-### Step 6: Add Initialization Logic
+    // Add this new validation method
+    fn validate_your_service_config(
+        config: &YourServiceSignerConfig,
+        signer_name: &str,
+    ) -> Result<(), KoraError> {
+        // Update the environment variable names to match your signer's configuration
+        let env_vars = [
+            ("api_key_env", &config.api_key_env),
+            ("api_secret_env", &config.api_secret_env),
+            ("wallet_id_env", &config.wallet_id_env),
+        ];
 
-Update `crates/lib/src/signer/init.rs` to include your signer:
-
-- add `init_your_service_signer` to define your service's signer as a `KoraSigner`
-- add your service to the `init_signer_type` function if specified in the CLI args (we'll be adding these in the next step)
-
-```rust
-// Add your args struct import
-use crate::rpc_server::args::YourServiceArgs;
-
-pub fn init_signer_type(args: &RpcArgs) -> Result<KoraSigner, KoraError> {
-    if args.turnkey_args.turnkey_signer {
-        init_turnkey_signer(&args.turnkey_args)
-    } else if args.vault_args.vault_signer {
-        init_vault_signer(&args.vault_args)
-    } else if args.privy_args.privy_signer {
-        init_privy_signer(&args.privy_args)
-    } else if args.your_service_args.your_service_signer {
-        init_your_service_signer(&args.your_service_args)
-    } else {
-        init_memory_signer(args.private_key.as_ref())
+        for (field_name, env_var) in env_vars {
+            if env_var.is_empty() {
+                return Err(KoraError::ValidationError(format!(
+                    "YourService signer '{signer_name}' must specify non-empty {field_name}"
+                )));
+            }
+        }
+        Ok(())
     }
 }
-
-fn init_your_service_signer(config: &YourServiceArgs) -> Result<KoraSigner, KoraError> {
-    // Extract required configuration
-    let api_key = config
-        .your_service_api_key
-        .clone()
-        .or_else(|| std::env::var("YOUR_SERVICE_API_KEY").ok())
-        .ok_or_else(|| KoraError::SigningError("YourService API key required".to_string()))?;
-        
-    let api_secret = config
-        .your_service_api_secret
-        .clone()
-        .or_else(|| std::env::var("YOUR_SERVICE_API_SECRET").ok())
-        .ok_or_else(|| KoraError::SigningError("YourService API secret required".to_string()))?;
-        
-    let wallet_id = config
-        .your_service_wallet_id
-        .clone()
-        .or_else(|| std::env::var("YOUR_SERVICE_WALLET_ID").ok())
-        .ok_or_else(|| KoraError::SigningError("YourService wallet ID required".to_string()))?;
-        
-    // Create the signer
-    let mut signer = YourServiceSigner::new(api_key, api_secret, wallet_id)?;
-    
-    // Initialize if needed (fetch public key, etc)
-    // Note: This would need to be handled async in practice
-    
-    Ok(KoraSigner::YourService(signer))
-}
 ```
 
-### Step 7: Export Your Module
+#### Step 5: Export Your Configuration
 
-Update `crates/lib/src/signer/mod.rs`:
+Add your new config struct to the module exports in `crates/lib/src/signer/mod.rs` (or at the top of the file if it's public):
 
 ```rust
-pub mod your_service;
-// ... other modules
-
-pub use your_service::types::YourServiceSigner;
+pub use config::{
+    MemorySignerConfig,
+    PrivySignerConfig,
+    SignerTypeConfig,
+    TurnkeySignerConfig,
+    VaultSignerConfig,
+    YourServiceSignerConfig,  // Add this
+    // ... other exports
+};
 ```
+
 
 ## Testing Your Integration
 
+### Add Test Mock Builder
+
+To make testing easier, add a builder method to `SignerPoolConfigBuilder` in `crates/lib/src/tests/config_mock.rs`:
+
+```rust
+impl SignerPoolConfigBuilder {
+    // ... existing methods
+
+    pub fn with_your_service_signer(
+        mut self,
+        name: String,
+        api_key_env: String,
+        api_secret_env: String,
+        wallet_id_env: String,
+        weight: Option<u32>,
+    ) -> Self {
+        let signer = SignerConfig {
+            name,
+            weight,
+            config: SignerTypeConfig::YourService {
+                config: YourServiceSignerConfig {
+                    api_key_env,
+                    api_secret_env,
+                    wallet_id_env,
+                },
+            },
+        };
+        self.config.signers.push(signer);
+        self
+    }
+}
+```
+
+This allows other tests to easily create mock configurations that include your signer:
+
+```rust
+use crate::tests::config_mock::SignerPoolConfigBuilder;
+
+let config = SignerPoolConfigBuilder::new()
+    .with_your_service_signer(
+        "yourservice_test".to_string(),
+        "YOUR_SERVICE_API_KEY".to_string(),
+        "YOUR_SERVICE_API_SECRET".to_string(),
+        "YOUR_SERVICE_WALLET_ID".to_string(),
+        Some(1)
+    )
+    .build();
+```
+
+
 ### Environment Variables
 
-Define a `example-signer.toml` with your signer's configuration and necessary environment variables defined. Add the example environment variables to the following files: `.env.example` and `.env` in the root of the project, and in `./sdks/ts/`:
+Add the example environment variables to the following files:
+- `.env.example` (root of the project)
+- `.env` (root of the project, for local testing)
+- `./sdks/ts/.env.example`
+- `./sdks/ts/.env`
 
-- `YOUR_SERVICE_API_KEY`: The API key for your service.
-- `YOUR_SERVICE_API_SECRET`: The API secret for your service.
-- `YOUR_SERVICE_WALLET_ID`: The wallet ID for your service.
+```bash
+# YourService Signer Configuration
+YOUR_SERVICE_API_KEY=your_api_key_here
+YOUR_SERVICE_API_SECRET=your_api_secret_here
+YOUR_SERVICE_WALLET_ID=your_wallet_id_here
+```
 
 ### Integration Tests
 
@@ -408,6 +261,9 @@ Create a new signer configuration file in `tests/src/common/fixtures/` for your 
 
 ```toml
 # tests/src/common/fixtures/signers-your-service.toml
+[signer_pool]
+strategy = "round_robin"
+
 [[signers]]
 name = "yourservice_main"
 type = "your_service"
@@ -429,19 +285,7 @@ port = "8090"  # Use a unique port
 tests = ["your_service"]
 ```
 
-#### 3. TypeScript SDK Integration
-
-For TypeScript SDK testing with your signer:
-
-1. Update `sdks/ts/test/setup.ts` to recognize your signer type:
-   - Add environment variable handling for `KORA_SIGNER_TYPE=your-service`
-
-2. Add a test script in `sdks/ts/package.json`:
-   ```json
-   "test:integration:your-service": "KORA_SIGNER_TYPE=your-service pnpm test integration.test.ts"
-   ```
-
-#### 4. Running Tests
+#### 3. Running Tests
 
 Make sure your environment is set up:
 
@@ -502,63 +346,71 @@ YOUR_SERVICE_API_SECRET="your_api_secret"
 YOUR_SERVICE_WALLET_ID="your_wallet_id"
 \```
 
-### Configure Signer.toml
+### Configure signers.toml
 
-\```bash
+\```toml
+[signer_pool]
+strategy = "round_robin"
+
 [[signers]]
 name = "yourservice_main"
 type = "your_service"
 api_key_env = "YOUR_SERVICE_API_KEY"
 api_secret_env = "YOUR_SERVICE_API_SECRET"
 wallet_id_env = "YOUR_SERVICE_WALLET_ID"
+weight = 1
 \```
 
+### Run Kora with YourService Signer
+
+\```bash
+kora rpc start --signers-config signers.toml
+\```
+```
 
 ### 2. Update README
 
 Add your service to the main README's signer list.
 
-### 3. Add Example Configuration
-
-Create an example `.env` configuration:
-
-```bash
-# YourService Signer Configuration
-YOUR_SERVICE_API_KEY=your_api_key_here
-YOUR_SERVICE_API_SECRET=your_api_secret_here
-YOUR_SERVICE_WALLET_ID=your_wallet_id_here
-```
-
 ## Submission Checklist
 
-Before submitting your PR:
-
+- [ ] Your signer is supported in the `solana-signers` crate
+- [ ] Updated `solana-signers` dependency in Cargo.toml to latest version
+- [ ] Added configuration struct for your signer
+- [ ] Added `SignerTypeConfig` variant
+- [ ] Added build logic in `build_signer_from_config`
+- [ ] Added validation logic in `validate_individual_signer_config`
+- [ ] Exported configuration struct in `mod.rs`
+- [ ] (Optional) Added test mock builder method in `config_mock.rs`
 - [ ] Code compiles without warnings
-- [ ] All tests pass
-- [ ] Documentation is complete
-- [ ] Example configuration (.env.example) provided
+- [ ] All tests pass (`make test` and `make test-integration`)
+- [ ] Documentation added to [`docs/operators/SIGNERS.md`](/docs/operators/SIGNERS.md)
+- [ ] Example configuration files created (`.toml` and `.env.example`)
 - [ ] No hardcoded values or secrets
 - [ ] Error messages are helpful
 - [ ] Follows Rust naming conventions (snake_case)
-- [ ] Linting passes (`make lint` and `make format-ts-sdk`)
+- [ ] Linting passes (`make lint`)
 - [ ] Contact the Kora team with API Keys for integration testing
 
 ## Getting Help
 
-- Open an issue for design discussions
+- **For signer implementation**: Open an issue in the [`solana-signers`](https://github.com/solana-foundation/solana-signers) repository
+- **For Kora integration**: Open an issue in the Kora repository for design discussions
 - Join our community channels
-- Review existing signer implementations for patterns in [`crates/lib/src/signer/`](/crates/lib/src/signer/)
+- Review existing signer configurations in [`crates/lib/src/signer/config.rs`](/crates/lib/src/signer/config.rs)
 
 ## Example PR Structure
 
-```sh
-feat(signer): add YourService signer integration
+**For Kora repository:**
+```
+feat(signer): add YourService signer configuration support
 
-- Implement Signer trait for YourService
-- Add CLI arguments and initialization
-- Add signer to Signers Guide
-- Add integration tests script to Makefile
-
+- Add YourServiceSignerConfig struct
+- Add YourService variant to SignerTypeConfig enum
+- Add build and validation logic for YourService
+- Add example configuration files
+- Add documentation to SIGNERS.md
+- Add integration tests
 ```
 
 Welcome to the Kora ecosystem! We're excited to have your key management solution as part of the platform.
