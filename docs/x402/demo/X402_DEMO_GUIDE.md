@@ -230,12 +230,48 @@ allowed_tokens = [
 api_key = "kora_facilitator_api_key_example"
 ```
 
-3. **Fee Payer Policy**: Configured to restrict signing unwanted transactions:
+3. **Fee Payer Policy**: Configured to restrict signing unwanted transactions using granular controls:
 
 ```toml
-[validation.fee_payer_policy]
-allow_sol_transfers = false
-# all other settings are false
+[validation.fee_payer_policy.system]
+allow_transfer = false
+allow_assign = false
+allow_create_account = false
+allow_allocate = false
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false
+allow_advance = false
+allow_authorize = false
+allow_withdraw = false
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+allow_revoke = false
+allow_set_authority = false
+allow_mint_to = false
+allow_initialize_mint = false
+allow_initialize_account = false
+allow_initialize_multisig = false
+allow_freeze_account = false
+allow_thaw_account = false
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+allow_revoke = false
+allow_set_authority = false
+allow_mint_to = false
+allow_initialize_mint = false
+allow_initialize_account = false
+allow_initialize_multisig = false
+allow_freeze_account = false
+allow_thaw_account = false
 ```
 
 4. **Allowed Programs**: Ensure the system program, token program, associated token program, and compute budget program are in the allowlist:

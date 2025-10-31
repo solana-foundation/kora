@@ -277,34 +277,96 @@ blocked_account_extensions = [
 
 ## Fee Payer Policy
 
-The `[validation.fee_payer_policy]` section restricts what your Kora node's fee payer wallet can do. This is important to prevent unexpected behavior from users' transactions utilizing your Kora node as a signer. For example, if `allow_spl_transfers` is set to `false`, the Kora node would not sign transactions that include an SPL token transfer where the Kora node's fee payer is the instruction's authority.
+The `[validation.fee_payer_policy]` section provides granular control over what actions your Kora node's fee payer wallet can perform. The policy is organized by program type (System, SPL Token, Token-2022) and covers all different instruction types. This prevents unexpected behavior from users' transactions utilizing your Kora node as a signer.
 
+For example, if `spl_token.allow_transfer` is set to `false`, the Kora node will not sign transactions that include an SPL token transfer where the Kora node's fee payer is the transfer authority.
 
 ```toml
 [validation.fee_payer_policy]
-allow_sol_transfers = false
-allow_spl_transfers = false
-allow_token2022_transfers = false
-allow_assign = false
-allow_burn = false
-allow_close_account = false
-allow_approve = false
-``` 
 
-| Option | Description | Required | Type |
-|--------|-------------|---------|---------|
-| `allow_sol_transfers` | Allow SOL transfers where the Kora node's fee payer is the signer/authority | ✅ | boolean |
-| `allow_spl_transfers` | Allow SPL token transfers where the Kora node's fee payer is the signer/authority | ✅ | boolean |
-| `allow_token2022_transfers` | Allow Token-2022 transfers where the Kora node's fee payer is the signer/authority | ✅ | boolean |
-| `allow_assign` | Allow account ownership changes where the Kora node's fee payer is the signer/authority | ✅ | boolean |
-| `allow_burn` | Allow token burn operations where the Kora node's fee payer is the signer/authority | ✅ | boolean |
-| `allow_close_account` | Allow closing token accounts where the Kora node's fee payer is the signer/authority | ✅ | boolean |
-| `allow_approve` | Allow token delegation/approval where the Kora node's fee payer is the signer/authority | ✅ | boolean |
+[validation.fee_payer_policy.system]
+allow_transfer = false           # System Transfer/TransferWithSeed
+allow_assign = false             # System Assign/AssignWithSeed
+allow_create_account = false     # System CreateAccount/CreateAccountWithSeed
+allow_allocate = false           # System Allocate/AllocateWithSeed
 
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false         # InitializeNonceAccount
+allow_advance = false            # AdvanceNonceAccount
+allow_authorize = false          # AuthorizeNonceAccount
+allow_withdraw = false           # WithdrawNonceAccount
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = false           # Transfer/TransferChecked
+allow_burn = false               # Burn/BurnChecked
+allow_close_account = false      # CloseAccount
+allow_approve = false            # Approve/ApproveChecked
+allow_revoke = false             # Revoke
+allow_set_authority = false      # SetAuthority
+allow_mint_to = false            # MintTo/MintToChecked
+allow_initialize_mint = false    # InitializeMint/InitializeMint2
+allow_initialize_account = false # InitializeAccount/InitializeAccount3
+allow_initialize_multisig = false # InitializeMultisig/InitializeMultisig2
+allow_freeze_account = false     # FreezeAccount
+allow_thaw_account = false       # ThawAccount
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = false           # Transfer/TransferChecked
+allow_burn = false               # Burn/BurnChecked
+allow_close_account = false      # CloseAccount
+allow_approve = false            # Approve/ApproveChecked
+allow_revoke = false             # Revoke
+allow_set_authority = false      # SetAuthority
+allow_mint_to = false            # MintTo/MintToChecked
+allow_initialize_mint = false    # InitializeMint/InitializeMint2
+allow_initialize_account = false # InitializeAccount/InitializeAccount3
+allow_initialize_multisig = false # InitializeMultisig/InitializeMultisig2
+allow_freeze_account = false     # FreezeAccount
+allow_thaw_account = false       # ThawAccount
+```
+
+### System Program Instructions
+
+| Option | Description | Default | Type |
+|--------|-------------|---------|------|
+| `allow_transfer` | Allow fee payer as sender in Transfer/TransferWithSeed instructions | `false` | boolean |
+| `allow_assign` | Allow fee payer as authority in Assign/AssignWithSeed instructions | `false` | boolean |
+| `allow_create_account` | Allow fee payer as funding payer in CreateAccount/CreateAccountWithSeed instructions | `false` | boolean |
+| `allow_allocate` | Allow fee payer as account owner in Allocate/AllocateWithSeed instructions | `false` | boolean |
+| `nonce.allow_initialize` | Allow fee payer to be set as nonce authority in InitializeNonceAccount | `false` | boolean |
+| `nonce.allow_advance` | Allow fee payer as authority in AdvanceNonceAccount | `false` | boolean |
+| `nonce.allow_authorize` | Allow fee payer as current authority in AuthorizeNonceAccount | `false` | boolean |
+| `nonce.allow_withdraw` | Allow fee payer as authority in WithdrawNonceAccount | `false` | boolean |
+
+### SPL Token Program Instructions
+
+| Option | Description | Default | Type |
+|--------|-------------|---------|------|
+| `allow_transfer` | Allow fee payer as owner in Transfer/TransferChecked instructions | `false` | boolean |
+| `allow_burn` | Allow fee payer as owner in Burn/BurnChecked instructions | `false` | boolean |
+| `allow_close_account` | Allow fee payer as owner in CloseAccount instructions | `false` | boolean |
+| `allow_approve` | Allow fee payer as owner in Approve/ApproveChecked instructions | `false` | boolean |
+| `allow_revoke` | Allow fee payer as owner in Revoke instructions | `false` | boolean |
+| `allow_set_authority` | Allow fee payer as current authority in SetAuthority instructions | `false` | boolean |
+| `allow_mint_to` | Allow fee payer as mint authority in MintTo/MintToChecked instructions | `false` | boolean |
+| `allow_initialize_mint` | Allow fee payer as mint authority in InitializeMint/InitializeMint2 instructions | `false` | boolean |
+| `allow_initialize_account` | Allow fee payer as owner in InitializeAccount/InitializeAccount3 instructions | `false` | boolean |
+| `allow_initialize_multisig` | Allow fee payer as signer in InitializeMultisig/InitializeMultisig2 instructions | `false` | boolean |
+| `allow_freeze_account` | Allow fee payer as freeze authority in FreezeAccount instructions | `false` | boolean |
+| `allow_thaw_account` | Allow fee payer as freeze authority in ThawAccount instructions | `false` | boolean |
+
+Token-2022 supports the same instruction set as SPL Token with identical configuration options (under the `[validation.fee_payer_policy.token_2022]` section).
 
 ### Security Considerations
 
-**SECURITY WARNING:** For security reasons, it is recommended to set all of these to `false` and only enable as needed. This will prevent unwanted behavior such as users draining your fee payer account or burning tokens from your fee payer account.
+**SECURITY WARNING:** For security reasons, it is recommended to set all of these to `false` (default) and only enable as needed. This will prevent unwanted behavior such as users draining your fee payer account or burning tokens from your fee payer account. This prevents:
+
+- **Account Drainage**: Users transferring SOL or tokens from your fee payer account
+- **Authority Takeover**: Users changing authorities on accounts owned by your fee payer
+- **Unauthorized Minting**: Users minting tokens if your fee payer has mint authority
+- **Account Manipulation**: Users freezing, closing, or modifying accounts controlled by your fee payer
+
+**Best Practice:** Start with all permissions disabled and enable only the minimum set needed for your specific use case.
 
 ## Price Configuration (optional)
 
@@ -354,17 +416,22 @@ type = "free"
 
 #### Security Measures When Using Fixed/Free Pricing
 
-1. **Disable Transfer Operations** - Prevent fee payer from being used as source in transfers:
+1. **Disable All Transfer and Monetary Operations** - Prevent fee payer from being used as source in transfers:
    ```toml
    [validation.fee_payer_policy.system]
-   allow_transfer = false              # Critical: Block SOL transfers
-   allow_create_account = false        # Block account creation
+   allow_transfer = false              # Block SOL transfers
+   allow_create_account = false        # Block account creation with lamports
+   allow_allocate = false              # Block space allocation
 
-   [validation.fee_payer_policy.spl_token]
+   [validation.fee_payer_policy.system.nonce]
+   allow_withdraw = false              # Block nonce account withdrawals
+
+   [validation.fee_payer_policy.spl_token] # and for [validation.fee_payer_policy.token_2022]
    allow_transfer = false              # Block SPL transfers
-
-   [validation.fee_payer_policy.token_2022]
-   allow_transfer = false              # Block Token2022 transfers
+   allow_burn = false                  # Block SPL token burning
+   allow_close_account = false         # Block SPL token account closures (returns rent)
+   allow_mint_to = false               # Block unauthorized SPL token minting
+   allow_initialize_account = false    # Block account initialization
    ```
 
 2. **Enable Authentication** - Use authentication to prevent abuse:
@@ -380,6 +447,12 @@ type = "free"
    [validation]
    max_allowed_lamports = 1000000  # 0.001 SOL maximum
    ```
+
+> **WARNING:** Particularly dangerous operations when using fixed/free pricing:
+> - `allow_mint_to`: Could allow unlimited token creation if fee payer has mint authority
+> - `allow_set_authority`: Could transfer control of critical accounts to attackers
+> - `allow_transfer`: Enables direct drainage of fee payer token balances
+> - `allow_close_account`: Returns rent to attacker-controlled accounts
 
 ## Performance Monitoring (optional)
 
@@ -503,15 +576,46 @@ disallowed_accounts = [
     "BadActor1111111111111111111111111111111111111111",
 ]
 
-# Restrictive fee payer policy
-[validation.fee_payer_policy]
-allow_sol_transfers = false
-allow_spl_transfers = false
-allow_token2022_transfers = false
-allow_assign = false
-allow_burn = false
-allow_close_account = false
-allow_approve = false
+# Restrictive fee payer policy (recommended for production)
+[validation.fee_payer_policy.system]
+allow_transfer = false           # Block SOL transfers from fee payer
+allow_assign = false             # Block account ownership changes
+allow_create_account = false     # Block creating accounts with fee payer funds
+allow_allocate = false           # Block allocating space for fee payer accounts
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false         # Block nonce account initialization
+allow_advance = false            # Block nonce advancement
+allow_authorize = false          # Block nonce authority changes
+allow_withdraw = false           # Block nonce withdrawals
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = false           # Critical: Block SPL transfers
+allow_burn = false               # Block token burning
+allow_close_account = false      # Block account closures
+allow_approve = false            # Block token approvals
+allow_revoke = false             # Block delegate revocations
+allow_set_authority = false      # Block authority changes
+allow_mint_to = false            # Block minting operations
+allow_initialize_mint = false    # Block mint initialization
+allow_initialize_account = false # Block account initialization
+allow_initialize_multisig = false # Block multisig initialization
+allow_freeze_account = false     # Block account freezing
+allow_thaw_account = false       # Block account thawing
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = false           # Critical: Block Token2022 transfers
+allow_burn = false               # Block token burning
+allow_close_account = false      # Block account closures
+allow_approve = false            # Block token approvals
+allow_revoke = false             # Block delegate revocations
+allow_set_authority = false      # Block authority changes
+allow_mint_to = false            # Block minting operations
+allow_initialize_mint = false    # Block mint initialization
+allow_initialize_account = false # Block account initialization
+allow_initialize_multisig = false # Block multisig initialization
+allow_freeze_account = false     # Block account freezing
+allow_thaw_account = false       # Block account thawing
 
 # Token-2022 extension blocking
 [validation.token2022]
