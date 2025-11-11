@@ -57,6 +57,7 @@ pub async fn estimate_transaction_fee(
 
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
+        &config,
         rpc_client,
         request.sig_verify,
     )

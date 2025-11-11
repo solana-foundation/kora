@@ -44,6 +44,7 @@ pub async fn sign_transaction(
 
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
+        &config,
         rpc_client,
         request.sig_verify,
     )
