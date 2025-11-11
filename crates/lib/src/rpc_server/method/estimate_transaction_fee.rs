@@ -63,6 +63,7 @@ pub async fn estimate_transaction_fee(
     .await?;
 
     let fee_calculation = FeeConfigUtil::estimate_kora_fee(
+        &config,
         rpc_client,
         &mut resolved_transaction,
         &fee_payer,
@@ -75,6 +76,7 @@ pub async fn estimate_transaction_fee(
 
     // Calculate fee in token if requested
     let fee_in_token = FeeConfigUtil::calculate_fee_in_token(
+        &config,
         rpc_client,
         fee_in_lamports,
         request.fee_token.as_deref(),

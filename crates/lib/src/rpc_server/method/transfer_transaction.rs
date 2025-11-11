@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 
 use crate::{
     constant::NATIVE_SOL,
-    state::get_request_signer_with_signer_key,
+    state::{get_config, get_request_signer_with_signer_key},
     transaction::{
         TransactionUtil, VersionedMessageExt, VersionedTransactionOps, VersionedTransactionResolved,
     },
@@ -43,9 +43,10 @@ pub async fn transfer_transaction(
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let config = get_config()?;
     let fee_payer = signer.pubkey();
 
-    let validator = TransactionValidator::new(fee_payer)?;
+    let validator = TransactionValidator::new(config, fee_payer)?;
 
     let source = Pubkey::from_str(&request.source)
         .map_err(|e| KoraError::ValidationError(format!("Invalid source address: {e}")))?;

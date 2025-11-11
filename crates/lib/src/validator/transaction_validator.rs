@@ -1,9 +1,8 @@
 use crate::{
-    config::FeePayerPolicy,
+    config::{Config, FeePayerPolicy},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation},
     oracle::PriceSource,
-    state::get_config,
     token::{interface::TokenMint, token::TokenUtil},
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
@@ -28,8 +27,8 @@ pub struct TransactionValidator {
 }
 
 impl TransactionValidator {
-    pub fn new(fee_payer_pubkey: Pubkey) -> Result<Self, KoraError> {
-        let config = &get_config()?.validation;
+    pub fn new(config: &Config, fee_payer_pubkey: Pubkey) -> Result<Self, KoraError> {
+        let config = &config.validation;
 
         // Convert string program IDs to Pubkeys
         let allowed_programs = config
@@ -329,12 +328,11 @@ impl TransactionValidator {
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
     ) -> Result<u64, KoraError> {
-        let config = get_config()?;
         FeeConfigUtil::calculate_fee_payer_outflow(
             &self.fee_payer_pubkey,
             transaction_resolved,
             rpc_client,
-            &config.validation.price_source,
+            &self._price_source,
         )
         .await
     }
@@ -362,10 +360,9 @@ impl TransactionValidator {
     }
 
     pub fn validate_strict_pricing_with_fee(
+        config: &Config,
         fee_calculation: &TotalFeeCalculation,
     ) -> Result<(), KoraError> {
-        let config = get_config()?;
-
         if !matches!(&config.validation.price.model, PriceModel::Fixed { strict: true, .. }) {
             return Ok(());
         }
@@ -394,7 +391,7 @@ impl TransactionValidator {
 mod tests {
     use crate::{
         config::FeePayerPolicy,
-        state::update_config,
+        state::{get_config, update_config},
         tests::{config_mock::ConfigMockBuilder, rpc_mock::RpcMockBuilder},
         transaction::TransactionUtil,
     };
@@ -458,7 +455,8 @@ mod tests {
         setup_default_config();
         let rpc_client = RpcMockBuilder::new().build();
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let recipient = Pubkey::new_unique();
         let sender = Pubkey::new_unique();
@@ -477,7 +475,8 @@ mod tests {
         setup_default_config();
         let rpc_client = RpcMockBuilder::new().build();
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
@@ -505,7 +504,8 @@ mod tests {
         setup_default_config();
         let rpc_client = RpcMockBuilder::new().build();
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
@@ -544,7 +544,8 @@ mod tests {
         update_config(config).unwrap();
 
         let rpc_client = RpcMockBuilder::new().build();
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
@@ -568,7 +569,8 @@ mod tests {
         setup_default_config();
         let rpc_client = RpcMockBuilder::new().build();
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let sender = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
@@ -594,7 +596,8 @@ mod tests {
         setup_default_config();
         let rpc_client = RpcMockBuilder::new().build();
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         // Create an empty message using Message::new with empty instructions
         let message = VersionedMessage::Legacy(Message::new(&[], Some(&fee_payer)));
@@ -619,7 +622,8 @@ mod tests {
         update_config(config).unwrap();
 
         let rpc_client = RpcMockBuilder::new().build();
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = transfer(
             &Pubkey::from_str("hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek").unwrap(),
             &fee_payer,
@@ -643,7 +647,8 @@ mod tests {
         policy.system.allow_transfer = true;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
 
@@ -658,7 +663,8 @@ mod tests {
         policy.system.allow_transfer = false;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let instruction = transfer(&fee_payer, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
@@ -681,7 +687,8 @@ mod tests {
         policy.system.allow_assign = true;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
@@ -697,7 +704,8 @@ mod tests {
         policy.system.allow_assign = false;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
@@ -721,7 +729,8 @@ mod tests {
         policy.spl_token.allow_transfer = true;
         setup_spl_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let transfer_ix = spl_token_interface::instruction::transfer(
             &spl_token_interface::id(),
@@ -745,7 +754,8 @@ mod tests {
         policy.spl_token.allow_transfer = false;
         setup_spl_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let transfer_ix = spl_token_interface::instruction::transfer(
             &spl_token_interface::id(),
@@ -798,7 +808,8 @@ mod tests {
         policy.token_2022.allow_transfer = true;
         setup_token2022_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let transfer_ix = spl_token_2022_interface::instruction::transfer_checked(
             &spl_token_2022_interface::id(),
@@ -825,7 +836,8 @@ mod tests {
         policy.token_2022.allow_transfer = false;
         setup_token2022_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let transfer_ix = spl_token_2022_interface::instruction::transfer_checked(
             &spl_token_2022_interface::id(),
@@ -881,7 +893,8 @@ mod tests {
         update_config(config).unwrap();
 
         let rpc_client = RpcMockBuilder::new().build();
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         // Test 1: Fee payer as sender in Transfer - should add to outflow
         let recipient = Pubkey::new_unique();
@@ -1019,7 +1032,8 @@ mod tests {
         policy.spl_token.allow_burn = true;
         setup_spl_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let burn_ix = spl_token_interface::instruction::burn(
             &spl_token_interface::id(),
@@ -1044,7 +1058,8 @@ mod tests {
         policy.spl_token.allow_burn = false;
         setup_spl_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let burn_ix = spl_token_interface::instruction::burn(
             &spl_token_interface::id(),
@@ -1097,7 +1112,8 @@ mod tests {
         policy.spl_token.allow_close_account = true;
         setup_spl_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let close_ix = spl_token_interface::instruction::close_account(
             &spl_token_interface::id(),
@@ -1120,7 +1136,8 @@ mod tests {
         policy.spl_token.allow_close_account = false;
         setup_spl_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let close_ix = spl_token_interface::instruction::close_account(
             &spl_token_interface::id(),
@@ -1153,7 +1170,8 @@ mod tests {
         policy.spl_token.allow_approve = true;
         setup_spl_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let approve_ix = spl_token_interface::instruction::approve(
             &spl_token_interface::id(),
@@ -1177,7 +1195,8 @@ mod tests {
         policy.spl_token.allow_approve = false;
         setup_spl_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let approve_ix = spl_token_interface::instruction::approve(
             &spl_token_interface::id(),
@@ -1233,7 +1252,8 @@ mod tests {
         policy.token_2022.allow_burn = false;
         setup_token2022_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let burn_ix = spl_token_2022_interface::instruction::burn(
             &spl_token_2022_interface::id(),
@@ -1266,7 +1286,8 @@ mod tests {
         policy.token_2022.allow_close_account = false;
         setup_token2022_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let close_ix = spl_token_2022_interface::instruction::close_account(
             &spl_token_2022_interface::id(),
@@ -1298,7 +1319,8 @@ mod tests {
         policy.token_2022.allow_approve = true;
         setup_token2022_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let approve_ix = spl_token_2022_interface::instruction::approve(
             &spl_token_2022_interface::id(),
@@ -1323,7 +1345,8 @@ mod tests {
         policy.token_2022.allow_approve = false;
         setup_token2022_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         let approve_ix = spl_token_2022_interface::instruction::approve(
             &spl_token_2022_interface::id(),
@@ -1380,7 +1403,8 @@ mod tests {
         policy.system.allow_create_account = true;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = create_account(&fee_payer, &new_account, 1000, 100, &owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1393,7 +1417,8 @@ mod tests {
         policy.system.allow_create_account = false;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = create_account(&fee_payer, &new_account, 1000, 100, &owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1414,7 +1439,8 @@ mod tests {
         policy.system.allow_allocate = true;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = allocate(&fee_payer, 100);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1427,7 +1453,8 @@ mod tests {
         policy.system.allow_allocate = false;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = allocate(&fee_payer, 100);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1449,7 +1476,8 @@ mod tests {
         policy.system.nonce.allow_initialize = true;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instructions = create_nonce_account(&fee_payer, &nonce_account, &fee_payer, 1_000_000);
         // Only test the InitializeNonceAccount instruction (second one)
         let message =
@@ -1464,7 +1492,8 @@ mod tests {
         policy.system.nonce.allow_initialize = false;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instructions = create_nonce_account(&fee_payer, &nonce_account, &fee_payer, 1_000_000);
         let message =
             VersionedMessage::Legacy(Message::new(&[instructions[1].clone()], Some(&fee_payer)));
@@ -1487,7 +1516,8 @@ mod tests {
         policy.system.nonce.allow_advance = true;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = advance_nonce_account(&nonce_account, &fee_payer);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1500,7 +1530,8 @@ mod tests {
         policy.system.nonce.allow_advance = false;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = advance_nonce_account(&nonce_account, &fee_payer);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1523,7 +1554,8 @@ mod tests {
         policy.system.nonce.allow_withdraw = true;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1536,7 +1568,8 @@ mod tests {
         policy.system.nonce.allow_withdraw = false;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 1000);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1559,7 +1592,8 @@ mod tests {
         policy.system.nonce.allow_authorize = true;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1572,7 +1606,8 @@ mod tests {
         policy.system.nonce.allow_authorize = false;
         setup_config_with_policy(policy);
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
         let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &new_authority);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
@@ -1594,7 +1629,8 @@ mod tests {
         // Fixed price = 5000, but total = 3000 + 2000 + 5000 = 10000 > 5000
         let fee_calc = TotalFeeCalculation::new(5000, 3000, 2000, 5000, 0, 0);
 
-        let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
+        let config = get_config().unwrap();
+        let result = TransactionValidator::validate_strict_pricing_with_fee(&config, &fee_calc);
 
         assert!(result.is_err());
         if let Err(KoraError::ValidationError(msg)) = result {
@@ -1619,7 +1655,8 @@ mod tests {
         // Fixed price = 5000, total = 1000 + 1000 + 1000 = 3000 < 5000
         let fee_calc = TotalFeeCalculation::new(5000, 1000, 1000, 1000, 0, 0);
 
-        let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
+        let config = get_config().unwrap();
+        let result = TransactionValidator::validate_strict_pricing_with_fee(&config, &fee_calc);
 
         assert!(result.is_ok());
     }
@@ -1637,7 +1674,8 @@ mod tests {
 
         let fee_calc = TotalFeeCalculation::new(5000, 10000, 0, 0, 0, 0);
 
-        let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
+        let config = get_config().unwrap();
+        let result = TransactionValidator::validate_strict_pricing_with_fee(&config, &fee_calc);
 
         assert!(result.is_ok(), "Should pass when strict=false");
     }
@@ -1655,7 +1693,8 @@ mod tests {
 
         let fee_calc = TotalFeeCalculation::new(5000, 10000, 0, 0, 0, 0);
 
-        let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
+        let config = get_config().unwrap();
+        let result = TransactionValidator::validate_strict_pricing_with_fee(&config, &fee_calc);
 
         assert!(result.is_ok());
     }
@@ -1678,7 +1717,8 @@ mod tests {
         // Total exactly equals fixed price (5000 = 5000)
         let fee_calc = TotalFeeCalculation::new(5000, 2000, 1000, 2000, 0, 0);
 
-        let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
+        let config = get_config().unwrap();
+        let result = TransactionValidator::validate_strict_pricing_with_fee(&config, &fee_calc);
 
         assert!(result.is_ok(), "Should pass when total equals fixed price");
     }

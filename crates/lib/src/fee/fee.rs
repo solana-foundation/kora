@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use crate::{
+    config::Config,
     constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
     fee::price::PriceModel,
@@ -18,10 +19,10 @@ use crate::{
 use solana_message::Message;
 
 #[cfg(not(test))]
-use {crate::cache::CacheUtil, crate::state::get_config};
+use crate::cache::CacheUtil;
 
 #[cfg(test)]
-use crate::tests::{cache_mock::MockCacheUtil as CacheUtil, config_mock::mock_state::get_config};
+use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
@@ -137,11 +138,11 @@ impl FeeConfigUtil {
     /// Analyze payment instructions in transaction
     /// Returns (has_payment, total_transfer_fees)
     async fn analyze_payment_instructions(
+        config: &Config,
         resolved_transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,
     ) -> Result<(bool, u64), KoraError> {
-        let config = get_config()?;
         let payment_destination = config.kora.get_payment_address(fee_payer)?;
         let mut has_payment = false;
         let mut total_transfer_fees = 0u64;
@@ -215,6 +216,7 @@ impl FeeConfigUtil {
     }
 
     async fn estimate_transaction_fee(
+        config: &Config,
         rpc_client: &RpcClient,
         transaction: &mut VersionedTransactionResolved,
         fee_payer: &Pubkey,
@@ -234,7 +236,6 @@ impl FeeConfigUtil {
         }
 
         // Calculate fee payer outflow if fee payer is provided, to better estimate the potential fee
-        let config = get_config()?;
         let fee_payer_outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             fee_payer,
             transaction,
@@ -245,7 +246,7 @@ impl FeeConfigUtil {
 
         // Analyze payment instructions (checks if payment exists + calculates Token2022 fees)
         let (has_payment, transfer_fee_config_amount) =
-            FeeConfigUtil::analyze_payment_instructions(transaction, rpc_client, fee_payer).await?;
+            FeeConfigUtil::analyze_payment_instructions(config, transaction, rpc_client, fee_payer).await?;
 
         // If payment is required but not found, add estimated payment instruction fee
         let fee_for_payment_instruction = if is_payment_required && !has_payment {
@@ -277,14 +278,13 @@ impl FeeConfigUtil {
 
     /// Main entry point for fee calculation with Kora's price model applied
     pub async fn estimate_kora_fee(
+        config: &Config,
         rpc_client: &RpcClient,
         transaction: &mut VersionedTransactionResolved,
         fee_payer: &Pubkey,
         is_payment_required: bool,
         price_source: PriceSource,
     ) -> Result<TotalFeeCalculation, KoraError> {
-        let config = get_config()?;
-
         match &config.validation.price.model {
             PriceModel::Free => Ok(TotalFeeCalculation::new_fixed(0)),
             PriceModel::Fixed { strict, .. } => {
@@ -296,6 +296,7 @@ impl FeeConfigUtil {
 
                 if *strict {
                     let fee_calculation = Self::estimate_transaction_fee(
+                        config,
                         rpc_client,
                         transaction,
                         fee_payer,
@@ -318,6 +319,7 @@ impl FeeConfigUtil {
             PriceModel::Margin { .. } => {
                 // Get the raw transaction
                 let fee_calculation = Self::estimate_transaction_fee(
+                    config,
                     rpc_client,
                     transaction,
                     fee_payer,
@@ -345,6 +347,7 @@ impl FeeConfigUtil {
 
     /// Calculate the fee in a specific token if provided
     pub async fn calculate_fee_in_token(
+        config: &Config,
         rpc_client: &RpcClient,
         fee_in_lamports: u64,
         fee_token: Option<&str>,
@@ -354,7 +357,6 @@ impl FeeConfigUtil {
                 KoraError::InvalidTransaction("Invalid fee token mint address".to_string())
             })?;
 
-            let config = get_config()?;
             let validation_config = &config.validation;
 
             if !validation_config.supports_token(fee_token) {
@@ -520,7 +522,7 @@ mod tests {
                 create_mock_rpc_client_with_account, create_mock_token_account,
                 setup_or_get_test_config, setup_or_get_test_signer,
             },
-            config_mock::ConfigMockBuilder,
+            config_mock::{mock_state::get_config, ConfigMockBuilder},
             rpc_mock::RpcMockBuilder,
         },
         token::{interface::TokenInterface, spl_token::TokenProgram},
@@ -957,7 +959,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
@@ -986,7 +990,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
@@ -1032,7 +1038,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
@@ -1063,7 +1071,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let result = FeeConfigUtil::estimate_transaction_fee(
+            &config,
             &mocked_rpc_client,
             &mut resolved_transaction,
             &fee_payer.pubkey(),
@@ -1093,7 +1103,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let result = FeeConfigUtil::estimate_transaction_fee(
+            &config,
             &mocked_rpc_client,
             &mut resolved_transaction,
             &kora_fee_payer.pubkey(),
@@ -1130,7 +1142,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let result = FeeConfigUtil::estimate_transaction_fee(
+            &config,
             &mocked_rpc_client,
             &mut resolved_transaction,
             &fee_payer.pubkey(),
@@ -1186,7 +1200,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,

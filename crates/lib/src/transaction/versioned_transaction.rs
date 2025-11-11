@@ -12,9 +12,9 @@ use std::{collections::HashMap, ops::Deref};
 use solana_transaction_status_client_types::{UiInstruction, UiTransactionEncoding};
 
 use crate::{
+    config::Config,
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
-    state::get_config,
     transaction::{
         instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
         ParsedSystemInstructionData, ParsedSystemInstructionType,
@@ -58,11 +58,13 @@ pub trait VersionedTransactionOps {
 
     async fn sign_transaction(
         &mut self,
+        config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError>;
     async fn sign_and_send_transaction(
         &mut self,
+        config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError>;
@@ -242,18 +244,19 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
     async fn sign_transaction(
         &mut self,
+        config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError> {
         let fee_payer = signer.pubkey();
-        let config = &get_config()?;
-        let validator = TransactionValidator::new(fee_payer)?;
+        let validator = TransactionValidator::new(config, fee_payer)?;
 
         // Validate transaction and accounts (already resolved)
         validator.validate_transaction(self, rpc_client).await?;
 
         // Calculate fee and validate payment if price model requires it
         let fee_calculation = FeeConfigUtil::estimate_kora_fee(
+            &config,
             rpc_client,
             self,
             &fee_payer,
@@ -280,7 +283,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             .await?;
 
             // Validate strict pricing if enabled
-            TransactionValidator::validate_strict_pricing_with_fee(&fee_calculation)?;
+            TransactionValidator::validate_strict_pricing_with_fee(&config, &fee_calculation)?;
         }
 
         // Get latest blockhash and update transaction
@@ -317,11 +320,12 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
     async fn sign_and_send_transaction(
         &mut self,
+        config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError> {
         // Payment validation is handled in sign_transaction
-        let (transaction, encoded) = self.sign_transaction(signer, rpc_client).await?;
+        let (transaction, encoded) = self.sign_transaction(config, signer, rpc_client).await?;
 
         // Send and confirm transaction
         let signature = rpc_client
