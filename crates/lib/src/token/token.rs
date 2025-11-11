@@ -69,10 +69,11 @@ impl TokenUtil {
     }
 
     pub async fn get_mint(
+        config: &crate::config::Config,
         rpc_client: &RpcClient,
         mint_pubkey: &Pubkey,
     ) -> Result<Box<dyn TokenMint + Send + Sync>, KoraError> {
-        let mint_account = CacheUtil::get_account(rpc_client, mint_pubkey, false).await?;
+        let mint_account = CacheUtil::get_account(config, rpc_client, mint_pubkey, false).await?;
 
         let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
 
@@ -82,10 +83,11 @@ impl TokenUtil {
     }
 
     pub async fn get_mint_decimals(
+        config: &crate::config::Config,
         rpc_client: &RpcClient,
         mint_pubkey: &Pubkey,
     ) -> Result<u8, KoraError> {
-        let mint = Self::get_mint(rpc_client, mint_pubkey).await?;
+        let mint = Self::get_mint(config, rpc_client, mint_pubkey).await?;
         Ok(mint.decimals())
     }
 
@@ -94,7 +96,8 @@ impl TokenUtil {
         price_source: PriceSource,
         rpc_client: &RpcClient,
     ) -> Result<(TokenPrice, u8), KoraError> {
-        let decimals = Self::get_mint_decimals(rpc_client, mint).await?;
+        let config = get_config()?;
+        let decimals = Self::get_mint_decimals(&config, rpc_client, mint).await?;
 
         let oracle =
             RetryingPriceOracle::new(3, Duration::from_secs(1), get_price_oracle(price_source));
@@ -174,6 +177,7 @@ impl TokenUtil {
     /// Calculate the total lamports value of SPL token transfers where the fee payer is involved
     /// This includes both outflow (fee payer as owner/source) and inflow (fee payer owns destination)
     pub async fn calculate_spl_transfers_value_in_lamports(
+        config: &crate::config::Config,
         spl_transfers: &[ParsedSPLInstructionData],
         fee_payer: &Pubkey,
         price_source: &PriceSource,
@@ -204,7 +208,7 @@ impl TokenUtil {
                     // We need to check the destination token account owner
                     if let Some(mint_pubkey) = mint {
                         // Get destination account to check owner
-                        match CacheUtil::get_account(rpc_client, destination_address, false).await {
+                        match CacheUtil::get_account(config, rpc_client, destination_address, false).await {
                             Ok(dest_account) => {
                                 let token_program =
                                     TokenType::get_token_program_from_owner(&dest_account.owner)?;
@@ -276,7 +280,7 @@ impl TokenUtil {
 
         let mut mint_decimals = std::collections::HashMap::new();
         for mint in mint_to_transfers.keys() {
-            let decimals = Self::get_mint_decimals(rpc_client, mint).await?;
+            let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
             mint_decimals.insert(*mint, decimals);
         }
 
@@ -329,17 +333,18 @@ impl TokenUtil {
     /// Validate Token2022 extensions for payment instructions
     /// This checks if any blocked extensions are present on the payment accounts
     pub async fn validate_token2022_extensions_for_payment(
+        config: &crate::config::Config,
         rpc_client: &RpcClient,
         source_address: &Pubkey,
         destination_address: &Pubkey,
         mint: &Pubkey,
     ) -> Result<(), KoraError> {
-        let config = &get_config()?.validation.token_2022;
+        let token2022_config = &config.validation.token_2022;
 
         let token_program = Token2022Program::new();
 
         // Get mint account data and validate mint extensions (force refresh in case extensions are added)
-        let mint_account = CacheUtil::get_account(rpc_client, mint, true).await?;
+        let mint_account = CacheUtil::get_account(config, rpc_client, mint, true).await?;
         let mint_data = mint_account.data;
 
         // Unpack the mint state with extensions
@@ -352,7 +357,7 @@ impl TokenUtil {
 
         // Check each extension type present on the mint
         for extension_type in mint_with_extensions.get_extension_types() {
-            if config.is_mint_extension_blocked(*extension_type) {
+            if token2022_config.is_mint_extension_blocked(*extension_type) {
                 return Err(KoraError::ValidationError(format!(
                     "Blocked mint extension found on mint account {mint}",
                 )));
@@ -360,7 +365,7 @@ impl TokenUtil {
         }
 
         // Check source account extensions (force refresh in case extensions are added)
-        let source_account = CacheUtil::get_account(rpc_client, source_address, true).await?;
+        let source_account = CacheUtil::get_account(config, rpc_client, source_address, true).await?;
         let source_data = source_account.data;
 
         let source_state = token_program.unpack_token_account(&source_data)?;
@@ -371,7 +376,7 @@ impl TokenUtil {
             })?;
 
         for extension_type in source_with_extensions.get_extension_types() {
-            if config.is_account_extension_blocked(*extension_type) {
+            if token2022_config.is_account_extension_blocked(*extension_type) {
                 return Err(KoraError::ValidationError(format!(
                     "Blocked account extension found on source account {source_address}",
                 )));
@@ -380,7 +385,7 @@ impl TokenUtil {
 
         // Check destination account extensions (force refresh in case extensions are added)
         let destination_account =
-            CacheUtil::get_account(rpc_client, destination_address, true).await?;
+            CacheUtil::get_account(config, rpc_client, destination_address, true).await?;
         let destination_data = destination_account.data;
 
         let destination_state = token_program.unpack_token_account(&destination_data)?;
@@ -391,7 +396,7 @@ impl TokenUtil {
             })?;
 
         for extension_type in destination_with_extensions.get_extension_types() {
-            if config.is_account_extension_blocked(*extension_type) {
+            if token2022_config.is_account_extension_blocked(*extension_type) {
                 return Err(KoraError::ValidationError(format!(
                     "Blocked account extension found on destination account {destination_address}",
                 )));
@@ -402,13 +407,13 @@ impl TokenUtil {
     }
 
     pub async fn verify_token_payment(
+        config: &crate::config::Config,
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         required_lamports: u64,
         // Wallet address of the owner of the destination token account
         expected_destination_owner: &Pubkey,
     ) -> Result<bool, KoraError> {
-        let config = get_config()?;
         let mut total_lamport_value = 0u64;
 
         for instruction in transaction_resolved
@@ -433,7 +438,7 @@ impl TokenUtil {
 
                 // Validate the destination account is that of the payment address (or signer if none provided)
                 let destination_account =
-                    CacheUtil::get_account(rpc_client, destination_address, false)
+                    CacheUtil::get_account(config, rpc_client, destination_address, false)
                         .await
                         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
@@ -445,6 +450,7 @@ impl TokenUtil {
                 // For Token2022 payments, validate that blocked extensions are not used
                 if *is_2022 {
                     TokenUtil::validate_token2022_extensions_for_payment(
+                        config,
                         rpc_client,
                         source_address,
                         destination_address,
@@ -575,7 +581,8 @@ mod tests_token {
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
-        let result = TokenUtil::get_mint(&rpc_client, &mint).await;
+        let config = get_config().unwrap();
+        let result = TokenUtil::get_mint(&config, &rpc_client, &mint).await;
         assert!(result.is_ok());
         let mint_data = result.unwrap();
         assert_eq!(mint_data.decimals(), 9);
@@ -587,7 +594,8 @@ mod tests_token {
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result = TokenUtil::get_mint(&rpc_client, &mint).await;
+        let config = get_config().unwrap();
+        let result = TokenUtil::get_mint(&config, &rpc_client, &mint).await;
         assert!(result.is_err());
     }
 
@@ -597,7 +605,8 @@ mod tests_token {
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
-        let result = TokenUtil::get_mint_decimals(&rpc_client, &mint).await;
+        let config = get_config().unwrap();
+        let result = TokenUtil::get_mint_decimals(&config, &rpc_client, &mint).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 6);
     }
@@ -908,7 +917,9 @@ mod tests_token {
 
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
+        let config = get_config().unwrap();
         let result = TokenUtil::validate_token2022_extensions_for_payment(
+            &config,
             &rpc_client,
             &source_address,
             &destination_address,
@@ -933,7 +944,9 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_account_info(&source_account).build();
 
         // Test with None mint (should only check account extensions but will fail on dest account lookup)
+        let config = get_config().unwrap();
         let result = TokenUtil::validate_token2022_extensions_for_payment(
+            &config,
             &rpc_client,
             &source_address,
             &destination_address,

@@ -473,7 +473,7 @@ impl ConfigValidator {
             for program_str in &config.validation.allowed_programs {
                 if let Ok(program_pubkey) = Pubkey::from_str(program_str) {
                     if let Err(e) =
-                        validate_account(rpc_client, &program_pubkey, Some(AccountType::Program))
+                        validate_account(config, rpc_client, &program_pubkey, Some(AccountType::Program))
                             .await
                     {
                         errors.push(format!("Program {program_str} validation failed: {e}"));
@@ -485,7 +485,7 @@ impl ConfigValidator {
             for token_str in &config.validation.allowed_tokens {
                 if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
                     if let Err(e) =
-                        validate_account(rpc_client, &token_pubkey, Some(AccountType::Mint)).await
+                        validate_account(config, rpc_client, &token_pubkey, Some(AccountType::Mint)).await
                     {
                         errors.push(format!("Token {token_str} validation failed: {e}"));
                     }
@@ -496,7 +496,7 @@ impl ConfigValidator {
             for token_str in &config.validation.allowed_spl_paid_tokens {
                 if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
                     if let Err(e) =
-                        validate_account(rpc_client, &token_pubkey, Some(AccountType::Mint)).await
+                        validate_account(config, rpc_client, &token_pubkey, Some(AccountType::Mint)).await
                     {
                         errors.push(format!("SPL paid token {token_str} validation failed: {e}"));
                     }
@@ -514,7 +514,7 @@ impl ConfigValidator {
             // Validate missing ATAs for payment address
             if let Some(payment_address) = &config.kora.payment_address {
                 if let Ok(payment_address) = Pubkey::from_str(payment_address) {
-                    match find_missing_atas(rpc_client, &payment_address).await {
+                    match find_missing_atas(config, rpc_client, &payment_address).await {
                         Ok(atas_to_create) => {
                             if !atas_to_create.is_empty() {
                                 errors.push(format!(

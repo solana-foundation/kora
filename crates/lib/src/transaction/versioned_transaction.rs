@@ -15,6 +15,7 @@ use crate::{
     config::Config,
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
+    state::get_config,
     transaction::{
         instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
         ParsedSystemInstructionData, ParsedSystemInstructionType,
@@ -252,7 +253,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let validator = TransactionValidator::new(config, fee_payer)?;
 
         // Validate transaction and accounts (already resolved)
-        validator.validate_transaction(self, rpc_client).await?;
+        validator.validate_transaction(config, self, rpc_client).await?;
 
         // Calculate fee and validate payment if price model requires it
         let fee_calculation = FeeConfigUtil::estimate_kora_fee(
@@ -275,6 +276,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
             // Validate token payment using the resolved transaction
             TransactionValidator::validate_token_payment(
+                config,
                 self,
                 required_lamports,
                 rpc_client,
@@ -347,10 +349,12 @@ impl LookupTableUtil {
     ) -> Result<Vec<Pubkey>, KoraError> {
         let mut resolved_addresses = Vec::new();
 
+        let config = get_config()?;
+
         // Maybe we can use caching here, there's a chance the lookup tables get updated though, so tbd
         for lookup in lookup_table_lookups {
             let lookup_table_account =
-                CacheUtil::get_account(rpc_client, &lookup.account_key, false).await.map_err(
+                CacheUtil::get_account(&config, rpc_client, &lookup.account_key, false).await.map_err(
                     |e| KoraError::RpcError(format!("Failed to fetch lookup table: {e}")),
                 )?;
 

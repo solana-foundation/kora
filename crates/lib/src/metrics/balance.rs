@@ -52,6 +52,15 @@ impl BalanceTracker {
         // Get all signers in the pool
         let signers_info = get_signers_info()?;
 
+        // Fetch config once for all signers
+        let config = match get_config() {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("Failed to get config in metrics: {e}");
+                return Ok(());
+            }
+        };
+
         if let Some(gauge_vec) = SIGNER_BALANCE_GAUGES.get() {
             let mut balance_results = Vec::new();
 
@@ -64,7 +73,7 @@ impl BalanceTracker {
                     ))
                 })?;
 
-                match CacheUtil::get_account(rpc_client, &pubkey, false).await {
+                match CacheUtil::get_account(&config, rpc_client, &pubkey, false).await {
                     Ok(account) => {
                         balance_results.push((signer_info, account.lamports));
                     }

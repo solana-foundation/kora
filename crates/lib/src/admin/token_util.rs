@@ -1,4 +1,5 @@
 use crate::{
+    config::Config,
     error::KoraError,
     state::{get_request_signer_with_signer_key, get_signer_pool},
     token::token::TokenType,
@@ -94,7 +95,8 @@ pub async fn initialize_atas_with_chunk_size(
     for address in addresses_to_initialize_atas {
         println!("Initializing ATAs for address: {address}");
 
-        let atas_to_create = find_missing_atas(rpc_client, address).await?;
+        let config = get_config()?;
+        let atas_to_create = find_missing_atas(&config, rpc_client, address).await?;
 
         if atas_to_create.is_empty() {
             println!("✓ All required ATAs already exist for address: {address}");
@@ -245,11 +247,10 @@ async fn create_atas_for_signer(
 }
 
 pub async fn find_missing_atas(
+    config: &Config,
     rpc_client: &RpcClient,
     payment_address: &Pubkey,
 ) -> Result<Vec<ATAToCreate>, KoraError> {
-    let config = get_config()?;
-
     // Parse all allowed SPL paid token mints
     let mut token_mints = Vec::new();
     for token_str in &config.validation.allowed_spl_paid_tokens {
@@ -273,14 +274,14 @@ pub async fn find_missing_atas(
     for mint in &token_mints {
         let ata = get_associated_token_address(payment_address, mint);
 
-        match CacheUtil::get_account(rpc_client, &ata, false).await {
+        match CacheUtil::get_account(&config, rpc_client, &ata, false).await {
             Ok(_) => {
                 println!("✓ ATA already exists for token {mint}: {ata}");
             }
             Err(_) => {
                 // Fetch mint account to determine if it's SPL or Token2022
                 let mint_account =
-                    CacheUtil::get_account(rpc_client, mint, false).await.map_err(|e| {
+                    CacheUtil::get_account(&config, rpc_client, mint, false).await.map_err(|e| {
                         KoraError::RpcError(format!("Failed to fetch mint account for {mint}: {e}"))
                     })?;
 
@@ -328,7 +329,8 @@ mod tests {
         let rpc_client = create_mock_rpc_client_account_not_found();
         let payment_address = Pubkey::new_unique();
 
-        let result = find_missing_atas(&rpc_client, &payment_address).await.unwrap();
+        let config = get_config().unwrap();
+        let result = find_missing_atas(&config, &rpc_client, &payment_address).await.unwrap();
 
         assert!(result.is_empty(), "Should return empty vec when no SPL tokens configured");
     }
@@ -366,9 +368,10 @@ mod tests {
         cache_ctx
             .expect()
             .times(3)
-            .returning(move |_, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
+            .returning(move |_, _, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
 
-        let result = find_missing_atas(&rpc_client, &payment_address).await;
+        let config = get_config().unwrap();
+        let result = find_missing_atas(&config, &rpc_client, &payment_address).await;
 
         assert!(result.is_ok(), "Should handle SPL tokens with proper mocking");
         let atas = result.unwrap();

@@ -6,7 +6,7 @@ use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 use tokio::sync::OnceCell;
 
 use super::usage_store::{RedisUsageStore, UsageStore};
-use crate::{error::KoraError, sanitize_error, state::get_signer_pool};
+use crate::{config::Config, error::KoraError, sanitize_error, state::get_signer_pool};
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -205,10 +205,9 @@ impl UsageTracker {
 
     /// Check usage limit for transaction sender
     pub async fn check_transaction_usage_limit(
+        config: &Config,
         transaction: &VersionedTransaction,
     ) -> Result<(), KoraError> {
-        let config = get_config()?;
-
         if let Some(limiter) = Self::get_usage_limiter()? {
             let sender = limiter.extract_transaction_sender(transaction)?;
             if let Some(sender) = sender {
@@ -307,7 +306,8 @@ mod tests {
         // Initialize the usage limiter - it should set to None when disabled
         let _ = UsageTracker::init_usage_limiter().await;
 
-        let result = UsageTracker::check_transaction_usage_limit(&create_mock_transaction()).await;
+        let config = get_config().unwrap();
+        let result = UsageTracker::check_transaction_usage_limit(&config, &create_mock_transaction()).await;
         match &result {
             Ok(_) => {}
             Err(e) => println!("Test failed with error: {e}"),
@@ -326,7 +326,8 @@ mod tests {
         // Initialize with no cache_url - should set limiter to None
         let _ = UsageTracker::init_usage_limiter().await;
 
-        let result = UsageTracker::check_transaction_usage_limit(&create_mock_transaction()).await;
+        let config = get_config().unwrap();
+        let result = UsageTracker::check_transaction_usage_limit(&config, &create_mock_transaction()).await;
         assert!(result.is_ok());
     }
 
@@ -341,7 +342,8 @@ mod tests {
         // Initialize with no cache_url - should set limiter to None
         let _ = UsageTracker::init_usage_limiter().await;
 
-        let result = UsageTracker::check_transaction_usage_limit(&create_mock_transaction()).await;
+        let config = get_config().unwrap();
+        let result = UsageTracker::check_transaction_usage_limit(&config, &create_mock_transaction()).await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()

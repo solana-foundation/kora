@@ -132,11 +132,12 @@ impl AccountType {
 }
 
 pub async fn validate_account(
+    config: &crate::config::Config,
     rpc_client: &RpcClient,
     account_pubkey: &Pubkey,
     expected_account_type: Option<AccountType>,
 ) -> Result<(), KoraError> {
-    let account = CacheUtil::get_account(rpc_client, account_pubkey, false).await?;
+    let account = CacheUtil::get_account(config, rpc_client, account_pubkey, false).await?;
 
     if let Some(expected_type) = expected_account_type {
         expected_type.validate_account_type(&account, account_pubkey)?;
@@ -156,7 +157,7 @@ mod tests {
             create_mock_token_account, AccountMockBuilder,
         },
         common::{MintAccountMockBuilder, TokenAccountMockBuilder},
-        config_mock::ConfigMockBuilder,
+        config_mock::{mock_state::get_config, ConfigMockBuilder},
         rpc_mock::{create_mock_rpc_client_account_not_found, create_mock_rpc_client_with_account},
     };
 
@@ -365,7 +366,8 @@ mod tests {
         let rpc_client = create_mock_rpc_client_with_account(&mint_account);
         let account_pubkey = Pubkey::new_unique();
 
-        let result = validate_account(&rpc_client, &account_pubkey, Some(AccountType::Mint)).await;
+        let config = get_config().unwrap();
+        let result = validate_account(&config, &rpc_client, &account_pubkey, Some(AccountType::Mint)).await;
         assert!(result.is_ok());
     }
 
@@ -377,7 +379,8 @@ mod tests {
         let rpc_client = create_mock_rpc_client_with_account(&account);
         let account_pubkey = Pubkey::new_unique();
 
-        let result = validate_account(&rpc_client, &account_pubkey, None).await;
+        let config = get_config().unwrap();
+        let result = validate_account(&config, &rpc_client, &account_pubkey, None).await;
         assert!(result.is_ok());
     }
 
@@ -388,8 +391,9 @@ mod tests {
         let rpc_client = create_mock_rpc_client_account_not_found();
         let account_pubkey = Pubkey::new_unique();
 
+        let config = get_config().unwrap();
         let result =
-            validate_account(&rpc_client, &account_pubkey, Some(AccountType::System)).await;
+            validate_account(&config, &rpc_client, &account_pubkey, Some(AccountType::System)).await;
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Account") && error_msg.contains("not found"));
@@ -403,8 +407,9 @@ mod tests {
         let rpc_client = create_mock_rpc_client_with_account(&account);
         let account_pubkey = Pubkey::new_unique();
 
+        let config = get_config().unwrap();
         let result =
-            validate_account(&rpc_client, &account_pubkey, Some(AccountType::System)).await;
+            validate_account(&config, &rpc_client, &account_pubkey, Some(AccountType::System)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("is not owned by"));
     }

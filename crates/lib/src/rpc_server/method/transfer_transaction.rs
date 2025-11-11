@@ -83,11 +83,11 @@ pub async fn transfer_transaction(
         let dest_ata =
             token_program.get_associated_token_address(&destination, &token_mint.address());
 
-        CacheUtil::get_account(rpc_client, &source_ata, false)
+        CacheUtil::get_account(config, rpc_client, &source_ata, false)
             .await
             .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
 
-        if CacheUtil::get_account(rpc_client, &dest_ata, false).await.is_err() {
+        if CacheUtil::get_account(config, rpc_client, &dest_ata, false).await.is_err() {
             instructions.push(token_program.create_associated_token_account_instruction(
                 &fee_payer,
                 &destination,
@@ -127,7 +127,7 @@ pub async fn transfer_transaction(
         VersionedTransactionResolved::from_kora_built_transaction(&transaction)?;
 
     // validate transaction before signing
-    validator.validate_transaction(&mut resolved_transaction, rpc_client).await?;
+    validator.validate_transaction(config, &mut resolved_transaction, rpc_client).await?;
 
     // Find the fee payer position in the account keys
     let fee_payer_position = resolved_transaction.find_signer_position(&fee_payer)?;
