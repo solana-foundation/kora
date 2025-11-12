@@ -74,6 +74,7 @@ impl TransactionValidator {
     pub async fn fetch_and_validate_token_mint(
         &self,
         mint: &Pubkey,
+        config: &Config,
         rpc_client: &RpcClient,
     ) -> Result<Box<dyn TokenMint + Send + Sync>, KoraError> {
         // First check if the mint is in allowed tokens
@@ -83,8 +84,7 @@ impl TransactionValidator {
             )));
         }
 
-        let config = crate::state::get_config()?;
-        let mint = TokenUtil::get_mint(&config, rpc_client, mint).await?;
+        let mint = TokenUtil::get_mint(config, rpc_client, mint).await?;
 
         Ok(mint)
     }

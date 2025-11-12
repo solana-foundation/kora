@@ -75,7 +75,7 @@ pub async fn transfer_transaction(
         instructions.push(transfer(&source, &destination, request.amount));
     } else {
         // Handle wrapped SOL and other SPL tokens
-        let token_mint = validator.fetch_and_validate_token_mint(&token_mint, rpc_client).await?;
+        let token_mint = validator.fetch_and_validate_token_mint(&token_mint, config, rpc_client).await?;
         let token_program = token_mint.get_token_program();
         let decimals = token_mint.decimals();
 
