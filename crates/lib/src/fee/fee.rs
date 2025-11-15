@@ -179,7 +179,8 @@ impl FeeConfigUtil {
                     if *is_2022 {
                         if let Some(mint_pubkey) = mint {
                             let mint_account =
-                                CacheUtil::get_account(config, rpc_client, mint_pubkey, true).await?;
+                                CacheUtil::get_account(config, rpc_client, mint_pubkey, true)
+                                    .await?;
 
                             let token_program =
                                 TokenType::get_token_program_from_owner(&mint_account.owner)?;
@@ -249,7 +250,8 @@ impl FeeConfigUtil {
 
         // Analyze payment instructions (checks if payment exists + calculates Token2022 fees)
         let (has_payment, transfer_fee_config_amount) =
-            FeeConfigUtil::analyze_payment_instructions(config, transaction, rpc_client, fee_payer).await?;
+            FeeConfigUtil::analyze_payment_instructions(config, transaction, rpc_client, fee_payer)
+                .await?;
 
         // If payment is required but not found, add estimated payment instruction fee
         let fee_for_payment_instruction = if is_payment_required && !has_payment {

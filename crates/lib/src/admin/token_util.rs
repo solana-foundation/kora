@@ -280,10 +280,11 @@ pub async fn find_missing_atas(
             }
             Err(_) => {
                 // Fetch mint account to determine if it's SPL or Token2022
-                let mint_account =
-                    CacheUtil::get_account(&config, rpc_client, mint, false).await.map_err(|e| {
-                        KoraError::RpcError(format!("Failed to fetch mint account for {mint}: {e}"))
-                    })?;
+                let mint_account = CacheUtil::get_account(&config, rpc_client, mint, false)
+                    .await
+                    .map_err(|e| {
+                    KoraError::RpcError(format!("Failed to fetch mint account for {mint}: {e}"))
+                })?;
 
                 let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
 

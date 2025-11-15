@@ -307,7 +307,8 @@ mod tests {
         let _ = UsageTracker::init_usage_limiter().await;
 
         let config = get_config().unwrap();
-        let result = UsageTracker::check_transaction_usage_limit(&config, &create_mock_transaction()).await;
+        let result =
+            UsageTracker::check_transaction_usage_limit(&config, &create_mock_transaction()).await;
         match &result {
             Ok(_) => {}
             Err(e) => println!("Test failed with error: {e}"),
@@ -327,7 +328,8 @@ mod tests {
         let _ = UsageTracker::init_usage_limiter().await;
 
         let config = get_config().unwrap();
-        let result = UsageTracker::check_transaction_usage_limit(&config, &create_mock_transaction()).await;
+        let result =
+            UsageTracker::check_transaction_usage_limit(&config, &create_mock_transaction()).await;
         assert!(result.is_ok());
     }
 
@@ -343,7 +345,8 @@ mod tests {
         let _ = UsageTracker::init_usage_limiter().await;
 
         let config = get_config().unwrap();
-        let result = UsageTracker::check_transaction_usage_limit(&config, &create_mock_transaction()).await;
+        let result =
+            UsageTracker::check_transaction_usage_limit(&config, &create_mock_transaction()).await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()

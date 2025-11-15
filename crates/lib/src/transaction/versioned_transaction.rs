@@ -354,9 +354,11 @@ impl LookupTableUtil {
         // Maybe we can use caching here, there's a chance the lookup tables get updated though, so tbd
         for lookup in lookup_table_lookups {
             let lookup_table_account =
-                CacheUtil::get_account(&config, rpc_client, &lookup.account_key, false).await.map_err(
-                    |e| KoraError::RpcError(format!("Failed to fetch lookup table: {e}")),
-                )?;
+                CacheUtil::get_account(&config, rpc_client, &lookup.account_key, false)
+                    .await
+                    .map_err(|e| {
+                        KoraError::RpcError(format!("Failed to fetch lookup table: {e}"))
+                    })?;
 
             // Parse the lookup table account data to get the actual addresses
             let address_lookup_table = AddressLookupTable::deserialize(&lookup_table_account.data)
@@ -701,10 +703,14 @@ mod tests {
         );
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let resolved =
-            VersionedTransactionResolved::from_transaction(&transaction, &config, &rpc_client, true)
-                .await
-                .unwrap();
+        let resolved = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            &config,
+            &rpc_client,
+            true,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(resolved.transaction, transaction);
         assert_eq!(resolved.all_account_keys, transaction.message.static_account_keys());
@@ -803,10 +809,14 @@ mod tests {
 
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let resolved =
-            VersionedTransactionResolved::from_transaction(&transaction, &config, &rpc_client, true)
-                .await
-                .unwrap();
+        let resolved = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            &config,
+            &rpc_client,
+            true,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(resolved.transaction, transaction);
 
@@ -848,8 +858,13 @@ mod tests {
         );
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let result =
-            VersionedTransactionResolved::from_transaction(&transaction, &config, &rpc_client, true).await;
+        let result = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            &config,
+            &rpc_client,
+            true,
+        )
+        .await;
 
         // The simulation should fail, but the exact error type depends on mock implementation
         // We expect either an RpcError (from mock deserialization) or InvalidTransaction (from simulation logic)
@@ -1047,7 +1062,9 @@ mod tests {
         }];
 
         let resolved_addresses =
-            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await.unwrap();
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups)
+                .await
+                .unwrap();
 
         assert_eq!(resolved_addresses.len(), 3);
         assert_eq!(resolved_addresses[0], address1);
@@ -1064,7 +1081,9 @@ mod tests {
         let lookups = vec![];
 
         let resolved_addresses =
-            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await.unwrap();
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups)
+                .await
+                .unwrap();
 
         assert_eq!(resolved_addresses.len(), 0);
     }
@@ -1081,7 +1100,8 @@ mod tests {
             readonly_indexes: vec![],
         }];
 
-        let result = LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
+        let result =
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
         assert!(matches!(result, Err(KoraError::RpcError(_))));
 
         if let Err(KoraError::RpcError(msg)) = result {
@@ -1126,7 +1146,8 @@ mod tests {
             readonly_indexes: vec![],
         }];
 
-        let result = LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
+        let result =
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
 
         if let Err(KoraError::InvalidTransaction(msg)) = result {
@@ -1171,7 +1192,8 @@ mod tests {
             readonly_indexes: vec![5], // Invalid index
         }];
 
-        let result = LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
+        let result =
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
 
         if let Err(KoraError::InvalidTransaction(msg)) = result {

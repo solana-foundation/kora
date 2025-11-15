@@ -472,9 +472,13 @@ impl ConfigValidator {
             // Validate allowed programs - should be executable
             for program_str in &config.validation.allowed_programs {
                 if let Ok(program_pubkey) = Pubkey::from_str(program_str) {
-                    if let Err(e) =
-                        validate_account(config, rpc_client, &program_pubkey, Some(AccountType::Program))
-                            .await
+                    if let Err(e) = validate_account(
+                        config,
+                        rpc_client,
+                        &program_pubkey,
+                        Some(AccountType::Program),
+                    )
+                    .await
                     {
                         errors.push(format!("Program {program_str} validation failed: {e}"));
                     }
@@ -485,7 +489,8 @@ impl ConfigValidator {
             for token_str in &config.validation.allowed_tokens {
                 if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
                     if let Err(e) =
-                        validate_account(config, rpc_client, &token_pubkey, Some(AccountType::Mint)).await
+                        validate_account(config, rpc_client, &token_pubkey, Some(AccountType::Mint))
+                            .await
                     {
                         errors.push(format!("Token {token_str} validation failed: {e}"));
                     }
@@ -496,7 +501,8 @@ impl ConfigValidator {
             for token_str in &config.validation.allowed_spl_paid_tokens {
                 if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
                     if let Err(e) =
-                        validate_account(config, rpc_client, &token_pubkey, Some(AccountType::Mint)).await
+                        validate_account(config, rpc_client, &token_pubkey, Some(AccountType::Mint))
+                            .await
                     {
                         errors.push(format!("SPL paid token {token_str} validation failed: {e}"));
                     }

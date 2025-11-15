@@ -208,7 +208,9 @@ impl TokenUtil {
                     // We need to check the destination token account owner
                     if let Some(mint_pubkey) = mint {
                         // Get destination account to check owner
-                        match CacheUtil::get_account(config, rpc_client, destination_address, false).await {
+                        match CacheUtil::get_account(config, rpc_client, destination_address, false)
+                            .await
+                        {
                             Ok(dest_account) => {
                                 let token_program =
                                     TokenType::get_token_program_from_owner(&dest_account.owner)?;
@@ -365,7 +367,8 @@ impl TokenUtil {
         }
 
         // Check source account extensions (force refresh in case extensions are added)
-        let source_account = CacheUtil::get_account(config, rpc_client, source_address, true).await?;
+        let source_account =
+            CacheUtil::get_account(config, rpc_client, source_address, true).await?;
         let source_data = source_account.data;
 
         let source_state = token_program.unpack_token_account(&source_data)?;
