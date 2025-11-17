@@ -1,7 +1,11 @@
+use crate::rpc_server::middleware_utils::build_response_with_graceful_error;
 use futures_util::future::BoxFuture;
 use http::{Request, Response, StatusCode};
 use jsonrpsee::server::logger::Body;
-use std::task::{Context, Poll};
+use std::{
+    collections::HashMap,
+    task::{Context, Poll},
+};
 use tower::{Layer, Service};
 
 /// Layer that intercepts /metrics requests and returns Prometheus metrics directly
@@ -56,21 +60,19 @@ where
             // Return metrics directly
             Box::pin(async move {
                 match crate::metrics::gather() {
-                    Ok(metrics) => {
-                        let response = Response::builder()
-                            .status(StatusCode::OK)
-                            .header("content-type", "text/plain; version=0.0.4")
-                            .body(Body::from(metrics))
-                            .expect("Failed to build response");
-                        Ok(response)
-                    }
-                    Err(e) => {
-                        let response = Response::builder()
-                            .status(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(Body::from(format!("Error gathering metrics: {e}")))
-                            .expect("Failed to build response");
-                        Ok(response)
-                    }
+                    Ok(metrics) => Ok(build_response_with_graceful_error(
+                        Some(HashMap::from([(
+                            "content-type".to_string(),
+                            "text/plain; version=0.0.4".to_string(),
+                        )])),
+                        StatusCode::OK,
+                        &metrics,
+                    )),
+                    Err(e) => Ok(build_response_with_graceful_error(
+                        None,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        &format!("Error gathering metrics: {e}"),
+                    )),
                 }
             })
         } else {

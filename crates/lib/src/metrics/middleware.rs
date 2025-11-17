@@ -21,7 +21,10 @@ impl HttpMetrics {
             Opts::new("http_requests_total", "Total number of HTTP requests").namespace("kora"),
             &["method", "status"],
         )
-        .expect("Failed to create http_requests_total metric");
+        .unwrap_or_else(|e| {
+            log::error!("Failed to create http_requests_total metric: {e:?}");
+            panic!("Metrics initialization failed - cannot continue")
+        });
 
         let request_duration_seconds = HistogramVec::new(
             prometheus::HistogramOpts::new(
@@ -32,12 +35,19 @@ impl HttpMetrics {
             .buckets(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0]),
             &["method"],
         )
-        .expect("Failed to create http_request_duration_seconds metric");
+        .unwrap_or_else(|e| {
+            log::error!("Failed to create http_request_duration_seconds metric: {e:?}");
+            panic!("Metrics initialization failed - cannot continue")
+        });
 
-        prometheus::register(Box::new(requests_total.clone()))
-            .expect("Failed to register http_requests_total metric");
-        prometheus::register(Box::new(request_duration_seconds.clone()))
-            .expect("Failed to register http_request_duration_seconds metric");
+        prometheus::register(Box::new(requests_total.clone())).unwrap_or_else(|e| {
+            log::error!("Failed to register http_requests_total metric: {e:?}");
+            panic!("Metrics initialization failed - cannot continue")
+        });
+        prometheus::register(Box::new(request_duration_seconds.clone())).unwrap_or_else(|e| {
+            log::error!("Failed to register http_request_duration_seconds metric: {e:?}");
+            panic!("Metrics initialization failed - cannot continue")
+        });
 
         Self { requests_total, request_duration_seconds }
     }

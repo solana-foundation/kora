@@ -1,6 +1,8 @@
 use crate::{
     constant::{X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP},
-    rpc_server::middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method},
+    rpc_server::middleware_utils::{
+        build_response_with_graceful_error, extract_parts_and_body_bytes, get_jsonrpc_method,
+    },
 };
 use hmac::{Hmac, Mac};
 use http::{Request, Response, StatusCode};
@@ -55,10 +57,8 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let unauthorized_response = Response::builder()
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Body::empty())
-                .expect("Failed to build unauthorized response");
+            let unauthorized_response =
+                build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
 
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
@@ -140,10 +140,8 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let unauthorized_response = Response::builder()
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Body::empty())
-                .expect("Failed to build unauthorized response");
+            let unauthorized_response =
+                build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
 
             let signature_header = request.headers().get(X_HMAC_SIGNATURE).cloned();
             let timestamp_header = request.headers().get(X_TIMESTAMP).cloned();
@@ -169,12 +167,10 @@ where
             let timestamp = timestamp.to_str().unwrap_or("");
 
             // Verify timestamp is within allowed age
-            let parsed_timestamp = timestamp.parse::<i64>();
-            if parsed_timestamp.is_err() {
-                return Ok(unauthorized_response);
-            }
-
-            let ts = parsed_timestamp.expect("timestamp already validated");
+            let ts = match timestamp.parse::<i64>() {
+                Ok(ts) => ts,
+                Err(_) => return Ok(unauthorized_response),
+            };
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|e| {
