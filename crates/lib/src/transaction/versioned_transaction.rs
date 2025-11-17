@@ -266,7 +266,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
         // Validate payment if price model is not Free
         if required_lamports > 0 {
-            log::error!("Payment validation: required_lamports={}", required_lamports);
+            log::info!("Payment validation: required_lamports={}", required_lamports);
             // Get the expected payment destination
             let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
