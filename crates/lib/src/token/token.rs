@@ -208,15 +208,19 @@ impl TokenUtil {
                             Ok(dest_account) => {
                                 let token_program =
                                     TokenType::get_token_program_from_owner(&dest_account.owner)?;
-                                if let Ok(token_account) =
-                                    token_program.unpack_token_account(&dest_account.data)
-                                {
-                                    if token_account.owner() == *fee_payer {
-                                        mint_to_transfers
-                                            .entry(*mint_pubkey)
-                                            .or_default()
-                                            .push((*amount, false)); // inflow
-                                    }
+                                let token_account = token_program
+                                    .unpack_token_account(&dest_account.data)
+                                    .map_err(|e| {
+                                        KoraError::TokenOperationError(format!(
+                                            "Failed to unpack destination token account {}: {}",
+                                            destination_address, e
+                                        ))
+                                    })?;
+                                if token_account.owner() == *fee_payer {
+                                    mint_to_transfers
+                                        .entry(*mint_pubkey)
+                                        .or_default()
+                                        .push((*amount, false)); // inflow
                                 }
                             }
                             Err(e) => {
