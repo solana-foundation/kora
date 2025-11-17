@@ -7,7 +7,7 @@ use std::sync::Arc;
 /// 2. Centralized re-exports of commonly used mock utilities
 use crate::{
     get_request_signer_with_signer_key,
-    signer::{SignerPool, SignerWithMetadata},
+    signer::{pool::SignerWithMetadata, SignerPool},
     state::{get_config, update_config, update_signer_pool},
     tests::{account_mock, config_mock::ConfigMockBuilder, rpc_mock},
     usage_limit::UsageTracker,
