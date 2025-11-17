@@ -459,6 +459,10 @@ impl TokenUtil {
                 }
 
                 if !config.validation.supports_token(&token_state.mint().to_string()) {
+                    log::warn!(
+                        "Ignoring payment with unsupported token mint: {}",
+                        token_state.mint(),
+                    );
                     continue;
                 }
 
