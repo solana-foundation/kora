@@ -398,7 +398,10 @@ impl FeeConfigUtil {
                 instruction
             {
                 if *sender == *fee_payer_pubkey {
-                    total = total.saturating_add(*lamports);
+                    total = total.checked_add(*lamports).ok_or_else(|| {
+                        log::error!("Outflow calculation overflow in SystemTransfer");
+                        KoraError::ValidationError("Outflow calculation overflow".to_string())
+                    })?;
                 }
                 if *receiver == *fee_payer_pubkey {
                     total = total.saturating_sub(*lamports);
@@ -414,7 +417,10 @@ impl FeeConfigUtil {
                 instruction
             {
                 if *payer == *fee_payer_pubkey {
-                    total = total.saturating_add(*lamports);
+                    total = total.checked_add(*lamports).ok_or_else(|| {
+                        log::error!("Outflow calculation overflow in SystemCreateAccount");
+                        KoraError::ValidationError("Outflow calculation overflow".to_string())
+                    })?;
                 }
             }
         }
@@ -430,7 +436,10 @@ impl FeeConfigUtil {
             } = instruction
             {
                 if *nonce_authority == *fee_payer_pubkey {
-                    total = total.saturating_add(*lamports);
+                    total = total.checked_add(*lamports).ok_or_else(|| {
+                        log::error!("Outflow calculation overflow in SystemWithdrawNonceAccount");
+                        KoraError::ValidationError("Outflow calculation overflow".to_string())
+                    })?;
                 }
                 if *recipient == *fee_payer_pubkey {
                     total = total.saturating_sub(*lamports);
