@@ -258,12 +258,11 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
         // Calculate fee and validate payment if price model requires it
         let fee_calculation = FeeConfigUtil::estimate_kora_fee(
-            &config,
-            rpc_client,
             self,
             &fee_payer,
             config.validation.is_payment_required(),
-            config.validation.price_source.clone(),
+            rpc_client,
+            &config,
         )
         .await?;
 

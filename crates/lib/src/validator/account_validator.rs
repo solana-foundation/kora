@@ -11,7 +11,7 @@ use spl_token_interface::{
     ID as SPL_TOKEN_PROGRAM_ID,
 };
 
-use crate::{CacheUtil, KoraError};
+use crate::{config::Config, CacheUtil, KoraError};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AccountType {

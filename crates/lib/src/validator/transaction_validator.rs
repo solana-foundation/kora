@@ -334,11 +334,10 @@ impl TransactionValidator {
         rpc_client: &RpcClient,
     ) -> Result<u64, KoraError> {
         FeeConfigUtil::calculate_fee_payer_outflow(
-            config,
             &self.fee_payer_pubkey,
             transaction_resolved,
             rpc_client,
-            &self._price_source,
+            config,
         )
         .await
     }

@@ -1,4 +1,4 @@
-use crate::{config::Config, error::KoraError, oracle::PriceSource, token::token::TokenUtil};
+use crate::{config::Config, error::KoraError, token::token::TokenUtil};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -28,21 +28,19 @@ pub struct PriceConfig {
 impl PriceConfig {
     pub async fn get_required_lamports_with_fixed(
         &self,
-        config: &Config,
         rpc_client: &RpcClient,
-        price_source: PriceSource,
+        config: &Config,
     ) -> Result<u64, KoraError> {
         if let PriceModel::Fixed { amount, token, .. } = &self.model {
             return TokenUtil::calculate_token_value_in_lamports(
-                config,
                 *amount,
                 &Pubkey::from_str(token).map_err(|e| {
                     log::error!("Invalid Pubkey for price {e}");
 
                     KoraError::ConfigError
                 })?,
-                price_source,
                 rpc_client,
+                config,
             )
             .await;
         }
@@ -128,10 +126,9 @@ mod tests {
         };
 
         // Use Mock price source which returns 0.0001 SOL per USDC
-        let price_source = PriceSource::Mock;
 
         let result =
-            price_config.get_required_lamports_with_fixed(&config, &rpc_client, price_source).await.unwrap();
+            price_config.get_required_lamports_with_fixed(&rpc_client, &config).await.unwrap();
 
         // Expected calculation:
         // 1,000,000 base units / 10^6 = 1.0 USDC
@@ -156,10 +153,9 @@ mod tests {
         };
 
         // Mock oracle returns 1.0 SOL price for SOL mint
-        let price_source = PriceSource::Mock;
 
         let result =
-            price_config.get_required_lamports_with_fixed(&config, &rpc_client, price_source).await.unwrap();
+            price_config.get_required_lamports_with_fixed(&rpc_client, &config).await.unwrap();
 
         // Expected calculation:
         // 500,000,000 base units / 10^9 = 0.5 tokens
@@ -183,10 +179,8 @@ mod tests {
             },
         };
 
-        let price_source = PriceSource::Mock;
-
         let result =
-            price_config.get_required_lamports_with_fixed(&config, &rpc_client, price_source).await.unwrap();
+            price_config.get_required_lamports_with_fixed(&rpc_client, &config).await.unwrap();
 
         // Expected calculation:
         // 1,000 base units / 10^6 = 0.001 USDC

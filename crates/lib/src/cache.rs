@@ -5,7 +5,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio::sync::OnceCell;
 
-use crate::{error::KoraError, sanitize_error};
+use crate::{config::Config, error::KoraError, sanitize_error};
 
 #[cfg(not(test))]
 use crate::state::get_config;

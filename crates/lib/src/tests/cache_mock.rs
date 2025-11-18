@@ -1,4 +1,4 @@
-use crate::error::KoraError;
+use crate::{config::Config, error::KoraError};
 use mockall::mock;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::Account, pubkey::Pubkey};
