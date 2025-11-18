@@ -134,7 +134,8 @@ impl BalanceTracker {
                 interval.tick().await;
 
                 // Track all signer balances, but don't let errors crash the loop
-                if let Err(e) = BalanceTracker::track_all_signer_balances(&config, &rpc_client).await
+                if let Err(e) =
+                    BalanceTracker::track_all_signer_balances(&config, &rpc_client).await
                 {
                     log::warn!("Failed to track signer balances in background task: {e}");
                 }

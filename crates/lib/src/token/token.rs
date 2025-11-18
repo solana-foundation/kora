@@ -470,9 +470,13 @@ impl TokenUtil {
                     continue;
                 }
 
-                let lamport_value =
-                    TokenUtil::calculate_token_value_in_lamports(*amount, &token_state.mint(), rpc_client, config)
-                        .await?;
+                let lamport_value = TokenUtil::calculate_token_value_in_lamports(
+                    *amount,
+                    &token_state.mint(),
+                    rpc_client,
+                    config,
+                )
+                .await?;
 
                 total_lamport_value =
                     total_lamport_value.checked_add(lamport_value).ok_or_else(|| {
@@ -617,9 +621,7 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let (token_price, decimals) =
-            TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config)
-                .await
-                .unwrap();
+            TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config).await.unwrap();
 
         assert_eq!(decimals, 9);
         assert_eq!(token_price.price, Decimal::from(1));
@@ -633,9 +635,7 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let (token_price, decimals) =
-            TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config)
-                .await
-                .unwrap();
+            TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config).await.unwrap();
 
         assert_eq!(decimals, 6);
         assert_eq!(token_price.price, dec!(0.0001));
@@ -648,9 +648,7 @@ mod tests_token {
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result =
-            TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config)
-                .await;
+        let result = TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config).await;
         assert!(result.is_err());
     }
 
@@ -662,14 +660,10 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let amount = 1_000_000_000; // 1 SOL in lamports
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            &rpc_client,
-            &config,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 1_000_000_000); // Should equal input since SOL price is 1.0
     }
@@ -682,14 +676,10 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let amount = 1_000_000; // 1 USDC (6 decimals)
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            &rpc_client,
-            &config,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         // 1 USDC * 0.0001 SOL/USDC = 0.0001 SOL = 100,000 lamports
         assert_eq!(result, 100_000);
@@ -703,14 +693,10 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let amount = 0;
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            &rpc_client,
-            &config,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 0);
     }
@@ -723,14 +709,10 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let amount = 1; // 0.000001 USDC (smallest unit)
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            &rpc_client,
-            &config,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         // 0.000001 USDC * 0.0001 SOL/USDC = very small amount, should floor to 0
         assert_eq!(result, 0);
@@ -744,14 +726,10 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let lamports = 1_000_000_000; // 1 SOL
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &rpc_client,
-            &config,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 1_000_000_000); // Should equal input since SOL price is 1.0
     }
@@ -764,14 +742,10 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let lamports = 100_000; // 0.0001 SOL
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &rpc_client,
-            &config,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         // 0.0001 SOL / 0.0001 SOL/USDC = 1 USDC = 1,000,000 base units
         assert_eq!(result, 1_000_000);
@@ -785,14 +759,10 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let lamports = 0;
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &rpc_client,
-            &config,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 0);
     }
@@ -824,13 +794,9 @@ mod tests_token {
         let lamports = lamports_result.unwrap();
 
         // Convert lamports back to token amount
-        let recovered_amount_result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &rpc_client,
-            &config,
-        )
-        .await;
+        let recovered_amount_result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await;
 
         if let Ok(recovered_amount) = recovered_amount_result {
             assert_eq!(recovered_amount, original_amount);
@@ -844,13 +810,9 @@ mod tests_token {
         let mint = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            1_000_000,
-            &mint,
-            &rpc_client,
-            &config,
-        )
-        .await;
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(1_000_000, &mint, &rpc_client, &config)
+                .await;
 
         assert!(result.is_err());
     }
@@ -862,13 +824,9 @@ mod tests_token {
         let mint = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            1_000_000,
-            &mint,
-            &rpc_client,
-            &config,
-        )
-        .await;
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(1_000_000, &mint, &rpc_client, &config)
+                .await;
 
         assert!(result.is_err());
     }
@@ -904,14 +862,10 @@ mod tests_token {
 
         for (lamports, expected, description) in test_cases {
             let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
-            let result = TokenUtil::calculate_lamports_value_in_token(
-                lamports,
-                &mint,
-                &rpc_client,
-                &config,
-            )
-            .await
-            .unwrap();
+            let result =
+                TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                    .await
+                    .unwrap();
 
             assert_eq!(
                 result, expected,

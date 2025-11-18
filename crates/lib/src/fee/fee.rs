@@ -239,7 +239,8 @@ impl FeeConfigUtil {
 
         // Calculate fee payer outflow if fee payer is provided, to better estimate the potential fee
         let fee_payer_outflow =
-            FeeConfigUtil::calculate_fee_payer_outflow(fee_payer, transaction, rpc_client, config).await?;
+            FeeConfigUtil::calculate_fee_payer_outflow(fee_payer, transaction, rpc_client, config)
+                .await?;
 
         // Analyze payment instructions (checks if payment exists + calculates Token2022 fees)
         let (has_payment, transfer_fee_config_amount) =
@@ -362,9 +363,13 @@ impl FeeConfigUtil {
                 )));
             }
 
-            let fee_value_in_token =
-                TokenUtil::calculate_lamports_value_in_token(fee_in_lamports, &token_mint, rpc_client, config)
-                    .await?;
+            let fee_value_in_token = TokenUtil::calculate_lamports_value_in_token(
+                fee_in_lamports,
+                &token_mint,
+                rpc_client,
+                config,
+            )
+            .await?;
 
             Ok(Some(fee_value_in_token))
         } else {
@@ -440,9 +445,13 @@ impl FeeConfigUtil {
             spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer).unwrap_or(&empty_vec);
 
         if !spl_transfers.is_empty() {
-            let spl_outflow =
-                TokenUtil::calculate_spl_transfers_value_in_lamports(spl_transfers, fee_payer_pubkey, rpc_client, config)
-                    .await?;
+            let spl_outflow = TokenUtil::calculate_spl_transfers_value_in_lamports(
+                spl_transfers,
+                fee_payer_pubkey,
+                rpc_client,
+                config,
+            )
+            .await?;
 
             total = total.checked_add(spl_outflow).ok_or_else(|| {
                 log::error!("Fee payer outflow overflow: sol={}, spl={}", total, spl_outflow);
