@@ -296,7 +296,7 @@ impl FeeConfigUtil {
                 let fixed_fee_lamports = config
                     .validation
                     .price
-                    .get_required_lamports_with_fixed(rpc_client, price_source)
+                    .get_required_lamports_with_fixed(config, rpc_client, price_source)
                     .await?;
 
                 if *strict {
@@ -371,6 +371,7 @@ impl FeeConfigUtil {
             }
 
             let fee_value_in_token = TokenUtil::calculate_lamports_value_in_token(
+                config,
                 fee_in_lamports,
                 &token_mint,
                 &validation_config.price_source,

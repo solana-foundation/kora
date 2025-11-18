@@ -132,7 +132,7 @@ impl AccountType {
 }
 
 pub async fn validate_account(
-    config: &crate::config::Config,
+    config: &Config,
     rpc_client: &RpcClient,
     account_pubkey: &Pubkey,
     expected_account_type: Option<AccountType>,

@@ -1,4 +1,5 @@
 use crate::{
+    config::Config,
     error::KoraError,
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
     token::{
@@ -20,9 +21,6 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use std::{collections::HashMap, str::FromStr, time::Duration};
-
-#[cfg(not(test))]
-use crate::state::get_config;
 
 #[cfg(test)]
 use {crate::tests::config_mock::mock_state::get_config, rust_decimal_macros::dec};
@@ -69,7 +67,7 @@ impl TokenUtil {
     }
 
     pub async fn get_mint(
-        config: &crate::config::Config,
+        config: &Config,
         rpc_client: &RpcClient,
         mint_pubkey: &Pubkey,
     ) -> Result<Box<dyn TokenMint + Send + Sync>, KoraError> {
@@ -83,7 +81,7 @@ impl TokenUtil {
     }
 
     pub async fn get_mint_decimals(
-        config: &crate::config::Config,
+        config: &Config,
         rpc_client: &RpcClient,
         mint_pubkey: &Pubkey,
     ) -> Result<u8, KoraError> {
@@ -92,12 +90,12 @@ impl TokenUtil {
     }
 
     pub async fn get_token_price_and_decimals(
+        config: &Config,
         mint: &Pubkey,
         price_source: PriceSource,
         rpc_client: &RpcClient,
     ) -> Result<(TokenPrice, u8), KoraError> {
-        let config = get_config()?;
-        let decimals = Self::get_mint_decimals(&config, rpc_client, mint).await?;
+        let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
 
         let oracle =
             RetryingPriceOracle::new(3, Duration::from_secs(1), get_price_oracle(price_source));
@@ -112,13 +110,14 @@ impl TokenUtil {
     }
 
     pub async fn calculate_token_value_in_lamports(
+        config: &Config,
         amount: u64,
         mint: &Pubkey,
         price_source: PriceSource,
         rpc_client: &RpcClient,
     ) -> Result<u64, KoraError> {
         let (token_price, decimals) =
-            Self::get_token_price_and_decimals(mint, price_source, rpc_client).await?;
+            Self::get_token_price_and_decimals(config, mint, price_source, rpc_client).await?;
 
         // Convert amount to Decimal with proper scaling
         let amount_decimal = Decimal::from_u64(amount)
@@ -144,13 +143,15 @@ impl TokenUtil {
     }
 
     pub async fn calculate_lamports_value_in_token(
+        config: &Config,
         lamports: u64,
         mint: &Pubkey,
         price_source: &PriceSource,
         rpc_client: &RpcClient,
     ) -> Result<u64, KoraError> {
         let (token_price, decimals) =
-            Self::get_token_price_and_decimals(mint, price_source.clone(), rpc_client).await?;
+            Self::get_token_price_and_decimals(config, mint, price_source.clone(), rpc_client)
+                .await?;
 
         // Convert lamports to SOL using Decimal
         let lamports_decimal = Decimal::from_u64(lamports)
@@ -177,7 +178,7 @@ impl TokenUtil {
     /// Calculate the total lamports value of SPL token transfers where the fee payer is involved
     /// This includes both outflow (fee payer as owner/source) and inflow (fee payer owns destination)
     pub async fn calculate_spl_transfers_value_in_lamports(
-        config: &crate::config::Config,
+        config: &Config,
         spl_transfers: &[ParsedSPLInstructionData],
         fee_payer: &Pubkey,
         price_source: &PriceSource,
@@ -335,7 +336,7 @@ impl TokenUtil {
     /// Validate Token2022 extensions for payment instructions
     /// This checks if any blocked extensions are present on the payment accounts
     pub async fn validate_token2022_extensions_for_payment(
-        config: &crate::config::Config,
+        config: &Config,
         rpc_client: &RpcClient,
         source_address: &Pubkey,
         destination_address: &Pubkey,
@@ -410,7 +411,7 @@ impl TokenUtil {
     }
 
     pub async fn verify_token_payment(
-        config: &crate::config::Config,
+        config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         required_lamports: u64,
@@ -472,6 +473,7 @@ impl TokenUtil {
                 }
 
                 let lamport_value = TokenUtil::calculate_token_value_in_lamports(
+                    config,
                     *amount,
                     &token_state.mint(),
                     config.validation.price_source.clone(),
@@ -617,11 +619,12 @@ mod tests_token {
     #[tokio::test]
     async fn test_get_token_price_and_decimals_spl() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let (token_price, decimals) =
-            TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client)
+            TokenUtil::get_token_price_and_decimals(&config, &mint, PriceSource::Mock, &rpc_client)
                 .await
                 .unwrap();
 
@@ -632,11 +635,12 @@ mod tests_token {
     #[tokio::test]
     async fn test_get_token_price_and_decimals_token2022() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let (token_price, decimals) =
-            TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client)
+            TokenUtil::get_token_price_and_decimals(&config, &mint, PriceSource::Mock, &rpc_client)
                 .await
                 .unwrap();
 
@@ -647,22 +651,26 @@ mod tests_token {
     #[tokio::test]
     async fn test_get_token_price_and_decimals_account_not_found() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
         let result =
-            TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client).await;
+            TokenUtil::get_token_price_and_decimals(&config, &mint, PriceSource::Mock, &rpc_client)
+                .await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_sol() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let amount = 1_000_000_000; // 1 SOL in lamports
         let result = TokenUtil::calculate_token_value_in_lamports(
+            &config,
             amount,
             &mint,
             PriceSource::Mock,
@@ -677,11 +685,13 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_usdc() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let amount = 1_000_000; // 1 USDC (6 decimals)
         let result = TokenUtil::calculate_token_value_in_lamports(
+            &config,
             amount,
             &mint,
             PriceSource::Mock,
@@ -697,11 +707,13 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_zero_amount() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let amount = 0;
         let result = TokenUtil::calculate_token_value_in_lamports(
+            &config,
             amount,
             &mint,
             PriceSource::Mock,
@@ -716,11 +728,13 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_small_amount() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let amount = 1; // 0.000001 USDC (smallest unit)
         let result = TokenUtil::calculate_token_value_in_lamports(
+            &config,
             amount,
             &mint,
             PriceSource::Mock,
@@ -736,11 +750,13 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_sol() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let lamports = 1_000_000_000; // 1 SOL
         let result = TokenUtil::calculate_lamports_value_in_token(
+            &config,
             lamports,
             &mint,
             &PriceSource::Mock,
@@ -755,11 +771,13 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_usdc() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let lamports = 100_000; // 0.0001 SOL
         let result = TokenUtil::calculate_lamports_value_in_token(
+            &config,
             lamports,
             &mint,
             &PriceSource::Mock,
@@ -775,11 +793,13 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_zero_lamports() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let lamports = 0;
         let result = TokenUtil::calculate_lamports_value_in_token(
+            &config,
             lamports,
             &mint,
             &PriceSource::Mock,
@@ -794,6 +814,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_price_functions_consistency() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         // Test that convert to lamports and back to token amount gives approximately the same result
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
@@ -802,6 +823,7 @@ mod tests_token {
 
         // Convert token amount to lamports
         let lamports_result = TokenUtil::calculate_token_value_in_lamports(
+            &config,
             original_amount,
             &mint,
             PriceSource::Mock,
@@ -818,6 +840,7 @@ mod tests_token {
 
         // Convert lamports back to token amount
         let recovered_amount_result = TokenUtil::calculate_lamports_value_in_token(
+            &config,
             lamports,
             &mint,
             &PriceSource::Mock,
@@ -833,10 +856,12 @@ mod tests_token {
     #[tokio::test]
     async fn test_price_calculation_with_account_error() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
         let result = TokenUtil::calculate_token_value_in_lamports(
+            &config,
             1_000_000,
             &mint,
             PriceSource::Mock,
@@ -850,10 +875,12 @@ mod tests_token {
     #[tokio::test]
     async fn test_lamports_calculation_with_account_error() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
         let result = TokenUtil::calculate_lamports_value_in_token(
+            &config,
             1_000_000,
             &mint,
             &PriceSource::Mock,
@@ -867,6 +894,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_decimal_precision() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
 
         // Explanation (i.e. for case 1)
@@ -895,6 +923,7 @@ mod tests_token {
         for (lamports, expected, description) in test_cases {
             let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
             let result = TokenUtil::calculate_lamports_value_in_token(
+                &config,
                 lamports,
                 &mint,
                 &PriceSource::Mock,

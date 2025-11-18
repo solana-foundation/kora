@@ -1,4 +1,4 @@
-use crate::{error::KoraError, oracle::PriceSource, token::token::TokenUtil};
+use crate::{config::Config, error::KoraError, oracle::PriceSource, token::token::TokenUtil};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -28,11 +28,13 @@ pub struct PriceConfig {
 impl PriceConfig {
     pub async fn get_required_lamports_with_fixed(
         &self,
+        config: &Config,
         rpc_client: &RpcClient,
         price_source: PriceSource,
     ) -> Result<u64, KoraError> {
         if let PriceModel::Fixed { amount, token, .. } = &self.model {
             return TokenUtil::calculate_token_value_in_lamports(
+                config,
                 *amount,
                 &Pubkey::from_str(token).map_err(|e| {
                     log::error!("Invalid Pubkey for price {e}");
@@ -78,7 +80,10 @@ impl PriceConfig {
 mod tests {
 
     use super::*;
-    use crate::tests::{common::create_mock_rpc_client_with_mint, config_mock::ConfigMockBuilder};
+    use crate::tests::{
+        common::create_mock_rpc_client_with_mint,
+        config_mock::{mock_state::get_config, ConfigMockBuilder},
+    };
 
     #[tokio::test]
     async fn test_margin_model_get_required_lamports() {
@@ -110,6 +115,7 @@ mod tests {
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_with_oracle() {
         let _m = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let rpc_client = create_mock_rpc_client_with_mint(6); // USDC has 6 decimals
 
         let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
@@ -125,7 +131,7 @@ mod tests {
         let price_source = PriceSource::Mock;
 
         let result =
-            price_config.get_required_lamports_with_fixed(&rpc_client, price_source).await.unwrap();
+            price_config.get_required_lamports_with_fixed(&config, &rpc_client, price_source).await.unwrap();
 
         // Expected calculation:
         // 1,000,000 base units / 10^6 = 1.0 USDC
@@ -137,6 +143,7 @@ mod tests {
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_with_custom_price() {
         let _m = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let rpc_client = create_mock_rpc_client_with_mint(9); // 9 decimals token
 
         let custom_token = "So11111111111111111111111111111111111111112"; // SOL mint
@@ -152,7 +159,7 @@ mod tests {
         let price_source = PriceSource::Mock;
 
         let result =
-            price_config.get_required_lamports_with_fixed(&rpc_client, price_source).await.unwrap();
+            price_config.get_required_lamports_with_fixed(&config, &rpc_client, price_source).await.unwrap();
 
         // Expected calculation:
         // 500,000,000 base units / 10^9 = 0.5 tokens
@@ -164,6 +171,7 @@ mod tests {
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_small_amount() {
         let _m = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let rpc_client = create_mock_rpc_client_with_mint(6); // USDC has 6 decimals
 
         let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
@@ -178,7 +186,7 @@ mod tests {
         let price_source = PriceSource::Mock;
 
         let result =
-            price_config.get_required_lamports_with_fixed(&rpc_client, price_source).await.unwrap();
+            price_config.get_required_lamports_with_fixed(&config, &rpc_client, price_source).await.unwrap();
 
         // Expected calculation:
         // 1,000 base units / 10^6 = 0.001 USDC

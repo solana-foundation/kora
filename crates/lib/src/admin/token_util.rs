@@ -92,10 +92,11 @@ pub async fn initialize_atas_with_chunk_size(
     compute_unit_limit: Option<u32>,
     chunk_size: usize,
 ) -> Result<(), KoraError> {
+    let config = get_config()?;
+
     for address in addresses_to_initialize_atas {
         println!("Initializing ATAs for address: {address}");
 
-        let config = get_config()?;
         let atas_to_create = find_missing_atas(&config, rpc_client, address).await?;
 
         if atas_to_create.is_empty() {

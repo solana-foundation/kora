@@ -179,13 +179,13 @@ impl CacheUtil {
     }
 
     /// Check if cache is enabled and available
-    fn is_cache_enabled(config: &crate::config::Config) -> bool {
+    fn is_cache_enabled(config: &Config) -> bool {
         config.kora.cache.enabled && config.kora.cache.url.is_some()
     }
 
     /// Get account from cache with optional force refresh
     pub async fn get_account(
-        config: &crate::config::Config,
+        config: &Config,
         rpc_client: &RpcClient,
         pubkey: &Pubkey,
         force_refresh: bool,
