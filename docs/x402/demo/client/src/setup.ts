@@ -1,7 +1,8 @@
-import { getBase58Decoder, getBase58Encoder, createKeyPairSignerFromBytes, createSolanaRpc, Address, lamports, LAMPORTS_PER_SOL, createSolanaClient } from "gill";
+import { getBase58Decoder, getBase58Encoder, createKeyPairSignerFromBytes, Address, lamports, createSolanaRpc } from "@solana/kit";
 import { appendFile } from 'fs/promises';
 import path from "path";
 
+const LAMPORTS_PER_SOL = 1_000_000_000;
 
 async function createB58SecretKey(): Promise<string> {
     // await assertKeyGenerationIsAvailable();
@@ -78,8 +79,8 @@ const addKeypairToEnvFile = async (
 };
 
 async function airdrop(address: Address) {
-    const client = createSolanaClient({ urlOrMoniker: 'devnet' });
-    await client.rpc.requestAirdrop(
+    const rpc = createSolanaRpc('https://api.devnet.solana.com');
+    await rpc.requestAirdrop(
         address,
         lamports(BigInt(LAMPORTS_PER_SOL / 10)),
         { commitment: 'processed' }
