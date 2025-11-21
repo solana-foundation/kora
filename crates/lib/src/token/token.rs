@@ -127,8 +127,15 @@ impl TokenUtil {
 
         // Calculate: (amount * price * LAMPORTS_PER_SOL) / 10^decimals
         // Multiply before divide to preserve precision
-        let lamports_decimal =
-            (amount_decimal * token_price.price * lamports_per_sol) / decimals_scale;
+        let lamports_decimal = amount_decimal.checked_mul(token_price.price).and_then(|result| result.checked_mul(lamports_per_sol)).and_then(|result| result.checked_div(decimals_scale)).ok_or_else(|| {
+            log::error!("Token value calculation overflow: amount={}, price={}, decimals={}, lamports_per_sol={}",
+                amount,
+                token_price.price,
+                decimals,
+                lamports_per_sol
+            );
+            KoraError::ValidationError("Token value calculation overflow".to_string())
+        })?;
 
         // Floor and convert to u64
         let lamports = lamports_decimal
@@ -158,8 +165,18 @@ impl TokenUtil {
 
         // Calculate: (lamports * 10^decimals) / (LAMPORTS_PER_SOL * price)
         // Multiply before divide to preserve precision
-        let token_amount =
-            (lamports_decimal * scale) / (lamports_per_sol_decimal * token_price.price);
+        let token_amount = lamports_decimal
+            .checked_mul(scale)
+            .and_then(|result| result.checked_div(lamports_per_sol_decimal.checked_mul(token_price.price)?))
+            .ok_or_else(|| {
+                log::error!("Token value calculation overflow: lamports={}, scale={}, lamports_per_sol_decimal={}, token_price.price={}",
+                    lamports,
+                    scale,
+                    lamports_per_sol_decimal,
+                    token_price.price
+                );
+                KoraError::ValidationError("Token value calculation overflow".to_string())
+            })?;
 
         // Ceil and convert to u64
         let result = token_amount
@@ -307,8 +324,18 @@ impl TokenUtil {
 
                 // Calculate: (amount * price * LAMPORTS_PER_SOL) / 10^decimals
                 // Multiply before divide to preserve precision
-                let lamports_decimal =
-                    (amount_decimal * price.price * lamports_per_sol) / decimals_scale;
+                let lamports_decimal = amount_decimal.checked_mul(price.price)
+                    .and_then(|result| result.checked_mul(lamports_per_sol))
+                    .and_then(|result| result.checked_div(decimals_scale))
+                    .ok_or_else(|| {
+                        log::error!("Token value calculation overflow: amount={}, price={}, decimals={}, lamports_per_sol={}",
+                            amount,
+                            price.price,
+                            decimals,
+                            lamports_per_sol
+                        );
+                        KoraError::ValidationError("Token value calculation overflow".to_string())
+                    })?;
 
                 let lamports = lamports_decimal.floor().to_u64().ok_or_else(|| {
                     KoraError::ValidationError("Lamports value overflow".to_string())
