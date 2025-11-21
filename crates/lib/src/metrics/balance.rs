@@ -150,7 +150,7 @@ mod tests {
     use super::*;
     use crate::{
         config::FeePayerBalanceMetricsConfig,
-        signer::{SignerPool, SignerWithMetadata},
+        signer::{pool::SignerWithMetadata, SignerPool},
         state::update_signer_pool,
         tests::{
             account_mock::create_mock_account_with_balance,

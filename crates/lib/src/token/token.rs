@@ -122,14 +122,13 @@ impl TokenUtil {
             .ok_or_else(|| KoraError::ValidationError("Invalid token amount".to_string()))?;
         let decimals_scale = Decimal::from_u64(10u64.pow(decimals as u32))
             .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
+        let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL)
+            .ok_or_else(|| KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string()))?;
 
-        // Calculate: (amount / 10^decimals) * price * LAMPORTS_PER_SOL
-        let token_value = amount_decimal / decimals_scale;
-        let sol_value = token_value * token_price.price;
-        let lamports_decimal = sol_value
-            * Decimal::from_u64(LAMPORTS_PER_SOL).ok_or_else(|| {
-                KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string())
-            })?;
+        // Calculate: (amount * price * LAMPORTS_PER_SOL) / 10^decimals
+        // Multiply before divide to preserve precision
+        let lamports_decimal =
+            (amount_decimal * token_price.price * lamports_per_sol) / decimals_scale;
 
         // Floor and convert to u64
         let lamports = lamports_decimal
@@ -149,18 +148,18 @@ impl TokenUtil {
         let (token_price, decimals) =
             Self::get_token_price_and_decimals(mint, price_source.clone(), rpc_client).await?;
 
-        // Convert lamports to SOL using Decimal
+        // Convert lamports to token base units
         let lamports_decimal = Decimal::from_u64(lamports)
             .ok_or_else(|| KoraError::ValidationError("Invalid lamports value".to_string()))?;
         let lamports_per_sol_decimal = Decimal::from_u64(LAMPORTS_PER_SOL)
             .ok_or_else(|| KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string()))?;
-        let sol_value = lamports_decimal / lamports_per_sol_decimal;
-
-        // Convert SOL to token base units
-        let token_value = sol_value / token_price.price;
         let scale = Decimal::from_u64(10u64.pow(decimals as u32))
             .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
-        let token_amount = token_value * scale;
+
+        // Calculate: (lamports * 10^decimals) / (LAMPORTS_PER_SOL * price)
+        // Multiply before divide to preserve precision
+        let token_amount =
+            (lamports_decimal * scale) / (lamports_per_sol_decimal * token_price.price);
 
         // Ceil and convert to u64
         let result = token_amount
@@ -208,15 +207,19 @@ impl TokenUtil {
                             Ok(dest_account) => {
                                 let token_program =
                                     TokenType::get_token_program_from_owner(&dest_account.owner)?;
-                                if let Ok(token_account) =
-                                    token_program.unpack_token_account(&dest_account.data)
-                                {
-                                    if token_account.owner() == *fee_payer {
-                                        mint_to_transfers
-                                            .entry(*mint_pubkey)
-                                            .or_default()
-                                            .push((*amount, false)); // inflow
-                                    }
+                                let token_account = token_program
+                                    .unpack_token_account(&dest_account.data)
+                                    .map_err(|e| {
+                                        KoraError::TokenOperationError(format!(
+                                            "Failed to unpack destination token account {}: {}",
+                                            destination_address, e
+                                        ))
+                                    })?;
+                                if token_account.owner() == *fee_payer {
+                                    mint_to_transfers
+                                        .entry(*mint_pubkey)
+                                        .or_default()
+                                        .push((*amount, false)); // inflow
                                 }
                             }
                             Err(e) => {
@@ -298,13 +301,14 @@ impl TokenUtil {
                 })?;
                 let decimals_scale = Decimal::from_u64(10u64.pow(*decimals as u32))
                     .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
+                let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL).ok_or_else(|| {
+                    KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string())
+                })?;
 
-                let token_value = amount_decimal / decimals_scale;
-                let sol_value = token_value * price.price;
-                let lamports_decimal = sol_value
-                    * Decimal::from_u64(LAMPORTS_PER_SOL).ok_or_else(|| {
-                        KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string())
-                    })?;
+                // Calculate: (amount * price * LAMPORTS_PER_SOL) / 10^decimals
+                // Multiply before divide to preserve precision
+                let lamports_decimal =
+                    (amount_decimal * price.price * lamports_per_sol) / decimals_scale;
 
                 let lamports = lamports_decimal.floor().to_u64().ok_or_else(|| {
                     KoraError::ValidationError("Lamports value overflow".to_string())
@@ -459,6 +463,10 @@ impl TokenUtil {
                 }
 
                 if !config.validation.supports_token(&token_state.mint().to_string()) {
+                    log::warn!(
+                        "Ignoring payment with unsupported token mint: {}",
+                        token_state.mint(),
+                    );
                     continue;
                 }
 

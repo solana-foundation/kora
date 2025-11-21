@@ -387,6 +387,12 @@ impl ConfigValidator {
                     "When fees are enabled, allowed_spl_paid_tokens cannot be empty".to_string(),
                 );
             }
+        } else {
+            warnings.push(
+                "⚠️  SECURITY: Free pricing model enabled - all transactions will be processed \
+                without charging fees."
+                    .to_string(),
+            );
         }
 
         // Validate that all tokens in allowed_spl_paid_tokens are also in allowed_tokens

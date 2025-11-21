@@ -221,9 +221,8 @@ explore additional Kora RPC methods:
 - `estimateTransactionFee` - Calculate fees for transactions
 - `getPayerSigner` - Get the payer signer and payment destination
 - `getSupportedTokens` - Returns an array of supported payment tokens
-- `signTransaction` - Sign transactions with the Kora feepayer
 - `transferTransaction` - Create transfer SOL or SPL token transfer transactions (signed by the Kora feepayer)
-- `signAndSendTransaction` - Signs a transaction with the Kora feepayer and sends it to the configured Solana RPC
+- `signAndSendTransaction` - Conditionally signs a transaction with the Kora feepayer and sends it to the configured Solana RPC if fees are covered
 - `signTransaction` - Conditionally sign transactions when fees are covered
 - `getPaymentInstruction` - Get a payment instruction for a transaction
 

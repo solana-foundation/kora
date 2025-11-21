@@ -223,6 +223,8 @@ disallowed_accounts = [
 
 > *Note: Empty arrays are allowed, but you will need to specify at least one whitelisted `allowed_programs`, `allowed_tokens`, `allowed_spl_paid_tokens` for the Kora node to be able to process transactions. You need to specify the System Program or Token Program for the Kora node to be able to process transfers. To enable common instruction types (e.g., Compute Budget, Address Lookup Table), you need to specify the Compute Budget Program or Address Lookup Table Program, etc.*
 
+> **⚠️ Payment Token Validation Warning**: Only tokens listed in `allowed_spl_paid_tokens` will be accepted as payment for transaction fees. If a transaction contains payment transfers using unsupported tokens (tokens not in this list), those payments will be silently ignored.
+
 ## Token-2022 Extension Blocking
 
 The `[validation.token2022]` section allows you to block specific Token-2022 extensions for enhanced security. All extensions are enabled by default. You can block specific extensions by adding them to the `blocked_mint_extensions` or `blocked_account_extensions` arrays:

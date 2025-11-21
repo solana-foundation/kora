@@ -107,6 +107,9 @@ mod tests {
         assert!(!response.validation_config.fee_payer_policy.spl_token.allow_revoke);
         assert!(!response.validation_config.fee_payer_policy.spl_token.allow_set_authority);
         assert!(!response.validation_config.fee_payer_policy.spl_token.allow_mint_to);
+        assert!(!response.validation_config.fee_payer_policy.spl_token.allow_initialize_mint);
+        assert!(!response.validation_config.fee_payer_policy.spl_token.allow_initialize_account);
+        assert!(!response.validation_config.fee_payer_policy.spl_token.allow_initialize_multisig);
         assert!(!response.validation_config.fee_payer_policy.spl_token.allow_freeze_account);
         assert!(!response.validation_config.fee_payer_policy.spl_token.allow_thaw_account);
 
@@ -118,6 +121,9 @@ mod tests {
         assert!(!response.validation_config.fee_payer_policy.token_2022.allow_revoke);
         assert!(!response.validation_config.fee_payer_policy.token_2022.allow_set_authority);
         assert!(!response.validation_config.fee_payer_policy.token_2022.allow_mint_to);
+        assert!(!response.validation_config.fee_payer_policy.token_2022.allow_initialize_mint);
+        assert!(!response.validation_config.fee_payer_policy.token_2022.allow_initialize_account);
+        assert!(!response.validation_config.fee_payer_policy.token_2022.allow_initialize_multisig);
         assert!(!response.validation_config.fee_payer_policy.token_2022.allow_freeze_account);
         assert!(!response.validation_config.fee_payer_policy.token_2022.allow_thaw_account);
         // Assert PriceConfig default (check margin value)

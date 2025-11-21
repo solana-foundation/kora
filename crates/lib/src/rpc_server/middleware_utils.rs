@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use futures_util::TryStreamExt;
 use http::{Request, Response, StatusCode};
@@ -42,6 +42,27 @@ pub fn verify_jsonrpc_method(
         }
     }
     Err(KoraError::InvalidRequest("Method not allowed".to_string()))
+}
+
+pub fn build_response_with_graceful_error(
+    headers: Option<HashMap<String, String>>,
+    status_code: StatusCode,
+    error_message: &str,
+) -> Response<Body> {
+    let mut builder = Response::builder();
+
+    if let Some(headers) = headers {
+        for (key, value) in headers.iter() {
+            builder = builder.header(key, value);
+        }
+    }
+
+    builder.status(status_code).body(Body::from(error_message.to_string())).unwrap_or_else(|e| {
+        log::error!("Failed to build response, error: {e:?}");
+        let mut response = Response::new(Body::empty());
+        *response.status_mut() = status_code;
+        response
+    })
 }
 
 /// Method validation layer - applies first in middleware stack to fail fast
@@ -98,12 +119,11 @@ where
             match verify_jsonrpc_method(&body_bytes, &allowed_methods) {
                 Ok(_) => {}
                 Err(_) => {
-                    // Method not allowed
-                    let method_not_allowed_response = Response::builder()
-                        .status(StatusCode::METHOD_NOT_ALLOWED)
-                        .body(Body::empty())
-                        .expect("Failed to build METHOD_NOT_ALLOWED response");
-                    return Ok(method_not_allowed_response);
+                    return Ok(build_response_with_graceful_error(
+                        None,
+                        StatusCode::METHOD_NOT_ALLOWED,
+                        "",
+                    ));
                 }
             }
 

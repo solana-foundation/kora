@@ -16,15 +16,15 @@ use std::{
 const DEFAULT_WEIGHT: u32 = 1;
 
 /// Metadata associated with a signer in the pool
-pub struct SignerWithMetadata {
+pub(crate) struct SignerWithMetadata {
     /// Human-readable name for this signer
-    pub name: String,
+    name: String,
     /// The actual signer instance
-    pub signer: Arc<Signer>,
+    signer: Arc<Signer>,
     /// Weight for weighted selection (higher = more likely to be selected)
-    pub weight: u32,
+    weight: u32,
     /// Timestamp of last use (Unix timestamp in seconds)
-    pub last_used: AtomicU64,
+    last_used: AtomicU64,
 }
 
 impl Clone for SignerWithMetadata {
@@ -40,8 +40,17 @@ impl Clone for SignerWithMetadata {
 
 impl SignerWithMetadata {
     /// Create a new signer with metadata
-    pub fn new(name: String, signer: Arc<Signer>, weight: u32) -> Self {
+    pub(crate) fn new(name: String, signer: Arc<Signer>, weight: u32) -> Self {
         Self { name, signer, weight, last_used: AtomicU64::new(0) }
+    }
+
+    /// Update the last used timestamp to current time
+    fn update_last_used(&self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.last_used.store(now, Ordering::Relaxed);
     }
 }
 
@@ -68,7 +77,7 @@ pub struct SignerInfo {
 
 impl SignerPool {
     #[cfg(test)]
-    pub fn new(signers: Vec<SignerWithMetadata>) -> Self {
+    pub(crate) fn new(signers: Vec<SignerWithMetadata>) -> Self {
         let total_weight: u32 = signers.iter().map(|s| s.weight).sum();
 
         Self {
@@ -129,16 +138,19 @@ impl SignerPool {
     }
 
     /// Get the next signer according to the configured strategy
-    pub fn get_next_signer(&self) -> Result<&SignerWithMetadata, KoraError> {
+    pub fn get_next_signer(&self) -> Result<Arc<Signer>, KoraError> {
         if self.signers.is_empty() {
             return Err(KoraError::InternalServerError("Signer pool is empty".to_string()));
         }
 
-        match self.strategy {
+        let signer_meta = match self.strategy {
             SelectionStrategy::RoundRobin => self.round_robin_select(),
             SelectionStrategy::Random => self.random_select(),
             SelectionStrategy::Weighted => self.weighted_select(),
-        }
+        }?;
+
+        signer_meta.update_last_used();
+        Ok(Arc::clone(&signer_meta.signer))
     }
 
     /// Round-robin selection strategy
@@ -200,16 +212,20 @@ impl SignerPool {
     }
 
     /// Get a signer by public key (for client consistency signer keys)
-    pub fn get_signer_by_pubkey(&self, pubkey: &str) -> Result<&SignerWithMetadata, KoraError> {
+    pub fn get_signer_by_pubkey(&self, pubkey: &str) -> Result<Arc<Signer>, KoraError> {
         // Try to parse as Pubkey to validate format
         let target_pubkey = Pubkey::from_str(pubkey).map_err(|_| {
             KoraError::ValidationError(format!("Invalid signer signer key pubkey: {pubkey}"))
         })?;
 
         // Find signer with matching public key
-        self.signers.iter().find(|s| s.signer.pubkey() == target_pubkey).ok_or_else(|| {
-            KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
-        })
+        let signer_meta =
+            self.signers.iter().find(|s| s.signer.pubkey() == target_pubkey).ok_or_else(|| {
+                KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
+            })?;
+
+        signer_meta.update_last_used();
+        Ok(Arc::clone(&signer_meta.signer))
     }
 }
 
@@ -249,13 +265,13 @@ mod tests {
         let mut selections = HashMap::new();
         for _ in 0..100 {
             let signer = pool.get_next_signer().unwrap();
-            *selections.entry(signer.name.clone()).or_insert(0) += 1;
+            *selections.entry(signer.pubkey().to_string()).or_insert(0) += 1;
         }
 
         // Should have selected both signers equally
         assert_eq!(selections.len(), 2);
-        assert_eq!(selections["signer_1"], 50);
-        assert_eq!(selections["signer_2"], 50);
+        // Each signer should be selected 50 times
+        assert!(selections.values().all(|&count| count == 50));
     }
 
     #[test]
@@ -263,17 +279,21 @@ mod tests {
         let mut pool = create_test_pool();
         pool.strategy = SelectionStrategy::Weighted;
 
+        // Store the public keys for comparison (signer_1 has weight 1, signer_2 has weight 2)
+        let signer1_pubkey = pool.signers[0].signer.pubkey().to_string();
+        let signer2_pubkey = pool.signers[1].signer.pubkey().to_string();
+
         // Test weighted selection over many iterations
         let mut selections = HashMap::new();
         for _ in 0..300 {
             let signer = pool.get_next_signer().unwrap();
-            *selections.entry(signer.name.clone()).or_insert(0) += 1;
+            *selections.entry(signer.pubkey().to_string()).or_insert(0) += 1;
         }
 
         // signer_2 has weight 2, signer_1 has weight 1
         // So signer_2 should be selected ~2/3 of the time
-        let signer1_count = selections.get("signer_1").unwrap_or(&0);
-        let signer2_count = selections.get("signer_2").unwrap_or(&0);
+        let signer1_count = selections.get(&signer1_pubkey).unwrap_or(&0);
+        let signer2_count = selections.get(&signer2_pubkey).unwrap_or(&0);
 
         // Allow some variance due to randomness
         assert!(*signer2_count > *signer1_count);
