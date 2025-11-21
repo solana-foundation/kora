@@ -56,5 +56,5 @@ console.log('Message:', result.message);
 console.log('Instructions:', result.instructions);
 ```
 
-**[→ API Reference](./docs/README.md)**
-**[→ Quick Start](/docs/getting-started/QUICK_START.md)**
+**[→ API Reference](https://launch.solana.com/docs/kora/json-rpc-api)**
+**[→ Quick Start](https://launch.solana.com/docs/kora/getting-started/quick-start)**

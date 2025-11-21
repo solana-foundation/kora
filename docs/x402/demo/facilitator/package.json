@@ -11,7 +11,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.14.0",
   "dependencies": {
-    "@solana/kora": "file:../../../../sdks/ts",
+    "@solana/kora": "^0.1.0",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "x402": "^0.6.1"
