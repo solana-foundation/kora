@@ -60,23 +60,16 @@ impl PriceConfig {
             let margin_decimal = Decimal::from_f64(*margin)
                 .ok_or_else(|| KoraError::ValidationError("Invalid margin".to_string()))?;
 
-            let one_decimal = Decimal::from_u64(1u64).ok_or_else(|| {
-                log::error!(
-                    "Margin calculation overflow: min_transaction_fee={}, margin={}",
-                    min_transaction_fee,
-                    margin,
-                );
-                KoraError::ValidationError("Margin calculation overflow".to_string())
-            })?;
-
-            let multiplier = margin_decimal.checked_add(one_decimal).ok_or_else(|| {
-                log::error!(
-                    "Margin calculation overflow: min_transaction_fee={}, margin={}",
-                    min_transaction_fee,
-                    margin,
-                );
-                KoraError::ValidationError("Margin calculation overflow".to_string())
-            })?;
+            let multiplier = Decimal::from_u64(1u64)
+                .and_then(|result| result.checked_add(margin_decimal))
+                .ok_or_else(|| {
+                    log::error!(
+                        "Multiplier calculation overflow: min_transaction_fee={}, margin={}",
+                        min_transaction_fee,
+                        margin,
+                    );
+                    KoraError::ValidationError("Multiplier calculation overflow".to_string())
+                })?;
 
             let result = Decimal::from_u64(min_transaction_fee)
                 .and_then(|result| result.checked_mul(multiplier))
