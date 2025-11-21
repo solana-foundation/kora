@@ -1,6 +1,7 @@
 use crate::{
+    config::Config,
     error::KoraError,
-    oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
+    oracle::{get_price_oracle, RetryingPriceOracle, TokenPrice},
     token::{
         interface::TokenMint,
         spl_token::TokenProgram,
@@ -20,9 +21,6 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use std::{collections::HashMap, str::FromStr, time::Duration};
-
-#[cfg(not(test))]
-use crate::state::get_config;
 
 #[cfg(test)]
 use {crate::tests::config_mock::mock_state::get_config, rust_decimal_macros::dec};
@@ -69,10 +67,11 @@ impl TokenUtil {
     }
 
     pub async fn get_mint(
+        config: &Config,
         rpc_client: &RpcClient,
         mint_pubkey: &Pubkey,
     ) -> Result<Box<dyn TokenMint + Send + Sync>, KoraError> {
-        let mint_account = CacheUtil::get_account(rpc_client, mint_pubkey, false).await?;
+        let mint_account = CacheUtil::get_account(config, rpc_client, mint_pubkey, false).await?;
 
         let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
 
@@ -82,22 +81,26 @@ impl TokenUtil {
     }
 
     pub async fn get_mint_decimals(
+        config: &Config,
         rpc_client: &RpcClient,
         mint_pubkey: &Pubkey,
     ) -> Result<u8, KoraError> {
-        let mint = Self::get_mint(rpc_client, mint_pubkey).await?;
+        let mint = Self::get_mint(config, rpc_client, mint_pubkey).await?;
         Ok(mint.decimals())
     }
 
     pub async fn get_token_price_and_decimals(
         mint: &Pubkey,
-        price_source: PriceSource,
         rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<(TokenPrice, u8), KoraError> {
-        let decimals = Self::get_mint_decimals(rpc_client, mint).await?;
+        let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
 
-        let oracle =
-            RetryingPriceOracle::new(3, Duration::from_secs(1), get_price_oracle(price_source));
+        let oracle = RetryingPriceOracle::new(
+            3,
+            Duration::from_secs(1),
+            get_price_oracle(config.validation.price_source.clone()),
+        );
 
         // Get token price in SOL directly
         let token_price = oracle
@@ -111,11 +114,11 @@ impl TokenUtil {
     pub async fn calculate_token_value_in_lamports(
         amount: u64,
         mint: &Pubkey,
-        price_source: PriceSource,
         rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<u64, KoraError> {
         let (token_price, decimals) =
-            Self::get_token_price_and_decimals(mint, price_source, rpc_client).await?;
+            Self::get_token_price_and_decimals(mint, rpc_client, config).await?;
 
         // Convert amount to Decimal with proper scaling
         let amount_decimal = Decimal::from_u64(amount)
@@ -142,11 +145,11 @@ impl TokenUtil {
     pub async fn calculate_lamports_value_in_token(
         lamports: u64,
         mint: &Pubkey,
-        price_source: &PriceSource,
         rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<u64, KoraError> {
         let (token_price, decimals) =
-            Self::get_token_price_and_decimals(mint, price_source.clone(), rpc_client).await?;
+            Self::get_token_price_and_decimals(mint, rpc_client, config).await?;
 
         // Convert lamports to token base units
         let lamports_decimal = Decimal::from_u64(lamports)
@@ -175,8 +178,8 @@ impl TokenUtil {
     pub async fn calculate_spl_transfers_value_in_lamports(
         spl_transfers: &[ParsedSPLInstructionData],
         fee_payer: &Pubkey,
-        price_source: &PriceSource,
         rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<u64, KoraError> {
         // Collect all unique mints that need price lookups
         let mut mint_to_transfers: HashMap<
@@ -203,7 +206,9 @@ impl TokenUtil {
                     // We need to check the destination token account owner
                     if let Some(mint_pubkey) = mint {
                         // Get destination account to check owner
-                        match CacheUtil::get_account(rpc_client, destination_address, false).await {
+                        match CacheUtil::get_account(config, rpc_client, destination_address, false)
+                            .await
+                        {
                             Ok(dest_account) => {
                                 let token_program =
                                     TokenType::get_token_program_from_owner(&dest_account.owner)?;
@@ -272,14 +277,14 @@ impl TokenUtil {
         let oracle = RetryingPriceOracle::new(
             3,
             Duration::from_secs(1),
-            get_price_oracle(price_source.clone()),
+            get_price_oracle(config.validation.price_source.clone()),
         );
 
         let prices = oracle.get_token_prices(&mint_addresses).await?;
 
         let mut mint_decimals = std::collections::HashMap::new();
         for mint in mint_to_transfers.keys() {
-            let decimals = Self::get_mint_decimals(rpc_client, mint).await?;
+            let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
             mint_decimals.insert(*mint, decimals);
         }
 
@@ -333,17 +338,18 @@ impl TokenUtil {
     /// Validate Token2022 extensions for payment instructions
     /// This checks if any blocked extensions are present on the payment accounts
     pub async fn validate_token2022_extensions_for_payment(
+        config: &Config,
         rpc_client: &RpcClient,
         source_address: &Pubkey,
         destination_address: &Pubkey,
         mint: &Pubkey,
     ) -> Result<(), KoraError> {
-        let config = &get_config()?.validation.token_2022;
+        let token2022_config = &config.validation.token_2022;
 
         let token_program = Token2022Program::new();
 
         // Get mint account data and validate mint extensions (force refresh in case extensions are added)
-        let mint_account = CacheUtil::get_account(rpc_client, mint, true).await?;
+        let mint_account = CacheUtil::get_account(config, rpc_client, mint, true).await?;
         let mint_data = mint_account.data;
 
         // Unpack the mint state with extensions
@@ -356,7 +362,7 @@ impl TokenUtil {
 
         // Check each extension type present on the mint
         for extension_type in mint_with_extensions.get_extension_types() {
-            if config.is_mint_extension_blocked(*extension_type) {
+            if token2022_config.is_mint_extension_blocked(*extension_type) {
                 return Err(KoraError::ValidationError(format!(
                     "Blocked mint extension found on mint account {mint}",
                 )));
@@ -364,7 +370,8 @@ impl TokenUtil {
         }
 
         // Check source account extensions (force refresh in case extensions are added)
-        let source_account = CacheUtil::get_account(rpc_client, source_address, true).await?;
+        let source_account =
+            CacheUtil::get_account(config, rpc_client, source_address, true).await?;
         let source_data = source_account.data;
 
         let source_state = token_program.unpack_token_account(&source_data)?;
@@ -375,7 +382,7 @@ impl TokenUtil {
             })?;
 
         for extension_type in source_with_extensions.get_extension_types() {
-            if config.is_account_extension_blocked(*extension_type) {
+            if token2022_config.is_account_extension_blocked(*extension_type) {
                 return Err(KoraError::ValidationError(format!(
                     "Blocked account extension found on source account {source_address}",
                 )));
@@ -384,7 +391,7 @@ impl TokenUtil {
 
         // Check destination account extensions (force refresh in case extensions are added)
         let destination_account =
-            CacheUtil::get_account(rpc_client, destination_address, true).await?;
+            CacheUtil::get_account(config, rpc_client, destination_address, true).await?;
         let destination_data = destination_account.data;
 
         let destination_state = token_program.unpack_token_account(&destination_data)?;
@@ -395,7 +402,7 @@ impl TokenUtil {
             })?;
 
         for extension_type in destination_with_extensions.get_extension_types() {
-            if config.is_account_extension_blocked(*extension_type) {
+            if token2022_config.is_account_extension_blocked(*extension_type) {
                 return Err(KoraError::ValidationError(format!(
                     "Blocked account extension found on destination account {destination_address}",
                 )));
@@ -406,13 +413,13 @@ impl TokenUtil {
     }
 
     pub async fn verify_token_payment(
+        config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         required_lamports: u64,
         // Wallet address of the owner of the destination token account
         expected_destination_owner: &Pubkey,
     ) -> Result<bool, KoraError> {
-        let config = get_config()?;
         let mut total_lamport_value = 0u64;
 
         for instruction in transaction_resolved
@@ -437,7 +444,7 @@ impl TokenUtil {
 
                 // Validate the destination account is that of the payment address (or signer if none provided)
                 let destination_account =
-                    CacheUtil::get_account(rpc_client, destination_address, false)
+                    CacheUtil::get_account(config, rpc_client, destination_address, false)
                         .await
                         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
@@ -449,6 +456,7 @@ impl TokenUtil {
                 // For Token2022 payments, validate that blocked extensions are not used
                 if *is_2022 {
                     TokenUtil::validate_token2022_extensions_for_payment(
+                        config,
                         rpc_client,
                         source_address,
                         destination_address,
@@ -473,8 +481,8 @@ impl TokenUtil {
                 let lamport_value = TokenUtil::calculate_token_value_in_lamports(
                     *amount,
                     &token_state.mint(),
-                    config.validation.price_source.clone(),
                     rpc_client,
+                    config,
                 )
                 .await?;
 
@@ -583,7 +591,8 @@ mod tests_token {
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
-        let result = TokenUtil::get_mint(&rpc_client, &mint).await;
+        let config = get_config().unwrap();
+        let result = TokenUtil::get_mint(&config, &rpc_client, &mint).await;
         assert!(result.is_ok());
         let mint_data = result.unwrap();
         assert_eq!(mint_data.decimals(), 9);
@@ -595,7 +604,8 @@ mod tests_token {
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result = TokenUtil::get_mint(&rpc_client, &mint).await;
+        let config = get_config().unwrap();
+        let result = TokenUtil::get_mint(&config, &rpc_client, &mint).await;
         assert!(result.is_err());
     }
 
@@ -605,7 +615,8 @@ mod tests_token {
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
-        let result = TokenUtil::get_mint_decimals(&rpc_client, &mint).await;
+        let config = get_config().unwrap();
+        let result = TokenUtil::get_mint_decimals(&config, &rpc_client, &mint).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 6);
     }
@@ -613,13 +624,12 @@ mod tests_token {
     #[tokio::test]
     async fn test_get_token_price_and_decimals_spl() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let (token_price, decimals) =
-            TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client)
-                .await
-                .unwrap();
+            TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config).await.unwrap();
 
         assert_eq!(decimals, 9);
         assert_eq!(token_price.price, Decimal::from(1));
@@ -628,13 +638,12 @@ mod tests_token {
     #[tokio::test]
     async fn test_get_token_price_and_decimals_token2022() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let (token_price, decimals) =
-            TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client)
-                .await
-                .unwrap();
+            TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config).await.unwrap();
 
         assert_eq!(decimals, 6);
         assert_eq!(token_price.price, dec!(0.0001));
@@ -643,29 +652,26 @@ mod tests_token {
     #[tokio::test]
     async fn test_get_token_price_and_decimals_account_not_found() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result =
-            TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client).await;
+        let result = TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_sol() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let amount = 1_000_000_000; // 1 SOL in lamports
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 1_000_000_000); // Should equal input since SOL price is 1.0
     }
@@ -673,18 +679,15 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_usdc() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let amount = 1_000_000; // 1 USDC (6 decimals)
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         // 1 USDC * 0.0001 SOL/USDC = 0.0001 SOL = 100,000 lamports
         assert_eq!(result, 100_000);
@@ -693,18 +696,15 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_zero_amount() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let amount = 0;
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 0);
     }
@@ -712,18 +712,15 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_small_amount() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let amount = 1; // 0.000001 USDC (smallest unit)
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         // 0.000001 USDC * 0.0001 SOL/USDC = very small amount, should floor to 0
         assert_eq!(result, 0);
@@ -732,18 +729,15 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_sol() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let lamports = 1_000_000_000; // 1 SOL
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 1_000_000_000); // Should equal input since SOL price is 1.0
     }
@@ -751,18 +745,15 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_usdc() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let lamports = 100_000; // 0.0001 SOL
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         // 0.0001 SOL / 0.0001 SOL/USDC = 1 USDC = 1,000,000 base units
         assert_eq!(result, 1_000_000);
@@ -771,18 +762,15 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_zero_lamports() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let lamports = 0;
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 0);
     }
@@ -790,6 +778,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_price_functions_consistency() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         // Test that convert to lamports and back to token amount gives approximately the same result
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
@@ -800,8 +789,8 @@ mod tests_token {
         let lamports_result = TokenUtil::calculate_token_value_in_lamports(
             original_amount,
             &mint,
-            PriceSource::Mock,
             &rpc_client,
+            &config,
         )
         .await;
 
@@ -813,13 +802,9 @@ mod tests_token {
         let lamports = lamports_result.unwrap();
 
         // Convert lamports back to token amount
-        let recovered_amount_result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &PriceSource::Mock,
-            &rpc_client,
-        )
-        .await;
+        let recovered_amount_result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await;
 
         if let Ok(recovered_amount) = recovered_amount_result {
             assert_eq!(recovered_amount, original_amount);
@@ -829,16 +814,13 @@ mod tests_token {
     #[tokio::test]
     async fn test_price_calculation_with_account_error() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            1_000_000,
-            &mint,
-            PriceSource::Mock,
-            &rpc_client,
-        )
-        .await;
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(1_000_000, &mint, &rpc_client, &config)
+                .await;
 
         assert!(result.is_err());
     }
@@ -846,16 +828,13 @@ mod tests_token {
     #[tokio::test]
     async fn test_lamports_calculation_with_account_error() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            1_000_000,
-            &mint,
-            &PriceSource::Mock,
-            &rpc_client,
-        )
-        .await;
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(1_000_000, &mint, &rpc_client, &config)
+                .await;
 
         assert!(result.is_err());
     }
@@ -863,6 +842,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_decimal_precision() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
 
         // Explanation (i.e. for case 1)
@@ -890,14 +870,10 @@ mod tests_token {
 
         for (lamports, expected, description) in test_cases {
             let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
-            let result = TokenUtil::calculate_lamports_value_in_token(
-                lamports,
-                &mint,
-                &PriceSource::Mock,
-                &rpc_client,
-            )
-            .await
-            .unwrap();
+            let result =
+                TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                    .await
+                    .unwrap();
 
             assert_eq!(
                 result, expected,
@@ -916,7 +892,9 @@ mod tests_token {
 
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
+        let config = get_config().unwrap();
         let result = TokenUtil::validate_token2022_extensions_for_payment(
+            &config,
             &rpc_client,
             &source_address,
             &destination_address,
@@ -941,7 +919,9 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_account_info(&source_account).build();
 
         // Test with None mint (should only check account extensions but will fail on dest account lookup)
+        let config = get_config().unwrap();
         let result = TokenUtil::validate_token2022_extensions_for_payment(
+            &config,
             &rpc_client,
             &source_address,
             &destination_address,
