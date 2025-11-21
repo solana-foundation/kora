@@ -8,7 +8,7 @@ importers:
 
   .:
     dependencies:
-      '@kora/sdk':
+      '@solana/kora':
         specifier: file:../../../../sdks/ts
         version: file:../../../../sdks/ts
       '@solana-program/compute-budget':
@@ -204,7 +204,7 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@kora/sdk@file:../../../../sdks/ts':
+  '@solana/kora@file:../../../../sdks/ts':
     resolution: {directory: ../../../../sdks/ts, type: directory}
 
   '@solana-program/compute-budget@0.8.0':
@@ -588,7 +588,7 @@ snapshots:
   '@esbuild/win32-x64@0.25.9':
     optional: true
 
-  '@kora/sdk@file:../../../../sdks/ts': {}
+  '@solana/kora@file:../../../../sdks/ts': {}
 
   '@solana-program/compute-budget@0.8.0(@solana/kit@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.2)(ws@8.18.3))':
     dependencies:

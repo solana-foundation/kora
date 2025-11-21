@@ -1,5 +1,5 @@
 {
-  "name": "@kora/sdk",
+  "name": "@solana/kora",
   "version": "0.1.0",
   "description": "TypeScript SDK for Kora RPC",
   "main": "dist/src/index.js",

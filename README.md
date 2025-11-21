@@ -74,7 +74,7 @@ Kora provides a simple JSON-RPC interface:
 
 ```typescript
 // Initialize Kora client
-import { KoraClient } from '@kora/sdk';
+import { KoraClient } from '@solana/kora';
 const kora = new KoraClient({ rpcUrl: 'http://localhost:8080' });
 
 // Sign transaction as paymaster
@@ -152,7 +152,7 @@ kora/
 ## Other Resources
 
 - [Kora CLI Crates.io](https://crates.io/crates/kora-cli) - Rust crate for running a Kora node
-- @kora/sdk NPM Package Coming Soon
+- @solana/kora NPM Package Coming Soon
 
 ---
 
