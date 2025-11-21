@@ -61,11 +61,11 @@ Basic usage:
 kora rpc [OPTIONS] # --help for full list of options
 ```
 
-**[→ Full Documentation](docs/README.md)** - Learn how Kora works
+**[→ Full Documentation](http://launch.solana.com/docs/kora/getting-started/overview)** - Learn how Kora works
 
-**[→ Quick Start Guide](docs/getting-started/QUICK_START.md)** - Get Kora running locally minutes
+**[→ Quick Start Guide](https://launch.solana.com/docs/kora/getting-started/quick-start)** - Get Kora running locally minutes
 
-**[→ Node Operator Guide](docs/operators/README.md)** - Run a paymaster
+**[→ Node Operator Guide](https://launch.solana.com/docs/kora/operators)** - Run a paymaster
 
 
 ## TypeScript SDK
@@ -81,7 +81,7 @@ const kora = new KoraClient({ rpcUrl: 'http://localhost:8080' });
 const signed = await kora.signTransaction({ transaction });
 ```
 
-**[→ API Reference](./sdks/ts/README.md)**
+**[→ API Reference](https://launch.solana.com/docs/kora/json-rpc-api)**
 
 ## Local Development
 
