@@ -37,7 +37,7 @@ This will start a local test validator and run all tests.
 ## Quick Start
 
 ```typescript
-import { KoraClient } from '@kora/sdk';
+import { KoraClient } from '@solana/kora';
 
 // Initialize the client with your RPC endpoint
 const client = new KoraClient({ rpcUrl: 'http://localhost:8080' });

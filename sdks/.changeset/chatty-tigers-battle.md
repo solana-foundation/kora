@@ -1,5 +1,5 @@
 ---
-"@kora/sdk": patch
+"@solana/kora": patch
 ---
 
 add support for fee_in_token response in EstimateTransactionFeeResponse.

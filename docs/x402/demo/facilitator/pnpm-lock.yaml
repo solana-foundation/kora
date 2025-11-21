@@ -8,7 +8,7 @@ importers:
 
   .:
     dependencies:
-      '@kora/sdk':
+      '@solana/kora':
         specifier: file:../../../../sdks/ts
         version: file:../../../../sdks/ts
       dotenv:
@@ -229,7 +229,7 @@ packages:
     peerDependencies:
       viem: '>=2.0.0'
 
-  '@kora/sdk@file:../../../../sdks/ts':
+  '@solana/kora@file:../../../../sdks/ts':
     resolution: {directory: ../../../../sdks/ts, type: directory}
 
   '@lit-labs/ssr-dom-shim@1.4.0':
@@ -2248,7 +2248,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@kora/sdk@file:../../../../sdks/ts': {}
+  '@solana/kora@file:../../../../sdks/ts': {}
 
   '@lit-labs/ssr-dom-shim@1.4.0': {}
 

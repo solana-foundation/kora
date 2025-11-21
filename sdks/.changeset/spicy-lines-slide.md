@@ -1,5 +1,5 @@
 ---
-"@kora/sdk": minor
+"@solana/kora": minor
 ---
 
 add changeset

@@ -1,5 +1,5 @@
 
-import { KoraClient } from "@kora/sdk";
+import { KoraClient } from "@solana/kora";
 
 async function main() {
     const client = new KoraClient({ rpcUrl: 'http://localhost:8080/' });

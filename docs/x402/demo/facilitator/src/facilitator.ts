@@ -10,7 +10,7 @@ import {
     SettleResponse,
     Network,
 } from "x402/types";
-import { KoraClient } from "@kora/sdk";
+import { KoraClient } from "@solana/kora";
 import path from "path";
 
 config({ path: path.join(process.cwd(), '..', '.env') });

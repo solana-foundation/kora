@@ -116,7 +116,7 @@ Before we start running the demo, let's walk through the [full demo](./demo/clie
 Our demo starts with the necessary imports and configuration:
 
 ```ts
-import { KoraClient } from "@kora/sdk";
+import { KoraClient } from "@solana/kora";
 import {
   createKeyPairSignerFromBytes,
   getBase58Encoder,
@@ -159,7 +159,7 @@ const CONFIG = {
 }
 ```
 
-We are importing the Kora Client from the [Kora SDK](https://www.npmjs.com/package/@kora/sdk) and a few types/helpers from Solana Kit library for building transactions.
+We are importing the Kora Client from the [Kora SDK](https://www.npmjs.com/package/@solana/kora) and a few types/helpers from Solana Kit library for building transactions.
 
 We are also creating a global configuration object that defines:
 
@@ -601,4 +601,4 @@ Kora makes it possible to provide users with a seamless Web3 experience where th
 - [**Signers Guide**](../operators/SIGNERS.md) - Managing different signer types
 - [**API Reference**](../reference/API.md) - Complete RPC method documentation
 - [**GitHub Repository**](https://github.com/solana-foundation/kora) - Source code and examples
-- [**Kora SDK**](https://www.npmjs.com/package/@kora/sdk) - SDK for interacting with Kora RPC endpoints
+- [**Kora SDK**](https://www.npmjs.com/package/@solana/kora) - SDK for interacting with Kora RPC endpoints

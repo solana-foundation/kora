@@ -1,4 +1,4 @@
-import { KoraClient } from "@kora/sdk";
+import { KoraClient } from "@solana/kora";
 import {
   createKeyPairSignerFromBytes,
   getBase58Encoder,
