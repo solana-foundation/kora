@@ -1,4 +1,8 @@
 use crate::{error::KoraError, oracle::PriceSource, token::token::TokenUtil};
+use rust_decimal::{
+    prelude::{FromPrimitive, ToPrimitive},
+    Decimal,
+};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -53,21 +57,40 @@ impl PriceConfig {
         min_transaction_fee: u64,
     ) -> Result<u64, KoraError> {
         if let PriceModel::Margin { margin } = &self.model {
-            let multiplier = 1.0 + margin;
-            let result = min_transaction_fee as f64 * multiplier;
+            let margin_decimal = Decimal::from_f64(*margin)
+                .ok_or_else(|| KoraError::ValidationError("Invalid margin".to_string()))?;
 
-            // Check for overflow/underflow before casting to u64
-            if result > u64::MAX as f64 || result < 0.0 {
+            let multiplier = Decimal::from_u64(1u64)
+                .and_then(|result| result.checked_add(margin_decimal))
+                .ok_or_else(|| {
+                    log::error!(
+                        "Multiplier calculation overflow: min_transaction_fee={}, margin={}",
+                        min_transaction_fee,
+                        margin,
+                    );
+                    KoraError::ValidationError("Multiplier calculation overflow".to_string())
+                })?;
+
+            let result = Decimal::from_u64(min_transaction_fee)
+                .and_then(|result| result.checked_mul(multiplier))
+                .ok_or_else(|| {
+                    log::error!(
+                        "Margin calculation overflow: min_transaction_fee={}, margin={}",
+                        min_transaction_fee,
+                        margin,
+                    );
+                    KoraError::ValidationError("Margin calculation overflow".to_string())
+                })?;
+
+            return result.ceil().to_u64().ok_or_else(|| {
                 log::error!(
                     "Margin calculation overflow: min_transaction_fee={}, margin={}, result={}",
                     min_transaction_fee,
                     margin,
                     result
                 );
-                return Err(KoraError::ValidationError("Margin calculation overflow".to_string()));
-            }
-
-            return Ok(result as u64);
+                KoraError::ValidationError("Margin calculation overflow".to_string())
+            });
         }
 
         Err(KoraError::ConfigError)
