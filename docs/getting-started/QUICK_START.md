@@ -71,16 +71,6 @@ First, create .env for your environment :
 touch .env
 ```
 
-### Build Kora SDK
-
-The client uses the local Kora TypeScript SDK. Build it first:
-
-```bash
-# From project root (kora/)
-make install-ts-sdk
-make build-ts-sdk
-```
-
 ### Setup Client
 
 Install client dependencies:
