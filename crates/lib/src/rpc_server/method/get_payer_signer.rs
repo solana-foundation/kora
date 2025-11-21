@@ -3,6 +3,7 @@ use crate::{
     state::{get_config, get_signer_pool},
 };
 use serde::{Deserialize, Serialize};
+use solana_signers::SolanaSigner;
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -18,8 +19,8 @@ pub async fn get_payer_signer() -> Result<GetPayerSignerResponse, KoraError> {
     let pool = get_signer_pool()?;
 
     // Get the next signer according to the configured strategy
-    let signer_meta = pool.get_next_signer()?;
-    let signer_pubkey = signer_meta.signer.solana_pubkey();
+    let signer = pool.get_next_signer()?;
+    let signer_pubkey = signer.pubkey();
     // Get the payment destination address (falls back to signer if no payment address is configured)
     let payment_destination = config.kora.get_payment_address(&signer_pubkey)?;
 

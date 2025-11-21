@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 /// Common test utilities and centralized re-exports
 ///
 /// This module provides:
@@ -5,7 +7,7 @@
 /// 2. Centralized re-exports of commonly used mock utilities
 use crate::{
     get_request_signer_with_signer_key,
-    signer::{KoraSigner, SignerPool, SignerWithMetadata, SolanaMemorySigner},
+    signer::{pool::SignerWithMetadata, SignerPool},
     state::{get_config, update_config, update_signer_pool},
     tests::{account_mock, config_mock::ConfigMockBuilder, rpc_mock},
     usage_limit::UsageTracker,
@@ -16,22 +18,24 @@ use solana_sdk::{pubkey::Pubkey, signature::Keypair};
 // Re-export mock utilities for centralized access
 pub use account_mock::*;
 pub use rpc_mock::*;
+use solana_signers::{Signer, SolanaSigner};
 
 /// Setup or retrieve test signer for global state initialization
 ///
 /// Returns the signer's public key.
 pub fn setup_or_get_test_signer() -> Pubkey {
     if let Ok(signer) = get_request_signer_with_signer_key(None) {
-        return signer.solana_pubkey();
+        return signer.pubkey();
     }
 
     let test_keypair = Keypair::new();
 
-    let signer = SolanaMemorySigner::new(test_keypair.insecure_clone());
+    // Create external signer and wrap with adapter
+    let external_signer = Signer::from_memory(&test_keypair.to_base58_string()).unwrap();
 
     let pool = SignerPool::new(vec![SignerWithMetadata::new(
         "test_signer".to_string(),
-        KoraSigner::Memory(signer.clone()),
+        Arc::new(external_signer),
         1,
     )]);
 
@@ -42,7 +46,7 @@ pub fn setup_or_get_test_signer() -> Pubkey {
         }
     }
 
-    signer.solana_pubkey()
+    solana_sdk::signer::Signer::pubkey(&test_keypair)
 }
 
 /// Setup or retrieve test config for global state initialization

@@ -29,6 +29,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
     let destinationAddress: Address;
     let usdcMint: Address;
     let koraAddress: Address;
+    let koraRpcUrl: string;
 
     beforeAll(async () => {
         const testSuite = await setupTestSuite();
@@ -38,11 +39,12 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         destinationAddress = testSuite.destinationAddress;
         usdcMint = testSuite.usdcMint;
         koraAddress = testSuite.koraAddress;
+        koraRpcUrl = testSuite.koraRpcUrl;
     }, 90000); // allow adequate time for airdrops and token initialization
 
     // Run authentication tests only when auth is enabled
     if (AUTH_ENABLED) {
-        runAuthenticationTests('http://localhost:8080/');
+        runAuthenticationTests();
     }
 
     describe('Configuration and Setup', () => {
@@ -61,11 +63,44 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.validation_config.price).toBeDefined();
             expect(config.validation_config.price.type).toBeDefined();
             expect(config.validation_config.fee_payer_policy).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.allow_sol_transfers).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.allow_spl_transfers).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.allow_token2022_transfers).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.allow_assign).toBeDefined();
-            expect(config.validation_config.fee_payer_policy.allow_burn).toBeDefined();
+
+            // System policy
+            expect(config.validation_config.fee_payer_policy.system).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.allow_transfer).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.allow_assign).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.allow_create_account).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.allow_allocate).toBeDefined();
+
+            // System nonce policy
+            expect(config.validation_config.fee_payer_policy.system.nonce).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.nonce.allow_initialize).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.nonce.allow_advance).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.nonce.allow_authorize).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.system.nonce.allow_withdraw).toBeDefined();
+
+            // SPL token policy
+            expect(config.validation_config.fee_payer_policy.spl_token).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_transfer).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_burn).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_close_account).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_approve).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_revoke).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_set_authority).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_mint_to).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_freeze_account).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.spl_token.allow_thaw_account).toBeDefined();
+
+            // Token2022 policy
+            expect(config.validation_config.fee_payer_policy.token_2022).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_transfer).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_burn).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_close_account).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_approve).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_revoke).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_set_authority).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_mint_to).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_freeze_account).toBeDefined();
+            expect(config.validation_config.fee_payer_policy.token_2022.allow_thaw_account).toBeDefined();
             expect(config.enabled_methods).toBeDefined();
             expect(config.enabled_methods.liveness).toBeDefined();
             expect(config.enabled_methods.estimate_transaction_fee).toBeDefined();
@@ -75,7 +110,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.enabled_methods.transfer_transaction).toBeDefined();
             expect(config.enabled_methods.get_blockhash).toBeDefined();
             expect(config.enabled_methods.get_config).toBeDefined();
-            expect(config.enabled_methods.sign_transaction_if_paid).toBeDefined();
         });
 
         it('should get payer signer', async () => {
@@ -160,44 +194,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
 
         it('should sign transaction', async () => {
-            const transferRequest = {
-                amount: 1000000,
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: destinationAddress,
-            };
-
-            const { transaction } = await client.transferTransaction(transferRequest);
-            const signResult = await client.signTransaction({ transaction });
-
-            expect(signResult).toBeDefined();
-            expect(signResult.signature).toBeDefined();
-            expect(signResult.signed_transaction).toBeDefined();
-        });
-
-        it('should sign and send transaction', async () => {
-            const transferRequest = {
-                amount: 1000000,
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: destinationAddress,
-            };
-
-            const { transaction: transactionString } = await client.transferTransaction(transferRequest);
-            const transaction = transactionFromBase64(transactionString);
-            // Sign transaction with test wallet before sending
-            const signedTransaction = await signTransaction([testWallet.keyPair], transaction);
-            const base64SignedTransaction = getBase64EncodedWireTransaction(signedTransaction);
-            const signResult = await client.signAndSendTransaction({
-                transaction: base64SignedTransaction,
-            });
-
-            expect(signResult).toBeDefined();
-            expect(signResult.signature).toBeDefined();
-            expect(signResult.signed_transaction).toBeDefined();
-        });
-
-        it('should sign transaction if paid', async () => {
             const config = await client.getConfig();
             const paymentAddress = config.fee_payers[0];
             const transferRequest = {
@@ -209,12 +205,35 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
             const { transaction } = await client.transferTransaction(transferRequest);
 
-            const signResult = await client.signTransactionIfPaid({
+            const signResult = await client.signTransaction({
                 transaction,
             });
 
             expect(signResult).toBeDefined();
-            expect(signResult.transaction).toBeDefined();
+            expect(signResult.signed_transaction).toBeDefined();
+        });
+
+        it('should sign and send transaction', async () => {
+            const config = await client.getConfig();
+            const paymentAddress = config.fee_payers[0];
+            const transferRequest = {
+                amount: 1000000,
+                token: usdcMint,
+                source: testWalletAddress,
+                destination: paymentAddress,
+            };
+
+            const { transaction: transactionString } = await client.transferTransaction(transferRequest);
+
+            const transaction = transactionFromBase64(transactionString);
+            // Sign transaction with test wallet before sending
+            const signedTransaction = await signTransaction([testWallet.keyPair], transaction);
+            const base64SignedTransaction = getBase64EncodedWireTransaction(signedTransaction);
+            const signResult = await client.signAndSendTransaction({
+                transaction: base64SignedTransaction,
+            });
+
+            expect(signResult).toBeDefined();
             expect(signResult.signed_transaction).toBeDefined();
         });
 
@@ -319,18 +338,19 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
     describe('End-to-End Flows', () => {
         it('should handle transfer and sign flow', async () => {
+            const config = await client.getConfig();
+            const paymentAddress = config.fee_payers[0];
             const request = {
                 amount: 1000000,
                 token: usdcMint,
                 source: testWalletAddress,
-                destination: destinationAddress,
+                destination: paymentAddress,
             };
 
             // Create and sign the transaction
             const { transaction } = await client.transferTransaction(request);
             const signResult = await client.signTransaction({ transaction });
 
-            expect(signResult.signature).toBeDefined();
             expect(signResult.signed_transaction).toBeDefined();
         });
 

@@ -1,4 +1,5 @@
 use kora_lib::oracle::{get_price_oracle, PriceSource, RetryingPriceOracle};
+use rust_decimal_macros::dec;
 use std::time::Duration;
 
 #[tokio::test]
@@ -12,8 +13,16 @@ async fn test_jupiter_integration_usdc() {
 
     match result {
         Ok(token_price) => {
-            assert!(token_price.price > 0.001, "USDC price too low: {} SOL", token_price.price);
-            assert!(token_price.price < 0.01, "USDC price too high: {} SOL", token_price.price);
+            assert!(
+                token_price.price > dec!(0.001),
+                "USDC price too low: {} SOL",
+                token_price.price
+            );
+            assert!(
+                token_price.price < dec!(0.01),
+                "USDC price too high: {} SOL",
+                token_price.price
+            );
             assert_eq!(token_price.source, PriceSource::Jupiter);
         }
         Err(e) => {
@@ -36,8 +45,16 @@ async fn test_jupiter_integration_cbtc() {
 
     match result {
         Ok(token_price) => {
-            assert!(token_price.price > 200.0, "cBTC price too low: {} SOL", token_price.price);
-            assert!(token_price.price < 1_000.0, "cBTC price too high: {} SOL", token_price.price);
+            assert!(
+                token_price.price > dec!(200.0),
+                "cBTC price too low: {} SOL",
+                token_price.price
+            );
+            assert!(
+                token_price.price < dec!(1_000.0),
+                "cBTC price too high: {} SOL",
+                token_price.price
+            );
             assert_eq!(token_price.source, PriceSource::Jupiter);
         }
         Err(e) => {
@@ -61,7 +78,7 @@ async fn test_jupiter_integration_sol() {
     match result {
         Ok(token_price) => {
             assert!(
-                (token_price.price - 1.0).abs() < 0.001,
+                (token_price.price - dec!(1.0)).abs() < dec!(0.001),
                 "SOL price should be ~1.0, got: {}",
                 token_price.price
             );
@@ -75,4 +92,28 @@ async fn test_jupiter_integration_sol() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn test_jupiter_integration_unknown_token() {
+    const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
+    // Invalid token mint
+    const UNKNOWN_TOKEN_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1w";
+
+    let oracle = get_price_oracle(PriceSource::Jupiter);
+    let retrying_oracle = RetryingPriceOracle::new(3, Duration::from_millis(500), oracle);
+
+    let result = retrying_oracle
+        .get_token_prices(&[SOL_MINT.to_string(), UNKNOWN_TOKEN_MINT.to_string()])
+        .await;
+
+    assert!(result.is_err(), "Expected error for unknown token");
+    let error = result.unwrap_err();
+    assert!(
+        error.to_string().contains(
+            "No price data from Jupiter for mint EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1w"
+        ),
+        "Expected error message about unknown mint, got: {}",
+        error
+    );
 }

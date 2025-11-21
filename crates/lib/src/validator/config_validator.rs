@@ -2,7 +2,7 @@ use std::{path::Path, str::FromStr};
 
 use crate::{
     admin::token_util::find_missing_atas,
-    config::{SplTokenConfig, Token2022Config},
+    config::{FeePayerPolicy, SplTokenConfig, Token2022Config},
     fee::price::PriceModel,
     oracle::PriceSource,
     signer::SignerPoolConfig,
@@ -16,13 +16,214 @@ use crate::{
     KoraError,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{pubkey::Pubkey, system_program::ID as SYSTEM_PROGRAM_ID};
-use spl_token::ID as SPL_TOKEN_PROGRAM_ID;
-use spl_token_2022::ID as TOKEN_2022_PROGRAM_ID;
+use solana_sdk::{account::Account, pubkey::Pubkey};
+use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
+use spl_token_2022_interface::{
+    extension::{BaseStateWithExtensions, ExtensionType, StateWithExtensions},
+    state::Mint as Token2022MintState,
+    ID as TOKEN_2022_PROGRAM_ID,
+};
+use spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID;
 
 pub struct ConfigValidator {}
 
 impl ConfigValidator {
+    /// Check Token2022 mints for risky extensions (PermanentDelegate, TransferHook)
+    async fn check_token_mint_extensions(
+        rpc_client: &RpcClient,
+        allowed_tokens: &[String],
+        warnings: &mut Vec<String>,
+    ) {
+        for token_str in allowed_tokens {
+            let token_pubkey = match Pubkey::from_str(token_str) {
+                Ok(pk) => pk,
+                Err(_) => continue, // Skip invalid pubkeys
+            };
+
+            let account: Account = match rpc_client.get_account(&token_pubkey).await {
+                Ok(acc) => acc,
+                Err(_) => continue, // Skip if can't fetch
+            };
+
+            if account.owner != TOKEN_2022_PROGRAM_ID {
+                continue;
+            }
+
+            let mint_with_extensions =
+                match StateWithExtensions::<Token2022MintState>::unpack(&account.data) {
+                    Ok(m) => m,
+                    Err(_) => continue, // Skip if can't parse
+                };
+
+            if mint_with_extensions
+                .get_extension::<spl_token_2022_interface::extension::permanent_delegate::PermanentDelegate>()
+                .is_ok()
+            {
+                warnings.push(format!(
+                    "⚠️  SECURITY: Token {} has PermanentDelegate extension. \
+                    Risk: The permanent delegate can transfer or burn tokens at any time without owner approval. \
+                    This creates significant risks for payment tokens as funds can be seized after payment. \
+                    Consider removing this token from allowed_tokens or blocking the extension in [validation.token2022].",
+                    token_str
+                ));
+            }
+
+            if mint_with_extensions
+                .get_extension::<spl_token_2022_interface::extension::transfer_hook::TransferHook>()
+                .is_ok()
+            {
+                warnings.push(format!(
+                    "⚠️  SECURITY: Token {} has TransferHook extension. \
+                    Risk: A custom program executes on every transfer which can reject transfers  \
+                    or introduce external dependencies and attack surface. \
+                    Consider removing this token from allowed_tokens or blocking the extension in [validation.token2022].",
+                    token_str
+                ));
+            }
+        }
+    }
+
+    /// Validate fee payer policy and add warnings for enabled risky operations
+    fn validate_fee_payer_policy(policy: &FeePayerPolicy, warnings: &mut Vec<String>) {
+        macro_rules! check_fee_payer_policy {
+        ($($category:ident, $field:ident, $description:expr, $risk:expr);* $(;)?) => {
+            $(
+                if policy.$category.$field {
+                    warnings.push(format!(
+                        "⚠️  SECURITY: Fee payer policy allows {} ({}). \
+                        Risk: {}. \
+                        Consider setting [validation.fee_payer_policy.{}] {}=false to prevent abuse.",
+                        $description,
+                        stringify!($field),
+                        $risk,
+                        stringify!($category),
+                        stringify!($field)
+                    ));
+                }
+            )*
+        };
+    }
+
+        check_fee_payer_policy! {
+            system, allow_transfer, "System transfers",
+                "Users can make the fee payer transfer arbitrary SOL amounts. This can drain your fee payer account";
+
+            system, allow_assign, "System Assign instructions",
+                "Users can make the fee payer reassign ownership of its accounts. This can compromise account control";
+
+            system, allow_create_account, "System CreateAccount instructions",
+                "Users can make the fee payer pay for arbitrary account creations. This can drain your fee payer account";
+
+            system, allow_allocate, "System Allocate instructions",
+                "Users can make the fee payer allocate space for accounts. This can be used to waste resources";
+
+            spl_token, allow_transfer, "SPL Token transfers",
+                "Users can make the fee payer transfer arbitrary token amounts. This can drain your fee payer token accounts";
+
+            spl_token, allow_burn, "SPL Token burn operations",
+                "Users can make the fee payer burn tokens from its accounts. This causes permanent loss of assets";
+
+            spl_token, allow_close_account, "SPL Token CloseAccount instructions",
+                "Users can make the fee payer close token accounts. This can disrupt operations and drain fee payer";
+
+            spl_token, allow_approve, "SPL Token approve operations",
+                "Users can make the fee payer approve delegates. This can lead to unauthorized token transfers";
+
+            spl_token, allow_revoke, "SPL Token revoke operations",
+                "Users can make the fee payer revoke delegates. This can disrupt authorized operations";
+
+            spl_token, allow_set_authority, "SPL Token SetAuthority instructions",
+                "Users can make the fee payer transfer authority. This can lead to complete loss of control";
+
+            spl_token, allow_mint_to, "SPL Token MintTo operations",
+                "Users can make the fee payer mint tokens. This can inflate token supply";
+
+            spl_token, allow_initialize_mint, "SPL Token InitializeMint instructions",
+                "Users can make the fee payer initialize mints with itself as authority. This can lead to unexpected responsibilities";
+
+            spl_token, allow_initialize_account, "SPL Token InitializeAccount instructions",
+                "Users can make the fee payer the owner of new token accounts. This can clutter or exploit the fee payer";
+
+            spl_token, allow_initialize_multisig, "SPL Token InitializeMultisig instructions",
+                "Users can make the fee payer part of multisig accounts. This can create unwanted signing obligations";
+
+            spl_token, allow_freeze_account, "SPL Token FreezeAccount instructions",
+                "Users can make the fee payer freeze token accounts. This can disrupt token operations";
+
+            spl_token, allow_thaw_account, "SPL Token ThawAccount instructions",
+                "Users can make the fee payer unfreeze token accounts. This can undermine freeze policies";
+
+            token_2022, allow_transfer, "Token2022 transfers",
+                "Users can make the fee payer transfer arbitrary token amounts. This can drain your fee payer token accounts";
+
+            token_2022, allow_burn, "Token2022 burn operations",
+                "Users can make the fee payer burn tokens from its accounts. This causes permanent loss of assets";
+
+            token_2022, allow_close_account, "Token2022 CloseAccount instructions",
+                "Users can make the fee payer close token accounts. This can disrupt operations";
+
+            token_2022, allow_approve, "Token2022 approve operations",
+                "Users can make the fee payer approve delegates. This can lead to unauthorized token transfers";
+
+            token_2022, allow_revoke, "Token2022 revoke operations",
+                "Users can make the fee payer revoke delegates. This can disrupt authorized operations";
+
+            token_2022, allow_set_authority, "Token2022 SetAuthority instructions",
+                "Users can make the fee payer transfer authority. This can lead to complete loss of control";
+
+            token_2022, allow_mint_to, "Token2022 MintTo operations",
+                "Users can make the fee payer mint tokens. This can inflate token supply";
+
+            token_2022, allow_initialize_mint, "Token2022 InitializeMint instructions",
+                "Users can make the fee payer initialize mints with itself as authority. This can lead to unexpected responsibilities";
+
+            token_2022, allow_initialize_account, "Token2022 InitializeAccount instructions",
+                "Users can make the fee payer the owner of new token accounts. This can clutter or exploit the fee payer";
+
+            token_2022, allow_initialize_multisig, "Token2022 InitializeMultisig instructions",
+                "Users can make the fee payer part of multisig accounts. This can create unwanted signing obligations";
+
+            token_2022, allow_freeze_account, "Token2022 FreezeAccount instructions",
+                "Users can make the fee payer freeze token accounts. This can disrupt token operations";
+
+            token_2022, allow_thaw_account, "Token2022 ThawAccount instructions",
+                "Users can make the fee payer unfreeze token accounts. This can undermine freeze policies";
+        }
+
+        // Check nonce policy separately (nested structure)
+        macro_rules! check_nonce_policy {
+        ($($field:ident, $description:expr, $risk:expr);* $(;)?) => {
+            $(
+                if policy.system.nonce.$field {
+                    warnings.push(format!(
+                        "⚠️  SECURITY: Fee payer policy allows {} (nonce.{}). \
+                        Risk: {}. \
+                        Consider setting [validation.fee_payer_policy.system.nonce] {}=false to prevent abuse.",
+                        $description,
+                        stringify!($field),
+                        $risk,
+                        stringify!($field)
+                    ));
+                }
+            )*
+        };
+    }
+
+        check_nonce_policy! {
+            allow_initialize, "nonce account initialization",
+                "Users can make the fee payer the authority of nonce accounts. This can create unexpected control relationships";
+
+            allow_advance, "nonce account advancement",
+                "Users can make the fee payer advance nonce accounts. This can be used to manipulate nonce states";
+
+            allow_withdraw, "nonce account withdrawals",
+                "Users can make the fee payer withdraw from nonce accounts. This can drain nonce account balances";
+
+            allow_authorize, "nonce authority changes",
+                "Users can make the fee payer transfer nonce authority. This can lead to loss of control over nonce accounts";
+        }
+    }
+
     pub async fn validate(_rpc_client: &RpcClient) -> Result<(), KoraError> {
         let config = &get_config()?;
 
@@ -49,7 +250,9 @@ impl ConfigValidator {
     ) -> Result<Vec<String>, Vec<String>> {
         Self::validate_with_result_and_signers(rpc_client, skip_rpc_validation, None::<&Path>).await
     }
+}
 
+impl ConfigValidator {
     pub async fn validate_with_result_and_signers<P: AsRef<Path>>(
         rpc_client: &RpcClient,
         skip_rpc_validation: bool,
@@ -151,6 +354,19 @@ impl ConfigValidator {
             errors.push(format!("Token2022 extension validation failed: {e}"));
         }
 
+        // Warn if PermanentDelegate is not blocked
+        if !config.validation.token_2022.is_mint_extension_blocked(ExtensionType::PermanentDelegate)
+        {
+            warnings.push(
+                "⚠️  SECURITY: PermanentDelegate extension is NOT blocked. Tokens with this extension \
+                allow the delegate to transfer/burn tokens at any time without owner approval. \
+                This creates significant risks:\n\
+                  - Payment tokens: Funds can be seized after payment\n\
+                Consider adding \"permanent_delegate\" to blocked_mint_extensions in [validation.token2022] \
+                unless explicitly needed for your use case.".to_string()
+            );
+        }
+
         // Check if fees are enabled (not Free pricing)
         let fees_enabled = !matches!(config.validation.price.model, PriceModel::Free);
 
@@ -171,6 +387,12 @@ impl ConfigValidator {
                     "When fees are enabled, allowed_spl_paid_tokens cannot be empty".to_string(),
                 );
             }
+        } else {
+            warnings.push(
+                "⚠️  SECURITY: Free pricing model enabled - all transactions will be processed \
+                without charging fees."
+                    .to_string(),
+            );
         }
 
         // Validate that all tokens in allowed_spl_paid_tokens are also in allowed_tokens
@@ -182,9 +404,12 @@ impl ConfigValidator {
             }
         }
 
+        // Validate fee payer policy - warn about enabled risky operations
+        Self::validate_fee_payer_policy(&config.validation.fee_payer_policy, &mut warnings);
+
         // Validate margin (error if negative)
         match &config.validation.price.model {
-            PriceModel::Fixed { amount, token } => {
+            PriceModel::Fixed { amount, token, strict } => {
                 if *amount == 0 {
                     warnings
                         .push("Fixed price amount is 0 - transactions will be free".to_string());
@@ -197,6 +422,27 @@ impl ConfigValidator {
                         "Token address for fixed price is not in allowed spl paid tokens: {token}"
                     ));
                 }
+
+                // Warn about dangerous configurations with fixed pricing
+                let has_auth =
+                    config.kora.auth.api_key.is_some() || config.kora.auth.hmac_secret.is_some();
+                if !has_auth {
+                    warnings.push(
+                        "⚠️  SECURITY: Fixed pricing with NO authentication enabled. \
+                        Without authentication, anyone can spam transactions at your expense. \
+                        Consider enabling api_key or hmac_secret in [kora.auth]."
+                            .to_string(),
+                    );
+                }
+
+                // Warn about strict mode
+                if *strict {
+                    warnings.push(
+                        "Strict pricing mode enabled. \
+                        Transactions where fee payer outflow exceeds the fixed price will be rejected."
+                            .to_string(),
+                    );
+                }
             }
             PriceModel::Margin { margin } => {
                 if *margin < 0.0 {
@@ -208,11 +454,21 @@ impl ConfigValidator {
             _ => {}
         };
 
+        // General authentication warning
+        let has_auth = config.kora.auth.api_key.is_some() || config.kora.auth.hmac_secret.is_some();
+        if !has_auth {
+            warnings.push(
+                "⚠️  SECURITY: No authentication configured (neither api_key nor hmac_secret). \
+                Authentication is strongly recommended for production deployments. \
+                Consider enabling api_key or hmac_secret in [kora.auth]."
+                    .to_string(),
+            );
+        }
+
         // Validate usage limit configuration
         let usage_config = &config.kora.usage_limit;
         if usage_config.enabled {
-            let (usage_errors, usage_warnings) =
-                CacheValidator::validate(usage_config).await.unwrap();
+            let (usage_errors, usage_warnings) = CacheValidator::validate(usage_config).await;
             errors.extend(usage_errors);
             warnings.extend(usage_warnings);
         }
@@ -253,16 +509,29 @@ impl ConfigValidator {
                 }
             }
 
+            // Check Token2022 mints for risky extensions
+            Self::check_token_mint_extensions(
+                rpc_client,
+                &config.validation.allowed_tokens,
+                &mut warnings,
+            )
+            .await;
+
             // Validate missing ATAs for payment address
             if let Some(payment_address) = &config.kora.payment_address {
-                let payment_address = Pubkey::from_str(payment_address).unwrap();
-
-                let atas_to_create = find_missing_atas(rpc_client, &payment_address).await;
-
-                if let Err(e) = atas_to_create {
-                    errors.push(format!("Failed to find missing ATAs: {e}"));
-                } else if !atas_to_create.unwrap().is_empty() {
-                    errors.push(format!("Missing ATAs for payment address: {payment_address}"));
+                if let Ok(payment_address) = Pubkey::from_str(payment_address) {
+                    match find_missing_atas(rpc_client, &payment_address).await {
+                        Ok(atas_to_create) => {
+                            if !atas_to_create.is_empty() {
+                                errors.push(format!(
+                                    "Missing ATAs for payment address: {payment_address}"
+                                ));
+                            }
+                        }
+                        Err(e) => errors.push(format!("Failed to find missing ATAs: {e}")),
+                    }
+                } else {
+                    errors.push(format!("Invalid payment address: {payment_address}"));
                 }
             }
         }
@@ -288,8 +557,6 @@ impl ConfigValidator {
         println!("=== Configuration Validation ===");
         if errors.is_empty() {
             println!("✓ Configuration validation successful!");
-            println!("\n=== Current Configuration ===");
-            println!("{config:#?}");
         } else {
             println!("✗ Configuration validation failed!");
             println!("\n❌ Errors:");
@@ -344,17 +611,26 @@ mod tests {
     use crate::{
         config::{
             AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy, KoraConfig,
-            MetricsConfig, SplTokenConfig, UsageLimitConfig, ValidationConfig,
+            MetricsConfig, NonceInstructionPolicy, SplTokenConfig, SplTokenInstructionPolicy,
+            SystemInstructionPolicy, Token2022InstructionPolicy, UsageLimitConfig,
+            ValidationConfig,
         },
+        constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
         fee::price::PriceConfig,
         state::update_config,
-        tests::common::{
-            create_mock_non_executable_account, create_mock_program_account,
-            create_mock_rpc_client_account_not_found, create_mock_rpc_client_with_account,
-            create_mock_rpc_client_with_mint, RpcMockBuilder,
+        tests::{
+            account_mock::create_mock_token2022_mint_with_extensions,
+            common::{
+                create_mock_non_executable_account, create_mock_program_account,
+                create_mock_rpc_client_account_not_found, create_mock_rpc_client_with_account,
+                create_mock_rpc_client_with_mint, RpcMockBuilder,
+            },
+            config_mock::ConfigMockBuilder,
         },
     };
     use serial_test::serial;
+    use solana_commitment_config::CommitmentConfig;
+    use spl_token_2022_interface::extension::ExtensionType;
 
     use super::*;
 
@@ -385,7 +661,10 @@ mod tests {
         config.validation.allowed_tokens = vec![];
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate(&rpc_client).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), KoraError::InternalServerError(_)));
@@ -419,11 +698,17 @@ mod tests {
         // Initialize global config
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
-        assert!(warnings.is_empty());
+        // Expect warnings about PermanentDelegate and no authentication
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings.iter().any(|w| w.contains("PermanentDelegate")));
+        assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
     }
 
     #[tokio::test]
@@ -444,6 +729,7 @@ mod tests {
             },
             kora: KoraConfig {
                 rate_limit: 0, // Should warn
+                max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods {
                     liveness: false,
                     estimate_transaction_fee: false,
@@ -453,7 +739,6 @@ mod tests {
                     transfer_transaction: false,
                     get_blockhash: false,
                     get_config: false,
-                    sign_transaction_if_paid: false, // All false - should warn
                     get_payer_signer: false,
                 },
                 auth: AuthConfig::default(),
@@ -467,7 +752,10 @@ mod tests {
         // Initialize global config
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
@@ -504,7 +792,10 @@ mod tests {
         // Initialize global config
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
@@ -539,7 +830,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -569,6 +863,7 @@ mod tests {
                     model: PriceModel::Fixed {
                         amount: 0,                                  // Should warn
                         token: "invalid_token_address".to_string(), // Should error
+                        strict: false,
                     },
                 },
                 token_2022: Token2022Config::default(),
@@ -579,7 +874,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -606,6 +904,7 @@ mod tests {
                     model: PriceModel::Fixed {
                         amount: 1000,
                         token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(), // Valid but not in allowed
+                        strict: false,
                     },
                 },
                 token_2022: Token2022Config::default(),
@@ -616,7 +915,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -651,6 +953,7 @@ mod tests {
                     model: PriceModel::Fixed {
                         amount: 0, // Should warn
                         token: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                        strict: false,
                     },
                 },
                 token_2022: Token2022Config::default(),
@@ -661,7 +964,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
@@ -693,7 +999,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -980,7 +1289,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
     }
@@ -1011,7 +1323,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -1046,7 +1361,10 @@ mod tests {
 
         let _ = update_config(config);
 
-        let rpc_client = RpcClient::new("http://localhost:8899".to_string());
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -1094,5 +1412,302 @@ mod tests {
 
         let result = validate_token2022_extensions(&config);
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_fee_payer_policy_warnings() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                    TOKEN_2022_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy {
+                    system: SystemInstructionPolicy {
+                        allow_transfer: true,
+                        allow_assign: true,
+                        allow_create_account: true,
+                        allow_allocate: true,
+                        nonce: NonceInstructionPolicy {
+                            allow_initialize: true,
+                            allow_advance: true,
+                            allow_withdraw: true,
+                            allow_authorize: true,
+                        },
+                    },
+                    spl_token: SplTokenInstructionPolicy {
+                        allow_transfer: true,
+                        allow_burn: true,
+                        allow_close_account: true,
+                        allow_approve: true,
+                        allow_revoke: true,
+                        allow_set_authority: true,
+                        allow_mint_to: true,
+                        allow_initialize_mint: true,
+                        allow_initialize_account: true,
+                        allow_initialize_multisig: true,
+                        allow_freeze_account: true,
+                        allow_thaw_account: true,
+                    },
+                    token_2022: Token2022InstructionPolicy {
+                        allow_transfer: true,
+                        allow_burn: true,
+                        allow_close_account: true,
+                        allow_approve: true,
+                        allow_revoke: true,
+                        allow_set_authority: true,
+                        allow_mint_to: true,
+                        allow_initialize_mint: true,
+                        allow_initialize_account: true,
+                        allow_initialize_multisig: true,
+                        allow_freeze_account: true,
+                        allow_thaw_account: true,
+                    },
+                },
+                price: PriceConfig { model: PriceModel::Free },
+                token_2022: Token2022Config::default(),
+            },
+            metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
+        };
+
+        let _ = update_config(config.clone());
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        // Should have warnings for ALL enabled fee payer policy flags
+        // System policies
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("System transfers") && w.contains("allow_transfer")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("System Assign instructions") && w.contains("allow_assign")));
+        assert!(warnings.iter().any(|w| w.contains("System CreateAccount instructions")
+            && w.contains("allow_create_account")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("System Allocate instructions") && w.contains("allow_allocate")));
+
+        // Nonce policies
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("nonce account initialization") && w.contains("allow_initialize")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("nonce account advancement") && w.contains("allow_advance")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("nonce account withdrawals") && w.contains("allow_withdraw")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("nonce authority changes") && w.contains("allow_authorize")));
+
+        // SPL Token policies
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SPL Token transfers") && w.contains("allow_transfer")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SPL Token burn operations") && w.contains("allow_burn")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SPL Token CloseAccount") && w.contains("allow_close_account")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SPL Token approve") && w.contains("allow_approve")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SPL Token revoke") && w.contains("allow_revoke")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SPL Token SetAuthority") && w.contains("allow_set_authority")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SPL Token MintTo") && w.contains("allow_mint_to")));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("SPL Token InitializeMint")
+                    && w.contains("allow_initialize_mint"))
+        );
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SPL Token InitializeAccount")
+                && w.contains("allow_initialize_account")));
+        assert!(warnings.iter().any(|w| w.contains("SPL Token InitializeMultisig")
+            && w.contains("allow_initialize_multisig")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SPL Token FreezeAccount") && w.contains("allow_freeze_account")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("SPL Token ThawAccount") && w.contains("allow_thaw_account")));
+
+        // Token2022 policies
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 transfers") && w.contains("allow_transfer")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 burn operations") && w.contains("allow_burn")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 CloseAccount") && w.contains("allow_close_account")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 approve") && w.contains("allow_approve")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 revoke") && w.contains("allow_revoke")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 SetAuthority") && w.contains("allow_set_authority")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 MintTo") && w.contains("allow_mint_to")));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("Token2022 InitializeMint")
+                    && w.contains("allow_initialize_mint"))
+        );
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 InitializeAccount")
+                && w.contains("allow_initialize_account")));
+        assert!(warnings.iter().any(|w| w.contains("Token2022 InitializeMultisig")
+            && w.contains("allow_initialize_multisig")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 FreezeAccount") && w.contains("allow_freeze_account")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Token2022 ThawAccount") && w.contains("allow_thaw_account")));
+
+        // Each warning should contain risk explanation
+        let fee_payer_warnings: Vec<_> =
+            warnings.iter().filter(|w| w.contains("Fee payer policy")).collect();
+        for warning in fee_payer_warnings {
+            assert!(warning.contains("Risk:"));
+            assert!(warning.contains("Consider setting"));
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_check_token_mint_extensions_permanent_delegate() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let mint_with_delegate =
+            create_mock_token2022_mint_with_extensions(6, vec![ExtensionType::PermanentDelegate]);
+        let mint_pubkey = Pubkey::new_unique();
+
+        let rpc_client = create_mock_rpc_client_with_account(&mint_with_delegate);
+        let mut warnings = Vec::new();
+
+        ConfigValidator::check_token_mint_extensions(
+            &rpc_client,
+            &[mint_pubkey.to_string()],
+            &mut warnings,
+        )
+        .await;
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("PermanentDelegate extension"));
+        assert!(warnings[0].contains(&mint_pubkey.to_string()));
+        assert!(warnings[0].contains("Risk:"));
+        assert!(warnings[0].contains("permanent delegate can transfer or burn tokens"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_check_token_mint_extensions_transfer_hook() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let mint_with_hook =
+            create_mock_token2022_mint_with_extensions(6, vec![ExtensionType::TransferHook]);
+        let mint_pubkey = Pubkey::new_unique();
+
+        let rpc_client = create_mock_rpc_client_with_account(&mint_with_hook);
+        let mut warnings = Vec::new();
+
+        ConfigValidator::check_token_mint_extensions(
+            &rpc_client,
+            &[mint_pubkey.to_string()],
+            &mut warnings,
+        )
+        .await;
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("TransferHook extension"));
+        assert!(warnings[0].contains(&mint_pubkey.to_string()));
+        assert!(warnings[0].contains("Risk:"));
+        assert!(warnings[0].contains("custom program executes on every transfer"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_check_token_mint_extensions_both() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let mint_with_both = create_mock_token2022_mint_with_extensions(
+            6,
+            vec![ExtensionType::PermanentDelegate, ExtensionType::TransferHook],
+        );
+        let mint_pubkey = Pubkey::new_unique();
+
+        let rpc_client = create_mock_rpc_client_with_account(&mint_with_both);
+        let mut warnings = Vec::new();
+
+        ConfigValidator::check_token_mint_extensions(
+            &rpc_client,
+            &[mint_pubkey.to_string()],
+            &mut warnings,
+        )
+        .await;
+
+        // Should have warnings for both extensions
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings.iter().any(|w| w.contains("PermanentDelegate extension")));
+        assert!(warnings.iter().any(|w| w.contains("TransferHook extension")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_check_token_mint_extensions_no_risky_extensions() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let mint_with_safe =
+            create_mock_token2022_mint_with_extensions(6, vec![ExtensionType::MintCloseAuthority]);
+        let mint_pubkey = Pubkey::new_unique();
+
+        let rpc_client = create_mock_rpc_client_with_account(&mint_with_safe);
+        let mut warnings = Vec::new();
+
+        ConfigValidator::check_token_mint_extensions(
+            &rpc_client,
+            &[mint_pubkey.to_string()],
+            &mut warnings,
+        )
+        .await;
+
+        assert_eq!(warnings.len(), 0);
     }
 }

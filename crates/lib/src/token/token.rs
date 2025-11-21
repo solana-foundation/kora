@@ -3,23 +3,29 @@ use crate::{
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
     token::{
         interface::TokenMint,
-        spl_token_2022::{Token2022Extensions, Token2022Mint},
-        Token2022Account, Token2022Program, TokenInterface, TokenProgram,
+        spl_token::TokenProgram,
+        spl_token_2022::{Token2022Account, Token2022Extensions, Token2022Mint, Token2022Program},
+        TokenInterface,
     },
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
     },
     CacheUtil,
 };
+use rust_decimal::{
+    prelude::{FromPrimitive, ToPrimitive},
+    Decimal,
+};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
-use std::{str::FromStr, time::Duration};
+use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
+use std::{collections::HashMap, str::FromStr, time::Duration};
 
 #[cfg(not(test))]
 use crate::state::get_config;
 
 #[cfg(test)]
-use crate::tests::config_mock::mock_state::get_config;
+use {crate::tests::config_mock::mock_state::get_config, rust_decimal_macros::dec};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType {
@@ -31,9 +37,9 @@ impl TokenType {
     pub fn get_token_program_from_owner(
         owner: &Pubkey,
     ) -> Result<Box<dyn TokenInterface>, KoraError> {
-        if *owner == spl_token::id() {
+        if *owner == spl_token_interface::id() {
             Ok(Box::new(TokenProgram::new()))
-        } else if *owner == spl_token_2022::id() {
+        } else if *owner == spl_token_2022_interface::id() {
             Ok(Box::new(Token2022Program::new()))
         } else {
             Err(KoraError::TokenOperationError(format!("Invalid token program owner: {owner}")))
@@ -111,12 +117,24 @@ impl TokenUtil {
         let (token_price, decimals) =
             Self::get_token_price_and_decimals(mint, price_source, rpc_client).await?;
 
-        // Convert token amount to its real value based on decimals and multiply by SOL price
-        let token_amount = amount as f64 / 10f64.powi(decimals as i32);
-        let sol_amount = token_amount * token_price.price;
+        // Convert amount to Decimal with proper scaling
+        let amount_decimal = Decimal::from_u64(amount)
+            .ok_or_else(|| KoraError::ValidationError("Invalid token amount".to_string()))?;
+        let decimals_scale = Decimal::from_u64(10u64.pow(decimals as u32))
+            .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
+        let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL)
+            .ok_or_else(|| KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string()))?;
 
-        // Convert SOL to lamports and round down
-        let lamports = (sol_amount * LAMPORTS_PER_SOL as f64).floor() as u64;
+        // Calculate: (amount * price * LAMPORTS_PER_SOL) / 10^decimals
+        // Multiply before divide to preserve precision
+        let lamports_decimal =
+            (amount_decimal * token_price.price * lamports_per_sol) / decimals_scale;
+
+        // Floor and convert to u64
+        let lamports = lamports_decimal
+            .floor()
+            .to_u64()
+            .ok_or_else(|| KoraError::ValidationError("Lamports value overflow".to_string()))?;
 
         Ok(lamports)
     }
@@ -126,18 +144,190 @@ impl TokenUtil {
         mint: &Pubkey,
         price_source: &PriceSource,
         rpc_client: &RpcClient,
-    ) -> Result<f64, KoraError> {
+    ) -> Result<u64, KoraError> {
         let (token_price, decimals) =
             Self::get_token_price_and_decimals(mint, price_source.clone(), rpc_client).await?;
 
-        // Convert lamports to SOL, then to token amount
-        let fee_in_sol = lamports as f64 / LAMPORTS_PER_SOL as f64;
-        let fee_in_token_base_units = fee_in_sol / token_price.price;
-        let fee_in_token = fee_in_token_base_units * 10f64.powi(decimals as i32);
+        // Convert lamports to token base units
+        let lamports_decimal = Decimal::from_u64(lamports)
+            .ok_or_else(|| KoraError::ValidationError("Invalid lamports value".to_string()))?;
+        let lamports_per_sol_decimal = Decimal::from_u64(LAMPORTS_PER_SOL)
+            .ok_or_else(|| KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string()))?;
+        let scale = Decimal::from_u64(10u64.pow(decimals as u32))
+            .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
 
-        // Round up to the next integer to fix floating point precision errors
-        // This ensures values like 1010049.9999999999 become 1010050
-        Ok(fee_in_token.ceil())
+        // Calculate: (lamports * 10^decimals) / (LAMPORTS_PER_SOL * price)
+        // Multiply before divide to preserve precision
+        let token_amount =
+            (lamports_decimal * scale) / (lamports_per_sol_decimal * token_price.price);
+
+        // Ceil and convert to u64
+        let result = token_amount
+            .ceil()
+            .to_u64()
+            .ok_or_else(|| KoraError::ValidationError("Token amount overflow".to_string()))?;
+
+        Ok(result)
+    }
+
+    /// Calculate the total lamports value of SPL token transfers where the fee payer is involved
+    /// This includes both outflow (fee payer as owner/source) and inflow (fee payer owns destination)
+    pub async fn calculate_spl_transfers_value_in_lamports(
+        spl_transfers: &[ParsedSPLInstructionData],
+        fee_payer: &Pubkey,
+        price_source: &PriceSource,
+        rpc_client: &RpcClient,
+    ) -> Result<u64, KoraError> {
+        // Collect all unique mints that need price lookups
+        let mut mint_to_transfers: HashMap<
+            Pubkey,
+            Vec<(u64, bool)>, // (amount, is_outflow)
+        > = HashMap::new();
+
+        for transfer in spl_transfers {
+            if let ParsedSPLInstructionData::SplTokenTransfer {
+                amount,
+                owner,
+                mint,
+                destination_address,
+                ..
+            } = transfer
+            {
+                // Check if fee payer is the source (outflow)
+                if *owner == *fee_payer {
+                    if let Some(mint_pubkey) = mint {
+                        mint_to_transfers.entry(*mint_pubkey).or_default().push((*amount, true));
+                    }
+                } else {
+                    // Check if fee payer owns the destination (inflow)
+                    // We need to check the destination token account owner
+                    if let Some(mint_pubkey) = mint {
+                        // Get destination account to check owner
+                        match CacheUtil::get_account(rpc_client, destination_address, false).await {
+                            Ok(dest_account) => {
+                                let token_program =
+                                    TokenType::get_token_program_from_owner(&dest_account.owner)?;
+                                let token_account = token_program
+                                    .unpack_token_account(&dest_account.data)
+                                    .map_err(|e| {
+                                        KoraError::TokenOperationError(format!(
+                                            "Failed to unpack destination token account {}: {}",
+                                            destination_address, e
+                                        ))
+                                    })?;
+                                if token_account.owner() == *fee_payer {
+                                    mint_to_transfers
+                                        .entry(*mint_pubkey)
+                                        .or_default()
+                                        .push((*amount, false)); // inflow
+                                }
+                            }
+                            Err(e) => {
+                                // If we get Account not found error, we try to match it to the ATA derivation for the fee payer
+                                // in case that ATA is being created in the current instruction
+                                if matches!(e, KoraError::AccountNotFound(_)) {
+                                    let spl_ata =
+                                        spl_associated_token_account_interface::address::get_associated_token_address(
+                                            fee_payer,
+                                            mint_pubkey,
+                                        );
+                                    let token2022_ata =
+                                        get_associated_token_address_with_program_id(
+                                            fee_payer,
+                                            mint_pubkey,
+                                            &spl_token_2022_interface::id(),
+                                        );
+
+                                    // If destination matches a valid ATA for fee payer, count as inflow
+                                    if *destination_address == spl_ata
+                                        || *destination_address == token2022_ata
+                                    {
+                                        mint_to_transfers
+                                            .entry(*mint_pubkey)
+                                            .or_default()
+                                            .push((*amount, false)); // inflow
+                                    }
+                                    // Otherwise, it's not fee payer's account, continue to next transfer
+                                } else {
+                                    // Skip if destination account doesn't exist or can't be fetched
+                                    // This could be problematic for non ATA token accounts created
+                                    // during the transaction
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if mint_to_transfers.is_empty() {
+            return Ok(0);
+        }
+
+        // Batch fetch all prices and decimals
+        let mint_addresses: Vec<String> =
+            mint_to_transfers.keys().map(|mint| mint.to_string()).collect();
+
+        let oracle = RetryingPriceOracle::new(
+            3,
+            Duration::from_secs(1),
+            get_price_oracle(price_source.clone()),
+        );
+
+        let prices = oracle.get_token_prices(&mint_addresses).await?;
+
+        let mut mint_decimals = std::collections::HashMap::new();
+        for mint in mint_to_transfers.keys() {
+            let decimals = Self::get_mint_decimals(rpc_client, mint).await?;
+            mint_decimals.insert(*mint, decimals);
+        }
+
+        // Calculate total value
+        let mut total_lamports = 0u64;
+
+        for (mint, transfers) in mint_to_transfers.iter() {
+            let price = prices
+                .get(&mint.to_string())
+                .ok_or_else(|| KoraError::RpcError(format!("No price data for mint {mint}")))?;
+            let decimals = mint_decimals
+                .get(mint)
+                .ok_or_else(|| KoraError::RpcError(format!("No decimals data for mint {mint}")))?;
+
+            for (amount, is_outflow) in transfers {
+                // Convert token amount to lamports value using Decimal
+                let amount_decimal = Decimal::from_u64(*amount).ok_or_else(|| {
+                    KoraError::ValidationError("Invalid transfer amount".to_string())
+                })?;
+                let decimals_scale = Decimal::from_u64(10u64.pow(*decimals as u32))
+                    .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
+                let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL).ok_or_else(|| {
+                    KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string())
+                })?;
+
+                // Calculate: (amount * price * LAMPORTS_PER_SOL) / 10^decimals
+                // Multiply before divide to preserve precision
+                let lamports_decimal =
+                    (amount_decimal * price.price * lamports_per_sol) / decimals_scale;
+
+                let lamports = lamports_decimal.floor().to_u64().ok_or_else(|| {
+                    KoraError::ValidationError("Lamports value overflow".to_string())
+                })?;
+
+                if *is_outflow {
+                    // Add outflow to total
+                    total_lamports = total_lamports.checked_add(lamports).ok_or_else(|| {
+                        log::error!("SPL outflow calculation overflow");
+                        KoraError::ValidationError("SPL outflow calculation overflow".to_string())
+                    })?;
+                } else {
+                    // Subtract inflow from total (using saturating_sub to prevent underflow)
+                    total_lamports = total_lamports.saturating_sub(lamports);
+                }
+            }
+        }
+
+        Ok(total_lamports)
     }
 
     /// Validate Token2022 extensions for payment instructions
@@ -159,7 +349,10 @@ impl TokenUtil {
         // Unpack the mint state with extensions
         let mint_state = token_program.unpack_mint(mint, &mint_data)?;
 
-        let mint_with_extensions = mint_state.as_any().downcast_ref::<Token2022Mint>().unwrap();
+        let mint_with_extensions =
+            mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast mint state.".to_string())
+            })?;
 
         // Check each extension type present on the mint
         for extension_type in mint_with_extensions.get_extension_types() {
@@ -177,7 +370,9 @@ impl TokenUtil {
         let source_state = token_program.unpack_token_account(&source_data)?;
 
         let source_with_extensions =
-            source_state.as_any().downcast_ref::<Token2022Account>().unwrap();
+            source_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast source state.".to_string())
+            })?;
 
         for extension_type in source_with_extensions.get_extension_types() {
             if config.is_account_extension_blocked(*extension_type) {
@@ -195,7 +390,9 @@ impl TokenUtil {
         let destination_state = token_program.unpack_token_account(&destination_data)?;
 
         let destination_with_extensions =
-            destination_state.as_any().downcast_ref::<Token2022Account>().unwrap();
+            destination_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast destination state.".to_string())
+            })?;
 
         for extension_type in destination_with_extensions.get_extension_types() {
             if config.is_account_extension_blocked(*extension_type) {
@@ -208,7 +405,7 @@ impl TokenUtil {
         Ok(())
     }
 
-    pub async fn process_token_transfer(
+    pub async fn verify_token_payment(
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         required_lamports: u64,
@@ -216,6 +413,7 @@ impl TokenUtil {
         expected_destination_owner: &Pubkey,
     ) -> Result<bool, KoraError> {
         let config = get_config()?;
+        let mut total_lamport_value = 0u64;
 
         for instruction in transaction_resolved
             .get_or_parse_spl_instructions()?
@@ -265,7 +463,11 @@ impl TokenUtil {
                 }
 
                 if !config.validation.supports_token(&token_state.mint().to_string()) {
-                    return Ok(false);
+                    log::warn!(
+                        "Ignoring payment with unsupported token mint: {}",
+                        token_state.mint(),
+                    );
+                    continue;
                 }
 
                 let lamport_value = TokenUtil::calculate_token_value_in_lamports(
@@ -276,13 +478,19 @@ impl TokenUtil {
                 )
                 .await?;
 
-                if lamport_value >= required_lamports {
-                    return Ok(true); // Payment satisfied
-                }
+                total_lamport_value =
+                    total_lamport_value.checked_add(lamport_value).ok_or_else(|| {
+                        log::error!(
+                            "Payment accumulation overflow: total={}, new_payment={}",
+                            total_lamport_value,
+                            lamport_value
+                        );
+                        KoraError::ValidationError("Payment accumulation overflow".to_string())
+                    })?;
             }
         }
 
-        Ok(false)
+        Ok(total_lamport_value >= required_lamports)
     }
 }
 
@@ -300,16 +508,16 @@ mod tests_token {
 
     #[test]
     fn test_token_type_get_token_program_from_owner_spl() {
-        let spl_token_owner = spl_token::id();
+        let spl_token_owner = spl_token_interface::id();
         let result = TokenType::get_token_program_from_owner(&spl_token_owner).unwrap();
-        assert_eq!(result.program_id(), spl_token::id());
+        assert_eq!(result.program_id(), spl_token_interface::id());
     }
 
     #[test]
     fn test_token_type_get_token_program_from_owner_token2022() {
-        let token2022_owner = spl_token_2022::id();
+        let token2022_owner = spl_token_2022_interface::id();
         let result = TokenType::get_token_program_from_owner(&token2022_owner).unwrap();
-        assert_eq!(result.program_id(), spl_token_2022::id());
+        assert_eq!(result.program_id(), spl_token_2022_interface::id());
     }
 
     #[test]
@@ -326,14 +534,14 @@ mod tests_token {
     fn test_token_type_get_token_program_spl() {
         let token_type = TokenType::Spl;
         let result = token_type.get_token_program();
-        assert_eq!(result.program_id(), spl_token::id());
+        assert_eq!(result.program_id(), spl_token_interface::id());
     }
 
     #[test]
     fn test_token_type_get_token_program_token2022() {
         let token_type = TokenType::Token2022;
         let result = token_type.get_token_program();
-        assert_eq!(result.program_id(), spl_token_2022::id());
+        assert_eq!(result.program_id(), spl_token_2022_interface::id());
     }
 
     #[test]
@@ -414,7 +622,7 @@ mod tests_token {
                 .unwrap();
 
         assert_eq!(decimals, 9);
-        assert_eq!(token_price.price, 1.0);
+        assert_eq!(token_price.price, Decimal::from(1));
     }
 
     #[tokio::test]
@@ -429,7 +637,7 @@ mod tests_token {
                 .unwrap();
 
         assert_eq!(decimals, 6);
-        assert_eq!(token_price.price, 0.0001);
+        assert_eq!(token_price.price, dec!(0.0001));
     }
 
     #[tokio::test]
@@ -537,7 +745,7 @@ mod tests_token {
         .await
         .unwrap();
 
-        assert_eq!(result, 1_000_000_000.0); // Should equal input since SOL price is 1.0
+        assert_eq!(result, 1_000_000_000); // Should equal input since SOL price is 1.0
     }
 
     #[tokio::test]
@@ -557,7 +765,7 @@ mod tests_token {
         .unwrap();
 
         // 0.0001 SOL / 0.0001 SOL/USDC = 1 USDC = 1,000,000 base units
-        assert_eq!(result, 1_000_000.0);
+        assert_eq!(result, 1_000_000);
     }
 
     #[tokio::test]
@@ -576,7 +784,7 @@ mod tests_token {
         .await
         .unwrap();
 
-        assert_eq!(result, 0.0);
+        assert_eq!(result, 0);
     }
 
     #[tokio::test]
@@ -614,7 +822,7 @@ mod tests_token {
         .await;
 
         if let Ok(recovered_amount) = recovered_amount_result {
-            assert_eq!(recovered_amount, original_amount as f64);
+            assert_eq!(recovered_amount, original_amount);
         }
     }
 
@@ -664,20 +872,20 @@ mod tests_token {
 
         let test_cases = vec![
             // Low priority fees
-            (5_000u64, 50_000.0, "low priority base case"),
-            (10_001u64, 100_010.0, "odd number precision"),
+            (5_000u64, 50_000u64, "low priority base case"),
+            (10_001u64, 100_010u64, "odd number precision"),
             // High priority fees
-            (1_010_050u64, 10_100_500.0, "high priority problematic case"),
+            (1_010_050u64, 10_100_500u64, "high priority problematic case"),
             // High compute unit scenarios
-            (5_000_000u64, 50_000_000.0, "very high CU limit"),
-            (2_500_050u64, 25_000_501.0, "odd high amount"), // round up
-            (10_000_000u64, 100_000_000.0, "maximum CU cost"),
+            (5_000_000u64, 50_000_000u64, "very high CU limit"),
+            (2_500_050u64, 25_000_500u64, "odd high amount"), // exact result with Decimal
+            (10_000_000u64, 100_000_000u64, "maximum CU cost"),
             // Edge cases
-            (1_010_049u64, 10_100_490.0, "precision edge case -1"),
-            (1_010_051u64, 10_100_510.0, "precision edge case +1"),
-            (999_999u64, 9_999_990.0, "near million boundary"),
-            (1_000_001u64, 10_000_010.0, "over million boundary"),
-            (1_333_337u64, 13_333_370.0, "repeating digits edge case"),
+            (1_010_049u64, 10_100_490u64, "precision edge case -1"),
+            (1_010_051u64, 10_100_510u64, "precision edge case +1"),
+            (999_999u64, 9_999_990u64, "near million boundary"),
+            (1_000_001u64, 10_000_010u64, "over million boundary"),
+            (1_333_337u64, 13_333_370u64, "repeating digits edge case"),
         ];
 
         for (lamports, expected, description) in test_cases {
@@ -694,13 +902,6 @@ mod tests_token {
             assert_eq!(
                 result, expected,
                 "Failed for {description}: lamports={lamports}, expected={expected}, got={result}",
-            );
-
-            // Must be proper integers (no fractional part)
-            assert_eq!(
-                result.fract(),
-                0.0,
-                "Result should be integer for {lamports} lamports: got {result}",
             );
         }
     }
@@ -756,7 +957,7 @@ mod tests_token {
 
     #[test]
     fn test_config_token2022_extension_blocking() {
-        use spl_token_2022::extension::ExtensionType;
+        use spl_token_2022_interface::extension::ExtensionType;
 
         let mut config_builder = ConfigMockBuilder::new();
         config_builder = config_builder
@@ -807,7 +1008,7 @@ mod tests_token {
 
     #[test]
     fn test_config_token2022_empty_extension_blocking() {
-        use spl_token_2022::extension::ExtensionType;
+        use spl_token_2022_interface::extension::ExtensionType;
 
         let _lock = ConfigMockBuilder::new().build_and_setup();
         let config = crate::tests::config_mock::mock_state::get_config().unwrap();

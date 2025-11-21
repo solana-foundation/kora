@@ -13,5 +13,5 @@ include makefiles/METRICS.makefile
 # Default target
 all: check test build
 
-# Run all tests (unit + integration + TypeScript)
-test-all: test test-integration test-ts
+# Run all tests (unit + TypeScript + integration)
+test-all: build test test-ts test-integration

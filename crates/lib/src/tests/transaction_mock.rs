@@ -3,9 +3,9 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::Keypair,
     signer::Signer,
-    system_instruction::transfer,
     transaction::{Transaction, VersionedTransaction},
 };
+use solana_system_interface::instruction::transfer;
 
 use crate::transaction::TransactionUtil;
 
@@ -14,7 +14,7 @@ pub fn create_mock_encoded_transaction() -> String {
     let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&Pubkey::new_unique())));
     let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-    TransactionUtil::encode_versioned_transaction(&transaction)
+    TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
 }
 
 pub fn create_mock_transaction() -> VersionedTransaction {

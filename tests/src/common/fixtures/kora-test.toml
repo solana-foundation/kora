@@ -20,7 +20,6 @@ transfer_transaction = true
 get_blockhash = true
 get_config = true
 get_payer_signer = true
-sign_transaction_if_paid = true
 
 [validation]
 max_allowed_lamports = 1000000
@@ -32,6 +31,7 @@ allowed_programs = [
     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  # Token-2022 Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
     "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
+    "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA", # Custom Transfer Hook Program Example
 ]
 allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
@@ -48,6 +48,10 @@ disallowed_accounts = [
     "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek", # Test disallowed account for lookup table
 ]
 
+[validation.price]
+type = "margin"
+margin = 0.0
+
 # Block specific extensions for testing (only affects extension test accounts)
 [validation.token_2022]
 blocked_mint_extensions = [
@@ -58,13 +62,46 @@ blocked_account_extensions = [
 ]
 
 [validation.fee_payer_policy]
-allow_sol_transfers = true
-allow_spl_transfers = true
-allow_token2022_transfers = true
+
+[validation.fee_payer_policy.system]
+allow_transfer = true
 allow_assign = true
+allow_create_account = true
+allow_allocate = true
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = true
+allow_advance = true
+allow_authorize = true
+allow_withdraw = true
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = true
 allow_burn = true
 allow_close_account = true
 allow_approve = true
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = true
+allow_burn = true
+allow_close_account = true
+allow_approve = true
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
 
 [kora.usage_limit]
 enabled = false

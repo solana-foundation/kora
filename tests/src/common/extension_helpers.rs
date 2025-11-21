@@ -8,7 +8,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use solana_system_interface::instruction::create_account;
-use spl_token_2022::{
+use spl_token_2022_interface::{
     extension::{interest_bearing_mint::instruction::initialize, transfer_hook, ExtensionType},
     instruction as token_2022_instruction,
     state::{Account as Token2022Account, Mint as Token2022Mint},
@@ -45,14 +45,18 @@ impl ExtensionHelpers {
             &mint_keypair.pubkey(),
             rent,
             space as u64,
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
-        let initialize_interest_bearing_instruction =
-            initialize(&spl_token_2022::id(), &mint_keypair.pubkey(), Some(payer.pubkey()), 10)?;
+        let initialize_interest_bearing_instruction = initialize(
+            &spl_token_2022_interface::id(),
+            &mint_keypair.pubkey(),
+            Some(payer.pubkey()),
+            10,
+        )?;
 
         let initialize_mint_instruction = token_2022_instruction::initialize_mint2(
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
             &mint_keypair.pubkey(),
             &payer.pubkey(),
             Some(&payer.pubkey()),
@@ -102,20 +106,20 @@ impl ExtensionHelpers {
             &token_account_keypair.pubkey(),
             rent,
             account_space as u64,
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
         // Initialize MemoTransfer account extension (requires memo for transfers)
         let initialize_memo_transfer_instruction =
-            spl_token_2022::extension::memo_transfer::instruction::enable_required_transfer_memos(
-                &spl_token_2022::id(),
+            spl_token_2022_interface::extension::memo_transfer::instruction::enable_required_transfer_memos(
+                &spl_token_2022_interface::id(),
                 &token_account_keypair.pubkey(),
                 &owner.pubkey(),
                 &[&owner.pubkey()],
             )?;
 
         let initialize_account_instruction = token_2022_instruction::initialize_account3(
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
             &token_account_keypair.pubkey(),
             mint,
             &owner.pubkey(),
@@ -150,7 +154,7 @@ impl ExtensionHelpers {
         });
 
         let instruction = token_2022_instruction::mint_to(
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
             mint,
             token_account,
             &mint_authority.pubkey(),
@@ -193,19 +197,19 @@ impl ExtensionHelpers {
             &mint_keypair.pubkey(),
             rent,
             space as u64,
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
         );
 
         // Initialize the transfer hook extension
         let initialize_hook_instruction = transfer_hook::instruction::initialize(
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
             &mint_keypair.pubkey(),
             Some(payer.pubkey()),
             Some(*hook_program_id),
         )?;
 
         let initialize_mint_instruction = token_2022_instruction::initialize_mint2(
-            &spl_token_2022::id(),
+            &spl_token_2022_interface::id(),
             &mint_keypair.pubkey(),
             &payer.pubkey(),
             Some(&payer.pubkey()),
@@ -262,7 +266,7 @@ impl ExtensionHelpers {
         // Add the system program account which is needed for PDA creation
         initialize_instruction
             .accounts
-            .push(AccountMeta::new_readonly(solana_sdk::system_program::id(), false));
+            .push(AccountMeta::new_readonly(solana_system_interface::program::id(), false));
 
         let recent_blockhash = rpc_client.get_latest_blockhash().await?;
         let transaction = Transaction::new_signed_with_payer(

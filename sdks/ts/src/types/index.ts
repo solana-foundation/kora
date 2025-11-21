@@ -45,18 +45,6 @@ export interface SignAndSendTransactionRequest {
 }
 
 /**
- * Parameters for conditionally signing a transaction based on payment.
- */
-export interface SignTransactionIfPaidRequest {
-    /** Base64-encoded transaction */
-    transaction: string;
-    /** Optional signer address for the transaction */
-    signer_key?: string;
-    /** Optional signer verification during transaction simulation (defaults to false) */
-    sig_verify?: boolean;
-}
-
-/**
  * Parameters for estimating transaction fees.
  */
 export interface EstimateTransactionFeeRequest {
@@ -112,8 +100,6 @@ export interface TransferTransactionResponse {
  * Response from signing a transaction.
  */
 export interface SignTransactionResponse {
-    /** Base58-encoded signature */
-    signature: string;
     /** Base64-encoded signed transaction */
     signed_transaction: string;
     /** Public key of the signer used to sign the transaction */
@@ -124,23 +110,9 @@ export interface SignTransactionResponse {
  * Response from signing and sending a transaction.
  */
 export interface SignAndSendTransactionResponse {
-    /** Base58-encoded transaction signature */
-    signature: string;
     /** Base64-encoded signed transaction */
     signed_transaction: string;
     /** Public key of the signer used to send the transaction */
-    signer_pubkey: string;
-}
-
-/**
- * Response from conditionally signing a transaction.
- */
-export interface SignTransactionIfPaidResponse {
-    /** Base64-encoded original transaction */
-    transaction: string;
-    /** Base64-encoded signed transaction */
-    signed_transaction: string;
-    /** Public key of the signer used to sign the transaction */
     signer_pubkey: string;
 }
 
@@ -280,8 +252,6 @@ export interface EnabledMethods {
     get_blockhash: boolean;
     /** Whether the get_config method is enabled */
     get_config: boolean;
-    /** Whether the sign_transaction_if_paid method is enabled */
-    sign_transaction_if_paid: boolean;
 }
 
 /**
@@ -297,23 +267,93 @@ export interface Config {
 }
 
 /**
+ * Nonce instruction policy
+ */
+export interface NonceInstructionPolicy {
+    /** Allow fee payer to initialize nonce accounts */
+    allow_initialize: boolean;
+    /** Allow fee payer to advance nonce accounts */
+    allow_advance: boolean;
+    /** Allow fee payer to authorize nonce accounts */
+    allow_authorize: boolean;
+    /** Allow fee payer to withdraw from nonce accounts */
+    allow_withdraw: boolean;
+}
+
+/**
+ * System instruction policy
+ */
+export interface SystemInstructionPolicy {
+    /** Allow fee payer to be the sender in System Transfer/TransferWithSeed */
+    allow_transfer: boolean;
+    /** Allow fee payer to be the authority in System Assign/AssignWithSeed */
+    allow_assign: boolean;
+    /** Allow fee payer to be the payer in System CreateAccount/CreateAccountWithSeed */
+    allow_create_account: boolean;
+    /** Allow fee payer to be the account in System Allocate/AllocateWithSeed */
+    allow_allocate: boolean;
+    /** Nested policy for nonce account operations */
+    nonce: NonceInstructionPolicy;
+}
+
+/**
+ * SPL Token instruction policy
+ */
+export interface SplTokenInstructionPolicy {
+    /** Allow fee payer to be source in SPL token transfers */
+    allow_transfer: boolean;
+    /** Allow fee payer to burn SPL tokens */
+    allow_burn: boolean;
+    /** Allow fee payer to close SPL token accounts */
+    allow_close_account: boolean;
+    /** Allow fee payer to approve SPL token delegates */
+    allow_approve: boolean;
+    /** Allow fee payer to revoke SPL token delegates */
+    allow_revoke: boolean;
+    /** Allow fee payer to set authority on SPL token accounts */
+    allow_set_authority: boolean;
+    /** Allow fee payer to mint SPL tokens */
+    allow_mint_to: boolean;
+    /** Allow fee payer to freeze SPL token accounts */
+    allow_freeze_account: boolean;
+    /** Allow fee payer to thaw SPL token accounts */
+    allow_thaw_account: boolean;
+}
+
+/**
+ * Token2022 instruction policy
+ */
+export interface Token2022InstructionPolicy {
+    /** Allow fee payer to be source in Token2022 transfers */
+    allow_transfer: boolean;
+    /** Allow fee payer to burn Token2022 tokens */
+    allow_burn: boolean;
+    /** Allow fee payer to close Token2022 accounts */
+    allow_close_account: boolean;
+    /** Allow fee payer to approve Token2022 delegates */
+    allow_approve: boolean;
+    /** Allow fee payer to revoke Token2022 delegates */
+    allow_revoke: boolean;
+    /** Allow fee payer to set authority on Token2022 accounts */
+    allow_set_authority: boolean;
+    /** Allow fee payer to mint Token2022 tokens */
+    allow_mint_to: boolean;
+    /** Allow fee payer to freeze Token2022 accounts */
+    allow_freeze_account: boolean;
+    /** Allow fee payer to thaw Token2022 accounts */
+    allow_thaw_account: boolean;
+}
+
+/**
  * Policy controlling what actions the fee payer can perform.
  */
 export interface FeePayerPolicy {
-    /** Allow fee payer to be source in SOL transfers */
-    allow_sol_transfers: boolean;
-    /** Allow fee payer to be source in SPL token transfers */
-    allow_spl_transfers: boolean;
-    /** Allow fee payer to be source in Token2022 transfers */
-    allow_token2022_transfers: boolean;
-    /** Allow fee payer to use Assign instruction */
-    allow_assign: boolean;
-    /** Allow fee payer to use Burn instruction */
-    allow_burn: boolean;
-    /** Allow fee payer to use CloseAccount instruction */
-    allow_close_account: boolean;
-    /** Allow fee payer to use Approve instruction */
-    allow_approve: boolean;
+    /** System program instruction policies */
+    system: SystemInstructionPolicy;
+    /** SPL Token program instruction policies */
+    spl_token: SplTokenInstructionPolicy;
+    /** Token2022 program instruction policies */
+    token_2022: Token2022InstructionPolicy;
 }
 
 /**

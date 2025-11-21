@@ -5,7 +5,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio::sync::OnceCell;
 
-use crate::error::KoraError;
+use crate::{error::KoraError, sanitize_error};
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -34,24 +34,33 @@ impl CacheUtil {
         let config = get_config()?;
 
         let pool = if CacheUtil::is_cache_enabled() {
-            let redis_url = config.kora.cache.url.as_ref().unwrap();
+            let redis_url = config.kora.cache.url.as_ref().ok_or(KoraError::ConfigError)?;
 
             let cfg = deadpool_redis::Config::from_url(redis_url);
             let pool = cfg.create_pool(Some(Runtime::Tokio1)).map_err(|e| {
-                KoraError::InternalServerError(format!("Failed to create cache pool: {e}"))
+                KoraError::InternalServerError(format!(
+                    "Failed to create cache pool: {}",
+                    sanitize_error!(e)
+                ))
             })?;
 
             // Test connection
             let mut conn = pool.get().await.map_err(|e| {
-                KoraError::InternalServerError(format!("Failed to connect to cache: {e}"))
+                KoraError::InternalServerError(format!(
+                    "Failed to connect to cache: {}",
+                    sanitize_error!(e)
+                ))
             })?;
 
             // Simple connection test - try to get a non-existent key
             let _: Option<String> = conn.get("__connection_test__").await.map_err(|e| {
-                KoraError::InternalServerError(format!("Cache connection test failed: {e}"))
+                KoraError::InternalServerError(format!(
+                    "Cache connection test failed: {}",
+                    sanitize_error!(e)
+                ))
             })?;
 
-            log::info!("Cache initialized successfully with Redis at {redis_url}");
+            log::info!("Cache initialized successfully");
 
             Some(pool)
         } else {
@@ -68,7 +77,10 @@ impl CacheUtil {
 
     async fn get_connection(pool: &Pool) -> Result<deadpool_redis::Connection, KoraError> {
         pool.get().await.map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to get cache connection: {e}"))
+            KoraError::InternalServerError(format!(
+                "Failed to get cache connection: {}",
+                sanitize_error!(e)
+            ))
         })
     }
 
@@ -100,7 +112,10 @@ impl CacheUtil {
         let mut conn = Self::get_connection(pool).await?;
 
         let cached_data: Option<String> = conn.get(key).await.map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to get from cache: {e}"))
+            KoraError::InternalServerError(format!(
+                "Failed to get from cache: {}",
+                sanitize_error!(e)
+            ))
         })?;
 
         match cached_data {
@@ -147,11 +162,17 @@ impl CacheUtil {
         let mut conn = Self::get_connection(pool).await?;
 
         let serialized = serde_json::to_string(data).map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to serialize cache data: {e}"))
+            KoraError::InternalServerError(format!(
+                "Failed to serialize cache data: {}",
+                sanitize_error!(e)
+            ))
         })?;
 
         conn.set_ex::<_, _, ()>(key, serialized, ttl_seconds).await.map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to set cache data: {e}"))
+            KoraError::InternalServerError(format!(
+                "Failed to set cache data: {}",
+                sanitize_error!(e)
+            ))
         })?;
 
         Ok(())

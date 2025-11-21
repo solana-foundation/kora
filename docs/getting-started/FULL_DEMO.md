@@ -118,28 +118,32 @@ Our demo starts with the necessary imports and configuration:
 ```ts
 import { KoraClient } from "@kora/sdk";
 import {
-    createKeyPairSignerFromBytes,
-    getBase58Encoder,
-    createNoopSigner,
-    address,
-    getBase64EncodedWireTransaction,
-    partiallySignTransactionMessageWithSigners,
-    Blockhash,
-    Base64EncodedWireTransaction,
-    partiallySignTransaction,
-    TransactionVersion,
-    Instruction,
-    KeyPairSigner,
-    Rpc,
-    SolanaRpcApi
+  createKeyPairSignerFromBytes,
+  getBase58Encoder,
+  createNoopSigner,
+  address,
+  getBase64EncodedWireTransaction,
+  partiallySignTransactionMessageWithSigners,
+  Blockhash,
+  Base64EncodedWireTransaction,
+  partiallySignTransaction,
+  TransactionVersion,
+  Instruction,
+  KeyPairSigner,
+  Rpc,
+  SolanaRpcApi,
+  createSolanaRpc,
+  createSolanaRpcSubscriptions,
+  pipe,
+  createTransactionMessage,
+  setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash,
+  MicroLamports,
+  appendTransactionMessageInstructions,
 } from "@solana/kit";
-import {
-    createTransaction, 
-    createSolanaClient,
-    getExplorerLink
-} from "gill";
 import { getAddMemoInstruction } from "@solana-program/memo";
 import { createRecentSignatureConfirmationPromiseFactory } from "@solana/transaction-confirmation";
+import { updateOrAppendSetComputeUnitLimitInstruction, updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
 import dotenv from "dotenv";
 import path from "path";
 
@@ -150,11 +154,12 @@ const CONFIG = {
     computeUnitPrice: 1_000_000n,
     transactionVersion: 0,
     solanaRpcUrl: "http://127.0.0.1:8899",
+    solanaWsUrl: "ws://127.0.0.1:8900",
     koraRpcUrl: "http://localhost:8080/",
 }
 ```
 
-We are importing the Kora Client from the [Kora SDK](https://www.npmjs.com/package/@kora/sdk) and a few types/helpers from Solana Kit library for building transactions. We are also importing a couple of helper functions from the [gill](https://www.npmjs.com/package/gill) library to simplify transaction building.
+We are importing the Kora Client from the [Kora SDK](https://www.npmjs.com/package/@kora/sdk) and a few types/helpers from Solana Kit library for building transactions.
 
 We are also creating a global configuration object that defines:
 
@@ -200,9 +205,8 @@ async function initializeClients() {
         // hmacSecret: process.env.KORA_HMAC_SECRET, // Uncomment if HMAC is enabled
     });
 
-    const { rpc, rpcSubscriptions } = createSolanaClient({
-        urlOrMoniker: CONFIG.solanaRpcUrl,
-    });
+  const rpc = createSolanaRpc(CONFIG.solanaRpcUrl);
+  const rpcSubscriptions = createSolanaRpcSubscriptions(CONFIG.solanaWsUrl);
 
     const confirmTransaction = createRecentSignatureConfirmationPromiseFactory({ 
         rpc, 
@@ -326,17 +330,17 @@ async function getPaymentInstruction(
     console.log('  → Blockhash:', latestBlockhash.blockhash.slice(0, 8) + '...');
 
     // Create estimate transaction to get payment instruction
-    const estimateTransaction = await createTransaction({
-        version: CONFIG.transactionVersion as TransactionVersion,
-        instructions,
-        feePayer: noopSigner,
-        latestBlockhash: {
-            blockhash: latestBlockhash.blockhash as Blockhash,
-            lastValidBlockHeight: 0n,
-        },
-        computeUnitPrice: CONFIG.computeUnitPrice,
-        computeUnitLimit: CONFIG.computeUnitLimit
-    });
+    const estimateTransaction = pipe(
+        createTransactionMessage({ version: CONFIG.transactionVersion as TransactionVersion }),
+        (tx) => setTransactionMessageFeePayerSigner(noopSigner, tx),
+        (tx) => setTransactionMessageLifetimeUsingBlockhash({
+        blockhash: latestBlockhash.blockhash as Blockhash,
+        lastValidBlockHeight: 0n,
+        }, tx),
+        (tx) => updateOrAppendSetComputeUnitPriceInstruction(CONFIG.computeUnitPrice, tx),
+        (tx) => updateOrAppendSetComputeUnitLimitInstruction(CONFIG.computeUnitLimit, tx),
+        (tx) => appendTransactionMessageInstructions(instructions, tx),
+    );
 
     const signedEstimateTransaction = await partiallySignTransactionMessageWithSigners(estimateTransaction);
     const base64EncodedWireTransaction = getBase64EncodedWireTransaction(signedEstimateTransaction);
@@ -382,17 +386,17 @@ async function getFinalTransaction(
 
     // Build final transaction with payment instruction
     const newBlockhash = await client.getBlockhash();
-    const fullTransaction = await createTransaction({
-        version: CONFIG.transactionVersion as TransactionVersion,
-        instructions: [...instructions, paymentInstruction],
-        feePayer: noopSigner,
-        latestBlockhash: {
-            blockhash: newBlockhash.blockhash as Blockhash,
-            lastValidBlockHeight: 0n,
-        },
-        computeUnitPrice: CONFIG.computeUnitPrice,
-        computeUnitLimit: CONFIG.computeUnitLimit
-    });
+    const fullTransaction = pipe(
+        createTransactionMessage({ version: CONFIG.transactionVersion as TransactionVersion }),
+        (tx) => setTransactionMessageFeePayerSigner(noopSigner, tx),
+        (tx) => setTransactionMessageLifetimeUsingBlockhash({
+        blockhash: newBlockhash.blockhash as Blockhash,
+        lastValidBlockHeight: 0n,
+        }, tx),
+        (tx) => updateOrAppendSetComputeUnitPriceInstruction(CONFIG.computeUnitPrice, tx),
+        (tx) => updateOrAppendSetComputeUnitLimitInstruction(CONFIG.computeUnitLimit, tx),
+        (tx) => appendTransactionMessageInstructions([...instructions, paymentInstruction], tx),
+    );
     console.log('  ✓ Final transaction built with payment');
 
     // Sign with user keypair
@@ -405,9 +409,7 @@ async function getFinalTransaction(
 }
 ```
 
-
-
-We use the same `createTransaction` helper to assemble our transaction. Our final transaction includes:
+We use the same `pipe` function to assemble our transaction. Our final transaction includes:
 - Our original instructions
 - The payment instruction
 - A fresh blockhash
@@ -417,7 +419,7 @@ We then call the same `partiallySignTransactionMessageWithSigners` function to g
 
 ### Step 6: Submit Transaction
 
-Finally, we need to get the Kora node to sign the transaction so we can send a fully signed transaction to the network. We do this by calling the `signTransactionIfPaid` method on the Kora client.
+Finally, we need to get the Kora node to sign the transaction so we can send a fully signed transaction to the network. We do this by calling the `signTransaction` method on the Kora client.
 
 ```ts
 
@@ -431,7 +433,7 @@ async function submitTransaction(
     console.log('\n[6/6] Signing transaction with Kora and sending to Solana cluster');
     
     // Get Kora's signature
-    const { signed_transaction } = await client.signTransactionIfPaid({
+    const { signed_transaction } = await client.signTransaction({
         transaction: signedTransaction,
         signer_key: signer_address
     });
@@ -455,15 +457,13 @@ async function submitTransaction(
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('\nTransaction signature:');
     console.log(signature);
-    console.log('\nView on explorer:');
-    console.log(getExplorerLink({transaction: signature, cluster: 'localhost'}));
     
     return signature;
 }
 ```
 
 Here we are doing three things: 
-1. We call the `signTransactionIfPaid` method on the Kora client to get the Kora node to sign the transaction. The node will introspect the transaction to ensure the payment is sufficient and then sign the transaction. _Note: some Kora nodes may enable `signTransaction` that do not require payment. You can check your node's configuration to see if this is enabled by running `getConfig()`._ 
+1. We call the `signTransaction` method on the Kora client to get the Kora node to sign the transaction. The node will introspect the transaction to ensure the payment is sufficient and then sign the transaction. _Note: some Kora nodes may enable `signTransaction` that do not require payment. You can check your node's configuration to see if this is enabled by running `getConfig()`._ 
 2. We send the fully signed transaction to the Solana network using the Solana RPC client.
 3. We wait for the transaction to be confirmed on the network.
 

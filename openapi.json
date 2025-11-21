@@ -21,8 +21,7 @@
           "sign_and_send_transaction",
           "transfer_transaction",
           "get_blockhash",
-          "get_config",
-          "sign_transaction_if_paid"
+          "get_config"
         ],
         "properties": {
           "estimate_transaction_fee": {
@@ -44,9 +43,6 @@
             "type": "boolean"
           },
           "sign_transaction": {
-            "type": "boolean"
-          },
-          "sign_transaction_if_paid": {
             "type": "boolean"
           },
           "transfer_transaction": {
@@ -236,32 +232,6 @@
             "type": "string"
           },
           "signed_transaction": {
-            "type": "string"
-          }
-        }
-      },
-      "SignTransactionIfPaidRequest": {
-        "type": "object",
-        "required": [
-          "transaction"
-        ],
-        "properties": {
-          "transaction": {
-            "type": "string"
-          }
-        }
-      },
-      "SignTransactionIfPaidResponse": {
-        "type": "object",
-        "required": [
-          "transaction",
-          "signed_transaction"
-        ],
-        "properties": {
-          "signed_transaction": {
-            "type": "string"
-          },
-          "transaction": {
             "type": "string"
           }
         }

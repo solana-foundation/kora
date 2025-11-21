@@ -76,10 +76,7 @@ make lint-fix-all
 # Run unit tests
 make test
 
-# Setup test environment (for integration tests)
-make setup-test-env
-
-# Run integration tests
+# Run integration tests (automatically handles environment setup)
 make test-integration
 
 # Run all tests
@@ -88,7 +85,7 @@ cargo test --workspace
 
 #### Integration Test Environment Setup
 
-Integration tests are fully automated using a makefile-based approach that handles sequential test execution:
+Integration tests are fully automated using a Rust test runner binary that handles sequential test execution:
 
 **Quick Start:**
 ```bash
@@ -100,23 +97,27 @@ make test-integration
 2. **Test Environment Setup**: Creates test accounts, tokens, and ATAs
 3. **Sequential Test Phases**: Runs 3 test suites with different configurations
 
-**Test Phases (Auto-managed):**
+**Test Phases (Configured in `tests/src/test_runner/test_cases.toml`):**
 
-**Phase 1: Regular integration tests (26 tests)**
+**Regular Tests**
 - Config: `tests/src/common/fixtures/kora-test.toml` (no auth)
-- Server: Standard Kora RPC server 
 - Tests: Core RPC functionality, token operations, compute budget
 
-**Phase 2: Auth integration tests (4 tests)**  
+**Auth Tests**
 - Config: `tests/src/common/fixtures/auth-test.toml` (auth enabled)
-- Server: Restart with auth middleware
 - Tests: API key and HMAC authentication validation
 
-**Phase 3: Payment address tests (2 tests)**
+**Payment Address Tests**
 - Config: `tests/src/common/fixtures/paymaster-address-test.toml` (payment address)
-- Server: Restart with payment address configuration
 - **CLI ATA Initialization**: Automatically runs `kora rpc initialize-atas` before tests
 - Tests: Payment address validation and wrong destination rejection
+
+**Multi-Signer Tests**
+- Config: `tests/src/common/fixtures/signers-multi.toml`
+- Tests: Multiple signer configurations
+
+**TypeScript Tests**
+- Tests: TypeScript SDK integration tests
 
 **File Structure:**
 ```
@@ -132,54 +133,47 @@ tests/
 │   │   │   ├── payment-local.json       # Payment address keypair
 │   │   │   ├── sender-local.json        # Sender keypair
 │   │   │   └── usdc-mint-local.json     # USDC mint keypair
-│   │   └── setup_test_env.rs            # Test environment setup
+│   │   └── setup.rs                     # Test environment setup
+│   ├── test_runner/                     # Test runner modules
+│   │   ├── accounts.rs                  # Account management
+│   │   ├── commands.rs                  # Test command execution
+│   │   ├── config.rs                    # Test configuration
+│   │   ├── kora.rs                      # Kora server management
+│   │   ├── output.rs                    # Output handling
+│   │   ├── test_cases.toml              # Test phase configurations
+│   │   └── validator.rs                 # Solana validator management
 │   └── bin/
-│       └── setup_test_env.rs            # Binary wrapper for setup
+│       └── test_runner.rs               # Main test runner binary
 ├── integration/                         # Regular integration tests
 ├── auth/                                # Authentication tests
 └── payment-address/                     # Payment address tests
 ```
 
-**Manual Test Commands (if needed):**
+**Test Runner Commands:**
 ```bash
-# Setup test environment only
-make setup-test-env
+# Run all integration tests (default)
+make test-integration
 
-# Clean up test environment
-make clean-test-env
+# Run with verbose output
+make test-integration-verbose
 
-# Run specific test phase
-cargo test -p tests --test integration
-cargo test -p tests --test auth  
-cargo test -p tests --test payment-address
+# Force refresh test accounts (ignore cached)
+make test-integration-fresh
+
+# Run specific test
+cargo run -p tests --bin test_runner -- --filter regular
+cargo run -p tests --bin test_runner -- --filter auth
+cargo run -p tests --bin test_runner -- --filter payment_address
+cargo run -p tests --bin test_runner -- --filter multi_signer
+cargo run -p tests --bin test_runner -- --filter typescript_basic
+cargo run -p tests --bin test_runner -- --filter typescript_auth
 ```
 
 #### Customize Test Environment
 
-The test suite uses environment variables for configuration (checked before falling back to defaults):
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RPC_URL` | Solana RPC endpoint | `http://127.0.0.1:8899` |
-| `TEST_SERVER_URL` | Kora RPC server URL | `http://127.0.0.1:8080` |
-| `TEST_SENDER_KEYPAIR` | Base58 encoded test sender keypair | Built-in test keypair |
-| `TEST_RECIPIENT_PUBKEY` | Test recipient public key | Built-in test pubkey |
-| `KORA_PRIVATE_KEY` | Kora fee payer private key | Built-in test keypair |
-| `TEST_USDC_MINT_KEYPAIR` | Test USDC mint keypair | Built-in test mint |
-| `TEST_USDC_MINT_DECIMALS` | USDC mint decimals | `6` |
+The test suite uses environment variables for configuration specified in `tests/src/common/constants.rs`.
 
 Make sure to update the appropriate config file (kora.toml for production, tests/common/fixtures/kora-test.toml for testing) to reflect the public key of TEST_USDC_MINT_KEYPAIR.
-
-**Example with custom test configuration:**
-```bash
-# Create .env file for custom test setup
-echo "RPC_URL=https://api.devnet.solana.com" > .env
-echo "TEST_SENDER_KEYPAIR=your_base58_keypair" >> .env
-echo "KORA_PRIVATE_KEY=your_fee_payer_keypair" >> .env
-
-# Run tests with custom config
-make test-integration
-```
 
 ### Running Services
 
@@ -275,7 +269,6 @@ pnpm run format
   - `getBlockhash` - Get recent blockhash
   - `getConfig` - Return server configuration
   - `getSupportedTokens` - List accepted payment tokens
-  - `signTransactionIfPaid` - Conditional signing based on payment verification
   - `getPayerSigner` - Get the payer signer and payment destination
   - (client-only) `getPaymentInstruction` - Get a payment instruction for a transaction
 
@@ -355,12 +348,47 @@ allowed_spl_paid_tokens = [
 disallowed_accounts = []  # Blocked account addresses
 
 # Fee payer policy controls what actions the fee payer can perform
-# All default to true for backward compatibility
-[validation.fee_payer_policy]
-allow_sol_transfers = true      # Allow fee payer to be source in SOL transfers
-allow_spl_transfers = true      # Allow fee payer to be source in SPL token transfers
-allow_token2022_transfers = true # Allow fee payer to be source in Token2022 transfers
-allow_assign = true             # Allow fee payer to use Assign instruction
+# Organized by program type with 28 granular controls
+# All default to false for security
+[validation.fee_payer_policy.system]
+allow_transfer = false           # System Transfer/TransferWithSeed
+allow_assign = false             # System Assign/AssignWithSeed
+allow_create_account = false     # System CreateAccount/CreateAccountWithSeed
+allow_allocate = false           # System Allocate/AllocateWithSeed
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false         # InitializeNonceAccount
+allow_advance = false            # AdvanceNonceAccount
+allow_authorize = false          # AuthorizeNonceAccount
+allow_withdraw = false           # WithdrawNonceAccount
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = false           # Transfer/TransferChecked
+allow_burn = false               # Burn/BurnChecked
+allow_close_account = false      # CloseAccount
+allow_approve = false            # Approve/ApproveChecked
+allow_revoke = false             # Revoke
+allow_set_authority = false      # SetAuthority
+allow_mint_to = false            # MintTo/MintToChecked
+allow_initialize_mint = false    # InitializeMint/InitializeMint2
+allow_initialize_account = false # InitializeAccount/InitializeAccount3
+allow_initialize_multisig = false # InitializeMultisig/InitializeMultisig2
+allow_freeze_account = false     # FreezeAccount
+allow_thaw_account = false       # ThawAccount
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = false           # Transfer/TransferChecked
+allow_burn = false               # Burn/BurnChecked
+allow_close_account = false      # CloseAccount
+allow_approve = false            # Approve/ApproveChecked
+allow_revoke = false             # Revoke
+allow_set_authority = false      # SetAuthority
+allow_mint_to = false            # MintTo/MintToChecked
+allow_initialize_mint = false    # InitializeMint/InitializeMint2
+allow_initialize_account = false # InitializeAccount/InitializeAccount3
+allow_initialize_multisig = false # InitializeMultisig/InitializeMultisig2
+allow_freeze_account = false     # FreezeAccount
+allow_thaw_account = false       # ThawAccount
 ```
 
 ### Environment Variables set in `signers.toml`
@@ -374,29 +402,60 @@ RUST_LOG=debug  # Logging level
 
 ### Overview
 
-The fee payer policy system provides fine-grained control over what actions the fee payer can perform in transactions. By default, all actions are permitted to maintain backward compatibility with existing behavior.
+The fee payer policy system provides granular control over what actions the fee payer can perform in transactions. The policy is organized by program type (System, SPL Token, Token-2022) and covers 28 different instruction types. By default, all actions are permitted to maintain backward compatibility with existing behavior.
 
 ### Policy Configuration
 
-The fee payer policy is configured via the `[validation.fee_payer_policy]` section in `kora.toml`:
+The fee payer policy is configured via nested sections in `kora.toml`:
+- `[validation.fee_payer_policy.system]` - System program instructions (4 fields)
+- `[validation.fee_payer_policy.system.nonce]` - Nonce account operations (4 fields)
+- `[validation.fee_payer_policy.spl_token]` - SPL Token program instructions (12 fields)
+- `[validation.fee_payer_policy.token_2022]` - Token-2022 program instructions (12 fields)
 
 ### Implementation Details
 
 **Core Structure** (`crates/lib/src/config.rs`):
-- `FeePayerPolicy` struct with 4 boolean fields
-- `Default` implementation sets all fields to `true` (permissive)
+- `FeePayerPolicy` struct with nested policy structs for each program type
+- `SystemInstructionPolicy` - Controls System program operations including nested `NonceInstructionPolicy`
+- `SplTokenInstructionPolicy` - Controls SPL Token program operations
+- `Token2022InstructionPolicy` - Controls Token-2022 program operations
+- All `Default` implementations set fields to `true` (permissive) for backward compatibility
 - `#[serde(default)]` attribute ensures backward compatibility
 
 **Validation Logic** (`crates/lib/src/transaction/validator.rs`):
 - `TransactionValidator` stores the policy configuration
-- `is_fee_payer_source()` method checks policy flags before validating restrictions
+- Program-specific validation methods check policy flags before validating restrictions
+- Uses macro-based validation patterns for consistent enforcement across instruction types
 - Different validation logic for each program type (System, SPL Token, Token2022)
 
-**Supported Actions**:
-1. **SOL Transfers** - System program Transfer and TransferWithSeed instructions
-2. **SPL Token Transfers** - SPL Token program Transfer and TransferChecked instructions
-3. **Token2022 Transfers** - Token2022 program Transfer and TransferChecked instructions
-4. **Assign** - System program Assign instruction (changes account owner)
+**Supported Actions by Program Type**:
+
+**System Program (8 controls)**:
+1. **Transfer** - Transfer and TransferWithSeed instructions (fee payer as sender)
+2. **Assign** - Assign and AssignWithSeed instructions (fee payer as authority)
+3. **CreateAccount** - CreateAccount and CreateAccountWithSeed instructions (fee payer as funding source)
+4. **Allocate** - Allocate and AllocateWithSeed instructions (fee payer as account owner)
+5. **Nonce Initialize** - InitializeNonceAccount instruction (fee payer set as authority)
+6. **Nonce Advance** - AdvanceNonceAccount instruction (fee payer as authority)
+7. **Nonce Authorize** - AuthorizeNonceAccount instruction (fee payer as current authority)
+8. **Nonce Withdraw** - WithdrawNonceAccount instruction (fee payer as authority)
+
+**SPL Token Program (12 controls)**:
+1. **Transfer** - Transfer and TransferChecked instructions (fee payer as owner)
+2. **Burn** - Burn and BurnChecked instructions (fee payer as owner)
+3. **CloseAccount** - CloseAccount instruction (fee payer as owner)
+4. **Approve** - Approve and ApproveChecked instructions (fee payer as owner)
+5. **Revoke** - Revoke instruction (fee payer as owner)
+6. **SetAuthority** - SetAuthority instruction (fee payer as current authority)
+7. **MintTo** - MintTo and MintToChecked instructions (fee payer as mint authority)
+8. **InitializeMint** - InitializeMint and InitializeMint2 instructions (fee payer as mint authority)
+9. **InitializeAccount** - InitializeAccount and InitializeAccount3 instructions (fee payer as owner)
+10. **InitializeMultisig** - InitializeMultisig and InitializeMultisig2 instructions (fee payer as signer)
+11. **FreezeAccount** - FreezeAccount instruction (fee payer as freeze authority)
+12. **ThawAccount** - ThawAccount instruction (fee payer as freeze authority)
+
+**Token-2022 Program (12 controls)**:
+- Identical instruction set and controls as SPL Token Program
 
 ## Private Key Formats
 
@@ -562,29 +621,28 @@ Both skip `/liveness` endpoint and can be used simultaneously. Implementation us
 - **API tests** - Include example JSON payloads in `tests/examples/`
 - **SDK tests** - TypeScript tests in `sdks/*/test/` directories
 
-## Makefile Structure
+## Test Runner Architecture
 
-The project uses a modular makefile approach for better organization:
+The project uses a Rust-based test runner for integration testing:
 
 ```
-/Makefile                  # Main makefile with includes
-/makefiles/
-├── utils.mk              # Common utilities and functions
-├── rs.mk                 # Rust build commands  
-├── tests_rs.mk           # Integration test orchestration
-└── docs.mk               # Documentation generation
+/tests/src/
+├── bin/test_runner.rs     # Main test runner binary
+├── test_runner/           # Test runner modules
+│   ├── test_cases.toml    # Test phase configurations
+│   ├── accounts.rs        # Account management & caching
+│   ├── commands.rs        # Test execution logic
+│   ├── kora.rs            # Kora server lifecycle
+│   └── validator.rs       # Solana validator management
+└── common/                # Shared test utilities
 ```
 
 **Key Features:**
-- **Sequential Test Execution**: Prevents port conflicts and ensures clean config isolation
-- **Server Lifecycle Management**: Automatic start/stop with proper cleanup
-- **CLI Integration**: Automated `kora rpc initialize-atas` for payment address tests
-- **Parallel Tool Execution**: Optimized for development workflow efficiency
-
-**Core Functions (from utils.mk):**
-- `start_solana_validator` / `stop_solana_validator`: Validator lifecycle
-- `start_kora_server` / `stop_kora_server`: Server lifecycle with config switching
-- `run_integration_phase`: Orchestrates server + CLI + tests for each phase
+- **Rust Test Runner**: Single binary manages all test phases
+- **TOML Configuration**: Test phases defined in `test_cases.toml`
+- **Account Caching**: Reuses test accounts for faster execution
+- **Isolated Ports**: Each test phase uses unique ports to avoid conflicts
+- **TypeScript Integration**: Seamlessly runs TS SDK tests alongside Rust tests
 
 ## Development Guidelines
 

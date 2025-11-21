@@ -21,9 +21,6 @@ use crate::rpc_server::method::{
         sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResponse,
     },
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResponse},
-    sign_transaction_if_paid::{
-        sign_transaction_if_paid, SignTransactionIfPaidRequest, SignTransactionIfPaidResponse,
-    },
     transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
     },
@@ -124,16 +121,6 @@ impl KoraRpc {
         result
     }
 
-    pub async fn sign_transaction_if_paid(
-        &self,
-        request: SignTransactionIfPaidRequest,
-    ) -> Result<SignTransactionIfPaidResponse, KoraError> {
-        info!("Sign transaction if paid request: {request:?}");
-        let result = sign_transaction_if_paid(&self.rpc_client, request).await;
-        info!("Sign transaction if paid response: {result:?}");
-        result
-    }
-
     #[cfg(feature = "docs")]
     pub fn build_docs_spec() -> Vec<OpenApiSpec> {
         vec![
@@ -176,11 +163,6 @@ impl KoraRpc {
                 name: "transferTransaction".to_string(),
                 request: Some(TransferTransactionRequest::schema().1),
                 response: TransferTransactionResponse::schema().1,
-            },
-            OpenApiSpec {
-                name: "signTransactionIfPaid".to_string(),
-                request: Some(SignTransactionIfPaidRequest::schema().1),
-                response: SignTransactionIfPaidResponse::schema().1,
             },
         ]
     }

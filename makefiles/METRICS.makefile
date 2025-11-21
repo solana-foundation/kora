@@ -13,5 +13,3 @@ update-metrics-config:
 run-metrics: update-metrics-config
 	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml down
 	cd crates/lib/src/metrics && docker compose -f docker-compose.metrics.yml up
-
-# install ts sdk

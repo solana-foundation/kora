@@ -150,10 +150,7 @@ mod tests {
     use super::*;
     use crate::{
         config::FeePayerBalanceMetricsConfig,
-        signer::{
-            memory_signer::solana_signer::SolanaMemorySigner, KoraSigner, SignerPool,
-            SignerWithMetadata,
-        },
+        signer::{pool::SignerWithMetadata, SignerPool},
         state::update_signer_pool,
         tests::{
             account_mock::create_mock_account_with_balance,
@@ -162,14 +159,18 @@ mod tests {
         },
     };
     use solana_sdk::signature::Keypair;
+    use solana_signers::Signer;
 
     fn setup_test_signer_pool() {
-        let signer1 = SolanaMemorySigner::new(Keypair::new());
-        let signer2 = SolanaMemorySigner::new(Keypair::new());
+        let keypair1 = Keypair::new();
+        let keypair2 = Keypair::new();
+
+        let external_signer1 = Signer::from_memory(&keypair1.to_base58_string()).unwrap();
+        let external_signer2 = Signer::from_memory(&keypair2.to_base58_string()).unwrap();
 
         let pool = SignerPool::new(vec![
-            SignerWithMetadata::new("test_signer_1".to_string(), KoraSigner::Memory(signer1), 1),
-            SignerWithMetadata::new("test_signer_2".to_string(), KoraSigner::Memory(signer2), 1),
+            SignerWithMetadata::new("signer_1".to_string(), Arc::new(external_signer1), 1),
+            SignerWithMetadata::new("signer_2".to_string(), Arc::new(external_signer2), 2),
         ]);
 
         let _ = update_signer_pool(pool);

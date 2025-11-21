@@ -36,6 +36,7 @@ struct ValidationSection {
 
 struct KoraSection {
     rate_limit: u64,
+    max_request_body_size: Option<usize>,
     enabled_methods: Option<String>,
     cache_config: Option<String>,
     usage_limit_config: Option<String>,
@@ -61,6 +62,7 @@ impl Default for KoraSection {
     fn default() -> Self {
         Self {
             rate_limit: 100,
+            max_request_body_size: None,
             enabled_methods: None,
             cache_config: None,
             usage_limit_config: None,
@@ -101,7 +103,7 @@ impl ConfigBuilder {
 
     pub fn with_fixed_price(mut self, amount: u64, token: &str) -> Self {
         self.validation.price_config = Some(format!(
-            "[validation.price]\ntype = \"fixed\"\namount = {amount}\ntoken = \"{token}\"\n"
+            "[validation.price]\ntype = \"fixed\"\namount = {amount}\ntoken = \"{token}\"\nstrict = false\n"
         ));
         self
     }
@@ -180,6 +182,11 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn with_max_request_body_size(mut self, size: usize) -> Self {
+        self.kora.max_request_body_size = Some(size);
+        self
+    }
+
     pub fn build_toml(&self) -> String {
         let programs_list = self
             .validation
@@ -246,6 +253,10 @@ impl ConfigBuilder {
         }
 
         toml.push_str(&format!("[kora]\nrate_limit = {}\n", self.kora.rate_limit));
+
+        if let Some(size) = self.kora.max_request_body_size {
+            toml.push_str(&format!("max_request_body_size = {size}\n"));
+        }
 
         if let Some(ref methods_config) = self.kora.enabled_methods {
             toml.push_str(&format!("{methods_config}\n"));

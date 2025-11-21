@@ -1,22 +1,20 @@
-use crate::{
-    token::{
-        interface::TokenMint,
-        spl_token_2022_util::{
-            try_parse_account_extension, try_parse_mint_extension, AccountExtension, MintExtension,
-            ParsedExtension,
-        },
+use crate::token::{
+    interface::TokenMint,
+    spl_token_2022_util::{
+        try_parse_account_extension, try_parse_mint_extension, AccountExtension, MintExtension,
+        ParsedExtension,
     },
-    KoraError,
 };
 
 use super::interface::{TokenInterface, TokenState};
 use async_trait::async_trait;
 use solana_program::{program_pack::Pack, pubkey::Pubkey};
-use solana_sdk::{account::Account, instruction::Instruction};
-use spl_associated_token_account::{
-    get_associated_token_address_with_program_id, instruction::create_associated_token_account,
+use solana_sdk::instruction::Instruction;
+use spl_associated_token_account_interface::{
+    address::get_associated_token_address_with_program_id,
+    instruction::create_associated_token_account,
 };
-use spl_token_2022::{
+use spl_token_2022_interface::{
     extension::{transfer_fee::TransferFeeConfig, ExtensionType, StateWithExtensions},
     state::{Account as Token2022AccountState, AccountState, Mint as Token2022MintState},
 };
@@ -161,7 +159,11 @@ impl Token2022Mint {
 
     /// Calculate transfer fee for a given amount and epoch
     /// Returns None if no transfer fee is configured
-    pub fn calculate_transfer_fee(&self, amount: u64, current_epoch: u64) -> Option<u64> {
+    pub fn calculate_transfer_fee(
+        &self,
+        amount: u64,
+        current_epoch: u64,
+    ) -> Result<Option<u64>, crate::error::KoraError> {
         if let Some(fee_config) = self.get_transfer_fee() {
             let transfer_fee = if current_epoch >= u64::from(fee_config.newer_transfer_fee.epoch) {
                 &fee_config.newer_transfer_fee
@@ -172,10 +174,26 @@ impl Token2022Mint {
             let basis_points = u16::from(transfer_fee.transfer_fee_basis_points);
             let maximum_fee = u64::from(transfer_fee.maximum_fee);
 
-            let fee_amount = (amount as u128 * basis_points as u128 / 10_000) as u64;
-            Some(std::cmp::min(fee_amount, maximum_fee))
+            let fee_amount = (amount as u128)
+                .checked_mul(basis_points as u128)
+                .and_then(|product| product.checked_div(10_000))
+                .and_then(
+                    |result| if result <= u64::MAX as u128 { Some(result as u64) } else { None },
+                )
+                .ok_or_else(|| {
+                    log::error!(
+                        "Transfer fee calculation overflow: amount={}, basis_points={}",
+                        amount,
+                        basis_points
+                    );
+                    crate::error::KoraError::ValidationError(format!(
+                        "Transfer fee calculation overflow: amount={}, basis_points={}",
+                        amount, basis_points
+                    ))
+                })?;
+            Ok(Some(std::cmp::min(fee_amount, maximum_fee)))
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -243,7 +261,7 @@ impl Default for Token2022Program {
 #[async_trait]
 impl TokenInterface for Token2022Program {
     fn program_id(&self) -> Pubkey {
-        spl_token_2022::id()
+        spl_token_2022_interface::id()
     }
 
     fn unpack_token_account(
@@ -290,7 +308,7 @@ impl TokenInterface for Token2022Program {
         mint: &Pubkey,
         owner: &Pubkey,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token_2022::instruction::initialize_account3(
+        Ok(spl_token_2022_interface::instruction::initialize_account3(
             &self.program_id(),
             account,
             mint,
@@ -307,7 +325,7 @@ impl TokenInterface for Token2022Program {
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
         // Get the mint from the source account data
         #[allow(deprecated)]
-        Ok(spl_token_2022::instruction::transfer(
+        Ok(spl_token_2022_interface::instruction::transfer(
             &self.program_id(),
             source,
             destination,
@@ -326,7 +344,7 @@ impl TokenInterface for Token2022Program {
         amount: u64,
         decimals: u8,
     ) -> Result<Instruction, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(spl_token_2022::instruction::transfer_checked(
+        Ok(spl_token_2022_interface::instruction::transfer_checked(
             &self.program_id(),
             source,
             mint,
@@ -385,57 +403,6 @@ impl TokenInterface for Token2022Program {
             extensions,
         }))
     }
-
-    async fn get_ata_account_size(
-        &self,
-        mint_pubkey: &Pubkey,
-        mint_account: &Account,
-    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
-        let token_program = Token2022Program::new();
-        let mint_with_extensions = token_program.unpack_mint(mint_pubkey, &mint_account.data)?;
-
-        let mint_with_extensions = mint_with_extensions
-            .as_any()
-            .downcast_ref::<Token2022Mint>()
-            .ok_or(KoraError::InternalServerError("Failed to unpack mint".to_string()))?;
-
-        let mut required_account_extensions = Vec::new();
-
-        // If the mint has TransferFeeConfig, token accounts need TransferFeeAmount to store withheld fees
-        if mint_with_extensions.has_extension(ExtensionType::TransferFeeConfig) {
-            required_account_extensions.push(ExtensionType::TransferFeeAmount);
-        }
-
-        // If mint is non-transferable, token accounts must be non-transferable too
-        if mint_with_extensions.is_non_transferable() {
-            required_account_extensions.push(ExtensionType::NonTransferableAccount);
-        }
-
-        // If mint has confidential transfer, token accounts need confidential transfer account extension
-        if mint_with_extensions.has_confidential_transfer_extension() {
-            required_account_extensions.push(ExtensionType::ConfidentialTransferAccount);
-        }
-
-        // If mint has transfer hook, token accounts need transfer hook account extension
-        if mint_with_extensions.has_transfer_hook_extension() {
-            required_account_extensions.push(ExtensionType::TransferHookAccount);
-        }
-
-        // If mint is pausable, token accounts need pausable account extension
-        if mint_with_extensions.has_pausable_extension() {
-            required_account_extensions.push(ExtensionType::PausableAccount);
-        }
-
-        // ATAs created for Token-2022 are immutable by default (owner cannot be changed)
-        required_account_extensions.push(ExtensionType::ImmutableOwner);
-
-        // Calculate the account size with all required extensions
-        let account_size = ExtensionType::try_calculate_account_len::<Token2022AccountState>(
-            &required_account_extensions,
-        )?;
-
-        Ok(account_size)
-    }
 }
 
 /// Trait for Token-2022 extension validation and fee calculation
@@ -483,7 +450,7 @@ mod tests {
         optional_keys::OptionalNonZeroPubkey,
         primitives::{PodU16, PodU64},
     };
-    use spl_token_2022::extension::{
+    use spl_token_2022_interface::extension::{
         transfer_fee::{TransferFee, TransferFeeConfig},
         ExtensionType,
     };
@@ -502,13 +469,13 @@ mod tests {
     #[test]
     fn test_token_program_token2022() {
         let program = Token2022Program::new();
-        assert_eq!(program.program_id(), spl_token_2022::id());
+        assert_eq!(program.program_id(), spl_token_2022_interface::id());
     }
 
     #[test]
     fn test_token2022_program_creation() {
         let program = Token2022Program::new();
-        assert_eq!(program.program_id(), spl_token_2022::id());
+        assert_eq!(program.program_id(), spl_token_2022_interface::id());
     }
 
     #[test]
@@ -551,7 +518,7 @@ mod tests {
         let program = Token2022Program::new();
         let ix = program.create_transfer_instruction(&source, &dest, &authority, amount).unwrap();
 
-        assert_eq!(ix.program_id, spl_token_2022::id());
+        assert_eq!(ix.program_id, spl_token_2022_interface::id());
         // Verify accounts are in correct order
         assert_eq!(ix.accounts[0].pubkey, source);
         assert_eq!(ix.accounts[1].pubkey, dest);
@@ -574,7 +541,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(ix.program_id, spl_token_2022::id());
+        assert_eq!(ix.program_id, spl_token_2022_interface::id());
         // Verify accounts are in correct order
         assert_eq!(ix.accounts[0].pubkey, source);
         assert_eq!(ix.accounts[1].pubkey, mint);
@@ -592,10 +559,10 @@ mod tests {
 
         // Verify ATA derivation matches spl-token-2022
         let expected_ata =
-            spl_associated_token_account::get_associated_token_address_with_program_id(
+            spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
                 &wallet,
                 &mint,
-                &spl_token_2022::id(),
+                &spl_token_2022_interface::id(),
             );
         assert_eq!(ata, expected_ata);
     }
@@ -644,19 +611,19 @@ mod tests {
         let mint = MintAccountMockBuilder::new()
             .build_as_custom_token2022_mint(mint_pubkey, HashMap::new());
 
-        let fee = mint.calculate_transfer_fee(1000, 0);
+        let fee = mint.calculate_transfer_fee(1000, 0).unwrap();
         assert!(fee.is_none(), "Mint without transfer fee config should return None");
 
         let mint = MintAccountMockBuilder::new()
             .build_as_custom_token2022_mint(mint_pubkey, create_test_extensions());
 
         // Test zero amount
-        let zero_fee = mint.calculate_transfer_fee(0, 0);
+        let zero_fee = mint.calculate_transfer_fee(0, 0).unwrap();
         assert!(zero_fee.is_some());
         assert_eq!(zero_fee.unwrap(), 0, "Zero amount should result in zero fee");
 
         // Test maximum fee cap
-        let large_amount_fee = mint.calculate_transfer_fee(1_000_000, 0);
+        let large_amount_fee = mint.calculate_transfer_fee(1_000_000, 0).unwrap();
         assert!(large_amount_fee.is_some());
         assert_eq!(large_amount_fee.unwrap(), 1000, "Large amount should be capped at maximum fee");
     }
@@ -683,24 +650,6 @@ mod tests {
         assert!(mint.has_permanent_delegate_extension());
         assert!(mint.has_mint_close_authority_extension());
         assert!(!mint.has_confidential_mint_burn_extension());
-    }
-
-    #[tokio::test]
-    async fn test_token2022_get_ata_account_size() {
-        let program = Token2022Program::new();
-        let mint_pubkey = Pubkey::new_unique();
-
-        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build_token2022();
-
-        let result = program.get_ata_account_size(&mint_pubkey, &mint_account).await;
-
-        assert!(result.is_ok());
-        let size = result.unwrap();
-
-        // Size should be base Token2022AccountState size + ImmutableOwner extension + 1 byte padding
-        // (has 0 bytes of extension data, but still has the TVL overhead (type 2 bytes, length 2 bytes))
-        // (ATAs created for Token-2022 are immutable by default)
-        assert_eq!(size, 170); // Base (165) + Immutable Owner TVL Overhead (5)
     }
 
     #[test]
@@ -752,7 +701,7 @@ mod tests {
         ];
 
         for (amount, _expected_adjusted) in test_cases {
-            let expected_fee = mint.calculate_transfer_fee(amount, 0).unwrap_or(0);
+            let expected_fee = mint.calculate_transfer_fee(amount, 0).unwrap().unwrap_or(0);
             let expected_result = amount.saturating_sub(expected_fee);
             assert_eq!(expected_result, expected_result);
         }
@@ -765,12 +714,12 @@ mod tests {
         // Create config with different fees for different epochs
         let transfer_fee_config = TransferFeeConfig {
             transfer_fee_config_authority: OptionalNonZeroPubkey::try_from(Some(
-                Pubkey::new_unique(),
+                spl_pod::solana_pubkey::Pubkey::new_unique(),
             ))
             .unwrap(),
-            withdraw_withheld_authority: OptionalNonZeroPubkey::try_from(
-                Some(Pubkey::new_unique()),
-            )
+            withdraw_withheld_authority: OptionalNonZeroPubkey::try_from(Some(
+                spl_pod::solana_pubkey::Pubkey::new_unique(),
+            ))
             .unwrap(),
             withheld_amount: PodU64::from(0),
             older_transfer_fee: TransferFee {
@@ -796,11 +745,11 @@ mod tests {
             .build_as_custom_token2022_mint(mint_pubkey, extensions);
 
         // Test older fee (epoch < 10)
-        let fee_old = mint.calculate_transfer_fee(10000, 5).unwrap();
+        let fee_old = mint.calculate_transfer_fee(10000, 5).unwrap().unwrap();
         assert_eq!(fee_old, 100); // 10000 * 1% = 100
 
         // Test newer fee (epoch >= 10)
-        let fee_new = mint.calculate_transfer_fee(10000, 15).unwrap();
+        let fee_new = mint.calculate_transfer_fee(10000, 15).unwrap().unwrap();
         assert_eq!(fee_new, 200); // 10000 * 2% = 200
     }
 
@@ -829,31 +778,5 @@ mod tests {
 
         // Test extensions not present
         assert!(!mint.is_non_transferable());
-    }
-
-    #[tokio::test]
-    async fn test_token2022_get_ata_account_size_with_extensions() {
-        let program = Token2022Program::new();
-        let mint_pubkey = Pubkey::new_unique();
-
-        // Create a mint with transfer fee extension
-        let mint_account = MintAccountMockBuilder::new()
-            .with_decimals(6)
-            .with_supply(1_000_000)
-            .with_extension(ExtensionType::TransferFeeConfig)
-            .build_token2022_account_state_with_extensions()
-            .unwrap();
-
-        let result = program.get_ata_account_size(&mint_pubkey, &mint_account).await;
-
-        // Should succeed and return size that includes extension space
-        assert!(result.is_ok());
-
-        // Size would be
-        // Base 165
-        // Immutable owner tvl overhead 4 (all ATA for 2022 have immutable owner)
-        // + 1 byte padding
-        // Transfer fee config 8 bytes for data and 4 bytes for TVL overhead
-        assert_eq!(result.unwrap(), 182);
     }
 }

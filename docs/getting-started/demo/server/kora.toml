@@ -17,7 +17,6 @@ sign_and_send_transaction = true
 transfer_transaction = true
 get_blockhash = true
 get_config = true
-sign_transaction_if_paid = true
 get_payer_signer = true
 
 [validation]
@@ -30,7 +29,7 @@ allowed_programs = [
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
     "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
     "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",  # Memo Program
-    "ComputeBudget111111111111111111111111111111", # Compute Budget Program
+    "ComputeBudget111111111111111111111111111111",  # Compute Budget Program
 ]
 allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Update this based on the USDC_LOCAL_KEY public key comment in your .env
@@ -44,17 +43,50 @@ disallowed_accounts = [
 ]
 
 [validation.fee_payer_policy]
-allow_sol_transfers = true
-allow_spl_transfers = true
-allow_token2022_transfers = true
+
+[validation.fee_payer_policy.system]
+allow_transfer = true
 allow_assign = true
+allow_create_account = true
+allow_allocate = true
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = true
+allow_advance = true
+allow_authorize = true
+allow_withdraw = true
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = true
 allow_burn = true
 allow_close_account = true
 allow_approve = true
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = true
+allow_burn = true
+allow_close_account = true
+allow_approve = true
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
 
 [validation.price]
 type = "margin" # free / margin / fixed
-margin = 0.1  # Default margin (10%) for paid transaction validation
+margin = 0.1    # Default margin (10%) for paid transaction validation
 
 
 [validation.token2022]

@@ -11,7 +11,6 @@ generated/
 # SDK
 node_modules/
 dist/
-.env*
 
 # Coverage reports
 coverage/
@@ -20,11 +19,11 @@ coverage/
 .DS_Store
 
 # Make test files
-.validator.pid
-.kora.pid
+*.pid
 test-ledger/
 .local/
 tests/src/common/fixtures/lookup_tables.json
+tests/src/common/fixtures/test-accounts/
 
 # Docs
 sdks/ts/docs-html/

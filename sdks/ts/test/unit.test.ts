@@ -9,8 +9,6 @@ import {
     SignTransactionResponse,
     SignAndSendTransactionRequest,
     SignAndSendTransactionResponse,
-    SignTransactionIfPaidRequest,
-    SignTransactionIfPaidResponse,
     TransferTransactionRequest,
     TransferTransactionResponse,
     EstimateTransactionFeeResponse,
@@ -122,13 +120,40 @@ describe('KoraClient Unit Tests', () => {
                     allowed_spl_paid_tokens: ['spl_token1'],
                     disallowed_accounts: ['account1'],
                     fee_payer_policy: {
-                        allow_sol_transfers: true,
-                        allow_spl_transfers: true,
-                        allow_token2022_transfers: false,
-                        allow_assign: true,
-                        allow_burn: true,
-                        allow_close_account: true,
-                        allow_approve: true,
+                        system: {
+                            allow_transfer: true,
+                            allow_assign: true,
+                            allow_create_account: true,
+                            allow_allocate: true,
+                            nonce: {
+                                allow_initialize: true,
+                                allow_advance: true,
+                                allow_authorize: true,
+                                allow_withdraw: true,
+                            },
+                        },
+                        spl_token: {
+                            allow_transfer: true,
+                            allow_burn: true,
+                            allow_close_account: true,
+                            allow_approve: true,
+                            allow_revoke: true,
+                            allow_set_authority: true,
+                            allow_mint_to: true,
+                            allow_freeze_account: true,
+                            allow_thaw_account: true,
+                        },
+                        token_2022: {
+                            allow_transfer: false,
+                            allow_burn: true,
+                            allow_close_account: true,
+                            allow_approve: true,
+                            allow_revoke: true,
+                            allow_set_authority: true,
+                            allow_mint_to: true,
+                            allow_freeze_account: true,
+                            allow_thaw_account: true,
+                        },
                     },
                     price: {
                         type: 'margin',
@@ -148,7 +173,6 @@ describe('KoraClient Unit Tests', () => {
                     transfer_transaction: true,
                     get_blockhash: true,
                     get_config: true,
-                    sign_transaction_if_paid: true,
                 },
             };
 
@@ -225,7 +249,6 @@ describe('KoraClient Unit Tests', () => {
                 transaction: 'base64_encoded_transaction',
             };
             const mockResponse: SignTransactionResponse = {
-                signature: 'test_signature',
                 signed_transaction: 'base64_signed_transaction',
                 signer_pubkey: 'test_signer_pubkey',
             };
@@ -245,7 +268,6 @@ describe('KoraClient Unit Tests', () => {
                 transaction: 'base64_encoded_transaction',
             };
             const mockResponse: SignAndSendTransactionResponse = {
-                signature: 'test_signature',
                 signed_transaction: 'base64_signed_transaction',
                 signer_pubkey: 'test_signer_pubkey',
             };
@@ -257,30 +279,6 @@ describe('KoraClient Unit Tests', () => {
                 request,
             );
         });
-    });
-
-    describe('signTransactionIfPaid', () => {
-        const testSignTransactionIfPaid = async (margin?: number) => {
-            const request: SignTransactionIfPaidRequest = {
-                transaction: 'base64_encoded_transaction',
-                ...(margin !== undefined && { margin }),
-            };
-            const mockResponse: SignTransactionIfPaidResponse = {
-                transaction: 'base64_encoded_transaction',
-                signed_transaction: 'base64_signed_transaction',
-                signer_pubkey: 'test_signer_pubkey',
-            };
-
-            await testSuccessfulRpcMethod(
-                'signTransactionIfPaid',
-                () => client.signTransactionIfPaid(request),
-                mockResponse,
-                request,
-            );
-        };
-
-        it('should sign transaction if paid', () => testSignTransactionIfPaid(10));
-        it('should handle request without margin', () => testSignTransactionIfPaid());
     });
 
     describe('transferTransaction', () => {
@@ -374,13 +372,40 @@ describe('KoraClient Unit Tests', () => {
                 allowed_spl_paid_tokens: ['4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'],
                 disallowed_accounts: [],
                 fee_payer_policy: {
-                    allow_sol_transfers: true,
-                    allow_spl_transfers: true,
-                    allow_token2022_transfers: true,
-                    allow_assign: true,
-                    allow_burn: true,
-                    allow_close_account: true,
-                    allow_approve: true,
+                    system: {
+                        allow_transfer: true,
+                        allow_assign: true,
+                        allow_create_account: true,
+                        allow_allocate: true,
+                        nonce: {
+                            allow_initialize: true,
+                            allow_advance: true,
+                            allow_authorize: true,
+                            allow_withdraw: true,
+                        },
+                    },
+                    spl_token: {
+                        allow_transfer: true,
+                        allow_burn: true,
+                        allow_close_account: true,
+                        allow_approve: true,
+                        allow_revoke: true,
+                        allow_set_authority: true,
+                        allow_mint_to: true,
+                        allow_freeze_account: true,
+                        allow_thaw_account: true,
+                    },
+                    token_2022: {
+                        allow_transfer: true,
+                        allow_burn: true,
+                        allow_close_account: true,
+                        allow_approve: true,
+                        allow_revoke: true,
+                        allow_set_authority: true,
+                        allow_mint_to: true,
+                        allow_freeze_account: true,
+                        allow_thaw_account: true,
+                    },
                 },
                 price: {
                     type: 'margin',
@@ -400,7 +425,6 @@ describe('KoraClient Unit Tests', () => {
                 transfer_transaction: true,
                 get_blockhash: true,
                 get_config: true,
-                sign_transaction_if_paid: true,
             },
         };
 

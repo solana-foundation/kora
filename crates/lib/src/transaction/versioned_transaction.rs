@@ -2,27 +2,25 @@ use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcSimulateTransactionConfig};
 use solana_commitment_config::CommitmentConfig;
-use solana_message::{v0::MessageAddressTableLookup, VersionedMessage};
-use solana_sdk::{
-    instruction::{CompiledInstruction, Instruction},
-    pubkey::Pubkey,
-    transaction::VersionedTransaction,
+use solana_message::{
+    compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup, VersionedMessage,
 };
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
+use solana_signers::{Signer, SolanaSigner};
 use std::{collections::HashMap, ops::Deref};
 
-use solana_transaction_status_client_types::UiInstruction;
+use solana_transaction_status_client_types::{UiInstruction, UiTransactionEncoding};
 
 use crate::{
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
-    signer::KoraSigner,
     state::get_config,
     transaction::{
         instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
         ParsedSystemInstructionData, ParsedSystemInstructionType,
     },
     validator::transaction_validator::TransactionValidator,
-    CacheUtil, Signer,
+    CacheUtil,
 };
 use solana_address_lookup_table_interface::state::AddressLookupTable;
 
@@ -60,17 +58,12 @@ pub trait VersionedTransactionOps {
 
     async fn sign_transaction(
         &mut self,
-        signer: &std::sync::Arc<KoraSigner>,
-        rpc_client: &RpcClient,
-    ) -> Result<(VersionedTransaction, String), KoraError>;
-    async fn sign_transaction_if_paid(
-        &mut self,
-        signer: &std::sync::Arc<KoraSigner>,
+        signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError>;
     async fn sign_and_send_transaction(
         &mut self,
-        signer: &std::sync::Arc<KoraSigner>,
+        signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError>;
 }
@@ -112,7 +105,7 @@ impl VersionedTransactionResolved {
 
         // 2. Fetch all instructions
         let outer_instructions =
-            IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys);
+            IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys)?;
 
         let inner_instructions = resolved.fetch_inner_instructions(rpc_client, sig_verify).await?;
 
@@ -123,17 +116,19 @@ impl VersionedTransactionResolved {
     }
 
     /// Only use this is we built the transaction ourselves, because it won't do any checks for resolving LUT, etc.
-    pub fn from_kora_built_transaction(transaction: &VersionedTransaction) -> Self {
-        Self {
+    pub fn from_kora_built_transaction(
+        transaction: &VersionedTransaction,
+    ) -> Result<Self, KoraError> {
+        Ok(Self {
             transaction: transaction.clone(),
             all_account_keys: transaction.message.static_account_keys().to_vec(),
             all_instructions: IxUtils::uncompile_instructions(
                 transaction.message.instructions(),
                 transaction.message.static_account_keys(),
-            ),
+            )?,
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
-        }
+        })
     }
 
     /// Fetch inner instructions via simulation
@@ -148,7 +143,11 @@ impl VersionedTransactionResolved {
                 RpcSimulateTransactionConfig {
                     commitment: Some(rpc_client.commitment()),
                     sig_verify,
-                    ..Default::default()
+                    inner_instructions: true,
+                    replace_recent_blockhash: false,
+                    encoding: Some(UiTransactionEncoding::Base64),
+                    accounts: None,
+                    min_context_slot: None,
                 },
             )
             .await
@@ -164,21 +163,29 @@ impl VersionedTransactionResolved {
             let mut compiled_inner_instructions: Vec<CompiledInstruction> = vec![];
 
             inner_instructions.iter().for_each(|ix| {
-                ix.instructions.iter().for_each(|inner_ix| {
-                    if let UiInstruction::Compiled(ix) = inner_ix {
+                ix.instructions.iter().for_each(|inner_ix| match inner_ix {
+                    UiInstruction::Compiled(ix) => {
                         compiled_inner_instructions.push(CompiledInstruction {
                             program_id_index: ix.program_id_index,
                             accounts: ix.accounts.clone(),
                             data: bs58::decode(&ix.data).into_vec().unwrap_or_default(),
                         });
                     }
+                    UiInstruction::Parsed(ui_parsed) => {
+                        if let Some(compiled) = IxUtils::reconstruct_instruction_from_ui(
+                            &UiInstruction::Parsed(ui_parsed.clone()),
+                            &self.all_account_keys,
+                        ) {
+                            compiled_inner_instructions.push(compiled);
+                        }
+                    }
                 });
             });
 
-            return Ok(IxUtils::uncompile_instructions(
+            return IxUtils::uncompile_instructions(
                 &compiled_inner_instructions,
                 &self.all_account_keys,
-            ));
+            );
         }
 
         Ok(vec![])
@@ -191,7 +198,10 @@ impl VersionedTransactionResolved {
         if self.parsed_system_instructions.is_none() {
             self.parsed_system_instructions = Some(IxUtils::parse_system_instructions(self)?);
         }
-        Ok(self.parsed_system_instructions.as_ref().unwrap())
+
+        self.parsed_system_instructions.as_ref().ok_or_else(|| {
+            KoraError::SerializationError("Parsed system instructions not found".to_string())
+        })
     }
 
     pub fn get_or_parse_spl_instructions(
@@ -200,7 +210,10 @@ impl VersionedTransactionResolved {
         if self.parsed_spl_instructions.is_none() {
             self.parsed_spl_instructions = Some(IxUtils::parse_token_instructions(self)?);
         }
-        Ok(self.parsed_spl_instructions.as_ref().unwrap())
+
+        self.parsed_spl_instructions.as_ref().ok_or_else(|| {
+            KoraError::SerializationError("Parsed SPL instructions not found".to_string())
+        })
     }
 }
 
@@ -229,65 +242,33 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
     async fn sign_transaction(
         &mut self,
-        signer: &std::sync::Arc<KoraSigner>,
+        signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError> {
-        let validator = TransactionValidator::new(signer.solana_pubkey())?;
+        let fee_payer = signer.pubkey();
+        let config = &get_config()?;
+        let validator = TransactionValidator::new(fee_payer)?;
 
         // Validate transaction and accounts (already resolved)
-        validator.validate_transaction(self).await?;
+        validator.validate_transaction(self, rpc_client).await?;
 
-        // Get latest blockhash and update transaction
-        let mut transaction = self.transaction.clone();
-
-        if transaction.signatures.is_empty() {
-            let blockhash = rpc_client
-                .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-                .await?;
-            transaction.message.set_recent_blockhash(blockhash.0);
-        }
-
-        // Validate transaction fee using resolved transaction
-        let estimated_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, self).await?;
-        validator.validate_lamport_fee(estimated_fee)?;
-
-        // Sign transaction
-        let signature = signer.sign_solana(&transaction).await?;
-
-        // Find the fee payer position - don't assume it's at position 0
-        let fee_payer_position = self.find_signer_position(&signer.solana_pubkey())?;
-        transaction.signatures[fee_payer_position] = signature;
-
-        // Serialize signed transaction
-        let serialized = bincode::serialize(&transaction)?;
-        let encoded = STANDARD.encode(serialized);
-
-        Ok((transaction, encoded))
-    }
-
-    async fn sign_transaction_if_paid(
-        &mut self,
-        signer: &std::sync::Arc<KoraSigner>,
-        rpc_client: &RpcClient,
-    ) -> Result<(VersionedTransaction, String), KoraError> {
-        let fee_payer = signer.solana_pubkey();
-        let config = &get_config()?;
-
+        // Calculate fee and validate payment if price model requires it
         let fee_calculation = FeeConfigUtil::estimate_kora_fee(
             rpc_client,
             self,
             &fee_payer,
             config.validation.is_payment_required(),
-            Some(config.validation.price_source.clone()),
+            config.validation.price_source.clone(),
         )
         .await?;
 
         let required_lamports = fee_calculation.total_fee_lamports;
 
-        // Only validate payment if not free
+        // Validate payment if price model is not Free
         if required_lamports > 0 {
+            log::info!("Payment validation: required_lamports={}", required_lamports);
             // Get the expected payment destination
-            let payment_destination = config.kora.get_payment_address(&signer.solana_pubkey())?;
+            let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
             // Validate token payment using the resolved transaction
             TransactionValidator::validate_token_payment(
@@ -297,17 +278,49 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                 &payment_destination,
             )
             .await?;
+
+            // Validate strict pricing if enabled
+            TransactionValidator::validate_strict_pricing_with_fee(&fee_calculation)?;
         }
 
-        // Sign the transaction
-        self.sign_transaction(signer, rpc_client).await
+        // Get latest blockhash and update transaction
+        let mut transaction = self.transaction.clone();
+
+        if transaction.signatures.is_empty() {
+            let blockhash = rpc_client
+                .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+                .await?;
+            transaction.message.set_recent_blockhash(blockhash.0);
+        }
+
+        // Validate transaction fee using resolved transaction
+        let estimated_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, self).await?;
+        validator.validate_lamport_fee(estimated_fee)?;
+
+        // Sign transaction
+        let message_bytes = transaction.message.serialize();
+        let signature = signer
+            .sign_message(&message_bytes)
+            .await
+            .map_err(|e| KoraError::SigningError(e.to_string()))?;
+
+        // Find the fee payer position - don't assume it's at position 0
+        let fee_payer_position = self.find_signer_position(&fee_payer)?;
+        transaction.signatures[fee_payer_position] = signature;
+
+        // Serialize signed transaction
+        let serialized = bincode::serialize(&transaction)?;
+        let encoded = STANDARD.encode(serialized);
+
+        Ok((transaction, encoded))
     }
 
     async fn sign_and_send_transaction(
         &mut self,
-        signer: &std::sync::Arc<KoraSigner>,
+        signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError> {
+        // Payment validation is handled in sign_transaction
         let (transaction, encoded) = self.sign_transaction(signer, rpc_client).await?;
 
         // Send and confirm transaction
@@ -389,11 +402,11 @@ mod tests {
 
     use super::*;
     use solana_address_lookup_table_interface::state::LookupTableMeta;
-    use solana_message::{v0, Message};
+    use solana_message::{compiled_instruction::CompiledInstruction, v0, Message};
     use solana_sdk::{
         account::Account,
         hash::Hash,
-        instruction::{AccountMeta, CompiledInstruction, Instruction},
+        instruction::{AccountMeta, Instruction},
         signature::Keypair,
         signer::Signer,
     };
@@ -421,7 +434,7 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx);
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let encoded = resolved.encode_b64_transaction().unwrap();
         assert!(!encoded.is_empty());
         assert!(encoded
@@ -441,7 +454,7 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx);
+        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let encoded = resolved.encode_b64_transaction().unwrap();
         let decoded = TransactionUtil::decode_b64_transaction(&encoded).unwrap();
 
@@ -459,7 +472,8 @@ mod tests {
         );
         let message =
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let position = transaction.find_signer_position(&keypair.pubkey()).unwrap();
         assert_eq!(position, 0); // Fee payer is typically at position 0
@@ -487,7 +501,8 @@ mod tests {
             address_table_lookups: vec![],
         };
         let message = VersionedMessage::V0(v0_message);
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let position = transaction.find_signer_position(&keypair.pubkey()).unwrap();
         assert_eq!(position, 0);
@@ -519,7 +534,8 @@ mod tests {
             address_table_lookups: vec![],
         };
         let message = VersionedMessage::V0(v0_message);
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         assert_eq!(transaction.find_signer_position(&keypair1.pubkey()).unwrap(), 0);
         assert_eq!(transaction.find_signer_position(&keypair2.pubkey()).unwrap(), 1);
@@ -537,7 +553,8 @@ mod tests {
         );
         let message =
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         let result = transaction.find_signer_position(&missing_keypair.pubkey());
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
@@ -563,7 +580,8 @@ mod tests {
             address_table_lookups: vec![],
         };
         let message = VersionedMessage::V0(v0_message);
-        let transaction = TransactionUtil::new_unsigned_versioned_transaction_resolved(message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         let search_key = Pubkey::new_unique();
 
         let result = transaction.find_signer_position(&search_key);
@@ -582,11 +600,14 @@ mod tests {
                 AccountMeta::new_readonly(Pubkey::new_unique(), false),
             ],
         );
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction.clone()], Some(&keypair.pubkey())));
+        let message = VersionedMessage::Legacy(Message::new(
+            std::slice::from_ref(&instruction),
+            Some(&keypair.pubkey()),
+        ));
         let transaction = VersionedTransaction::try_new(message.clone(), &[&keypair]).unwrap();
 
-        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
 
         assert_eq!(resolved.transaction, transaction);
         assert_eq!(resolved.all_account_keys, transaction.message.static_account_keys());
@@ -627,7 +648,8 @@ mod tests {
         let message = VersionedMessage::V0(v0_message);
         let transaction = VersionedTransaction::try_new(message.clone(), &[&keypair]).unwrap();
 
-        let resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
 
         assert_eq!(resolved.transaction, transaction);
         assert_eq!(resolved.all_account_keys, vec![keypair.pubkey(), other_account, program_id]);
@@ -648,8 +670,10 @@ mod tests {
             &[1, 2, 3],
             vec![AccountMeta::new(keypair.pubkey(), true)],
         );
-        let message =
-            VersionedMessage::Legacy(Message::new(&[instruction.clone()], Some(&keypair.pubkey())));
+        let message = VersionedMessage::Legacy(Message::new(
+            std::slice::from_ref(&instruction),
+            Some(&keypair.pubkey()),
+        ));
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
         // Mock RPC client that will be used for inner instructions
@@ -878,7 +902,8 @@ mod tests {
         );
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let mut resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
         let inner_instructions =
             resolved.fetch_inner_instructions(&rpc_client, true).await.unwrap();
 
@@ -930,7 +955,8 @@ mod tests {
         );
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let mut resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
         let inner_instructions =
             resolved.fetch_inner_instructions(&rpc_client, false).await.unwrap();
 
@@ -948,12 +974,13 @@ mod tests {
 
         // Create a system transfer instruction
         let instruction =
-            solana_sdk::system_instruction::transfer(&keypair.pubkey(), &recipient, 1000000);
+            solana_system_interface::instruction::transfer(&keypair.pubkey(), &recipient, 1000000);
         let message =
             VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
-        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        let mut resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
 
         // First call should parse and cache
         let parsed1_len = {

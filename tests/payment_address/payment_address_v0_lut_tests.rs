@@ -5,7 +5,7 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
 };
-use spl_associated_token_account::instruction::create_associated_token_account_idempotent;
+use spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent;
 use std::str::FromStr;
 
 #[tokio::test]
@@ -36,7 +36,7 @@ async fn test_sign_transaction_if_paid_with_payment_address_v0_with_lookup() {
         .expect("Failed to create signed V0 transaction with mint in lookup table");
 
     let response: serde_json::Value = ctx
-        .rpc_call("signTransactionIfPaid", rpc_params![encoded_tx])
+        .rpc_call("signTransaction", rpc_params![encoded_tx])
         .await
         .expect("Failed to sign V0 transaction with mint in lookup table");
 
@@ -61,7 +61,7 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_v0_with_lookup() {
         &fee_payer_keypair.pubkey(),
         &wrong_destination.pubkey(),
         &test_mint,
-        &spl_token::id(),
+        &spl_token_interface::id(),
     );
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
@@ -83,7 +83,7 @@ async fn test_sign_transaction_if_paid_with_wrong_destination_v0_with_lookup() {
         .expect("Failed to create signed V0 transaction with mint in lookup table");
 
     let response: Result<serde_json::Value, _> =
-        ctx.rpc_call("signTransactionIfPaid", rpc_params![encoded_tx]).await;
+        ctx.rpc_call("signTransaction", rpc_params![encoded_tx]).await;
 
     assert!(response.is_err(), "Expected payment validation to fail for wrong destination");
 }

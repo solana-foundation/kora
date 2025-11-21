@@ -3,6 +3,7 @@ use crate::{
     metrics::run_metrics_server_if_required,
     rpc_server::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
+        middleware_utils::MethodValidationLayer,
         rpc::KoraRpc,
     },
     usage_limit::UsageTracker,
@@ -64,6 +65,9 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
     let (metrics_handle, metrics_layers, balance_tracker_handle) =
         run_metrics_server_if_required(port, rpc_client).await?;
 
+    // Build whitelist of allowed methods from enabled_methods config
+    let allowed_methods = config.kora.enabled_methods.get_enabled_method_names();
+
     let middleware = tower::ServiceBuilder::new()
         // Add metrics handler first (before other layers) so it can intercept /metrics
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
@@ -73,22 +77,24 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
             metrics_layers.as_ref().and_then(|layers| layers.metrics_handler_layer.clone()),
         )
         .layer(cors)
+        // Method validation layer -  to fail fast
+        .layer(MethodValidationLayer::new(allowed_methods.clone()))
         // Add metrics collection layer
         .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
         // Add authentication layer for API key if configured
         .option_layer(
             (get_value_by_priority("KORA_API_KEY", config.kora.auth.api_key.clone()))
-                .map(|key| ApiKeyAuthLayer::new(key.clone())),
+                .map(ApiKeyAuthLayer::new),
         )
         // Add authentication layer for HMAC if configured
         .option_layer(
-            (get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone())).map(
-                |secret| HmacAuthLayer::new(secret.clone(), config.kora.auth.max_timestamp_age),
-            ),
+            (get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone()))
+                .map(|secret| HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)),
         );
 
     // Configure and build the server with HTTP support
     let server = ServerBuilder::default()
+        .max_request_body_size(config.kora.max_request_body_size as u32)
         .set_middleware(middleware)
         .http_only() // Explicitly enable HTTP
         .build(addr)
@@ -191,14 +197,6 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
         get_blockhash
     );
     register_method_if_enabled!(module, enabled_methods, get_config, "getConfig", get_config);
-    register_method_if_enabled!(
-        module,
-        enabled_methods,
-        sign_transaction_if_paid,
-        "signTransactionIfPaid",
-        sign_transaction_if_paid,
-        with_params
-    );
 
     Ok(module)
 }
@@ -261,7 +259,7 @@ mod tests {
         // Verify that the module has the expected methods
         let module = result.unwrap();
         let method_names: Vec<&str> = module.method_names().collect();
-        assert_eq!(method_names.len(), 10);
+        assert_eq!(method_names.len(), 9);
         assert!(method_names.contains(&"liveness"));
         assert!(method_names.contains(&"estimateTransactionFee"));
         assert!(method_names.contains(&"getSupportedTokens"));
@@ -271,7 +269,6 @@ mod tests {
         assert!(method_names.contains(&"transferTransaction"));
         assert!(method_names.contains(&"getBlockhash"));
         assert!(method_names.contains(&"getConfig"));
-        assert!(method_names.contains(&"signTransactionIfPaid"));
     }
 
     #[test]
@@ -286,7 +283,6 @@ mod tests {
             transfer_transaction: false,
             get_blockhash: false,
             get_config: false,
-            sign_transaction_if_paid: false,
             liveness: false,
         };
 
@@ -318,7 +314,6 @@ mod tests {
             sign_and_send_transaction: false,
             transfer_transaction: false,
             get_blockhash: false,
-            sign_transaction_if_paid: false,
         };
 
         let kora_config = KoraConfigBuilder::new().with_enabled_methods(enabled_methods).build();

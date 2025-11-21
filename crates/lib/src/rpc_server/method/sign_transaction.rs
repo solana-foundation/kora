@@ -7,6 +7,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_signers::SolanaSigner;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
@@ -23,7 +24,6 @@ pub struct SignTransactionRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SignTransactionResponse {
-    pub signature: String,
     pub signed_transaction: String,
     /// Public key of the signer used (for client consistency)
     pub signer_pubkey: String,
@@ -50,12 +50,11 @@ pub async fn sign_transaction(
     let (signed_transaction, _) =
         resolved_transaction.sign_transaction(&signer, rpc_client).await?;
 
-    let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction);
+    let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction)?;
 
     Ok(SignTransactionResponse {
-        signature: transaction.signatures[0].to_string(),
         signed_transaction: encoded,
-        signer_pubkey: signer.solana_pubkey().to_string(),
+        signer_pubkey: signer.pubkey().to_string(),
     })
 }
 

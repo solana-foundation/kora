@@ -5,62 +5,27 @@ test:
 # Build transfer hook program (is checked in, so only need to build if changes are made)
 build-transfer-hook:
 	$(call print_header,BUILDING TRANSFER HOOK PROGRAM)
-	$(call print_step,Building transfer hook program...)
 	cd tests/src/common/transfer-hook-example && \
 		chmod +x build.sh && \
 		./build.sh
 	$(call print_success,Transfer hook program built at tests/src/common/transfer-hook-example/target/deploy/)
 
-# Run all integration tests with clean output
+# Run all integration tests using new config-driven test runner
 test-integration:
 	$(call print_header,KORA INTEGRATION TEST SUITE)
-	$(call print_step,Initializing test infrastructure)
-	@$(call start_solana_validator)
-	$(call print_substep,Setting up base test environment...)
-	@KORA_PRIVATE_KEY="$$(cat tests/src/common/local-keys/fee-payer-local.json)" cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT)
-	$(call print_success,Infrastructure ready)
-	
-	@$(call run_integration_phase,1,RPC tests,$(REGULAR_CONFIG),,--test rpc,)
-	@$(call run_integration_phase,2,token tests,$(REGULAR_CONFIG),,--test tokens,)
-	@$(call run_integration_phase,3,external tests,$(REGULAR_CONFIG),,--test external,)
-	@$(call run_integration_phase,4,auth tests,$(AUTH_CONFIG),,--test auth,)
-	@$(call run_integration_phase,5,payment address tests,$(PAYMENT_ADDRESS_CONFIG),,--test payment_address,true)
-	@$(call run_multi_signer_phase,6,multi-signer tests,$(REGULAR_CONFIG),$(MULTI_SIGNERS_CONFIG),--test multi_signer)
+	@cargo run -p tests --bin test_runner
 
-	$(call print_header,TEST SUITE COMPLETE)
-	@$(call stop_solana_validator)
+# Verbose integration tests (shows detailed output)
+test-integration-verbose:
+	$(call print_header,KORA INTEGRATION TEST SUITE - VERBOSE)
+	@cargo run -p tests --bin test_runner -- --verbose
 
-# Individual test targets for development
-test-regular:
-	$(call print_header,REGULAR TESTS)
-	@$(call start_solana_validator)
-	@cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT)
-	$(call run_integration_phase,1,Regular Tests,$(REGULAR_CONFIG),,--test rpc,)
-	@$(call stop_solana_validator)
+# Force refresh test accounts (ignore cached)
+test-integration-fresh:
+	$(call print_header,KORA INTEGRATION TEST SUITE - FRESH SETUP)
+	@cargo run -p tests --bin test_runner -- --force-refresh
 
-test-token:
-	$(call print_header,TOKEN TESTS)
-	@$(call start_solana_validator)
-	@cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT)
-	$(call run_integration_phase,1,Tokens Tests,$(REGULAR_CONFIG),,--test tokens,)
-	@$(call stop_solana_validator)
-
-test-auth:
-	$(call print_header,AUTHENTICATION TESTS)
-	@$(call start_solana_validator)
-	@cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT)
-	$(call run_integration_phase,1,Authentication Tests,$(AUTH_CONFIG),,--test auth,)
-	@$(call stop_solana_validator)
-
-test-payment:
-	$(call print_header,PAYMENT ADDRESS TESTS)
-	@$(call start_solana_validator)
-	@cargo run -p tests --bin setup_test_env $(QUIET_OUTPUT)
-	$(call run_integration_phase,1,Payment Address Tests,$(PAYMENT_ADDRESS_CONFIG),,--test payment_address,true)
-	@$(call stop_solana_validator)
-
-test-multi-signer:
-	$(call print_header,MULTI-SIGNER TESTS)
-	@$(call start_solana_validator)
-	$(call run_multi_signer_phase,1,Multi-Signer Tests,$(REGULAR_CONFIG),$(MULTI_SIGNERS_CONFIG),--test multi-signers)
-	@$(call stop_solana_validator)
+# Run specific test phases with filters (for CI)
+test-integration-filtered:
+	$(call print_header,KORA INTEGRATION TEST SUITE - FILTERED)
+	@cargo run -p tests --bin test_runner -- $(FILTERS)

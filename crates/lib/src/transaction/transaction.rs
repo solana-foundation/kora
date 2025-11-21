@@ -42,14 +42,18 @@ impl TransactionUtil {
 
     pub fn new_unsigned_versioned_transaction_resolved(
         message: VersionedMessage,
-    ) -> VersionedTransactionResolved {
+    ) -> Result<VersionedTransactionResolved, KoraError> {
         let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         VersionedTransactionResolved::from_kora_built_transaction(&transaction)
     }
 
-    pub fn encode_versioned_transaction(transaction: &VersionedTransaction) -> String {
-        let serialized = bincode::serialize(transaction).unwrap();
-        STANDARD.encode(serialized)
+    pub fn encode_versioned_transaction(
+        transaction: &VersionedTransaction,
+    ) -> Result<String, KoraError> {
+        let serialized = bincode::serialize(transaction).map_err(|_| {
+            KoraError::SerializationError("Failed to serialize transaction.".to_string())
+        })?;
+        Ok(STANDARD.encode(serialized))
     }
 }
 
@@ -57,10 +61,10 @@ impl TransactionUtil {
 mod tests {
     use super::*;
     use crate::error::KoraError;
-    use solana_message::{v0, Message};
+    use solana_message::{compiled_instruction::CompiledInstruction, v0, Message};
     use solana_sdk::{
         hash::Hash,
-        instruction::{AccountMeta, CompiledInstruction, Instruction},
+        instruction::{AccountMeta, Instruction},
         pubkey::Pubkey,
         signature::Keypair,
         signer::Signer as _,

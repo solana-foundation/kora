@@ -1,10 +1,13 @@
 import { KoraClient } from '../src/index.js';
+import { loadEnvironmentVariables } from './setup.js';
 
-export function runAuthenticationTests(rpcUrl: string = 'http://localhost:8080/') {
+export function runAuthenticationTests() {
+    const { koraRpcUrl } = loadEnvironmentVariables();
+
     describe('Authentication', () => {
         it('should fail with incorrect API key', async () => {
             const client = new KoraClient({
-                rpcUrl,
+                rpcUrl: koraRpcUrl,
                 apiKey: 'WRONG-API-KEY',
             });
 
@@ -14,7 +17,7 @@ export function runAuthenticationTests(rpcUrl: string = 'http://localhost:8080/'
 
         it('should fail with incorrect HMAC secret', async () => {
             const client = new KoraClient({
-                rpcUrl,
+                rpcUrl: koraRpcUrl,
                 hmacSecret: 'WRONG-HMAC-SECRET',
             });
 
@@ -24,7 +27,7 @@ export function runAuthenticationTests(rpcUrl: string = 'http://localhost:8080/'
 
         it('should fail with both incorrect credentials', async () => {
             const client = new KoraClient({
-                rpcUrl,
+                rpcUrl: koraRpcUrl,
                 apiKey: 'WRONG-API-KEY',
                 hmacSecret: 'WRONG-HMAC-SECRET',
             });
@@ -35,7 +38,7 @@ export function runAuthenticationTests(rpcUrl: string = 'http://localhost:8080/'
 
         it('should succeed with correct credentials', async () => {
             const client = new KoraClient({
-                rpcUrl,
+                rpcUrl: koraRpcUrl,
                 apiKey: 'test-api-key-123',
                 hmacSecret: 'test-hmac-secret-456',
             });
@@ -49,7 +52,7 @@ export function runAuthenticationTests(rpcUrl: string = 'http://localhost:8080/'
 
         it('should fail when no credentials provided but auth is required', async () => {
             const client = new KoraClient({
-                rpcUrl,
+                rpcUrl: koraRpcUrl,
             });
 
             // No credentials should fail when auth is enabled

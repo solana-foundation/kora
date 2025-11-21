@@ -3,6 +3,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_message::Message;
 use solana_sdk::{message::VersionedMessage, pubkey::Pubkey};
+use solana_signers::SolanaSigner;
 use solana_system_interface::instruction::transfer;
 use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;
@@ -14,7 +15,7 @@ use crate::{
         TransactionUtil, VersionedMessageExt, VersionedTransactionOps, VersionedTransactionResolved,
     },
     validator::transaction_validator::TransactionValidator,
-    CacheUtil, KoraError, Signer as _,
+    CacheUtil, KoraError,
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -42,7 +43,7 @@ pub async fn transfer_transaction(
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
-    let fee_payer = signer.solana_pubkey();
+    let fee_payer = signer.pubkey();
 
     let validator = TransactionValidator::new(fee_payer)?;
 
@@ -112,7 +113,7 @@ pub async fn transfer_transaction(
     }
 
     let blockhash =
-        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::finalized()).await?;
+        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::confirmed()).await?;
 
     let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &instructions,
@@ -122,15 +123,19 @@ pub async fn transfer_transaction(
     let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
     let mut resolved_transaction =
-        VersionedTransactionResolved::from_kora_built_transaction(&transaction);
+        VersionedTransactionResolved::from_kora_built_transaction(&transaction)?;
 
     // validate transaction before signing
-    validator.validate_transaction(&mut resolved_transaction).await?;
+    validator.validate_transaction(&mut resolved_transaction, rpc_client).await?;
 
     // Find the fee payer position in the account keys
     let fee_payer_position = resolved_transaction.find_signer_position(&fee_payer)?;
 
-    let signature = signer.sign_solana(&resolved_transaction).await?;
+    let message_bytes = resolved_transaction.transaction.message.serialize();
+    let signature = signer
+        .sign_message(&message_bytes)
+        .await
+        .map_err(|e| KoraError::SigningError(e.to_string()))?;
 
     resolved_transaction.transaction.signatures[fee_payer_position] = signature;
 
@@ -159,15 +164,15 @@ mod tests {
     #[tokio::test]
     async fn test_transfer_transaction_invalid_source() {
         let config = ConfigMockBuilder::new().build();
-        let _ = update_config(config);
+        update_config(config).unwrap();
         let _ = setup_or_get_test_signer();
 
-        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());
 
         let request = TransferTransactionRequest {
             amount: 1000,
             token: Pubkey::new_unique().to_string(),
-            source: "invalid_pubkey".to_string(),
+            source: "invalid".to_string(),
             destination: Pubkey::new_unique().to_string(),
             signer_key: None,
         };
@@ -188,10 +193,10 @@ mod tests {
     #[tokio::test]
     async fn test_transfer_transaction_invalid_destination() {
         let config = ConfigMockBuilder::new().build();
-        let _ = update_config(config);
+        update_config(config).unwrap();
         let _ = setup_or_get_test_signer();
 
-        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());
 
         let request = TransferTransactionRequest {
             amount: 1000,
@@ -216,10 +221,10 @@ mod tests {
     #[tokio::test]
     async fn test_transfer_transaction_invalid_token() {
         let config = ConfigMockBuilder::new().build();
-        let _ = update_config(config);
+        update_config(config).unwrap();
         let _ = setup_or_get_test_signer();
 
-        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());
 
         let request = TransferTransactionRequest {
             amount: 1000,

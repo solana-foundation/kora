@@ -70,9 +70,8 @@ impl SignerValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signer::{
-        config::SignerPoolSettings, memory_signer::config::MemorySignerConfig, SignerConfig,
-        SignerTypeConfig,
+    use crate::signer::config::{
+        MemorySignerConfig, SignerConfig, SignerPoolSettings, SignerTypeConfig,
     };
 
     #[test]

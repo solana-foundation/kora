@@ -4,8 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 
 [[bin]]
-name = "setup_test_env"
-path = "src/bin/setup_test_env.rs"
+name = "test_runner"
+path = "src/bin/test_runner.rs"
 
 
 [[test]]
@@ -21,6 +21,14 @@ name = "auth"
 path = "auth/main.rs"
 
 [[test]]
+name = "adversarial"
+path = "adversarial/main.rs"
+
+[[test]]
+name = "fee_payer_policy"
+path = "fee_payer_policy/main.rs"
+
+[[test]]
 name = "multi_signer"
 path = "multi_signer/main.rs"
 
@@ -32,18 +40,23 @@ path = "external/main.rs"
 name = "payment_address"
 path = "payment_address/main.rs"
 
+[[test]]
+name = "free_signing"
+path = "free_signing/main.rs"
+
 [dependencies]
 kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }
 solana-commitment-config = { workspace = true }
+solana-program-pack = { workspace = true }
+solana-compute-budget-interface = { workspace = true }
 solana-message = { workspace = true }
 solana-system-interface = { workspace = true }
 solana-client = { workspace = true }
-spl-token = { workspace = true }
-spl-token-2022 = { workspace = true }
-spl-associated-token-account = { workspace = true }
-spl-transfer-hook-interface = { version = "0.10.0" }
-solana-compute-budget-interface = "2.2.2"
+spl-token-interface = { workspace = true }
+spl-token-2022-interface = { workspace = true }
+spl-associated-token-account-interface = { workspace = true }
+spl-transfer-hook-interface = { version = "2.0.0" }
 bincode = { workspace = true }
 bs58 = { workspace = true }
 dotenv = { workspace = true }
@@ -57,9 +70,12 @@ reqwest = { workspace = true }
 futures = { workspace = true }
 anyhow = { workspace = true }
 once_cell = "1.21.3"
-clap = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 toml = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }
 colored = "3.0"
 serde = { workspace = true }
 base64 = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }

@@ -1,13 +1,12 @@
+#![cfg(test)]
+
 use hmac::{Hmac, Mac};
 use kora_lib::constant::{X_HMAC_SIGNATURE, X_TIMESTAMP};
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use crate::common::client::TestClient;
-
-pub const TEST_API_KEY: &str = "test-api-key-123";
-pub const TEST_HMAC_SECRET: &str = "test-hmac-secret-456";
+use crate::common::{client::TestClient, constants::TEST_HMAC_SECRET};
 
 pub static JSON_TEST_BODY: Lazy<Value> = Lazy::new(|| {
     json!({

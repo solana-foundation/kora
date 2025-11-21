@@ -60,7 +60,7 @@ const DEFAULTS = {
 
     // DO NOT USE THESE KEYPAIRS IN PRODUCTION, TESTING KEYPAIRS ONLY
     KORA_ADDRESS: '7AqpcUvgJ7Kh1VmJZ44rWp2XDow33vswo9VK9VqpPU2d', // Make sure this matches the kora-rpc signer address on launch (root .env)
-    SENDER_SECRET: '3Tdt5TrRGJYPbTo8zZAscNTvgRGnCLM854tCpxapggUazqdYn6VQRQ9DqNz1UkEfoPCYKj6PwSwCNtckGGvAKugb',
+    SENDER_SECRET: 'tzgfgSWTE3KUA6qfRoFYLaSfJm59uUeZRDy4ybMrLn1JV2drA1mftiaEcVFvq1Lok6h6EX2C4Y9kSKLvQWyMpS5', // HhA5j2rRiPbMrpF2ZD36r69FyZf3zWmEHRNSZbbNdVjf
     TEST_USDC_MINT_SECRET: '59kKmXphL5UJANqpFFjtH17emEq3oRNmYsx6a3P3vSGJRmhMgVdzH77bkNEi9bArRViT45e8L2TsuPxKNFoc3Qfg', // Make sure this matches the USDC mint in kora.toml (9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ)
     DESTINATION_ADDRESS: 'AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM',
     KORA_SIGNER_TYPE: 'memory', // Default signer type
@@ -68,6 +68,7 @@ const DEFAULTS = {
 
 interface TestSuite {
     koraClient: KoraClient;
+    koraRpcUrl: string;
     testWallet: KeyPairSigner<string>;
     usdcMint: Address<string>;
     destinationAddress: Address<string>;
@@ -85,7 +86,7 @@ const createKeyPairSignerFromB58Secret = async (b58Secret: string) => {
     return await createKeyPairSignerFromBytes(b58SecretEncoded);
 };
 // TODO Add KORA_PRIVATE_KEY_2= support for multi-signer configs
-function loadEnvironmentVariables() {
+export function loadEnvironmentVariables() {
     const koraSignerType = process.env.KORA_SIGNER_TYPE || DEFAULTS.KORA_SIGNER_TYPE;
 
     let koraAddress = process.env.KORA_ADDRESS;
@@ -283,7 +284,8 @@ async function initializeToken({
               ),
           )
         : [];
-    const instructions = [...baseInstructions, ...otherAtaInstructions];
+    const alreadyExists = await mintExists(client, mint.address);
+    let instructions = alreadyExists ? [...otherAtaInstructions] : [...baseInstructions, ...otherAtaInstructions];
     await sendAndConfirmInstructions(client, payer, instructions, 'Initialize token and ATAs', 'finalized');
 }
 
@@ -346,11 +348,21 @@ async function setupTestSuite(): Promise<TestSuite> {
 
     return {
         koraClient: new KoraClient({ rpcUrl: koraRpcUrl, ...authConfig }),
+        koraRpcUrl,
         testWallet,
         usdcMint: usdcMint.address,
         destinationAddress,
         koraAddress,
     };
 }
+
+const mintExists = async (client: Client, mint: Address<string>) => {
+    try {
+        const mintAccount = await client.rpc.getAccountInfo(mint).send();
+        return mintAccount.value !== null;
+    } catch (error) {
+        return false;
+    }
+};
 
 export default setupTestSuite;

@@ -1,0 +1,117 @@
+[kora]
+rate_limit = 100
+# Optional: Payment address to receive payment tokens (defaults to signer address)
+# payment_address = "YourPaymentAddressPubkey11111111111111111111"
+
+[kora.auth]
+api_key = "kora_facilitator_api_key_example"
+
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60
+
+[kora.enabled_methods]
+liveness = false
+estimate_transaction_fee = false
+get_supported_tokens = false
+sign_transaction = true
+sign_and_send_transaction = true
+transfer_transaction = false
+get_blockhash = true
+get_config = true
+get_payer_signer = true
+
+[validation]
+max_allowed_lamports = 1000000
+max_signatures = 10
+price_source = "Mock"
+allowed_programs = [
+    "11111111111111111111111111111111",            # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # Token Program
+    # "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  # Token-2022 Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
+    "ComputeBudget111111111111111111111111111111",  # Compute Budget Program
+]
+allowed_tokens = [
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", # USDC devnet
+]
+allowed_spl_paid_tokens = [
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", # USDC devnet
+]
+
+disallowed_accounts = []
+
+[validation.fee_payer_policy]
+
+[validation.fee_payer_policy.system]
+allow_transfer = false
+allow_assign = false
+allow_create_account = false
+allow_allocate = false
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false
+allow_advance = false
+allow_authorize = false
+allow_withdraw = false
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+allow_revoke = false
+allow_set_authority = false
+allow_mint_to = false
+allow_initialize_mint = false
+allow_initialize_account = false
+allow_initialize_multisig = false
+allow_freeze_account = false
+allow_thaw_account = false
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+allow_revoke = false
+allow_set_authority = false
+allow_mint_to = false
+allow_initialize_mint = false
+allow_initialize_account = false
+allow_initialize_multisig = false
+allow_freeze_account = false
+allow_thaw_account = false
+
+[validation.price]
+type = "free" # free / margin / fixed
+
+[validation.token2022]
+blocked_mint_extensions = [
+    "confidential_transfer_mint", # Confidential transfer configuration for the mint
+    "confidential_mint_burn",     # Confidential mint and burn configuration
+    "transfer_fee_config",        # Transfer fee configuration
+    "mint_close_authority",       # Authority allowed to close the mint
+    "interest_bearing_config",    # Interest-bearing token configuration
+    "non_transferable",           # Makes tokens non-transferable
+    "permanent_delegate",         # Permanent delegate for the mint
+    "transfer_hook",              # Block tokens with transfer hooks
+    "pausable",                   # Block pausable tokens
+]
+blocked_account_extensions = [
+    "confidential_transfer_account", # Confidential transfer state for the account
+    "non_transferable_account",      # Non-transferable token account
+    "transfer_hook_account",         # Transfer hook state for the account
+    "pausable_account",              # Pausable token account state
+    "memo_transfer",                 # Requires memo for transfers
+    "cpi_guard",                     # Prevents certain CPI calls
+    "immutable_owner",               # Account owner cannot be changed
+    "default_account_state",         # Default state for new accounts
+]
+
+[kora.usage_limit]
+enabled = false
+cache_url = "redis://redis:6379"
+max_transactions = 2
+fallback_if_unavailable = false

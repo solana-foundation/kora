@@ -2,6 +2,7 @@ use crate::common::*;
 use jsonrpsee::rpc_params;
 use serde_json::json;
 use solana_sdk::signature::Signer;
+use std::str::FromStr;
 
 #[tokio::test]
 async fn test_multi_signer_get_config() {
@@ -112,10 +113,30 @@ async fn test_signer_key_consistency() {
     );
     assert_eq!(estimate_signer, transfer_signer, "Both calls should use same signer");
 
-    // Now call signTransaction with the same signer key using the built transaction
-    let built_tx = transfer_response["transaction"].as_str().unwrap();
+    // Build a proper signed transaction with payment for signTransaction test
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+    let fee_payer =
+        solana_sdk::pubkey::Pubkey::from_str(&first_signer_pubkey).expect("Invalid pubkey");
+
+    let signed_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &RecipientTestHelper::get_recipient_pubkey(), 10)
+        .build()
+        .await
+        .expect("Failed to create signed transaction");
+
+    // Now call signTransaction with the same signer key
     let sign_response: serde_json::Value = ctx
-        .rpc_call("signTransaction", rpc_params![built_tx, &first_signer_pubkey])
+        .rpc_call("signTransaction", rpc_params![signed_tx, &first_signer_pubkey])
         .await
         .expect("Failed to sign transaction");
 

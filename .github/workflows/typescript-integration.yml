@@ -10,9 +10,13 @@ on:
       - "sdks/ts/**"
       # Backend changes that affect TS integration
       - "crates/**"
+      - "tests/**"
       - "Cargo.*"
       - "Makefile"
+      - "makefiles/**"
       - ".github/workflows/typescript-integration.yml"
+      - ".github/workflows/build-rust.yml"
+      - ".github/actions/run-test-runner/**"
 
   pull_request:
     branches: [main, "release/*"]
@@ -21,37 +25,55 @@ on:
       - "sdks/ts/**"
       # Backend changes that affect TS integration
       - "crates/**"
+      - "tests/**"
       - "Cargo.*"
       - "Makefile"
+      - "makefiles/**"
       - ".github/workflows/typescript-integration.yml"
+      - ".github/workflows/build-rust.yml"
+      - ".github/actions/run-test-runner/**"
 
 env:
   CARGO_TERM_COLOR: always
   RUST_LOG: info
 
 jobs:
+  build:
+    name: Build Rust Backend
+    uses: ./.github/workflows/build-rust.yml
+    with:
+      cache-key: "typescript-integration-build"
+      artifact-name: "rust-binaries-ts"
+
   typescript-integration:
     name: TypeScript SDK Integration Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    needs: build
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        test-group: [typescript_basic, typescript_auth]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "typescript-integration"
-          cache-on-failure: true
+          shared-key: "typescript-integration-${{ matrix.test-group }}"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: target/debug/
+
+      - name: Make binaries executable
+        run: chmod +x target/debug/kora target/debug/test_runner
 
       - name: Setup Solana CLI
         uses: ./.github/actions/setup-solana
-
-      - name: Setup Kora RPC server
-        uses: ./.github/actions/setup-kora-rpc
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -84,34 +106,16 @@ jobs:
         run: pnpm build
 
       - name: Run TypeScript integration tests
-        working-directory: sdks/ts
-        run: |
-          echo "🧪 Running TypeScript SDK integration tests..."
-          # The test script handles starting/stopping its own validator
-          pnpm test:ci:integration
-
-      - name: Stop Kora RPC server
-        run: |
-          if [ ! -z "$KORA_PID" ]; then
-            kill $KORA_PID || true
-          fi
-          sleep 2
-
-      - name: Setup Kora RPC server (auth config)
-        uses: ./.github/actions/setup-kora-rpc
+        uses: ./.github/actions/run-test-runner
         with:
-          config-file: "tests/src/common/fixtures/auth-test.toml"
-
-      - name: Run TypeScript auth integration tests
-        working-directory: sdks/ts
-        run: |
-          echo "🧪 Running TypeScript SDK auth integration tests..."
-          pnpm test:ci:integration:auth
+          filters: "--filter ${{ matrix.test-group }}"
 
       - name: Cleanup test environment
+        if: always()
         uses: ./.github/actions/cleanup-test-env
 
       - name: Show failure logs
+        if: failure()
         uses: ./.github/actions/show-failure-logs
         with:
-          test-type: "TypeScript integration"
+          test-type: "TypeScript integration (${{ matrix.test-group }})"

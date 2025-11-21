@@ -1,11 +1,14 @@
 use crate::{
     constant::{X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP},
-    rpc_server::middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method},
+    rpc_server::middleware_utils::{
+        build_response_with_graceful_error, extract_parts_and_body_bytes, get_jsonrpc_method,
+    },
 };
 use hmac::{Hmac, Mac};
 use http::{Request, Response, StatusCode};
 use jsonrpsee::server::logger::Body;
 use sha2::Sha256;
+use subtle::ConstantTimeEq;
 
 #[derive(Clone)]
 pub struct ApiKeyAuthLayer {
@@ -55,18 +58,24 @@ where
 
         Box::pin(async move {
             let unauthorized_response =
-                Response::builder().status(StatusCode::UNAUTHORIZED).body(Body::empty()).unwrap();
+                build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
 
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
-            if get_jsonrpc_method(&body_bytes) == Some("liveness".to_string()) {
-                let new_body = Body::from(body_bytes);
-                let new_request = Request::from_parts(parts, new_body);
-                return inner.call(new_request).await;
+
+            // Bypass auth for liveness endpoint
+            if let Some(method) = get_jsonrpc_method(&body_bytes) {
+                if method == "liveness" {
+                    let new_body = Body::from(body_bytes);
+                    let new_request = Request::from_parts(parts, new_body);
+                    return inner.call(new_request).await;
+                }
             }
 
+            // Check for API key header
             let req = Request::from_parts(parts, Body::from(body_bytes));
             if let Some(provided_key) = req.headers().get(X_API_KEY) {
-                if provided_key.to_str().unwrap_or("") == api_key {
+                // Constant-time comparison prevents timing attacks
+                if provided_key.as_bytes().ct_eq(api_key.as_bytes()).into() {
                     return inner.call(req).await;
                 }
             }
@@ -132,17 +141,20 @@ where
 
         Box::pin(async move {
             let unauthorized_response =
-                Response::builder().status(StatusCode::UNAUTHORIZED).body(Body::empty()).unwrap();
+                build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
 
             let signature_header = request.headers().get(X_HMAC_SIGNATURE).cloned();
             let timestamp_header = request.headers().get(X_TIMESTAMP).cloned();
 
-            // Since our proxy for get /liveness transforms the request in a POST, we need to check the liveness via the method in the body
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
-            if get_jsonrpc_method(&body_bytes) == Some("liveness".to_string()) {
-                let new_body = Body::from(body_bytes);
-                let new_request = Request::from_parts(parts, new_body);
-                return inner.call(new_request).await;
+
+            // Bypass auth for liveness endpoint
+            if let Some(method) = get_jsonrpc_method(&body_bytes) {
+                if method == "liveness" {
+                    let new_body = Body::from(body_bytes);
+                    let new_request = Request::from_parts(parts, new_body);
+                    return inner.call(new_request).await;
+                }
             }
 
             let (signature, timestamp) =
@@ -154,16 +166,18 @@ where
             let signature = signature.to_str().unwrap_or("");
             let timestamp = timestamp.to_str().unwrap_or("");
 
-            // Verify timestamp is within 5 minutes
-            let parsed_timestamp = timestamp.parse::<i64>();
-            if parsed_timestamp.is_err() {
-                return Ok(unauthorized_response);
-            }
-
-            let ts = parsed_timestamp.unwrap();
+            // Verify timestamp is within allowed age
+            let ts = match timestamp.parse::<i64>() {
+                Ok(ts) => ts,
+                Err(_) => return Ok(unauthorized_response),
+            };
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .map_err(|e| {
+                    log::error!("System time error: {e:?}");
+                    e
+                })
+                .unwrap_or_else(|_| std::time::Duration::from_secs(0))
                 .as_secs() as i64;
 
             if (now - ts).abs() > max_timestamp_age {
@@ -171,20 +185,35 @@ where
             }
 
             // Verify HMAC signature using timestamp + body
-            let message = format!("{}{}", timestamp, std::str::from_utf8(&body_bytes).unwrap());
+            let body_str = match std::str::from_utf8(&body_bytes) {
+                Ok(s) => s,
+                Err(_) => {
+                    log::error!("HMAC authentication failed: invalid UTF-8 in request body");
+                    return Ok(unauthorized_response);
+                }
+            };
+            let message = format!("{}{}", timestamp, body_str);
 
             let mut mac = match Hmac::<Sha256>::new_from_slice(secret.as_bytes()) {
                 Ok(mac) => mac,
-                Err(e) => {
-                    log::error!("Invalid HMAC secret: {e:?}");
+                Err(_) => {
+                    log::error!("HMAC authentication failed");
                     return Ok(unauthorized_response);
                 }
             };
 
             mac.update(message.as_bytes());
-            let expected_signature = hex::encode(mac.finalize().into_bytes());
 
-            if signature != expected_signature {
+            let signature_bytes = match hex::decode(signature) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    log::error!("HMAC signature hex decode failed");
+                    return Ok(unauthorized_response);
+                }
+            };
+
+            // Constant time comparison prevents timing attacks
+            if mac.verify_slice(&signature_bytes).is_err() {
                 return Ok(unauthorized_response);
             }
 
@@ -233,10 +262,11 @@ mod tests {
     async fn test_api_key_auth_valid_key() {
         let layer = ApiKeyAuthLayer::new("test-key".to_string());
         let mut service = layer.layer(MockService);
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let request = Request::builder()
             .uri("/test")
             .header(X_API_KEY, "test-key")
-            .body(Body::empty())
+            .body(Body::from(body))
             .unwrap();
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
@@ -247,10 +277,11 @@ mod tests {
     async fn test_api_key_auth_invalid_key() {
         let layer = ApiKeyAuthLayer::new("test-key".to_string());
         let mut service = layer.layer(MockService);
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let request = Request::builder()
             .uri("/test")
             .header(X_API_KEY, "wrong-key")
-            .body(Body::empty())
+            .body(Body::from(body))
             .unwrap();
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
@@ -261,7 +292,8 @@ mod tests {
     async fn test_api_key_auth_missing_header() {
         let layer = ApiKeyAuthLayer::new("test-key".to_string());
         let mut service = layer.layer(MockService);
-        let request = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
+        let request = Request::builder().uri("/test").body(Body::from(body)).unwrap();
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -294,7 +326,7 @@ mod tests {
             .as_secs()
             .to_string();
 
-        let body = r#"{"jsonrpc":"2.0","method":"test","id":1}"#;
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let message = format!("{timestamp}{body}");
 
         let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
@@ -325,7 +357,7 @@ mod tests {
             .as_secs()
             .to_string();
 
-        let body = r#"{"jsonrpc":"2.0","method":"test","id":1}"#;
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
 
         let request = Request::builder()
             .method(Method::POST)
@@ -345,8 +377,9 @@ mod tests {
         let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
         let mut service = layer.layer(MockService);
 
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let request =
-            Request::builder().method(Method::POST).uri("/test").body(Body::from("test")).unwrap();
+            Request::builder().method(Method::POST).uri("/test").body(Body::from(body)).unwrap();
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -364,7 +397,7 @@ mod tests {
                 - 600)
                 .to_string();
 
-        let body = r#"{"jsonrpc":"2.0","method":"test","id":1}"#;
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let message = format!("{expired_timestamp}{body}");
 
         let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
@@ -376,6 +409,26 @@ mod tests {
             .uri("/test")
             .header(X_TIMESTAMP, &expired_timestamp)
             .header(X_HMAC_SIGNATURE, &signature)
+            .body(Body::from(body))
+            .unwrap();
+
+        let response = service.ready().await.unwrap().call(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_hmac_auth_malformed_timestamp() {
+        let secret = "test-secret";
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
+        let mut service = layer.layer(MockService);
+
+        let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
+
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/test")
+            .header(X_TIMESTAMP, "not-a-number")
+            .header(X_HMAC_SIGNATURE, "some-signature")
             .body(Body::from(body))
             .unwrap();
 
@@ -398,25 +451,5 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn test_hmac_auth_malformed_timestamp() {
-        let secret = "test-secret";
-        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE);
-        let mut service = layer.layer(MockService);
-
-        let body = r#"{"jsonrpc":"2.0","method":"test","id":1}"#;
-
-        let request = Request::builder()
-            .method(Method::POST)
-            .uri("/test")
-            .header(X_TIMESTAMP, "not-a-number")
-            .header(X_HMAC_SIGNATURE, "some-signature")
-            .body(Body::from(body))
-            .unwrap();
-
-        let response = service.ready().await.unwrap().call(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 }
