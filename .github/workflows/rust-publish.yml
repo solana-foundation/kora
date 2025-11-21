@@ -1,131 +1,106 @@
-name: Publish kora-rpc
+name: Publish Rust Crates
 
 on:
   workflow_dispatch:
-    inputs:
-      version_bump:
-        description: 'Version bump type'
-        required: false
-        default: 'auto'
-        type: choice
-        options:
-          - auto
-          - patch
-          - minor
-          - major
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-rust
+  cancel-in-progress: false
 
 jobs:
-  publish-kora-rpc:
-    name: Publish kora-rpc
+  publish:
+    name: Publish rust crates
     runs-on: ubuntu-latest
-    # Skip if commit message contains version bump to avoid infinite loops
-    if: "!contains(github.event.head_commit.message, 'chore:')"
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-      
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      
-      - name: Build check
-        working-directory: crates/rpc
-        run: cargo build
-      
-      - name: Determine version bump from commits
-        id: version_bump
-        run: |
-          echo "📝 Analyzing commits for kora-rpc..."
-          
-          # Get last release tag for this crate
-          LAST_TAG=$(git tag -l "kora-rpc-v*" --sort=-version:refname | head -1)
-          
-          if [ -z "$LAST_TAG" ]; then
-            echo "No previous release found"
-            COMMITS=$(git log --oneline --pretty=format:"- %s" -- crates/rpc/ | head -10)
-          else
-            echo "Last release: $LAST_TAG"
-            COMMITS=$(git log --oneline "$LAST_TAG"..HEAD --pretty=format:"- %s" -- crates/rpc/)
-          fi
-          
-          # Use manual input if provided, otherwise auto-detect
-          if [ "${{ github.event.inputs.version_bump }}" != "auto" ]; then
-            echo "Using manual version bump: ${{ github.event.inputs.version_bump }}"
-            echo "bump_type=${{ github.event.inputs.version_bump }}" >> $GITHUB_OUTPUT
-          else
-            echo "Auto-detecting version bump from commits"
-            # Determine bump type from conventional commits
-            if echo "$COMMITS" | grep -q "BREAKING CHANGE\|!:"; then
-              echo "bump_type=major" >> $GITHUB_OUTPUT
-            elif echo "$COMMITS" | grep -q "^feat"; then
-              echo "bump_type=minor" >> $GITHUB_OUTPUT  
-            else
-              echo "bump_type=patch" >> $GITHUB_OUTPUT
-            fi
-          fi
-          
-          echo "commits<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMITS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Bump version and publish
-        working-directory: crates/rpc
+      - name: Build check
+        run: cargo build --workspace
+
+      - name: Get current versions
+        id: version
         run: |
-          echo "🚀 Publishing kora-rpc with ${{ steps.version_bump.outputs.bump_type }} version bump"
-          
-          # Get current version
-          CURRENT_VERSION=$(grep "^version" Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "Current version: $CURRENT_VERSION"
-          
-          # Bump version manually
-          case "${{ steps.version_bump.outputs.bump_type }}" in
-            major)
-              NEW_VERSION=$(echo $CURRENT_VERSION | awk -F. '{print ($1+1)".0.0"}')
-              ;;
-            minor) 
-              NEW_VERSION=$(echo $CURRENT_VERSION | awk -F. '{print $1"."%($2+1)".0"}')
-              ;;
-            patch)
-              NEW_VERSION=$(echo $CURRENT_VERSION | awk -F. '{print $1"."$2"."($3+1)}')
-              ;;
-          esac
-          
-          echo "New version: $NEW_VERSION"
-          
-          # Update Cargo.toml
-          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml
-          
-          # Commit version bump
-          git add Cargo.toml
-          git commit -m "chore(kora-rpc): release v$NEW_VERSION"
-          git tag "kora-rpc-v$NEW_VERSION"
-          git push origin main "kora-rpc-v$NEW_VERSION"
-          
-          # Publish to crates.io
-          cargo publish --locked --token ${{ secrets.KORA_RPC_REGISTRY_TOKEN }}
-          
-          echo "version=$NEW_VERSION" >> $GITHUB_ENV
+          # Get kora-lib version
+          LIB_VERSION=$(grep "^version" crates/lib/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "lib_version=$LIB_VERSION" >> $GITHUB_OUTPUT
+          echo "📦 kora-lib v$LIB_VERSION"
+
+          # Get kora-cli version
+          CLI_VERSION=$(grep "^version" crates/cli/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "cli_version=$CLI_VERSION" >> $GITHUB_OUTPUT
+          echo "📦 kora-cli v$CLI_VERSION"
+
+          # Get last release tag for changelog range
+          LAST_TAG=$(git tag -l "v*" --sort=-version:refname | head -1)
+          if [ -z "$LAST_TAG" ]; then
+            echo "tag_range=HEAD" >> $GITHUB_OUTPUT
+          else
+            echo "tag_range=$LAST_TAG..HEAD" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: .github/cliff.toml
+          args: ${{ steps.version.outputs.tag_range }} --strip all
+
+      - name: Create git tags
+        run: |
+          git tag "v${{ steps.version.outputs.lib_version }}"
+          git tag "kora-lib-v${{ steps.version.outputs.lib_version }}"
+          git tag "kora-cli-v${{ steps.version.outputs.cli_version }}"
+          git push origin --tags
+
+      - name: Publish kora-lib to crates.io
+        working-directory: crates/lib
+        run: cargo publish --locked
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_RPC_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_CLI_REGISTRY_TOKEN }}
+
+      - name: Publish kora-cli to crates.io
+        working-directory: crates/cli
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_CLI_REGISTRY_TOKEN }}
 
       - name: Create GitHub Release
         if: success()
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: kora-rpc-v${{ env.version }}
-          name: kora-rpc v${{ env.version }}
+          tag_name: v${{ steps.version.outputs.lib_version }}
+          name: Kora v${{ steps.version.outputs.lib_version }}
           body: |
-            ## Changes in kora-rpc v${{ env.version }}
-            
-            ${{ steps.version_bump.outputs.commits }}
+            ## Kora Release v${{ steps.version.outputs.lib_version }}
+
+            ### Published Crates
+            - `kora-lib` v${{ steps.version.outputs.lib_version }}
+            - `kora-cli` v${{ steps.version.outputs.cli_version }}
+
+            ### Changes
+
+            ${{ steps.changelog.outputs.content }}
+
+            ### Installation
+
+            ```bash
+            # Install CLI
+            cargo install kora-cli
+
+            # Or use in your Rust project
+            cargo add kora-lib
+            ```
           draft: false
           prerelease: false
         env:
