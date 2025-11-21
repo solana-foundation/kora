@@ -144,6 +144,12 @@ kora/
 └── kora.toml                 # Example configuration
 ```
 
+## Security Audit
+
+Kora has been audited by [Runtime Verification](https://runtimeverification.com/). View the [audit report](audits/20251119_runtime-verification.pdf). (Audited up to commit [8c592591](https://github.com/solana-foundation/kora/commit/8c592591debd08424a65cc471ce0403578fd5d5d))
+
+
+
 ## Community & Support
 
 - **Questions?** Ask on [Solana Stack Exchange](https://solana.stackexchange.com/) (use the `kora` tag)
