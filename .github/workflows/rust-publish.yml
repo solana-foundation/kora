@@ -44,7 +44,8 @@ jobs:
           # Get last release tag for changelog range
           LAST_TAG=$(git tag -l "v*" --sort=-version:refname | head -1)
           if [ -z "$LAST_TAG" ]; then
-            echo "tag_range=HEAD" >> $GITHUB_OUTPUT
+            # First run of CI - hardcoded commit range from audit commit to HEAD
+            echo "tag_range=024df585e6da5cddd5adba21174acd3f101f3981..HEAD" >> $GITHUB_OUTPUT
           else
             echo "tag_range=$LAST_TAG..HEAD" >> $GITHUB_OUTPUT
           fi
