@@ -150,8 +150,8 @@ Before starting, ensure you have:
 git clone https://github.com/solana-foundation/kora.git
 cd kora
 
-# Checkout the release branch as Kora is currently in a feature freeze for audit
-git checkout release/feature-freeze-for-audit
+# Checkout the main branch
+git checkout main
 
 # Build and install Kora
 make install
