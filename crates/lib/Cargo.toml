@@ -42,7 +42,7 @@ reqwest = { workspace = true }
 spl-token-interface = { workspace = true }
 spl-token-2022-interface = { workspace = true }
 spl-associated-token-account-interface = { workspace = true }
-solana-signers = { git = "https://github.com/solana-foundation/solana-signers", default-features = false, features = [
+solana-keychain = { version = "0.1.0", default-features = false, features = [
     "all",
     "sdk-v3",
 ] }

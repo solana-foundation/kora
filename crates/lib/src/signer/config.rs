@@ -1,6 +1,6 @@
 use crate::{error::KoraError, sanitize_error, signer::utils::get_env_var_for_signer};
 use serde::{Deserialize, Serialize};
-use solana_signers::Signer;
+use solana_keychain::Signer;
 use std::{fmt, fs, path::Path};
 
 /// Configuration for a pool of signers

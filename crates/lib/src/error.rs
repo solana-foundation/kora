@@ -272,8 +272,8 @@ impl From<anyhow::Error> for KoraError {
     }
 }
 
-impl From<solana_signers::SignerError> for KoraError {
-    fn from(_err: solana_signers::SignerError) -> Self {
+impl From<solana_keychain::SignerError> for KoraError {
+    fn from(_err: solana_keychain::SignerError) -> Self {
         #[cfg(feature = "unsafe-debug")]
         {
             KoraError::SigningError(_err.to_string())

@@ -2,11 +2,11 @@ use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcSimulateTransactionConfig};
 use solana_commitment_config::CommitmentConfig;
+use solana_keychain::{Signer, SolanaSigner};
 use solana_message::{
     compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup, VersionedMessage,
 };
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
-use solana_signers::{Signer, SolanaSigner};
 use std::{collections::HashMap, ops::Deref};
 
 use solana_transaction_status_client_types::{UiInstruction, UiTransactionEncoding};

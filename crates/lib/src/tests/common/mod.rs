@@ -18,7 +18,7 @@ use solana_sdk::{pubkey::Pubkey, signature::Keypair};
 // Re-export mock utilities for centralized access
 pub use account_mock::*;
 pub use rpc_mock::*;
-use solana_signers::{Signer, SolanaSigner};
+use solana_keychain::{Signer, SolanaSigner};
 
 /// Setup or retrieve test signer for global state initialization
 ///

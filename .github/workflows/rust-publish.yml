@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish rust crates
+    name: Publish Kora crates to crates.io
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,81 +28,31 @@ jobs:
       - name: Build check
         run: cargo build --workspace
 
-      - name: Get current versions
+      - name: Get current version
         id: version
         run: |
-          # Get kora-lib version
-          LIB_VERSION=$(grep "^version" crates/lib/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "lib_version=$LIB_VERSION" >> $GITHUB_OUTPUT
-          echo "📦 kora-lib v$LIB_VERSION"
-
-          # Get kora-cli version
-          CLI_VERSION=$(grep "^version" crates/cli/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "cli_version=$CLI_VERSION" >> $GITHUB_OUTPUT
-          echo "📦 kora-cli v$CLI_VERSION"
-
-          # Get last release tag for changelog range
-          LAST_TAG=$(git tag -l "v*" --sort=-version:refname | head -1)
-          if [ -z "$LAST_TAG" ]; then
-            # First run of CI - hardcoded commit range from audit commit to HEAD
-            echo "tag_range=024df585e6da5cddd5adba21174acd3f101f3981..HEAD" >> $GITHUB_OUTPUT
-          else
-            echo "tag_range=$LAST_TAG..HEAD" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Generate changelog
-        id: changelog
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: .github/cliff.toml
-          args: ${{ steps.version.outputs.tag_range }} --strip all
+          VERSION=$(grep "^version" Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Kora v$VERSION"
 
       - name: Create git tags
         run: |
-          git tag "v${{ steps.version.outputs.lib_version }}"
-          git tag "kora-lib-v${{ steps.version.outputs.lib_version }}"
-          git tag "kora-cli-v${{ steps.version.outputs.cli_version }}"
+          git tag "v${{ steps.version.outputs.version }}"
+          git tag "kora-lib-v${{ steps.version.outputs.version }}"
+          git tag "kora-cli-v${{ steps.version.outputs.version }}"
           git push origin --tags
 
       - name: Publish kora-lib to crates.io
-        working-directory: crates/lib
-        run: cargo publish --locked
+        run: cargo publish -p kora-lib --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_CLI_REGISTRY_TOKEN }}
+
+      - name: Wait for kora-lib to be available on crates.io
+        run: |
+          echo "Waiting 30 seconds for crates.io to index kora-lib..."
+          sleep 30
 
       - name: Publish kora-cli to crates.io
-        working-directory: crates/cli
-        run: cargo publish --locked
+        run: cargo publish -p kora-cli --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_CLI_REGISTRY_TOKEN }}
-
-      - name: Create GitHub Release
-        if: success()
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ steps.version.outputs.lib_version }}
-          name: Kora v${{ steps.version.outputs.lib_version }}
-          body: |
-            ## Kora Release v${{ steps.version.outputs.lib_version }}
-
-            ### Published Crates
-            - `kora-lib` v${{ steps.version.outputs.lib_version }}
-            - `kora-cli` v${{ steps.version.outputs.cli_version }}
-
-            ### Changes
-
-            ${{ steps.changelog.outputs.content }}
-
-            ### Installation
-
-            ```bash
-            # Install CLI
-            cargo install kora-cli
-
-            # Or use in your Rust project
-            cargo add kora-lib
-            ```
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -16,7 +16,7 @@ static GLOBAL_CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
 /// Get a request-scoped signer with optional signer_key for consistency across related calls
 pub fn get_request_signer_with_signer_key(
     signer_key: Option<&str>,
-) -> Result<Arc<solana_signers::Signer>, KoraError> {
+) -> Result<Arc<solana_keychain::Signer>, KoraError> {
     let pool = get_signer_pool()?;
 
     // If client provided a signer signer_key, try to use that specific signer

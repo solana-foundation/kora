@@ -6,9 +6,9 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
+use solana_keychain::SolanaSigner;
 use solana_message::{Message, VersionedMessage};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
-use solana_signers::SolanaSigner;
 
 use spl_associated_token_account_interface::{
     address::get_associated_token_address, instruction::create_associated_token_account,
@@ -85,7 +85,7 @@ pub async fn initialize_atas(
 /// This function does not use cache and directly checks on-chain
 pub async fn initialize_atas_with_chunk_size(
     rpc_client: &RpcClient,
-    fee_payer: &Arc<solana_signers::Signer>,
+    fee_payer: &Arc<solana_keychain::Signer>,
     addresses_to_initialize_atas: &Vec<Pubkey>,
     compute_unit_price: Option<u64>,
     compute_unit_limit: Option<u32>,
@@ -121,7 +121,7 @@ pub async fn initialize_atas_with_chunk_size(
 /// Helper function to create ATAs for a single signer
 async fn create_atas_for_signer(
     rpc_client: &RpcClient,
-    fee_payer: &Arc<solana_signers::Signer>,
+    fee_payer: &Arc<solana_keychain::Signer>,
     address: &Pubkey,
     atas_to_create: &[ATAToCreate],
     compute_unit_price: Option<u64>,

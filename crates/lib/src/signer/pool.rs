@@ -3,8 +3,8 @@ use crate::{
     signer::config::{SelectionStrategy, SignerConfig, SignerPoolConfig},
 };
 use rand::Rng;
+use solana_keychain::{Signer, SolanaSigner};
 use solana_sdk::pubkey::Pubkey;
-use solana_signers::{Signer, SolanaSigner};
 use std::{
     str::FromStr,
     sync::{
@@ -242,9 +242,9 @@ mod tests {
         let keypair2 = Keypair::new();
 
         let external_signer1 =
-            solana_signers::Signer::from_memory(&keypair1.to_base58_string()).unwrap();
+            solana_keychain::Signer::from_memory(&keypair1.to_base58_string()).unwrap();
         let external_signer2 =
-            solana_signers::Signer::from_memory(&keypair2.to_base58_string()).unwrap();
+            solana_keychain::Signer::from_memory(&keypair2.to_base58_string()).unwrap();
 
         SignerPool {
             signers: vec![
