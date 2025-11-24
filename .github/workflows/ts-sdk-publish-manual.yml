@@ -3,11 +3,6 @@ name: Publish TypeScript SDK (Manual)
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version bump type or specific version (patch, minor, major, or semver like 1.2.3)'
-        required: true
-        default: 'patch'
-        type: string
       publish-to-npm:
         description: 'Publish to npm registry'
         required: true
@@ -86,23 +81,13 @@ jobs:
         working-directory: sdks
         run: pnpm install --frozen-lockfile
 
-      - name: Bump version
+      - name: Get version
         id: version
         working-directory: sdks/ts
         run: |
-          # Determine if input is a bump type or specific version
-          if [[ "${{ github.event.inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.*)?$ ]]; then
-            # Specific version provided
-            pnpm version ${{ github.event.inputs.version }} --no-git-tag-version
-          else
-            # Bump type (patch, minor, major)
-            pnpm version ${{ github.event.inputs.version }} --no-git-tag-version
-          fi
-
-          # Get the new version
-          NEW_VERSION=$(node -p "require('./package.json').version")
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "📦 New version: $NEW_VERSION"
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Publishing version: $VERSION"
 
       - name: Build TypeScript SDK
         working-directory: sdks
@@ -112,23 +97,16 @@ jobs:
         working-directory: sdks/ts
         run: pnpm type-check
 
-      - name: Commit version bump
-        working-directory: sdks/ts
+      - name: Create and push tag
         run: |
-          git add package.json
-          git commit -m "chore(ts-sdk): release v${{ steps.version.outputs.new_version }}"
-          git tag "ts-sdk-v${{ steps.version.outputs.new_version }}"
-
-      - name: Push changes
-        run: |
-          git push origin HEAD:${{ github.ref_name }}
-          git push origin "ts-sdk-v${{ steps.version.outputs.new_version }}"
+          git tag "ts-sdk-v${{ steps.version.outputs.version }}"
+          git push origin "ts-sdk-v${{ steps.version.outputs.version }}"
 
       - name: Publish to npm
         if: ${{ github.event.inputs.publish-to-npm == 'true' }}
         working-directory: sdks/ts
         run: |
-          echo "📦 Publishing @solana/kora@${{ steps.version.outputs.new_version }} to npm..."
+          echo "📦 Publishing @solana/kora@${{ steps.version.outputs.version }} to npm..."
           pnpm publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -139,15 +117,15 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const tagName = `ts-sdk-v${{ steps.version.outputs.new_version }}`;
-            const releaseName = `TypeScript SDK v${{ steps.version.outputs.new_version }}`;
+            const tagName = `ts-sdk-v${{ steps.version.outputs.version }}`;
+            const releaseName = `TypeScript SDK v${{ steps.version.outputs.version }}`;
 
             await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: tagName,
               name: releaseName,
-              body: `Release of @solana/kora v${{ steps.version.outputs.new_version }}`,
+              body: `Release of @solana/kora v${{ steps.version.outputs.version }}`,
               draft: false,
               prerelease: false,
             });
@@ -158,17 +136,17 @@ jobs:
         run: |
           echo "## 🎉 TypeScript SDK Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version**: \`${{ steps.version.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Package**: \`@solana/kora\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag**: \`ts-sdk-v${{ steps.version.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag**: \`ts-sdk-v${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.event.inputs.publish-to-npm }}" == "true" ]; then
-            echo "✅ Published to npm: https://www.npmjs.com/package/@solana/kora/v/${{ steps.version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Published to npm: https://www.npmjs.com/package/@solana/kora/v/${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           else
             echo "⏭️ Skipped npm publish (dry run)" >> $GITHUB_STEP_SUMMARY
           fi
           if [ "${{ github.event.inputs.create-github-release }}" == "true" ]; then
-            echo "✅ GitHub release created: https://github.com/${{ github.repository }}/releases/tag/ts-sdk-v${{ steps.version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+            echo "✅ GitHub release created: https://github.com/${{ github.repository }}/releases/tag/ts-sdk-v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           else
             echo "⏭️ Skipped GitHub release creation" >> $GITHUB_STEP_SUMMARY
           fi
