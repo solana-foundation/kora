@@ -5,7 +5,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio::sync::OnceCell;
 
-use crate::{error::KoraError, sanitize_error};
+use crate::{config::Config, error::KoraError, sanitize_error};
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -33,7 +33,8 @@ impl CacheUtil {
     pub async fn init() -> Result<(), KoraError> {
         let config = get_config()?;
 
-        let pool = if CacheUtil::is_cache_enabled() {
+        #[allow(clippy::needless_borrow)]
+        let pool = if CacheUtil::is_cache_enabled(&config) {
             let redis_url = config.kora.cache.url.as_ref().ok_or(KoraError::ConfigError)?;
 
             let cfg = deadpool_redis::Config::from_url(redis_url);
@@ -179,23 +180,19 @@ impl CacheUtil {
     }
 
     /// Check if cache is enabled and available
-    fn is_cache_enabled() -> bool {
-        match get_config() {
-            Ok(config) => config.kora.cache.enabled && config.kora.cache.url.is_some(),
-            Err(_) => false,
-        }
+    fn is_cache_enabled(config: &Config) -> bool {
+        config.kora.cache.enabled && config.kora.cache.url.is_some()
     }
 
     /// Get account from cache with optional force refresh
     pub async fn get_account(
+        config: &Config,
         rpc_client: &RpcClient,
         pubkey: &Pubkey,
         force_refresh: bool,
     ) -> Result<Account, KoraError> {
-        let config = get_config()?;
-
         // If cache is disabled or force refresh is requested, go directly to RPC
-        if !CacheUtil::is_cache_enabled() {
+        if !CacheUtil::is_cache_enabled(config) {
             return Self::get_account_from_rpc(rpc_client, pubkey).await;
         }
 
@@ -264,7 +261,8 @@ mod tests {
     async fn test_is_cache_enabled_disabled() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
-        assert!(!CacheUtil::is_cache_enabled());
+        let config = get_config().unwrap();
+        assert!(!CacheUtil::is_cache_enabled(&config));
     }
 
     #[tokio::test]
@@ -275,7 +273,8 @@ mod tests {
             .build_and_setup();
 
         // Without URL, cache should be disabled
-        assert!(!CacheUtil::is_cache_enabled());
+        let config = get_config().unwrap();
+        assert!(!CacheUtil::is_cache_enabled(&config));
     }
 
     #[tokio::test]
@@ -286,7 +285,8 @@ mod tests {
             .build_and_setup();
 
         // Give time for config to be set up
-        assert!(CacheUtil::is_cache_enabled());
+        let config = get_config().unwrap();
+        assert!(CacheUtil::is_cache_enabled(&config));
     }
 
     #[tokio::test]
@@ -336,7 +336,8 @@ mod tests {
 
         let rpc_client = RpcMockBuilder::new().with_account_info(&expected_account).build();
 
-        let result = CacheUtil::get_account(&rpc_client, &pubkey, false).await;
+        let config = get_config().unwrap();
+        let result = CacheUtil::get_account(&config, &rpc_client, &pubkey, false).await;
 
         assert!(result.is_ok());
         let account = result.unwrap();
@@ -355,7 +356,8 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().with_account_info(&expected_account).build();
 
         // force_refresh = true should always go to RPC
-        let result = CacheUtil::get_account(&rpc_client, &pubkey, true).await;
+        let config = get_config().unwrap();
+        let result = CacheUtil::get_account(&config, &rpc_client, &pubkey, true).await;
 
         assert!(result.is_ok());
         let account = result.unwrap();

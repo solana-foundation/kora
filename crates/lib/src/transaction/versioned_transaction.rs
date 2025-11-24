@@ -12,9 +12,9 @@ use std::{collections::HashMap, ops::Deref};
 use solana_transaction_status_client_types::{UiInstruction, UiTransactionEncoding};
 
 use crate::{
+    config::Config,
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
-    state::get_config,
     transaction::{
         instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
         ParsedSystemInstructionData, ParsedSystemInstructionType,
@@ -58,11 +58,13 @@ pub trait VersionedTransactionOps {
 
     async fn sign_transaction(
         &mut self,
+        config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError>;
     async fn sign_and_send_transaction(
         &mut self,
+        config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError>;
@@ -71,6 +73,7 @@ pub trait VersionedTransactionOps {
 impl VersionedTransactionResolved {
     pub async fn from_transaction(
         transaction: &VersionedTransaction,
+        config: &Config,
         rpc_client: &RpcClient,
         sig_verify: bool,
     ) -> Result<Self, KoraError> {
@@ -91,6 +94,7 @@ impl VersionedTransactionResolved {
             VersionedMessage::V0(v0_message) => {
                 // V0 transactions may have lookup tables
                 LookupTableUtil::resolve_lookup_table_addresses(
+                    config,
                     rpc_client,
                     &v0_message.address_table_lookups,
                 )
@@ -242,23 +246,23 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
     async fn sign_transaction(
         &mut self,
+        config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(VersionedTransaction, String), KoraError> {
         let fee_payer = signer.pubkey();
-        let config = &get_config()?;
-        let validator = TransactionValidator::new(fee_payer)?;
+        let validator = TransactionValidator::new(config, fee_payer)?;
 
         // Validate transaction and accounts (already resolved)
-        validator.validate_transaction(self, rpc_client).await?;
+        validator.validate_transaction(config, self, rpc_client).await?;
 
         // Calculate fee and validate payment if price model requires it
         let fee_calculation = FeeConfigUtil::estimate_kora_fee(
-            rpc_client,
             self,
             &fee_payer,
             config.validation.is_payment_required(),
-            config.validation.price_source.clone(),
+            rpc_client,
+            config,
         )
         .await?;
 
@@ -272,6 +276,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
             // Validate token payment using the resolved transaction
             TransactionValidator::validate_token_payment(
+                config,
                 self,
                 required_lamports,
                 rpc_client,
@@ -280,7 +285,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             .await?;
 
             // Validate strict pricing if enabled
-            TransactionValidator::validate_strict_pricing_with_fee(&fee_calculation)?;
+            TransactionValidator::validate_strict_pricing_with_fee(config, &fee_calculation)?;
         }
 
         // Get latest blockhash and update transaction
@@ -317,11 +322,12 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
     async fn sign_and_send_transaction(
         &mut self,
+        config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
     ) -> Result<(String, String), KoraError> {
         // Payment validation is handled in sign_transaction
-        let (transaction, encoded) = self.sign_transaction(signer, rpc_client).await?;
+        let (transaction, encoded) = self.sign_transaction(config, signer, rpc_client).await?;
 
         // Send and confirm transaction
         let signature = rpc_client
@@ -338,6 +344,7 @@ pub struct LookupTableUtil {}
 impl LookupTableUtil {
     /// Resolves addresses from lookup tables for V0 transactions
     pub async fn resolve_lookup_table_addresses(
+        config: &Config,
         rpc_client: &RpcClient,
         lookup_table_lookups: &[MessageAddressTableLookup],
     ) -> Result<Vec<Pubkey>, KoraError> {
@@ -346,9 +353,11 @@ impl LookupTableUtil {
         // Maybe we can use caching here, there's a chance the lookup tables get updated though, so tbd
         for lookup in lookup_table_lookups {
             let lookup_table_account =
-                CacheUtil::get_account(rpc_client, &lookup.account_key, false).await.map_err(
-                    |e| KoraError::RpcError(format!("Failed to fetch lookup table: {e}")),
-                )?;
+                CacheUtil::get_account(config, rpc_client, &lookup.account_key, false)
+                    .await
+                    .map_err(|e| {
+                        KoraError::RpcError(format!("Failed to fetch lookup table: {e}"))
+                    })?;
 
             // Parse the lookup table account data to get the actual addresses
             let address_lookup_table = AddressLookupTable::deserialize(&lookup_table_account.data)
@@ -662,7 +671,7 @@ mod tests {
     #[tokio::test]
     async fn test_from_transaction_legacy() {
         let config = setup_test_config();
-        let _m = setup_config_mock(config);
+        let _m = setup_config_mock(config.clone());
 
         let keypair = Keypair::new();
         let instruction = Instruction::new_with_bytes(
@@ -693,10 +702,14 @@ mod tests {
         );
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let resolved =
-            VersionedTransactionResolved::from_transaction(&transaction, &rpc_client, true)
-                .await
-                .unwrap();
+        let resolved = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            &config,
+            &rpc_client,
+            true,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(resolved.transaction, transaction);
         assert_eq!(resolved.all_account_keys, transaction.message.static_account_keys());
@@ -718,7 +731,7 @@ mod tests {
     #[tokio::test]
     async fn test_from_transaction_v0_with_lookup_tables() {
         let config = setup_test_config();
-        let _m = setup_config_mock(config);
+        let _m = setup_config_mock(config.clone());
 
         let keypair = Keypair::new();
         let program_id = Pubkey::new_unique();
@@ -795,10 +808,14 @@ mod tests {
 
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let resolved =
-            VersionedTransactionResolved::from_transaction(&transaction, &rpc_client, true)
-                .await
-                .unwrap();
+        let resolved = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            &config,
+            &rpc_client,
+            true,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(resolved.transaction, transaction);
 
@@ -812,7 +829,7 @@ mod tests {
     #[tokio::test]
     async fn test_from_transaction_simulation_failure() {
         let config = setup_test_config();
-        let _m = setup_config_mock(config);
+        let _m = setup_config_mock(config.clone());
 
         let keypair = Keypair::new();
         let instruction = Instruction::new_with_bytes(
@@ -840,8 +857,13 @@ mod tests {
         );
         let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
 
-        let result =
-            VersionedTransactionResolved::from_transaction(&transaction, &rpc_client, true).await;
+        let result = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            &config,
+            &rpc_client,
+            true,
+        )
+        .await;
 
         // The simulation should fail, but the exact error type depends on mock implementation
         // We expect either an RpcError (from mock deserialization) or InvalidTransaction (from simulation logic)
@@ -1002,7 +1024,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses() {
         let config = setup_test_config();
-        let _m = setup_config_mock(config);
+        let _m = setup_config_mock(config.clone());
 
         let lookup_account_key = Pubkey::new_unique();
         let address1 = Pubkey::new_unique();
@@ -1039,7 +1061,9 @@ mod tests {
         }];
 
         let resolved_addresses =
-            LookupTableUtil::resolve_lookup_table_addresses(&rpc_client, &lookups).await.unwrap();
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups)
+                .await
+                .unwrap();
 
         assert_eq!(resolved_addresses.len(), 3);
         assert_eq!(resolved_addresses[0], address1);
@@ -1049,17 +1073,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses_empty() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config.clone());
+
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
         let lookups = vec![];
 
         let resolved_addresses =
-            LookupTableUtil::resolve_lookup_table_addresses(&rpc_client, &lookups).await.unwrap();
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups)
+                .await
+                .unwrap();
 
         assert_eq!(resolved_addresses.len(), 0);
     }
 
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses_account_not_found() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config.clone());
+
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
         let lookups = vec![solana_message::v0::MessageAddressTableLookup {
             account_key: Pubkey::new_unique(),
@@ -1067,7 +1099,8 @@ mod tests {
             readonly_indexes: vec![],
         }];
 
-        let result = LookupTableUtil::resolve_lookup_table_addresses(&rpc_client, &lookups).await;
+        let result =
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
         assert!(matches!(result, Err(KoraError::RpcError(_))));
 
         if let Err(KoraError::RpcError(msg)) = result {
@@ -1078,7 +1111,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses_invalid_index() {
         let config = setup_test_config();
-        let _m = setup_config_mock(config);
+        let _m = setup_config_mock(config.clone());
 
         let lookup_account_key = Pubkey::new_unique();
         let address1 = Pubkey::new_unique();
@@ -1112,7 +1145,8 @@ mod tests {
             readonly_indexes: vec![],
         }];
 
-        let result = LookupTableUtil::resolve_lookup_table_addresses(&rpc_client, &lookups).await;
+        let result =
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
 
         if let Err(KoraError::InvalidTransaction(msg)) = result {
@@ -1124,7 +1158,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses_invalid_readonly_index() {
         let config = setup_test_config();
-        let _m = setup_config_mock(config);
+        let _m = setup_config_mock(config.clone());
 
         let lookup_account_key = Pubkey::new_unique();
         let address1 = Pubkey::new_unique();
@@ -1157,7 +1191,8 @@ mod tests {
             readonly_indexes: vec![5], // Invalid index
         }];
 
-        let result = LookupTableUtil::resolve_lookup_table_addresses(&rpc_client, &lookups).await;
+        let result =
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
 
         if let Err(KoraError::InvalidTransaction(msg)) = result {

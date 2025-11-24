@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
 use crate::{
+    config::Config,
     constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
     fee::price::PriceModel,
-    oracle::PriceSource,
     token::{
         spl_token_2022::Token2022Mint,
         token::{TokenType, TokenUtil},
@@ -18,10 +18,10 @@ use crate::{
 use solana_message::Message;
 
 #[cfg(not(test))]
-use {crate::cache::CacheUtil, crate::state::get_config};
+use crate::cache::CacheUtil;
 
 #[cfg(test)]
-use crate::tests::{cache_mock::MockCacheUtil as CacheUtil, config_mock::mock_state::get_config};
+use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
@@ -106,6 +106,7 @@ impl FeeConfigUtil {
     /// Helper function to check if a token transfer instruction is a payment to Kora
     /// Returns Some(token_account_data) if it's a payment, None otherwise
     async fn get_payment_instruction_info(
+        config: &Config,
         rpc_client: &RpcClient,
         destination_address: &Pubkey,
         payment_destination: &Pubkey,
@@ -113,7 +114,7 @@ impl FeeConfigUtil {
     ) -> Result<Option<Box<dyn TokenState + Send + Sync>>, KoraError> {
         // Get destination account - handle missing accounts based on skip_missing_accounts
         let destination_account =
-            match CacheUtil::get_account(rpc_client, destination_address, false).await {
+            match CacheUtil::get_account(config, rpc_client, destination_address, false).await {
                 Ok(account) => account,
                 Err(_) if skip_missing_accounts => {
                     return Ok(None);
@@ -137,11 +138,11 @@ impl FeeConfigUtil {
     /// Analyze payment instructions in transaction
     /// Returns (has_payment, total_transfer_fees)
     async fn analyze_payment_instructions(
+        config: &Config,
         resolved_transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,
     ) -> Result<(bool, u64), KoraError> {
-        let config = get_config()?;
         let payment_destination = config.kora.get_payment_address(fee_payer)?;
         let mut has_payment = false;
         let mut total_transfer_fees = 0u64;
@@ -162,6 +163,7 @@ impl FeeConfigUtil {
             {
                 // Check if this is a payment to Kora
                 let payment_info = Self::get_payment_instruction_info(
+                    config,
                     rpc_client,
                     destination_address,
                     &payment_destination,
@@ -176,7 +178,8 @@ impl FeeConfigUtil {
                     if *is_2022 {
                         if let Some(mint_pubkey) = mint {
                             let mint_account =
-                                CacheUtil::get_account(rpc_client, mint_pubkey, true).await?;
+                                CacheUtil::get_account(config, rpc_client, mint_pubkey, true)
+                                    .await?;
 
                             let token_program =
                                 TokenType::get_token_program_from_owner(&mint_account.owner)?;
@@ -215,10 +218,11 @@ impl FeeConfigUtil {
     }
 
     async fn estimate_transaction_fee(
-        rpc_client: &RpcClient,
         transaction: &mut VersionedTransactionResolved,
         fee_payer: &Pubkey,
         is_payment_required: bool,
+        rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<TotalFeeCalculation, KoraError> {
         // Get base transaction fee using resolved transaction to handle lookup tables
         let base_fee =
@@ -234,18 +238,14 @@ impl FeeConfigUtil {
         }
 
         // Calculate fee payer outflow if fee payer is provided, to better estimate the potential fee
-        let config = get_config()?;
-        let fee_payer_outflow = FeeConfigUtil::calculate_fee_payer_outflow(
-            fee_payer,
-            transaction,
-            rpc_client,
-            &config.validation.price_source,
-        )
-        .await?;
+        let fee_payer_outflow =
+            FeeConfigUtil::calculate_fee_payer_outflow(fee_payer, transaction, rpc_client, config)
+                .await?;
 
         // Analyze payment instructions (checks if payment exists + calculates Token2022 fees)
         let (has_payment, transfer_fee_config_amount) =
-            FeeConfigUtil::analyze_payment_instructions(transaction, rpc_client, fee_payer).await?;
+            FeeConfigUtil::analyze_payment_instructions(config, transaction, rpc_client, fee_payer)
+                .await?;
 
         // If payment is required but not found, add estimated payment instruction fee
         let fee_for_payment_instruction = if is_payment_required && !has_payment {
@@ -277,29 +277,28 @@ impl FeeConfigUtil {
 
     /// Main entry point for fee calculation with Kora's price model applied
     pub async fn estimate_kora_fee(
-        rpc_client: &RpcClient,
         transaction: &mut VersionedTransactionResolved,
         fee_payer: &Pubkey,
         is_payment_required: bool,
-        price_source: PriceSource,
+        rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<TotalFeeCalculation, KoraError> {
-        let config = get_config()?;
-
         match &config.validation.price.model {
             PriceModel::Free => Ok(TotalFeeCalculation::new_fixed(0)),
             PriceModel::Fixed { strict, .. } => {
                 let fixed_fee_lamports = config
                     .validation
                     .price
-                    .get_required_lamports_with_fixed(rpc_client, price_source)
+                    .get_required_lamports_with_fixed(rpc_client, config)
                     .await?;
 
                 if *strict {
                     let fee_calculation = Self::estimate_transaction_fee(
-                        rpc_client,
                         transaction,
                         fee_payer,
                         is_payment_required,
+                        rpc_client,
+                        config,
                     )
                     .await?;
 
@@ -318,10 +317,11 @@ impl FeeConfigUtil {
             PriceModel::Margin { .. } => {
                 // Get the raw transaction
                 let fee_calculation = Self::estimate_transaction_fee(
-                    rpc_client,
                     transaction,
                     fee_payer,
                     is_payment_required,
+                    rpc_client,
+                    config,
                 )
                 .await?;
 
@@ -345,16 +345,16 @@ impl FeeConfigUtil {
 
     /// Calculate the fee in a specific token if provided
     pub async fn calculate_fee_in_token(
-        rpc_client: &RpcClient,
         fee_in_lamports: u64,
         fee_token: Option<&str>,
+        rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<Option<u64>, KoraError> {
         if let Some(fee_token) = fee_token {
             let token_mint = Pubkey::from_str(fee_token).map_err(|_| {
                 KoraError::InvalidTransaction("Invalid fee token mint address".to_string())
             })?;
 
-            let config = get_config()?;
             let validation_config = &config.validation;
 
             if !validation_config.supports_token(fee_token) {
@@ -366,8 +366,8 @@ impl FeeConfigUtil {
             let fee_value_in_token = TokenUtil::calculate_lamports_value_in_token(
                 fee_in_lamports,
                 &token_mint,
-                &validation_config.price_source,
                 rpc_client,
+                config,
             )
             .await?;
 
@@ -383,7 +383,7 @@ impl FeeConfigUtil {
         fee_payer_pubkey: &Pubkey,
         transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
-        price_source: &PriceSource,
+        config: &Config,
     ) -> Result<u64, KoraError> {
         let mut total = 0u64;
 
@@ -457,8 +457,8 @@ impl FeeConfigUtil {
             let spl_outflow = TokenUtil::calculate_spl_transfers_value_in_lamports(
                 spl_transfers,
                 fee_payer_pubkey,
-                price_source,
                 rpc_client,
+                config,
             )
             .await?;
 
@@ -529,7 +529,7 @@ mod tests {
                 create_mock_rpc_client_with_account, create_mock_token_account,
                 setup_or_get_test_config, setup_or_get_test_signer,
             },
-            config_mock::ConfigMockBuilder,
+            config_mock::{mock_state::get_config, ConfigMockBuilder},
             rpc_mock::RpcMockBuilder,
         },
         token::{interface::TokenInterface, spl_token::TokenProgram},
@@ -643,11 +643,12 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -660,11 +661,12 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -677,11 +679,12 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -708,11 +711,12 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -732,11 +736,12 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[transfer_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -760,11 +765,12 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -778,11 +784,12 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -810,11 +817,12 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[create_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -839,11 +847,12 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -860,11 +869,12 @@ mod tests {
             VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -892,11 +902,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -922,11 +933,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer,
             &mut resolved_transaction,
             &mocked_rpc_client,
-            &crate::oracle::PriceSource::Mock,
+            &config,
         )
         .await
         .unwrap();
@@ -945,7 +957,7 @@ mod tests {
         let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
 
         // Set up cache expectation for token account lookup
-        cache_ctx.expect().times(1).returning(move |_, _, _| Ok(mocked_account.clone()));
+        cache_ctx.expect().times(1).returning(move |_, _, _, _| Ok(mocked_account.clone()));
 
         let sender = Keypair::new();
 
@@ -966,7 +978,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
@@ -995,7 +1009,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
@@ -1020,7 +1036,7 @@ mod tests {
         let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
 
         // Set up cache expectation for token account lookup
-        cache_ctx.expect().times(1).returning(move |_, _, _| Ok(mocked_account.clone()));
+        cache_ctx.expect().times(1).returning(move |_, _, _, _| Ok(mocked_account.clone()));
 
         // Create token accounts
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
@@ -1041,7 +1057,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
@@ -1072,11 +1090,13 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let result = FeeConfigUtil::estimate_transaction_fee(
-            &mocked_rpc_client,
             &mut resolved_transaction,
             &fee_payer.pubkey(),
             false,
+            &mocked_rpc_client,
+            &config,
         )
         .await
         .unwrap();
@@ -1102,11 +1122,13 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let result = FeeConfigUtil::estimate_transaction_fee(
-            &mocked_rpc_client,
             &mut resolved_transaction,
             &kora_fee_payer.pubkey(),
             false,
+            &mocked_rpc_client,
+            &config,
         )
         .await
         .unwrap();
@@ -1139,11 +1161,13 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let result = FeeConfigUtil::estimate_transaction_fee(
-            &mocked_rpc_client,
             &mut resolved_transaction,
             &fee_payer.pubkey(),
             true, // payment required
+            &mocked_rpc_client,
+            &config,
         )
         .await
         .unwrap();
@@ -1167,7 +1191,7 @@ mod tests {
         let mocked_account = create_mock_token_account(&signer, &mint);
         let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
 
-        cache_ctx.expect().times(2).returning(move |_, _, _| Ok(mocked_account.clone()));
+        cache_ctx.expect().times(2).returning(move |_, _, _, _| Ok(mocked_account.clone()));
 
         let sender = Keypair::new();
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
@@ -1195,7 +1219,9 @@ mod tests {
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
+        let config = get_config().unwrap();
         let (has_payment, transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
