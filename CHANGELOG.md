@@ -1,3 +1,11 @@
+## 2.0.1 - 2025-11-24
+
+
+### Bug Fixes
+
+- Readme in cargo.toml for crates.io
+
+## v2.0.0 - 2025-11-24
 
 ### Documentation
 
