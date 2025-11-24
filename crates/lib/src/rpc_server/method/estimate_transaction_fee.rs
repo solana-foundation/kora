@@ -1,4 +1,4 @@
-use solana_signers::SolanaSigner;
+use solana_keychain::SolanaSigner;
 use std::sync::Arc;
 use utoipa::ToSchema;
 

@@ -14,9 +14,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `chore:`, `docs:`, `refactor:` → patch version bump
 
 ### Publishing Flow
-- **Rust crates**: Automatic publishing when files change + conventional commits
+- **Rust crates**: Manual release process with synchronized versioning (both kora-lib and kora-cli released together)
 - **TypeScript SDKs**: Changeset-based releases (require `pnpm changeset`)
-- **Individual crate releases**: Each crate publishes independently when modified
+- **CHANGELOG**: Auto-generated from conventional commits using git-cliff
 - **GitHub releases**: Auto-generated with commit-based release notes
 
 ## Project Overview
@@ -219,6 +219,72 @@ pnpm run test
 pnpm run lint
 pnpm run format
 ```
+
+### Release Process
+
+Kora uses a manual release process with synchronized versioning across all workspace crates. Both `kora-lib` and `kora-cli` are always released together with the same version number.
+
+**Prerequisites:**
+```bash
+# Install required tools
+cargo install cargo-edit   # For cargo set-version
+cargo install git-cliff     # For CHANGELOG generation
+```
+
+**Release Steps:**
+
+1. **Prepare Release (on feature branch)**
+   ```bash
+   make release
+   ```
+   This interactive command will:
+   - Check working directory is clean
+   - Prompt for new version (e.g., 2.0.0)
+   - Update version in workspace `Cargo.toml`
+   - Generate `CHANGELOG.md` from conventional commits since last release
+   - Commit changes with message: `chore: release v{VERSION}`
+
+2. **Create PR and Merge**
+   ```bash
+   git push origin HEAD
+   ```
+   - Create pull request to `main`
+   - Get review and merge PR
+
+3. **Publish to crates.io (after PR merge)**
+   - Go to GitHub Actions
+   - Manually trigger the "Publish Rust Crates" workflow
+   - This will:
+     - Build and verify the workspace
+     - Read version from `Cargo.toml`
+     - Create git tags on main:
+       - `v{VERSION}` (generic version tag)
+       - `kora-lib-v{VERSION}` (crate-specific tag)
+       - `kora-cli-v{VERSION}` (crate-specific tag)
+     - Publish `kora-lib` to crates.io
+     - Wait for indexing
+     - Publish `kora-cli` to crates.io
+
+**Conventional Commits:**
+
+The CHANGELOG is auto-generated from conventional commits. Use these prefixes:
+- `feat:` - New features (grouped under "Features")
+- `fix:` - Bug fixes (grouped under "Bug Fixes")
+- `perf:` - Performance improvements (grouped under "Performance")
+- `refactor:` - Code refactoring (grouped under "Refactoring")
+- `doc:` - Documentation changes (grouped under "Documentation")
+- `test:` - Test changes (grouped under "Testing")
+- `chore:`, `ci:`, `build:` - Skipped in CHANGELOG
+
+**Version Strategy:**
+
+Kora uses synchronized versioning where all workspace crates share the same version number:
+- Simplifies user understanding ("Kora v2.0.0")
+- Ensures compatibility across all components
+- Both crates published together in dependency order
+
+**GitHub Secrets Required:**
+- `KORA_CLI_REGISTRY_TOKEN` - crates.io API token for publishing
 
 ## Architecture Overview
 

@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
+use solana_keychain::SolanaSigner;
 use solana_message::Message;
 use solana_sdk::{message::VersionedMessage, pubkey::Pubkey};
-use solana_signers::SolanaSigner;
 use solana_system_interface::instruction::transfer;
 use std::{str::FromStr, sync::Arc};
 use utoipa::ToSchema;

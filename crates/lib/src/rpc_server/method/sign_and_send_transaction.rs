@@ -1,7 +1,7 @@
 use crate::{rpc_server::middleware_utils::default_sig_verify, usage_limit::UsageTracker};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_signers::SolanaSigner;
+use solana_keychain::SolanaSigner;
 use std::sync::Arc;
 use utoipa::ToSchema;
 

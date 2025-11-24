@@ -7,8 +7,9 @@ include makefiles/CLIENT.makefile
 include makefiles/DOCUMENTATION.makefile
 include makefiles/COVERAGE.makefile
 include makefiles/METRICS.makefile
+include makefiles/RELEASE.makefile
 
-.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-all test-ts coverage coverage-clean build-bin build-lib build-cli run-presigned openapi gen-ts-client run-metrics build-transfer-hook
+.PHONY: check lint test build run clean all install generate-key setup-test-env test-integration test-all test-ts coverage coverage-clean build-bin build-lib build-cli run-presigned openapi gen-ts-client run-metrics build-transfer-hook release
 
 # Default target
 all: check test build

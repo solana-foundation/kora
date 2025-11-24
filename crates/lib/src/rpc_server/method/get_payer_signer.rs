@@ -3,7 +3,7 @@ use crate::{
     state::{get_config, get_signer_pool},
 };
 use serde::{Deserialize, Serialize};
-use solana_signers::SolanaSigner;
+use solana_keychain::SolanaSigner;
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

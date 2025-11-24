@@ -158,8 +158,8 @@ mod tests {
             config_mock::{ConfigMockBuilder, MetricsConfigBuilder},
         },
     };
+    use solana_keychain::Signer;
     use solana_sdk::signature::Keypair;
-    use solana_signers::Signer;
 
     fn setup_test_signer_pool() {
         let keypair1 = Keypair::new();
