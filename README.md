@@ -12,6 +12,7 @@
 ![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/solana-foundation/kora/main/.github/badges/coverage.json)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/solana-foundation/kora)
 [![Crates.io](https://img.shields.io/crates/v/kora-cli.svg)](https://crates.io/crates/kora-cli)
+[![npm](https://img.shields.io/npm/v/@solana/kora)](https://www.npmjs.com/package/@solana/kora)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
   <br />
@@ -160,7 +161,8 @@ Kora has been audited by [Runtime Verification](https://runtimeverification.com/
 ## Other Resources
 
 - [Kora CLI Crates.io](https://crates.io/crates/kora-cli) - Rust crate for running a Kora node
-- @solana/kora NPM Package Coming Soon
+- [Kora Lib Crates.io](https://crates.io/crates/kora-lib) - Rust crate for the Kora library
+- [@solana/kora](https://www.npmjs.com/package/@solana/kora) - TypeScript SDK for Kora
 
 ---
 
