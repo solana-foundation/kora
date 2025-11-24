@@ -76,7 +76,7 @@ jobs:
           commit: 'chore: release ts sdk packages'
           title: 'chore: release ts sdk packages'
           createGithubReleases: true
-          cwd: ./sdks
+          cwd: ${{ github.workspace }}/sdks
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
