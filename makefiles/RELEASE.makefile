@@ -31,18 +31,25 @@ release:
 	echo "📋 Generating CHANGELOG.md..."; \
 	LAST_TAG=$$(git tag -l "v*" --sort=-version:refname | head -1); \
 	if [ -z "$$LAST_TAG" ]; then \
-		git-cliff $$(git rev-list --max-parents=0 HEAD)..HEAD --config .github/cliff.toml --output CHANGELOG.md --strip all; \
+		git-cliff $$(git rev-list --max-parents=0 HEAD)..HEAD --tag v$$VERSION --config .github/cliff.toml --output CHANGELOG.md --strip all; \
 	else \
-		git-cliff $$LAST_TAG..HEAD --config .github/cliff.toml --output CHANGELOG.md --strip all; \
+		if [ -f CHANGELOG.md ]; then \
+			git-cliff $$LAST_TAG..HEAD --tag v$$VERSION --config .github/cliff.toml --strip all > CHANGELOG.new.md; \
+			cat CHANGELOG.md >> CHANGELOG.new.md; \
+			mv CHANGELOG.new.md CHANGELOG.md; \
+		else \
+			git-cliff $$LAST_TAG..HEAD --tag v$$VERSION --config .github/cliff.toml --output CHANGELOG.md --strip all; \
+		fi; \
 	fi; \
 	echo ""; \
-	echo "📦 Committing changes..."; \
+	echo "📦 Staging changes..."; \
 	git add Cargo.toml Cargo.lock CHANGELOG.md crates/*/Cargo.toml; \
-	git commit -m "chore: release v$$VERSION"; \
 	echo ""; \
 	echo "✅ Release prepared!"; \
 	echo ""; \
 	echo "Next steps:"; \
-	echo "  1. Push branch: git push origin HEAD"; \
-	echo "  2. Create PR and merge to main"; \
-	echo "  3. After merge, go to GitHub Actions and manually trigger 'Publish Rust Crates' workflow"
+	echo "  1. Review CHANGELOG.md"; \
+	echo "  2. Commit: git commit -m 'chore: release v$$VERSION'"; \
+	echo "  3. Push branch: git push origin HEAD"; \
+	echo "  4. Create PR and merge to main"; \
+	echo "  5. After merge, go to GitHub Actions and manually trigger 'Publish Rust Crates' workflow"
