@@ -1,0 +1,135 @@
+[kora]
+rate_limit = 100
+# Optional: Payment address to receive payment tokens (defaults to signer address)
+# payment_address = "YourPaymentAddressPubkey11111111111111111111"
+
+[kora.auth]
+# Optional: API key for simple authentication
+# api_key = "your-api-key-here"
+# Optional: HMAC secret for signed requests
+# hmac_secret = "your-hmac-secret-here"
+
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60
+
+[validation]
+price_source = "Mock"
+max_allowed_lamports = 1000000
+max_signatures = 10
+allowed_programs = [
+    "11111111111111111111111111111111",              # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",   # Token Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",  # Associated Token Program
+    "AddressLookupTab1e1111111111111111111111111",   # Address Lookup Table Program
+    "ComputeBudget11111111111111111111111111111111", # Compute Budget Program
+]
+allowed_tokens = [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # mainnet USDC
+    "So11111111111111111111111111111111111111112",  # SOL
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", # devnet USDC
+]
+allowed_spl_paid_tokens = [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # mainnet USDC
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", # devnet USDC
+]
+disallowed_accounts = []
+
+# Fee payer policy controls what actions the fee payer can perform
+# All default to false for security
+[validation.fee_payer_policy]
+
+[validation.fee_payer_policy.system]
+allow_transfer = true           # Allow fee payer to be sender in System Transfer/TransferWithSeed
+allow_assign = true             # Allow fee payer to be authority in System Assign/AssignWithSeed
+allow_create_account = true     # Allow fee payer to be payer in System CreateAccount/CreateAccountWithSeed
+allow_allocate = true           # Allow fee payer to be account in System Allocate/AllocateWithSeed
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = true         # Allow fee payer to initialize nonce accounts
+allow_advance = true            # Allow fee payer to advance nonce accounts
+allow_authorize = true          # Allow fee payer to authorize nonce accounts
+allow_withdraw = true           # Allow fee payer to withdraw from nonce accounts
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = true           # Allow fee payer to be source in SPL token transfers
+allow_burn = true               # Allow fee payer to burn SPL tokens from their accounts
+allow_close_account = true      # Allow fee payer to close their SPL token accounts
+allow_approve = true            # Allow fee payer to approve SPL tokens from their accounts
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = true           # Allow fee payer to be source in Token2022 transfers
+allow_burn = true               # Allow fee payer to burn Token2022 tokens from their accounts
+allow_close_account = true      # Allow fee payer to close their Token2022 accounts
+allow_approve = true            # Allow fee payer to approve Token2022 tokens from their accounts
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
+
+[kora.enabled_methods]
+liveness = false
+estimate_transaction_fee = true
+get_supported_tokens = true
+sign_transaction = true
+sign_and_send_transaction = true
+transfer_transaction = true
+get_blockhash = true
+get_config = true
+get_payer_signer = true
+
+[validation.price]
+type = "margin" # free / margin / fixed
+margin = 0.1  # # 10% margin (0.1 = 10%, 1.0 = 100%)
+
+[validation.token2022]
+blocked_mint_extensions = [
+    # "confidential_transfer_mint",     # Confidential transfer configuration for the mint
+    # "confidential_mint_burn",         # Confidential mint and burn configuration
+    # "transfer_fee_config",            # Transfer fee configuration
+    # "mint_close_authority",           # Authority allowed to close the mint
+    # "interest_bearing_config",        # Interest-bearing token configuration
+    # "non_transferable",               # Makes tokens non-transferable
+    # "permanent_delegate",             # Permanent delegate for the mint
+    # "transfer_hook",                  # Block tokens with transfer hooks
+    # "pausable",                       # Block pausable tokens
+]
+blocked_account_extensions = [
+    # "confidential_transfer_account", # Confidential transfer state for the account
+    # "non_transferable_account",      # Non-transferable token account
+    # "transfer_hook_account",          # Transfer hook state for the account
+    # "pausable_account",               # Pausable token account state
+    # "memo_transfer",                  # Requires memo for transfers
+    # "cpi_guard",                      # Prevents certain CPI calls
+    # "immutable_owner",                # Account owner cannot be changed
+    # "default_account_state",          # Default state for new accounts
+]
+
+[metrics]
+enabled = true
+endpoint = "/metrics"
+port = 8080  # Same port as main server, or separate port like 9090
+scrape_interval = 60
+
+[metrics.fee_payer_balance]
+enabled = true
+expiry_seconds = 30
+
+[kora.usage_limit]
+enabled = false
+cache_url = "redis://redis:6379"
+max_transactions = 2
+fallback_if_unavailable = false
