@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 
 use crate::{
     constant::NATIVE_SOL,
-    state::get_request_signer_with_signer_key,
+    state::{get_config, get_request_signer_with_signer_key},
     transaction::{
         TransactionUtil, VersionedMessageExt, VersionedTransactionOps, VersionedTransactionResolved,
     },
@@ -43,9 +43,10 @@ pub async fn transfer_transaction(
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let config = get_config()?;
     let fee_payer = signer.pubkey();
 
-    let validator = TransactionValidator::new(fee_payer)?;
+    let validator = TransactionValidator::new(config, fee_payer)?;
 
     let source = Pubkey::from_str(&request.source)
         .map_err(|e| KoraError::ValidationError(format!("Invalid source address: {e}")))?;
@@ -74,7 +75,8 @@ pub async fn transfer_transaction(
         instructions.push(transfer(&source, &destination, request.amount));
     } else {
         // Handle wrapped SOL and other SPL tokens
-        let token_mint = validator.fetch_and_validate_token_mint(&token_mint, rpc_client).await?;
+        let token_mint =
+            validator.fetch_and_validate_token_mint(&token_mint, config, rpc_client).await?;
         let token_program = token_mint.get_token_program();
         let decimals = token_mint.decimals();
 
@@ -82,11 +84,11 @@ pub async fn transfer_transaction(
         let dest_ata =
             token_program.get_associated_token_address(&destination, &token_mint.address());
 
-        CacheUtil::get_account(rpc_client, &source_ata, false)
+        CacheUtil::get_account(config, rpc_client, &source_ata, false)
             .await
             .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
 
-        if CacheUtil::get_account(rpc_client, &dest_ata, false).await.is_err() {
+        if CacheUtil::get_account(config, rpc_client, &dest_ata, false).await.is_err() {
             instructions.push(token_program.create_associated_token_account_instruction(
                 &fee_payer,
                 &destination,
@@ -126,7 +128,7 @@ pub async fn transfer_transaction(
         VersionedTransactionResolved::from_kora_built_transaction(&transaction)?;
 
     // validate transaction before signing
-    validator.validate_transaction(&mut resolved_transaction, rpc_client).await?;
+    validator.validate_transaction(config, &mut resolved_transaction, rpc_client).await?;
 
     // Find the fee payer position in the account keys
     let fee_payer_position = resolved_transaction.find_signer_position(&fee_payer)?;
