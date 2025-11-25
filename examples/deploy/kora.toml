@@ -95,7 +95,7 @@ get_payer_signer = true
 type = "margin" # free / margin / fixed
 margin = 0.1  # # 10% margin (0.1 = 10%, 1.0 = 100%)
 
-[validation.token2022]
+[validation.token_2022]
 blocked_mint_extensions = [
     # "confidential_transfer_mint",     # Confidential transfer configuration for the mint
     # "confidential_mint_burn",         # Confidential mint and burn configuration
