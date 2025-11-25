@@ -88,4 +88,4 @@ Access:
 
 ## Additional Documentation
 
-- [Kora Monitoring Guide](../../../../docs/operators/MONITORING.md)
+- [Kora Monitoring Guide](https://launch.solana.com/docs/kora/operators/monitoring)
