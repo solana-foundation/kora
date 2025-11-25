@@ -398,7 +398,7 @@ allowed_programs = [
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",  # Associated Token Program
     "AddressLookupTab1e1111111111111111111111111",   # Address Lookup Table Program
-    "ComputeBudget11111111111111111111111111111111", # Compute Budget Program
+    "ComputeBudget111111111111111111111111111111", # Compute Budget Program
 ]
 
 # Supported tokens for fee payment (by mint address)
