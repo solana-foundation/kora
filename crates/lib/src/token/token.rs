@@ -673,7 +673,7 @@ mod tests_token {
             TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config).await.unwrap();
 
         assert_eq!(decimals, 6);
-        assert_eq!(token_price.price, dec!(0.0001));
+        assert_eq!(token_price.price, dec!(0.0075));
     }
 
     #[tokio::test]
@@ -716,8 +716,8 @@ mod tests_token {
                 .await
                 .unwrap();
 
-        // 1 USDC * 0.0001 SOL/USDC = 0.0001 SOL = 100,000 lamports
-        assert_eq!(result, 100_000);
+        // 1 USDC * 0.0075 SOL/USDC = 0.0075 SOL = 7,500,000 lamports
+        assert_eq!(result, 7_500_000);
     }
 
     #[tokio::test]
@@ -749,8 +749,8 @@ mod tests_token {
                 .await
                 .unwrap();
 
-        // 0.000001 USDC * 0.0001 SOL/USDC = very small amount, should floor to 0
-        assert_eq!(result, 0);
+        // 0.000001 USDC * 0.0075 SOL/USDC = 0.0000000075 SOL = 7.5 lamports, floors to 7
+        assert_eq!(result, 7);
     }
 
     #[tokio::test]
@@ -776,13 +776,13 @@ mod tests_token {
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
-        let lamports = 100_000; // 0.0001 SOL
+        let lamports = 7_500_000; // 0.0075 SOL
         let result =
             TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
                 .await
                 .unwrap();
 
-        // 0.0001 SOL / 0.0001 SOL/USDC = 1 USDC = 1,000,000 base units
+        // 0.0075 SOL / 0.0075 SOL/USDC = 1 USDC = 1,000,000 base units
         assert_eq!(result, 1_000_000);
     }
 
@@ -873,26 +873,27 @@ mod tests_token {
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
 
         // Explanation (i.e. for case 1)
+        // With USDC price = 0.0075 SOL/USDC:
         // 1. Lamports → SOL: 5,000 / 1,000,000,000 = 0.000005 SOL
-        // 2. SOL → USDC: 0.000005 SOL / 0.0001 SOL/USDC = 0.05 USDC
-        // 3. USDC → Base units: 0.05 USDC × 10^6 = 50,000 base units
+        // 2. SOL → USDC: 0.000005 SOL / 0.0075 SOL/USDC = 0.000666... USDC
+        // 3. USDC → Base units: 0.000666... USDC × 10^6 = 666.666... base units, ceil to 667
 
         let test_cases = vec![
             // Low priority fees
-            (5_000u64, 50_000u64, "low priority base case"),
-            (10_001u64, 100_010u64, "odd number precision"),
+            (5_000u64, 667u64, "low priority base case"),
+            (10_001u64, 1_334u64, "odd number precision"),
             // High priority fees
-            (1_010_050u64, 10_100_500u64, "high priority problematic case"),
+            (1_010_050u64, 134_674u64, "high priority problematic case"),
             // High compute unit scenarios
-            (5_000_000u64, 50_000_000u64, "very high CU limit"),
-            (2_500_050u64, 25_000_500u64, "odd high amount"), // exact result with Decimal
-            (10_000_000u64, 100_000_000u64, "maximum CU cost"),
+            (5_000_000u64, 666_667u64, "very high CU limit"),
+            (2_500_050u64, 333_340u64, "odd high amount"),
+            (10_000_000u64, 1_333_334u64, "maximum CU cost"),
             // Edge cases
-            (1_010_049u64, 10_100_490u64, "precision edge case -1"),
-            (1_010_051u64, 10_100_510u64, "precision edge case +1"),
-            (999_999u64, 9_999_990u64, "near million boundary"),
-            (1_000_001u64, 10_000_010u64, "over million boundary"),
-            (1_333_337u64, 13_333_370u64, "repeating digits edge case"),
+            (1_010_049u64, 134_674u64, "precision edge case -1"),
+            (1_010_051u64, 134_674u64, "precision edge case +1"),
+            (999_999u64, 133_334u64, "near million boundary"),
+            (1_000_001u64, 133_334u64, "over million boundary"),
+            (1_333_337u64, 177_779u64, "repeating digits edge case"),
         ];
 
         for (lamports, expected, description) in test_cases {
