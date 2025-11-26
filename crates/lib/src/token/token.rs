@@ -18,9 +18,16 @@ use rust_decimal::{
     Decimal,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
+use solana_sdk::{instruction::Instruction, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use std::{collections::HashMap, str::FromStr, time::Duration};
+
+mod ata_instruction_indexes {
+    pub const ATA_ADDRESS_INDEX: usize = 1;
+    pub const WALLET_OWNER_INDEX: usize = 2;
+    pub const MINT_INDEX: usize = 3;
+    pub const MIN_ACCOUNTS: usize = 6;
+}
 
 #[cfg(test)]
 use {crate::tests::config_mock::mock_state::get_config, rust_decimal_macros::dec};
@@ -64,6 +71,30 @@ impl TokenUtil {
                 })
             })
             .collect()
+    }
+
+    /// Check if the transaction contains an ATA creation instruction for the given destination address.
+    /// Returns Some((wallet_owner, mint)) if found, None otherwise.
+    pub fn find_ata_creation_for_destination(
+        instructions: &[Instruction],
+        destination_address: &Pubkey,
+    ) -> Option<(Pubkey, Pubkey)> {
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+
+        for ix in instructions {
+            if ix.program_id == ata_program_id
+                && ix.accounts.len() >= ata_instruction_indexes::MIN_ACCOUNTS
+            {
+                let ata_address = ix.accounts[ata_instruction_indexes::ATA_ADDRESS_INDEX].pubkey;
+                if ata_address == *destination_address {
+                    let wallet_owner =
+                        ix.accounts[ata_instruction_indexes::WALLET_OWNER_INDEX].pubkey;
+                    let mint = ix.accounts[ata_instruction_indexes::MINT_INDEX].pubkey;
+                    return Some((wallet_owner, mint));
+                }
+            }
+        }
+        None
     }
 
     pub async fn get_mint(
@@ -449,6 +480,9 @@ impl TokenUtil {
     ) -> Result<bool, KoraError> {
         let mut total_lamport_value = 0u64;
 
+        // Clone instructions to avoid borrow conflicts when checking for ATA creation instructions
+        let all_instructions = transaction_resolved.all_instructions.clone();
+
         for instruction in transaction_resolved
             .get_or_parse_spl_instructions()?
             .get(&ParsedSPLInstructionType::SplTokenTransfer)
@@ -470,44 +504,72 @@ impl TokenUtil {
                 };
 
                 // Validate the destination account is that of the payment address (or signer if none provided)
-                let destination_account =
-                    CacheUtil::get_account(config, rpc_client, destination_address, false)
+                // The destination ATA may not exist yet if it's being created in the same transaction
+                let (destination_owner, token_mint) =
+                    match CacheUtil::get_account(config, rpc_client, destination_address, false)
                         .await
-                        .map_err(|e| KoraError::RpcError(e.to_string()))?;
+                    {
+                        Ok(destination_account) => {
+                            let token_state = token_program
+                                .unpack_token_account(&destination_account.data)
+                                .map_err(|e| {
+                                    KoraError::InvalidTransaction(format!(
+                                        "Invalid token account: {e}"
+                                    ))
+                                })?;
 
-                let token_state =
-                    token_program.unpack_token_account(&destination_account.data).map_err(|e| {
-                        KoraError::InvalidTransaction(format!("Invalid token account: {e}"))
-                    })?;
+                            // For Token2022 payments, validate that blocked extensions are not used
+                            if *is_2022 {
+                                TokenUtil::validate_token2022_extensions_for_payment(
+                                    config,
+                                    rpc_client,
+                                    source_address,
+                                    destination_address,
+                                    &mint.unwrap_or(token_state.mint()),
+                                )
+                                .await?;
+                            }
 
-                // For Token2022 payments, validate that blocked extensions are not used
-                if *is_2022 {
-                    TokenUtil::validate_token2022_extensions_for_payment(
-                        config,
-                        rpc_client,
-                        source_address,
-                        destination_address,
-                        &mint.unwrap_or(token_state.mint()),
-                    )
-                    .await?;
-                }
+                            (token_state.owner(), token_state.mint())
+                        }
+                        Err(e) => {
+                            // If account not found, check if there's an ATA creation instruction
+                            // in this transaction that creates this destination address
+                            if matches!(e, KoraError::AccountNotFound(_)) {
+                                if let Some((wallet_owner, ata_mint)) =
+                                    Self::find_ata_creation_for_destination(
+                                        &all_instructions,
+                                        destination_address,
+                                    )
+                                {
+                                    // ATA creation instruction found - use the wallet owner and mint from it
+                                    (wallet_owner, ata_mint)
+                                } else {
+                                    // No ATA creation instruction found and destination doesn't exist
+                                    return Err(KoraError::AccountNotFound(
+                                        destination_address.to_string(),
+                                    ));
+                                }
+                            } else {
+                                // Other error (not AccountNotFound), propagate it
+                                return Err(KoraError::RpcError(e.to_string()));
+                            }
+                        }
+                    };
 
                 // Skip transfer if destination isn't our expected payment address
-                if token_state.owner() != *expected_destination_owner {
+                if destination_owner != *expected_destination_owner {
                     continue;
                 }
 
-                if !config.validation.supports_token(&token_state.mint().to_string()) {
-                    log::warn!(
-                        "Ignoring payment with unsupported token mint: {}",
-                        token_state.mint(),
-                    );
+                if !config.validation.supports_token(&token_mint.to_string()) {
+                    log::warn!("Ignoring payment with unsupported token mint: {}", token_mint,);
                     continue;
                 }
 
                 let lamport_value = TokenUtil::calculate_token_value_in_lamports(
                     *amount,
-                    &token_state.mint(),
+                    &token_mint,
                     rpc_client,
                     config,
                 )
@@ -1034,5 +1096,120 @@ mod tests_token {
             .validation
             .token_2022
             .is_account_extension_blocked(ExtensionType::CpiGuard));
+    }
+
+    #[test]
+    fn test_find_ata_creation_for_destination_found() {
+        use solana_sdk::instruction::AccountMeta;
+
+        let funding_account = Pubkey::new_unique();
+        let wallet_owner = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+
+        // Derive the ATA address
+        let ata_address =
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &wallet_owner,
+                &mint,
+            );
+
+        // Create a mock ATA creation instruction
+        let ata_instruction = Instruction {
+            program_id: ata_program_id,
+            accounts: vec![
+                AccountMeta::new(funding_account, true), // 0: funding account
+                AccountMeta::new(ata_address, false),    // 1: ATA to be created
+                AccountMeta::new_readonly(wallet_owner, false), // 2: wallet owner
+                AccountMeta::new_readonly(mint, false),  // 3: mint
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false), // 4: system program
+                AccountMeta::new_readonly(spl_token_interface::id(), false), // 5: token program
+            ],
+            data: vec![0], // CreateAssociatedTokenAccount instruction discriminator
+        };
+
+        let instructions = vec![ata_instruction];
+
+        // Should find the ATA creation instruction
+        let result = TokenUtil::find_ata_creation_for_destination(&instructions, &ata_address);
+        assert!(result.is_some());
+        let (found_wallet, found_mint) = result.unwrap();
+        assert_eq!(found_wallet, wallet_owner);
+        assert_eq!(found_mint, mint);
+    }
+
+    #[test]
+    fn test_find_ata_creation_for_destination_not_found() {
+        use solana_sdk::instruction::AccountMeta;
+
+        let funding_account = Pubkey::new_unique();
+        let wallet_owner = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+
+        // Derive the ATA address
+        let ata_address =
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &wallet_owner,
+                &mint,
+            );
+
+        // Create a mock ATA creation instruction for a different address
+        let different_ata = Pubkey::new_unique();
+        let ata_instruction = Instruction {
+            program_id: ata_program_id,
+            accounts: vec![
+                AccountMeta::new(funding_account, true),
+                AccountMeta::new(different_ata, false), // Different ATA
+                AccountMeta::new_readonly(wallet_owner, false),
+                AccountMeta::new_readonly(mint, false),
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+                AccountMeta::new_readonly(spl_token_interface::id(), false),
+            ],
+            data: vec![0],
+        };
+
+        let instructions = vec![ata_instruction];
+
+        // Should NOT find an ATA creation for our target address
+        let result = TokenUtil::find_ata_creation_for_destination(&instructions, &ata_address);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_ata_creation_for_destination_empty_instructions() {
+        let target_address = Pubkey::new_unique();
+        let instructions: Vec<Instruction> = vec![];
+
+        let result = TokenUtil::find_ata_creation_for_destination(&instructions, &target_address);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_ata_creation_for_destination_wrong_program() {
+        use solana_sdk::instruction::AccountMeta;
+
+        let target_address = Pubkey::new_unique();
+        let wallet_owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Create an instruction with the wrong program ID
+        let wrong_program_instruction = Instruction {
+            program_id: Pubkey::new_unique(), // Not the ATA program
+            accounts: vec![
+                AccountMeta::new(Pubkey::new_unique(), true),
+                AccountMeta::new(target_address, false),
+                AccountMeta::new_readonly(wallet_owner, false),
+                AccountMeta::new_readonly(mint, false),
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+                AccountMeta::new_readonly(spl_token_interface::id(), false),
+            ],
+            data: vec![0],
+        };
+
+        let instructions = vec![wrong_program_instruction];
+
+        let result = TokenUtil::find_ata_creation_for_destination(&instructions, &target_address);
+        assert!(result.is_none());
     }
 }
