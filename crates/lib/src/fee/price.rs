@@ -148,16 +148,16 @@ mod tests {
             },
         };
 
-        // Use Mock price source which returns 0.0001 SOL per USDC
+        // Use Mock price source which returns 0.0075 SOL per USDC
 
         let result =
             price_config.get_required_lamports_with_fixed(&rpc_client, &config).await.unwrap();
 
         // Expected calculation:
         // 1,000,000 base units / 10^6 = 1.0 USDC
-        // 1.0 USDC * 0.0001 SOL/USDC = 0.0001 SOL
-        // 0.0001 SOL * 1,000,000,000 lamports/SOL = 100,000 lamports
-        assert_eq!(result, 100000);
+        // 1.0 USDC * 0.0075 SOL/USDC = 0.0075 SOL
+        // 0.0075 SOL * 1,000,000,000 lamports/SOL = 7,500,000 lamports
+        assert_eq!(result, 7500000);
     }
 
     #[tokio::test]
@@ -207,9 +207,9 @@ mod tests {
 
         // Expected calculation:
         // 1,000 base units / 10^6 = 0.001 USDC
-        // 0.001 USDC * 0.0001 SOL/USDC = 0.0000001 SOL
-        // 0.0000001 SOL * 1,000,000,000 lamports/SOL = 100 lamports (rounded down)
-        assert_eq!(result, 100);
+        // 0.001 USDC * 0.0075 SOL/USDC = 0.0000075 SOL
+        // 0.0000075 SOL * 1,000,000,000 lamports/SOL = 7,500 lamports
+        assert_eq!(result, 7500);
     }
 
     #[tokio::test]
