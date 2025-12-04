@@ -64,7 +64,7 @@ Basic usage:
 kora rpc [OPTIONS] # --help for full list of options
 ```
 
-**[→ Full Documentation](http://launch.solana.com/docs/kora/getting-started/overview)** - Learn how Kora works
+**[→ Full Documentation](https://launch.solana.com/docs/kora/getting-started)** - Learn how Kora works
 
 **[→ Quick Start Guide](https://launch.solana.com/docs/kora/getting-started/quick-start)** - Get Kora running locally minutes
 
