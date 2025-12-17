@@ -35,12 +35,15 @@ jobs:
       - name: Calculate source files hash
         id: source-hash
         run: |
-          SOURCE_HASH=$(find crates tests Cargo.toml Cargo.lock Makefile makefiles -type f \( -name "*.rs" -o -name "*.toml" -o -name "Makefile" \) -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1 | head -c 8)
+          SOURCE_HASH=$(find crates tests Cargo.toml Cargo.lock justfile -type f \( -name "*.rs" -o -name "*.toml" -o -name "justfile" \) -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1 | head -c 8)
           echo "hash=$SOURCE_HASH" >> $GITHUB_OUTPUT
           echo "Source files hash: $SOURCE_HASH"
 
+      - name: Install just
+        uses: extractions/setup-just@v3
+
       - name: Build workspace
-        run: make build
+        run: just build
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

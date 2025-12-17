@@ -19,11 +19,8 @@ scrape_interval = 60    # Prometheus scrape interval in seconds
 The metrics Docker stack (Prometheus + Grafana) automatically reads configuration from `kora.toml`:
 
 ```bash
-# Update prometheus.yml and docker-compose.metrics.yml from kora.toml
-make update-metrics-config
-
-# Or run metrics (automatically updates config first)
-make run-metrics
+# Run metrics (automatically updates config first)
+just run-metrics
 ```
 
 ### Manual Configuration Update
@@ -73,7 +70,7 @@ When `port = 9090` (different from RPC server), a dedicated metrics server runs 
 Start Prometheus and Grafana:
 
 ```bash
-make run-metrics
+just run-metrics
 ```
 
 This will:

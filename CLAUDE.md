@@ -39,7 +39,7 @@ Kora supports two authentication methods that can be used individually or togeth
 
 **Testing:**
 ```bash
-make test-integration           # Run all integration tests
+just test-integration           # Run all integration tests
 ```
 
 ## Common Development Commands
@@ -48,39 +48,30 @@ make test-integration           # Run all integration tests
 
 ```bash
 # Build all workspace packages
-make build
+just build
 
 # Build specific packages
-make build-lib    # Build the lib crate
-make build-cli    # Build the CLI tool
+just build-lib    # Build the lib crate
+just build-cli    # Build the CLI tool
 
 # Install all binaries
-make install
+just install
 
-# Check formatting
-make check
-
-# Format code
-make fmt
-
-# Run linter with warnings as errors
-make lint
-
-# Run linter with auto-fix
-make lint-fix-all
+# Run formatter (formats and checks)
+just fmt
 ```
 
 ### Testing
 
 ```bash
 # Run unit tests
-make test
+just test
 
 # Run integration tests (automatically handles environment setup)
-make test-integration
+just test-integration
 
 # Run all tests
-cargo test --workspace
+just test-all
 ```
 
 #### Integration Test Environment Setup
@@ -89,7 +80,7 @@ Integration tests are fully automated using a Rust test runner binary that handl
 
 **Quick Start:**
 ```bash
-make test-integration
+just test-integration
 ```
 
 **What happens automatically:**
@@ -152,21 +143,21 @@ tests/
 **Test Runner Commands:**
 ```bash
 # Run all integration tests (default)
-make test-integration
+just test-integration
 
 # Run with verbose output
-make test-integration-verbose
+just test-integration-verbose
 
 # Force refresh test accounts (ignore cached)
-make test-integration-fresh
+just test-integration-fresh
 
 # Run specific test
-cargo run -p tests --bin test_runner -- --filter regular
-cargo run -p tests --bin test_runner -- --filter auth
-cargo run -p tests --bin test_runner -- --filter payment_address
-cargo run -p tests --bin test_runner -- --filter multi_signer
-cargo run -p tests --bin test_runner -- --filter typescript_basic
-cargo run -p tests --bin test_runner -- --filter typescript_auth
+just test-integration-filtered --filter regular
+just test-integration-filtered --filter auth
+just test-integration-filtered --filter payment_address
+just test-integration-filtered --filter multi_signer
+just test-integration-filtered --filter typescript_basic
+just test-integration-filtered --filter typescript_auth
 ```
 
 #### Customize Test Environment
@@ -179,7 +170,7 @@ Make sure to update the appropriate config file (kora.toml for production, tests
 
 ```bash
 # Basic server run (production config)
-make run
+just run
 
 # Run with test configuration (for integration testing)
 cargo run -p kora --bin kora -- --config tests/common/fixtures/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --signers-config tests/common/fixtures/signers.toml
@@ -235,7 +226,7 @@ cargo install git-cliff     # For CHANGELOG generation
 
 1. **Prepare Release (on feature branch)**
    ```bash
-   make release
+   just release
    ```
    This interactive command will:
    - Check working directory is clean
@@ -715,7 +706,7 @@ The project uses a Rust-based test runner for integration testing:
 ### Behavioral Instructions
 
 - Always run linting and formatting commands before committing
-- Use the Makefile targets for consistent builds across the workspace
+- Use `just` recipes for consistent builds across the workspace
 - Test both unit and integration levels when making changes
 - Verify TypeScript SDK compatibility when changing RPC interfaces
 
@@ -729,7 +720,7 @@ The project uses a Rust-based test runner for integration testing:
 ## Key Integration Test Achievements
 
 **✅ Complete Sequential Test Runner**
-- Makefile-based orchestration with 3 automated phases
+- `just`-based orchestration with automated phases
 - Proper server lifecycle management (start/stop/restart)
 - Config isolation between test suites
 - Zero manual intervention required
