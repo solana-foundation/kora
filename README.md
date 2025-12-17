@@ -88,7 +88,8 @@ const signed = await kora.signTransaction({ transaction });
 
 ### Prerequisites
 
-- Rust 1.86+ or 
+- [Just](https://github.com/casey/just) (command runner)
+- Rust 1.86+
 - Solana CLI 2.2+
 - Node.js 20+ and pnpm (for SDK)
 
