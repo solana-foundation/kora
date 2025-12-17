@@ -88,7 +88,8 @@ const signed = await kora.signTransaction({ transaction });
 
 ### Prerequisites
 
-- Rust 1.86+ or 
+- [Just](https://github.com/casey/just) (command runner)
+- Rust 1.86+
 - Solana CLI 2.2+
 - Node.js 20+ and pnpm (for SDK)
 
@@ -97,13 +98,13 @@ const signed = await kora.signTransaction({ transaction });
 ```bash
 git clone https://github.com/solana-foundation/kora.git
 cd kora
-make install
+just install
 ```
 
 ### Build
 
 ```bash
-make build
+just build
 ```
 
 ### Running the Server
@@ -114,10 +115,10 @@ Basic usage:
 kora rpc [OPTIONS]
 ```
 
-Or for running with a test configuration, run: 
+Or for running with a test configuration, run:
 
 ```bash
-make run
+just run
 ```
 
 ### Local Testing
@@ -125,7 +126,7 @@ make run
 And run all tests:
 
 ```bash
-make test-all
+just test-all
 ```
 
 ## Repository Structure
@@ -141,7 +142,7 @@ kora/
 ├── docs/                     # Documentation
 │   ├── getting-started/      # Quick start guides
 │   └── operators/            # Node operator documentation
-├── Makefile                  # Build and development commands
+├── justfile                  # Build and development commands
 └── kora.toml                 # Example configuration
 ```
 
