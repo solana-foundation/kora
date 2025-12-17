@@ -27,6 +27,8 @@ pub struct SignAndSendTransactionResponse {
     pub signed_transaction: String,
     /// Public key of the signer used (for client consistency)
     pub signer_pubkey: String,
+    /// Transaction signature
+    pub signature: String,
 }
 
 pub async fn sign_and_send_transaction(
@@ -50,12 +52,13 @@ pub async fn sign_and_send_transaction(
     )
     .await?;
 
-    let (_, signed_transaction) =
+    let (signature, signed_transaction) =
         resolved_transaction.sign_and_send_transaction(config, &signer, rpc_client).await?;
 
     Ok(SignAndSendTransactionResponse {
         signed_transaction,
         signer_pubkey: signer.pubkey().to_string(),
+        signature,
     })
 }
 

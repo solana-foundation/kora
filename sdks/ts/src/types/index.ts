@@ -110,6 +110,8 @@ export interface SignTransactionResponse {
  * Response from signing and sending a transaction.
  */
 export interface SignAndSendTransactionResponse {
+    /** Transaction signature */
+    signature: string;
     /** Base64-encoded signed transaction */
     signed_transaction: string;
     /** Public key of the signer used to send the transaction */
