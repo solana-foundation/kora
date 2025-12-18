@@ -1,5 +1,6 @@
 # Solana x402 Protocol Integration with Kora RPC
 
+*Updated December 18, 2025 to x402 v2 spec*
 
 ## What You'll Build
 
@@ -55,7 +56,7 @@ Response Data:
 }
 ```
 
-Full Guide available [here](https://launch.solana.com/docs/kora/operators/deployment/x402).
+Full Guide available [here](https://launch.solana.com/docs/kora/guides/x402).
 
 ## What is x402?
 
