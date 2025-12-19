@@ -1,15 +1,15 @@
 import { config } from "dotenv";
 import express, { Request, Response } from "express";
 import {
-    PaymentRequirementsSchema,
     type PaymentRequirements,
     type PaymentPayload,
-    PaymentPayloadSchema,
-    SupportedSVMNetworks,
-    ExactSvmPayload,
-    SettleResponse,
-    Network,
-} from "x402/types";
+    type SettleRequest,
+    type SettleResponse,
+    type Network,
+    type VerifyRequest,
+    type VerifyResponse
+} from "@x402/core/types";
+import { SOLANA_DEVNET_CAIP2 } from "@x402/svm";
 import { KoraClient } from "@solana/kora";
 import path from "path";
 
@@ -17,22 +17,12 @@ config({ path: path.join(process.cwd(), '..', '.env') });
 
 const KORA_RPC_URL = process.env.KORA_RPC_URL || "http://localhost:8080/";
 const FACILITATOR_PORT = process.env.FACILITATOR_PORT || 3000;
-const NETWORK = (process.env.NETWORK || "solana-devnet") as Network;
+const NETWORK = (process.env.NETWORK || SOLANA_DEVNET_CAIP2) as Network;
 const KORA_API_KEY = process.env.KORA_API_KEY || "kora_facilitator_api_key_example";
 
 const app = express();
 
 app.use(express.json());
-
-type VerifyRequest = {
-    paymentPayload: PaymentPayload;
-    paymentRequirements: PaymentRequirements;
-};
-
-type SettleRequest = {
-    paymentPayload: PaymentPayload;
-    paymentRequirements: PaymentRequirements;
-};
 
 app.get("/verify", (req: Request, res: Response) => {
     res.json({
@@ -52,28 +42,32 @@ app.post("/verify", async (req: Request, res: Response) => {
 
     try {
         const body: VerifyRequest = req.body;
-        const paymentRequirements = PaymentRequirementsSchema.parse(body.paymentRequirements);
+        const { paymentPayload, paymentRequirements } = req.body as {
+            paymentPayload: PaymentPayload;
+            paymentRequirements: PaymentRequirements;
+        };
 
-        const paymentPayload = PaymentPayloadSchema.parse(body.paymentPayload);
-
-        if (!SupportedSVMNetworks.includes(paymentRequirements.network)) {
+        if(!paymentRequirements.network.startsWith("solana:")) {
             throw new Error("Invalid network");
         }
-        const { transaction } = paymentPayload.payload as ExactSvmPayload;
 
+        const { transaction } = paymentPayload.payload as { transaction: string };
+        
         const { signed_transaction } = await kora.signTransaction({
             transaction
         });
 
-        const valid = !!signed_transaction;
-
-        const verifyResponse = {
-            isValid: valid,
+        const verifyResponse: VerifyResponse = {
+            isValid: true,
         };
 
         res.json(verifyResponse);
     } catch (error) {
-        res.status(400).json({ error: "Invalid request" });
+        const verifyResponse: VerifyResponse = {
+            isValid: false,
+            invalidReason: error instanceof Error ? error.message : "Kora validation failed",
+        };
+        res.status(400).json(verifyResponse);
     }
 });
 
@@ -96,7 +90,7 @@ app.get("/supported", async (req: Request, res: Response) => {
         const { signer_address } = await kora.getPayerSigner();
 
         const kinds = [{
-            x402Version: 1,
+            x402Version: 2,
             scheme: "exact",
             network: NETWORK,
             extra: {
@@ -118,13 +112,16 @@ app.post("/settle", async (req: Request, res: Response) => {
     console.log("=== /settle endpoint called ===");
     try {
         const body: SettleRequest = req.body;
-        const paymentRequirements = PaymentRequirementsSchema.parse(body.paymentRequirements);
-        const paymentPayload = PaymentPayloadSchema.parse(body.paymentPayload);
+        const { paymentPayload, paymentRequirements } = req.body as {
+            paymentPayload: PaymentPayload;
+            paymentRequirements: PaymentRequirements;
+        };
 
-        if (!SupportedSVMNetworks.includes(paymentRequirements.network)) {
+        if(!paymentRequirements.network.startsWith("solana:")) {
             throw new Error("Invalid network");
         }
-        const { transaction } = paymentPayload.payload as ExactSvmPayload;
+
+        const { transaction } = paymentPayload.payload as { transaction: string };
 
         const kora = new KoraClient({ rpcUrl: KORA_RPC_URL, apiKey: KORA_API_KEY });
         const { signature } = await kora.signAndSendTransaction({
@@ -139,7 +136,13 @@ app.post("/settle", async (req: Request, res: Response) => {
 
         res.json(response);
     } catch (error) {
-        res.status(400).json({ error: `Invalid request: ${error}` });
+        const response: SettleResponse = {
+            transaction: "",
+            success: false,
+            network: NETWORK,
+            errorReason: error instanceof Error ? error.message : "Kora validation failed",
+        };
+        res.status(400).json(response);
     }
 });
 
