@@ -64,32 +64,22 @@ impl UsageTracker {
             return Ok(());
         }
 
-        // Check current count first, then increment only if allowed
+        // Atomically increment and then check against limit
         let key = self.get_usage_key(wallet);
 
-        // Handle store.get() errors using helper
-        let current_count = match self.store.get(&key).await {
-            Ok(count) => count,
-            Err(e) => {
-                return self.handle_store_error(e, "get usage count", wallet);
-            }
-        };
-
-        if current_count >= self.max_transactions as u32 {
-            return Err(KoraError::UsageLimitExceeded(format!(
-                "Wallet {wallet} exceeded limit: {}/{}",
-                current_count + 1,
-                self.max_transactions
-            )));
-        }
-
-        // Handle store.increment() errors using helper
         let new_count = match self.store.increment(&key).await {
             Ok(count) => count,
             Err(e) => {
                 return self.handle_store_error(e, "increment usage count", wallet);
             }
         };
+
+        if new_count > self.max_transactions as u32 {
+            return Err(KoraError::UsageLimitExceeded(format!(
+                "Wallet {wallet} exceeded limit: {}/{}",
+                new_count, self.max_transactions
+            )));
+        }
 
         log::debug!("Usage check passed for {wallet}: {new_count}/{}", self.max_transactions);
 
@@ -352,36 +342,6 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Usage limiter unavailable and fallback disabled"));
-    }
-
-    #[tokio::test]
-    async fn test_usage_limit_store_get_error_fallback_enabled() {
-        let store = Arc::new(ErrorUsageStore::new(true, false)); // get() will error
-        let kora_signers = HashSet::new();
-        let tracker = UsageTracker::new(store, 2, kora_signers, true); // fallback enabled
-
-        let wallet = Pubkey::new_unique();
-
-        // Should succeed because fallback is enabled
-        let result = tracker.check_usage_limit(&wallet).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_usage_limit_store_get_error_fallback_disabled() {
-        let store = Arc::new(ErrorUsageStore::new(true, false)); // get() will error
-        let kora_signers = HashSet::new();
-        let tracker = UsageTracker::new(store, 2, kora_signers, false); // fallback disabled
-
-        let wallet = Pubkey::new_unique();
-
-        // Should fail because fallback is disabled
-        let result = tracker.check_usage_limit(&wallet).await;
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Usage limit store unavailable and fallback disabled"));
     }
 
     #[tokio::test]
