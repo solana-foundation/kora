@@ -77,8 +77,7 @@ impl UsageTracker {
         if new_count > self.max_transactions as u32 {
             return Err(KoraError::UsageLimitExceeded(format!(
                 "Wallet {wallet} exceeded limit: {}/{}",
-                new_count,
-                self.max_transactions
+                new_count, self.max_transactions
             )));
         }
 
