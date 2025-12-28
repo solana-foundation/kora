@@ -658,6 +658,7 @@ mod tests {
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         // Initialize global config
@@ -699,6 +700,7 @@ mod tests {
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         // Initialize global config
@@ -753,6 +755,7 @@ mod tests {
                 usage_limit: UsageLimitConfig::default(),
             },
             metrics: MetricsConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         // Initialize global config
@@ -793,6 +796,7 @@ mod tests {
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         // Initialize global config
@@ -832,6 +836,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -876,6 +881,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -917,6 +923,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -966,6 +973,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -1001,6 +1009,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -1040,6 +1049,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -1078,6 +1088,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -1109,6 +1120,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         }
     }
 
@@ -1129,6 +1141,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         }
     }
 
@@ -1191,6 +1204,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         // Initialize global config
@@ -1223,6 +1237,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -1254,6 +1269,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -1291,6 +1307,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -1325,6 +1342,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -1363,6 +1381,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config);
@@ -1485,6 +1504,7 @@ mod tests {
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
+            privacy: crate::privacy::PrivacyConfig::default(),
         };
 
         let _ = update_config(config.clone());

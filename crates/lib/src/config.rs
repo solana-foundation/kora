@@ -25,6 +25,8 @@ pub struct Config {
     pub kora: KoraConfig,
     #[serde(default)]
     pub metrics: MetricsConfig,
+    #[serde(default)]
+    pub privacy: crate::privacy::PrivacyConfig,
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
@@ -531,6 +533,14 @@ impl Config {
         config.validation.token_2022.initialize().map_err(|e| {
             KoraError::InternalServerError(format!(
                 "Failed to initialize Token2022 config: {}",
+                sanitize_error!(e)
+            ))
+        })?;
+
+        // Initialize PrivacyConfig to parse and cache program addresses
+        config.privacy.initialize().map_err(|e| {
+            KoraError::InternalServerError(format!(
+                "Failed to initialize privacy config: {}",
                 sanitize_error!(e)
             ))
         })?;

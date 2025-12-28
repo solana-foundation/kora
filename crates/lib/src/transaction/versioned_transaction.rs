@@ -9,7 +9,7 @@ use solana_message::{
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
 use std::{collections::HashMap, ops::Deref};
 
-use solana_transaction_status_client_types::{UiInstruction, UiTransactionEncoding};
+use solana_transaction_status_client_types::{UiInnerInstructions, UiInstruction, UiTransactionEncoding};
 
 use crate::{
     config::Config,
@@ -33,6 +33,15 @@ pub struct VersionedTransactionResolved {
 
     // Includes all instructions, including inner instructions
     pub all_instructions: Vec<Instruction>,
+
+    // Number of top-level instructions (before inner instructions are added)
+    // Used to distinguish outer vs inner instructions in all_instructions
+    outer_instruction_count: Option<usize>,
+
+    // Raw inner instruction groups from simulation, preserving parent instruction mapping.
+    // Each UiInnerInstructions has an `index` field indicating which outer instruction triggered it.
+    // Used for CPI source tracking in privacy mode.
+    inner_instruction_groups: Option<Vec<UiInnerInstructions>>,
 
     // Parsed instructions by type (None if not parsed yet)
     parsed_system_instructions:
@@ -81,6 +90,8 @@ impl VersionedTransactionResolved {
             transaction: transaction.clone(),
             all_account_keys: vec![],
             all_instructions: vec![],
+            outer_instruction_count: None,
+            inner_instruction_groups: None,
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
         };
@@ -111,6 +122,9 @@ impl VersionedTransactionResolved {
         let outer_instructions =
             IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys)?;
 
+        // Track outer instruction count for CPI source identification
+        resolved.outer_instruction_count = Some(outer_instructions.len());
+
         let inner_instructions = resolved.fetch_inner_instructions(rpc_client, sig_verify).await?;
 
         resolved.all_instructions.extend(outer_instructions);
@@ -123,13 +137,18 @@ impl VersionedTransactionResolved {
     pub fn from_kora_built_transaction(
         transaction: &VersionedTransaction,
     ) -> Result<Self, KoraError> {
+        let instructions = IxUtils::uncompile_instructions(
+            transaction.message.instructions(),
+            transaction.message.static_account_keys(),
+        )?;
+        let outer_count = instructions.len();
+
         Ok(Self {
             transaction: transaction.clone(),
             all_account_keys: transaction.message.static_account_keys().to_vec(),
-            all_instructions: IxUtils::uncompile_instructions(
-                transaction.message.instructions(),
-                transaction.message.static_account_keys(),
-            )?,
+            all_instructions: instructions,
+            outer_instruction_count: Some(outer_count),
+            inner_instruction_groups: None,
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
         })
@@ -164,6 +183,10 @@ impl VersionedTransactionResolved {
         }
 
         if let Some(inner_instructions) = simulation_result.value.inner_instructions {
+            // Store raw inner instruction groups for CPI source tracking
+            // Each group's `index` field identifies which outer instruction triggered it
+            self.inner_instruction_groups = Some(inner_instructions.clone());
+
             let mut compiled_inner_instructions: Vec<CompiledInstruction> = vec![];
 
             inner_instructions.iter().for_each(|ix| {
@@ -218,6 +241,23 @@ impl VersionedTransactionResolved {
         self.parsed_spl_instructions.as_ref().ok_or_else(|| {
             KoraError::SerializationError("Parsed SPL instructions not found".to_string())
         })
+    }
+
+    /// Get the raw inner instruction groups from simulation.
+    ///
+    /// Each `UiInnerInstructions` has an `index` field that identifies which
+    /// outer instruction triggered the inner instructions. This is used for
+    /// CPI source tracking in privacy mode.
+    pub fn get_inner_instruction_groups(&self) -> Option<&[UiInnerInstructions]> {
+        self.inner_instruction_groups.as_deref()
+    }
+
+    /// Get the count of outer (top-level) instructions.
+    ///
+    /// Returns `None` if the transaction was created via `from_kora_built_transaction`
+    /// without simulation (before inner instructions are fetched).
+    pub fn get_outer_instruction_count(&self) -> Option<usize> {
+        self.outer_instruction_count
     }
 }
 

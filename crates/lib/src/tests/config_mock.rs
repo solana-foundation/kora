@@ -107,6 +107,7 @@ impl ConfigMockBuilder {
                     usage_limit: UsageLimitConfig::default(),
                 },
                 metrics: MetricsConfig::default(),
+                privacy: crate::privacy::PrivacyConfig::default(),
             },
         }
     }
@@ -127,6 +128,21 @@ impl ConfigMockBuilder {
 
     pub fn with_metrics(mut self, metrics: MetricsConfig) -> Self {
         self.config.metrics = metrics;
+        self
+    }
+
+    pub fn with_privacy(mut self, privacy: crate::privacy::PrivacyConfig) -> Self {
+        self.config.privacy = privacy;
+        self
+    }
+
+    /// Enable privacy mode with the given allowed programs.
+    pub fn with_privacy_enabled(mut self, allowed_programs: Vec<String>) -> Self {
+        let mut privacy_config = crate::privacy::PrivacyConfig::default();
+        privacy_config.enabled = true;
+        privacy_config.allowed_fee_payment_programs = allowed_programs;
+        privacy_config.initialize().expect("Failed to initialize privacy config");
+        self.config.privacy = privacy_config;
         self
     }
 

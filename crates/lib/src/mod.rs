@@ -11,6 +11,7 @@ pub mod fee;
 pub mod log;
 pub mod metrics;
 pub mod oracle;
+pub mod privacy;
 pub mod rpc;
 pub mod rpc_server;
 pub mod sanitize;

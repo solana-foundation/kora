@@ -3,6 +3,7 @@ use crate::{
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation},
     oracle::PriceSource,
+    privacy::CpiPaymentValidator,
     token::{interface::TokenMint, token::TokenUtil},
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
@@ -349,6 +350,7 @@ impl TransactionValidator {
         rpc_client: &RpcClient,
         expected_payment_destination: &Pubkey,
     ) -> Result<(), KoraError> {
+        // First, try standard top-level payment validation
         if TokenUtil::verify_token_payment(
             config,
             transaction_resolved,
@@ -359,6 +361,35 @@ impl TransactionValidator {
         .await?
         {
             return Ok(());
+        }
+
+        // If privacy mode is enabled, also check for CPI payments from allowed programs
+        let cpi_validator = CpiPaymentValidator::new(&config.privacy);
+        if cpi_validator.is_active() {
+            // Clone inner instructions to avoid borrow conflict with mutable transaction_resolved
+            let inner_instructions = transaction_resolved
+                .get_inner_instruction_groups()
+                .map(|ixs| ixs.to_vec());
+
+            let cpi_result = cpi_validator
+                .verify_cpi_payment(
+                    config,
+                    transaction_resolved,
+                    rpc_client,
+                    required_lamports,
+                    expected_payment_destination,
+                    inner_instructions.as_deref(),
+                )
+                .await?;
+
+            if cpi_result.payment_found {
+                log::info!(
+                    "CPI payment validated: {} lamports from {} transfers",
+                    cpi_result.total_lamports,
+                    cpi_result.payment_count
+                );
+                return Ok(());
+            }
         }
 
         Err(KoraError::InvalidTransaction(format!(
