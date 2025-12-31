@@ -6,14 +6,64 @@ use rand::Rng;
 use solana_keychain::{Signer, SolanaSigner};
 use solana_sdk::pubkey::Pubkey;
 use std::{
+    collections::HashMap,
     str::FromStr,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
-        Arc,
+        Arc, RwLock,
     },
+    time::{Duration, Instant},
 };
 
 const DEFAULT_WEIGHT: u32 = 1;
+
+/// Circuit breaker health tracking per signer
+#[derive(Debug, Clone)]
+struct SignerHealth {
+    consecutive_failures: u32,
+    last_failure_time: Option<Instant>,
+    is_blacklisted: bool,
+    blacklist_until: Option<Instant>,
+}
+
+impl Default for SignerHealth {
+    fn default() -> Self {
+        Self {
+            consecutive_failures: 0,
+            last_failure_time: None,
+            is_blacklisted: false,
+            blacklist_until: None,
+        }
+    }
+}
+
+/// Failover configuration for circuit breaker pattern
+#[derive(Debug, Clone)]
+pub struct FailoverConfig {
+    pub failure_threshold: u32,
+    pub blacklist_duration: Duration,
+    pub max_retry_attempts: u32,
+}
+
+impl Default for FailoverConfig {
+    fn default() -> Self {
+        Self {
+            failure_threshold: 3,
+            blacklist_duration: Duration::from_secs(300),
+            max_retry_attempts: 3,
+        }
+    }
+}
+
+/// Health metrics for monitoring signer status
+#[derive(Debug, Clone)]
+pub struct SignerHealthMetrics {
+    pub name: String,
+    pub public_key: String,
+    pub is_healthy: bool,
+    pub consecutive_failures: u32,
+    pub last_failure_time: Option<Instant>,
+}
 
 /// Metadata associated with a signer in the pool
 pub(crate) struct SignerWithMetadata {
@@ -54,16 +104,14 @@ impl SignerWithMetadata {
     }
 }
 
-/// A pool of signers with different selection strategies
+/// Signer pool with automatic failover via circuit breaker pattern
 pub struct SignerPool {
-    /// List of signers with their metadata
     signers: Vec<SignerWithMetadata>,
-    /// Strategy for selecting signers
     strategy: SelectionStrategy,
-    /// Current index for round-robin selection
     current_index: AtomicUsize,
-    /// Total weight of all signers in the pool
     total_weight: u32,
+    health_status: RwLock<HashMap<String, SignerHealth>>,
+    failover_config: FailoverConfig,
 }
 
 /// Information about a signer for monitoring/debugging
@@ -85,6 +133,8 @@ impl SignerPool {
             strategy: SelectionStrategy::RoundRobin,
             current_index: AtomicUsize::new(0),
             total_weight,
+            health_status: RwLock::new(HashMap::new()),
+            failover_config: FailoverConfig::default(),
         }
     }
 
@@ -134,10 +184,15 @@ impl SignerPool {
             strategy: config.signer_pool.strategy,
             current_index: AtomicUsize::new(0),
             total_weight,
+            health_status: RwLock::new(HashMap::new()),
+            failover_config: FailoverConfig::default(),
         })
     }
 
     /// Get the next signer according to the configured strategy
+    ///
+    /// Note: This method does NOT implement failover. Use `get_next_signer_with_failover()`
+    /// for production code that needs automatic retry on signer failures.
     pub fn get_next_signer(&self) -> Result<Arc<Signer>, KoraError> {
         if self.signers.is_empty() {
             return Err(KoraError::InternalServerError("Signer pool is empty".to_string()));
@@ -151,6 +206,190 @@ impl SignerPool {
 
         signer_meta.update_last_used();
         Ok(Arc::clone(&signer_meta.signer))
+    }
+
+    /// Get the next healthy signer with automatic failover
+    ///
+    /// This method implements a circuit breaker pattern:
+    /// 1. Selects a signer using the configured strategy
+    /// 2. Checks if the signer is healthy (not blacklisted)
+    /// 3. If blacklisted, tries the next signer (up to max_retry_attempts)
+    /// 4. Returns error if no healthy signers are available
+    ///
+    /// Use this method in production code to ensure high availability.
+    pub fn get_next_signer_with_failover(&self) -> Result<(Arc<Signer>, String), KoraError> {
+        if self.signers.is_empty() {
+            return Err(KoraError::InternalServerError("Signer pool is empty".to_string()));
+        }
+
+        let max_attempts = self.failover_config.max_retry_attempts;
+        let mut attempts = 0;
+
+        while attempts < max_attempts {
+            // Select candidate signer using configured strategy
+            let signer_meta = match self.strategy {
+                SelectionStrategy::RoundRobin => self.round_robin_select(),
+                SelectionStrategy::Random => self.random_select(),
+                SelectionStrategy::Weighted => self.weighted_select(),
+            }?;
+
+            match self.is_signer_healthy(&signer_meta.name) {
+                Ok(true) => {
+                    signer_meta.update_last_used();
+                    return Ok((Arc::clone(&signer_meta.signer), signer_meta.name.clone()));
+                }
+                Ok(false) => {
+                    log::warn!(
+                        "Signer '{}' is blacklisted, selecting next candidate (attempt {}/{})",
+                        signer_meta.name,
+                        attempts + 1,
+                        max_attempts
+                    );
+                    attempts += 1;
+                }
+                Err(e) => {
+                    log::error!("Error checking signer '{}' health: {}", signer_meta.name, e);
+                    attempts += 1;
+                }
+            }
+        }
+
+        Err(KoraError::InternalServerError(format!(
+            "No healthy signers available after {} attempts",
+            max_attempts
+        )))
+    }
+
+    /// Check if signer is healthy and handle blacklist expiration
+    fn is_signer_healthy(&self, signer_name: &str) -> Result<bool, KoraError> {
+        let health_map = self.health_status.read().map_err(|_| {
+            KoraError::InternalServerError("Failed to acquire health status read lock".to_string())
+        })?;
+
+        if let Some(health) = health_map.get(signer_name) {
+            if health.is_blacklisted {
+                if let Some(blacklist_until) = health.blacklist_until {
+                    if Instant::now() > blacklist_until {
+                        drop(health_map);
+                        self.clear_blacklist(signer_name)?;
+                        return Ok(true);
+                    }
+                }
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Record a signer failure and potentially blacklist it
+    ///
+    /// Call this method when a signer-specific error occurs (e.g., signing error,
+    /// insufficient balance, RPC connection failure). The method tracks consecutive
+    /// failures and blacklists the signer if it exceeds the threshold.
+    ///
+    /// # Arguments
+    /// * `signer_name` - Name of the failing signer
+    /// * `error` - The error that occurred (for logging)
+    pub fn record_failure(&self, signer_name: &str, error: &KoraError) -> Result<(), KoraError> {
+        let mut health_map = self.health_status.write().map_err(|_| {
+            KoraError::InternalServerError("Failed to acquire health status write lock".to_string())
+        })?;
+
+        let health =
+            health_map.entry(signer_name.to_string()).or_insert_with(SignerHealth::default);
+
+        health.consecutive_failures += 1;
+        health.last_failure_time = Some(Instant::now());
+
+        log::error!("Signer '{}' failure #{}: {}", signer_name, health.consecutive_failures, error);
+
+        // Blacklist if threshold exceeded
+        if health.consecutive_failures >= self.failover_config.failure_threshold {
+            health.is_blacklisted = true;
+            health.blacklist_until = Some(Instant::now() + self.failover_config.blacklist_duration);
+
+            log::warn!(
+                "Signer '{}' blacklisted for {:?} after {} consecutive failures",
+                signer_name,
+                self.failover_config.blacklist_duration,
+                health.consecutive_failures
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Record a successful operation and reset failure counters
+    ///
+    /// Call this method after a signer successfully completes an operation
+    /// (e.g., signs a transaction). This resets the failure counter and
+    /// indicates the signer has recovered.
+    ///
+    /// # Arguments
+    /// * `signer_name` - Name of the successful signer
+    pub fn record_success(&self, signer_name: &str) -> Result<(), KoraError> {
+        let mut health_map = self.health_status.write().map_err(|_| {
+            KoraError::InternalServerError("Failed to acquire health status write lock".to_string())
+        })?;
+
+        if let Some(health) = health_map.get_mut(signer_name) {
+            if health.consecutive_failures > 0 {
+                log::info!(
+                    "Signer '{}' recovered after {} failures",
+                    signer_name,
+                    health.consecutive_failures
+                );
+            }
+            health.consecutive_failures = 0;
+            health.last_failure_time = None;
+            health.is_blacklisted = false;
+            health.blacklist_until = None;
+        }
+
+        Ok(())
+    }
+
+    /// Clear blacklist for a signer (used when blacklist expires)
+    fn clear_blacklist(&self, signer_name: &str) -> Result<(), KoraError> {
+        let mut health_map = self.health_status.write().map_err(|_| {
+            KoraError::InternalServerError("Failed to acquire health status write lock".to_string())
+        })?;
+
+        if let Some(health) = health_map.get_mut(signer_name) {
+            health.is_blacklisted = false;
+            health.blacklist_until = None;
+            log::info!("Signer '{}' blacklist cleared (expired)", signer_name);
+        }
+
+        Ok(())
+    }
+
+    /// Get health metrics for all signers (for monitoring/debugging)
+    ///
+    /// Returns a snapshot of health status for all signers in the pool.
+    /// Use this for observability dashboards and operational monitoring.
+    pub fn get_health_metrics(&self) -> Result<Vec<SignerHealthMetrics>, KoraError> {
+        let health_map = self.health_status.read().map_err(|_| {
+            KoraError::InternalServerError("Failed to acquire health status read lock".to_string())
+        })?;
+
+        let metrics: Vec<SignerHealthMetrics> = self
+            .signers
+            .iter()
+            .map(|s| {
+                let health = health_map.get(&s.name);
+                SignerHealthMetrics {
+                    name: s.name.clone(),
+                    public_key: s.signer.pubkey().to_string(),
+                    is_healthy: health.map_or(true, |h| !h.is_blacklisted),
+                    consecutive_failures: health.map_or(0, |h| h.consecutive_failures),
+                    last_failure_time: health.and_then(|h| h.last_failure_time),
+                }
+            })
+            .collect();
+
+        Ok(metrics)
     }
 
     /// Round-robin selection strategy
@@ -254,6 +493,8 @@ mod tests {
             strategy: SelectionStrategy::RoundRobin,
             current_index: AtomicUsize::new(0),
             total_weight: 3,
+            health_status: RwLock::new(HashMap::new()),
+            failover_config: FailoverConfig::default(),
         }
     }
 
@@ -308,10 +549,160 @@ mod tests {
             strategy: SelectionStrategy::RoundRobin,
             current_index: AtomicUsize::new(0),
             total_weight: 0,
+            health_status: RwLock::new(HashMap::new()),
+            failover_config: FailoverConfig::default(),
         };
 
         assert!(pool.get_next_signer().is_err());
         assert!(pool.is_empty());
         assert_eq!(pool.len(), 0);
+    }
+
+    #[test]
+    fn test_failover_skips_blacklisted_signer() {
+        let pool = create_test_pool();
+
+        // Blacklist signer_1 by recording failures
+        let error = KoraError::SigningError("Test error".to_string());
+        for _ in 0..3 {
+            pool.record_failure("signer_1", &error).unwrap();
+        }
+
+        // Verify signer_1 is blacklisted
+        let metrics = pool.get_health_metrics().unwrap();
+        let signer1_health = metrics.iter().find(|m| m.name == "signer_1").unwrap();
+        assert!(!signer1_health.is_healthy);
+        assert_eq!(signer1_health.consecutive_failures, 3);
+
+        // Get next signer with failover - should skip signer_1
+        let (signer, name) = pool.get_next_signer_with_failover().unwrap();
+        assert_eq!(name, "signer_2");
+        assert_eq!(signer.pubkey(), pool.signers[1].signer.pubkey());
+    }
+
+    #[test]
+    fn test_record_success_resets_failures() {
+        let pool = create_test_pool();
+
+        // Record some failures
+        let error = KoraError::SigningError("Test error".to_string());
+        pool.record_failure("signer_1", &error).unwrap();
+        pool.record_failure("signer_1", &error).unwrap();
+
+        // Verify failures were recorded
+        let metrics = pool.get_health_metrics().unwrap();
+        let signer1_health = metrics.iter().find(|m| m.name == "signer_1").unwrap();
+        assert_eq!(signer1_health.consecutive_failures, 2);
+
+        // Record success
+        pool.record_success("signer_1").unwrap();
+
+        // Verify failures were reset
+        let metrics = pool.get_health_metrics().unwrap();
+        let signer1_health = metrics.iter().find(|m| m.name == "signer_1").unwrap();
+        assert_eq!(signer1_health.consecutive_failures, 0);
+        assert!(signer1_health.is_healthy);
+    }
+
+    #[test]
+    fn test_blacklist_threshold() {
+        let pool = create_test_pool();
+        let error = KoraError::SigningError("Test error".to_string());
+
+        // Record failures below threshold
+        pool.record_failure("signer_1", &error).unwrap();
+        pool.record_failure("signer_1", &error).unwrap();
+
+        // Should not be blacklisted yet
+        let metrics = pool.get_health_metrics().unwrap();
+        let signer1_health = metrics.iter().find(|m| m.name == "signer_1").unwrap();
+        assert!(signer1_health.is_healthy);
+        assert_eq!(signer1_health.consecutive_failures, 2);
+
+        // One more failure should trigger blacklist
+        pool.record_failure("signer_1", &error).unwrap();
+
+        // Should now be blacklisted
+        let metrics = pool.get_health_metrics().unwrap();
+        let signer1_health = metrics.iter().find(|m| m.name == "signer_1").unwrap();
+        assert!(!signer1_health.is_healthy);
+        assert_eq!(signer1_health.consecutive_failures, 3);
+    }
+
+    #[test]
+    fn test_failover_with_all_signers_blacklisted() {
+        let pool = create_test_pool();
+        let error = KoraError::SigningError("Test error".to_string());
+
+        // Blacklist all signers
+        for _ in 0..3 {
+            pool.record_failure("signer_1", &error).unwrap();
+            pool.record_failure("signer_2", &error).unwrap();
+        }
+
+        // Attempt to get signer should fail
+        let result = pool.get_next_signer_with_failover();
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(e.to_string().contains("No healthy signers available"));
+        }
+    }
+
+    #[test]
+    fn test_get_health_metrics() {
+        let pool = create_test_pool();
+        let error = KoraError::SigningError("Test error".to_string());
+
+        // Record some failures on signer_1
+        pool.record_failure("signer_1", &error).unwrap();
+
+        // Get metrics
+        let metrics = pool.get_health_metrics().unwrap();
+        assert_eq!(metrics.len(), 2);
+
+        // Check signer_1 metrics
+        let signer1_metrics = metrics.iter().find(|m| m.name == "signer_1").unwrap();
+        assert_eq!(signer1_metrics.consecutive_failures, 1);
+        assert!(signer1_metrics.is_healthy); // Not blacklisted yet
+        assert!(signer1_metrics.last_failure_time.is_some());
+
+        // Check signer_2 metrics (should be healthy with no failures)
+        let signer2_metrics = metrics.iter().find(|m| m.name == "signer_2").unwrap();
+        assert_eq!(signer2_metrics.consecutive_failures, 0);
+        assert!(signer2_metrics.is_healthy);
+        assert!(signer2_metrics.last_failure_time.is_none());
+    }
+
+    #[test]
+    fn test_failover_config_custom_threshold() {
+        let pool = SignerPool {
+            signers: vec![SignerWithMetadata::new(
+                "signer_1".to_string(),
+                Arc::new(
+                    solana_keychain::Signer::from_memory(&Keypair::new().to_base58_string())
+                        .unwrap(),
+                ),
+                1,
+            )],
+            strategy: SelectionStrategy::RoundRobin,
+            current_index: AtomicUsize::new(0),
+            total_weight: 1,
+            health_status: RwLock::new(HashMap::new()),
+            failover_config: FailoverConfig {
+                failure_threshold: 1, // Blacklist after just 1 failure
+                blacklist_duration: Duration::from_secs(60),
+                max_retry_attempts: 3,
+            },
+        };
+
+        let error = KoraError::SigningError("Test error".to_string());
+
+        // Single failure should blacklist with threshold=1
+        pool.record_failure("signer_1", &error).unwrap();
+
+        let metrics = pool.get_health_metrics().unwrap();
+        let signer1_health = &metrics[0];
+        assert!(!signer1_health.is_healthy);
+        assert_eq!(signer1_health.consecutive_failures, 1);
     }
 }

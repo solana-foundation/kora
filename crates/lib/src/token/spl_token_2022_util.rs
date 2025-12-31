@@ -8,32 +8,77 @@
 //! ### `define_extensions!` Macro
 //! The `define_extensions!` macro generates extension enums with parsing methods:
 //!
-//! ```rust,ignore
-//! // For MintExtension:
-//! MintExtension::from_string("transfer_fee_config") -> Some(ExtensionType::TransferFeeConfig)
-//! MintExtension::to_string_name(ExtensionType::TransferFeeConfig) -> Some("transfer_fee_config")  
-//! MintExtension::all_string_names() -> &["confidential_transfer_mint", "transfer_fee_config", ...]
-//! MintExtension::EXTENSIONS -> &[ExtensionType::ConfidentialTransferMint, ExtensionType::TransferFeeConfig, ...]
+//! ```rust
+//! use kora_lib::token::spl_token_2022_util::{MintExtension, AccountExtension};
+//! use spl_token_2022_interface::extension::ExtensionType;
+//!
+//! // For MintExtension - string to ExtensionType conversion
+//! assert_eq!(
+//!     MintExtension::from_string("transfer_fee_config"),
+//!     Some(ExtensionType::TransferFeeConfig)
+//! );
+//!
+//! // ExtensionType to string conversion
+//! assert_eq!(
+//!     MintExtension::to_string_name(ExtensionType::TransferFeeConfig),
+//!     Some("transfer_fee_config")
+//! );
+//!
+//! // Get all supported mint extension names
+//! let mint_names = MintExtension::all_string_names();
+//! assert!(mint_names.contains(&"transfer_fee_config"));
+//! assert!(mint_names.contains(&"confidential_transfer_mint"));
+//!
+//! // Access the list of all supported extension types
+//! let extensions = MintExtension::EXTENSIONS;
+//! assert!(extensions.contains(&ExtensionType::TransferFeeConfig));
 //! ```
 //!
 //! ## Utility Functions
 //!
 //! ### Extension Parsing Functions
-//! The module also provides utility functions for parsing extensions from on-chain data:
+//! The module provides utility functions for parsing extensions from on-chain data.
+//! For complex examples involving state parsing, see the integration tests.
 //!
-//! ```rust,ignore
-//! // Parse extensions from mint/account state:
-//! try_parse_mint_extension(&mint_state, ExtensionType::TransferFeeConfig) -> Option<ParsedExtension>
-//! try_parse_account_extension(&account_state, ExtensionType::MemoTransfer) -> Option<ParsedExtension>
+//! ```rust
+//! use kora_lib::token::spl_token_2022_util::{
+//!     parse_mint_extension_string, parse_account_extension_string,
+//!     get_all_mint_extension_names, get_all_account_extension_names,
+//! };
+//! use spl_token_2022_interface::extension::ExtensionType;
 //!
-//! // String-to-ExtensionType parsing:
-//! parse_mint_extension_string("transfer_fee_config") -> Some(ExtensionType::TransferFeeConfig)
-//! parse_account_extension_string("memo_transfer") -> Some(ExtensionType::MemoTransfer)
+//! // String-to-ExtensionType parsing for mints
+//! assert_eq!(
+//!     parse_mint_extension_string("transfer_fee_config"),
+//!     Some(ExtensionType::TransferFeeConfig)
+//! );
 //!
-//! // Get all valid extension names:
-//! get_all_mint_extension_names() -> &["confidential_transfer_mint", "transfer_fee_config", ...]
-//! get_all_account_extension_names() -> &["memo_transfer", "cpi_guard", ...]
+//! // String-to-ExtensionType parsing for accounts
+//! assert_eq!(
+//!     parse_account_extension_string("memo_transfer"),
+//!     Some(ExtensionType::MemoTransfer)
+//! );
+//!
+//! // Get all valid mint extension names
+//! let mint_names = get_all_mint_extension_names();
+//! assert!(mint_names.len() > 0);
+//! assert!(mint_names.contains(&"transfer_fee_config"));
+//!
+//! // Get all valid account extension names
+//! let account_names = get_all_account_extension_names();
+//! assert!(account_names.len() > 0);
+//! assert!(account_names.contains(&"memo_transfer"));
+//! assert!(account_names.contains(&"cpi_guard"));
 //! ```
+//!
+//! ### Advanced: Parsing Extensions from State
+//!
+//! For examples of parsing extensions from actual mint/account state objects,
+//! see the integration tests in `tests/token_2022_extensions.rs`. These tests
+//! demonstrate:
+//! - Creating mock mint/account states with extensions
+//! - Using `try_parse_mint_extension()` and `try_parse_account_extension()`
+//! - Validating extension data extraction
 
 use spl_token_2022_interface::{
     extension::{

@@ -234,6 +234,10 @@ pub struct Token2022InstructionPolicy {
 pub struct Token2022Config {
     pub blocked_mint_extensions: Vec<String>,
     pub blocked_account_extensions: Vec<String>,
+    /// Whether to reject tokens with unknown extensions (not in our known list)
+    /// This provides defense-in-depth against future SPL Token 2022 extensions
+    #[serde(default)]
+    pub reject_unknown_extensions: bool,
     #[serde(skip)]
     parsed_blocked_mint_extensions: Option<Vec<ExtensionType>>,
     #[serde(skip)]
@@ -245,6 +249,7 @@ impl Default for Token2022Config {
         Self {
             blocked_mint_extensions: Vec::new(),
             blocked_account_extensions: Vec::new(),
+            reject_unknown_extensions: false,
             parsed_blocked_mint_extensions: Some(Vec::new()),
             parsed_blocked_account_extensions: Some(Vec::new()),
         }
@@ -310,6 +315,116 @@ impl Token2022Config {
     /// Check if an account extension is blocked
     pub fn is_account_extension_blocked(&self, ext: ExtensionType) -> bool {
         self.get_blocked_account_extensions().contains(&ext)
+    }
+
+    /// Check for dangerous extension combinations
+    ///
+    /// Some extension combinations can create security risks or unexpected behavior.
+    /// This method validates that mint and account extensions don't form dangerous patterns.
+    ///
+    /// # Arguments
+    /// * `mint_extensions` - Extensions present on the mint account
+    /// * `account_extensions` - Extensions present on the token account
+    ///
+    /// # Returns
+    /// * `Ok(())` if no dangerous combinations detected
+    /// * `Err(String)` with description of the dangerous combination
+    pub fn validate_extension_combinations(
+        &self,
+        mint_extensions: &[ExtensionType],
+        _account_extensions: &[ExtensionType],
+    ) -> Result<(), String> {
+        // Rule 1: TransferHook + PermanentDelegate is high-risk
+        // TransferHook allows custom program logic on transfers, and PermanentDelegate
+        // grants permanent authority to transfer tokens. Together, they could enable
+        // unauthorized token draining through malicious transfer hook logic.
+        let has_transfer_hook =
+            mint_extensions.iter().any(|e| matches!(e, ExtensionType::TransferHook));
+        let has_permanent_delegate =
+            mint_extensions.iter().any(|e| matches!(e, ExtensionType::PermanentDelegate));
+
+        if has_transfer_hook && has_permanent_delegate {
+            return Err(
+                "Dangerous combination: TransferHook + PermanentDelegate not allowed. \
+                This combination could enable unauthorized token transfers through malicious hook logic."
+                    .to_string(),
+            );
+        }
+
+        // Rule 2: NonTransferable tokens cannot be used for payments
+        // NonTransferable tokens are locked to their current owner and cannot be moved,
+        // making them unsuitable for payment operations.
+        if mint_extensions.iter().any(|e| matches!(e, ExtensionType::NonTransferable)) {
+            return Err("NonTransferable tokens cannot be used for payments. \
+                These tokens are permanently locked to their owner."
+                .to_string());
+        }
+
+        // Rule 3: Pausable tokens are risky for payments
+        // If a token can be paused, payments could fail unexpectedly after validation
+        // but before transaction execution, leading to poor user experience.
+        if mint_extensions.iter().any(|e| matches!(e, ExtensionType::Pausable)) {
+            return Err("Pausable tokens are not allowed for payments. \
+                Token transfers could be disabled after validation but before execution."
+                .to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Check if any extensions are unknown (not in our recognized list)
+    ///
+    /// This provides defense-in-depth against future SPL Token 2022 extensions
+    /// that may be added after this code was written. Unknown extensions could
+    /// have unexpected behavior or security implications.
+    ///
+    /// # Arguments
+    /// * `mint_extensions` - Extensions to check from mint account
+    /// * `account_extensions` - Extensions to check from token account
+    ///
+    /// # Returns
+    /// * `Ok(())` if all extensions are known or unknown extensions are allowed
+    /// * `Err(String)` if unknown extensions detected and reject_unknown_extensions is true
+    pub fn validate_unknown_extensions(
+        &self,
+        mint_extensions: &[ExtensionType],
+        account_extensions: &[ExtensionType],
+    ) -> Result<(), String> {
+        if !self.reject_unknown_extensions {
+            return Ok(()); // Unknown extensions are allowed
+        }
+
+        // Check for unknown mint extensions
+        for ext in mint_extensions {
+            let is_known = crate::token::spl_token_2022_util::MintExtension::EXTENSIONS
+                .iter()
+                .any(|known| known == ext);
+
+            if !is_known {
+                return Err(format!(
+                    "Unknown mint extension detected: {:?}. \
+                    This extension is not recognized and may have unexpected behavior.",
+                    ext
+                ));
+            }
+        }
+
+        // Check for unknown account extensions
+        for ext in account_extensions {
+            let is_known = crate::token::spl_token_2022_util::AccountExtension::EXTENSIONS
+                .iter()
+                .any(|known| known == ext);
+
+            if !is_known {
+                return Err(format!(
+                    "Unknown account extension detected: {:?}. \
+                    This extension is not recognized and may have unexpected behavior.",
+                    ext
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
