@@ -18,23 +18,12 @@ use std::{
 const DEFAULT_WEIGHT: u32 = 1;
 
 /// Circuit breaker health tracking per signer
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct SignerHealth {
     consecutive_failures: u32,
     last_failure_time: Option<Instant>,
     is_blacklisted: bool,
     blacklist_until: Option<Instant>,
-}
-
-impl Default for SignerHealth {
-    fn default() -> Self {
-        Self {
-            consecutive_failures: 0,
-            last_failure_time: None,
-            is_blacklisted: false,
-            blacklist_until: None,
-        }
-    }
 }
 
 /// Failover configuration for circuit breaker pattern
@@ -382,7 +371,7 @@ impl SignerPool {
                 SignerHealthMetrics {
                     name: s.name.clone(),
                     public_key: s.signer.pubkey().to_string(),
-                    is_healthy: health.map_or(true, |h| !h.is_blacklisted),
+                    is_healthy: health.is_none_or(|h| !h.is_blacklisted),
                     consecutive_failures: health.map_or(0, |h| h.consecutive_failures),
                     last_failure_time: health.and_then(|h| h.last_failure_time),
                 }

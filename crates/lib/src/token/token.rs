@@ -468,11 +468,11 @@ impl TokenUtil {
         }
 
         let mint_extensions: Vec<spl_token_2022_interface::extension::ExtensionType> =
-            mint_with_extensions.get_extension_types().iter().copied().collect();
+            mint_with_extensions.get_extension_types().to_vec();
         let source_extensions: Vec<spl_token_2022_interface::extension::ExtensionType> =
-            source_with_extensions.get_extension_types().iter().copied().collect();
+            source_with_extensions.get_extension_types().to_vec();
         let destination_extensions: Vec<spl_token_2022_interface::extension::ExtensionType> =
-            destination_with_extensions.get_extension_types().iter().copied().collect();
+            destination_with_extensions.get_extension_types().to_vec();
 
         token2022_config
             .validate_extension_combinations(&mint_extensions, &source_extensions)
