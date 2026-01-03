@@ -42,11 +42,15 @@
   ],
   "author": "",
   "license": "MIT",
+  "peerDependencies": {
+    "@solana-program/token": "^0.5.1",
+    "@solana/kit": ">=2.3.0"
+  },
   "devDependencies": {
-    "@solana-program/compute-budget": "^0.8.0",
-    "@solana-program/system": "^0.7.0",
     "@solana-program/token": "^0.5.1",
     "@solana/kit": "^2.3.0",
+    "@solana-program/compute-budget": "^0.8.0",
+    "@solana-program/system": "^0.7.0",
     "@solana/prettier-config-solana": "^0.0.5",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.17.27",

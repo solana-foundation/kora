@@ -1,4 +1,3 @@
-// TODO Make sure to change necessary deps from devdeps to deps
 import { assertIsAddress, createNoopSigner, Instruction } from '@solana/kit';
 import {
     Config,
