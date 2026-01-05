@@ -245,3 +245,32 @@ release:
     echo "  git commit -m 'chore: release v$version'"
     echo "  git push origin HEAD"
     echo "  Create PR → merge → trigger 'Publish Rust Crates' workflow"
+
+# Prepare a new TypeScript SDK release
+[group('release')]
+[confirm('Start TS SDK release process?')]
+release-ts-sdk:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "Error: Working directory not clean"
+        exit 1
+    fi
+
+    current=$(node -p "require('./sdks/ts/package.json').version")
+    echo "Current version: $current"
+
+    read -p "New version: " version
+    [ -z "$version" ] && { echo "Version required"; exit 1; }
+
+    echo "Updating to $version..."
+    npm version "$version" --no-git-tag-version --prefix sdks/ts
+
+    git add sdks/ts/package.json
+
+    echo ""
+    echo "Ready! Next steps:"
+    echo "  git commit -m 'chore: release ts-sdk v$version'"
+    echo "  git push origin HEAD"
+    echo "  Trigger 'Publish TypeScript SDK (Manual)' workflow"
