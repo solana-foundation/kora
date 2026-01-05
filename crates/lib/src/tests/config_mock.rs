@@ -684,7 +684,10 @@ impl SignerPoolConfigBuilder {
     pub fn new() -> Self {
         Self {
             config: SignerPoolConfig {
-                signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
+                signer_pool: SignerPoolSettings {
+                    strategy: SelectionStrategy::RoundRobin,
+                    failover_enabled: false,
+                },
                 signers: vec![],
             },
         }

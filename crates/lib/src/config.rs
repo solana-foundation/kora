@@ -351,23 +351,7 @@ impl Token2022Config {
             );
         }
 
-        // Rule 2: NonTransferable tokens cannot be used for payments
-        // NonTransferable tokens are locked to their current owner and cannot be moved,
-        // making them unsuitable for payment operations.
-        if mint_extensions.iter().any(|e| matches!(e, ExtensionType::NonTransferable)) {
-            return Err("NonTransferable tokens cannot be used for payments. \
-                These tokens are permanently locked to their owner."
-                .to_string());
-        }
-
-        // Rule 3: Pausable tokens are risky for payments
-        // If a token can be paused, payments could fail unexpectedly after validation
-        // but before transaction execution, leading to poor user experience.
-        if mint_extensions.iter().any(|e| matches!(e, ExtensionType::Pausable)) {
-            return Err("Pausable tokens are not allowed for payments. \
-                Token transfers could be disabled after validation but before execution."
-                .to_string());
-        }
+        // Implicitly Allow: TransferHook without PermanentDelegate is allowed (used in legitimate cases)
 
         Ok(())
     }

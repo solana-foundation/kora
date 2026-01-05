@@ -77,7 +77,10 @@ mod tests {
     #[test]
     fn test_validate_with_result_warnings() {
         let config = SignerPoolConfig {
-            signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
+            signer_pool: SignerPoolSettings {
+                strategy: SelectionStrategy::RoundRobin,
+                failover_enabled: false,
+            },
             signers: vec![SignerConfig {
                 name: "test_signer".to_string(),
                 weight: Some(10), // Weight specified for non-weighted strategy
@@ -96,7 +99,10 @@ mod tests {
     #[test]
     fn test_validate_duplicate_names() {
         let config = SignerPoolConfig {
-            signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
+            signer_pool: SignerPoolSettings {
+                strategy: SelectionStrategy::RoundRobin,
+                failover_enabled: false,
+            },
             signers: vec![
                 SignerConfig {
                     name: "duplicate".to_string(),
@@ -123,7 +129,10 @@ mod tests {
     #[test]
     fn test_validate_with_result_zero_weight() {
         let config = SignerPoolConfig {
-            signer_pool: SignerPoolSettings { strategy: SelectionStrategy::Weighted },
+            signer_pool: SignerPoolSettings {
+                strategy: SelectionStrategy::Weighted,
+                failover_enabled: false,
+            },
             signers: vec![SignerConfig {
                 name: "test_signer".to_string(),
                 weight: Some(0),
@@ -141,7 +150,10 @@ mod tests {
     #[test]
     fn test_validate_with_result_empty_signers() {
         let config = SignerPoolConfig {
-            signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
+            signer_pool: SignerPoolSettings {
+                strategy: SelectionStrategy::RoundRobin,
+                failover_enabled: false,
+            },
             signers: vec![],
         };
 

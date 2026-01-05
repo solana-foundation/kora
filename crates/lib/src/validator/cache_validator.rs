@@ -171,6 +171,8 @@ mod tests {
     async fn test_validate_usage_limit_fallback_disabled_warning() {
         let config = ConfigMockBuilder::new()
             .with_usage_limit_enabled(true)
+            // Port 54321 is used here because it is likely to be closed,
+            // ensuring that the connection fails as expected for this test case.
             .with_usage_limit_cache_url(Some("redis://127.0.0.1:54321".to_string()))
             .with_usage_limit_fallback(false)
             .build();
@@ -191,6 +193,8 @@ mod tests {
     async fn test_validate_usage_limit_valid_redis_url() {
         let config = ConfigMockBuilder::new()
             .with_usage_limit_enabled(true)
+            // Port 54321 is used here because it is likely to be closed,
+            // ensuring that the connection fails as expected for this test case.
             .with_usage_limit_cache_url(Some("redis://127.0.0.1:54321".to_string()))
             .with_usage_limit_fallback(true)
             .build();

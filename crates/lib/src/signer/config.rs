@@ -18,6 +18,10 @@ pub struct SignerPoolSettings {
     /// Selection strategy for choosing signers
     #[serde(default = "default_strategy")]
     pub strategy: SelectionStrategy,
+
+    /// Whether to enable failover if the selected signer is unhealthy
+    #[serde(default)]
+    pub failover_enabled: bool,
 }
 
 /// Available signer selection strategies
@@ -424,7 +428,10 @@ weight = 2
     #[test]
     fn test_validate_config_success() {
         let config = SignerPoolConfig {
-            signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
+            signer_pool: SignerPoolSettings {
+                strategy: SelectionStrategy::RoundRobin,
+                failover_enabled: false,
+            },
             signers: vec![SignerConfig {
                 name: "test_signer".to_string(),
                 weight: Some(1),
@@ -441,7 +448,10 @@ weight = 2
     #[test]
     fn test_validate_config_empty_signers() {
         let config = SignerPoolConfig {
-            signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
+            signer_pool: SignerPoolSettings {
+                strategy: SelectionStrategy::RoundRobin,
+                failover_enabled: false,
+            },
             signers: vec![],
         };
 
@@ -451,7 +461,10 @@ weight = 2
     #[test]
     fn test_validate_config_duplicate_names() {
         let config = SignerPoolConfig {
-            signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
+            signer_pool: SignerPoolSettings {
+                strategy: SelectionStrategy::RoundRobin,
+                failover_enabled: false,
+            },
             signers: vec![
                 SignerConfig {
                     name: "duplicate".to_string(),

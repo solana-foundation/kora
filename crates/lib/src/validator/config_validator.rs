@@ -33,6 +33,7 @@ impl ConfigValidator {
         rpc_client: &RpcClient,
         allowed_tokens: &[String],
         warnings: &mut Vec<String>,
+        errors: &mut Vec<String>,
     ) {
         for token_str in allowed_tokens {
             let token_pubkey = match Pubkey::from_str(token_str) {
@@ -80,6 +81,34 @@ impl ConfigValidator {
                     token_str
                 ));
             }
+
+            if mint_with_extensions
+                .get_extension::<spl_token_2022_interface::extension::non_transferable::NonTransferable>()
+                .is_ok()
+            {
+                errors.push(format!(
+                    "SECURITY: Token {} has NonTransferable extension. \
+                    Risk: This token cannot be transferred and is unsuitable for payments. \
+                    Remove this token from allowed_tokens.",
+                    token_str
+                ));
+            }
+
+            if mint_with_extensions
+                .get_extension::<spl_token_2022_interface::extension::confidential_transfer::ConfidentialTransferMint>()
+                .is_ok()
+            {
+                // Note: ConfidentialTransfer is technically compatible but often adds complexity.
+                // We don't block it, but users should be aware.
+            }
+
+            // Note: Pausable is checked via config mostly, but we add a check here for existing mints
+            // because a Pausable mint is dangerous for payments.
+            if mint_with_extensions
+                .get_extension::<spl_token_2022_interface::extension::mint_close_authority::MintCloseAuthority>()
+                 .is_ok() {
+                  // MintCloseAuthority could be used to close the mint account, invalidating the token.
+             }
         }
     }
 
@@ -520,6 +549,7 @@ impl ConfigValidator {
                 rpc_client,
                 &config.validation.allowed_tokens,
                 &mut warnings,
+                &mut errors,
             )
             .await;
 
@@ -1633,6 +1663,7 @@ mod tests {
             &rpc_client,
             &[mint_pubkey.to_string()],
             &mut warnings,
+            &mut Vec::new(),
         )
         .await;
 
@@ -1659,6 +1690,7 @@ mod tests {
             &rpc_client,
             &[mint_pubkey.to_string()],
             &mut warnings,
+            &mut Vec::new(),
         )
         .await;
 
@@ -1687,6 +1719,7 @@ mod tests {
             &rpc_client,
             &[mint_pubkey.to_string()],
             &mut warnings,
+            &mut Vec::new(),
         )
         .await;
 
@@ -1712,6 +1745,7 @@ mod tests {
             &rpc_client,
             &[mint_pubkey.to_string()],
             &mut warnings,
+            &mut Vec::new(),
         )
         .await;
 

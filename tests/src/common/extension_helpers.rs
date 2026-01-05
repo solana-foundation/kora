@@ -190,7 +190,7 @@ impl ExtensionHelpers {
             ExtensionType::TransferHook,
         ])?;
 
-        let rent = rpc_client.get_minimum_balance_for_rent_exemption(space).await?;
+        let rent = rpc_client.get_minimum_balance_for_rent_exemption(space).await? + 10000;
 
         let create_account_instruction = create_account(
             &payer.pubkey(),

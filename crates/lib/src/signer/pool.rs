@@ -101,6 +101,7 @@ pub struct SignerPool {
     total_weight: u32,
     health_status: RwLock<HashMap<String, SignerHealth>>,
     failover_config: FailoverConfig,
+    failover_enabled: bool,
 }
 
 /// Information about a signer for monitoring/debugging
@@ -124,6 +125,7 @@ impl SignerPool {
             total_weight,
             health_status: RwLock::new(HashMap::new()),
             failover_config: FailoverConfig::default(),
+            failover_enabled: false,
         }
     }
 
@@ -175,6 +177,7 @@ impl SignerPool {
             total_weight,
             health_status: RwLock::new(HashMap::new()),
             failover_config: FailoverConfig::default(),
+            failover_enabled: config.signer_pool.failover_enabled,
         })
     }
 
@@ -201,14 +204,35 @@ impl SignerPool {
     ///
     /// This method implements a circuit breaker pattern:
     /// 1. Selects a signer using the configured strategy
-    /// 2. Checks if the signer is healthy (not blacklisted)
-    /// 3. If blacklisted, tries the next signer (up to max_retry_attempts)
-    /// 4. Returns error if no healthy signers are available
+    /// 2. If failover is DISABLED, returns the signer immediately (even if unhealthy)
+    /// 3. If failover is ENABLED, checks if the signer is healthy (not blacklisted)
+    /// 4. If blacklisted, tries the next signer (up to max_retry_attempts)
+    /// 5. Returns error if no healthy signers are available
     ///
     /// Use this method in production code to ensure high availability.
     pub fn get_next_signer_with_failover(&self) -> Result<(Arc<Signer>, String), KoraError> {
         if self.signers.is_empty() {
             return Err(KoraError::InternalServerError("Signer pool is empty".to_string()));
+        }
+
+        // If failover is disabled, just pick one and return it
+        if !self.failover_enabled {
+            let signer_meta = match self.strategy {
+                SelectionStrategy::RoundRobin => self.round_robin_select(),
+                SelectionStrategy::Random => self.random_select(),
+                SelectionStrategy::Weighted => self.weighted_select(),
+            }?;
+            match self.is_signer_healthy(&signer_meta.name) {
+                Ok(true) => {
+                    signer_meta.update_last_used();
+                    return Ok((Arc::clone(&signer_meta.signer), signer_meta.name.clone()));
+                }
+                _ => {
+                    // Even if unhealthy, we return it because failover is disabled.
+                    // The caller might fail, but that's what "failover disabled" implies.
+                    return Ok((Arc::clone(&signer_meta.signer), signer_meta.name.clone()));
+                }
+            }
         }
 
         let max_attempts = self.failover_config.max_retry_attempts;
@@ -484,6 +508,7 @@ mod tests {
             total_weight: 3,
             health_status: RwLock::new(HashMap::new()),
             failover_config: FailoverConfig::default(),
+            failover_enabled: false,
         }
     }
 
@@ -540,6 +565,7 @@ mod tests {
             total_weight: 0,
             health_status: RwLock::new(HashMap::new()),
             failover_config: FailoverConfig::default(),
+            failover_enabled: false,
         };
 
         assert!(pool.get_next_signer().is_err());
@@ -549,7 +575,8 @@ mod tests {
 
     #[test]
     fn test_failover_skips_blacklisted_signer() {
-        let pool = create_test_pool();
+        let mut pool = create_test_pool();
+        pool.failover_enabled = true;
 
         // Blacklist signer_1 by recording failures
         let error = KoraError::SigningError("Test error".to_string());
@@ -620,7 +647,8 @@ mod tests {
 
     #[test]
     fn test_failover_with_all_signers_blacklisted() {
-        let pool = create_test_pool();
+        let mut pool = create_test_pool();
+        pool.failover_enabled = true;
         let error = KoraError::SigningError("Test error".to_string());
 
         // Blacklist all signers
@@ -682,6 +710,7 @@ mod tests {
                 blacklist_duration: Duration::from_secs(60),
                 max_retry_attempts: 3,
             },
+            failover_enabled: false,
         };
 
         let error = KoraError::SigningError("Test error".to_string());
