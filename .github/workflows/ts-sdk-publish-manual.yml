@@ -111,15 +111,26 @@ jobs:
 
       - name: Create and push tag
         run: |
-          git tag "ts-sdk-v${{ steps.version.outputs.version }}"
-          git push origin "ts-sdk-v${{ steps.version.outputs.version }}"
+          TAG="ts-sdk-v${{ steps.version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "⏭️ Tag $TAG already exists, skipping"
+          else
+            git tag "$TAG"
+            echo "✅ Created tag $TAG"
+          fi
+          git push origin "$TAG" 2>/dev/null || echo "⏭️ Tag already pushed"
 
       - name: Publish to npm
         if: ${{ github.event.inputs.publish-to-npm == 'true' }}
         working-directory: sdks/ts
         run: |
-          echo "📦 Publishing @solana/kora@${{ steps.version.outputs.version }} to npm with tag '${{ steps.prerelease.outputs.npm_tag }}'..."
-          pnpm publish --access public --no-git-checks --tag ${{ steps.prerelease.outputs.npm_tag }}
+          VERSION="${{ steps.version.outputs.version }}"
+          if npm view @solana/kora@$VERSION version 2>/dev/null | grep -q "$VERSION"; then
+            echo "⏭️ @solana/kora@$VERSION already published, skipping"
+          else
+            echo "📦 Publishing @solana/kora@$VERSION to npm with tag '${{ steps.prerelease.outputs.npm_tag }}'..."
+            pnpm publish --access public --no-git-checks --tag ${{ steps.prerelease.outputs.npm_tag }}
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -131,8 +142,21 @@ jobs:
           script: |
             const tagName = `ts-sdk-v${{ steps.version.outputs.version }}`;
             const releaseName = `TypeScript SDK v${{ steps.version.outputs.version }}`;
-
             const isPrerelease = '${{ steps.prerelease.outputs.is_prerelease }}' === 'true';
+
+            // Check if release already exists
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tagName,
+              });
+              console.log(`⏭️ Release ${tagName} already exists, skipping`);
+              return;
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
+
             await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,

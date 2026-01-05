@@ -60,30 +60,56 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ steps.version.outputs.version }}"
-          git tag "kora-lib-v${{ steps.version.outputs.version }}"
-          git tag "kora-cli-v${{ steps.version.outputs.version }}"
-          git push origin --tags
+
+          VERSION="${{ steps.version.outputs.version }}"
+          for tag in "v$VERSION" "kora-lib-v$VERSION" "kora-cli-v$VERSION"; do
+            if git rev-parse "$tag" >/dev/null 2>&1; then
+              echo "⏭️ Tag $tag already exists, skipping"
+            else
+              git tag "$tag"
+              echo "✅ Created tag $tag"
+            fi
+          done
+          git push origin --tags 2>/dev/null || echo "⏭️ Tags already pushed"
 
       - name: Publish kora-lib to crates.io
         if: ${{ github.event.inputs.publish-to-crates-io == 'true' }}
         run: |
-          echo "📦 Publishing kora-lib@${{ steps.version.outputs.version }} to crates.io..."
-          cargo publish -p kora-lib --locked
+          VERSION="${{ steps.version.outputs.version }}"
+          if cargo search kora-lib --limit 1 | grep -q "kora-lib = \"$VERSION\""; then
+            echo "⏭️ kora-lib@$VERSION already published, skipping"
+          else
+            echo "📦 Publishing kora-lib@$VERSION to crates.io..."
+            cargo publish -p kora-lib --locked
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_CLI_REGISTRY_TOKEN }}
 
       - name: Wait for kora-lib to be available on crates.io
         if: ${{ github.event.inputs.publish-to-crates-io == 'true' }}
         run: |
-          echo "Waiting 30 seconds for crates.io to index kora-lib..."
-          sleep 30
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Waiting for kora-lib@$VERSION to be indexed on crates.io..."
+          for i in {1..12}; do
+            if cargo search kora-lib --limit 1 | grep -q "kora-lib = \"$VERSION\""; then
+              echo "✅ kora-lib@$VERSION is now available"
+              exit 0
+            fi
+            echo "Attempt $i/12: Not yet available, waiting 10s..."
+            sleep 10
+          done
+          echo "⚠️ Timeout waiting for kora-lib, proceeding anyway"
 
       - name: Publish kora-cli to crates.io
         if: ${{ github.event.inputs.publish-to-crates-io == 'true' }}
         run: |
-          echo "📦 Publishing kora-cli@${{ steps.version.outputs.version }} to crates.io..."
-          cargo publish -p kora-cli --locked
+          VERSION="${{ steps.version.outputs.version }}"
+          if cargo search kora-cli --limit 1 | grep -q "kora-cli = \"$VERSION\""; then
+            echo "⏭️ kora-cli@$VERSION already published, skipping"
+          else
+            echo "📦 Publishing kora-cli@$VERSION to crates.io..."
+            cargo publish -p kora-cli --locked
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_CLI_REGISTRY_TOKEN }}
 
@@ -95,8 +121,21 @@ jobs:
           script: |
             const tagName = `v${{ steps.version.outputs.version }}`;
             const releaseName = `Kora v${{ steps.version.outputs.version }}`;
-
             const isPrerelease = '${{ steps.prerelease.outputs.is_prerelease }}' === 'true';
+
+            // Check if release already exists
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tagName,
+              });
+              console.log(`⏭️ Release ${tagName} already exists, skipping`);
+              return;
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
+
             await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
