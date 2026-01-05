@@ -4,4 +4,4 @@ strategy = "round_robin"
 [[signers]]
 name = "main_signer"
 type = "memory"
-private_key_env = "KORA_SIGNER_PRIVATE_KEY"
+private_key_env = "KORA_PRIVATE_KEY"
