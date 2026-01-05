@@ -24,7 +24,8 @@ import {
     Rpc,
     SolanaRpcSubscriptionsApi,
     MicroLamports,
-    CompilableTransactionMessage,
+    TransactionMessage,
+    TransactionMessageWithFeePayer,
     TransactionMessageWithBlockhashLifetime,
     Commitment,
     Signature,
@@ -36,12 +37,13 @@ import {
     assertIsAddress,
     createKeyPairSignerFromBytes,
     getBase58Encoder,
+    assertIsSendableTransaction,
+    assertIsTransactionWithBlockhashLifetime,
 } from '@solana/kit';
 import {
     updateOrAppendSetComputeUnitLimitInstruction,
     updateOrAppendSetComputeUnitPriceInstruction,
     MAX_COMPUTE_UNIT_LIMIT,
-    estimateComputeUnitLimitFactory,
 } from '@solana-program/compute-budget';
 import { config } from 'dotenv';
 import path from 'path';
@@ -156,7 +158,7 @@ const createDefaultTransaction = async (
     feePayer: TransactionSigner,
     computeLimit: number = MAX_COMPUTE_UNIT_LIMIT,
     feeMicroLamports: MicroLamports = 1n as MicroLamports,
-): Promise<CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime> => {
+): Promise<TransactionMessageWithFeePayer & TransactionMessage & TransactionMessageWithBlockhashLifetime> => {
     const { value: latestBlockhash } = await client.rpc.getLatestBlockhash().send();
     return pipe(
         createTransactionMessage({ version: 0 }),
@@ -169,11 +171,13 @@ const createDefaultTransaction = async (
 
 const signAndSendTransaction = async (
     client: Client,
-    transactionMessage: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime,
+    transactionMessage: TransactionMessageWithFeePayer & TransactionMessage & TransactionMessageWithBlockhashLifetime,
     commitment: Commitment,
 ) => {
     const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
     const signature = getSignatureFromTransaction(signedTransaction);
+    assertIsSendableTransaction(signedTransaction);
+    assertIsTransactionWithBlockhashLifetime(signedTransaction);
     await sendAndConfirmTransactionFactory(client)(signedTransaction, { commitment, skipPreflight: true });
     return signature;
 };
