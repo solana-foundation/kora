@@ -1,3 +1,35 @@
+## 2.1.0-beta.0 - 2026-01-05
+
+
+### Features
+
+- add prerelease detection for Rust and TypeScript SDK workflows
+
+## ts-sdk-v0.1.1 - 2026-01-05
+
+
+### Bug Fixes
+
+- resolve race condition in usage tracker (#273)
+
+- add missing signature field to SignAndSendTransactionResponse (#270)
+
+- update readme url to docs (#269)
+
+- sign if create ata ix found (#267)
+
+
+### Documentation
+
+- update x402 guide to x402 v2 spec (#272)
+
+- add deploy sample & cleanup (#265)
+
+
+### Refactoring
+
+- limit access to config's singleton (#263)
+
 ## 2.0.1 - 2025-11-24
 
 
