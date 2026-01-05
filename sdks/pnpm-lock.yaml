@@ -19,16 +19,16 @@ importers:
     devDependencies:
       '@solana-program/compute-budget':
         specifier: ^0.11.0
-        version: 0.11.0(@solana/kit@5.1.0(typescript@5.8.3))
+        version: 0.11.0(@solana/kit@5.1.0(typescript@5.8.3)(ws@8.18.3))
       '@solana-program/system':
         specifier: ^0.10.0
-        version: 0.10.0(@solana/kit@5.1.0(typescript@5.8.3))
+        version: 0.10.0(@solana/kit@5.1.0(typescript@5.8.3)(ws@8.18.3))
       '@solana-program/token':
         specifier: ^0.9.0
-        version: 0.9.0(@solana/kit@5.1.0(typescript@5.8.3))
+        version: 0.9.0(@solana/kit@5.1.0(typescript@5.8.3)(ws@8.18.3))
       '@solana/kit':
         specifier: ^5.1.0
-        version: 5.1.0(typescript@5.8.3)
+        version: 5.1.0(typescript@5.8.3)(ws@8.18.3)
       '@solana/prettier-config-solana':
         specifier: ^0.0.6
         version: 0.0.6(prettier@3.6.2)
@@ -71,6 +71,9 @@ importers:
       typescript:
         specifier: ^5.3.3
         version: 5.8.3
+      ws:
+        specifier: ^8.18.3
+        version: 8.18.3
 
 packages:
 
@@ -2175,6 +2178,18 @@ packages:
     resolution: {integrity: sha512-7KxauUdBmSdWnmpaGFg+ppNjKF8uNLry8LyzjauQDOVONfFLNKrKvQOxZ/VuTIcS/gge/YNahf5RIIQWTSarlg==}
     engines: {node: ^12.13.0 || ^14.15.0 || >=16.0.0}
 
+  ws@8.18.3:
+    resolution: {integrity: sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   y18n@5.0.8:
     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}
     engines: {node: '>=10'}
@@ -2876,17 +2891,17 @@ snapshots:
     dependencies:
       '@sinonjs/commons': 3.0.1
 
-  '@solana-program/compute-budget@0.11.0(@solana/kit@5.1.0(typescript@5.8.3))':
+  '@solana-program/compute-budget@0.11.0(@solana/kit@5.1.0(typescript@5.8.3)(ws@8.18.3))':
     dependencies:
-      '@solana/kit': 5.1.0(typescript@5.8.3)
+      '@solana/kit': 5.1.0(typescript@5.8.3)(ws@8.18.3)
 
-  '@solana-program/system@0.10.0(@solana/kit@5.1.0(typescript@5.8.3))':
+  '@solana-program/system@0.10.0(@solana/kit@5.1.0(typescript@5.8.3)(ws@8.18.3))':
     dependencies:
-      '@solana/kit': 5.1.0(typescript@5.8.3)
+      '@solana/kit': 5.1.0(typescript@5.8.3)(ws@8.18.3)
 
-  '@solana-program/token@0.9.0(@solana/kit@5.1.0(typescript@5.8.3))':
+  '@solana-program/token@0.9.0(@solana/kit@5.1.0(typescript@5.8.3)(ws@8.18.3))':
     dependencies:
-      '@solana/kit': 5.1.0(typescript@5.8.3)
+      '@solana/kit': 5.1.0(typescript@5.8.3)(ws@8.18.3)
 
   '@solana/accounts@5.1.0(typescript@5.8.3)':
     dependencies:
@@ -2995,7 +3010,7 @@ snapshots:
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
 
-  '@solana/kit@5.1.0(typescript@5.8.3)':
+  '@solana/kit@5.1.0(typescript@5.8.3)(ws@8.18.3)':
     dependencies:
       '@solana/accounts': 5.1.0(typescript@5.8.3)
       '@solana/addresses': 5.1.0(typescript@5.8.3)
@@ -3010,11 +3025,11 @@ snapshots:
       '@solana/rpc': 5.1.0(typescript@5.8.3)
       '@solana/rpc-parsed-types': 5.1.0(typescript@5.8.3)
       '@solana/rpc-spec-types': 5.1.0(typescript@5.8.3)
-      '@solana/rpc-subscriptions': 5.1.0(typescript@5.8.3)
+      '@solana/rpc-subscriptions': 5.1.0(typescript@5.8.3)(ws@8.18.3)
       '@solana/rpc-types': 5.1.0(typescript@5.8.3)
       '@solana/signers': 5.1.0(typescript@5.8.3)
       '@solana/sysvars': 5.1.0(typescript@5.8.3)
-      '@solana/transaction-confirmation': 5.1.0(typescript@5.8.3)
+      '@solana/transaction-confirmation': 5.1.0(typescript@5.8.3)(ws@8.18.3)
       '@solana/transaction-messages': 5.1.0(typescript@5.8.3)
       '@solana/transactions': 5.1.0(typescript@5.8.3)
       typescript: 5.8.3
@@ -3111,13 +3126,15 @@ snapshots:
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
 
-  '@solana/rpc-subscriptions-channel-websocket@5.1.0(typescript@5.8.3)':
+  '@solana/rpc-subscriptions-channel-websocket@5.1.0(typescript@5.8.3)(ws@8.18.3)':
     dependencies:
       '@solana/errors': 5.1.0(typescript@5.8.3)
       '@solana/functional': 5.1.0(typescript@5.8.3)
       '@solana/rpc-subscriptions-spec': 5.1.0(typescript@5.8.3)
       '@solana/subscribable': 5.1.0(typescript@5.8.3)
       typescript: 5.8.3
+    optionalDependencies:
+      ws: 8.18.3
 
   '@solana/rpc-subscriptions-spec@5.1.0(typescript@5.8.3)':
     dependencies:
@@ -3127,7 +3144,7 @@ snapshots:
       '@solana/subscribable': 5.1.0(typescript@5.8.3)
       typescript: 5.8.3
 
-  '@solana/rpc-subscriptions@5.1.0(typescript@5.8.3)':
+  '@solana/rpc-subscriptions@5.1.0(typescript@5.8.3)(ws@8.18.3)':
     dependencies:
       '@solana/errors': 5.1.0(typescript@5.8.3)
       '@solana/fast-stable-stringify': 5.1.0(typescript@5.8.3)
@@ -3135,7 +3152,7 @@ snapshots:
       '@solana/promises': 5.1.0(typescript@5.8.3)
       '@solana/rpc-spec-types': 5.1.0(typescript@5.8.3)
       '@solana/rpc-subscriptions-api': 5.1.0(typescript@5.8.3)
-      '@solana/rpc-subscriptions-channel-websocket': 5.1.0(typescript@5.8.3)
+      '@solana/rpc-subscriptions-channel-websocket': 5.1.0(typescript@5.8.3)(ws@8.18.3)
       '@solana/rpc-subscriptions-spec': 5.1.0(typescript@5.8.3)
       '@solana/rpc-transformers': 5.1.0(typescript@5.8.3)
       '@solana/rpc-types': 5.1.0(typescript@5.8.3)
@@ -3221,7 +3238,7 @@ snapshots:
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
 
-  '@solana/transaction-confirmation@5.1.0(typescript@5.8.3)':
+  '@solana/transaction-confirmation@5.1.0(typescript@5.8.3)(ws@8.18.3)':
     dependencies:
       '@solana/addresses': 5.1.0(typescript@5.8.3)
       '@solana/codecs-strings': 5.1.0(typescript@5.8.3)
@@ -3229,7 +3246,7 @@ snapshots:
       '@solana/keys': 5.1.0(typescript@5.8.3)
       '@solana/promises': 5.1.0(typescript@5.8.3)
       '@solana/rpc': 5.1.0(typescript@5.8.3)
-      '@solana/rpc-subscriptions': 5.1.0(typescript@5.8.3)
+      '@solana/rpc-subscriptions': 5.1.0(typescript@5.8.3)(ws@8.18.3)
       '@solana/rpc-types': 5.1.0(typescript@5.8.3)
       '@solana/transaction-messages': 5.1.0(typescript@5.8.3)
       '@solana/transactions': 5.1.0(typescript@5.8.3)
@@ -4816,6 +4833,8 @@ snapshots:
     dependencies:
       imurmurhash: 0.1.4
       signal-exit: 3.0.7
+
+  ws@8.18.3: {}
 
   y18n@5.0.8: {}
 
