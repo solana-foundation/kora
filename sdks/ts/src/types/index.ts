@@ -1,4 +1,4 @@
-import { Instruction, Address } from '@solana/kit';
+import { Instruction } from '@solana/kit';
 
 /**
  * Request Types
