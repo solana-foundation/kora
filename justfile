@@ -226,6 +226,10 @@ release:
     echo "Updating to $version..."
     cargo set-version --workspace "$version"
 
+    # Update kora-lib version in workspace.dependencies
+    sed -i.bak "s/kora-lib = { path = \"crates\/lib\", version = \"[^\"]*\" }/kora-lib = { path = \"crates\/lib\", version = \"$version\" }/" Cargo.toml
+    rm -f Cargo.toml.bak
+
     echo "Generating CHANGELOG..."
     last_tag=$(git tag -l "v*" --sort=-version:refname | head -1)
     if [ -z "$last_tag" ]; then
