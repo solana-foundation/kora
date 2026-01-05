@@ -89,6 +89,18 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Publishing version: $VERSION"
 
+      - name: Check if prerelease
+        id: prerelease
+        run: |
+          if [[ "${{ steps.version.outputs.version }}" == *"-"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "npm_tag=beta" >> $GITHUB_OUTPUT
+            echo "📦 Pre-release version detected, using 'beta' npm tag"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "npm_tag=latest" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build TypeScript SDK
         working-directory: sdks
         run: pnpm --filter "@solana/kora" build
@@ -106,8 +118,8 @@ jobs:
         if: ${{ github.event.inputs.publish-to-npm == 'true' }}
         working-directory: sdks/ts
         run: |
-          echo "📦 Publishing @solana/kora@${{ steps.version.outputs.version }} to npm..."
-          pnpm publish --access public --no-git-checks
+          echo "📦 Publishing @solana/kora@${{ steps.version.outputs.version }} to npm with tag '${{ steps.prerelease.outputs.npm_tag }}'..."
+          pnpm publish --access public --no-git-checks --tag ${{ steps.prerelease.outputs.npm_tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -120,6 +132,7 @@ jobs:
             const tagName = `ts-sdk-v${{ steps.version.outputs.version }}`;
             const releaseName = `TypeScript SDK v${{ steps.version.outputs.version }}`;
 
+            const isPrerelease = '${{ steps.prerelease.outputs.is_prerelease }}' === 'true';
             await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -127,7 +140,7 @@ jobs:
               name: releaseName,
               body: `Release of @solana/kora v${{ steps.version.outputs.version }}`,
               draft: false,
-              prerelease: false,
+              prerelease: isPrerelease,
             });
 
             console.log(`✅ Created release: ${releaseName}`);
