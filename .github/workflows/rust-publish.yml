@@ -76,7 +76,7 @@ jobs:
         if: ${{ github.event.inputs.publish-to-crates-io == 'true' }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          if cargo search kora-lib --limit 1 | grep -q "kora-lib = \"$VERSION\""; then
+          if curl -s "https://crates.io/api/v1/crates/kora-lib/$VERSION" | grep -q '"version"'; then
             echo "⏭️ kora-lib@$VERSION already published, skipping"
           else
             echo "📦 Publishing kora-lib@$VERSION to crates.io..."
@@ -91,7 +91,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           echo "Waiting for kora-lib@$VERSION to be indexed on crates.io..."
           for i in {1..12}; do
-            if cargo search kora-lib --limit 1 | grep -q "kora-lib = \"$VERSION\""; then
+            if curl -s "https://crates.io/api/v1/crates/kora-lib/$VERSION" | grep -q '"version"'; then
               echo "✅ kora-lib@$VERSION is now available"
               exit 0
             fi
@@ -104,7 +104,7 @@ jobs:
         if: ${{ github.event.inputs.publish-to-crates-io == 'true' }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          if cargo search kora-cli --limit 1 | grep -q "kora-cli = \"$VERSION\""; then
+          if curl -s "https://crates.io/api/v1/crates/kora-cli/$VERSION" | grep -q '"version"'; then
             echo "⏭️ kora-cli@$VERSION already published, skipping"
           else
             echo "📦 Publishing kora-cli@$VERSION to crates.io..."
