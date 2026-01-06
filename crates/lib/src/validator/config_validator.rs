@@ -746,6 +746,7 @@ mod tests {
                     get_blockhash: false,
                     get_config: false,
                     get_payer_signer: false,
+                    get_version: false,
                 },
                 auth: AuthConfig::default(),
                 payment_address: None,

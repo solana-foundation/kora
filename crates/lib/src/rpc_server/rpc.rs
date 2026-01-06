@@ -17,6 +17,7 @@ use crate::rpc_server::method::{
     get_config::{get_config, GetConfigResponse},
     get_payer_signer::{get_payer_signer, GetPayerSignerResponse},
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
+    get_version::{get_version, GetVersionResponse},
     sign_and_send_transaction::{
         sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResponse,
     },
@@ -121,6 +122,13 @@ impl KoraRpc {
         result
     }
 
+    pub async fn get_version(&self) -> Result<GetVersionResponse, KoraError> {
+        info!("Get version request received");
+        let result = get_version().await;
+        info!("Get version response: {result:?}");
+        result
+    }
+
     #[cfg(feature = "docs")]
     pub fn build_docs_spec() -> Vec<OpenApiSpec> {
         vec![
@@ -164,6 +172,11 @@ impl KoraRpc {
                 request: Some(TransferTransactionRequest::schema().1),
                 response: TransferTransactionResponse::schema().1,
             },
+            OpenApiSpec {
+                name: "getVersion".to_string(),
+                request: None,
+                response: GetVersionResponse::schema().1,
+            },
         ]
     }
 }
@@ -191,6 +204,17 @@ mod tests {
         // Test liveness endpoint
         let result = kora_rpc.liveness().await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_get_version() {
+        let kora_rpc = create_test_kora_rpc();
+
+        let result = kora_rpc.get_version().await;
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(!response.version.is_empty());
+        assert_eq!(response.version, env!("CARGO_PKG_VERSION"));
     }
 
     #[tokio::test]

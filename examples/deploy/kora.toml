@@ -90,6 +90,7 @@ transfer_transaction = true
 get_blockhash = true
 get_config = true
 get_payer_signer = true
+get_version = true
 
 [validation.price]
 type = "margin" # free / margin / fixed

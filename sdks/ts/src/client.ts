@@ -5,6 +5,7 @@ import {
     EstimateTransactionFeeResponse,
     GetBlockhashResponse,
     GetSupportedTokensResponse,
+    GetVersionResponse,
     SignAndSendTransactionRequest,
     SignAndSendTransactionResponse,
     SignTransactionRequest,
@@ -146,6 +147,21 @@ export class KoraClient {
      */
     async getBlockhash(): Promise<GetBlockhashResponse> {
         return this.rpcRequest<GetBlockhashResponse, undefined>('getBlockhash', undefined);
+    }
+
+    /**
+     * Gets the version of the Kora server.
+     * @returns Object containing the server version
+     * @throws {Error} When the RPC call fails
+     *
+     * @example
+     * ```typescript
+     * const { version } = await client.getVersion();
+     * console.log('Server version:', version);
+     * ```
+     */
+    async getVersion(): Promise<GetVersionResponse> {
+        return this.rpcRequest<GetVersionResponse, undefined>('getVersion', undefined);
     }
 
     /**
