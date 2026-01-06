@@ -5,6 +5,7 @@ import {
     GetBlockhashResponse,
     GetSupportedTokensResponse,
     GetPayerSignerResponse,
+    GetVersionResponse,
     SignTransactionRequest,
     SignTransactionResponse,
     SignAndSendTransactionRequest,
@@ -173,6 +174,7 @@ describe('KoraClient Unit Tests', () => {
                     transfer_transaction: true,
                     get_blockhash: true,
                     get_config: true,
+                    get_version: true,
                 },
             };
 
@@ -187,6 +189,16 @@ describe('KoraClient Unit Tests', () => {
             };
 
             await testSuccessfulRpcMethod('getBlockhash', () => client.getBlockhash(), mockResponse);
+        });
+    });
+
+    describe('getVersion', () => {
+        it('should return server version', async () => {
+            const mockResponse: GetVersionResponse = {
+                version: '2.1.0-beta.0',
+            };
+
+            await testSuccessfulRpcMethod('getVersion', () => client.getVersion(), mockResponse);
         });
     });
 
@@ -426,6 +438,7 @@ describe('KoraClient Unit Tests', () => {
                 transfer_transaction: true,
                 get_blockhash: true,
                 get_config: true,
+                get_version: true,
             },
         };
 

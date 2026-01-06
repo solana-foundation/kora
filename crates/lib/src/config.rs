@@ -324,6 +324,7 @@ pub struct EnabledMethods {
     pub transfer_transaction: bool,
     pub get_blockhash: bool,
     pub get_config: bool,
+    pub get_version: bool,
 }
 
 impl EnabledMethods {
@@ -338,6 +339,7 @@ impl EnabledMethods {
             self.transfer_transaction,
             self.get_blockhash,
             self.get_config,
+            self.get_version,
         ]
         .into_iter()
     }
@@ -372,13 +374,16 @@ impl EnabledMethods {
         if self.get_config {
             methods.push("getConfig".to_string());
         }
+        if self.get_version {
+            methods.push("getVersion".to_string());
+        }
         methods
     }
 }
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 9>;
+    type IntoIter = std::array::IntoIter<bool, 10>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
@@ -391,6 +396,7 @@ impl IntoIterator for &EnabledMethods {
             self.transfer_transaction,
             self.get_blockhash,
             self.get_config,
+            self.get_version,
         ]
         .into_iter()
     }
@@ -408,6 +414,7 @@ impl Default for EnabledMethods {
             transfer_transaction: true,
             get_blockhash: true,
             get_config: true,
+            get_version: true,
         }
     }
 }
@@ -604,6 +611,7 @@ mod tests {
                 ("get_blockhash", true),
                 ("get_config", true),
                 ("get_payer_signer", true),
+                ("get_version", true),
             ])
             .build_config()
             .unwrap();

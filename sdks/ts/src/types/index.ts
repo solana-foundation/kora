@@ -127,6 +127,14 @@ export interface GetBlockhashResponse {
 }
 
 /**
+ * Response containing the server version.
+ */
+export interface GetVersionResponse {
+    /** Server version string */
+    version: string;
+}
+
+/**
  * Response containing supported token mint addresses.
  */
 export interface GetSupportedTokensResponse {
@@ -254,6 +262,8 @@ export interface EnabledMethods {
     get_blockhash: boolean;
     /** Whether the get_config method is enabled */
     get_config: boolean;
+    /** Whether the get_version method is enabled */
+    get_version: boolean;
 }
 
 /**
