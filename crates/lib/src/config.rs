@@ -317,45 +317,6 @@ impl Token2022Config {
         self.get_blocked_account_extensions().contains(&ext)
     }
 
-    /// Check for dangerous extension combinations
-    ///
-    /// Some extension combinations can create security risks or unexpected behavior.
-    /// This method validates that mint and account extensions don't form dangerous patterns.
-    ///
-    /// # Arguments
-    /// * `mint_extensions` - Extensions present on the mint account
-    /// * `account_extensions` - Extensions present on the token account
-    ///
-    /// # Returns
-    /// * `Ok(())` if no dangerous combinations detected
-    /// * `Err(String)` with description of the dangerous combination
-    pub fn validate_extension_combinations(
-        &self,
-        mint_extensions: &[ExtensionType],
-        _account_extensions: &[ExtensionType],
-    ) -> Result<(), String> {
-        // Rule 1: TransferHook + PermanentDelegate is high-risk
-        // TransferHook allows custom program logic on transfers, and PermanentDelegate
-        // grants permanent authority to transfer tokens. Together, they could enable
-        // unauthorized token draining through malicious transfer hook logic.
-        let has_transfer_hook =
-            mint_extensions.iter().any(|e| matches!(e, ExtensionType::TransferHook));
-        let has_permanent_delegate =
-            mint_extensions.iter().any(|e| matches!(e, ExtensionType::PermanentDelegate));
-
-        if has_transfer_hook && has_permanent_delegate {
-            return Err(
-                "Dangerous combination: TransferHook + PermanentDelegate not allowed. \
-                This combination could enable unauthorized token transfers through malicious hook logic."
-                    .to_string(),
-            );
-        }
-
-        // Implicitly Allow: TransferHook without PermanentDelegate is allowed (used in legitimate cases)
-
-        Ok(())
-    }
-
     /// Check if any extensions are unknown (not in our recognized list)
     ///
     /// This provides defense-in-depth against future SPL Token 2022 extensions

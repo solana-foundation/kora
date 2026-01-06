@@ -475,24 +475,6 @@ impl TokenUtil {
             destination_with_extensions.get_extension_types().to_vec();
 
         token2022_config
-            .validate_extension_combinations(&mint_extensions, &source_extensions)
-            .map_err(|e| {
-                KoraError::ValidationError(format!(
-                    "Dangerous extension combination detected on source: {}",
-                    e
-                ))
-            })?;
-
-        token2022_config
-            .validate_extension_combinations(&mint_extensions, &destination_extensions)
-            .map_err(|e| {
-                KoraError::ValidationError(format!(
-                    "Dangerous extension combination detected on destination: {}",
-                    e
-                ))
-            })?;
-
-        token2022_config
             .validate_unknown_extensions(&mint_extensions, &source_extensions)
             .map_err(|e| {
                 KoraError::ValidationError(format!("Unknown extension validation failed: {}", e))

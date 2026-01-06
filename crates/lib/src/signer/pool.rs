@@ -222,17 +222,8 @@ impl SignerPool {
                 SelectionStrategy::Random => self.random_select(),
                 SelectionStrategy::Weighted => self.weighted_select(),
             }?;
-            match self.is_signer_healthy(&signer_meta.name) {
-                Ok(true) => {
-                    signer_meta.update_last_used();
-                    return Ok((Arc::clone(&signer_meta.signer), signer_meta.name.clone()));
-                }
-                _ => {
-                    // Even if unhealthy, we return it because failover is disabled.
-                    // The caller might fail, but that's what "failover disabled" implies.
-                    return Ok((Arc::clone(&signer_meta.signer), signer_meta.name.clone()));
-                }
-            }
+            signer_meta.update_last_used();
+            return Ok((Arc::clone(&signer_meta.signer), signer_meta.name.clone()));
         }
 
         let max_attempts = self.failover_config.max_retry_attempts;

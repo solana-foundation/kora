@@ -94,20 +94,18 @@ impl ConfigValidator {
                 ));
             }
 
-            if mint_with_extensions
-                .get_extension::<spl_token_2022_interface::extension::confidential_transfer::ConfidentialTransferMint>()
-                .is_ok()
-            {
-                // Note: ConfidentialTransfer is technically compatible but often adds complexity.
-                // We don't block it, but users should be aware.
-            }
-
             // Note: Pausable is checked via config mostly, but we add a check here for existing mints
             // because a Pausable mint is dangerous for payments.
             if mint_with_extensions
                 .get_extension::<spl_token_2022_interface::extension::mint_close_authority::MintCloseAuthority>()
                  .is_ok() {
-                  // MintCloseAuthority could be used to close the mint account, invalidating the token.
+                  errors.push(format!(
+                    "SECURITY: Token {} has MintCloseAuthority extension. \
+                    Risk: The mint authority can close the mint account, permanently destroying the token supply. \
+                    This is considered a 'Pausable' function and is unsafe for payments. \
+                    Remove this token from allowed_tokens.",
+                    token_str
+                ));
              }
         }
     }
