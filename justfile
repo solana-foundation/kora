@@ -257,7 +257,7 @@ hotfix:
     set -euo pipefail
 
     # Find latest stable tag (no -beta, -alpha, -rc)
-    stable_tag=$(git tag -l "v*" --sort=-version:refname | grep -v -E '-(beta|alpha|rc)' | head -1)
+    stable_tag=$(git tag -l "v*" --sort=-version:refname | grep -v -E -- '-(beta|alpha|rc)' | head -1)
 
     if [ -z "$stable_tag" ]; then
         echo "Error: No stable release tag found"
