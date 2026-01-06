@@ -202,7 +202,20 @@ generate-key:
 # Release
 # ******************************************************************************
 
-# Prepare a new release
+# Show branch workflow guidance
+[group('release')]
+branch-info:
+    @echo "Branch Workflow:"
+    @echo "  main           → Audited code only, stable releases"
+    @echo "  release/X.Y.Z  → Pre-audit features for version X.Y.Z"
+    @echo "  hotfix/*       → Hotfixes from main"
+    @echo ""
+    @echo "Releasing:"
+    @echo "  Stable: checkout main, run 'just release'"
+    @echo "  Beta:   checkout release/X.Y.Z, run 'just release'"
+    @echo "  Hotfix: run 'just hotfix' (branches from main)"
+
+# Prepare a new release (run from main for stable, release/X.Y.Z for beta)
 [group('release')]
 [confirm('Start release process?')]
 release:
@@ -250,26 +263,23 @@ release:
     echo "  git push origin HEAD"
     echo "  Create PR → merge → trigger 'Publish Rust Crates' workflow"
 
-# Start a hotfix branch from the latest stable release
+# Start a hotfix branch from main (main is always audited/stable)
 [group('release')]
-hotfix:
+hotfix name='':
     #!/usr/bin/env bash
     set -euo pipefail
 
-    # Find latest stable tag (no -beta, -alpha, -rc)
-    stable_tag=$(git tag -l "v*" --sort=-version:refname | grep -v -E -- '-(beta|alpha|rc)' | head -1)
-
-    if [ -z "$stable_tag" ]; then
-        echo "Error: No stable release tag found"
-        exit 1
+    if [ -z "{{name}}" ]; then
+        read -p "Hotfix branch name (hotfix/___): " name
+        [ -z "$name" ] && { echo "Name required"; exit 1; }
+    else
+        name="{{name}}"
     fi
 
-    echo "Latest stable release: $stable_tag"
+    branch_name="hotfix/$name"
 
-    # Extract major.minor for branch name
-    version=${stable_tag#v}
-    major_minor=$(echo "$version" | cut -d. -f1,2)
-    branch_name="release/${major_minor}.x"
+    # Ensure we're up to date with main
+    git fetch origin main
 
     # Check if branch already exists
     if git show-ref --verify --quiet "refs/heads/$branch_name"; then
@@ -279,11 +289,11 @@ hotfix:
             git checkout "$branch_name"
         fi
     else
-        read -p "Create branch $branch_name from $stable_tag? [y/N] " create
+        read -p "Create branch $branch_name from main? [y/N] " create
         if [[ "$create" =~ ^[Yy]$ ]]; then
-            git checkout -b "$branch_name" "$stable_tag"
+            git checkout -b "$branch_name" origin/main
             echo ""
-            echo "✅ Created $branch_name from $stable_tag"
+            echo "✅ Created $branch_name from main"
         else
             echo "Aborted"
             exit 0
@@ -293,9 +303,8 @@ hotfix:
     echo ""
     echo "Next steps:"
     echo "  1. Apply your hotfix commits"
-    echo "  2. Run 'just release' to bump version (e.g., ${major_minor}.x)"
-    echo "  3. Push and trigger release workflow"
-    echo "  4. Merge hotfix back to main: git checkout main && git merge $branch_name"
+    echo "  2. Push and create PR to main"
+    echo "  3. After merge, run 'just release' on main to publish"
 
 # Prepare a new TypeScript SDK release
 [group('release')]

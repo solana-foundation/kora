@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## TL;DR - Development Workflow
 
 ### Branches & Commits
-- **Main branch**: `main` (protected, requires PRs)
-- **Release branch**: `release/{id}` (requires PRs)
+- **Main branch**: `main` (protected, audited code only)
+- **Release branch**: `release/X.Y.Z` (pre-audit features for version X.Y.Z)
+- **Hotfix branch**: `hotfix/*` (hotfixes from main)
 - **Commit format**: Use conventional commits for automatic releases
   - `feat:` → minor version bump (1.0.3 → 1.1.0)
   - `fix:` → patch version bump (1.0.3 → 1.0.4)
