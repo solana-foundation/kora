@@ -21,6 +21,7 @@ import {
 } from './types/index.js';
 import crypto from 'crypto';
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS, getTransferInstruction } from '@solana-program/token';
+import { getInstructionsFromBase64Message } from './utils/transaction.js';
 
 /**
  * Kora RPC client for interacting with the Kora paymaster service.
@@ -272,7 +273,16 @@ export class KoraClient {
      * ```
      */
     async transferTransaction(request: TransferTransactionRequest): Promise<TransferTransactionResponse> {
-        return this.rpcRequest<TransferTransactionResponse, TransferTransactionRequest>('transferTransaction', request);
+        const response = await this.rpcRequest<TransferTransactionResponse, TransferTransactionRequest>(
+            'transferTransaction',
+            request,
+        );
+
+        // Parse instructions from the message to enhance developer experience
+        // Always set instructions, even for empty messages (for consistency)
+        response.instructions = getInstructionsFromBase64Message(response.message || '');
+
+        return response;
     }
 
     /**

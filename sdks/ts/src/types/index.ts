@@ -95,6 +95,8 @@ export interface TransferTransactionResponse {
     blockhash: string;
     /** Public key of the Kora signer (fee payer) */
     signer_pubkey: string;
+    /** Parsed instructions from the transaction message */
+    instructions: Instruction[];
 }
 
 /**
