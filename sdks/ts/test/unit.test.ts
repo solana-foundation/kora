@@ -307,6 +307,7 @@ describe('KoraClient Unit Tests', () => {
                 message: 'Transfer transaction created',
                 blockhash: 'test_blockhash',
                 signer_pubkey: 'test_signer_pubkey',
+                instructions: [],
             };
 
             await testSuccessfulRpcMethod(
