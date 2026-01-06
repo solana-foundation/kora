@@ -20,8 +20,8 @@ import {
     GetPaymentInstructionResponse,
 } from './types/index.js';
 import crypto from 'crypto';
-import { getInstructionsFromBase64Message } from './utils/transaction.js';
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS, getTransferInstruction } from '@solana-program/token';
+import { getInstructionsFromBase64Message } from './utils/transaction.js';
 
 /**
  * Kora RPC client for interacting with the Kora paymaster service.
@@ -248,13 +248,17 @@ export class KoraClient {
     }
 
     /**
-     * Creates a token transfer transaction with Kora as the fee payer.
+     * Creates an unsigned transfer transaction.
+     *
+     * @deprecated Use `getPaymentInstruction` instead for fee payment flows.
+     *
      * @param request - Transfer request parameters
      * @param request.amount - Amount to transfer (in token's smallest unit)
      * @param request.token - Mint address of the token to transfer
      * @param request.source - Source wallet public key
      * @param request.destination - Destination wallet public key
-     * @returns Base64-encoded signed transaction, base64-encoded message, blockhash, and parsed instructions
+     * @param request.signer_key - Optional signer key to select specific Kora signer
+     * @returns Unsigned transaction, message, blockhash, and signer info
      * @throws {Error} When the RPC call fails or token is not supported
      *
      * @example
@@ -263,11 +267,9 @@ export class KoraClient {
      *   amount: 1000000, // 1 USDC (6 decimals)
      *   token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
      *   source: 'sourceWalletPublicKey',
-     *   destination: 'destinationWalletPublicKey'
+     *   destination: 'destinationWalletPublicKey',
      * });
-     * console.log('Transaction:', transfer.transaction);
-     * console.log('Message:', transfer.message);
-     * console.log('Instructions:', transfer.instructions);
+     * console.log('Signer:', transfer.signer_pubkey);
      * ```
      */
     async transferTransaction(request: TransferTransactionRequest): Promise<TransferTransactionResponse> {
