@@ -11,42 +11,52 @@ use utoipa::ToSchema;
 use crate::{
     constant::NATIVE_SOL,
     state::{get_config, get_request_signer_with_signer_key},
-    transaction::{
-        TransactionUtil, VersionedMessageExt, VersionedTransactionOps, VersionedTransactionResolved,
-    },
+    transaction::{TransactionUtil, VersionedMessageExt},
     validator::transaction_validator::TransactionValidator,
     CacheUtil, KoraError,
 };
 
+/// **DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.
+/// This endpoint will be removed in a future version.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct TransferTransactionRequest {
     pub amount: u64,
     pub token: String,
+    /// The source wallet address
     pub source: String,
+    /// The destination wallet address
     pub destination: String,
-    /// Optional signer signer_key to ensure consistency across related RPC calls
+    /// Optional signer key to ensure consistency across related RPC calls
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
 }
 
+/// **DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TransferTransactionResponse {
+    /// Unsigned base64-encoded transaction
     pub transaction: String,
+    /// Unsigned base64-encoded message
     pub message: String,
     pub blockhash: String,
     /// Public key of the signer used (for client consistency)
     pub signer_pubkey: String,
 }
 
+/// **DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.
+///
+/// Creates an unsigned transfer transaction from source to destination.
+/// Kora is the fee payer but does NOT sign - user must sign before submitting.
+#[deprecated(since = "2.2.0", note = "Use getPaymentInstruction instead for fee payment flows")]
 pub async fn transfer_transaction(
     rpc_client: &Arc<RpcClient>,
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let config = get_config()?;
-    let fee_payer = signer.pubkey();
+    let signer_pubkey = signer.pubkey();
 
-    let validator = TransactionValidator::new(config, fee_payer)?;
+    let validator = TransactionValidator::new(config, signer_pubkey)?;
 
     let source = Pubkey::from_str(&request.source)
         .map_err(|e| KoraError::ValidationError(format!("Invalid source address: {e}")))?;
@@ -55,13 +65,12 @@ pub async fn transfer_transaction(
     let token_mint = Pubkey::from_str(&request.token)
         .map_err(|e| KoraError::ValidationError(format!("Invalid token address: {e}")))?;
 
-    // manually check disallowed account because we're creating the message
+    // Check source and destination are not disallowed
     if validator.is_disallowed_account(&source) {
         return Err(KoraError::InvalidTransaction(format!(
             "Source account {source} is disallowed"
         )));
     }
-
     if validator.is_disallowed_account(&destination) {
         return Err(KoraError::InvalidTransaction(format!(
             "Destination account {destination} is disallowed"
@@ -88,9 +97,10 @@ pub async fn transfer_transaction(
             .await
             .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
 
+        // Create ATA for destination if it doesn't exist (Kora pays for ATA creation)
         if CacheUtil::get_account(config, rpc_client, &dest_ata, false).await.is_err() {
             instructions.push(token_program.create_associated_token_account_instruction(
-                &fee_payer,
+                &signer_pubkey, // Kora pays for ATA creation
                 &destination,
                 &token_mint.address(),
             ));
@@ -119,36 +129,19 @@ pub async fn transfer_transaction(
 
     let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &instructions,
-        Some(&fee_payer),
+        Some(&signer_pubkey), // Kora as fee payer
         &blockhash.0,
     ));
     let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
-    let mut resolved_transaction =
-        VersionedTransactionResolved::from_kora_built_transaction(&transaction)?;
-
-    // validate transaction before signing
-    validator.validate_transaction(config, &mut resolved_transaction, rpc_client).await?;
-
-    // Find the fee payer position in the account keys
-    let fee_payer_position = resolved_transaction.find_signer_position(&fee_payer)?;
-
-    let message_bytes = resolved_transaction.transaction.message.serialize();
-    let signature = signer
-        .sign_message(&message_bytes)
-        .await
-        .map_err(|e| KoraError::SigningError(e.to_string()))?;
-
-    resolved_transaction.transaction.signatures[fee_payer_position] = signature;
-
-    let encoded = resolved_transaction.encode_b64_transaction()?;
+    let encoded = TransactionUtil::encode_versioned_transaction(&transaction)?;
     let message_encoded = transaction.message.encode_b64_message()?;
 
     Ok(TransferTransactionResponse {
         transaction: encoded,
         message: message_encoded,
         blockhash: blockhash.0.to_string(),
-        signer_pubkey: fee_payer.to_string(),
+        signer_pubkey: signer_pubkey.to_string(),
     })
 }
 
@@ -164,6 +157,7 @@ mod tests {
     };
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_transfer_transaction_invalid_source() {
         let config = ConfigMockBuilder::new().build();
         update_config(config).unwrap();
@@ -193,6 +187,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_transfer_transaction_invalid_destination() {
         let config = ConfigMockBuilder::new().build();
         update_config(config).unwrap();
@@ -204,7 +199,7 @@ mod tests {
             amount: 1000,
             token: Pubkey::new_unique().to_string(),
             source: Pubkey::new_unique().to_string(),
-            destination: "invalid_pubkey".to_string(),
+            destination: "invalid".to_string(),
             signer_key: None,
         };
 
@@ -221,6 +216,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_transfer_transaction_invalid_token() {
         let config = ConfigMockBuilder::new().build();
         update_config(config).unwrap();
