@@ -110,6 +110,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.enabled_methods.transfer_transaction).toBeDefined();
             expect(config.enabled_methods.get_blockhash).toBeDefined();
             expect(config.enabled_methods.get_config).toBeDefined();
+            expect(config.enabled_methods.get_version).toBeDefined();
         });
 
         it('should get payer signer', async () => {
@@ -131,6 +132,15 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(typeof blockhash).toBe('string');
             expect(blockhash.length).toBeGreaterThanOrEqual(43);
             expect(blockhash.length).toBeLessThanOrEqual(44); // Base58 encoded hash length
+        });
+
+        it('should get version', async () => {
+            const { version } = await client.getVersion();
+            expect(version).toBeDefined();
+            expect(typeof version).toBe('string');
+            expect(version.length).toBeGreaterThan(0);
+            // Version should follow semver format (e.g., "2.1.0" or "2.1.0-beta.0")
+            expect(version).toMatch(/^\d+\.\d+\.\d+/);
         });
     });
 
