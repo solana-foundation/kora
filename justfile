@@ -250,6 +250,53 @@ release:
     echo "  git push origin HEAD"
     echo "  Create PR → merge → trigger 'Publish Rust Crates' workflow"
 
+# Start a hotfix branch from the latest stable release
+[group('release')]
+hotfix:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Find latest stable tag (no -beta, -alpha, -rc)
+    stable_tag=$(git tag -l "v*" --sort=-version:refname | grep -v -E '-(beta|alpha|rc)' | head -1)
+
+    if [ -z "$stable_tag" ]; then
+        echo "Error: No stable release tag found"
+        exit 1
+    fi
+
+    echo "Latest stable release: $stable_tag"
+
+    # Extract major.minor for branch name
+    version=${stable_tag#v}
+    major_minor=$(echo "$version" | cut -d. -f1,2)
+    branch_name="release/${major_minor}.x"
+
+    # Check if branch already exists
+    if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+        echo "Branch $branch_name already exists"
+        read -p "Switch to it? [y/N] " switch
+        if [[ "$switch" =~ ^[Yy]$ ]]; then
+            git checkout "$branch_name"
+        fi
+    else
+        read -p "Create branch $branch_name from $stable_tag? [y/N] " create
+        if [[ "$create" =~ ^[Yy]$ ]]; then
+            git checkout -b "$branch_name" "$stable_tag"
+            echo ""
+            echo "✅ Created $branch_name from $stable_tag"
+        else
+            echo "Aborted"
+            exit 0
+        fi
+    fi
+
+    echo ""
+    echo "Next steps:"
+    echo "  1. Apply your hotfix commits"
+    echo "  2. Run 'just release' to bump version (e.g., ${major_minor}.x)"
+    echo "  3. Push and trigger release workflow"
+    echo "  4. Merge hotfix back to main: git checkout main && git merge $branch_name"
+
 # Prepare a new TypeScript SDK release
 [group('release')]
 [confirm('Start TS SDK release process?')]
