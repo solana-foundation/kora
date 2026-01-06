@@ -88,7 +88,7 @@ async fn test_signer_key_consistency() {
     // Verify the same signer was used
     assert_eq!(estimate_signer, first_signer_pubkey, "Estimate should use signer keyed signer");
 
-    // Call transferTransaction with the same signer key
+    // Call transferTransaction with the same signer key (DEPRECATED endpoint)
     let transfer_response: serde_json::Value = ctx
         .rpc_call(
             "transferTransaction",
@@ -97,7 +97,7 @@ async fn test_signer_key_consistency() {
                 "11111111111111111111111111111111", // Native SOL
                 SenderTestHelper::get_test_sender_keypair().pubkey().to_string(),
                 RecipientTestHelper::get_recipient_pubkey().to_string(),
-                &first_signer_pubkey
+                &first_signer_pubkey // signer_key
             ],
         )
         .await

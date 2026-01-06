@@ -9,6 +9,7 @@ use utoipa::{
     ToSchema,
 };
 
+#[allow(deprecated)]
 use crate::rpc_server::method::{
     estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest, EstimateTransactionFeeResponse,
@@ -98,11 +99,13 @@ impl KoraRpc {
         result
     }
 
+    #[deprecated(since = "2.2.0", note = "Use getPaymentInstruction instead for fee payment flows")]
     pub async fn transfer_transaction(
         &self,
         request: TransferTransactionRequest,
     ) -> Result<TransferTransactionResponse, KoraError> {
         info!("Transfer transaction request: {request:?}");
+        #[allow(deprecated)]
         let result = transfer_transaction(&self.rpc_client, request).await;
         info!("Transfer transaction response: {result:?}");
         result

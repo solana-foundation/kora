@@ -294,7 +294,7 @@ describe('KoraClient Unit Tests', () => {
         });
     });
 
-    describe('transferTransaction', () => {
+    describe('transferTransaction (DEPRECATED)', () => {
         it('should create transfer transaction', async () => {
             const request: TransferTransactionRequest = {
                 amount: 1000000,
@@ -307,7 +307,6 @@ describe('KoraClient Unit Tests', () => {
                 message: 'Transfer transaction created',
                 blockhash: 'test_blockhash',
                 signer_pubkey: 'test_signer_pubkey',
-                instructions: [],
             };
 
             await testSuccessfulRpcMethod(
@@ -316,61 +315,6 @@ describe('KoraClient Unit Tests', () => {
                 mockResponse,
                 request,
             );
-        });
-
-        it('should parse instructions from transfer transaction message', async () => {
-            const request: TransferTransactionRequest = {
-                amount: 1000000,
-                token: 'SOL',
-                source: 'source_address',
-                destination: 'destination_address',
-            };
-
-            // This is a real base64 encoded message for testing
-            // In production, this would come from the RPC response
-            const mockMessage =
-                'AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIDAAEMAgAAAAEAAAAAAAAA';
-
-            const mockResponse: TransferTransactionResponse = {
-                transaction: 'base64_encoded_transaction',
-                message: mockMessage,
-                blockhash: 'test_blockhash',
-                signer_pubkey: 'test_signer_pubkey',
-                instructions: [],
-            };
-
-            mockSuccessfulResponse(mockResponse);
-
-            const result = await client.transferTransaction(request);
-
-            expect(result.instructions).toBeDefined();
-            expect(Array.isArray(result.instructions)).toBe(true);
-            // The instructions array should be populated from the parsed message
-            expect(result.instructions).not.toBeNull();
-        });
-
-        it('should handle transfer transaction with empty message gracefully', async () => {
-            const request: TransferTransactionRequest = {
-                amount: 1000000,
-                token: 'SOL',
-                source: 'source_address',
-                destination: 'destination_address',
-            };
-
-            const mockResponse: TransferTransactionResponse = {
-                transaction: 'base64_encoded_transaction',
-                message: '',
-                blockhash: 'test_blockhash',
-                signer_pubkey: 'test_signer_pubkey',
-                instructions: [],
-            };
-
-            mockSuccessfulResponse(mockResponse);
-
-            const result = await client.transferTransaction(request);
-
-            // Should handle empty message gracefully
-            expect(result.instructions).toEqual([]);
         });
     });
     describe('getPaymentInstruction', () => {

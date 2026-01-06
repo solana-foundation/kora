@@ -127,10 +127,12 @@ macro_rules! register_method_if_enabled {
     // For methods with parameters
     ($module:expr, $enabled_methods:expr, $field:ident, $method_name:expr, $rpc_method:ident, with_params) => {
         if $enabled_methods.$field {
+            #[allow(deprecated)]
             let _ =
                 $module.register_async_method($method_name, |rpc_params, rpc_context| async move {
                     let rpc = rpc_context.as_ref();
                     let params = rpc_params.parse()?;
+                    #[allow(deprecated)]
                     rpc.$rpc_method(params).await.map_err(Into::into)
                 });
         }

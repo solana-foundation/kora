@@ -5,7 +5,8 @@ import { Instruction } from '@solana/kit';
  */
 
 /**
- * Parameters for creating a token transfer transaction.
+ * Parameters for creating a transfer transaction.
+ * @deprecated Use `getPaymentInstruction` instead for fee payment flows.
  */
 export interface TransferTransactionRequest {
     /** Amount to transfer in the token's smallest unit (e.g., lamports for SOL) */
@@ -16,7 +17,7 @@ export interface TransferTransactionRequest {
     source: string;
     /** Public key of the destination wallet (not token account) */
     destination: string;
-    /** Optional signer address for the transaction */
+    /** Optional signer key to select a specific Kora signer */
     signer_key?: string;
 }
 
@@ -82,18 +83,18 @@ export interface GetPaymentInstructionRequest {
 
 /**
  * Response from creating a transfer transaction.
+ * The transaction is unsigned.
+ * @deprecated Use `getPaymentInstruction` instead for fee payment flows.
  */
 export interface TransferTransactionResponse {
-    /** Base64-encoded signed transaction */
+    /** Base64-encoded unsigned transaction */
     transaction: string;
-    /** Base64-encoded message */
+    /** Base64-encoded unsigned message */
     message: string;
     /** Recent blockhash used in the transaction */
     blockhash: string;
-    /** Public key of the signer used to send the transaction */
+    /** Public key of the Kora signer (fee payer) */
     signer_pubkey: string;
-    /** Parsed instructions from the transaction message */
-    instructions: Instruction[];
 }
 
 /**
