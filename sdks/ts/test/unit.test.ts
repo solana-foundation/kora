@@ -175,6 +175,8 @@ describe('KoraClient Unit Tests', () => {
                     get_blockhash: true,
                     get_config: true,
                     get_version: true,
+                    sign_bundle: true,
+                    sign_and_send_bundle: true,
                 },
             };
 
@@ -384,6 +386,8 @@ describe('KoraClient Unit Tests', () => {
                 get_blockhash: true,
                 get_config: true,
                 get_version: true,
+                sign_bundle: true,
+                sign_and_send_bundle: true,
             },
         };
 

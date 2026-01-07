@@ -78,6 +78,34 @@ export interface GetPaymentInstructionRequest {
 }
 
 /**
+ * Parameters for signing a bundle of transactions for Jito submission.
+ */
+export interface SignBundleRequest {
+    /** Array of base64-encoded transactions (max 5) */
+    transactions: string[];
+    /** Optional signer key for consistency */
+    signer_key?: string;
+    /** Tip amount in lamports (uses server default if not provided) */
+    tip_lamports?: number;
+    /** Whether to auto-add tip if missing (default: true) */
+    auto_add_tip?: boolean;
+}
+
+/**
+ * Parameters for signing and sending a bundle of transactions via Jito.
+ */
+export interface SignAndSendBundleRequest {
+    /** Array of base64-encoded transactions (max 5) */
+    transactions: string[];
+    /** Optional signer key for consistency */
+    signer_key?: string;
+    /** Tip amount in lamports (uses server default if not provided) */
+    tip_lamports?: number;
+    /** Whether to auto-add tip if missing (default: true) */
+    auto_add_tip?: boolean;
+}
+
+/**
  * Response Types
  */
 
@@ -190,6 +218,49 @@ export interface GetPaymentInstructionResponse {
 }
 
 /**
+ * Response from signing a bundle of transactions.
+ */
+export interface SignBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: string[];
+    /** Public key of the signer used */
+    signer_pubkey: string;
+    /** Total tip amount in lamports */
+    tip_lamports: number;
+    /** Index of transaction containing the tip */
+    tip_transaction_index: number;
+}
+
+/**
+ * Response from signing and sending a bundle via Jito.
+ */
+export interface SignAndSendBundleResponse {
+    /** Jito bundle ID for status tracking */
+    bundle_id: string;
+    /** Array of transaction signatures */
+    signatures: string[];
+    /** Total tip amount in lamports */
+    tip_lamports: number;
+}
+
+/**
+ * Bundle status types from Jito.
+ */
+export type BundleStatusType = 'Pending' | 'Landed' | 'Failed' | 'Invalid';
+
+/**
+ * Status of a Jito bundle.
+ */
+export interface BundleStatus {
+    /** The bundle ID */
+    bundle_id: string;
+    /** Status of the bundle */
+    status: BundleStatusType;
+    /** Slot the bundle landed in (if landed) */
+    landed_slot?: number;
+}
+
+/**
  * Configuration Types
  */
 
@@ -267,6 +338,10 @@ export interface EnabledMethods {
     get_config: boolean;
     /** Whether the get_version method is enabled */
     get_version: boolean;
+    /** Whether the sign_bundle method is enabled (Jito bundles) */
+    sign_bundle: boolean;
+    /** Whether the sign_and_send_bundle method is enabled (Jito bundles) */
+    sign_and_send_bundle: boolean;
 }
 
 /**

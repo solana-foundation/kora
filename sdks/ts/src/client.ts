@@ -18,6 +18,10 @@ import {
     GetPayerSignerResponse,
     GetPaymentInstructionRequest,
     GetPaymentInstructionResponse,
+    SignBundleRequest,
+    SignBundleResponse,
+    SignAndSendBundleRequest,
+    SignAndSendBundleResponse,
 } from './types/index.js';
 import crypto from 'crypto';
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS, getTransferInstruction } from '@solana-program/token';
@@ -359,5 +363,66 @@ export class KoraClient {
             payment_address,
             signer_address: signer_pubkey,
         };
+    }
+
+    /**
+     * Signs a bundle of transactions for Jito submission without sending.
+     *
+     * Bundles provide MEV protection and atomic execution guarantees through Jito.
+     * A tip is required for bundle submission - if not present in the transactions,
+     * one will be auto-added to the last transaction (when auto_add_tip is true).
+     *
+     * @param request - Bundle signing request parameters
+     * @param request.transactions - Array of base64-encoded transactions (max 5)
+     * @param request.signer_key - Optional signer key for consistency across transactions
+     * @param request.tip_lamports - Optional tip amount in lamports (uses server default if not provided)
+     * @param request.auto_add_tip - Whether to auto-add tip if missing (default: true)
+     * @returns Signed transactions and tip information
+     * @throws {Error} When Jito is not enabled, bundle validation fails, or signing fails
+     *
+     * @example
+     * ```typescript
+     * const result = await client.signBundle({
+     *   transactions: ['base64EncodedTx1', 'base64EncodedTx2'],
+     *   tip_lamports: 10000, // 0.00001 SOL tip
+     * });
+     * console.log('Signed transactions:', result.signed_transactions);
+     * console.log('Tip amount:', result.tip_lamports);
+     * ```
+     */
+    async signBundle(request: SignBundleRequest): Promise<SignBundleResponse> {
+        return this.rpcRequest<SignBundleResponse, SignBundleRequest>('signBundle', request);
+    }
+
+    /**
+     * Signs and sends a bundle of transactions via Jito block engine.
+     *
+     * Bundles provide MEV protection and atomic execution guarantees through Jito.
+     * A tip is required for bundle submission - if not present in the transactions,
+     * one will be auto-added to the last transaction (when auto_add_tip is true).
+     *
+     * Returns immediately with a bundle ID that can be used to track status.
+     *
+     * @param request - Bundle sign and send request parameters
+     * @param request.transactions - Array of base64-encoded transactions (max 5)
+     * @param request.signer_key - Optional signer key for consistency across transactions
+     * @param request.tip_lamports - Optional tip amount in lamports (uses server default if not provided)
+     * @param request.auto_add_tip - Whether to auto-add tip if missing (default: true)
+     * @returns Bundle ID, transaction signatures, and tip information
+     * @throws {Error} When Jito is not enabled, bundle validation fails, or submission fails
+     *
+     * @example
+     * ```typescript
+     * const result = await client.signAndSendBundle({
+     *   transactions: ['base64EncodedTx1', 'base64EncodedTx2'],
+     *   tip_lamports: 10000, // 0.00001 SOL tip
+     * });
+     * console.log('Bundle ID:', result.bundle_id);
+     * console.log('Signatures:', result.signatures);
+     * // Use bundle_id to check status via Jito API
+     * ```
+     */
+    async signAndSendBundle(request: SignAndSendBundleRequest): Promise<SignAndSendBundleResponse> {
+        return this.rpcRequest<SignAndSendBundleResponse, SignAndSendBundleRequest>('signAndSendBundle', request);
     }
 }
