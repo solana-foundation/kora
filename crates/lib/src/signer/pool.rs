@@ -2,6 +2,7 @@ use crate::{
     error::KoraError,
     signer::config::{SelectionStrategy, SignerConfig, SignerPoolConfig},
 };
+use parking_lot::RwLock;
 use rand::Rng;
 use solana_keychain::{Signer, SolanaSigner};
 use solana_sdk::pubkey::Pubkey;
@@ -10,7 +11,7 @@ use std::{
     str::FromStr,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
-        Arc, RwLock,
+        Arc,
     },
     time::{Duration, Instant},
 };
@@ -190,10 +191,13 @@ impl SignerPool {
             return Err(KoraError::InternalServerError("Signer pool is empty".to_string()));
         }
 
+        // Simple non-failover get_next_signer also needs to function.
+        // We can pass an empty map here too so it acts like "blind" selection.
+        let empty_map = HashMap::new();
         let signer_meta = match self.strategy {
-            SelectionStrategy::RoundRobin => self.round_robin_select(),
-            SelectionStrategy::Random => self.random_select(),
-            SelectionStrategy::Weighted => self.weighted_select(),
+            SelectionStrategy::RoundRobin => self.round_robin_select(&empty_map),
+            SelectionStrategy::Random => self.random_select(&empty_map),
+            SelectionStrategy::Weighted => self.weighted_select(&empty_map),
         }?;
 
         signer_meta.update_last_used();
@@ -217,45 +221,60 @@ impl SignerPool {
 
         // If failover is disabled, just pick one and return it
         if !self.failover_enabled {
+            // Read lock needed for filters even if failover disabled, or we pass empty map/always true?
+            // Existing logic didn't filter. To keep "failover disabled" behavior pure, we should ignore health.
+            // But we changed the signatures of select methods.
+            // We can just pass the health map, but the selection logic now filters.
+            // Wait, if failover is disabled, we probably want the original behavior (just pick one, even if blacklisted).
+            // Reverting selection methods to accept optional map or making separate internal methods is cleaner.
+            // OR we just pass the map but ignore blacklist in the check if failover is disabled?
+            // Actually, the requirements say "Update selection strategies to EXCLUDE blacklisted...".
+            // It implies we should always exclude them in the internal selection logic used by the loop.
+            // But for this "failover disabled" path, we just want "a signer".
+
+            // Let's create a dummy empty map so everything looks healthy for this call?
+            let empty_map = HashMap::new();
+            // Using empty map means is_signer_healthy_internal returns true (not found in map = healthy).
+
             let signer_meta = match self.strategy {
-                SelectionStrategy::RoundRobin => self.round_robin_select(),
-                SelectionStrategy::Random => self.random_select(),
-                SelectionStrategy::Weighted => self.weighted_select(),
+                SelectionStrategy::RoundRobin => self.round_robin_select(&empty_map),
+                SelectionStrategy::Random => self.random_select(&empty_map),
+                SelectionStrategy::Weighted => self.weighted_select(&empty_map),
             }?;
             signer_meta.update_last_used();
             return Ok((Arc::clone(&signer_meta.signer), signer_meta.name.clone()));
         }
-
         let max_attempts = self.failover_config.max_retry_attempts;
         let mut attempts = 0;
 
+        // Get a read lock on health status to check blacklist efficiently during selection
+        let health_map = self.health_status.read();
+
         while attempts < max_attempts {
-            // Select candidate signer using configured strategy
+            // Select candidate signer using configured strategy, filtering out blacklisted ones
             let signer_meta = match self.strategy {
-                SelectionStrategy::RoundRobin => self.round_robin_select(),
-                SelectionStrategy::Random => self.random_select(),
-                SelectionStrategy::Weighted => self.weighted_select(),
+                SelectionStrategy::RoundRobin => self.round_robin_select(&health_map),
+                SelectionStrategy::Random => self.random_select(&health_map),
+                SelectionStrategy::Weighted => self.weighted_select(&health_map),
             }?;
 
-            match self.is_signer_healthy(&signer_meta.name) {
-                Ok(true) => {
-                    signer_meta.update_last_used();
-                    return Ok((Arc::clone(&signer_meta.signer), signer_meta.name.clone()));
-                }
-                Ok(false) => {
-                    log::warn!(
-                        "Signer '{}' is blacklisted, selecting next candidate (attempt {}/{})",
-                        signer_meta.name,
-                        attempts + 1,
-                        max_attempts
-                    );
-                    attempts += 1;
-                }
-                Err(e) => {
-                    log::error!("Error checking signer '{}' health: {}", signer_meta.name, e);
-                    attempts += 1;
-                }
+            // If we selected a signer, double check strictly (though strategy should have filtered)
+            // and return it. The strategy guarantees we try to pick a non-blacklisted one.
+            if self.is_signer_healthy_internal(&signer_meta.name, &health_map) {
+                signer_meta.update_last_used();
+                return Ok((Arc::clone(&signer_meta.signer), signer_meta.name.clone()));
             }
+
+            // If we somehow got a blacklisted signer (or health check failed), log and retry.
+            // This might happen if 'is_signer_healthy_internal' has extra logic like expiration check
+            // that the simple filter didn't catch, or if all signers are blacklisted.
+            log::warn!(
+                "Selected signer '{}' was unhealthy, selecting next candidate (attempt {}/{})",
+                signer_meta.name,
+                attempts + 1,
+                max_attempts
+            );
+            attempts += 1;
         }
 
         Err(KoraError::InternalServerError(format!(
@@ -265,25 +284,54 @@ impl SignerPool {
     }
 
     /// Check if signer is healthy and handle blacklist expiration
+    /// uses internal helper to avoid lock recursion
+    #[allow(dead_code)]
     fn is_signer_healthy(&self, signer_name: &str) -> Result<bool, KoraError> {
-        let health_map = self.health_status.read().map_err(|_| {
-            KoraError::InternalServerError("Failed to acquire health status read lock".to_string())
-        })?;
+        let health_map = self.health_status.upgradable_read();
 
         if let Some(health) = health_map.get(signer_name) {
             if health.is_blacklisted {
                 if let Some(blacklist_until) = health.blacklist_until {
                     if Instant::now() > blacklist_until {
-                        drop(health_map);
-                        self.clear_blacklist(signer_name)?;
+                        // Upgrade to write lock to clear blacklist
+                        let mut health_map_write =
+                            parking_lot::RwLockUpgradableReadGuard::upgrade(health_map);
+                        if let Some(health_mut) = health_map_write.get_mut(signer_name) {
+                            health_mut.is_blacklisted = false;
+                            health_mut.blacklist_until = None;
+                            log::info!("Signer '{}' blacklist cleared (expired)", signer_name);
+                        }
                         return Ok(true);
                     }
                 }
                 return Ok(false);
             }
         }
-
         Ok(true)
+    }
+
+    /// Internal health check that takes a reference to the map (no locking)
+    /// Returns true if healthy (not blacklisted), false otherwise.
+    /// Does NOT handle expiration - that requires write access.
+    fn is_signer_healthy_internal(
+        &self,
+        signer_name: &str,
+        health_map: &HashMap<String, SignerHealth>,
+    ) -> bool {
+        if let Some(health) = health_map.get(signer_name) {
+            if health.is_blacklisted {
+                // Check expiration "read-only" style - if expired, we treat as healthy CANDIDATE
+                // efficiently, but actual clearing happens elsewhere or lazily.
+                // For selection logic, if it's expired, we can try to use it.
+                if let Some(blacklist_until) = health.blacklist_until {
+                    if Instant::now() > blacklist_until {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+        true
     }
 
     /// Record a signer failure and potentially blacklist it
@@ -296,32 +344,52 @@ impl SignerPool {
     /// * `signer_name` - Name of the failing signer
     /// * `error` - The error that occurred (for logging)
     pub fn record_failure(&self, signer_name: &str, error: &KoraError) -> Result<(), KoraError> {
-        let mut health_map = self.health_status.write().map_err(|_| {
-            KoraError::InternalServerError("Failed to acquire health status write lock".to_string())
-        })?;
+        let health_map = self.health_status.upgradable_read();
 
-        let health =
-            health_map.entry(signer_name.to_string()).or_insert_with(SignerHealth::default);
+        // Check if we need to insert a new entry, if so upgrade immediately
+        if !health_map.contains_key(signer_name) {
+            let mut health_map_write = parking_lot::RwLockUpgradableReadGuard::upgrade(health_map);
+            health_map_write.insert(signer_name.to_string(), SignerHealth::default());
+            // Downgrade not supported directly in standard parking_lot without scope management,
+            // but we can just use the write lock for the rest of this function call or re-acquire.
+            // For simplicity, we'll continue with the write lock logic.
+            let health = health_map_write.get_mut(signer_name).unwrap();
+            Self::update_health_entry(health, signer_name, error, &self.failover_config);
+            return Ok(());
+        }
 
+        // Pass upgradable guard to logic that might upgrade
+        let mut health_map_write = parking_lot::RwLockUpgradableReadGuard::upgrade(health_map);
+        if let Some(health) = health_map_write.get_mut(signer_name) {
+            Self::update_health_entry(health, signer_name, error, &self.failover_config);
+        }
+
+        Ok(())
+    }
+
+    fn update_health_entry(
+        health: &mut SignerHealth,
+        signer_name: &str,
+        error: &KoraError,
+        config: &FailoverConfig,
+    ) {
         health.consecutive_failures += 1;
         health.last_failure_time = Some(Instant::now());
 
         log::error!("Signer '{}' failure #{}: {}", signer_name, health.consecutive_failures, error);
 
         // Blacklist if threshold exceeded
-        if health.consecutive_failures >= self.failover_config.failure_threshold {
+        if health.consecutive_failures >= config.failure_threshold {
             health.is_blacklisted = true;
-            health.blacklist_until = Some(Instant::now() + self.failover_config.blacklist_duration);
+            health.blacklist_until = Some(Instant::now() + config.blacklist_duration);
 
             log::warn!(
                 "Signer '{}' blacklisted for {:?} after {} consecutive failures",
                 signer_name,
-                self.failover_config.blacklist_duration,
+                config.blacklist_duration,
                 health.consecutive_failures
             );
         }
-
-        Ok(())
     }
 
     /// Record a successful operation and reset failure counters
@@ -333,37 +401,27 @@ impl SignerPool {
     /// # Arguments
     /// * `signer_name` - Name of the successful signer
     pub fn record_success(&self, signer_name: &str) -> Result<(), KoraError> {
-        let mut health_map = self.health_status.write().map_err(|_| {
-            KoraError::InternalServerError("Failed to acquire health status write lock".to_string())
-        })?;
+        let health_map = self.health_status.upgradable_read();
 
-        if let Some(health) = health_map.get_mut(signer_name) {
-            if health.consecutive_failures > 0 {
-                log::info!(
-                    "Signer '{}' recovered after {} failures",
-                    signer_name,
-                    health.consecutive_failures
-                );
+        if let Some(health) = health_map.get(signer_name) {
+            // Only upgrade if we actually need to change state (has failures to clear)
+            if health.consecutive_failures > 0 || health.is_blacklisted {
+                let mut health_map_write =
+                    parking_lot::RwLockUpgradableReadGuard::upgrade(health_map);
+                if let Some(health_mut) = health_map_write.get_mut(signer_name) {
+                    if health_mut.consecutive_failures > 0 {
+                        log::info!(
+                            "Signer '{}' recovered after {} failures",
+                            signer_name,
+                            health_mut.consecutive_failures
+                        );
+                    }
+                    health_mut.consecutive_failures = 0;
+                    health_mut.last_failure_time = None;
+                    health_mut.is_blacklisted = false;
+                    health_mut.blacklist_until = None;
+                }
             }
-            health.consecutive_failures = 0;
-            health.last_failure_time = None;
-            health.is_blacklisted = false;
-            health.blacklist_until = None;
-        }
-
-        Ok(())
-    }
-
-    /// Clear blacklist for a signer (used when blacklist expires)
-    fn clear_blacklist(&self, signer_name: &str) -> Result<(), KoraError> {
-        let mut health_map = self.health_status.write().map_err(|_| {
-            KoraError::InternalServerError("Failed to acquire health status write lock".to_string())
-        })?;
-
-        if let Some(health) = health_map.get_mut(signer_name) {
-            health.is_blacklisted = false;
-            health.blacklist_until = None;
-            log::info!("Signer '{}' blacklist cleared (expired)", signer_name);
         }
 
         Ok(())
@@ -374,9 +432,7 @@ impl SignerPool {
     /// Returns a snapshot of health status for all signers in the pool.
     /// Use this for observability dashboards and operational monitoring.
     pub fn get_health_metrics(&self) -> Result<Vec<SignerHealthMetrics>, KoraError> {
-        let health_map = self.health_status.read().map_err(|_| {
-            KoraError::InternalServerError("Failed to acquire health status read lock".to_string())
-        })?;
+        let health_map = self.health_status.read();
 
         let metrics: Vec<SignerHealthMetrics> = self
             .signers
@@ -396,25 +452,87 @@ impl SignerPool {
         Ok(metrics)
     }
 
-    /// Round-robin selection strategy
-    fn round_robin_select(&self) -> Result<&SignerWithMetadata, KoraError> {
-        let index = self.current_index.fetch_add(1, Ordering::AcqRel);
-        let signer_index = index % self.signers.len();
-        Ok(&self.signers[signer_index])
+    /// Round-robin selection strategy with blacklist filtering
+    fn round_robin_select(
+        &self,
+        health_map: &HashMap<String, SignerHealth>,
+    ) -> Result<&SignerWithMetadata, KoraError> {
+        // We try to find a healthy signer starting from the current index
+        // We limit iterations to scan the whole list once to avoid infinite loops if all are blacklisted
+        let start_index = self.current_index.fetch_add(1, Ordering::AcqRel);
+
+        for i in 0..self.signers.len() {
+            let idx = (start_index + i) % self.signers.len();
+            let signer = &self.signers[idx];
+
+            if self.is_signer_healthy_internal(&signer.name, health_map) {
+                return Ok(signer);
+            }
+        }
+
+        // If all are blacklisted, fallback to standard round robin (let the caller handle the failure/retry logic or just fail)
+        // But the requirement implies we should try to find a healthy one.
+        // If we found none above, we return the one at the start index just to return something,
+        // and the health check in the caller will fail/log it.
+        let idx = start_index % self.signers.len();
+        Ok(&self.signers[idx])
     }
 
-    /// Random selection strategy
-    fn random_select(&self) -> Result<&SignerWithMetadata, KoraError> {
+    /// Random selection strategy with blacklist filtering
+    fn random_select(
+        &self,
+        health_map: &HashMap<String, SignerHealth>,
+    ) -> Result<&SignerWithMetadata, KoraError> {
         let mut rng = rand::rng();
+
+        // Create a list of indices of healthy signers
+        let healthy_indices: Vec<usize> = self
+            .signers
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| self.is_signer_healthy_internal(&s.name, health_map))
+            .map(|(i, _)| i)
+            .collect();
+
+        if !healthy_indices.is_empty() {
+            let rand_idx = rng.random_range(0..healthy_indices.len());
+            return Ok(&self.signers[healthy_indices[rand_idx]]);
+        }
+
+        // Fallback to random if all are unhealthy
         let index = rng.random_range(0..self.signers.len());
         Ok(&self.signers[index])
     }
 
-    /// Weighted selection strategy (weighted random)
-    fn weighted_select(&self) -> Result<&SignerWithMetadata, KoraError> {
+    /// Weighted selection strategy with blacklist filtering
+    fn weighted_select(
+        &self,
+        health_map: &HashMap<String, SignerHealth>,
+    ) -> Result<&SignerWithMetadata, KoraError> {
         let mut rng = rand::rng();
-        let mut target = rng.random_range(0..self.total_weight);
 
+        // Calculate total weight of HEALTHY signers
+        let healthy_total_weight: u32 = self
+            .signers
+            .iter()
+            .filter(|s| self.is_signer_healthy_internal(&s.name, health_map))
+            .map(|s| s.weight)
+            .sum();
+
+        if healthy_total_weight > 0 {
+            let mut target = rng.random_range(0..healthy_total_weight);
+            for signer in &self.signers {
+                if self.is_signer_healthy_internal(&signer.name, health_map) {
+                    if target < signer.weight {
+                        return Ok(signer);
+                    }
+                    target -= signer.weight;
+                }
+            }
+        }
+
+        // Fallback if no healthy signers or calculation failed
+        let mut target = rng.random_range(0..self.total_weight);
         for signer in &self.signers {
             if target < signer.weight {
                 return Ok(signer);

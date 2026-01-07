@@ -341,11 +341,7 @@ impl Token2022Config {
 
         // Check for unknown mint extensions
         for ext in mint_extensions {
-            let is_known = crate::token::spl_token_2022_util::MintExtension::EXTENSIONS
-                .iter()
-                .any(|known| known == ext);
-
-            if !is_known {
+            if !crate::token::spl_token_2022_util::MintExtension::EXTENSIONS.contains(ext) {
                 return Err(format!(
                     "Unknown mint extension detected: {:?}. \
                     This extension is not recognized and may have unexpected behavior.",
@@ -356,11 +352,7 @@ impl Token2022Config {
 
         // Check for unknown account extensions
         for ext in account_extensions {
-            let is_known = crate::token::spl_token_2022_util::AccountExtension::EXTENSIONS
-                .iter()
-                .any(|known| known == ext);
-
-            if !is_known {
+            if !crate::token::spl_token_2022_util::AccountExtension::EXTENSIONS.contains(ext) {
                 return Err(format!(
                     "Unknown account extension detected: {:?}. \
                     This extension is not recognized and may have unexpected behavior.",
