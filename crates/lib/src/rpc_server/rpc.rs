@@ -9,6 +9,9 @@ use utoipa::{
     ToSchema,
 };
 
+use crate::jito::types::{
+    SignAndSendBundleRequest, SignAndSendBundleResponse, SignBundleRequest, SignBundleResponse,
+};
 #[allow(deprecated)]
 use crate::rpc_server::method::{
     estimate_transaction_fee::{
@@ -19,9 +22,11 @@ use crate::rpc_server::method::{
     get_payer_signer::{get_payer_signer, GetPayerSignerResponse},
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
     get_version::{get_version, GetVersionResponse},
+    sign_and_send_bundle::sign_and_send_bundle,
     sign_and_send_transaction::{
         sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResponse,
     },
+    sign_bundle::sign_bundle,
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResponse},
     transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
@@ -132,6 +137,26 @@ impl KoraRpc {
         result
     }
 
+    pub async fn sign_bundle(
+        &self,
+        request: SignBundleRequest,
+    ) -> Result<SignBundleResponse, KoraError> {
+        info!("Sign bundle request: {} transactions", request.transactions.len());
+        let result = sign_bundle(&self.rpc_client, request).await;
+        info!("Sign bundle response: {result:?}");
+        result
+    }
+
+    pub async fn sign_and_send_bundle(
+        &self,
+        request: SignAndSendBundleRequest,
+    ) -> Result<SignAndSendBundleResponse, KoraError> {
+        info!("Sign and send bundle request: {} transactions", request.transactions.len());
+        let result = sign_and_send_bundle(&self.rpc_client, request).await;
+        info!("Sign and send bundle response: {result:?}");
+        result
+    }
+
     #[cfg(feature = "docs")]
     pub fn build_docs_spec() -> Vec<OpenApiSpec> {
         vec![
@@ -179,6 +204,16 @@ impl KoraRpc {
                 name: "getVersion".to_string(),
                 request: None,
                 response: GetVersionResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "signBundle".to_string(),
+                request: Some(SignBundleRequest::schema().1),
+                response: SignBundleResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "signAndSendBundle".to_string(),
+                request: Some(SignAndSendBundleRequest::schema().1),
+                response: SignAndSendBundleResponse::schema().1,
             },
         ]
     }

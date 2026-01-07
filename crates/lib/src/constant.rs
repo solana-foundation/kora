@@ -15,6 +15,24 @@ pub const DEFAULT_MAX_TIMESTAMP_AGE: i64 = 300;
 pub const JUPITER_API_LITE_URL: &str = "https://lite-api.jup.ag";
 pub const JUPITER_API_PRO_URL: &str = "https://api.jup.ag";
 
+// Jito Bundle Configuration
+pub const JITO_MAINNET_BLOCK_ENGINE_URL: &str = "https://mainnet.block-engine.jito.wtf";
+pub const JITO_DEFAULT_MIN_TIP_LAMPORTS: u64 = 1000;
+pub const JITO_DEFAULT_TIP_LAMPORTS: u64 = 10000;
+pub const JITO_MAX_TRANSACTIONS_PER_BUNDLE: usize = 5;
+
+/// The 8 Jito tip accounts - select one at random to reduce contention
+pub const JITO_TIP_ACCOUNTS: [&str; 8] = [
+    "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
+    "HFqU5x63VTqvQss8hp11i4bVV4ERdNtoAr61jXpEWDmS",
+    "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY",
+    "ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49",
+    "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
+    "ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt",
+    "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
+    "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
+];
+
 // Metrics
 pub const DEFAULT_METRICS_ENDPOINT: &str = "/metrics";
 pub const DEFAULT_METRICS_PORT: u16 = 8080;

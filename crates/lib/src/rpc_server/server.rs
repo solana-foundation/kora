@@ -200,6 +200,22 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
     );
     register_method_if_enabled!(module, enabled_methods, get_config, "getConfig", get_config);
     register_method_if_enabled!(module, enabled_methods, get_version, "getVersion", get_version);
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
+        sign_bundle,
+        "signBundle",
+        sign_bundle,
+        with_params
+    );
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
+        sign_and_send_bundle,
+        "signAndSendBundle",
+        sign_and_send_bundle,
+        with_params
+    );
 
     Ok(module)
 }
@@ -289,6 +305,8 @@ mod tests {
             get_config: false,
             get_version: false,
             liveness: false,
+            sign_bundle: false,
+            sign_and_send_bundle: false,
         };
 
         let kora_config = KoraConfigBuilder::new().with_enabled_methods(enabled_methods).build();
@@ -320,6 +338,8 @@ mod tests {
             transfer_transaction: false,
             get_blockhash: false,
             get_version: false,
+            sign_bundle: false,
+            sign_and_send_bundle: false,
         };
 
         let kora_config = KoraConfigBuilder::new().with_enabled_methods(enabled_methods).build();

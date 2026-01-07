@@ -11,7 +11,8 @@ use crate::{
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
         DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
         DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE,
-        DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
+        DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS, JITO_DEFAULT_MIN_TIP_LAMPORTS,
+        JITO_DEFAULT_TIP_LAMPORTS, JITO_MAINNET_BLOCK_ENGINE_URL, JITO_MAX_TRANSACTIONS_PER_BUNDLE,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
@@ -325,6 +326,10 @@ pub struct EnabledMethods {
     pub get_blockhash: bool,
     pub get_config: bool,
     pub get_version: bool,
+    #[serde(default)]
+    pub sign_bundle: bool,
+    #[serde(default)]
+    pub sign_and_send_bundle: bool,
 }
 
 impl EnabledMethods {
@@ -340,6 +345,8 @@ impl EnabledMethods {
             self.get_blockhash,
             self.get_config,
             self.get_version,
+            self.sign_bundle,
+            self.sign_and_send_bundle,
         ]
         .into_iter()
     }
@@ -377,13 +384,19 @@ impl EnabledMethods {
         if self.get_version {
             methods.push("getVersion".to_string());
         }
+        if self.sign_bundle {
+            methods.push("signBundle".to_string());
+        }
+        if self.sign_and_send_bundle {
+            methods.push("signAndSendBundle".to_string());
+        }
         methods
     }
 }
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 10>;
+    type IntoIter = std::array::IntoIter<bool, 12>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
@@ -397,6 +410,8 @@ impl IntoIterator for &EnabledMethods {
             self.get_blockhash,
             self.get_config,
             self.get_version,
+            self.sign_bundle,
+            self.sign_and_send_bundle,
         ]
         .into_iter()
     }
@@ -415,6 +430,8 @@ impl Default for EnabledMethods {
             get_blockhash: true,
             get_config: true,
             get_version: true,
+            sign_bundle: false,
+            sign_and_send_bundle: false,
         }
     }
 }
@@ -465,6 +482,8 @@ pub struct KoraConfig {
     pub cache: CacheConfig,
     #[serde(default)]
     pub usage_limit: UsageLimitConfig,
+    #[serde(default)]
+    pub jito: JitoConfig,
 }
 
 impl Default for KoraConfig {
@@ -477,6 +496,7 @@ impl Default for KoraConfig {
             payment_address: None,
             cache: CacheConfig::default(),
             usage_limit: UsageLimitConfig::default(),
+            jito: JitoConfig::default(),
         }
     }
 }
@@ -500,6 +520,33 @@ impl Default for UsageLimitConfig {
             cache_url: None,
             max_transactions: DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
             fallback_if_unavailable: DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE,
+        }
+    }
+}
+
+/// Configuration for Jito bundle support
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
+pub struct JitoConfig {
+    /// Enable Jito bundle support
+    pub enabled: bool,
+    /// Jito block engine URL (mainnet or devnet)
+    pub block_engine_url: String,
+    /// Minimum tip amount in lamports required for bundles
+    pub min_tip_lamports: u64,
+    /// Default tip amount in lamports if not specified in request
+    pub default_tip_lamports: u64,
+    /// Maximum transactions per bundle (Jito limit: 5)
+    pub max_transactions_per_bundle: usize,
+}
+
+impl Default for JitoConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            block_engine_url: JITO_MAINNET_BLOCK_ENGINE_URL.to_string(),
+            min_tip_lamports: JITO_DEFAULT_MIN_TIP_LAMPORTS,
+            default_tip_lamports: JITO_DEFAULT_TIP_LAMPORTS,
+            max_transactions_per_bundle: JITO_MAX_TRANSACTIONS_PER_BUNDLE,
         }
     }
 }

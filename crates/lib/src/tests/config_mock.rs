@@ -1,8 +1,8 @@
 use crate::{
     config::{
         AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerBalanceMetricsConfig,
-        FeePayerPolicy, KoraConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
-        SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
+        FeePayerPolicy, JitoConfig, KoraConfig, MetricsConfig, NonceInstructionPolicy,
+        SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
         Token2022InstructionPolicy, UsageLimitConfig, ValidationConfig,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
@@ -105,6 +105,7 @@ impl ConfigMockBuilder {
                         account_ttl: 60,
                     },
                     usage_limit: UsageLimitConfig::default(),
+                    jito: JitoConfig::default(),
                 },
                 metrics: MetricsConfig::default(),
             },
@@ -333,6 +334,7 @@ impl KoraConfigBuilder {
                     account_ttl: 60,
                 },
                 usage_limit: UsageLimitConfig::default(),
+                jito: JitoConfig::default(),
             },
         }
     }
