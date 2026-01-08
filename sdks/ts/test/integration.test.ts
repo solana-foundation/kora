@@ -269,6 +269,84 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
     });
 
+    describe('Bundle Operations', () => {
+        it('should sign bundle of transactions', async () => {
+            // Create two transfer transactions for the bundle
+            const transferRequest1 = {
+                amount: 1000000,
+                token: usdcMint,
+                source: testWalletAddress,
+                destination: koraAddress,
+            };
+            const transferRequest2 = {
+                amount: 500000,
+                token: usdcMint,
+                source: testWalletAddress,
+                destination: koraAddress,
+            };
+
+            const { transaction: tx1String } = await client.transferTransaction(transferRequest1);
+            const { transaction: tx2String } = await client.transferTransaction(transferRequest2);
+
+            // Partially sign both transactions with test wallet
+            const tx1 = transactionFromBase64(tx1String);
+            const tx2 = transactionFromBase64(tx2String);
+            const signedTx1 = await partiallySignTransaction([testWallet.keyPair], tx1);
+            const signedTx2 = await partiallySignTransaction([testWallet.keyPair], tx2);
+            const base64Tx1 = transactionToBase64(signedTx1);
+            const base64Tx2 = transactionToBase64(signedTx2);
+
+            const result = await client.signBundle({
+                transactions: [base64Tx1, base64Tx2],
+            });
+
+            expect(result).toBeDefined();
+            expect(result.signed_transactions).toBeDefined();
+            expect(Array.isArray(result.signed_transactions)).toBe(true);
+            expect(result.signed_transactions.length).toBe(2);
+            expect(result.signer_pubkey).toBeDefined();
+        });
+
+        it('should sign and send bundle of transactions', async () => {
+            // Create two transfer transactions for the bundle
+            const transferRequest1 = {
+                amount: 1000000,
+                token: usdcMint,
+                source: testWalletAddress,
+                destination: koraAddress,
+            };
+            const transferRequest2 = {
+                amount: 500000,
+                token: usdcMint,
+                source: testWalletAddress,
+                destination: koraAddress,
+            };
+
+            const { transaction: tx1String } = await client.transferTransaction(transferRequest1);
+            const { transaction: tx2String } = await client.transferTransaction(transferRequest2);
+
+            // Partially sign both transactions with test wallet
+            const tx1 = transactionFromBase64(tx1String);
+            const tx2 = transactionFromBase64(tx2String);
+            const signedTx1 = await partiallySignTransaction([testWallet.keyPair], tx1);
+            const signedTx2 = await partiallySignTransaction([testWallet.keyPair], tx2);
+            const base64Tx1 = transactionToBase64(signedTx1);
+            const base64Tx2 = transactionToBase64(signedTx2);
+
+            const result = await client.signAndSendBundle({
+                transactions: [base64Tx1, base64Tx2],
+            });
+
+            expect(result).toBeDefined();
+            expect(result.signed_transactions).toBeDefined();
+            expect(Array.isArray(result.signed_transactions)).toBe(true);
+            expect(result.signed_transactions.length).toBe(2);
+            expect(result.signer_pubkey).toBeDefined();
+            expect(result.bundle_uuid).toBeDefined();
+            expect(typeof result.bundle_uuid).toBe('string');
+        });
+    });
+
     describe('Error Handling', () => {
         it('should handle invalid token address', async () => {
             const request = {

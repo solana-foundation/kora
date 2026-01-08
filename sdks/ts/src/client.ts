@@ -10,6 +10,10 @@ import {
     SignAndSendTransactionResponse,
     SignTransactionRequest,
     SignTransactionResponse,
+    SignBundleRequest,
+    SignBundleResponse,
+    SignAndSendBundleRequest,
+    SignAndSendBundleResponse,
     TransferTransactionRequest,
     TransferTransactionResponse,
     RpcError,
@@ -245,6 +249,50 @@ export class KoraClient {
             'signAndSendTransaction',
             request,
         );
+    }
+
+    /**
+     * Signs a bundle of transactions with the Kora fee payer without broadcasting.
+     * @param request - Sign bundle request parameters
+     * @param request.transactions - Array of base64-encoded transactions to sign
+     * @param request.signer_key - Optional signer address for the transactions
+     * @param request.sig_verify - Optional signature verification (defaults to false)
+     * @returns Array of signed transactions and signer public key
+     * @throws {Error} When the RPC call fails or validation fails
+     *
+     * @example
+     * ```typescript
+     * const result = await client.signBundle({
+     *   transactions: ['base64Tx1', 'base64Tx2']
+     * });
+     * console.log('Signed transactions:', result.signed_transactions);
+     * console.log('Signer:', result.signer_pubkey);
+     * ```
+     */
+    async signBundle(request: SignBundleRequest): Promise<SignBundleResponse> {
+        return this.rpcRequest<SignBundleResponse, SignBundleRequest>('signBundle', request);
+    }
+
+    /**
+     * Signs a bundle of transactions and sends them to Jito block engine.
+     * @param request - Sign and send bundle request parameters
+     * @param request.transactions - Array of base64-encoded transactions to sign and send
+     * @param request.signer_key - Optional signer address for the transactions
+     * @param request.sig_verify - Optional signature verification (defaults to false)
+     * @returns Array of signed transactions, signer public key, and Jito bundle UUID
+     * @throws {Error} When the RPC call fails, validation fails, or Jito submission fails
+     *
+     * @example
+     * ```typescript
+     * const result = await client.signAndSendBundle({
+     *   transactions: ['base64Tx1', 'base64Tx2']
+     * });
+     * console.log('Bundle UUID:', result.bundle_uuid);
+     * console.log('Signed transactions:', result.signed_transactions);
+     * ```
+     */
+    async signAndSendBundle(request: SignAndSendBundleRequest): Promise<SignAndSendBundleResponse> {
+        return this.rpcRequest<SignAndSendBundleResponse, SignAndSendBundleRequest>('signAndSendBundle', request);
     }
 
     /**

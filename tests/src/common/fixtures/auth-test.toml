@@ -23,6 +23,8 @@ get_blockhash = true
 get_config = true
 get_payer_signer = true
 get_version = true
+sign_bundle = true
+sign_and_send_bundle = true
 
 [validation]
 max_allowed_lamports = 1000000
@@ -99,4 +101,7 @@ max_transactions = 2
 fallback_if_unavailable = false
 
 [kora.bundle]
-enabled = false
+enabled = true
+
+[kora.bundle.jito]
+block_engine_url = "mock"

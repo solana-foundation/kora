@@ -46,6 +46,30 @@ export interface SignAndSendTransactionRequest {
 }
 
 /**
+ * Parameters for signing a bundle of transactions.
+ */
+export interface SignBundleRequest {
+    /** Array of base64-encoded transactions to sign */
+    transactions: string[];
+    /** Optional signer address for the transactions */
+    signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+}
+
+/**
+ * Parameters for signing and sending a bundle of transactions via Jito.
+ */
+export interface SignAndSendBundleRequest {
+    /** Array of base64-encoded transactions to sign and send */
+    transactions: string[];
+    /** Optional signer address for the transactions */
+    signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+}
+
+/**
  * Parameters for estimating transaction fees.
  */
 export interface EstimateTransactionFeeRequest {
@@ -119,6 +143,28 @@ export interface SignAndSendTransactionResponse {
     signed_transaction: string;
     /** Public key of the signer used to send the transaction */
     signer_pubkey: string;
+}
+
+/**
+ * Response from signing a bundle of transactions.
+ */
+export interface SignBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: string[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: string;
+}
+
+/**
+ * Response from signing and sending a bundle of transactions via Jito.
+ */
+export interface SignAndSendBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: string[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: string;
+    /** UUID of the submitted Jito bundle */
+    bundle_uuid: string;
 }
 
 /**
