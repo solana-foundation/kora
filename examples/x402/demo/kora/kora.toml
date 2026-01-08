@@ -116,3 +116,6 @@ enabled = false
 cache_url = "redis://redis:6379"
 max_transactions = 2
 fallback_if_unavailable = false
+
+[kora.bundle]
+enabled = false
