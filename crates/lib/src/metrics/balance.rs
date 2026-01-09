@@ -2,7 +2,7 @@
 use crate::state::get_config;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
-use crate::{cache::CacheUtil, error::KoraError, state::get_signers_info};
+use crate::{cache::CacheUtil, config::Config, error::KoraError, state::get_signers_info};
 use prometheus::{register_gauge_vec, GaugeVec};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -44,7 +44,10 @@ impl BalanceTracker {
     }
 
     /// Track all signers' balances and update Prometheus metrics
-    pub async fn track_all_signer_balances(rpc_client: &Arc<RpcClient>) -> Result<(), KoraError> {
+    pub async fn track_all_signer_balances(
+        config: &Config,
+        rpc_client: &Arc<RpcClient>,
+    ) -> Result<(), KoraError> {
         if !BalanceTracker::is_enabled() {
             return Ok(());
         }
@@ -64,7 +67,7 @@ impl BalanceTracker {
                     ))
                 })?;
 
-                match CacheUtil::get_account(rpc_client, &pubkey, false).await {
+                match CacheUtil::get_account(config, rpc_client, &pubkey, false).await {
                     Ok(account) => {
                         balance_results.push((signer_info, account.lamports));
                     }
@@ -120,6 +123,9 @@ impl BalanceTracker {
         let interval_seconds = config.metrics.fee_payer_balance.expiry_seconds;
         log::info!("Starting multi-signer balance tracking background task with {interval_seconds}s interval");
 
+        // Clone config to move into the spawned task
+        let config = config.clone();
+
         // Spawn a background task that runs forever
         let handle = tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(interval_seconds));
@@ -128,7 +134,9 @@ impl BalanceTracker {
                 interval.tick().await;
 
                 // Track all signer balances, but don't let errors crash the loop
-                if let Err(e) = BalanceTracker::track_all_signer_balances(&rpc_client).await {
+                if let Err(e) =
+                    BalanceTracker::track_all_signer_balances(&config, &rpc_client).await
+                {
                     log::warn!("Failed to track signer balances in background task: {e}");
                 }
             }
@@ -295,8 +303,9 @@ mod tests {
             )
             .build_and_setup();
 
+        let config = get_config().unwrap();
         let mock_rpc = RpcMockBuilder::new().build();
-        let result = BalanceTracker::track_all_signer_balances(&mock_rpc).await;
+        let result = BalanceTracker::track_all_signer_balances(&config, &mock_rpc).await;
         assert!(result.is_ok());
     }
 
@@ -317,10 +326,11 @@ mod tests {
         setup_test_signer_pool();
         let _ = BalanceTracker::init().await;
 
+        let config = get_config().unwrap();
         let account = create_mock_account_with_balance(1_000_000_000); // 1 SOL
         let mock_rpc = RpcMockBuilder::new().with_account_info(&account).build();
 
-        let result = BalanceTracker::track_all_signer_balances(&mock_rpc).await;
+        let result = BalanceTracker::track_all_signer_balances(&config, &mock_rpc).await;
         assert!(result.is_ok());
     }
 
@@ -341,9 +351,10 @@ mod tests {
         setup_test_signer_pool();
         let _ = BalanceTracker::init().await;
 
+        let config = get_config().unwrap();
         let mock_rpc = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result = BalanceTracker::track_all_signer_balances(&mock_rpc).await;
+        let result = BalanceTracker::track_all_signer_balances(&config, &mock_rpc).await;
         assert!(result.is_ok());
     }
 

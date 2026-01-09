@@ -1,6 +1,8 @@
 use crate::{
+    config::Config,
+    constant,
     error::KoraError,
-    oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
+    oracle::{get_price_oracle, RetryingPriceOracle, TokenPrice},
     token::{
         interface::TokenMint,
         spl_token::TokenProgram,
@@ -17,12 +19,9 @@ use rust_decimal::{
     Decimal,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
+use solana_sdk::{instruction::Instruction, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use std::{collections::HashMap, str::FromStr, time::Duration};
-
-#[cfg(not(test))]
-use crate::state::get_config;
 
 #[cfg(test)]
 use {crate::tests::config_mock::mock_state::get_config, rust_decimal_macros::dec};
@@ -68,11 +67,42 @@ impl TokenUtil {
             .collect()
     }
 
+    /// Check if the transaction contains an ATA creation instruction for the given destination address.
+    /// Supports both CreateAssociatedTokenAccount and CreateAssociatedTokenAccountIdempotent instructions.
+    /// Returns Some((wallet_owner, mint)) if found, None otherwise.
+    pub fn find_ata_creation_for_destination(
+        instructions: &[Instruction],
+        destination_address: &Pubkey,
+    ) -> Option<(Pubkey, Pubkey)> {
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+
+        for ix in instructions {
+            if ix.program_id == ata_program_id
+                && ix.accounts.len()
+                    >= constant::instruction_indexes::ata_instruction_indexes::MIN_ACCOUNTS
+            {
+                let ata_address = ix.accounts
+                    [constant::instruction_indexes::ata_instruction_indexes::ATA_ADDRESS_INDEX]
+                    .pubkey;
+                if ata_address == *destination_address {
+                    let wallet_owner =
+                        ix.accounts[constant::instruction_indexes::ata_instruction_indexes::WALLET_OWNER_INDEX].pubkey;
+                    let mint = ix.accounts
+                        [constant::instruction_indexes::ata_instruction_indexes::MINT_INDEX]
+                        .pubkey;
+                    return Some((wallet_owner, mint));
+                }
+            }
+        }
+        None
+    }
+
     pub async fn get_mint(
+        config: &Config,
         rpc_client: &RpcClient,
         mint_pubkey: &Pubkey,
     ) -> Result<Box<dyn TokenMint + Send + Sync>, KoraError> {
-        let mint_account = CacheUtil::get_account(rpc_client, mint_pubkey, false).await?;
+        let mint_account = CacheUtil::get_account(config, rpc_client, mint_pubkey, false).await?;
 
         let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
 
@@ -82,22 +112,26 @@ impl TokenUtil {
     }
 
     pub async fn get_mint_decimals(
+        config: &Config,
         rpc_client: &RpcClient,
         mint_pubkey: &Pubkey,
     ) -> Result<u8, KoraError> {
-        let mint = Self::get_mint(rpc_client, mint_pubkey).await?;
+        let mint = Self::get_mint(config, rpc_client, mint_pubkey).await?;
         Ok(mint.decimals())
     }
 
     pub async fn get_token_price_and_decimals(
         mint: &Pubkey,
-        price_source: PriceSource,
         rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<(TokenPrice, u8), KoraError> {
-        let decimals = Self::get_mint_decimals(rpc_client, mint).await?;
+        let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
 
-        let oracle =
-            RetryingPriceOracle::new(3, Duration::from_secs(1), get_price_oracle(price_source));
+        let oracle = RetryingPriceOracle::new(
+            3,
+            Duration::from_secs(1),
+            get_price_oracle(config.validation.price_source.clone()),
+        );
 
         // Get token price in SOL directly
         let token_price = oracle
@@ -111,11 +145,11 @@ impl TokenUtil {
     pub async fn calculate_token_value_in_lamports(
         amount: u64,
         mint: &Pubkey,
-        price_source: PriceSource,
         rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<u64, KoraError> {
         let (token_price, decimals) =
-            Self::get_token_price_and_decimals(mint, price_source, rpc_client).await?;
+            Self::get_token_price_and_decimals(mint, rpc_client, config).await?;
 
         // Convert amount to Decimal with proper scaling
         let amount_decimal = Decimal::from_u64(amount)
@@ -149,11 +183,11 @@ impl TokenUtil {
     pub async fn calculate_lamports_value_in_token(
         lamports: u64,
         mint: &Pubkey,
-        price_source: &PriceSource,
         rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<u64, KoraError> {
         let (token_price, decimals) =
-            Self::get_token_price_and_decimals(mint, price_source.clone(), rpc_client).await?;
+            Self::get_token_price_and_decimals(mint, rpc_client, config).await?;
 
         // Convert lamports to token base units
         let lamports_decimal = Decimal::from_u64(lamports)
@@ -192,8 +226,8 @@ impl TokenUtil {
     pub async fn calculate_spl_transfers_value_in_lamports(
         spl_transfers: &[ParsedSPLInstructionData],
         fee_payer: &Pubkey,
-        price_source: &PriceSource,
         rpc_client: &RpcClient,
+        config: &Config,
     ) -> Result<u64, KoraError> {
         // Collect all unique mints that need price lookups
         let mut mint_to_transfers: HashMap<
@@ -220,7 +254,9 @@ impl TokenUtil {
                     // We need to check the destination token account owner
                     if let Some(mint_pubkey) = mint {
                         // Get destination account to check owner
-                        match CacheUtil::get_account(rpc_client, destination_address, false).await {
+                        match CacheUtil::get_account(config, rpc_client, destination_address, false)
+                            .await
+                        {
                             Ok(dest_account) => {
                                 let token_program =
                                     TokenType::get_token_program_from_owner(&dest_account.owner)?;
@@ -289,14 +325,14 @@ impl TokenUtil {
         let oracle = RetryingPriceOracle::new(
             3,
             Duration::from_secs(1),
-            get_price_oracle(price_source.clone()),
+            get_price_oracle(config.validation.price_source.clone()),
         );
 
         let prices = oracle.get_token_prices(&mint_addresses).await?;
 
         let mut mint_decimals = std::collections::HashMap::new();
         for mint in mint_to_transfers.keys() {
-            let decimals = Self::get_mint_decimals(rpc_client, mint).await?;
+            let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
             mint_decimals.insert(*mint, decimals);
         }
 
@@ -360,17 +396,18 @@ impl TokenUtil {
     /// Validate Token2022 extensions for payment instructions
     /// This checks if any blocked extensions are present on the payment accounts
     pub async fn validate_token2022_extensions_for_payment(
+        config: &Config,
         rpc_client: &RpcClient,
         source_address: &Pubkey,
         destination_address: &Pubkey,
         mint: &Pubkey,
     ) -> Result<(), KoraError> {
-        let config = &get_config()?.validation.token_2022;
+        let token2022_config = &config.validation.token_2022;
 
         let token_program = Token2022Program::new();
 
         // Get mint account data and validate mint extensions (force refresh in case extensions are added)
-        let mint_account = CacheUtil::get_account(rpc_client, mint, true).await?;
+        let mint_account = CacheUtil::get_account(config, rpc_client, mint, true).await?;
         let mint_data = mint_account.data;
 
         // Unpack the mint state with extensions
@@ -383,7 +420,7 @@ impl TokenUtil {
 
         // Check each extension type present on the mint
         for extension_type in mint_with_extensions.get_extension_types() {
-            if config.is_mint_extension_blocked(*extension_type) {
+            if token2022_config.is_mint_extension_blocked(*extension_type) {
                 return Err(KoraError::ValidationError(format!(
                     "Blocked mint extension found on mint account {mint}",
                 )));
@@ -391,7 +428,8 @@ impl TokenUtil {
         }
 
         // Check source account extensions (force refresh in case extensions are added)
-        let source_account = CacheUtil::get_account(rpc_client, source_address, true).await?;
+        let source_account =
+            CacheUtil::get_account(config, rpc_client, source_address, true).await?;
         let source_data = source_account.data;
 
         let source_state = token_program.unpack_token_account(&source_data)?;
@@ -402,7 +440,7 @@ impl TokenUtil {
             })?;
 
         for extension_type in source_with_extensions.get_extension_types() {
-            if config.is_account_extension_blocked(*extension_type) {
+            if token2022_config.is_account_extension_blocked(*extension_type) {
                 return Err(KoraError::ValidationError(format!(
                     "Blocked account extension found on source account {source_address}",
                 )));
@@ -411,7 +449,7 @@ impl TokenUtil {
 
         // Check destination account extensions (force refresh in case extensions are added)
         let destination_account =
-            CacheUtil::get_account(rpc_client, destination_address, true).await?;
+            CacheUtil::get_account(config, rpc_client, destination_address, true).await?;
         let destination_data = destination_account.data;
 
         let destination_state = token_program.unpack_token_account(&destination_data)?;
@@ -422,7 +460,7 @@ impl TokenUtil {
             })?;
 
         for extension_type in destination_with_extensions.get_extension_types() {
-            if config.is_account_extension_blocked(*extension_type) {
+            if token2022_config.is_account_extension_blocked(*extension_type) {
                 return Err(KoraError::ValidationError(format!(
                     "Blocked account extension found on destination account {destination_address}",
                 )));
@@ -432,15 +470,72 @@ impl TokenUtil {
         Ok(())
     }
 
-    pub async fn verify_token_payment(
+    /// Validate Token2022 extensions for payment when destination ATA is being created.
+    /// Only validates mint and source account extensions (destination doesn't exist yet).
+    pub async fn validate_token2022_partial_for_ata_creation(
+        config: &Config,
+        rpc_client: &RpcClient,
+        source_address: &Pubkey,
+        mint: &Pubkey,
+    ) -> Result<(), KoraError> {
+        let token2022_config = &config.validation.token_2022;
+        let token_program = Token2022Program::new();
+
+        // Get mint account data and validate mint extensions
+        let mint_account = CacheUtil::get_account(config, rpc_client, mint, true).await?;
+        let mint_state = token_program.unpack_mint(mint, &mint_account.data)?;
+
+        let mint_with_extensions =
+            mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast mint state.".to_string())
+            })?;
+
+        for extension_type in mint_with_extensions.get_extension_types() {
+            if token2022_config.is_mint_extension_blocked(*extension_type) {
+                return Err(KoraError::ValidationError(format!(
+                    "Blocked mint extension found on mint account {mint}",
+                )));
+            }
+        }
+
+        // Check source account extensions
+        let source_account =
+            CacheUtil::get_account(config, rpc_client, source_address, true).await?;
+        let source_state = token_program.unpack_token_account(&source_account.data)?;
+
+        let source_with_extensions =
+            source_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast source state.".to_string())
+            })?;
+
+        for extension_type in source_with_extensions.get_extension_types() {
+            if token2022_config.is_account_extension_blocked(*extension_type) {
+                return Err(KoraError::ValidationError(format!(
+                    "Blocked account extension found on source account {source_address}",
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Find the total payment amount in a transaction to the expected destination.
+    /// Returns the total payment in lamports, or None if no valid payment found.
+    ///
+    /// For bundles, pass `bundle_instructions` to enable cross-tx ATA lookup
+    /// (e.g., ATA created in Tx1, payment in Tx2).
+    pub async fn find_payment_in_transaction(
+        config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
-        required_lamports: u64,
-        // Wallet address of the owner of the destination token account
         expected_destination_owner: &Pubkey,
-    ) -> Result<bool, KoraError> {
-        let config = get_config()?;
+        bundle_instructions: Option<&[Instruction]>,
+    ) -> Result<Option<u64>, KoraError> {
         let mut total_lamport_value = 0u64;
+
+        let all_instructions = bundle_instructions
+            .map(|bi| bi.to_vec())
+            .unwrap_or_else(|| transaction_resolved.all_instructions.clone());
 
         for instruction in transaction_resolved
             .get_or_parse_spl_instructions()?
@@ -462,46 +557,83 @@ impl TokenUtil {
                     Box::new(TokenProgram::new())
                 };
 
-                // Validate the destination account is that of the payment address (or signer if none provided)
-                let destination_account =
-                    CacheUtil::get_account(rpc_client, destination_address, false)
+                // Get destination owner and mint - the ATA may not exist yet if being created
+                // in this transaction (or another transaction in the bundle)
+                let (destination_owner, token_mint) =
+                    match CacheUtil::get_account(config, rpc_client, destination_address, false)
                         .await
-                        .map_err(|e| KoraError::RpcError(e.to_string()))?;
+                    {
+                        Ok(destination_account) => {
+                            let token_state = token_program
+                                .unpack_token_account(&destination_account.data)
+                                .map_err(|e| {
+                                    KoraError::InvalidTransaction(format!(
+                                        "Invalid token account: {e}"
+                                    ))
+                                })?;
 
-                let token_state =
-                    token_program.unpack_token_account(&destination_account.data).map_err(|e| {
-                        KoraError::InvalidTransaction(format!("Invalid token account: {e}"))
-                    })?;
+                            // For Token2022, validate that blocked extensions are not used
+                            if *is_2022 {
+                                TokenUtil::validate_token2022_extensions_for_payment(
+                                    config,
+                                    rpc_client,
+                                    source_address,
+                                    destination_address,
+                                    &mint.unwrap_or(token_state.mint()),
+                                )
+                                .await?;
+                            }
 
-                // For Token2022 payments, validate that blocked extensions are not used
-                if *is_2022 {
-                    TokenUtil::validate_token2022_extensions_for_payment(
-                        rpc_client,
-                        source_address,
-                        destination_address,
-                        &mint.unwrap_or(token_state.mint()),
-                    )
-                    .await?;
-                }
+                            (token_state.owner(), token_state.mint())
+                        }
+                        Err(e) => {
+                            // If account not found, check if there's an ATA creation instruction
+                            // that creates this destination address
+                            if matches!(e, KoraError::AccountNotFound(_)) {
+                                if let Some((wallet_owner, ata_mint)) =
+                                    Self::find_ata_creation_for_destination(
+                                        &all_instructions,
+                                        destination_address,
+                                    )
+                                {
+                                    // For Token2022, validate mint and source extensions
+                                    if *is_2022 {
+                                        TokenUtil::validate_token2022_partial_for_ata_creation(
+                                            config,
+                                            rpc_client,
+                                            source_address,
+                                            &ata_mint,
+                                        )
+                                        .await?;
+                                    }
 
-                // Skip transfer if destination isn't our expected payment address
-                if token_state.owner() != *expected_destination_owner {
+                                    (wallet_owner, ata_mint)
+                                } else {
+                                    // No ATA creation found - skip this transfer
+                                    continue;
+                                }
+                            } else {
+                                return Err(KoraError::RpcError(e.to_string()));
+                            }
+                        }
+                    };
+
+                // Skip if destination isn't our expected payment address
+                if destination_owner != *expected_destination_owner {
                     continue;
                 }
 
-                if !config.validation.supports_token(&token_state.mint().to_string()) {
-                    log::warn!(
-                        "Ignoring payment with unsupported token mint: {}",
-                        token_state.mint(),
-                    );
+                // Skip unsupported tokens
+                if !config.validation.supports_token(&token_mint.to_string()) {
+                    log::warn!("Ignoring payment with unsupported token mint: {}", token_mint,);
                     continue;
                 }
 
                 let lamport_value = TokenUtil::calculate_token_value_in_lamports(
                     *amount,
-                    &token_state.mint(),
-                    config.validation.price_source.clone(),
+                    &token_mint,
                     rpc_client,
+                    config,
                 )
                 .await?;
 
@@ -517,7 +649,35 @@ impl TokenUtil {
             }
         }
 
-        Ok(total_lamport_value >= required_lamports)
+        if total_lamport_value > 0 {
+            Ok(Some(total_lamport_value))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Verify that a transaction contains sufficient payment to the expected destination.
+    ///
+    /// For bundles, pass `bundle_instructions` to enable cross-tx ATA lookup
+    /// (e.g., ATA created in Tx1, payment in Tx2).
+    pub async fn verify_token_payment(
+        config: &Config,
+        transaction_resolved: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        required_lamports: u64,
+        expected_destination_owner: &Pubkey,
+        bundle_instructions: Option<&[Instruction]>,
+    ) -> Result<bool, KoraError> {
+        let payment = Self::find_payment_in_transaction(
+            config,
+            transaction_resolved,
+            rpc_client,
+            expected_destination_owner,
+            bundle_instructions,
+        )
+        .await?;
+
+        Ok(payment.unwrap_or(0) >= required_lamports)
     }
 }
 
@@ -610,7 +770,8 @@ mod tests_token {
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
-        let result = TokenUtil::get_mint(&rpc_client, &mint).await;
+        let config = get_config().unwrap();
+        let result = TokenUtil::get_mint(&config, &rpc_client, &mint).await;
         assert!(result.is_ok());
         let mint_data = result.unwrap();
         assert_eq!(mint_data.decimals(), 9);
@@ -622,7 +783,8 @@ mod tests_token {
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result = TokenUtil::get_mint(&rpc_client, &mint).await;
+        let config = get_config().unwrap();
+        let result = TokenUtil::get_mint(&config, &rpc_client, &mint).await;
         assert!(result.is_err());
     }
 
@@ -632,7 +794,8 @@ mod tests_token {
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
-        let result = TokenUtil::get_mint_decimals(&rpc_client, &mint).await;
+        let config = get_config().unwrap();
+        let result = TokenUtil::get_mint_decimals(&config, &rpc_client, &mint).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 6);
     }
@@ -640,13 +803,12 @@ mod tests_token {
     #[tokio::test]
     async fn test_get_token_price_and_decimals_spl() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let (token_price, decimals) =
-            TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client)
-                .await
-                .unwrap();
+            TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config).await.unwrap();
 
         assert_eq!(decimals, 9);
         assert_eq!(token_price.price, Decimal::from(1));
@@ -655,44 +817,40 @@ mod tests_token {
     #[tokio::test]
     async fn test_get_token_price_and_decimals_token2022() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let (token_price, decimals) =
-            TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client)
-                .await
-                .unwrap();
+            TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config).await.unwrap();
 
         assert_eq!(decimals, 6);
-        assert_eq!(token_price.price, dec!(0.0001));
+        assert_eq!(token_price.price, dec!(0.0075));
     }
 
     #[tokio::test]
     async fn test_get_token_price_and_decimals_account_not_found() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result =
-            TokenUtil::get_token_price_and_decimals(&mint, PriceSource::Mock, &rpc_client).await;
+        let result = TokenUtil::get_token_price_and_decimals(&mint, &rpc_client, &config).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_sol() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let amount = 1_000_000_000; // 1 SOL in lamports
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 1_000_000_000); // Should equal input since SOL price is 1.0
     }
@@ -700,38 +858,32 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_usdc() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let amount = 1_000_000; // 1 USDC (6 decimals)
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
-        // 1 USDC * 0.0001 SOL/USDC = 0.0001 SOL = 100,000 lamports
-        assert_eq!(result, 100_000);
+        // 1 USDC * 0.0075 SOL/USDC = 0.0075 SOL = 7,500,000 lamports
+        assert_eq!(result, 7_500_000);
     }
 
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_zero_amount() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let amount = 0;
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 0);
     }
@@ -739,38 +891,32 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_small_amount() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let amount = 1; // 0.000001 USDC (smallest unit)
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            amount,
-            &mint,
-            PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(amount, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
-        // 0.000001 USDC * 0.0001 SOL/USDC = very small amount, should floor to 0
-        assert_eq!(result, 0);
+        // 0.000001 USDC * 0.0075 SOL/USDC = 0.0000000075 SOL = 7.5 lamports, floors to 7
+        assert_eq!(result, 7);
     }
 
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_sol() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let lamports = 1_000_000_000; // 1 SOL
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 1_000_000_000); // Should equal input since SOL price is 1.0
     }
@@ -778,38 +924,32 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_usdc() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
-        let lamports = 100_000; // 0.0001 SOL
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let lamports = 7_500_000; // 0.0075 SOL
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
-        // 0.0001 SOL / 0.0001 SOL/USDC = 1 USDC = 1,000,000 base units
+        // 0.0075 SOL / 0.0075 SOL/USDC = 1 USDC = 1,000,000 base units
         assert_eq!(result, 1_000_000);
     }
 
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_zero_lamports() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(9).build();
 
         let lamports = 0;
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &PriceSource::Mock,
-            &rpc_client,
-        )
-        .await
-        .unwrap();
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await
+                .unwrap();
 
         assert_eq!(result, 0);
     }
@@ -817,6 +957,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_price_functions_consistency() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         // Test that convert to lamports and back to token amount gives approximately the same result
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
@@ -827,8 +968,8 @@ mod tests_token {
         let lamports_result = TokenUtil::calculate_token_value_in_lamports(
             original_amount,
             &mint,
-            PriceSource::Mock,
             &rpc_client,
+            &config,
         )
         .await;
 
@@ -840,13 +981,9 @@ mod tests_token {
         let lamports = lamports_result.unwrap();
 
         // Convert lamports back to token amount
-        let recovered_amount_result = TokenUtil::calculate_lamports_value_in_token(
-            lamports,
-            &mint,
-            &PriceSource::Mock,
-            &rpc_client,
-        )
-        .await;
+        let recovered_amount_result =
+            TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                .await;
 
         if let Ok(recovered_amount) = recovered_amount_result {
             assert_eq!(recovered_amount, original_amount);
@@ -856,16 +993,13 @@ mod tests_token {
     #[tokio::test]
     async fn test_price_calculation_with_account_error() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result = TokenUtil::calculate_token_value_in_lamports(
-            1_000_000,
-            &mint,
-            PriceSource::Mock,
-            &rpc_client,
-        )
-        .await;
+        let result =
+            TokenUtil::calculate_token_value_in_lamports(1_000_000, &mint, &rpc_client, &config)
+                .await;
 
         assert!(result.is_err());
     }
@@ -873,16 +1007,13 @@ mod tests_token {
     #[tokio::test]
     async fn test_lamports_calculation_with_account_error() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
-        let result = TokenUtil::calculate_lamports_value_in_token(
-            1_000_000,
-            &mint,
-            &PriceSource::Mock,
-            &rpc_client,
-        )
-        .await;
+        let result =
+            TokenUtil::calculate_lamports_value_in_token(1_000_000, &mint, &rpc_client, &config)
+                .await;
 
         assert!(result.is_err());
     }
@@ -890,41 +1021,39 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_decimal_precision() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
 
         // Explanation (i.e. for case 1)
+        // With USDC price = 0.0075 SOL/USDC:
         // 1. Lamports → SOL: 5,000 / 1,000,000,000 = 0.000005 SOL
-        // 2. SOL → USDC: 0.000005 SOL / 0.0001 SOL/USDC = 0.05 USDC
-        // 3. USDC → Base units: 0.05 USDC × 10^6 = 50,000 base units
+        // 2. SOL → USDC: 0.000005 SOL / 0.0075 SOL/USDC = 0.000666... USDC
+        // 3. USDC → Base units: 0.000666... USDC × 10^6 = 666.666... base units, ceil to 667
 
         let test_cases = vec![
             // Low priority fees
-            (5_000u64, 50_000u64, "low priority base case"),
-            (10_001u64, 100_010u64, "odd number precision"),
+            (5_000u64, 667u64, "low priority base case"),
+            (10_001u64, 1_334u64, "odd number precision"),
             // High priority fees
-            (1_010_050u64, 10_100_500u64, "high priority problematic case"),
+            (1_010_050u64, 134_674u64, "high priority problematic case"),
             // High compute unit scenarios
-            (5_000_000u64, 50_000_000u64, "very high CU limit"),
-            (2_500_050u64, 25_000_500u64, "odd high amount"), // exact result with Decimal
-            (10_000_000u64, 100_000_000u64, "maximum CU cost"),
+            (5_000_000u64, 666_667u64, "very high CU limit"),
+            (2_500_050u64, 333_340u64, "odd high amount"),
+            (10_000_000u64, 1_333_334u64, "maximum CU cost"),
             // Edge cases
-            (1_010_049u64, 10_100_490u64, "precision edge case -1"),
-            (1_010_051u64, 10_100_510u64, "precision edge case +1"),
-            (999_999u64, 9_999_990u64, "near million boundary"),
-            (1_000_001u64, 10_000_010u64, "over million boundary"),
-            (1_333_337u64, 13_333_370u64, "repeating digits edge case"),
+            (1_010_049u64, 134_674u64, "precision edge case -1"),
+            (1_010_051u64, 134_674u64, "precision edge case +1"),
+            (999_999u64, 133_334u64, "near million boundary"),
+            (1_000_001u64, 133_334u64, "over million boundary"),
+            (1_333_337u64, 177_779u64, "repeating digits edge case"),
         ];
 
         for (lamports, expected, description) in test_cases {
             let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
-            let result = TokenUtil::calculate_lamports_value_in_token(
-                lamports,
-                &mint,
-                &PriceSource::Mock,
-                &rpc_client,
-            )
-            .await
-            .unwrap();
+            let result =
+                TokenUtil::calculate_lamports_value_in_token(lamports, &mint, &rpc_client, &config)
+                    .await
+                    .unwrap();
 
             assert_eq!(
                 result, expected,
@@ -943,7 +1072,9 @@ mod tests_token {
 
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
+        let config = get_config().unwrap();
         let result = TokenUtil::validate_token2022_extensions_for_payment(
+            &config,
             &rpc_client,
             &source_address,
             &destination_address,
@@ -968,7 +1099,9 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().with_account_info(&source_account).build();
 
         // Test with None mint (should only check account extensions but will fail on dest account lookup)
+        let config = get_config().unwrap();
         let result = TokenUtil::validate_token2022_extensions_for_payment(
+            &config,
             &rpc_client,
             &source_address,
             &destination_address,
@@ -1054,5 +1187,120 @@ mod tests_token {
             .validation
             .token_2022
             .is_account_extension_blocked(ExtensionType::CpiGuard));
+    }
+
+    #[test]
+    fn test_find_ata_creation_for_destination_found() {
+        use solana_sdk::instruction::AccountMeta;
+
+        let funding_account = Pubkey::new_unique();
+        let wallet_owner = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+
+        // Derive the ATA address
+        let ata_address =
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &wallet_owner,
+                &mint,
+            );
+
+        // Create a mock ATA creation instruction
+        let ata_instruction = Instruction {
+            program_id: ata_program_id,
+            accounts: vec![
+                AccountMeta::new(funding_account, true), // 0: funding account
+                AccountMeta::new(ata_address, false),    // 1: ATA to be created
+                AccountMeta::new_readonly(wallet_owner, false), // 2: wallet owner
+                AccountMeta::new_readonly(mint, false),  // 3: mint
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false), // 4: system program
+                AccountMeta::new_readonly(spl_token_interface::id(), false), // 5: token program
+            ],
+            data: vec![0], // CreateAssociatedTokenAccount instruction discriminator
+        };
+
+        let instructions = vec![ata_instruction];
+
+        // Should find the ATA creation instruction
+        let result = TokenUtil::find_ata_creation_for_destination(&instructions, &ata_address);
+        assert!(result.is_some());
+        let (found_wallet, found_mint) = result.unwrap();
+        assert_eq!(found_wallet, wallet_owner);
+        assert_eq!(found_mint, mint);
+    }
+
+    #[test]
+    fn test_find_ata_creation_for_destination_not_found() {
+        use solana_sdk::instruction::AccountMeta;
+
+        let funding_account = Pubkey::new_unique();
+        let wallet_owner = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+
+        // Derive the ATA address
+        let ata_address =
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &wallet_owner,
+                &mint,
+            );
+
+        // Create a mock ATA creation instruction for a different address
+        let different_ata = Pubkey::new_unique();
+        let ata_instruction = Instruction {
+            program_id: ata_program_id,
+            accounts: vec![
+                AccountMeta::new(funding_account, true),
+                AccountMeta::new(different_ata, false), // Different ATA
+                AccountMeta::new_readonly(wallet_owner, false),
+                AccountMeta::new_readonly(mint, false),
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+                AccountMeta::new_readonly(spl_token_interface::id(), false),
+            ],
+            data: vec![0],
+        };
+
+        let instructions = vec![ata_instruction];
+
+        // Should NOT find an ATA creation for our target address
+        let result = TokenUtil::find_ata_creation_for_destination(&instructions, &ata_address);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_ata_creation_for_destination_empty_instructions() {
+        let target_address = Pubkey::new_unique();
+        let instructions: Vec<Instruction> = vec![];
+
+        let result = TokenUtil::find_ata_creation_for_destination(&instructions, &target_address);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_ata_creation_for_destination_wrong_program() {
+        use solana_sdk::instruction::AccountMeta;
+
+        let target_address = Pubkey::new_unique();
+        let wallet_owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Create an instruction with the wrong program ID
+        let wrong_program_instruction = Instruction {
+            program_id: Pubkey::new_unique(), // Not the ATA program
+            accounts: vec![
+                AccountMeta::new(Pubkey::new_unique(), true),
+                AccountMeta::new(target_address, false),
+                AccountMeta::new_readonly(wallet_owner, false),
+                AccountMeta::new_readonly(mint, false),
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+                AccountMeta::new_readonly(spl_token_interface::id(), false),
+            ],
+            data: vec![0],
+        };
+
+        let instructions = vec![wrong_program_instruction];
+
+        let result = TokenUtil::find_ata_creation_for_destination(&instructions, &target_address);
+        assert!(result.is_none());
     }
 }

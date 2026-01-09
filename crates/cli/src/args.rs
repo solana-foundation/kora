@@ -1,4 +1,4 @@
-use clap::{command, Parser};
+use clap::Parser;
 
 /// Global arguments used by all subcommands
 #[derive(Debug, Parser)]

@@ -2,20 +2,20 @@
 repos:
   - repo: local
     hooks:
-      - id: make-lint
-        name: make lint
-        description: Lint Rust code automatically
-        entry: make lint
+      - id: just-fmt
+        name: just fmt
+        description: Format Rust code automatically
+        entry: just fmt
         language: system
         types: [rust]
         pass_filenames: false
-        
+
   - repo: local
     hooks:
-      - id: make-format-ts-sdk
-        name: make format-ts-sdk
+      - id: just-format-ts-sdk
+        name: just format-ts-sdk
         description: Format TypeScript SDK code
-        entry: make format-ts-sdk
+        entry: just format-ts-sdk
         language: system
         types: [ts]
         pass_filenames: false
@@ -25,7 +25,9 @@ repos:
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
-        args: [
-          "--optional-scope",
-          "--types", "feat,fix,chore,docs,style,refactor,perf,test,build,ci"
-        ]
+        args:
+          [
+            "--optional-scope",
+            "--types",
+            "feat,fix,chore,docs,style,refactor,perf,test,build,ci",
+          ]

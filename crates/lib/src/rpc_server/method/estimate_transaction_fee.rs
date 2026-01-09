@@ -55,29 +55,34 @@ pub async fn estimate_transaction_fee(
     let validation_config = &config.validation;
     let fee_payer = signer.pubkey();
 
+    #[allow(clippy::needless_borrow)]
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
+        &config,
         rpc_client,
         request.sig_verify,
     )
     .await?;
 
+    #[allow(clippy::needless_borrow)]
     let fee_calculation = FeeConfigUtil::estimate_kora_fee(
-        rpc_client,
         &mut resolved_transaction,
         &fee_payer,
         validation_config.is_payment_required(),
-        validation_config.price_source.clone(),
+        rpc_client,
+        &config,
     )
     .await?;
 
     let fee_in_lamports = fee_calculation.total_fee_lamports;
 
+    #[allow(clippy::needless_borrow)]
     // Calculate fee in token if requested
     let fee_in_token = FeeConfigUtil::calculate_fee_in_token(
-        rpc_client,
         fee_in_lamports,
         request.fee_token.as_deref(),
+        rpc_client,
+        &config,
     )
     .await?;
 

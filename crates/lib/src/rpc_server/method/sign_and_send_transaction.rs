@@ -6,7 +6,7 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 
 use crate::{
-    state::get_request_signer_with_signer_key,
+    state::{get_config, get_request_signer_with_signer_key},
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
@@ -27,6 +27,8 @@ pub struct SignAndSendTransactionResponse {
     pub signed_transaction: String,
     /// Public key of the signer used (for client consistency)
     pub signer_pubkey: String,
+    /// Transaction signature
+    pub signature: String,
 }
 
 pub async fn sign_and_send_transaction(
@@ -35,24 +37,28 @@ pub async fn sign_and_send_transaction(
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
+    let config = get_config()?;
+
     // Check usage limit for transaction sender
-    UsageTracker::check_transaction_usage_limit(&transaction).await?;
+    UsageTracker::check_transaction_usage_limit(config, &transaction).await?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
 
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
+        config,
         rpc_client,
         request.sig_verify,
     )
     .await?;
 
-    let (_, signed_transaction) =
-        resolved_transaction.sign_and_send_transaction(&signer, rpc_client).await?;
+    let (signature, signed_transaction) =
+        resolved_transaction.sign_and_send_transaction(config, &signer, rpc_client).await?;
 
     Ok(SignAndSendTransactionResponse {
         signed_transaction,
         signer_pubkey: signer.pubkey().to_string(),
+        signature,
     })
 }
 

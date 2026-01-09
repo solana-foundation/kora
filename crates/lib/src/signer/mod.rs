@@ -1,3 +1,4 @@
+pub mod bundle_signer;
 pub mod config;
 pub mod init;
 pub mod keypair_util;

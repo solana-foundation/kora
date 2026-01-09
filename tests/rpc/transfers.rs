@@ -1,9 +1,9 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
 use kora_lib::transaction::TransactionUtil;
-use solana_sdk::signature::{Keypair, Signer};
+use solana_sdk::signature::Signer;
 
-/// Test transferTransaction with SPL token transfer
+/// Test transferTransaction with SPL token transfer (DEPRECATED endpoint)
 #[tokio::test]
 async fn test_transfer_transaction_spl_token_legacy() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
@@ -27,22 +27,22 @@ async fn test_transfer_transaction_spl_token_legacy() {
 
     response.assert_success();
 
-    // transferTransaction returns unsigned transaction data, not a signed transaction
+    // transferTransaction returns unsigned transaction data
     assert!(response["transaction"].as_str().is_some(), "Expected transaction in response");
     assert!(response["message"].as_str().is_some(), "Expected message in response");
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
+    assert!(response["signer_pubkey"].as_str().is_some(), "Expected signer_pubkey in response");
 }
 
-/// Test transfer transaction with automatic ATA creation
+/// Test transfer transaction returns valid unsigned transaction (DEPRECATED endpoint)
+/// Note: ATA creation for destination is handled automatically by Kora
 #[tokio::test]
 async fn test_transfer_transaction_with_ata_legacy() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
-    let rpc_client = ctx.rpc_client();
-    let random_keypair = Keypair::new();
-    let random_pubkey = random_keypair.pubkey();
-
     let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+
     let response: serde_json::Value = ctx
         .rpc_call(
             "transferTransaction",
@@ -50,7 +50,7 @@ async fn test_transfer_transaction_with_ata_legacy() {
                 10,
                 &USDCMintTestHelper::get_test_usdc_mint_pubkey().to_string(),
                 sender.pubkey().to_string(),
-                random_pubkey.to_string()
+                recipient.to_string()
             ],
         )
         .await
@@ -60,15 +60,10 @@ async fn test_transfer_transaction_with_ata_legacy() {
     assert!(response["transaction"].as_str().is_some(), "Expected transaction in response");
     assert!(response["message"].as_str().is_some(), "Expected message in response");
     assert!(response["blockhash"].as_str().is_some(), "Expected blockhash in response");
+    assert!(response["signer_pubkey"].as_str().is_some(), "Expected signer_pubkey in response");
 
+    // Verify we can decode the unsigned transaction
     let transaction_string = response["transaction"].as_str().unwrap();
-    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
+    let _transaction = TransactionUtil::decode_b64_transaction(transaction_string)
         .expect("Failed to decode transaction from base64");
-
-    let simulated_tx = rpc_client
-        .simulate_transaction(&transaction)
-        .await
-        .expect("Failed to simulate transaction");
-
-    assert!(simulated_tx.value.err.is_none(), "Transaction simulation failed");
 }

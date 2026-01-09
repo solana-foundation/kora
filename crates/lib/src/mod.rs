@@ -3,6 +3,7 @@
 #![cfg_attr(test, allow(clippy::await_holding_lock))]
 
 pub mod admin;
+pub mod bundle;
 pub mod cache;
 pub mod config;
 pub mod constant;

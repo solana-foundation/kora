@@ -9,6 +9,7 @@ use utoipa::{
     ToSchema,
 };
 
+#[allow(deprecated)]
 use crate::rpc_server::method::{
     estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest, EstimateTransactionFeeResponse,
@@ -17,9 +18,14 @@ use crate::rpc_server::method::{
     get_config::{get_config, GetConfigResponse},
     get_payer_signer::{get_payer_signer, GetPayerSignerResponse},
     get_supported_tokens::{get_supported_tokens, GetSupportedTokensResponse},
+    get_version::{get_version, GetVersionResponse},
+    sign_and_send_bundle::{
+        sign_and_send_bundle, SignAndSendBundleRequest, SignAndSendBundleResponse,
+    },
     sign_and_send_transaction::{
         sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResponse,
     },
+    sign_bundle::{sign_bundle, SignBundleRequest, SignBundleResponse},
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResponse},
     transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
@@ -97,11 +103,13 @@ impl KoraRpc {
         result
     }
 
+    #[deprecated(since = "2.2.0", note = "Use getPaymentInstruction instead for fee payment flows")]
     pub async fn transfer_transaction(
         &self,
         request: TransferTransactionRequest,
     ) -> Result<TransferTransactionResponse, KoraError> {
         info!("Transfer transaction request: {request:?}");
+        #[allow(deprecated)]
         let result = transfer_transaction(&self.rpc_client, request).await;
         info!("Transfer transaction response: {result:?}");
         result
@@ -118,6 +126,33 @@ impl KoraRpc {
         info!("Get config request received");
         let result = get_config().await;
         info!("Get config response: {result:?}");
+        result
+    }
+
+    pub async fn get_version(&self) -> Result<GetVersionResponse, KoraError> {
+        info!("Get version request received");
+        let result = get_version().await;
+        info!("Get version response: {result:?}");
+        result
+    }
+
+    pub async fn sign_bundle(
+        &self,
+        request: SignBundleRequest,
+    ) -> Result<SignBundleResponse, KoraError> {
+        info!("Sign bundle request: {request:?}");
+        let result = sign_bundle(&self.rpc_client, request).await;
+        info!("Sign bundle response: {result:?}");
+        result
+    }
+
+    pub async fn sign_and_send_bundle(
+        &self,
+        request: SignAndSendBundleRequest,
+    ) -> Result<SignAndSendBundleResponse, KoraError> {
+        info!("Sign and send bundle request: {request:?}");
+        let result = sign_and_send_bundle(&self.rpc_client, request).await;
+        info!("Sign and send bundle response: {result:?}");
         result
     }
 
@@ -164,6 +199,21 @@ impl KoraRpc {
                 request: Some(TransferTransactionRequest::schema().1),
                 response: TransferTransactionResponse::schema().1,
             },
+            OpenApiSpec {
+                name: "getVersion".to_string(),
+                request: None,
+                response: GetVersionResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "signBundle".to_string(),
+                request: Some(SignBundleRequest::schema().1),
+                response: SignBundleResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "signAndSendBundle".to_string(),
+                request: Some(SignAndSendBundleRequest::schema().1),
+                response: SignAndSendBundleResponse::schema().1,
+            },
         ]
     }
 }
@@ -191,6 +241,17 @@ mod tests {
         // Test liveness endpoint
         let result = kora_rpc.liveness().await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_get_version() {
+        let kora_rpc = create_test_kora_rpc();
+
+        let result = kora_rpc.get_version().await;
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(!response.version.is_empty());
+        assert_eq!(response.version, env!("CARGO_PKG_VERSION"));
     }
 
     #[tokio::test]

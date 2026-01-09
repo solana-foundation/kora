@@ -1,6 +1,7 @@
 import { KoraClient } from "@solana/kora";
 import {
   createKeyPairSignerFromBytes,
+  generateKeyPairSigner,
   getBase58Encoder,
   createNoopSigner,
   address,
@@ -98,11 +99,12 @@ async function createInstructions(
   console.log("  → Payment token:", paymentToken);
 
   // Create token transfer (will initialize ATA if needed)
+  const tokenDestination = await generateKeyPairSigner();
   const transferTokens = await client.transferTransaction({
     amount: 10_000_000, // 10 USDC (6 decimals)
     token: paymentToken,
     source: testSenderKeypair.address,
-    destination: destinationKeypair.address, // todo replace with a generated address to test ata creation
+    destination: tokenDestination.address,
   });
   console.log("  ✓ Token transfer instruction created");
 
