@@ -16,7 +16,9 @@ impl BundleSigner {
         blockhash: &Option<solana_sdk::hash::Hash>,
     ) -> Result<(), KoraError> {
         if resolved.transaction.signatures.is_empty() {
-            resolved.transaction.message.set_recent_blockhash(blockhash.unwrap());
+            if let Some(blockhash) = blockhash {
+                resolved.transaction.message.set_recent_blockhash(*blockhash);
+            }
         }
 
         let message_bytes = resolved.transaction.message.serialize();
