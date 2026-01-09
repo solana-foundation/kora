@@ -26,7 +26,7 @@ pub struct SignAndSendBundleRequest {
     /// Optional signer key to ensure consistency across related RPC calls
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
-    /// Whether to verify signatures during simulation (defaults to true)
+    /// Whether to verify signatures during simulation (defaults to false)
     #[serde(default = "default_sig_verify")]
     pub sig_verify: bool,
 }
@@ -45,13 +45,13 @@ pub async fn sign_and_send_bundle(
     rpc_client: &Arc<RpcClient>,
     request: SignAndSendBundleRequest,
 ) -> Result<SignAndSendBundleResponse, KoraError> {
-    BundleValidator::validate_jito_bundle_size(&request.transactions)?;
-
     let config = &get_config()?;
 
     if !config.kora.bundle.enabled {
         return Err(BundleError::Jito(JitoError::NotEnabled).into());
     }
+
+    BundleValidator::validate_jito_bundle_size(&request.transactions)?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.pubkey();

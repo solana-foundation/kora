@@ -43,13 +43,13 @@ pub async fn sign_bundle(
     rpc_client: &Arc<RpcClient>,
     request: SignBundleRequest,
 ) -> Result<SignBundleResponse, KoraError> {
-    BundleValidator::validate_jito_bundle_size(&request.transactions)?;
-
     let config = &get_config()?;
 
     if !config.kora.bundle.enabled {
         return Err(BundleError::Jito(JitoError::NotEnabled).into());
     }
+
+    BundleValidator::validate_jito_bundle_size(&request.transactions)?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.pubkey();

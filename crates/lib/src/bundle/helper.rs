@@ -10,6 +10,7 @@ use crate::{
     KoraError,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use std::sync::Arc;
 
@@ -122,8 +123,20 @@ impl BundleProcessor {
     ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
         self.validate_payment()?;
 
+        let mut blockhash = None;
+
         for resolved in self.resolved_transactions.iter_mut() {
-            BundleSigner::sign_transaction_for_bundle(resolved, signer, rpc_client, fee_payer)
+            // Get latest blockhash if signatures are empty and blockhash is not set
+            if blockhash.is_none() && resolved.transaction.signatures.is_empty() {
+                blockhash = Some(
+                    rpc_client
+                        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+                        .await?
+                        .0,
+                );
+            }
+
+            BundleSigner::sign_transaction_for_bundle(resolved, signer, fee_payer, &blockhash)
                 .await?;
         }
 

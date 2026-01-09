@@ -2,8 +2,6 @@ use crate::{
     transaction::{VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_commitment_config::CommitmentConfig;
 use solana_keychain::SolanaSigner;
 use solana_sdk::pubkey::Pubkey;
 use std::sync::Arc;
@@ -14,15 +12,11 @@ impl BundleSigner {
     pub async fn sign_transaction_for_bundle(
         resolved: &mut VersionedTransactionResolved,
         signer: &Arc<solana_keychain::Signer>,
-        rpc_client: &RpcClient,
         fee_payer: &Pubkey,
+        blockhash: &Option<solana_sdk::hash::Hash>,
     ) -> Result<(), KoraError> {
-        // Get latest blockhash if signatures are empty
         if resolved.transaction.signatures.is_empty() {
-            let blockhash = rpc_client
-                .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
-                .await?;
-            resolved.transaction.message.set_recent_blockhash(blockhash.0);
+            resolved.transaction.message.set_recent_blockhash(blockhash.unwrap());
         }
 
         let message_bytes = resolved.transaction.message.serialize();
@@ -41,10 +35,11 @@ impl BundleSigner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::common::RpcMockBuilder;
     use solana_keychain::Signer;
     use solana_message::Message;
-    use solana_sdk::{signature::Keypair, signer::Signer as SdkSigner, transaction::Transaction};
+    use solana_sdk::{
+        hash::Hash, signature::Keypair, signer::Signer as SdkSigner, transaction::Transaction,
+    };
     use solana_system_interface::instruction::transfer;
 
     fn create_test_resolved_with_fee_payer(fee_payer: &Keypair) -> VersionedTransactionResolved {
@@ -64,15 +59,15 @@ mod tests {
         let external_signer = Signer::from_memory(&fee_payer_keypair.to_base58_string()).unwrap();
         let signer = Arc::new(external_signer);
 
-        let rpc_client = RpcMockBuilder::new().with_blockhash().build();
+        let blockhash = Some(Hash::new_unique());
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
         let result = BundleSigner::sign_transaction_for_bundle(
             &mut resolved,
             &signer,
-            &rpc_client,
             &fee_payer,
+            &blockhash,
         )
         .await;
 
@@ -88,15 +83,15 @@ mod tests {
         let external_signer = Signer::from_memory(&fee_payer_keypair.to_base58_string()).unwrap();
         let signer = Arc::new(external_signer);
 
-        let rpc_client = RpcMockBuilder::new().with_blockhash().build();
+        let blockhash = Some(Hash::new_unique());
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
         let result = BundleSigner::sign_transaction_for_bundle(
             &mut resolved,
             &signer,
-            &rpc_client,
             &wrong_fee_payer,
+            &blockhash,
         )
         .await;
 
@@ -112,7 +107,7 @@ mod tests {
         let external_signer = Signer::from_memory(&fee_payer_keypair.to_base58_string()).unwrap();
         let signer = Arc::new(external_signer);
 
-        let rpc_client = RpcMockBuilder::new().with_blockhash().build();
+        let blockhash = Some(Hash::new_unique());
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
@@ -122,8 +117,8 @@ mod tests {
         let result = BundleSigner::sign_transaction_for_bundle(
             &mut resolved,
             &signer,
-            &rpc_client,
             &fee_payer,
+            &blockhash,
         )
         .await;
 
@@ -140,15 +135,15 @@ mod tests {
         let external_signer = Signer::from_memory(&fee_payer_keypair.to_base58_string()).unwrap();
         let signer = Arc::new(external_signer);
 
-        let rpc_client = RpcMockBuilder::new().with_blockhash().build();
+        let blockhash = Some(Hash::new_unique());
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
         let result = BundleSigner::sign_transaction_for_bundle(
             &mut resolved,
             &signer,
-            &rpc_client,
             &fee_payer,
+            &blockhash,
         )
         .await;
 
