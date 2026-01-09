@@ -519,18 +519,23 @@ impl TokenUtil {
         Ok(())
     }
 
-    pub async fn verify_token_payment(
+    /// Find the total payment amount in a transaction to the expected destination.
+    /// Returns the total payment in lamports, or None if no valid payment found.
+    ///
+    /// For bundles, pass `bundle_instructions` to enable cross-tx ATA lookup
+    /// (e.g., ATA created in Tx1, payment in Tx2).
+    pub async fn find_payment_in_transaction(
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
-        required_lamports: u64,
-        // Wallet address of the owner of the destination token account
         expected_destination_owner: &Pubkey,
-    ) -> Result<bool, KoraError> {
+        bundle_instructions: Option<&[Instruction]>,
+    ) -> Result<Option<u64>, KoraError> {
         let mut total_lamport_value = 0u64;
 
-        // Clone instructions to avoid borrow conflicts when checking for ATA creation instructions
-        let all_instructions = transaction_resolved.all_instructions.clone();
+        let all_instructions = bundle_instructions
+            .map(|bi| bi.to_vec())
+            .unwrap_or_else(|| transaction_resolved.all_instructions.clone());
 
         for instruction in transaction_resolved
             .get_or_parse_spl_instructions()?
@@ -552,8 +557,8 @@ impl TokenUtil {
                     Box::new(TokenProgram::new())
                 };
 
-                // Validate the destination account is that of the payment address (or signer if none provided)
-                // The destination ATA may not exist yet if it's being created in the same transaction
+                // Get destination owner and mint - the ATA may not exist yet if being created
+                // in this transaction (or another transaction in the bundle)
                 let (destination_owner, token_mint) =
                     match CacheUtil::get_account(config, rpc_client, destination_address, false)
                         .await
@@ -567,7 +572,7 @@ impl TokenUtil {
                                     ))
                                 })?;
 
-                            // For Token2022 payments, validate that blocked extensions are not used
+                            // For Token2022, validate that blocked extensions are not used
                             if *is_2022 {
                                 TokenUtil::validate_token2022_extensions_for_payment(
                                     config,
@@ -583,7 +588,7 @@ impl TokenUtil {
                         }
                         Err(e) => {
                             // If account not found, check if there's an ATA creation instruction
-                            // in this transaction that creates this destination address
+                            // that creates this destination address
                             if matches!(e, KoraError::AccountNotFound(_)) {
                                 if let Some((wallet_owner, ata_mint)) =
                                     Self::find_ata_creation_for_destination(
@@ -604,23 +609,21 @@ impl TokenUtil {
 
                                     (wallet_owner, ata_mint)
                                 } else {
-                                    // No ATA creation instruction found and destination doesn't exist
-                                    return Err(KoraError::AccountNotFound(
-                                        destination_address.to_string(),
-                                    ));
+                                    // No ATA creation found - skip this transfer
+                                    continue;
                                 }
                             } else {
-                                // Other error (not AccountNotFound), propagate it
                                 return Err(KoraError::RpcError(e.to_string()));
                             }
                         }
                     };
 
-                // Skip transfer if destination isn't our expected payment address
+                // Skip if destination isn't our expected payment address
                 if destination_owner != *expected_destination_owner {
                     continue;
                 }
 
+                // Skip unsupported tokens
                 if !config.validation.supports_token(&token_mint.to_string()) {
                     log::warn!("Ignoring payment with unsupported token mint: {}", token_mint,);
                     continue;
@@ -646,7 +649,35 @@ impl TokenUtil {
             }
         }
 
-        Ok(total_lamport_value >= required_lamports)
+        if total_lamport_value > 0 {
+            Ok(Some(total_lamport_value))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Verify that a transaction contains sufficient payment to the expected destination.
+    ///
+    /// For bundles, pass `bundle_instructions` to enable cross-tx ATA lookup
+    /// (e.g., ATA created in Tx1, payment in Tx2).
+    pub async fn verify_token_payment(
+        config: &Config,
+        transaction_resolved: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        required_lamports: u64,
+        expected_destination_owner: &Pubkey,
+        bundle_instructions: Option<&[Instruction]>,
+    ) -> Result<bool, KoraError> {
+        let payment = Self::find_payment_in_transaction(
+            config,
+            transaction_resolved,
+            rpc_client,
+            expected_destination_owner,
+            bundle_instructions,
+        )
+        .await?;
+
+        Ok(payment.unwrap_or(0) >= required_lamports)
     }
 }
 

@@ -55,12 +55,14 @@ clean:
 check:
     cargo fmt --all -- --check
     cargo clippy -- -D warnings
+    cd sdks/ts && pnpm format:check && pnpm type-check
 
 # Format with auto-fix
 [group('fmt')]
 fmt:
     cargo clippy --fix --allow-dirty -- -D warnings
     cargo fmt --all
+    cd sdks/ts && pnpm format
 
 # ******************************************************************************
 # Testing

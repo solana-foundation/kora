@@ -355,6 +355,7 @@ impl TransactionValidator {
             rpc_client,
             required_lamports,
             expected_payment_destination,
+            None,
         )
         .await?
         {

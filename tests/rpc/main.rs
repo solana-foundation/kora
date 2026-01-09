@@ -6,8 +6,10 @@
 //        - Fee estimation with legacy, V0, V0+lookup, compute budget scenarios
 //        - Transaction signing with all formats and conditions
 //        - Transfer operations with various token types
+//        - Bundle signing operations (signBundle, signAndSendBundle)
 
 mod basic_endpoints;
+mod bundles;
 mod compute_budget;
 mod fee_estimation;
 mod transaction_signing;

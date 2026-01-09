@@ -38,7 +38,9 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v3
       - name: Run fmt and clippy
-        run: just check
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy -- -D warnings
       - name: Build
         run: just build
 

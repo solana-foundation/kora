@@ -46,6 +46,30 @@ export interface SignAndSendTransactionRequest {
 }
 
 /**
+ * Parameters for signing a bundle of transactions.
+ */
+export interface SignBundleRequest {
+    /** Array of base64-encoded transactions to sign */
+    transactions: string[];
+    /** Optional signer address for the transactions */
+    signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+}
+
+/**
+ * Parameters for signing and sending a bundle of transactions via Jito.
+ */
+export interface SignAndSendBundleRequest {
+    /** Array of base64-encoded transactions to sign and send */
+    transactions: string[];
+    /** Optional signer address for the transactions */
+    signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+}
+
+/**
  * Parameters for estimating transaction fees.
  */
 export interface EstimateTransactionFeeRequest {
@@ -119,6 +143,28 @@ export interface SignAndSendTransactionResponse {
     signed_transaction: string;
     /** Public key of the signer used to send the transaction */
     signer_pubkey: string;
+}
+
+/**
+ * Response from signing a bundle of transactions.
+ */
+export interface SignBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: string[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: string;
+}
+
+/**
+ * Response from signing and sending a bundle of transactions via Jito.
+ */
+export interface SignAndSendBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: string[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: string;
+    /** UUID of the submitted Jito bundle */
+    bundle_uuid: string;
 }
 
 /**
@@ -255,6 +301,8 @@ export interface EnabledMethods {
     estimate_transaction_fee: boolean;
     /** Whether the get_supported_tokens method is enabled */
     get_supported_tokens: boolean;
+    /** Whether the get_payer_signer method is enabled */
+    get_payer_signer: boolean;
     /** Whether the sign_transaction method is enabled */
     sign_transaction: boolean;
     /** Whether the sign_and_send_transaction method is enabled */
@@ -267,6 +315,10 @@ export interface EnabledMethods {
     get_config: boolean;
     /** Whether the get_version method is enabled */
     get_version: boolean;
+    /** Whether the sign_and_send_bundle method is enabled (requires bundle.enabled = true) */
+    sign_and_send_bundle: boolean;
+    /** Whether the sign_bundle method is enabled (requires bundle.enabled = true) */
+    sign_bundle: boolean;
 }
 
 /**
@@ -329,6 +381,12 @@ export interface SplTokenInstructionPolicy {
     allow_set_authority: boolean;
     /** Allow fee payer to mint SPL tokens */
     allow_mint_to: boolean;
+    /** Allow fee payer to initialize SPL token mints */
+    allow_initialize_mint: boolean;
+    /** Allow fee payer to initialize SPL token accounts */
+    allow_initialize_account: boolean;
+    /** Allow fee payer to initialize SPL multisig accounts */
+    allow_initialize_multisig: boolean;
     /** Allow fee payer to freeze SPL token accounts */
     allow_freeze_account: boolean;
     /** Allow fee payer to thaw SPL token accounts */
@@ -353,6 +411,12 @@ export interface Token2022InstructionPolicy {
     allow_set_authority: boolean;
     /** Allow fee payer to mint Token2022 tokens */
     allow_mint_to: boolean;
+    /** Allow fee payer to initialize Token2022 mints */
+    allow_initialize_mint: boolean;
+    /** Allow fee payer to initialize Token2022 accounts */
+    allow_initialize_account: boolean;
+    /** Allow fee payer to initialize Token2022 multisig accounts */
+    allow_initialize_multisig: boolean;
     /** Allow fee payer to freeze Token2022 accounts */
     allow_freeze_account: boolean;
     /** Allow fee payer to thaw Token2022 accounts */

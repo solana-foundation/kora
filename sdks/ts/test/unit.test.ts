@@ -10,6 +10,10 @@ import {
     SignTransactionResponse,
     SignAndSendTransactionRequest,
     SignAndSendTransactionResponse,
+    SignBundleRequest,
+    SignBundleResponse,
+    SignAndSendBundleRequest,
+    SignAndSendBundleResponse,
     TransferTransactionRequest,
     TransferTransactionResponse,
     EstimateTransactionFeeResponse,
@@ -141,6 +145,9 @@ describe('KoraClient Unit Tests', () => {
                             allow_revoke: true,
                             allow_set_authority: true,
                             allow_mint_to: true,
+                            allow_initialize_mint: true,
+                            allow_initialize_account: true,
+                            allow_initialize_multisig: true,
                             allow_freeze_account: true,
                             allow_thaw_account: true,
                         },
@@ -152,6 +159,9 @@ describe('KoraClient Unit Tests', () => {
                             allow_revoke: true,
                             allow_set_authority: true,
                             allow_mint_to: true,
+                            allow_initialize_mint: true,
+                            allow_initialize_account: true,
+                            allow_initialize_multisig: true,
                             allow_freeze_account: true,
                             allow_thaw_account: true,
                         },
@@ -169,12 +179,15 @@ describe('KoraClient Unit Tests', () => {
                     liveness: true,
                     estimate_transaction_fee: true,
                     get_supported_tokens: true,
+                    get_payer_signer: true,
                     sign_transaction: true,
                     sign_and_send_transaction: true,
                     transfer_transaction: true,
                     get_blockhash: true,
                     get_config: true,
                     get_version: true,
+                    sign_and_send_bundle: true,
+                    sign_bundle: true,
                 },
             };
 
@@ -294,6 +307,58 @@ describe('KoraClient Unit Tests', () => {
         });
     });
 
+    describe('signBundle', () => {
+        it('should sign bundle of transactions', async () => {
+            const request: SignBundleRequest = {
+                transactions: ['base64_tx_1', 'base64_tx_2'],
+            };
+            const mockResponse: SignBundleResponse = {
+                signed_transactions: ['base64_signed_tx_1', 'base64_signed_tx_2'],
+                signer_pubkey: 'test_signer_pubkey',
+            };
+
+            await testSuccessfulRpcMethod('signBundle', () => client.signBundle(request), mockResponse, request);
+        });
+
+        it('should handle RPC error', async () => {
+            const request: SignBundleRequest = {
+                transactions: ['base64_tx_1'],
+            };
+            const mockError = { code: -32000, message: 'Bundle validation failed' };
+            mockErrorResponse(mockError);
+            await expect(client.signBundle(request)).rejects.toThrow('RPC Error -32000: Bundle validation failed');
+        });
+    });
+
+    describe('signAndSendBundle', () => {
+        it('should sign and send bundle of transactions', async () => {
+            const request: SignAndSendBundleRequest = {
+                transactions: ['base64_tx_1', 'base64_tx_2'],
+            };
+            const mockResponse: SignAndSendBundleResponse = {
+                signed_transactions: ['base64_signed_tx_1', 'base64_signed_tx_2'],
+                signer_pubkey: 'test_signer_pubkey',
+                bundle_uuid: 'test-bundle-uuid-123',
+            };
+
+            await testSuccessfulRpcMethod(
+                'signAndSendBundle',
+                () => client.signAndSendBundle(request),
+                mockResponse,
+                request,
+            );
+        });
+
+        it('should handle RPC error', async () => {
+            const request: SignAndSendBundleRequest = {
+                transactions: ['base64_tx_1'],
+            };
+            const mockError = { code: -32000, message: 'Jito submission failed' };
+            mockErrorResponse(mockError);
+            await expect(client.signAndSendBundle(request)).rejects.toThrow('RPC Error -32000: Jito submission failed');
+        });
+    });
+
     describe('transferTransaction (DEPRECATED)', () => {
         it('should create transfer transaction', async () => {
             const request: TransferTransactionRequest = {
@@ -350,6 +415,9 @@ describe('KoraClient Unit Tests', () => {
                         allow_revoke: true,
                         allow_set_authority: true,
                         allow_mint_to: true,
+                        allow_initialize_mint: true,
+                        allow_initialize_account: true,
+                        allow_initialize_multisig: true,
                         allow_freeze_account: true,
                         allow_thaw_account: true,
                     },
@@ -361,6 +429,9 @@ describe('KoraClient Unit Tests', () => {
                         allow_revoke: true,
                         allow_set_authority: true,
                         allow_mint_to: true,
+                        allow_initialize_mint: true,
+                        allow_initialize_account: true,
+                        allow_initialize_multisig: true,
                         allow_freeze_account: true,
                         allow_thaw_account: true,
                     },
@@ -378,12 +449,15 @@ describe('KoraClient Unit Tests', () => {
                 liveness: true,
                 estimate_transaction_fee: true,
                 get_supported_tokens: true,
+                get_payer_signer: true,
                 sign_transaction: true,
                 sign_and_send_transaction: true,
                 transfer_transaction: true,
                 get_blockhash: true,
                 get_config: true,
                 get_version: true,
+                sign_and_send_bundle: true,
+                sign_bundle: true,
             },
         };
 

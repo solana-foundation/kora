@@ -1,4 +1,4 @@
-use crate::sanitize::sanitize_message;
+use crate::{bundle::BundleError, sanitize::sanitize_message};
 use jsonrpsee::{core::Error as RpcError, types::error::CallError};
 use serde::{Deserialize, Serialize};
 use solana_client::client_error::ClientError;
@@ -62,6 +62,9 @@ pub enum KoraError {
 
     #[error("Invalid configuration for Kora")]
     ConfigError,
+
+    #[error("Jito error: {0}")]
+    JitoError(String),
 }
 
 impl From<ClientError> for KoraError {
@@ -281,6 +284,15 @@ impl From<solana_keychain::SignerError> for KoraError {
         #[cfg(not(feature = "unsafe-debug"))]
         {
             KoraError::SigningError(sanitize_message(&_err.to_string()))
+        }
+    }
+}
+
+impl From<BundleError> for KoraError {
+    fn from(err: BundleError) -> Self {
+        match err {
+            BundleError::Jito(_) => KoraError::JitoError(err.to_string()),
+            _ => KoraError::InvalidTransaction(err.to_string()),
         }
     }
 }
