@@ -1,6 +1,6 @@
 [package]
 name = "kora-cli"
-version = "2.1.0-beta.0"
+version = "2.2.0-beta.1"
 edition = "2021"
 description = "CLI for Kora gasless relayer"
 license = "MIT"

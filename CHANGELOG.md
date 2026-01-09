@@ -1,3 +1,22 @@
+## 2.2.0-beta.1 - 2026-01-09
+
+
+### Bug Fixes
+
+
+### Documentation
+
+
+### Features
+
+- (PRO-605) Jito bundle support (#291)
+
+### Refactoring
+
+
+### Bugfix
+
+
 ## 2.1.0-beta.0 - 2026-01-05
 
 
