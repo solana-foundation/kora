@@ -1,3 +1,50 @@
+## 2.2.0-beta.1 - 2026-01-09
+
+
+### Bug Fixes
+
+- use fresh wallet to exercise ata creation in full demo (#275)
+
+- resolve race condition in usage tracker (#273)
+
+- add missing signature field to SignAndSendTransactionResponse (#270)
+
+- sign if create ata ix found (#267)
+
+- update readme url to docs (#269)
+
+
+### Documentation
+
+- update x402 guide to x402 v2 spec (#272)
+
+- add deploy sample & cleanup (#265)
+
+- add branch migration notice
+
+
+### Features
+
+- (PRO-605) Jito bundle support (#291)
+
+- Changed transfer_transaction endpoint to actually return paymen… (#286)
+
+- Add getVersion RPC method to server and SDK (#284)
+
+- enhance rust-publish workflow with separate publish options for kora-lib and kora-cli
+
+- add prerelease detection for Rust and TypeScript SDK workflows & pre-release beta publish (#283)
+
+
+### Refactoring
+
+- limit access to config's singleton (#263)
+
+
+### Bugfix
+
+- version for kora lib to enable release github action
+
 ## 2.1.0-beta.0 - 2026-01-05
 
 
