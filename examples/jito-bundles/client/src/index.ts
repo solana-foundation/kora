@@ -46,7 +46,7 @@ function getRandomTipAccount(): string {
 }
 
 async function initializeClients() {
-  console.log("\n[1/5] Initializing clients");
+  console.log("\n[1/4] Initializing clients");
   console.log("  → Kora RPC:", CONFIG.koraRpcUrl);
   console.log("  → Solana RPC:", CONFIG.solanaRpcUrl);
 
@@ -59,7 +59,7 @@ async function initializeClients() {
 }
 
 async function setupKeys(client: KoraClient) {
-  console.log("\n[2/5] Setting up keypairs");
+  console.log("\n[2/4] Setting up keypairs");
 
   const senderKeypair = await generateKeyPairSigner();
   console.log("  → Sender:", senderKeypair.address);
@@ -75,7 +75,7 @@ async function createBundleTransactions(
   senderKeypair: KeyPairSigner,
   signer_address: string
 ) {
-  console.log("\n[3/5] Creating bundle transactions");
+  console.log("\n[3/4] Creating bundle transactions");
 
   const noopSigner = createNoopSigner(address(signer_address));
   const latestBlockhash = await client.getBlockhash();
@@ -143,64 +143,6 @@ async function createBundleTransactions(
   return transactions;
 }
 
-async function signBundle(
-  client: KoraClient,
-  transactions: string[],
-  signer_address: string
-) {
-  console.log("\n[4/5] Signing bundle with Kora");
-  console.log("  ✓ All transactions signed by user");
-
-  const { signed_transactions, signer_pubkey } = await client.signBundle({
-    transactions,
-    signer_key: signer_address,
-  });
-
-  console.log("  ✓ Bundle co-signed by Kora");
-  console.log(`  → ${signed_transactions.length} transactions signed`);
-
-  return { signed_transactions, signer_pubkey };
-}
-
-async function submitAndTrackBundle(
-  client: KoraClient,
-  signedTransactions: string[],
-  signer_address: string
-) {
-  console.log("\n[5/5] Submitting bundle to Jito");
-
-  // Submit bundle
-  const { bundle_uuid } = await client.signAndSendBundle({
-    transactions: signedTransactions,
-    signer_key: signer_address,
-  });
-
-  console.log("  ✓ Bundle submitted to Jito block engine");
-  console.log(`  → Bundle UUID: ${bundle_uuid}`);
-  console.log("  ⏳ Polling bundle status...");
-
-  // Poll for confirmation
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < CONFIG.pollTimeoutMs) {
-    await new Promise((resolve) => setTimeout(resolve, CONFIG.pollIntervalMs));
-
-    // Note: Bundle status checking would typically be done via Jito's API
-    // Kora handles submission but status polling requires additional Jito RPC calls from your client
-    // For this demo, we'll assume success after submission
-
-    // In production, you'd call Jito's getBundleStatuses endpoint:
-    // https://docs.jito.wtf/lowlatencytxnsend/#getbundlestatuses
-    // const status = await jitoRpc.getBundleStatuses([bundle_uuid]);
-    // if (status.value[0]?.status === 'Landed') break;
-
-    console.log("  ✓ Bundle landed (simulated for demo)");
-    break;
-  }
-
-  return { bundle_uuid };
-}
-
 async function main() {
   console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("KORA JITO BUNDLE DEMO");
@@ -220,25 +162,18 @@ async function main() {
       signer_address
     );
 
-    // Step 4: Sign bundle with Kora
-    const { signed_transactions } = await signBundle(
-      client,
+    // Step 4: Sign and send bundle
+    console.log("\n[4/4] Signing and sending bundle");
+    const { bundle_uuid } = await client.signAndSendBundle({
       transactions,
-      signer_address
-    );
+      signer_key: signer_address,
+    });
 
-    // Step 5: Submit and track bundle
-    const { bundle_uuid } = await submitAndTrackBundle(
-      client,
-      signed_transactions,
-      signer_address
-    );
-
+    console.log("\nBundle UUID:");
+    console.log(bundle_uuid);
     console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("SUCCESS: Bundle confirmed on Solana");
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("\nBundle UUID:");
-    console.log(bundle_uuid);
   } catch (error) {
     console.error("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.error("ERROR: Demo failed");
