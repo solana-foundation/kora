@@ -33,6 +33,7 @@ impl ConfigValidator {
         rpc_client: &RpcClient,
         allowed_tokens: &[String],
         warnings: &mut Vec<String>,
+        errors: &mut Vec<String>,
     ) {
         for token_str in allowed_tokens {
             let token_pubkey = match Pubkey::from_str(token_str) {
@@ -80,6 +81,32 @@ impl ConfigValidator {
                     token_str
                 ));
             }
+
+            if mint_with_extensions
+                .get_extension::<spl_token_2022_interface::extension::non_transferable::NonTransferable>()
+                .is_ok()
+            {
+                errors.push(format!(
+                    "SECURITY: Token {} has NonTransferable extension. \
+                    Risk: This token cannot be transferred and is unsuitable for payments. \
+                    Remove this token from allowed_tokens.",
+                    token_str
+                ));
+            }
+
+            // Note: Pausable is checked via config mostly, but we add a check here for existing mints
+            // because a Pausable mint is dangerous for payments.
+            if mint_with_extensions
+                .get_extension::<spl_token_2022_interface::extension::mint_close_authority::MintCloseAuthority>()
+                 .is_ok() {
+                  warnings.push(format!(
+                    "⚠️  SECURITY: Token {} has MintCloseAuthority extension. \
+                    Risk: The mint authority can close the mint account, permanently destroying the token supply. \
+                    This is considered a 'Pausable' function and is unsafe for payments. \
+                    Consider removing this token from allowed_tokens or blocking the extension in [validation.token2022].",
+                    token_str
+                ));
+             }
         }
     }
 
@@ -520,6 +547,7 @@ impl ConfigValidator {
                 rpc_client,
                 &config.validation.allowed_tokens,
                 &mut warnings,
+                &mut errors,
             )
             .await;
 
@@ -1636,6 +1664,7 @@ mod tests {
             &rpc_client,
             &[mint_pubkey.to_string()],
             &mut warnings,
+            &mut Vec::new(),
         )
         .await;
 
@@ -1662,6 +1691,7 @@ mod tests {
             &rpc_client,
             &[mint_pubkey.to_string()],
             &mut warnings,
+            &mut Vec::new(),
         )
         .await;
 
@@ -1690,6 +1720,7 @@ mod tests {
             &rpc_client,
             &[mint_pubkey.to_string()],
             &mut warnings,
+            &mut Vec::new(),
         )
         .await;
 
@@ -1701,23 +1732,25 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_check_token_mint_extensions_no_risky_extensions() {
+    async fn test_check_token_mint_extensions_mint_close_authority_warning() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
-        let mint_with_safe =
+        let mint_with_pausable =
             create_mock_token2022_mint_with_extensions(6, vec![ExtensionType::MintCloseAuthority]);
         let mint_pubkey = Pubkey::new_unique();
 
-        let rpc_client = create_mock_rpc_client_with_account(&mint_with_safe);
+        let rpc_client = create_mock_rpc_client_with_account(&mint_with_pausable);
         let mut warnings = Vec::new();
 
         ConfigValidator::check_token_mint_extensions(
             &rpc_client,
             &[mint_pubkey.to_string()],
             &mut warnings,
+            &mut Vec::new(),
         )
         .await;
 
-        assert_eq!(warnings.len(), 0);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings.iter().any(|w| w.contains("MintCloseAuthority extension")));
     }
 }

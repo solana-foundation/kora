@@ -177,12 +177,11 @@ mod tests {
 
         assert!(result.is_err(), "Should fail with invalid source address");
         let error = result.unwrap_err();
-        assert!(matches!(error, KoraError::ValidationError(_)), "Should return ValidationError");
         match error {
             KoraError::ValidationError(error_message) => {
                 assert!(error_message.contains("Invalid source address"));
             }
-            _ => panic!("Should return ValidationError"),
+            _ => panic!("Should return ValidationError, got: {:?}", error),
         }
     }
 

@@ -235,6 +235,10 @@ pub struct Token2022InstructionPolicy {
 pub struct Token2022Config {
     pub blocked_mint_extensions: Vec<String>,
     pub blocked_account_extensions: Vec<String>,
+    /// Whether to reject tokens with unknown extensions (not in our known list)
+    /// This provides defense-in-depth against future SPL Token 2022 extensions
+    #[serde(default)]
+    pub reject_unknown_extensions: bool,
     #[serde(skip)]
     parsed_blocked_mint_extensions: Option<Vec<ExtensionType>>,
     #[serde(skip)]
@@ -246,6 +250,7 @@ impl Default for Token2022Config {
         Self {
             blocked_mint_extensions: Vec::new(),
             blocked_account_extensions: Vec::new(),
+            reject_unknown_extensions: false,
             parsed_blocked_mint_extensions: Some(Vec::new()),
             parsed_blocked_account_extensions: Some(Vec::new()),
         }
@@ -311,6 +316,53 @@ impl Token2022Config {
     /// Check if an account extension is blocked
     pub fn is_account_extension_blocked(&self, ext: ExtensionType) -> bool {
         self.get_blocked_account_extensions().contains(&ext)
+    }
+
+    /// Check if any extensions are unknown (not in our recognized list)
+    ///
+    /// This provides defense-in-depth against future SPL Token 2022 extensions
+    /// that may be added after this code was written. Unknown extensions could
+    /// have unexpected behavior or security implications.
+    ///
+    /// # Arguments
+    /// * `mint_extensions` - Extensions to check from mint account
+    /// * `account_extensions` - Extensions to check from token account
+    ///
+    /// # Returns
+    /// * `Ok(())` if all extensions are known or unknown extensions are allowed
+    /// * `Err(String)` if unknown extensions detected and reject_unknown_extensions is true
+    pub fn validate_unknown_extensions(
+        &self,
+        mint_extensions: &[ExtensionType],
+        account_extensions: &[ExtensionType],
+    ) -> Result<(), String> {
+        if !self.reject_unknown_extensions {
+            return Ok(()); // Unknown extensions are allowed
+        }
+
+        // Check for unknown mint extensions
+        for ext in mint_extensions {
+            if !crate::token::spl_token_2022_util::MintExtension::EXTENSIONS.contains(ext) {
+                return Err(format!(
+                    "Unknown mint extension detected: {:?}. \
+                    This extension is not recognized and may have unexpected behavior.",
+                    ext
+                ));
+            }
+        }
+
+        // Check for unknown account extensions
+        for ext in account_extensions {
+            if !crate::token::spl_token_2022_util::AccountExtension::EXTENSIONS.contains(ext) {
+                return Err(format!(
+                    "Unknown account extension detected: {:?}. \
+                    This extension is not recognized and may have unexpected behavior.",
+                    ext
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 

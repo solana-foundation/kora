@@ -467,6 +467,21 @@ impl TokenUtil {
             }
         }
 
+        let mint_extensions: Vec<spl_token_2022_interface::extension::ExtensionType> =
+            mint_with_extensions.get_extension_types().to_vec();
+        let source_extensions: Vec<spl_token_2022_interface::extension::ExtensionType> =
+            source_with_extensions.get_extension_types().to_vec();
+        let destination_extensions: Vec<spl_token_2022_interface::extension::ExtensionType> =
+            destination_with_extensions.get_extension_types().to_vec();
+
+        // Concatenate source and destination extensions for combined validation
+        let mut all_extensions = source_extensions;
+        all_extensions.extend(destination_extensions);
+
+        token2022_config.validate_unknown_extensions(&mint_extensions, &all_extensions).map_err(
+            |e| KoraError::ValidationError(format!("Unknown extension validation failed: {}", e)),
+        )?;
+
         Ok(())
     }
 
