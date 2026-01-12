@@ -171,9 +171,8 @@ mod tests {
     async fn test_validate_usage_limit_fallback_disabled_warning() {
         let config = ConfigMockBuilder::new()
             .with_usage_limit_enabled(true)
-            // We use port 54321 to ensure connection failure, as tests assert that the validator
-            // catches connection errors. Using default 6379 might succeed if a local Redis is running.
-            .with_usage_limit_cache_url(Some("redis://localhost:54321".to_string()))
+            // Port 54321
+            .with_usage_limit_cache_url(Some("redis://127.0.0.1:54321".to_string()))
             .with_usage_limit_fallback(false)
             .build();
 
@@ -193,8 +192,8 @@ mod tests {
     async fn test_validate_usage_limit_valid_redis_url() {
         let config = ConfigMockBuilder::new()
             .with_usage_limit_enabled(true)
-            // Ensure connection failure by using a non-standard/unused port
-            .with_usage_limit_cache_url(Some("redis://localhost:54321".to_string()))
+            // Port 54321
+            .with_usage_limit_cache_url(Some("redis://127.0.0.1:54321".to_string()))
             .with_usage_limit_fallback(true)
             .build();
 
