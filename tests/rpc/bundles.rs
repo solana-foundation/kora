@@ -584,3 +584,84 @@ async fn test_sign_and_send_bundle_too_large_error() {
 
     assert!(result.is_err(), "Expected error for bundle > 5 transactions");
 }
+
+// **************************************************************************************
+// Bundle payment validation tests
+// **************************************************************************************
+
+/// Test estimating bundle fee when no transactions have payment instructions
+/// This validates the fix for overestimation - should only add payment instruction fee once
+#[tokio::test]
+async fn test_estimate_bundle_fee_no_payment_instructions() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+
+    // Create 3 transactions WITHOUT payment instructions (no SPL transfer to fee_payer)
+    let mut transactions = Vec::new();
+    for i in 0..3 {
+        let tx = ctx
+            .transaction_builder()
+            .with_fee_payer(fee_payer)
+            .with_signer(&sender)
+            .with_transfer(&sender.pubkey(), &recipient, 10 + i)
+            .build()
+            .await
+            .expect("Failed to create transaction");
+        transactions.push(tx);
+    }
+
+    let response: serde_json::Value = ctx
+        .rpc_call("estimateBundleFee", rpc_params![transactions])
+        .await
+        .expect("Failed to estimate bundle fee");
+
+    response.assert_success();
+
+    // Each transaction without payment:
+    // - Base signature fee: 5,000 lamports (sender signature)
+    // - Kora signature fee: 5,000 lamports (fee payer not in signers)
+    // - Payment instruction fee: 50 lamports (only counted ONCE for the bundle, not per tx)
+    // Total per tx: 10,000 lamports
+    // Total for 3 txs: 30,000 + 50 (one payment instruction fee) = 30,050 lamports
+    let expected_fee = 30_050;
+
+    let fee_lamports = response["fee_in_lamports"].as_u64().unwrap();
+    assert_eq!(
+        fee_lamports, expected_fee,
+        "Bundle fee should only add payment instruction fee once. Got {fee_lamports}, expected {expected_fee}"
+    );
+}
+
+/// Test signing bundle fails when payment is required but insufficient
+#[tokio::test]
+async fn test_sign_bundle_insufficient_payment_error() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+
+    // Create transaction WITHOUT payment instruction
+    let tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create transaction");
+
+    let transactions = vec![tx];
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("signBundle", rpc_params![transactions]).await;
+
+    assert!(result.is_err(), "Expected error for bundle with insufficient payment");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("insufficient") || err.contains("payment"),
+        "Error should mention insufficient payment: {err}"
+    );
+}

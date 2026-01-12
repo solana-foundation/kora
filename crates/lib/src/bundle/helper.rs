@@ -1,6 +1,7 @@
 use crate::{
     bundle::{BundleError, JitoError},
     config::Config,
+    constant::ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
     signer::bundle_signer::BundleSigner,
     token::token::TokenUtil,
@@ -34,6 +35,7 @@ impl BundleProcessor {
         let mut resolved_transactions = Vec::with_capacity(encoded_txs.len());
         let mut total_required_lamports = 0u64;
         let mut all_bundle_instructions: Vec<Instruction> = Vec::new();
+        let mut txs_missing_payment_count = 0u64;
 
         // Phase 1: Decode, resolve, validate, calc fees, collect instructions
         for encoded in encoded_txs {
@@ -64,8 +66,26 @@ impl BundleProcessor {
                     || KoraError::ValidationError("Bundle fee calculation overflow".to_string()),
                 )?;
 
+            // Track how many transactions are missing payment instructions
+            if fee_calc.payment_instruction_fee > 0 {
+                txs_missing_payment_count += 1;
+            }
+
             all_bundle_instructions.extend(resolved_tx.all_instructions.clone());
             resolved_transactions.push(resolved_tx);
+        }
+
+        // For bundles, only ONE payment instruction is needed across all transactions.
+        // If multiple transactions are missing payments, we've overcounted by
+        // (txs_missing_payment_count - 1) * ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION
+        if txs_missing_payment_count > 1 {
+            let overcount =
+                (txs_missing_payment_count - 1) * ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION;
+
+            total_required_lamports =
+                total_required_lamports.checked_sub(overcount).ok_or_else(|| {
+                    KoraError::ValidationError("Bundle fee calculation overflow".to_string())
+                })?;
         }
 
         // Phase 2: Calculate payments with cross-tx ATA visibility

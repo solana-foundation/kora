@@ -83,6 +83,7 @@ allow_thaw_account = true
 [kora.enabled_methods]
 liveness = false
 estimate_transaction_fee = true
+estimate_bundle_fee = true
 get_supported_tokens = true
 sign_transaction = true
 sign_and_send_transaction = true

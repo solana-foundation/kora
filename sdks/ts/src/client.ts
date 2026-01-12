@@ -396,7 +396,7 @@ export class KoraClient {
         assertIsAddress(fee_token);
         assertIsAddress(token_program_id);
 
-        const { fee_in_token, payment_address, signer_pubkey, fee_in_lamports } = await this.estimateTransactionFee({
+        const { fee_in_token, payment_address, signer_pubkey } = await this.estimateTransactionFee({
             transaction,
             fee_token,
             sig_verify,
@@ -416,17 +416,21 @@ export class KoraClient {
             mint: fee_token,
         });
 
+        if (fee_in_token === undefined) {
+            throw new Error('Fee token was specified but fee_in_token was not returned from server');
+        }
+
         const paymentInstruction: Instruction = getTransferInstruction({
             source: sourceTokenAccount,
             destination: destinationTokenAccount,
             authority: createNoopSigner(source_wallet),
-            amount: fee_in_token || fee_in_lamports,
+            amount: fee_in_token,
         });
 
         return {
             original_transaction: transaction,
             payment_instruction: paymentInstruction,
-            payment_amount: fee_in_token || fee_in_lamports,
+            payment_amount: fee_in_token,
             payment_token: fee_token,
             payment_address,
             signer_address: signer_pubkey,
