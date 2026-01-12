@@ -15,7 +15,6 @@ use crate::{
         ParsedSystemInstructionType, VersionedTransactionResolved,
     },
 };
-use solana_message::Message;
 
 #[cfg(not(test))]
 use crate::cache::CacheUtil;
@@ -498,21 +497,7 @@ impl TransactionFeeUtil {
                 // Legacy transactions don't have lookup tables, use as-is
                 rpc_client.get_fee_for_message(message).await
             }
-            VersionedMessage::V0(v0_message) => {
-                // Create a legacy message with resolved account keys to avoid lookup table index issues
-                // This is a workaround for https://github.com/anza-xyz/agave/pull/7719
-
-                let resolved_message = Message::new_with_compiled_instructions(
-                    v0_message.header.num_required_signatures,
-                    v0_message.header.num_readonly_signed_accounts,
-                    v0_message.header.num_readonly_unsigned_accounts,
-                    resolved_transaction.all_account_keys.clone(),
-                    v0_message.recent_blockhash,
-                    v0_message.instructions.clone(),
-                );
-
-                rpc_client.get_fee_for_message(&resolved_message).await
-            }
+            VersionedMessage::V0(v0_message) => rpc_client.get_fee_for_message(v0_message).await,
         }
         .map_err(|e| KoraError::RpcError(e.to_string()))
     }
