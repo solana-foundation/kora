@@ -3,6 +3,8 @@ import {
     Config,
     EstimateTransactionFeeRequest,
     EstimateTransactionFeeResponse,
+    EstimateBundleFeeRequest,
+    EstimateBundleFeeResponse,
     GetBlockhashResponse,
     GetSupportedTokensResponse,
     GetVersionResponse,
@@ -210,6 +212,28 @@ export class KoraClient {
     }
 
     /**
+     * Estimates the bundle fee in both lamports and the specified token.
+     * @param request - Bundle fee estimation request parameters
+     * @param request.transactions - Array of base64-encoded transactions to estimate fees for
+     * @param request.fee_token - Mint address of the token to calculate fees in
+     * @returns Total fee amounts across all transactions in both lamports and the specified token
+     * @throws {Error} When the RPC call fails, the bundle is invalid, or the token is not supported
+     *
+     * @example
+     * ```typescript
+     * const fees = await client.estimateBundleFee({
+     *   transactions: ['base64EncodedTransaction1', 'base64EncodedTransaction2'],
+     *   fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' // USDC
+     * });
+     * console.log('Total fee in lamports:', fees.fee_in_lamports);
+     * console.log('Total fee in USDC:', fees.fee_in_token);
+     * ```
+     */
+    async estimateBundleFee(request: EstimateBundleFeeRequest): Promise<EstimateBundleFeeResponse> {
+        return this.rpcRequest<EstimateBundleFeeResponse, EstimateBundleFeeRequest>('estimateBundleFee', request);
+    }
+
+    /**
      * Signs a transaction with the Kora fee payer without broadcasting it.
      * @param request - Sign request parameters
      * @param request.transaction - Base64-encoded transaction to sign
@@ -372,7 +396,7 @@ export class KoraClient {
         assertIsAddress(fee_token);
         assertIsAddress(token_program_id);
 
-        const { fee_in_token, payment_address, signer_pubkey } = await this.estimateTransactionFee({
+        const { fee_in_token, payment_address, signer_pubkey, fee_in_lamports } = await this.estimateTransactionFee({
             transaction,
             fee_token,
             sig_verify,
@@ -396,13 +420,13 @@ export class KoraClient {
             source: sourceTokenAccount,
             destination: destinationTokenAccount,
             authority: createNoopSigner(source_wallet),
-            amount: fee_in_token,
+            amount: fee_in_token || fee_in_lamports,
         });
 
         return {
             original_transaction: transaction,
             payment_instruction: paymentInstruction,
-            payment_amount: fee_in_token,
+            payment_amount: fee_in_token || fee_in_lamports,
             payment_token: fee_token,
             payment_address,
             signer_address: signer_pubkey,

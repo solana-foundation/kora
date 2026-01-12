@@ -15,6 +15,7 @@ account_ttl = 60
 [kora.enabled_methods]
 liveness = true
 estimate_transaction_fee = true
+estimate_bundle_fee = true
 get_supported_tokens = true
 sign_transaction = true
 sign_and_send_transaction = true

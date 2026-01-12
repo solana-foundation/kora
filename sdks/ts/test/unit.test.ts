@@ -178,6 +178,7 @@ describe('KoraClient Unit Tests', () => {
                 enabled_methods: {
                     liveness: true,
                     estimate_transaction_fee: true,
+                    estimate_bundle_fee: true,
                     get_supported_tokens: true,
                     get_payer_signer: true,
                     sign_transaction: true,
@@ -448,6 +449,7 @@ describe('KoraClient Unit Tests', () => {
             enabled_methods: {
                 liveness: true,
                 estimate_transaction_fee: true,
+                estimate_bundle_fee: true,
                 get_supported_tokens: true,
                 get_payer_signer: true,
                 sign_transaction: true,

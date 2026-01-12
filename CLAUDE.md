@@ -147,18 +147,18 @@ tests/
 just test-integration
 
 # Run with verbose output
-just test-integration-verbose
+just test-integration --verbose
 
 # Force refresh test accounts (ignore cached)
-just test-integration-fresh
+just test-integration --force-refresh
 
-# Run specific test
-just test-integration-filtered --filter regular
-just test-integration-filtered --filter auth
-just test-integration-filtered --filter payment_address
-just test-integration-filtered --filter multi_signer
-just test-integration-filtered --filter typescript_basic
-just test-integration-filtered --filter typescript_auth
+# Run specific test phase
+just test-integration --filter regular
+just test-integration --filter auth
+just test-integration --filter payment_address
+just test-integration --filter multi_signer
+just test-integration --filter typescript_basic
+just test-integration --filter typescript_auth
 ```
 
 #### Customize Test Environment

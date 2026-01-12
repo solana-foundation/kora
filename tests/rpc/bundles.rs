@@ -287,6 +287,215 @@ async fn test_sign_bundle_response_structure() {
 }
 
 // **************************************************************************************
+// estimateBundleFee tests
+// **************************************************************************************
+
+/// Test estimating bundle fee for single transaction
+#[tokio::test]
+async fn test_estimate_bundle_fee_single_transaction() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create transaction");
+
+    let transactions = vec![tx];
+    let response: serde_json::Value = ctx
+        .rpc_call("estimateBundleFee", rpc_params![transactions])
+        .await
+        .expect("Failed to estimate bundle fee");
+
+    response.assert_success();
+    assert!(response["signer_pubkey"].as_str().is_some(), "Expected signer_pubkey in response");
+    assert!(response["payment_address"].as_str().is_some(), "Expected payment_address in response");
+
+    // Expected fee breakdown for single transaction:
+    // - Base signature fee: 5,000 lamports (sender signature)
+    // - Kora signature fee: 5,000 lamports (fee payer not in signers)
+    // - SPL token outflow: 0 lamports (transfer TO fee_payer is inflow, not outflow)
+    // - Payment instruction fee: 0 lamports (payment already exists in transaction)
+    // Total: 10,000 lamports
+    let expected_fee = 10_000;
+
+    let fee_lamports = response["fee_in_lamports"].as_u64().unwrap();
+    assert_eq!(
+        fee_lamports, expected_fee,
+        "Bundle fee should match expected calculation. Got {fee_lamports}, expected {expected_fee}"
+    );
+}
+
+/// Test estimating bundle fee for multiple transactions
+#[tokio::test]
+async fn test_estimate_bundle_fee_multiple_transactions() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    // Create 3 transactions for the bundle
+    let mut transactions = Vec::new();
+    for _i in 0..3 {
+        let tx = ctx
+            .transaction_builder()
+            .with_fee_payer(fee_payer)
+            .with_signer(&sender)
+            .with_spl_transfer(
+                &token_mint,
+                &sender.pubkey(),
+                &fee_payer,
+                tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+            )
+            .with_transfer(&sender.pubkey(), &recipient, 10)
+            .build()
+            .await
+            .expect("Failed to create transaction");
+        transactions.push(tx);
+    }
+
+    let response: serde_json::Value = ctx
+        .rpc_call("estimateBundleFee", rpc_params![transactions])
+        .await
+        .expect("Failed to estimate bundle fee");
+
+    response.assert_success();
+
+    // Expected fee breakdown:
+    // Each transaction has same structure, so fee per transaction = 10,000 lamports
+    // For 3 transactions: 10,000 × 3 = 30,000 lamports
+    let expected_fee_per_tx = 10_000;
+    let expected_total_fee = expected_fee_per_tx * 3;
+
+    let fee_lamports = response["fee_in_lamports"].as_u64().unwrap();
+    assert_eq!(
+        fee_lamports, expected_total_fee,
+        "Bundle fee should equal sum of individual transaction fees. Got {fee_lamports}, expected {expected_total_fee}"
+    );
+}
+
+/// Test estimating bundle fee with fee_token parameter
+#[tokio::test]
+async fn test_estimate_bundle_fee_with_fee_token() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create transaction");
+
+    let transactions = vec![tx];
+    let fee_token: Option<String> = Some(token_mint.to_string());
+
+    let response: serde_json::Value = ctx
+        .rpc_call("estimateBundleFee", rpc_params![transactions, fee_token])
+        .await
+        .expect("Failed to estimate bundle fee with fee_token");
+
+    response.assert_success();
+
+    // Expected fee in lamports: 10,000 (same as single transaction)
+    let expected_fee_lamports = 10_000;
+
+    // Expected fee in token (USDC with 6 decimals):
+    // 10,000 lamports × 10^6 (decimals) / (1,000,000,000 lamports/SOL × 0.001 SOL/USDC)
+    // = 10,000 × 1,000,000 / 1,000,000
+    // = 10,000 USDC base units
+    let expected_fee_token = 10_000;
+
+    let fee_lamports = response["fee_in_lamports"].as_u64().unwrap();
+    let fee_token = response["fee_in_token"].as_u64().unwrap();
+
+    assert_eq!(
+        fee_lamports, expected_fee_lamports,
+        "Bundle fee in lamports should match expected. Got {fee_lamports}, expected {expected_fee_lamports}"
+    );
+    assert_eq!(
+        fee_token, expected_fee_token,
+        "Bundle fee in token should match expected. Got {fee_token}, expected {expected_fee_token}"
+    );
+}
+
+/// Test estimateBundleFee empty bundle error
+#[tokio::test]
+async fn test_estimate_bundle_fee_empty_error() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let transactions: Vec<String> = vec![];
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("estimateBundleFee", rpc_params![transactions]).await;
+
+    assert!(result.is_err(), "Expected error for empty bundle");
+}
+
+/// Test estimateBundleFee too large error
+#[tokio::test]
+async fn test_estimate_bundle_fee_too_large_error() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    // Create 6 transactions (exceeds max)
+    let mut transactions = Vec::new();
+    for i in 0..6 {
+        let tx = ctx
+            .transaction_builder()
+            .with_fee_payer(fee_payer)
+            .with_signer(&sender)
+            .with_spl_transfer(
+                &token_mint,
+                &sender.pubkey(),
+                &fee_payer,
+                tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+            )
+            .with_transfer(&sender.pubkey(), &recipient, 10 + i)
+            .build()
+            .await
+            .expect("Failed to create transaction");
+        transactions.push(tx);
+    }
+
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("estimateBundleFee", rpc_params![transactions]).await;
+
+    assert!(result.is_err(), "Expected error for bundle > 5 transactions");
+}
+
+// **************************************************************************************
 // signAndSendBundle tests
 // **************************************************************************************
 

@@ -76,8 +76,22 @@ export interface EstimateTransactionFeeRequest {
     /** Base64-encoded transaction to estimate fees for */
     transaction: string;
     /** Mint address of the token to calculate fees in */
-    fee_token: string;
+    fee_token?: string;
     /** Optional signer address for the transaction */
+    signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+}
+
+/**
+ * Parameters for estimating bundle fees.
+ */
+export interface EstimateBundleFeeRequest {
+    /** Array of base64-encoded transactions to estimate fees for */
+    transactions: string[];
+    /** Mint address of the token to calculate fees in */
+    fee_token?: string;
+    /** Optional signer address for the transactions */
     signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
@@ -200,7 +214,23 @@ export interface EstimateTransactionFeeResponse {
     /**
      * Transaction fee in the requested token (in decimals value of the token, e.g. 10^6 for USDC)
      */
-    fee_in_token: number;
+    fee_in_token?: number;
+    /** Public key of the signer used to estimate the fee */
+    signer_pubkey: string;
+    /** Public key of the payment destination */
+    payment_address: string;
+}
+
+/**
+ * Response containing estimated bundle fees.
+ */
+export interface EstimateBundleFeeResponse {
+    /** Total bundle fee in lamports across all transactions */
+    fee_in_lamports: number;
+    /**
+     * Total bundle fee in the requested token (in decimals value of the token, e.g. 10^6 for USDC)
+     */
+    fee_in_token?: number;
     /** Public key of the signer used to estimate the fee */
     signer_pubkey: string;
     /** Public key of the payment destination */
@@ -299,6 +329,8 @@ export interface EnabledMethods {
     liveness: boolean;
     /** Whether the estimate_transaction_fee method is enabled */
     estimate_transaction_fee: boolean;
+    /** Whether the estimate_bundle_fee method is enabled (requires bundle.enabled = true) */
+    estimate_bundle_fee: boolean;
     /** Whether the get_supported_tokens method is enabled */
     get_supported_tokens: boolean;
     /** Whether the get_payer_signer method is enabled */

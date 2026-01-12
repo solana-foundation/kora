@@ -10,11 +10,17 @@ use utoipa::ToSchema;
 
 use crate::{
     constant::NATIVE_SOL,
-    state::{get_config, get_request_signer_with_signer_key},
+    state::get_request_signer_with_signer_key,
     transaction::{TransactionUtil, VersionedMessageExt},
     validator::transaction_validator::TransactionValidator,
     CacheUtil, KoraError,
 };
+
+#[cfg(not(test))]
+use crate::state::get_config;
+
+#[cfg(test)]
+use crate::tests::config_mock::mock_state::get_config;
 
 /// **DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.
 /// This endpoint will be removed in a future version.
@@ -53,7 +59,7 @@ pub async fn transfer_transaction(
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
-    let config = get_config()?;
+    let config = &get_config()?;
     let signer_pubkey = signer.pubkey();
 
     let validator = TransactionValidator::new(config, signer_pubkey)?;
@@ -148,19 +154,15 @@ pub async fn transfer_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        state::update_config,
-        tests::{
-            common::{setup_or_get_test_signer, RpcMockBuilder},
-            config_mock::ConfigMockBuilder,
-        },
+    use crate::tests::{
+        common::{setup_or_get_test_signer, RpcMockBuilder},
+        config_mock::ConfigMockBuilder,
     };
 
     #[tokio::test]
     #[allow(deprecated)]
     async fn test_transfer_transaction_invalid_source() {
-        let config = ConfigMockBuilder::new().build();
-        update_config(config).unwrap();
+        let _m = ConfigMockBuilder::new().build_and_setup();
         let _ = setup_or_get_test_signer();
 
         let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());
@@ -189,8 +191,7 @@ mod tests {
     #[tokio::test]
     #[allow(deprecated)]
     async fn test_transfer_transaction_invalid_destination() {
-        let config = ConfigMockBuilder::new().build();
-        update_config(config).unwrap();
+        let _m = ConfigMockBuilder::new().build_and_setup();
         let _ = setup_or_get_test_signer();
 
         let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());
@@ -218,8 +219,7 @@ mod tests {
     #[tokio::test]
     #[allow(deprecated)]
     async fn test_transfer_transaction_invalid_token() {
-        let config = ConfigMockBuilder::new().build();
-        update_config(config).unwrap();
+        let _m = ConfigMockBuilder::new().build_and_setup();
         let _ = setup_or_get_test_signer();
 
         let rpc_client = Arc::new(RpcMockBuilder::new().with_mint_account(6).build());

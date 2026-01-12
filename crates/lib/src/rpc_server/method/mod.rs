@@ -1,3 +1,4 @@
+pub mod estimate_bundle_fee;
 pub mod estimate_transaction_fee;
 pub mod get_blockhash;
 pub mod get_config;
