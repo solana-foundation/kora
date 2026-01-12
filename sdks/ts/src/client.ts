@@ -3,6 +3,8 @@ import {
     Config,
     EstimateTransactionFeeRequest,
     EstimateTransactionFeeResponse,
+    EstimateBundleFeeRequest,
+    EstimateBundleFeeResponse,
     GetBlockhashResponse,
     GetSupportedTokensResponse,
     GetVersionResponse,
@@ -210,6 +212,28 @@ export class KoraClient {
     }
 
     /**
+     * Estimates the bundle fee in both lamports and the specified token.
+     * @param request - Bundle fee estimation request parameters
+     * @param request.transactions - Array of base64-encoded transactions to estimate fees for
+     * @param request.fee_token - Mint address of the token to calculate fees in
+     * @returns Total fee amounts across all transactions in both lamports and the specified token
+     * @throws {Error} When the RPC call fails, the bundle is invalid, or the token is not supported
+     *
+     * @example
+     * ```typescript
+     * const fees = await client.estimateBundleFee({
+     *   transactions: ['base64EncodedTransaction1', 'base64EncodedTransaction2'],
+     *   fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' // USDC
+     * });
+     * console.log('Total fee in lamports:', fees.fee_in_lamports);
+     * console.log('Total fee in USDC:', fees.fee_in_token);
+     * ```
+     */
+    async estimateBundleFee(request: EstimateBundleFeeRequest): Promise<EstimateBundleFeeResponse> {
+        return this.rpcRequest<EstimateBundleFeeResponse, EstimateBundleFeeRequest>('estimateBundleFee', request);
+    }
+
+    /**
      * Signs a transaction with the Kora fee payer without broadcasting it.
      * @param request - Sign request parameters
      * @param request.transaction - Base64-encoded transaction to sign
@@ -391,6 +415,10 @@ export class KoraClient {
             tokenProgram: token_program_id,
             mint: fee_token,
         });
+
+        if (fee_in_token === undefined) {
+            throw new Error('Fee token was specified but fee_in_token was not returned from server');
+        }
 
         const paymentInstruction: Instruction = getTransferInstruction({
             source: sourceTokenAccount,

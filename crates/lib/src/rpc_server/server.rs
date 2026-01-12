@@ -156,6 +156,14 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
     register_method_if_enabled!(
         module,
         enabled_methods,
+        estimate_bundle_fee,
+        "estimateBundleFee",
+        estimate_bundle_fee,
+        with_params
+    );
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
         get_supported_tokens,
         "getSupportedTokens",
         get_supported_tokens
@@ -306,6 +314,7 @@ mod tests {
             get_config: false,
             get_version: false,
             liveness: false,
+            estimate_bundle_fee: false,
             sign_and_send_bundle: false,
             sign_bundle: false,
         };
@@ -339,6 +348,7 @@ mod tests {
             transfer_transaction: false,
             get_blockhash: false,
             get_version: false,
+            estimate_bundle_fee: false,
             sign_and_send_bundle: false,
             sign_bundle: false,
         };

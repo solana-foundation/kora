@@ -328,6 +328,8 @@ pub struct EnabledMethods {
     pub get_version: bool,
     /// Bundle methods (require bundle.enabled = true)
     #[serde(default)]
+    pub estimate_bundle_fee: bool,
+    #[serde(default)]
     pub sign_and_send_bundle: bool,
     #[serde(default)]
     pub sign_bundle: bool,
@@ -346,6 +348,7 @@ impl EnabledMethods {
             self.get_blockhash,
             self.get_config,
             self.get_version,
+            self.estimate_bundle_fee,
             self.sign_and_send_bundle,
             self.sign_bundle,
         ]
@@ -360,6 +363,9 @@ impl EnabledMethods {
         }
         if self.estimate_transaction_fee {
             methods.push("estimateTransactionFee".to_string());
+        }
+        if self.estimate_bundle_fee {
+            methods.push("estimateBundleFee".to_string());
         }
         if self.get_supported_tokens {
             methods.push("getSupportedTokens".to_string());
@@ -397,7 +403,7 @@ impl EnabledMethods {
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 12>;
+    type IntoIter = std::array::IntoIter<bool, 13>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
@@ -411,6 +417,7 @@ impl IntoIterator for &EnabledMethods {
             self.get_blockhash,
             self.get_config,
             self.get_version,
+            self.estimate_bundle_fee,
             self.sign_and_send_bundle,
             self.sign_bundle,
         ]
@@ -432,6 +439,7 @@ impl Default for EnabledMethods {
             get_config: true,
             get_version: true,
             // Bundle methods default to false (opt-in)
+            estimate_bundle_fee: false,
             sign_and_send_bundle: false,
             sign_bundle: false,
         }

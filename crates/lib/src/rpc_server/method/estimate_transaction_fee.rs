@@ -49,28 +49,26 @@ pub async fn estimate_transaction_fee(
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
-    let config = get_config()?;
+    let config = &get_config()?;
     let payment_destination = config.kora.get_payment_address(&signer.pubkey())?;
 
     let validation_config = &config.validation;
     let fee_payer = signer.pubkey();
 
-    #[allow(clippy::needless_borrow)]
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
-        &config,
+        config,
         rpc_client,
         request.sig_verify,
     )
     .await?;
 
-    #[allow(clippy::needless_borrow)]
     let fee_calculation = FeeConfigUtil::estimate_kora_fee(
         &mut resolved_transaction,
         &fee_payer,
         validation_config.is_payment_required(),
         rpc_client,
-        &config,
+        config,
     )
     .await?;
 

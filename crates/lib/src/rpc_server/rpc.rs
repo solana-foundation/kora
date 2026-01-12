@@ -11,6 +11,9 @@ use utoipa::{
 
 #[allow(deprecated)]
 use crate::rpc_server::method::{
+    estimate_bundle_fee::{
+        estimate_bundle_fee, EstimateBundleFeeRequest, EstimateBundleFeeResponse,
+    },
     estimate_transaction_fee::{
         estimate_transaction_fee, EstimateTransactionFeeRequest, EstimateTransactionFeeResponse,
     },
@@ -66,6 +69,16 @@ impl KoraRpc {
         info!("Estimate transaction fee request: {request:?}");
         let result = estimate_transaction_fee(&self.rpc_client, request).await;
         info!("Estimate transaction fee response: {result:?}");
+        result
+    }
+
+    pub async fn estimate_bundle_fee(
+        &self,
+        request: EstimateBundleFeeRequest,
+    ) -> Result<EstimateBundleFeeResponse, KoraError> {
+        info!("Estimate bundle fee request: {request:?}");
+        let result = estimate_bundle_fee(&self.rpc_client, request).await;
+        info!("Estimate bundle fee response: {result:?}");
         result
     }
 
@@ -163,6 +176,11 @@ impl KoraRpc {
                 name: "estimateTransactionFee".to_string(),
                 request: Some(EstimateTransactionFeeRequest::schema().1),
                 response: EstimateTransactionFeeResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "estimateBundleFee".to_string(),
+                request: Some(EstimateBundleFeeRequest::schema().1),
+                response: EstimateBundleFeeResponse::schema().1,
             },
             OpenApiSpec {
                 name: "getBlockhash".to_string(),

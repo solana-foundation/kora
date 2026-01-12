@@ -747,6 +747,7 @@ mod tests {
                     get_config: false,
                     get_payer_signer: false,
                     get_version: false,
+                    estimate_bundle_fee: false,
                     sign_and_send_bundle: false,
                     sign_bundle: false,
                 },
