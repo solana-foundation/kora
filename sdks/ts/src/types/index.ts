@@ -5,7 +5,8 @@ import { Instruction } from '@solana/kit';
  */
 
 /**
- * Parameters for creating a token transfer transaction.
+ * Parameters for creating a transfer transaction.
+ * @deprecated Use `getPaymentInstruction` instead for fee payment flows.
  */
 export interface TransferTransactionRequest {
     /** Amount to transfer in the token's smallest unit (e.g., lamports for SOL) */
@@ -16,7 +17,7 @@ export interface TransferTransactionRequest {
     source: string;
     /** Public key of the destination wallet (not token account) */
     destination: string;
-    /** Optional signer address for the transaction */
+    /** Optional signer key to select a specific Kora signer */
     signer_key?: string;
 }
 
@@ -45,14 +46,52 @@ export interface SignAndSendTransactionRequest {
 }
 
 /**
+ * Parameters for signing a bundle of transactions.
+ */
+export interface SignBundleRequest {
+    /** Array of base64-encoded transactions to sign */
+    transactions: string[];
+    /** Optional signer address for the transactions */
+    signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+}
+
+/**
+ * Parameters for signing and sending a bundle of transactions via Jito.
+ */
+export interface SignAndSendBundleRequest {
+    /** Array of base64-encoded transactions to sign and send */
+    transactions: string[];
+    /** Optional signer address for the transactions */
+    signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+}
+
+/**
  * Parameters for estimating transaction fees.
  */
 export interface EstimateTransactionFeeRequest {
     /** Base64-encoded transaction to estimate fees for */
     transaction: string;
     /** Mint address of the token to calculate fees in */
-    fee_token: string;
+    fee_token?: string;
     /** Optional signer address for the transaction */
+    signer_key?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+}
+
+/**
+ * Parameters for estimating bundle fees.
+ */
+export interface EstimateBundleFeeRequest {
+    /** Array of base64-encoded transactions to estimate fees for */
+    transactions: string[];
+    /** Mint address of the token to calculate fees in */
+    fee_token?: string;
+    /** Optional signer address for the transactions */
     signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
@@ -82,15 +121,17 @@ export interface GetPaymentInstructionRequest {
 
 /**
  * Response from creating a transfer transaction.
+ * The transaction is unsigned.
+ * @deprecated Use `getPaymentInstruction` instead for fee payment flows.
  */
 export interface TransferTransactionResponse {
-    /** Base64-encoded signed transaction */
+    /** Base64-encoded unsigned transaction */
     transaction: string;
-    /** Base64-encoded message */
+    /** Base64-encoded unsigned message */
     message: string;
     /** Recent blockhash used in the transaction */
     blockhash: string;
-    /** Public key of the signer used to send the transaction */
+    /** Public key of the Kora signer (fee payer) */
     signer_pubkey: string;
     /** Parsed instructions from the transaction message */
     instructions: Instruction[];
@@ -110,10 +151,34 @@ export interface SignTransactionResponse {
  * Response from signing and sending a transaction.
  */
 export interface SignAndSendTransactionResponse {
+    /** Transaction signature */
+    signature: string;
     /** Base64-encoded signed transaction */
     signed_transaction: string;
     /** Public key of the signer used to send the transaction */
     signer_pubkey: string;
+}
+
+/**
+ * Response from signing a bundle of transactions.
+ */
+export interface SignBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: string[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: string;
+}
+
+/**
+ * Response from signing and sending a bundle of transactions via Jito.
+ */
+export interface SignAndSendBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: string[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: string;
+    /** UUID of the submitted Jito bundle */
+    bundle_uuid: string;
 }
 
 /**
@@ -122,6 +187,14 @@ export interface SignAndSendTransactionResponse {
 export interface GetBlockhashResponse {
     /** Base58-encoded blockhash */
     blockhash: string;
+}
+
+/**
+ * Response containing the server version.
+ */
+export interface GetVersionResponse {
+    /** Server version string */
+    version: string;
 }
 
 /**
@@ -141,7 +214,23 @@ export interface EstimateTransactionFeeResponse {
     /**
      * Transaction fee in the requested token (in decimals value of the token, e.g. 10^6 for USDC)
      */
-    fee_in_token: number;
+    fee_in_token?: number;
+    /** Public key of the signer used to estimate the fee */
+    signer_pubkey: string;
+    /** Public key of the payment destination */
+    payment_address: string;
+}
+
+/**
+ * Response containing estimated bundle fees.
+ */
+export interface EstimateBundleFeeResponse {
+    /** Total bundle fee in lamports across all transactions */
+    fee_in_lamports: number;
+    /**
+     * Total bundle fee in the requested token (in decimals value of the token, e.g. 10^6 for USDC)
+     */
+    fee_in_token?: number;
     /** Public key of the signer used to estimate the fee */
     signer_pubkey: string;
     /** Public key of the payment destination */
@@ -240,8 +329,12 @@ export interface EnabledMethods {
     liveness: boolean;
     /** Whether the estimate_transaction_fee method is enabled */
     estimate_transaction_fee: boolean;
+    /** Whether the estimate_bundle_fee method is enabled (requires bundle.enabled = true) */
+    estimate_bundle_fee: boolean;
     /** Whether the get_supported_tokens method is enabled */
     get_supported_tokens: boolean;
+    /** Whether the get_payer_signer method is enabled */
+    get_payer_signer: boolean;
     /** Whether the sign_transaction method is enabled */
     sign_transaction: boolean;
     /** Whether the sign_and_send_transaction method is enabled */
@@ -252,6 +345,12 @@ export interface EnabledMethods {
     get_blockhash: boolean;
     /** Whether the get_config method is enabled */
     get_config: boolean;
+    /** Whether the get_version method is enabled */
+    get_version: boolean;
+    /** Whether the sign_and_send_bundle method is enabled (requires bundle.enabled = true) */
+    sign_and_send_bundle: boolean;
+    /** Whether the sign_bundle method is enabled (requires bundle.enabled = true) */
+    sign_bundle: boolean;
 }
 
 /**
@@ -314,6 +413,12 @@ export interface SplTokenInstructionPolicy {
     allow_set_authority: boolean;
     /** Allow fee payer to mint SPL tokens */
     allow_mint_to: boolean;
+    /** Allow fee payer to initialize SPL token mints */
+    allow_initialize_mint: boolean;
+    /** Allow fee payer to initialize SPL token accounts */
+    allow_initialize_account: boolean;
+    /** Allow fee payer to initialize SPL multisig accounts */
+    allow_initialize_multisig: boolean;
     /** Allow fee payer to freeze SPL token accounts */
     allow_freeze_account: boolean;
     /** Allow fee payer to thaw SPL token accounts */
@@ -338,6 +443,12 @@ export interface Token2022InstructionPolicy {
     allow_set_authority: boolean;
     /** Allow fee payer to mint Token2022 tokens */
     allow_mint_to: boolean;
+    /** Allow fee payer to initialize Token2022 mints */
+    allow_initialize_mint: boolean;
+    /** Allow fee payer to initialize Token2022 accounts */
+    allow_initialize_account: boolean;
+    /** Allow fee payer to initialize Token2022 multisig accounts */
+    allow_initialize_multisig: boolean;
     /** Allow fee payer to freeze Token2022 accounts */
     allow_freeze_account: boolean;
     /** Allow fee payer to thaw Token2022 accounts */

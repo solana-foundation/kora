@@ -3,12 +3,19 @@ import {
     Config,
     EstimateTransactionFeeRequest,
     EstimateTransactionFeeResponse,
+    EstimateBundleFeeRequest,
+    EstimateBundleFeeResponse,
     GetBlockhashResponse,
     GetSupportedTokensResponse,
+    GetVersionResponse,
     SignAndSendTransactionRequest,
     SignAndSendTransactionResponse,
     SignTransactionRequest,
     SignTransactionResponse,
+    SignBundleRequest,
+    SignBundleResponse,
+    SignAndSendBundleRequest,
+    SignAndSendBundleResponse,
     TransferTransactionRequest,
     TransferTransactionResponse,
     RpcError,
@@ -19,8 +26,8 @@ import {
     GetPaymentInstructionResponse,
 } from './types/index.js';
 import crypto from 'crypto';
-import { getInstructionsFromBase64Message } from './utils/transaction.js';
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS, getTransferInstruction } from '@solana-program/token';
+import { getInstructionsFromBase64Message } from './utils/transaction.js';
 
 /**
  * Kora RPC client for interacting with the Kora paymaster service.
@@ -149,6 +156,21 @@ export class KoraClient {
     }
 
     /**
+     * Gets the version of the Kora server.
+     * @returns Object containing the server version
+     * @throws {Error} When the RPC call fails
+     *
+     * @example
+     * ```typescript
+     * const { version } = await client.getVersion();
+     * console.log('Server version:', version);
+     * ```
+     */
+    async getVersion(): Promise<GetVersionResponse> {
+        return this.rpcRequest<GetVersionResponse, undefined>('getVersion', undefined);
+    }
+
+    /**
      * Retrieves the list of tokens supported for fee payment.
      * @returns Object containing an array of supported token mint addresses
      * @throws {Error} When the RPC call fails
@@ -187,6 +209,28 @@ export class KoraClient {
             'estimateTransactionFee',
             request,
         );
+    }
+
+    /**
+     * Estimates the bundle fee in both lamports and the specified token.
+     * @param request - Bundle fee estimation request parameters
+     * @param request.transactions - Array of base64-encoded transactions to estimate fees for
+     * @param request.fee_token - Mint address of the token to calculate fees in
+     * @returns Total fee amounts across all transactions in both lamports and the specified token
+     * @throws {Error} When the RPC call fails, the bundle is invalid, or the token is not supported
+     *
+     * @example
+     * ```typescript
+     * const fees = await client.estimateBundleFee({
+     *   transactions: ['base64EncodedTransaction1', 'base64EncodedTransaction2'],
+     *   fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' // USDC
+     * });
+     * console.log('Total fee in lamports:', fees.fee_in_lamports);
+     * console.log('Total fee in USDC:', fees.fee_in_token);
+     * ```
+     */
+    async estimateBundleFee(request: EstimateBundleFeeRequest): Promise<EstimateBundleFeeResponse> {
+        return this.rpcRequest<EstimateBundleFeeResponse, EstimateBundleFeeRequest>('estimateBundleFee', request);
     }
 
     /**
@@ -232,13 +276,61 @@ export class KoraClient {
     }
 
     /**
-     * Creates a token transfer transaction with Kora as the fee payer.
+     * Signs a bundle of transactions with the Kora fee payer without broadcasting.
+     * @param request - Sign bundle request parameters
+     * @param request.transactions - Array of base64-encoded transactions to sign
+     * @param request.signer_key - Optional signer address for the transactions
+     * @param request.sig_verify - Optional signature verification (defaults to false)
+     * @returns Array of signed transactions and signer public key
+     * @throws {Error} When the RPC call fails or validation fails
+     *
+     * @example
+     * ```typescript
+     * const result = await client.signBundle({
+     *   transactions: ['base64Tx1', 'base64Tx2']
+     * });
+     * console.log('Signed transactions:', result.signed_transactions);
+     * console.log('Signer:', result.signer_pubkey);
+     * ```
+     */
+    async signBundle(request: SignBundleRequest): Promise<SignBundleResponse> {
+        return this.rpcRequest<SignBundleResponse, SignBundleRequest>('signBundle', request);
+    }
+
+    /**
+     * Signs a bundle of transactions and sends them to Jito block engine.
+     * @param request - Sign and send bundle request parameters
+     * @param request.transactions - Array of base64-encoded transactions to sign and send
+     * @param request.signer_key - Optional signer address for the transactions
+     * @param request.sig_verify - Optional signature verification (defaults to false)
+     * @returns Array of signed transactions, signer public key, and Jito bundle UUID
+     * @throws {Error} When the RPC call fails, validation fails, or Jito submission fails
+     *
+     * @example
+     * ```typescript
+     * const result = await client.signAndSendBundle({
+     *   transactions: ['base64Tx1', 'base64Tx2']
+     * });
+     * console.log('Bundle UUID:', result.bundle_uuid);
+     * console.log('Signed transactions:', result.signed_transactions);
+     * ```
+     */
+    async signAndSendBundle(request: SignAndSendBundleRequest): Promise<SignAndSendBundleResponse> {
+        return this.rpcRequest<SignAndSendBundleResponse, SignAndSendBundleRequest>('signAndSendBundle', request);
+    }
+
+    /**
+     * Creates an unsigned transfer transaction.
+     *
+     * @deprecated Use `getPaymentInstruction` instead for fee payment flows.
+     *
      * @param request - Transfer request parameters
      * @param request.amount - Amount to transfer (in token's smallest unit)
      * @param request.token - Mint address of the token to transfer
      * @param request.source - Source wallet public key
      * @param request.destination - Destination wallet public key
-     * @returns Base64-encoded signed transaction, base64-encoded message, blockhash, and parsed instructions
+     * @param request.signer_key - Optional signer key to select specific Kora signer
+     * @returns Unsigned transaction, message, blockhash, and signer info
      * @throws {Error} When the RPC call fails or token is not supported
      *
      * @example
@@ -247,11 +339,9 @@ export class KoraClient {
      *   amount: 1000000, // 1 USDC (6 decimals)
      *   token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
      *   source: 'sourceWalletPublicKey',
-     *   destination: 'destinationWalletPublicKey'
+     *   destination: 'destinationWalletPublicKey',
      * });
-     * console.log('Transaction:', transfer.transaction);
-     * console.log('Message:', transfer.message);
-     * console.log('Instructions:', transfer.instructions);
+     * console.log('Signer:', transfer.signer_pubkey);
      * ```
      */
     async transferTransaction(request: TransferTransactionRequest): Promise<TransferTransactionResponse> {
@@ -325,6 +415,10 @@ export class KoraClient {
             tokenProgram: token_program_id,
             mint: fee_token,
         });
+
+        if (fee_in_token === undefined) {
+            throw new Error('Fee token was specified but fee_in_token was not returned from server');
+        }
 
         const paymentInstruction: Instruction = getTransferInstruction({
             source: sourceTokenAccount,

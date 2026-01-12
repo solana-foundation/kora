@@ -5,10 +5,15 @@ import {
     GetBlockhashResponse,
     GetSupportedTokensResponse,
     GetPayerSignerResponse,
+    GetVersionResponse,
     SignTransactionRequest,
     SignTransactionResponse,
     SignAndSendTransactionRequest,
     SignAndSendTransactionResponse,
+    SignBundleRequest,
+    SignBundleResponse,
+    SignAndSendBundleRequest,
+    SignAndSendBundleResponse,
     TransferTransactionRequest,
     TransferTransactionResponse,
     EstimateTransactionFeeResponse,
@@ -140,6 +145,9 @@ describe('KoraClient Unit Tests', () => {
                             allow_revoke: true,
                             allow_set_authority: true,
                             allow_mint_to: true,
+                            allow_initialize_mint: true,
+                            allow_initialize_account: true,
+                            allow_initialize_multisig: true,
                             allow_freeze_account: true,
                             allow_thaw_account: true,
                         },
@@ -151,6 +159,9 @@ describe('KoraClient Unit Tests', () => {
                             allow_revoke: true,
                             allow_set_authority: true,
                             allow_mint_to: true,
+                            allow_initialize_mint: true,
+                            allow_initialize_account: true,
+                            allow_initialize_multisig: true,
                             allow_freeze_account: true,
                             allow_thaw_account: true,
                         },
@@ -167,12 +178,17 @@ describe('KoraClient Unit Tests', () => {
                 enabled_methods: {
                     liveness: true,
                     estimate_transaction_fee: true,
+                    estimate_bundle_fee: true,
                     get_supported_tokens: true,
+                    get_payer_signer: true,
                     sign_transaction: true,
                     sign_and_send_transaction: true,
                     transfer_transaction: true,
                     get_blockhash: true,
                     get_config: true,
+                    get_version: true,
+                    sign_and_send_bundle: true,
+                    sign_bundle: true,
                 },
             };
 
@@ -187,6 +203,16 @@ describe('KoraClient Unit Tests', () => {
             };
 
             await testSuccessfulRpcMethod('getBlockhash', () => client.getBlockhash(), mockResponse);
+        });
+    });
+
+    describe('getVersion', () => {
+        it('should return server version', async () => {
+            const mockResponse: GetVersionResponse = {
+                version: '2.1.0-beta.0',
+            };
+
+            await testSuccessfulRpcMethod('getVersion', () => client.getVersion(), mockResponse);
         });
     });
 
@@ -268,6 +294,7 @@ describe('KoraClient Unit Tests', () => {
                 transaction: 'base64_encoded_transaction',
             };
             const mockResponse: SignAndSendTransactionResponse = {
+                signature: 'transaction_signature',
                 signed_transaction: 'base64_signed_transaction',
                 signer_pubkey: 'test_signer_pubkey',
             };
@@ -281,7 +308,59 @@ describe('KoraClient Unit Tests', () => {
         });
     });
 
-    describe('transferTransaction', () => {
+    describe('signBundle', () => {
+        it('should sign bundle of transactions', async () => {
+            const request: SignBundleRequest = {
+                transactions: ['base64_tx_1', 'base64_tx_2'],
+            };
+            const mockResponse: SignBundleResponse = {
+                signed_transactions: ['base64_signed_tx_1', 'base64_signed_tx_2'],
+                signer_pubkey: 'test_signer_pubkey',
+            };
+
+            await testSuccessfulRpcMethod('signBundle', () => client.signBundle(request), mockResponse, request);
+        });
+
+        it('should handle RPC error', async () => {
+            const request: SignBundleRequest = {
+                transactions: ['base64_tx_1'],
+            };
+            const mockError = { code: -32000, message: 'Bundle validation failed' };
+            mockErrorResponse(mockError);
+            await expect(client.signBundle(request)).rejects.toThrow('RPC Error -32000: Bundle validation failed');
+        });
+    });
+
+    describe('signAndSendBundle', () => {
+        it('should sign and send bundle of transactions', async () => {
+            const request: SignAndSendBundleRequest = {
+                transactions: ['base64_tx_1', 'base64_tx_2'],
+            };
+            const mockResponse: SignAndSendBundleResponse = {
+                signed_transactions: ['base64_signed_tx_1', 'base64_signed_tx_2'],
+                signer_pubkey: 'test_signer_pubkey',
+                bundle_uuid: 'test-bundle-uuid-123',
+            };
+
+            await testSuccessfulRpcMethod(
+                'signAndSendBundle',
+                () => client.signAndSendBundle(request),
+                mockResponse,
+                request,
+            );
+        });
+
+        it('should handle RPC error', async () => {
+            const request: SignAndSendBundleRequest = {
+                transactions: ['base64_tx_1'],
+            };
+            const mockError = { code: -32000, message: 'Jito submission failed' };
+            mockErrorResponse(mockError);
+            await expect(client.signAndSendBundle(request)).rejects.toThrow('RPC Error -32000: Jito submission failed');
+        });
+    });
+
+    describe('transferTransaction (DEPRECATED)', () => {
         it('should create transfer transaction', async () => {
             const request: TransferTransactionRequest = {
                 amount: 1000000,
@@ -303,61 +382,6 @@ describe('KoraClient Unit Tests', () => {
                 mockResponse,
                 request,
             );
-        });
-
-        it('should parse instructions from transfer transaction message', async () => {
-            const request: TransferTransactionRequest = {
-                amount: 1000000,
-                token: 'SOL',
-                source: 'source_address',
-                destination: 'destination_address',
-            };
-
-            // This is a real base64 encoded message for testing
-            // In production, this would come from the RPC response
-            const mockMessage =
-                'AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIDAAEMAgAAAAEAAAAAAAAA';
-
-            const mockResponse: TransferTransactionResponse = {
-                transaction: 'base64_encoded_transaction',
-                message: mockMessage,
-                blockhash: 'test_blockhash',
-                signer_pubkey: 'test_signer_pubkey',
-                instructions: [],
-            };
-
-            mockSuccessfulResponse(mockResponse);
-
-            const result = await client.transferTransaction(request);
-
-            expect(result.instructions).toBeDefined();
-            expect(Array.isArray(result.instructions)).toBe(true);
-            // The instructions array should be populated from the parsed message
-            expect(result.instructions).not.toBeNull();
-        });
-
-        it('should handle transfer transaction with empty message gracefully', async () => {
-            const request: TransferTransactionRequest = {
-                amount: 1000000,
-                token: 'SOL',
-                source: 'source_address',
-                destination: 'destination_address',
-            };
-
-            const mockResponse: TransferTransactionResponse = {
-                transaction: 'base64_encoded_transaction',
-                message: '',
-                blockhash: 'test_blockhash',
-                signer_pubkey: 'test_signer_pubkey',
-                instructions: [],
-            };
-
-            mockSuccessfulResponse(mockResponse);
-
-            const result = await client.transferTransaction(request);
-
-            // Should handle empty message gracefully
-            expect(result.instructions).toEqual([]);
         });
     });
     describe('getPaymentInstruction', () => {
@@ -392,6 +416,9 @@ describe('KoraClient Unit Tests', () => {
                         allow_revoke: true,
                         allow_set_authority: true,
                         allow_mint_to: true,
+                        allow_initialize_mint: true,
+                        allow_initialize_account: true,
+                        allow_initialize_multisig: true,
                         allow_freeze_account: true,
                         allow_thaw_account: true,
                     },
@@ -403,6 +430,9 @@ describe('KoraClient Unit Tests', () => {
                         allow_revoke: true,
                         allow_set_authority: true,
                         allow_mint_to: true,
+                        allow_initialize_mint: true,
+                        allow_initialize_account: true,
+                        allow_initialize_multisig: true,
                         allow_freeze_account: true,
                         allow_thaw_account: true,
                     },
@@ -419,12 +449,17 @@ describe('KoraClient Unit Tests', () => {
             enabled_methods: {
                 liveness: true,
                 estimate_transaction_fee: true,
+                estimate_bundle_fee: true,
                 get_supported_tokens: true,
+                get_payer_signer: true,
                 sign_transaction: true,
                 sign_and_send_transaction: true,
                 transfer_transaction: true,
                 get_blockhash: true,
                 get_config: true,
+                get_version: true,
+                sign_and_send_bundle: true,
+                sign_bundle: true,
             },
         };
 

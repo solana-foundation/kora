@@ -83,6 +83,7 @@ allow_thaw_account = true
 [kora.enabled_methods]
 liveness = false
 estimate_transaction_fee = true
+estimate_bundle_fee = true
 get_supported_tokens = true
 sign_transaction = true
 sign_and_send_transaction = true
@@ -90,6 +91,7 @@ transfer_transaction = true
 get_blockhash = true
 get_config = true
 get_payer_signer = true
+get_version = true
 
 [validation.price]
 type = "margin" # free / margin / fixed
@@ -133,3 +135,6 @@ enabled = false
 cache_url = "redis://redis:6379"
 max_transactions = 2
 fallback_if_unavailable = false
+
+[kora.bundle]
+enabled = false

@@ -1,9 +1,9 @@
 use crate::{
     config::{
-        AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerBalanceMetricsConfig,
-        FeePayerPolicy, KoraConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
-        SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
-        Token2022InstructionPolicy, UsageLimitConfig, ValidationConfig,
+        AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods,
+        FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, MetricsConfig,
+        NonceInstructionPolicy, SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
+        Token2022Config, Token2022InstructionPolicy, UsageLimitConfig, ValidationConfig,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::PriceConfig,
@@ -105,6 +105,7 @@ impl ConfigMockBuilder {
                         account_ttl: 60,
                     },
                     usage_limit: UsageLimitConfig::default(),
+                    bundle: BundleConfig::default(),
                 },
                 metrics: MetricsConfig::default(),
             },
@@ -217,6 +218,11 @@ impl ConfigMockBuilder {
 
     pub fn with_disallowed_accounts(mut self, accounts: Vec<String>) -> Self {
         self.config.validation.disallowed_accounts = accounts;
+        self
+    }
+
+    pub fn with_bundle_enabled(mut self, enabled: bool) -> Self {
+        self.config.kora.bundle.enabled = enabled;
         self
     }
 
@@ -333,6 +339,7 @@ impl KoraConfigBuilder {
                     account_ttl: 60,
                 },
                 usage_limit: UsageLimitConfig::default(),
+                bundle: BundleConfig::default(),
             },
         }
     }

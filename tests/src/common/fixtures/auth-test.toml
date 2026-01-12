@@ -15,6 +15,7 @@ account_ttl = 60
 [kora.enabled_methods]
 liveness = true
 estimate_transaction_fee = true
+estimate_bundle_fee = true
 get_supported_tokens = true
 sign_transaction = true
 sign_and_send_transaction = true
@@ -22,6 +23,9 @@ transfer_transaction = true
 get_blockhash = true
 get_config = true
 get_payer_signer = true
+get_version = true
+sign_bundle = true
+sign_and_send_bundle = true
 
 [validation]
 max_allowed_lamports = 1000000
@@ -96,3 +100,9 @@ enabled = false
 cache_url = "redis://redis:6379"
 max_transactions = 2
 fallback_if_unavailable = false
+
+[kora.bundle]
+enabled = true
+
+[kora.bundle.jito]
+block_engine_url = "mock"

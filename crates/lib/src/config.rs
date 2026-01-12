@@ -6,6 +6,7 @@ use toml;
 use utoipa::ToSchema;
 
 use crate::{
+    bundle::JitoConfig,
     constant::{
         DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL,
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
@@ -324,6 +325,14 @@ pub struct EnabledMethods {
     pub transfer_transaction: bool,
     pub get_blockhash: bool,
     pub get_config: bool,
+    pub get_version: bool,
+    /// Bundle methods (require bundle.enabled = true)
+    #[serde(default)]
+    pub estimate_bundle_fee: bool,
+    #[serde(default)]
+    pub sign_and_send_bundle: bool,
+    #[serde(default)]
+    pub sign_bundle: bool,
 }
 
 impl EnabledMethods {
@@ -338,6 +347,10 @@ impl EnabledMethods {
             self.transfer_transaction,
             self.get_blockhash,
             self.get_config,
+            self.get_version,
+            self.estimate_bundle_fee,
+            self.sign_and_send_bundle,
+            self.sign_bundle,
         ]
         .into_iter()
     }
@@ -350,6 +363,9 @@ impl EnabledMethods {
         }
         if self.estimate_transaction_fee {
             methods.push("estimateTransactionFee".to_string());
+        }
+        if self.estimate_bundle_fee {
+            methods.push("estimateBundleFee".to_string());
         }
         if self.get_supported_tokens {
             methods.push("getSupportedTokens".to_string());
@@ -372,13 +388,22 @@ impl EnabledMethods {
         if self.get_config {
             methods.push("getConfig".to_string());
         }
+        if self.get_version {
+            methods.push("getVersion".to_string());
+        }
+        if self.sign_and_send_bundle {
+            methods.push("signAndSendBundle".to_string());
+        }
+        if self.sign_bundle {
+            methods.push("signBundle".to_string());
+        }
         methods
     }
 }
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 9>;
+    type IntoIter = std::array::IntoIter<bool, 13>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
@@ -391,6 +416,10 @@ impl IntoIterator for &EnabledMethods {
             self.transfer_transaction,
             self.get_blockhash,
             self.get_config,
+            self.get_version,
+            self.estimate_bundle_fee,
+            self.sign_and_send_bundle,
+            self.sign_bundle,
         ]
         .into_iter()
     }
@@ -408,6 +437,11 @@ impl Default for EnabledMethods {
             transfer_transaction: true,
             get_blockhash: true,
             get_config: true,
+            get_version: true,
+            // Bundle methods default to false (opt-in)
+            estimate_bundle_fee: false,
+            sign_and_send_bundle: false,
+            sign_bundle: false,
         }
     }
 }
@@ -458,6 +492,9 @@ pub struct KoraConfig {
     pub cache: CacheConfig,
     #[serde(default)]
     pub usage_limit: UsageLimitConfig,
+    /// Bundle support configuration
+    #[serde(default)]
+    pub bundle: BundleConfig,
 }
 
 impl Default for KoraConfig {
@@ -470,6 +507,7 @@ impl Default for KoraConfig {
             payment_address: None,
             cache: CacheConfig::default(),
             usage_limit: UsageLimitConfig::default(),
+            bundle: BundleConfig::default(),
         }
     }
 }
@@ -495,6 +533,17 @@ impl Default for UsageLimitConfig {
             fallback_if_unavailable: DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE,
         }
     }
+}
+
+/// Configuration for bundle support (wraps provider-specific configs)
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct BundleConfig {
+    /// Enable bundle support
+    #[serde(default)]
+    pub enabled: bool,
+    /// Jito-specific configuration
+    #[serde(default)]
+    pub jito: JitoConfig,
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
@@ -604,6 +653,7 @@ mod tests {
                 ("get_blockhash", true),
                 ("get_config", true),
                 ("get_payer_signer", true),
+                ("get_version", true),
             ])
             .build_config()
             .unwrap();
