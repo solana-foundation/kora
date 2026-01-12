@@ -1,3 +1,20 @@
+## 2.2.0-beta.2 - 2026-01-12
+
+
+### Documentation
+
+- add jito bundle example code (#295)
+
+
+### Features
+
+- (PRO-638) Estimate fee for Jito bundle endpoint (#296)
+
+
+### Hotfix
+
+- (PRO-639) Fix big transaction causing error when using v0 transaction (#297)
+
 ## 2.2.0-beta.1 - 2026-01-09
 
 
