@@ -229,7 +229,10 @@ impl UsageTracker {
         for (key, increment_count, window_seconds) in pending_increments {
             for _ in 0..increment_count {
                 if let Some(window) = window_seconds.filter(|&w| w > 0) {
-                    self.store.increment_with_ttl(&key, window).await?;
+                    // Calculate bucket boundary: key expires at end of current bucket
+                    // bucket = timestamp / window, so bucket_end = (bucket + 1) * window
+                    let expires_at = (ctx.timestamp / window + 1) * window;
+                    self.store.increment_with_expiry(&key, expires_at).await?;
                 } else {
                     self.store.increment(&key).await?;
                 }
@@ -583,6 +586,8 @@ mod tests {
         let tracker = UsageTracker::new(true, store, rules, HashSet::new(), false);
 
         let user_id = "test-user-multiple-rules".to_string();
+        // Use realistic timestamp (current time) so expiry calculations work correctly
+        let now = UsageTracker::current_timestamp();
 
         // First two should pass (time bucket limit is 2)
         let mut tx1 = create_mock_resolved_transaction();
@@ -590,7 +595,7 @@ mod tests {
             transaction: &mut tx1,
             user_id: user_id.clone(),
             kora_signer: None,
-            timestamp: 1000,
+            timestamp: now,
         };
         assert!(matches!(
             tracker.check_and_record(&mut ctx1).await.unwrap(),
@@ -601,7 +606,7 @@ mod tests {
             transaction: &mut tx2,
             user_id: user_id.clone(),
             kora_signer: None,
-            timestamp: 1000,
+            timestamp: now,
         };
         assert!(matches!(
             tracker.check_and_record(&mut ctx2).await.unwrap(),
@@ -614,7 +619,7 @@ mod tests {
             transaction: &mut tx3,
             user_id: user_id.clone(),
             kora_signer: None,
-            timestamp: 1000,
+            timestamp: now,
         };
         assert!(matches!(
             tracker.check_and_record(&mut ctx3).await.unwrap(),

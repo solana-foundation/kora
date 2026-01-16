@@ -12,8 +12,8 @@ pub trait UsageStore: Send + Sync {
     /// Increment usage count for a key and return the new value
     async fn increment(&self, key: &str) -> Result<u32, KoraError>;
 
-    /// Increment usage count with TTL (key expires after ttl_seconds)
-    async fn increment_with_ttl(&self, key: &str, ttl_seconds: u64) -> Result<u32, KoraError>;
+    /// Increment usage count with absolute expiration (key expires at unix timestamp)
+    async fn increment_with_expiry(&self, key: &str, expires_at: u64) -> Result<u32, KoraError>;
 
     /// Get current usage count for a key (returns 0 if not found)
     async fn get(&self, key: &str) -> Result<u32, KoraError>;
@@ -55,20 +55,23 @@ impl UsageStore for RedisUsageStore {
         Ok(count)
     }
 
-    async fn increment_with_ttl(&self, key: &str, ttl_seconds: u64) -> Result<u32, KoraError> {
+    async fn increment_with_expiry(&self, key: &str, expires_at: u64) -> Result<u32, KoraError> {
         let mut conn = self.get_connection().await?;
 
-        // Use Redis pipeline for atomic INCR + EXPIRE
+        // Use Redis pipeline for atomic INCR + EXPIREAT
+        // EXPIREAT sets absolute expiration timestamp, so repeated calls are idempotent
         let (count,): (u32,) = redis::pipe()
             .atomic()
             .incr(key, 1)
-            .expire(key, ttl_seconds as i64)
+            .cmd("EXPIREAT")
+            .arg(key)
+            .arg(expires_at as i64)
             .ignore()
             .query_async(&mut conn)
             .await
             .map_err(|e| {
                 KoraError::InternalServerError(sanitize_error!(format!(
-                    "Failed to increment with TTL for {}: {}",
+                    "Failed to increment with expiry for {}: {}",
                     key, e
                 )))
             })?;
@@ -140,7 +143,7 @@ impl UsageStore for InMemoryUsageStore {
         Ok(entry.count)
     }
 
-    async fn increment_with_ttl(&self, key: &str, ttl_seconds: u64) -> Result<u32, KoraError> {
+    async fn increment_with_expiry(&self, key: &str, expires_at: u64) -> Result<u32, KoraError> {
         let mut data = self.data.lock().map_err(|e| {
             KoraError::InternalServerError(sanitize_error!(format!(
                 "Failed to lock usage store: {}",
@@ -149,8 +152,6 @@ impl UsageStore for InMemoryUsageStore {
         })?;
 
         let now = Self::current_timestamp();
-        let new_expiry = now + ttl_seconds;
-
         let entry = data.entry(key.to_string()).or_insert(UsageEntry { count: 0, expiry: None });
 
         // Check if expired, reset if so
@@ -161,7 +162,8 @@ impl UsageStore for InMemoryUsageStore {
         }
 
         entry.count += 1;
-        entry.expiry = Some(new_expiry);
+        // Always set to the same absolute expiry (idempotent like EXPIREAT)
+        entry.expiry = Some(expires_at);
 
         Ok(entry.count)
     }
@@ -224,7 +226,7 @@ impl UsageStore for ErrorUsageStore {
         }
     }
 
-    async fn increment_with_ttl(&self, _key: &str, _ttl_seconds: u64) -> Result<u32, KoraError> {
+    async fn increment_with_expiry(&self, _key: &str, _expires_at: u64) -> Result<u32, KoraError> {
         if self.should_error_increment {
             Err(KoraError::InternalServerError("Redis connection failed".to_string()))
         } else {
