@@ -1,16 +1,21 @@
-# Auth test configuration file
+# Usage Limit Integration Test Configuration
+# This file is used for testing usage limit functionality
 [kora]
 rate_limit = 100
 
 [kora.auth]
-api_key = "test-api-key-123"
-hmac_secret = "test-hmac-secret-456"
 
 # Cache configuration - disabled for testing
 [kora.cache]
 enabled = false
 default_ttl = 300
 account_ttl = 60
+
+[kora.bundle]
+enabled = true
+
+[kora.bundle.jito]
+block_engine_url = "https://mainnet.block-engine.jito.wtf"
 
 [kora.enabled_methods]
 liveness = true
@@ -19,16 +24,16 @@ estimate_bundle_fee = true
 get_supported_tokens = true
 sign_transaction = true
 sign_and_send_transaction = true
+sign_bundle = true
+sign_and_send_bundle = true
 transfer_transaction = true
 get_blockhash = true
 get_config = true
 get_payer_signer = true
 get_version = true
-sign_bundle = true
-sign_and_send_bundle = true
 
 [validation]
-max_allowed_lamports = 1000000
+max_allowed_lamports = 10000000
 max_signatures = 10
 price_source = "Mock"
 allowed_programs = [
@@ -40,18 +45,21 @@ allowed_programs = [
 ]
 allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
 ]
 allowed_spl_paid_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
 ]
 
-disallowed_accounts = [
-    "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek", # Test disallowed account for lookup table
-]
+disallowed_accounts = []
 
 [validation.price]
-type = "margin"
-margin = 0.0
+type = "free"
+
+[validation.token_2022]
+blocked_mint_extensions = []
+blocked_account_extensions = []
 
 [validation.fee_payer_policy]
 
@@ -95,14 +103,37 @@ allow_initialize_multisig = true
 allow_freeze_account = true
 allow_thaw_account = true
 
+# Usage limit configuration - enabled for testing (in-memory store)
 [kora.usage_limit]
-enabled = false
-cache_url = "redis://redis:6379"
-fallback_if_unavailable = false
-rules = []
-
-[kora.bundle]
 enabled = true
+# cache_url omitted = uses in-memory store (no Redis required)
+fallback_if_unavailable = false
 
-[kora.bundle.jito]
-block_engine_url = "mock"
+# Transaction lifetime limit: 5 transactions per wallet
+[[kora.usage_limit.rules]]
+type = "transaction"
+max = 5
+# window_seconds omitted = lifetime limit
+
+# Transaction time-windowed limit: 4 transactions per 30 seconds
+# (higher than instruction limit of 3 to allow instruction tests to work)
+[[kora.usage_limit.rules]]
+type = "transaction"
+max = 4
+window_seconds = 30
+
+# Instruction-level limit: 3 System CreateAccount instructions per wallet (lifetime)
+[[kora.usage_limit.rules]]
+type = "instruction"
+program = "11111111111111111111111111111111"
+instruction = "CreateAccount"
+max = 3
+# window_seconds omitted = lifetime limit
+
+# Instruction-level limit: 3 ATA CreateIdempotent instructions per wallet (lifetime)
+[[kora.usage_limit.rules]]
+type = "instruction"
+program = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+instruction = "CreateIdempotent"
+max = 3
+# window_seconds omitted = lifetime limit

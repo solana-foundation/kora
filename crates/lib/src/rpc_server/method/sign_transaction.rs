@@ -20,6 +20,9 @@ pub struct SignTransactionRequest {
     /// Whether to verify signatures during simulation (defaults to true)
     #[serde(default = "default_sig_verify")]
     pub sig_verify: bool,
+    /// Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -37,16 +40,24 @@ pub async fn sign_transaction(
 
     let config = get_config()?;
 
-    // Check usage limit for transaction sender
-    UsageTracker::check_transaction_usage_limit(config, &transaction).await?;
-
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let fee_payer = signer.pubkey();
 
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
         config,
         rpc_client,
         request.sig_verify,
+    )
+    .await?;
+
+    // Check usage limit for transaction sender
+    UsageTracker::check_transaction_usage_limit(
+        config,
+        &mut resolved_transaction,
+        request.user_id.as_deref(),
+        &fee_payer,
+        rpc_client,
     )
     .await?;
 
@@ -83,6 +94,7 @@ mod tests {
             transaction: "invalid_base64!@#$".to_string(),
             signer_key: None,
             sig_verify: true,
+            user_id: None,
         };
 
         let result = sign_transaction(&rpc_client, request).await;
@@ -103,6 +115,7 @@ mod tests {
             transaction: create_mock_encoded_transaction(),
             signer_key: Some("invalid_pubkey".to_string()),
             sig_verify: true,
+            user_id: None,
         };
 
         let result = sign_transaction(&rpc_client, request).await;

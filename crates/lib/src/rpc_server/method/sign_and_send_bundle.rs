@@ -1,5 +1,5 @@
 use crate::{
-    bundle::{BundleError, BundleProcessor, JitoBundleClient, JitoError},
+    bundle::{BundleError, BundleProcessingMode, BundleProcessor, JitoBundleClient, JitoError},
     rpc_server::middleware_utils::default_sig_verify,
     transaction::TransactionUtil,
     validator::bundle_validator::BundleValidator,
@@ -29,6 +29,9 @@ pub struct SignAndSendBundleRequest {
     /// Whether to verify signatures during simulation (defaults to false)
     #[serde(default = "default_sig_verify")]
     pub sig_verify: bool,
+    /// Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -64,6 +67,7 @@ pub async fn sign_and_send_bundle(
         config,
         rpc_client,
         request.sig_verify,
+        BundleProcessingMode::CheckUsage(request.user_id.as_deref()),
     )
     .await?;
 
@@ -101,8 +105,12 @@ mod tests {
 
         let rpc_client = Arc::new(RpcMockBuilder::new().build());
 
-        let request =
-            SignAndSendBundleRequest { transactions: vec![], signer_key: None, sig_verify: true };
+        let request = SignAndSendBundleRequest {
+            transactions: vec![],
+            signer_key: None,
+            sig_verify: true,
+            user_id: None,
+        };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
 
@@ -122,6 +130,7 @@ mod tests {
             transactions: vec!["some_tx".to_string()],
             signer_key: None,
             sig_verify: true,
+            user_id: None,
         };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
@@ -145,6 +154,7 @@ mod tests {
             transactions: vec!["tx".to_string(); 6],
             signer_key: None,
             sig_verify: true,
+            user_id: None,
         };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
@@ -168,6 +178,7 @@ mod tests {
             transactions: vec!["some_tx".to_string()],
             signer_key: Some("invalid_pubkey".to_string()),
             sig_verify: true,
+            user_id: None,
         };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
@@ -182,13 +193,15 @@ mod tests {
         let json = r#"{
             "transactions": ["tx1", "tx2", "tx3"],
             "signer_key": "11111111111111111111111111111111",
-            "sig_verify": false
+            "sig_verify": false,
+            "user_id": "test-user-123"
         }"#;
         let request: SignAndSendBundleRequest = serde_json::from_str(json).unwrap();
 
         assert_eq!(request.transactions.len(), 3);
         assert_eq!(request.signer_key, Some("11111111111111111111111111111111".to_string()));
         assert!(!request.sig_verify);
+        assert_eq!(request.user_id, Some("test-user-123".to_string()));
     }
 
     #[tokio::test]
