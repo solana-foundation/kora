@@ -1,9 +1,10 @@
 use crate::{
-    constant::{X_API_KEY, X_HMAC_SIGNATURE, X_TIMESTAMP},
+    constant::{X_API_KEY, X_HMAC_SIGNATURE, X_RECAPTCHA_TOKEN, X_TIMESTAMP},
     metrics::run_metrics_server_if_required,
     rpc_server::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
         middleware_utils::MethodValidationLayer,
+        recaptcha::RecaptchaAuthLayer,
         rpc::KoraRpc,
     },
     usage_limit::UsageTracker,
@@ -53,6 +54,7 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
             header::CONTENT_TYPE,
             header::HeaderName::from_static(X_API_KEY),
             header::HeaderName::from_static(X_HMAC_SIGNATURE),
+            header::HeaderName::from_static(X_RECAPTCHA_TOKEN),
             header::HeaderName::from_static(X_TIMESTAMP),
         ])
         .max_age(Duration::from_secs(3600));
@@ -90,6 +92,16 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         .option_layer(
             (get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone()))
                 .map(|secret| HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)),
+        )
+        // Add reCAPTCHA verification layer if configured
+        .option_layer(
+            (get_value_by_priority(
+                "KORA_RECAPTCHA_SECRET",
+                config.kora.auth.recaptcha_secret.clone(),
+            ))
+            .map(|secret| {
+                RecaptchaAuthLayer::new(secret, config.kora.auth.recaptcha_score_threshold)
+            }),
         );
 
     // Configure and build the server with HTTP support

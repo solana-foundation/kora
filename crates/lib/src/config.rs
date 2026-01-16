@@ -11,7 +11,8 @@ use crate::{
         DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL,
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
         DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
-        DEFAULT_METRICS_SCRAPE_INTERVAL,
+        DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
+        DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE, DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
@@ -461,6 +462,10 @@ fn default_max_request_body_size() -> usize {
     DEFAULT_MAX_REQUEST_BODY_SIZE
 }
 
+fn default_recaptcha_score_threshold() -> f64 {
+    DEFAULT_RECAPTCHA_SCORE_THRESHOLD
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct CacheConfig {
     /// Redis URL for caching (e.g., "redis://localhost:6379")
@@ -534,13 +539,22 @@ pub struct BundleConfig {
 pub struct AuthConfig {
     pub api_key: Option<String>,
     pub hmac_secret: Option<String>,
+    pub recaptcha_secret: Option<String>,
+    #[serde(default = "default_recaptcha_score_threshold")]
+    pub recaptcha_score_threshold: f64,
     #[serde(default = "default_max_timestamp_age")]
     pub max_timestamp_age: i64,
 }
 
 impl Default for AuthConfig {
     fn default() -> Self {
-        Self { api_key: None, hmac_secret: None, max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE }
+        Self {
+            api_key: None,
+            hmac_secret: None,
+            recaptcha_secret: None,
+            recaptcha_score_threshold: DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
+            max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+        }
     }
 }
 

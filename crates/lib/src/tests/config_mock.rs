@@ -445,7 +445,15 @@ impl Default for AuthConfigBuilder {
 
 impl AuthConfigBuilder {
     pub fn new() -> Self {
-        Self { config: AuthConfig { api_key: None, hmac_secret: None, max_timestamp_age: 10 } }
+        Self {
+            config: AuthConfig {
+                api_key: None,
+                hmac_secret: None,
+                recaptcha_secret: None,
+                recaptcha_score_threshold: crate::constant::DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
+                max_timestamp_age: 10,
+            },
+        }
     }
 
     pub fn build(self) -> AuthConfig {
