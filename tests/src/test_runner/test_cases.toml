@@ -54,3 +54,10 @@ config = "tests/src/common/fixtures/auth-test.toml"
 signers = "tests/src/common/fixtures/signers.toml"
 port = "8085"
 tests = ["typescript_auth"]
+
+[test.usage_limit]
+name = "Usage Limit Tests"
+config = "tests/src/common/fixtures/usage-limit-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8088"
+tests = ["usage_limit"]

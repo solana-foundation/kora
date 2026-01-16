@@ -22,14 +22,21 @@ pub struct BundleProcessor {
     pub total_solana_estimated_fee: u64,
 }
 
+pub enum BundleProcessingMode<'a> {
+    CheckUsage(Option<&'a str>),
+    SkipUsage,
+}
+
 impl BundleProcessor {
-    pub async fn process_bundle(
+    #[allow(clippy::too_many_arguments)]
+    pub async fn process_bundle<'a>(
         encoded_txs: &[String],
         fee_payer: Pubkey,
         payment_destination: &Pubkey,
         config: &Config,
         rpc_client: &Arc<RpcClient>,
         sig_verify: bool,
+        processing_mode: BundleProcessingMode<'a>,
     ) -> Result<Self, KoraError> {
         let validator = TransactionValidator::new(config, fee_payer)?;
         let mut resolved_transactions = Vec::with_capacity(encoded_txs.len());
@@ -40,7 +47,6 @@ impl BundleProcessor {
         // Phase 1: Decode, resolve, validate, calc fees, collect instructions
         for encoded in encoded_txs {
             let transaction = TransactionUtil::decode_b64_transaction(encoded)?;
-            UsageTracker::check_transaction_usage_limit(config, &transaction).await?;
 
             let mut resolved_tx = VersionedTransactionResolved::from_transaction(
                 &transaction,
@@ -49,6 +55,18 @@ impl BundleProcessor {
                 sig_verify,
             )
             .await?;
+
+            // Check usage limit for each transaction in the bundle (skip for estimates)
+            if let BundleProcessingMode::CheckUsage(user_id) = processing_mode {
+                UsageTracker::check_transaction_usage_limit(
+                    config,
+                    &mut resolved_tx,
+                    user_id,
+                    &fee_payer,
+                    rpc_client,
+                )
+                .await?;
+            }
 
             validator.validate_transaction(config, &mut resolved_tx, rpc_client).await?;
 

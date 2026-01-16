@@ -3,7 +3,7 @@ use crate::{
         AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods,
         FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, MetricsConfig,
         NonceInstructionPolicy, SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
-        Token2022Config, Token2022InstructionPolicy, UsageLimitConfig, ValidationConfig,
+        Token2022Config, Token2022InstructionPolicy, ValidationConfig,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::PriceConfig,
@@ -12,6 +12,7 @@ use crate::{
         MemorySignerConfig, PrivySignerConfig, SelectionStrategy, SignerConfig, SignerPoolConfig,
         SignerPoolSettings, SignerTypeConfig, TurnkeySignerConfig, VaultSignerConfig,
     },
+    usage_limit::{UsageLimitConfig, UsageLimitRuleConfig},
 };
 use solana_sdk::pubkey::Pubkey;
 
@@ -211,8 +212,8 @@ impl ConfigMockBuilder {
         self
     }
 
-    pub fn with_usage_limit_max_transactions(mut self, max_transactions: u64) -> Self {
-        self.config.kora.usage_limit.max_transactions = max_transactions;
+    pub fn with_usage_limit_rules(mut self, rules: Vec<UsageLimitRuleConfig>) -> Self {
+        self.config.kora.usage_limit.rules = rules;
         self
     }
 

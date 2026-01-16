@@ -11,14 +11,16 @@ use crate::{
         DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL,
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
         DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
-        DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE,
-        DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
+        DEFAULT_METRICS_SCRAPE_INTERVAL,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
     oracle::PriceSource,
     sanitize_error,
 };
+
+// Re-export usage limit configs
+pub use crate::usage_limit::{UsageLimitConfig, UsageLimitRuleConfig};
 
 #[derive(Clone, Deserialize)]
 pub struct Config {
@@ -512,29 +514,6 @@ impl Default for KoraConfig {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
-pub struct UsageLimitConfig {
-    /// Enable per-wallet usage limiting
-    pub enabled: bool,
-    /// Cache URL for shared usage limiting across multiple Kora instances
-    pub cache_url: Option<String>,
-    /// Default maximum transactions per wallet (0 = unlimited)
-    pub max_transactions: u64,
-    /// Fallback behavior when cache is unavailable
-    pub fallback_if_unavailable: bool,
-}
-
-impl Default for UsageLimitConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            cache_url: None,
-            max_transactions: DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
-            fallback_if_unavailable: DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE,
-        }
-    }
-}
-
 /// Configuration for bundle support (wraps provider-specific configs)
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct BundleConfig {
@@ -860,43 +839,6 @@ mod tests {
         assert!(!config.kora.cache.enabled);
         assert_eq!(config.kora.cache.default_ttl, 300);
         assert_eq!(config.kora.cache.account_ttl, 60);
-    }
-
-    #[test]
-    fn test_usage_limit_config_parsing() {
-        let config = ConfigBuilder::new()
-            .with_usage_limit_config(true, Some("redis://localhost:6379"), 10, false)
-            .build_config()
-            .unwrap();
-
-        assert!(config.kora.usage_limit.enabled);
-        assert_eq!(config.kora.usage_limit.cache_url, Some("redis://localhost:6379".to_string()));
-        assert_eq!(config.kora.usage_limit.max_transactions, 10);
-        assert!(!config.kora.usage_limit.fallback_if_unavailable);
-    }
-
-    #[test]
-    fn test_usage_limit_config_default() {
-        let config = ConfigBuilder::new().build_config().unwrap();
-
-        assert!(!config.kora.usage_limit.enabled);
-        assert_eq!(config.kora.usage_limit.cache_url, None);
-        assert_eq!(config.kora.usage_limit.max_transactions, DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS);
-        assert_eq!(
-            config.kora.usage_limit.fallback_if_unavailable,
-            DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE
-        );
-    }
-
-    #[test]
-    fn test_usage_limit_config_unlimited() {
-        let config = ConfigBuilder::new()
-            .with_usage_limit_config(true, None, 0, true)
-            .build_config()
-            .unwrap();
-
-        assert!(config.kora.usage_limit.enabled);
-        assert_eq!(config.kora.usage_limit.max_transactions, 0); // 0 = unlimited
     }
 
     #[test]

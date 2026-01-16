@@ -76,13 +76,13 @@ test:
 
 # Run all integration tests (use --verbose, --force-refresh, --filter X as needed)
 [group('test')]
-test-integration *args: _ensure-transfer-hook
+test-integration *args: build _ensure-transfer-hook
     cargo run -p tests --bin test_runner -- {{args}}
 
 # Run TypeScript SDK unit tests
 [group('test')]
 [no-exit-message]
-test-ts:
+test-ts: build
     -cd sdks/ts && pnpm test:unit
 
 # Run all tests (unit + TypeScript + integration)
