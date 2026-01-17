@@ -62,6 +62,9 @@ pub enum KoraError {
 
     #[error("Invalid configuration for Kora")]
     ConfigError,
+
+    #[error("reCAPTCHA verification failed: {0}")]
+    RecaptchaError(String),
 }
 
 impl From<ClientError> for KoraError {
