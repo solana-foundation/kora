@@ -4,7 +4,20 @@ rate_limit = 100
 # payment_address = "YourPaymentAddressPubkey11111111111111111111"
 
 [kora.auth]
+# Optional: API key for simple header-based authentication (use x-api-key header)
 api_key = "kora_facilitator_api_key_example"
+
+# Optional: HMAC secret for signed requests
+# hmac_secret = "your-hmac-secret"
+
+# Optional: reCAPTCHA v3 secret key for bot protection
+# recaptcha_secret = "your-recaptcha-secret"
+
+# Optional: Minimum reCAPTCHA score threshold (0.0 to 1.0, default: 0.5)
+# recaptcha_score_threshold = 0.5
+
+# Optional: RPC methods that require reCAPTCHA verification
+# protected_methods = ["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"]
 
 [kora.cache]
 enabled = false

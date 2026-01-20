@@ -65,6 +65,9 @@ pub enum KoraError {
 
     #[error("Jito error: {0}")]
     JitoError(String),
+
+    #[error("reCAPTCHA error: {0}")]
+    RecaptchaError(String),
 }
 
 impl From<ClientError> for KoraError {

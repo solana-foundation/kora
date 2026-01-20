@@ -3,6 +3,7 @@ use std::{path::Path, str::FromStr};
 use crate::{
     admin::token_util::find_missing_atas,
     config::{FeePayerPolicy, SplTokenConfig, Token2022Config},
+    constant::{MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     fee::price::PriceModel,
     oracle::PriceSource,
     signer::SignerPoolConfig,
@@ -279,6 +280,14 @@ impl ConfigValidator {
             if let Err(e) = Pubkey::from_str(payment_address) {
                 errors.push(format!("Invalid payment address: {e}"));
             }
+        }
+
+        // Validate reCAPTCHA score threshold (must be between MIN and MAX inclusive)
+        let score_threshold = config.kora.auth.recaptcha_score_threshold;
+        if !(MIN_RECAPTCHA_SCORE..=MAX_RECAPTCHA_SCORE).contains(&score_threshold) {
+            errors.push(format!(
+                "recaptcha_score_threshold must be between {MIN_RECAPTCHA_SCORE} and {MAX_RECAPTCHA_SCORE}, got: {score_threshold}"
+            ));
         }
 
         // Validate enabled methods (warn if all false)

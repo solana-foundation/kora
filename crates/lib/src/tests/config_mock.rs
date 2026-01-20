@@ -452,6 +452,10 @@ impl AuthConfigBuilder {
                 recaptcha_secret: None,
                 recaptcha_score_threshold: crate::constant::DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
                 max_timestamp_age: 10,
+                protected_methods: crate::constant::DEFAULT_PROTECTED_METHODS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
             },
         }
     }
@@ -473,6 +477,22 @@ impl AuthConfigBuilder {
     pub fn with_both_auth(mut self, api_key: String, hmac_secret: String) -> Self {
         self.config.api_key = Some(api_key);
         self.config.hmac_secret = Some(hmac_secret);
+        self
+    }
+
+    pub fn with_recaptcha(
+        mut self,
+        secret: String,
+        score_threshold: Option<f64>,
+        protected_methods: Option<Vec<String>>,
+    ) -> Self {
+        self.config.recaptcha_secret = Some(secret);
+        if let Some(threshold) = score_threshold {
+            self.config.recaptcha_score_threshold = threshold;
+        }
+        if let Some(methods) = protected_methods {
+            self.config.protected_methods = methods;
+        }
         self
     }
 }

@@ -11,8 +11,8 @@ use crate::{
         DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL,
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
         DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
-        DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
-        DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE, DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
+        DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_PROTECTED_METHODS,
+        DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
@@ -544,6 +544,12 @@ pub struct AuthConfig {
     pub recaptcha_score_threshold: f64,
     #[serde(default = "default_max_timestamp_age")]
     pub max_timestamp_age: i64,
+    #[serde(default = "default_protected_methods")]
+    pub protected_methods: Vec<String>,
+}
+
+fn default_protected_methods() -> Vec<String> {
+    DEFAULT_PROTECTED_METHODS.iter().map(|s| s.to_string()).collect()
 }
 
 impl Default for AuthConfig {
@@ -554,6 +560,7 @@ impl Default for AuthConfig {
             recaptcha_secret: None,
             recaptcha_score_threshold: DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
             max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+            protected_methods: default_protected_methods(),
         }
     }
 }

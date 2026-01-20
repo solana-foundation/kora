@@ -11,13 +11,17 @@ pub const X_API_KEY: &str = "x-api-key";
 pub const X_HMAC_SIGNATURE: &str = "x-hmac-signature";
 pub const X_TIMESTAMP: &str = "x-timestamp";
 pub const DEFAULT_MAX_TIMESTAMP_AGE: i64 = 300;
+pub const MIN_RECAPTCHA_SCORE: f64 = 0.0;
+pub const MAX_RECAPTCHA_SCORE: f64 = 1.0;
 pub const DEFAULT_RECAPTCHA_SCORE_THRESHOLD: f64 = 0.5;
-pub const DEFAULT_PROTECTED_METHODS: &[&str] = &["signTransaction", "signAndSendTransaction"];
+pub const DEFAULT_PROTECTED_METHODS: &[&str] =
+    &["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"];
 
 // External Services
 pub const JUPITER_API_LITE_URL: &str = "https://lite-api.jup.ag";
 pub const JUPITER_API_PRO_URL: &str = "https://api.jup.ag";
 pub const RECAPTCHA_VERIFY_URL: &str = "https://www.google.com/recaptcha/api/siteverify";
+pub const RECAPTCHA_TIMEOUT_SECS: u64 = 5;
 
 // Metrics
 pub const DEFAULT_METRICS_ENDPOINT: &str = "/metrics";

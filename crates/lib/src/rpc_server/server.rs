@@ -4,7 +4,7 @@ use crate::{
     rpc_server::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
         middleware_utils::MethodValidationLayer,
-        recaptcha::RecaptchaAuthLayer,
+        recaptcha_util::RecaptchaConfig,
         rpc::KoraRpc,
     },
     usage_limit::UsageTracker,
@@ -70,6 +70,16 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
     // Build whitelist of allowed methods from enabled_methods config
     let allowed_methods = config.kora.enabled_methods.get_enabled_method_names();
 
+    let recaptcha_config =
+        get_value_by_priority("KORA_RECAPTCHA_SECRET", config.kora.auth.recaptcha_secret.clone())
+            .map(|secret| {
+                RecaptchaConfig::new(
+                    secret,
+                    config.kora.auth.recaptcha_score_threshold,
+                    config.kora.auth.protected_methods.clone(),
+                )
+            });
+
     let middleware = tower::ServiceBuilder::new()
         // Add metrics handler first (before other layers) so it can intercept /metrics
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
@@ -83,25 +93,19 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         .layer(MethodValidationLayer::new(allowed_methods.clone()))
         // Add metrics collection layer
         .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
-        // Add authentication layer for API key if configured
+        // Add authentication layer for API key if configured (with integrated reCAPTCHA)
         .option_layer(
-            (get_value_by_priority("KORA_API_KEY", config.kora.auth.api_key.clone()))
-                .map(ApiKeyAuthLayer::new),
+            get_value_by_priority("KORA_API_KEY", config.kora.auth.api_key.clone())
+                .map(|key| ApiKeyAuthLayer::new(key).with_recaptcha(recaptcha_config.clone())),
         )
-        // Add authentication layer for HMAC if configured
+        // Add authentication layer for HMAC if configured (with integrated reCAPTCHA)
         .option_layer(
-            (get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone()))
-                .map(|secret| HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)),
-        )
-        // Add reCAPTCHA verification layer if configured
-        .option_layer(
-            (get_value_by_priority(
-                "KORA_RECAPTCHA_SECRET",
-                config.kora.auth.recaptcha_secret.clone(),
-            ))
-            .map(|secret| {
-                RecaptchaAuthLayer::new(secret, config.kora.auth.recaptcha_score_threshold)
-            }),
+            get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone()).map(
+                |secret| {
+                    HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)
+                        .with_recaptcha(recaptcha_config.clone())
+                },
+            ),
         );
 
     // Configure and build the server with HTTP support
