@@ -23,6 +23,61 @@ pub struct BundleProcessor {
 }
 
 impl BundleProcessor {
+    /// Extract transactions at specified indices for processing.
+    /// Returns (filtered_transactions, indices_used).
+    /// If `transactions_to_sign` is None, returns all transactions with all indices.
+    pub fn extract_transactions_to_process(
+        transactions: &[String],
+        transactions_to_sign: Option<&[usize]>,
+    ) -> Result<(Vec<String>, Vec<usize>), KoraError> {
+        let indices: &[usize];
+        let default_indices: Vec<usize>;
+
+        match transactions_to_sign {
+            Some(idx_list) => indices = idx_list,
+            None => {
+                default_indices = (0..transactions.len()).collect();
+                indices = &default_indices;
+            }
+        };
+
+        let filtered: Vec<String> = indices
+            .iter()
+            .map(|&idx| {
+                transactions.get(idx).cloned().ok_or_else(|| {
+                    KoraError::ValidationError(format!(
+                        "transactions_to_sign index {} out of bounds (bundle has {} transactions)",
+                        idx,
+                        transactions.len()
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok((filtered, indices.to_vec()))
+    }
+
+    /// Merge signed transactions back into the original list, preserving order.
+    /// Transactions at indices in `signed_indices` are replaced with corresponding signed versions.
+    pub fn merge_signed_transactions(
+        original_transactions: &[String],
+        signed_transactions: Vec<String>,
+        signed_indices: &[usize],
+    ) -> Vec<String> {
+        let mut signed_iter = signed_transactions.into_iter();
+        let signed_set: std::collections::HashSet<usize> = signed_indices.iter().copied().collect();
+
+        (0..original_transactions.len())
+            .map(|idx| {
+                if signed_set.contains(&idx) {
+                    signed_iter.next().unwrap()
+                } else {
+                    original_transactions[idx].clone()
+                }
+            })
+            .collect()
+    }
+
     pub async fn process_bundle(
         encoded_txs: &[String],
         fee_payer: Pubkey,
@@ -264,5 +319,71 @@ mod tests {
         assert_eq!(processor.total_payment_lamports, 6000);
         assert_eq!(processor.total_solana_estimated_fee, 2500);
         assert!(processor.resolved_transactions.is_empty());
+    }
+
+    #[test]
+    fn test_extract_transactions_none_returns_all() {
+        let txs = vec!["tx0".to_string(), "tx1".to_string(), "tx2".to_string()];
+        let (result, indices) =
+            BundleProcessor::extract_transactions_to_process(&txs, None).unwrap();
+        assert_eq!(result, txs);
+        assert_eq!(indices, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_extract_transactions_specific_indices() {
+        let txs = vec!["tx0".to_string(), "tx1".to_string(), "tx2".to_string()];
+        let (result, indices) =
+            BundleProcessor::extract_transactions_to_process(&txs, Some(&[0, 2])).unwrap();
+        assert_eq!(result, vec!["tx0".to_string(), "tx2".to_string()]);
+        assert_eq!(indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn test_extract_transactions_out_of_bounds() {
+        let txs = vec!["tx0".to_string(), "tx1".to_string()];
+        let result = BundleProcessor::extract_transactions_to_process(&txs, Some(&[0, 5]));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, KoraError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_extract_transactions_empty_indices() {
+        let txs = vec!["tx0".to_string(), "tx1".to_string()];
+        let (result, indices) =
+            BundleProcessor::extract_transactions_to_process(&txs, Some(&[])).unwrap();
+        assert!(result.is_empty());
+        assert!(indices.is_empty());
+    }
+
+    #[test]
+    fn test_merge_signed_transactions_preserves_order() {
+        let original =
+            vec!["tx0".to_string(), "tx1".to_string(), "tx2".to_string(), "tx3".to_string()];
+        let signed = vec!["signed_tx0".to_string(), "signed_tx2".to_string()];
+        let indices = vec![0, 2];
+
+        let result = BundleProcessor::merge_signed_transactions(&original, signed, &indices);
+
+        assert_eq!(
+            result,
+            vec![
+                "signed_tx0".to_string(),
+                "tx1".to_string(),
+                "signed_tx2".to_string(),
+                "tx3".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_merge_signed_transactions_all_signed() {
+        let original = vec!["tx0".to_string(), "tx1".to_string()];
+        let signed = vec!["signed_tx0".to_string(), "signed_tx1".to_string()];
+        let indices = vec![0, 1];
+
+        let result = BundleProcessor::merge_signed_transactions(&original, signed, &indices);
+        assert_eq!(result, vec!["signed_tx0".to_string(), "signed_tx1".to_string()]);
     }
 }

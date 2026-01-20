@@ -29,6 +29,9 @@ pub struct SignAndSendBundleRequest {
     /// Whether to verify signatures during simulation (defaults to false)
     #[serde(default = "default_sig_verify")]
     pub sig_verify: bool,
+    /// Optional indices of transactions to sign (defaults to all if not specified)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transactions_to_sign: Option<Vec<usize>>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -51,14 +54,22 @@ pub async fn sign_and_send_bundle(
         return Err(BundleError::Jito(JitoError::NotEnabled).into());
     }
 
+    // Validate bundle size on ALL transactions first
     BundleValidator::validate_jito_bundle_size(&request.transactions)?;
+
+    // Extract only the transactions we need to process
+    let (transactions_to_process, signed_indices) =
+        BundleProcessor::extract_transactions_to_process(
+            &request.transactions,
+            request.transactions_to_sign.as_deref(),
+        )?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
     let processor = BundleProcessor::process_bundle(
-        &request.transactions,
+        &transactions_to_process,
         fee_payer,
         &payment_destination,
         config,
@@ -73,11 +84,18 @@ pub async fn sign_and_send_bundle(
     let jito_client = JitoBundleClient::new(&config.kora.bundle.jito);
     let bundle_uuid = jito_client.send_bundle(&signed_resolved).await?;
 
-    // Encode for response
-    let signed_transactions = signed_resolved
+    // Encode signed transactions
+    let encoded_signed: Vec<String> = signed_resolved
         .iter()
         .map(|r| TransactionUtil::encode_versioned_transaction(&r.transaction))
         .collect::<Result<Vec<_>, _>>()?;
+
+    // Merge signed transactions back into original positions
+    let signed_transactions = BundleProcessor::merge_signed_transactions(
+        &request.transactions,
+        encoded_signed,
+        &signed_indices,
+    );
 
     Ok(SignAndSendBundleResponse {
         signed_transactions,
@@ -101,8 +119,12 @@ mod tests {
 
         let rpc_client = Arc::new(RpcMockBuilder::new().build());
 
-        let request =
-            SignAndSendBundleRequest { transactions: vec![], signer_key: None, sig_verify: true };
+        let request = SignAndSendBundleRequest {
+            transactions: vec![],
+            signer_key: None,
+            sig_verify: true,
+            transactions_to_sign: None,
+        };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
 
@@ -122,6 +144,7 @@ mod tests {
             transactions: vec!["some_tx".to_string()],
             signer_key: None,
             sig_verify: true,
+            transactions_to_sign: None,
         };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
@@ -145,6 +168,7 @@ mod tests {
             transactions: vec!["tx".to_string(); 6],
             signer_key: None,
             sig_verify: true,
+            transactions_to_sign: None,
         };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
@@ -168,6 +192,7 @@ mod tests {
             transactions: vec!["some_tx".to_string()],
             signer_key: Some("invalid_pubkey".to_string()),
             sig_verify: true,
+            transactions_to_sign: None,
         };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
@@ -189,6 +214,23 @@ mod tests {
         assert_eq!(request.transactions.len(), 3);
         assert_eq!(request.signer_key, Some("11111111111111111111111111111111".to_string()));
         assert!(!request.sig_verify);
+        assert!(request.transactions_to_sign.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_sign_and_send_bundle_request_deserialization_with_transactions_to_sign() {
+        let json = r#"{
+            "transactions": ["tx1", "tx2", "tx3"],
+            "signer_key": "11111111111111111111111111111111",
+            "sig_verify": false,
+            "transactions_to_sign": [1, 2]
+        }"#;
+        let request: SignAndSendBundleRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(request.transactions.len(), 3);
+        assert_eq!(request.signer_key, Some("11111111111111111111111111111111".to_string()));
+        assert!(!request.sig_verify);
+        assert_eq!(request.transactions_to_sign, Some(vec![1, 2]));
     }
 
     #[tokio::test]
