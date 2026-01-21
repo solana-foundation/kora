@@ -305,14 +305,13 @@ impl ConfigValidator {
             warnings.push("Using Mock price source - not suitable for production".to_string());
         }
 
-        if config.validation.allow_durable_transactions
-            && matches!(config.validation.price.model, PriceModel::Margin { .. })
-        {
+        if config.validation.allow_durable_transactions {
             warnings.push(
-                "⚠️  SECURITY: allow_durable_transactions is enabled with dynamic pricing. \
-                Risk: Users can hold signed transactions indefinitely and execute when token prices \
-                drop, causing Kora to receive less value than intended. \
-                Consider using fixed pricing or disabling durable transactions."
+                "⚠️  SECURITY: allow_durable_transactions is enabled. \
+                Risk: Users can hold signed transactions indefinitely and execute them much later. \
+                Token values may change, your fee payer may run low on funds, or you may no longer \
+                want to subsidize these transactions. \
+                Consider disabling durable transactions unless specifically required."
                     .to_string(),
             );
         }
@@ -1741,5 +1740,78 @@ mod tests {
         .await;
 
         assert_eq!(warnings.len(), 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_durable_transactions_warning_when_enabled() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: true, // Enabled - should warn
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        assert!(warnings.iter().any(|w| w.contains("allow_durable_transactions is enabled")));
+        assert!(warnings.iter().any(|w| w.contains("hold signed transactions indefinitely")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_durable_transactions_no_warning_when_disabled() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false, // Disabled - should not warn
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        assert!(!warnings.iter().any(|w| w.contains("allow_durable_transactions")));
     }
 }

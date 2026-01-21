@@ -10,12 +10,11 @@ async fn test_durable_transaction_rejected() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
     let rpc_client = ctx.rpc_client();
 
-    let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
-    // Create a real nonce account on-chain
+    // User creates their own nonce account
     let nonce_account = Keypair::new();
     let nonce_authority = sender.pubkey();
 
@@ -23,7 +22,7 @@ async fn test_durable_transaction_rejected() {
     let rent =
         rpc_client.get_minimum_balance_for_rent_exemption(80).await.expect("Failed to get rent");
 
-    // Create and initialize nonce account
+    // User creates and pays for their own nonce account
     let blockhash = rpc_client
         .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
         .await
@@ -31,21 +30,22 @@ async fn test_durable_transaction_rejected() {
         .0;
 
     let create_nonce_ix =
-        create_nonce_account(&fee_payer.pubkey(), &nonce_account.pubkey(), &nonce_authority, rent);
+        create_nonce_account(&sender.pubkey(), &nonce_account.pubkey(), &nonce_authority, rent);
 
     let create_nonce_tx = Transaction::new_signed_with_payer(
         &create_nonce_ix,
-        Some(&fee_payer.pubkey()),
-        &[&fee_payer, &nonce_account],
+        Some(&sender.pubkey()),
+        &[&sender, &nonce_account],
         blockhash,
     );
 
+    // Send and wait for confirmation so the nonce account is fully initialized
     rpc_client
         .send_and_confirm_transaction(&create_nonce_tx)
         .await
         .expect("Failed to create nonce account");
 
-    // Create a durable transaction (AdvanceNonceAccount as first instruction)
+    // Create a durable transaction
     let durable_tx = ctx
         .transaction_builder()
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
@@ -58,7 +58,7 @@ async fn test_durable_transaction_rejected() {
         )
         .with_transfer(&sender.pubkey(), &recipient, 10)
         .with_advance_nonce(&nonce_account.pubkey(), &nonce_authority)
-        .build()
+        .build_with_nonce(&nonce_account.pubkey())
         .await
         .expect("Failed to create durable transaction");
 
