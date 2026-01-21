@@ -1,3 +1,11 @@
+## 2.2.0-beta.3 - 2026-01-21
+
+
+### Features
+
+- add transactions_to_sign parameter to bundle endpoints (#302)
+- implement granular usage tracking with rule-based limits (#300)
+
 ## 2.2.0-beta.2 - 2026-01-12
 
 
