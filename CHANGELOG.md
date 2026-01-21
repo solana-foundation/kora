@@ -1,3 +1,17 @@
+## 2.0.3 - 2026-01-21
+
+
+### Hotfix
+
+- (PRO-747) Improved Durable Nonce handling & security (#303)
+
+## 2.0.2 - 2026-01-12
+
+
+### Hotfix
+
+- (PRO-639) Fix big transaction causing error when using v0 transaction (#297)
+
 ## 2.0.2 - 2026-01-12
 
 
