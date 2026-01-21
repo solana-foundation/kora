@@ -1,5 +1,5 @@
 use crate::{
-    bundle::{BundleError, BundleProcessor, JitoError},
+    bundle::{BundleError, BundleProcessingMode, BundleProcessor, JitoError},
     rpc_server::middleware_utils::default_sig_verify,
     transaction::TransactionUtil,
     validator::bundle_validator::BundleValidator,
@@ -29,6 +29,9 @@ pub struct SignBundleRequest {
     /// Whether to verify signatures during simulation (defaults to true)
     #[serde(default = "default_sig_verify")]
     pub sig_verify: bool,
+    /// Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
     /// Optional indices of transactions to sign (defaults to all if not specified)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sign_only_indices: Option<Vec<usize>>,
@@ -73,6 +76,7 @@ pub async fn sign_bundle(
         config,
         rpc_client,
         request.sig_verify,
+        BundleProcessingMode::CheckUsage(request.user_id.as_deref()),
     )
     .await?;
 
@@ -120,6 +124,7 @@ mod tests {
             transactions: vec![],
             signer_key: None,
             sig_verify: true,
+            user_id: None,
             sign_only_indices: None,
         };
 
@@ -141,6 +146,7 @@ mod tests {
             transactions: vec!["some_tx".to_string()],
             signer_key: None,
             sig_verify: true,
+            user_id: None,
             sign_only_indices: None,
         };
 
@@ -165,6 +171,7 @@ mod tests {
             transactions: vec!["tx".to_string(); 6],
             signer_key: None,
             sig_verify: true,
+            user_id: None,
             sign_only_indices: None,
         };
 
@@ -189,6 +196,7 @@ mod tests {
             transactions: vec!["some_tx".to_string()],
             signer_key: Some("invalid_pubkey".to_string()),
             sig_verify: true,
+            user_id: None,
             sign_only_indices: None,
         };
 
@@ -237,6 +245,7 @@ mod tests {
             transactions,
             signer_key: Some(signer_pubkey.to_string()),
             sig_verify: true,
+            user_id: None,
             sign_only_indices: None,
         };
 
@@ -281,6 +290,7 @@ mod tests {
             transactions: vec![encoded_tx],
             signer_key: Some(signer_pubkey.to_string()),
             sig_verify: true,
+            user_id: None,
             sign_only_indices: None,
         };
 
@@ -307,13 +317,15 @@ mod tests {
         let json = r#"{
             "transactions": ["tx1", "tx2"],
             "signer_key": "11111111111111111111111111111111",
-            "sig_verify": false
+            "sig_verify": false,
+            "user_id": "test-user-456"
         }"#;
         let request: SignBundleRequest = serde_json::from_str(json).unwrap();
 
         assert_eq!(request.transactions.len(), 2);
         assert_eq!(request.signer_key, Some("11111111111111111111111111111111".to_string()));
         assert!(!request.sig_verify);
+        assert_eq!(request.user_id, Some("test-user-456".to_string()));
         assert!(request.sign_only_indices.is_none());
     }
 

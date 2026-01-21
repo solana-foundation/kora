@@ -1,5 +1,5 @@
 use crate::{
-    bundle::{BundleError, BundleProcessor, JitoError},
+    bundle::{BundleError, BundleProcessingMode, BundleProcessor, JitoError},
     error::KoraError,
     fee::fee::FeeConfigUtil,
     rpc_server::middleware_utils::default_sig_verify,
@@ -76,6 +76,7 @@ pub async fn estimate_bundle_fee(
         config,
         rpc_client,
         request.sig_verify,
+        BundleProcessingMode::SkipUsage,
     )
     .await?;
 

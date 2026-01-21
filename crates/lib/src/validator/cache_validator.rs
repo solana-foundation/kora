@@ -38,17 +38,11 @@ impl CacheValidator {
         // Check if cache_url is provided when enabled
         match &usage_config.cache_url {
             None => {
-                if !usage_config.fallback_if_unavailable {
-                    errors.push(
-                        "Usage limiting enabled without cache_url and fallback disabled - service will fail"
-                            .to_string(),
-                    );
-                } else {
-                    warnings.push(
-                        "Usage limiting enabled without cache_url - fallback mode will disable limits"
-                            .to_string(),
-                    );
-                }
+                // In-memory store will be used - warn about non-persistence
+                warnings.push(
+                    "Usage limiting enabled without cache_url - using in-memory store (not persistent across restarts)"
+                        .to_string(),
+                );
             }
             Some(cache_url) => {
                 // Validate cache_url format
@@ -71,20 +65,17 @@ impl CacheValidator {
         // Test Redis connection
         if let Some(cache_url) = &usage_config.cache_url {
             if cache_url.starts_with("redis://") || cache_url.starts_with("rediss://") {
-                match Self::test_redis_connection(cache_url).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        if usage_config.fallback_if_unavailable {
-                            warnings.push(format!(
-                                "Usage limit Redis connection failed (fallback enabled): {e}"
-                            ));
-                        } else {
-                            errors.push(format!(
-                                "Usage limit Redis connection failed (fallback disabled): {e}"
-                            ));
-                        }
+                if let Err(e) = Self::test_redis_connection(cache_url).await {
+                    if usage_config.fallback_if_unavailable {
+                        warnings.push(format!(
+                            "Usage limit Redis connection failed (fallback enabled): {e}"
+                        ));
+                    } else {
+                        errors.push(format!(
+                            "Usage limit Redis connection failed (fallback disabled): {e}"
+                        ));
                     }
-                };
+                }
             }
         }
 
@@ -121,9 +112,9 @@ mod tests {
         let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
         assert!(errors.is_empty());
-        assert!(warnings.iter().any(|w| w.contains(
-            "Usage limiting enabled without cache_url - fallback mode will disable limits"
-        )));
+        assert!(warnings.iter().any(
+            |w| w.contains("Usage limiting enabled without cache_url - using in-memory store")
+        ));
     }
 
     #[tokio::test]
@@ -137,10 +128,12 @@ mod tests {
 
         let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
-        // Should error when no cache_url and fallback disabled
-        assert!(errors.iter().any(|e| e.contains(
-            "Usage limiting enabled without cache_url and fallback disabled - service will fail"
-        )));
+        // In-memory store works - just warn about non-persistence
+        assert!(errors.is_empty());
+        assert!(warnings.iter().any(
+            |w| w.contains("Usage limiting enabled without cache_url - using in-memory store")
+        ));
+        // Fallback warning still applies
         assert!(warnings.iter().any(|w| w.contains(
             "Usage limit fallback disabled - service will fail if cache becomes unavailable"
         )));

@@ -31,6 +31,8 @@ export interface SignTransactionRequest {
     signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled) */
+    user_id?: string;
 }
 
 /**
@@ -43,6 +45,8 @@ export interface SignAndSendTransactionRequest {
     signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled) */
+    user_id?: string;
 }
 
 /**
@@ -55,6 +59,8 @@ export interface SignBundleRequest {
     signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled) */
+    user_id?: string;
     /** Optional indices of transactions to sign (defaults to all if not specified) */
     sign_only_indices?: number[];
 }
@@ -69,6 +75,8 @@ export interface SignAndSendBundleRequest {
     signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled) */
+    user_id?: string;
     /** Optional indices of transactions to sign (defaults to all if not specified) */
     sign_only_indices?: number[];
 }
