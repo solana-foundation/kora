@@ -12,13 +12,6 @@
 
 - (PRO-639) Fix big transaction causing error when using v0 transaction (#297)
 
-## 2.0.2 - 2026-01-12
-
-
-### Hotfix
-
-- (PRO-639) Fix big transaction causing error when using v0 transaction (#297)
-
 ## 2.0.1 - 2025-11-24
 
 
@@ -135,4 +128,3 @@
 - remove net-ts SDK and related scripts (#145)
 
 - CI workflows and add reusable GitHub Actions
-
