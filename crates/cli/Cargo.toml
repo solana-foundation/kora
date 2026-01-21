@@ -2,21 +2,36 @@
 name = "kora-cli"
 version = "2.0.3"
 edition = "2021"
-description = "CLI for Kora gasless relayer"
+description = "CLI for Kora gasless relayer - High Performance Version"
 license = "MIT"
 readme = "../../README.md"
+authors = ["Kora Dev Team"]
+categories = ["command-line-utilities", "cryptography"]
+repository = "https://github.com/kora-relayer/kora"
+
+# RELEASE PROFILING: Binary boyutunu küçültür, yürütme hızını artırır.
+[profile.release]
+opt-level = 'z'      # Boyut öncelikli optimizasyon (CLI'lar için ideal)
+lto = true           # Link Time Optimization (Gereksiz kodları temizler)
+codegen-units = 1    # Daha yavaş derleme, daha agresif optimizasyon
+panic = 'abort'      # Hata anında stack'i temizlemeden dur, boyutu %20-30 küçültür
+strip = true         # Sembolleri kaldır (Binary güvenliğini artırır, boyutu azaltır)
 
 [[bin]]
 name = "kora"
 path = "src/main.rs"
 
 [features]
+default = []
 docs = ["kora-lib/docs", "dep:utoipa"]
 
 [dependencies]
+# Yerel bağımlılık
 kora-lib = { path = "../lib", version = "2.0.3" }
-clap = { workspace = true }
-tokio = { workspace = true }
+
+# Workspace üzerinden gelen bağımlılıklar
+clap = { workspace = true, features = ["derive", "env"] } # CLI argüman yönetimi
+tokio = { workspace = true }                             # Async çalışma zamanı
 env_logger = { workspace = true }
 solana-client = { workspace = true }
 dotenv = { workspace = true }
@@ -25,3 +40,7 @@ utoipa = { workspace = true, optional = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 log = { workspace = true }
+
+# CLI Güvenliği ve Kullanıcı Deneyimi için Ekstra Öneriler (Gerekliyse Workspace'e ekle)
+# dialoguer = "0.10"  # İnteraktif inputlar için
+# indicatif = "0.17" # Progress bar desteği için
