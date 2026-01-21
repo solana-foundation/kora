@@ -1921,7 +1921,8 @@ mod tests {
         setup_default_config();
         let rpc_client = RpcMockBuilder::new().build();
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         // Transaction with AdvanceNonceAccount (authority is NOT fee payer)
         let instruction = advance_nonce_account(&nonce_account, &nonce_authority);
@@ -1929,7 +1930,7 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        let result = validator.validate_transaction(&mut transaction, &rpc_client).await;
+        let result = validator.validate_transaction(&config, &mut transaction, &rpc_client).await;
         assert!(result.is_err());
         if let Err(KoraError::InvalidTransaction(msg)) = result {
             assert!(msg.contains("Durable transactions"));
@@ -1949,17 +1950,18 @@ mod tests {
         let nonce_authority = Pubkey::new_unique(); // Different from fee payer
 
         // Enable durable transactions
-        let config = ConfigMockBuilder::new()
+        let mock_config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default())
             .with_allow_durable_transactions(true)
             .build();
-        update_config(config).unwrap();
+        update_config(mock_config).unwrap();
 
         let rpc_client = RpcMockBuilder::new().build();
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         // Transaction with AdvanceNonceAccount (authority is NOT fee payer)
         let instruction = advance_nonce_account(&nonce_account, &nonce_authority);
@@ -1968,7 +1970,10 @@ mod tests {
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should pass because durable transactions are allowed
-        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
+        assert!(validator
+            .validate_transaction(&config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -1982,7 +1987,8 @@ mod tests {
         setup_default_config();
         let rpc_client = RpcMockBuilder::new().build();
 
-        let validator = TransactionValidator::new(fee_payer).unwrap();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         // Regular transfer (no nonce instruction)
         let instruction = transfer(&sender, &recipient, 1000);
@@ -1991,6 +1997,9 @@ mod tests {
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should pass - no AdvanceNonceAccount instruction
-        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
+        assert!(validator
+            .validate_transaction(&config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
     }
 }
