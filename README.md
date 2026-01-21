@@ -1,6 +1,6 @@
 <div align="center">
   <br />
-  <img src="./kora.svg" alt="Kora" width="140" />
+  <img src="https://github.com/solana-foundation/kora/blob/main/kora.svg" alt="Kora" width="140" />
   <br />
   <br />
   
@@ -19,7 +19,7 @@
   <br />
 </div>
 
-> **Branch Update (Jan 6, 2025):** We migrated pre-release features to [`release/2.2.0`](https://github.com/solana-foundation/kora/tree/release/2.2.0). The `main` branch now only contains audited releases plus minor hotfixes/docs. See [v2.0.1](https://github.com/solana-foundation/kora/releases/tag/v2.0.1) for the latest stable release.
+> **Branch Update (Jan 6, 2025):** We migrated pre-release features to [`release/2.2.0`](https://github.com/solana-foundation/kora/tree/release/2.2.0). The `main` branch now only contains audited releases plus minor hotfixes/docs. See [v2.0.3](https://github.com/solana-foundation/kora/releases/tag/v2.0.3) for the latest stable release.
 
 **Kora is your Solana signing infrastructure.** Enable gasless transactions where users pay fees in any token—USDC, BONK, or your app's native token—or handle any transaction signing that requires a trusted signer.
 
