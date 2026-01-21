@@ -26,6 +26,7 @@ get_payer_signer = true
 max_allowed_lamports = 1000000
 max_signatures = 10
 price_source = "Mock"
+allow_durable_transactions = false  # Block nonce-based transactions to prevent price arbitrage
 allowed_programs = [
     "11111111111111111111111111111111",            # System Program
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # Token Program

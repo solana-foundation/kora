@@ -159,6 +159,7 @@ Kora has been audited by [Runtime Verification](https://runtimeverification.com/
 
 - **Questions?** Ask on [Solana Stack Exchange](https://solana.stackexchange.com/) (use the `kora` tag)
 - **Issues?** Report on [GitHub Issues](https://github.com/solana-foundation/kora/issues)
+- **Operators:** Running Kora in production? Reach out to [@a_milz](https://twitter.com/a_milz) or [@dev_jodee](https://twitter.com/dev_jodee) on Twitter to join our operator Slack channel for updates and support
 
 ## Other Resources
 

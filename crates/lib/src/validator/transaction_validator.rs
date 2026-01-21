@@ -25,6 +25,7 @@ pub struct TransactionValidator {
     disallowed_accounts: Vec<Pubkey>,
     _price_source: PriceSource,
     fee_payer_policy: FeePayerPolicy,
+    allow_durable_transactions: bool,
 }
 
 impl TransactionValidator {
@@ -69,6 +70,7 @@ impl TransactionValidator {
                     ))
                 })?,
             fee_payer_policy: config.fee_payer_policy.clone(),
+            allow_durable_transactions: config.allow_durable_transactions,
         })
     }
 
@@ -165,6 +167,16 @@ impl TransactionValidator {
         transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
         let system_instructions = transaction_resolved.get_or_parse_system_instructions()?;
+
+        // Check for durable transactions (nonce-based) - reject if not allowed
+        if !self.allow_durable_transactions
+            && system_instructions
+                .contains_key(&ParsedSystemInstructionType::SystemAdvanceNonceAccount)
+        {
+            return Err(KoraError::InvalidTransaction(
+                "Durable transactions (nonce-based) are not allowed".to_string(),
+            ));
+        }
 
         // Validate system program instructions
         validate_system!(self, system_instructions, SystemTransfer,
@@ -1481,11 +1493,18 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let nonce_account = Pubkey::new_unique();
 
-        // Test with allow_advance = true
+        // Test with allow_advance = true (must also enable durable transactions)
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_advance = true;
-        setup_config_with_policy(policy);
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .with_allow_durable_transactions(true)
+            .build();
+        update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = advance_nonce_account(&nonce_account, &fee_payer);
@@ -1494,11 +1513,18 @@ mod tests {
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
-        // Test with allow_advance = false
+        // Test with allow_advance = false (durable txs enabled but policy blocks it)
         let rpc_client = RpcMockBuilder::new().build();
         let mut policy = FeePayerPolicy::default();
         policy.system.nonce.allow_advance = false;
-        setup_config_with_policy(policy);
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .with_allow_durable_transactions(true)
+            .build();
+        update_config(config).unwrap();
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
         let instruction = advance_nonce_account(&nonce_account, &fee_payer);
@@ -1681,5 +1707,91 @@ mod tests {
         let result = TransactionValidator::validate_strict_pricing_with_fee(&fee_calc);
 
         assert!(result.is_ok(), "Should pass when total equals fixed price");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_durable_transaction_rejected_by_default() {
+        use solana_system_interface::instruction::advance_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let nonce_authority = Pubkey::new_unique(); // Different from fee payer
+
+        // Default config has allow_durable_transactions = false
+        setup_default_config();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+
+        // Transaction with AdvanceNonceAccount (authority is NOT fee payer)
+        let instruction = advance_nonce_account(&nonce_account, &nonce_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(&mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Durable transactions"));
+            assert!(msg.contains("not allowed"));
+        } else {
+            panic!("Expected InvalidTransaction error");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_durable_transaction_allowed_when_enabled() {
+        use solana_system_interface::instruction::advance_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let nonce_authority = Pubkey::new_unique(); // Different from fee payer
+
+        // Enable durable transactions
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .with_allow_durable_transactions(true)
+            .build();
+        update_config(config).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+
+        // Transaction with AdvanceNonceAccount (authority is NOT fee payer)
+        let instruction = advance_nonce_account(&nonce_account, &nonce_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        // Should pass because durable transactions are allowed
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_non_durable_transaction_passes() {
+        let fee_payer = Pubkey::new_unique();
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        // Default config has allow_durable_transactions = false
+        setup_default_config();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let validator = TransactionValidator::new(fee_payer).unwrap();
+
+        // Regular transfer (no nonce instruction)
+        let instruction = transfer(&sender, &recipient, 1000);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        // Should pass - no AdvanceNonceAccount instruction
+        assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
     }
 }

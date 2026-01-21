@@ -124,6 +124,11 @@ pub struct ValidationConfig {
     pub price: PriceConfig,
     #[serde(default)]
     pub token_2022: Token2022Config,
+    /// Allow durable transactions (nonce-based). Default: false.
+    /// When false, rejects any transaction containing AdvanceNonceAccount instruction.
+    /// WARNING: Enabling with dynamic pricing creates price arbitrage risk.
+    #[serde(default)]
+    pub allow_durable_transactions: bool,
 }
 
 impl ValidationConfig {

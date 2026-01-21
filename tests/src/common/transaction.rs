@@ -100,6 +100,17 @@ impl TransactionBuilder {
         self
     }
 
+    /// Add an advance nonce account instruction (makes this a durable transaction)
+    pub fn with_advance_nonce(mut self, nonce_account: &Pubkey, nonce_authority: &Pubkey) -> Self {
+        let instruction = solana_system_interface::instruction::advance_nonce_account(
+            nonce_account,
+            nonce_authority,
+        );
+        // Nonce advance must be the first instruction
+        self.instructions.insert(0, instruction);
+        self
+    }
+
     /// Add a system assign instruction
     pub fn with_system_assign(mut self, account: &Pubkey, owner: &Pubkey) -> Self {
         let instruction = solana_system_interface::instruction::assign(account, owner);
