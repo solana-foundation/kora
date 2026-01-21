@@ -144,7 +144,8 @@ impl VersionedTransactionResolved {
                     commitment: Some(rpc_client.commitment()),
                     sig_verify,
                     inner_instructions: true,
-                    replace_recent_blockhash: true,
+                    // replace_recent_blockhash and sig_verify are mutually exclusive
+                    replace_recent_blockhash: !sig_verify,
                     encoding: Some(UiTransactionEncoding::Base64),
                     accounts: None,
                     min_context_slot: None,
