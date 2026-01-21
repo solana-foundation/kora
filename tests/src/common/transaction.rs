@@ -100,17 +100,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add an advance nonce account instruction (makes this a durable transaction)
-    pub fn with_advance_nonce(mut self, nonce_account: &Pubkey, nonce_authority: &Pubkey) -> Self {
-        let instruction = solana_system_interface::instruction::advance_nonce_account(
-            nonce_account,
-            nonce_authority,
-        );
-        // Nonce advance must be the first instruction
-        self.instructions.insert(0, instruction);
-        self
-    }
-
     /// Add a system assign instruction
     pub fn with_system_assign(mut self, account: &Pubkey, owner: &Pubkey) -> Self {
         let instruction = solana_system_interface::instruction::assign(account, owner);
@@ -632,7 +621,7 @@ impl TransactionBuilder {
         Ok(STANDARD.encode(serialized))
     }
 
-    /// Build a durable transaction using a nonce account's stored blockhash
+    /// Build a durable transaction using a nonce account's stored blockhash.
     pub async fn build_with_nonce(self, nonce_pubkey: &Pubkey) -> Result<String> {
         let rpc_client =
             self.rpc_client.ok_or_else(|| anyhow::anyhow!("RPC client is required"))?;
@@ -640,9 +629,12 @@ impl TransactionBuilder {
         let fee_payer = self.fee_payer.ok_or_else(|| anyhow::anyhow!("Fee payer is required"))?;
 
         // Fetch the nonce account and extract the stored blockhash (durable nonce)
+        // Use Versions because nonce account data has a version prefix
         let nonce_account = rpc_client.get_account(nonce_pubkey).await?;
-        let nonce_state: solana_nonce::state::State = bincode::deserialize(&nonce_account.data)?;
-        let nonce_data = match nonce_state {
+        let nonce_versions: solana_nonce::versions::Versions =
+            bincode::deserialize(&nonce_account.data)?;
+
+        let nonce_data = match nonce_versions.state() {
             solana_nonce::state::State::Initialized(data) => data,
             solana_nonce::state::State::Uninitialized => {
                 return Err(anyhow::anyhow!("Nonce account is not initialized"));
@@ -651,39 +643,22 @@ impl TransactionBuilder {
         let durable_nonce = nonce_data.blockhash();
 
         let message = match self.version {
-            TransactionVersion::Legacy => VersionedMessage::Legacy(Message::new_with_blockhash(
-                &self.instructions,
-                Some(&fee_payer),
-                &durable_nonce,
-            )),
             TransactionVersion::V0 => {
-                let v0_message = V0Message::try_compile(
-                    &fee_payer,
-                    &self.instructions,
-                    &[], // No lookup tables
-                    durable_nonce,
-                )?;
+                let mut instructions = self.instructions;
+                let advance_ix = solana_system_interface::instruction::advance_nonce_account(
+                    nonce_pubkey,
+                    &nonce_data.authority,
+                );
+                instructions.insert(0, advance_ix);
+
+                let v0_message =
+                    V0Message::try_compile(&fee_payer, &instructions, &[], durable_nonce)?;
                 VersionedMessage::V0(v0_message)
             }
-            TransactionVersion::V0WithLookup(lookup_table_keys) => {
-                // Fetch and deserialize lookup tables
-                let mut lookup_table_accounts = Vec::new();
-                for key in lookup_table_keys {
-                    let account = rpc_client.get_account(&key).await?;
-                    let lookup_table = AddressLookupTable::deserialize(&account.data)?;
-                    lookup_table_accounts.push(AddressLookupTableAccount {
-                        key,
-                        addresses: lookup_table.addresses.to_vec(),
-                    });
-                }
-
-                let v0_message = V0Message::try_compile(
-                    &fee_payer,
-                    &self.instructions,
-                    &lookup_table_accounts,
-                    durable_nonce,
-                )?;
-                VersionedMessage::V0(v0_message)
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Durable nonce transactions are only supported for V0 transactions."
+                ));
             }
         };
 

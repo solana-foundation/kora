@@ -145,7 +145,7 @@ impl VersionedTransactionResolved {
                     sig_verify,
                     inner_instructions: true,
                     // replace_recent_blockhash and sig_verify are mutually exclusive
-                    replace_recent_blockhash: !sig_verify,
+                    replace_recent_blockhash: false,
                     encoding: Some(UiTransactionEncoding::Base64),
                     accounts: None,
                     min_context_slot: None,
