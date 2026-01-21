@@ -667,13 +667,13 @@ async fn test_sign_bundle_insufficient_payment_error() {
 }
 
 // **************************************************************************************
-// Partial signing tests (transactions_to_sign parameter)
+// Partial signing tests (sign_only_indices parameter)
 // **************************************************************************************
 
-/// Test processing only specific transactions in a bundle using transactions_to_sign parameter
+/// Test processing only specific transactions in a bundle using sign_only_indices parameter
 /// Response should contain ALL transactions in original order, with only specified ones signed.
 #[tokio::test]
-async fn test_sign_bundle_with_transactions_to_sign_filter() {
+async fn test_sign_bundle_with_sign_only_indices_filter() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
@@ -702,13 +702,13 @@ async fn test_sign_bundle_with_transactions_to_sign_filter() {
     }
 
     // Process only transactions at indices 0 and 2
-    // Pass transactions_to_sign as positional params: [transactions, signer_key, sig_verify, transactions_to_sign]
-    let transactions_to_sign: Vec<usize> = vec![0, 2];
+    // Pass sign_only_indices as positional params: [transactions, signer_key, sig_verify, sign_only_indices]
+    let sign_only_indices: Vec<usize> = vec![0, 2];
     let original_tx1 = transactions[1].clone();
     let response: serde_json::Value = ctx
         .rpc_call(
             "signBundle",
-            rpc_params![transactions, Option::<String>::None, false, transactions_to_sign],
+            rpc_params![transactions, Option::<String>::None, false, sign_only_indices],
         )
         .await
         .expect("Failed to sign bundle");
@@ -734,9 +734,9 @@ async fn test_sign_bundle_with_transactions_to_sign_filter() {
     );
 }
 
-/// Test that out-of-bounds transactions_to_sign index fails validation
+/// Test that out-of-bounds sign_only_indices index fails validation
 #[tokio::test]
-async fn test_sign_bundle_out_of_bounds_transactions_to_sign_fails() {
+async fn test_sign_bundle_out_of_bounds_sign_only_indices_fails() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
@@ -760,13 +760,13 @@ async fn test_sign_bundle_out_of_bounds_transactions_to_sign_fails() {
         .expect("Failed to create transaction");
 
     // Bundle has 1 transaction, try to sign index 5
-    // Pass transactions_to_sign as positional params: [transactions, signer_key, sig_verify, transactions_to_sign]
+    // Pass sign_only_indices as positional params: [transactions, signer_key, sig_verify, sign_only_indices]
     let transactions = vec![tx];
-    let transactions_to_sign: Vec<usize> = vec![5];
+    let sign_only_indices: Vec<usize> = vec![5];
     let result: Result<serde_json::Value, _> = ctx
         .rpc_call(
             "signBundle",
-            rpc_params![transactions, Option::<String>::None, false, transactions_to_sign],
+            rpc_params![transactions, Option::<String>::None, false, sign_only_indices],
         )
         .await;
 

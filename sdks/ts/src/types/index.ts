@@ -55,6 +55,8 @@ export interface SignBundleRequest {
     signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional indices of transactions to sign (defaults to all if not specified) */
+    sign_only_indices?: number[];
 }
 
 /**
@@ -67,6 +69,8 @@ export interface SignAndSendBundleRequest {
     signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional indices of transactions to sign (defaults to all if not specified) */
+    sign_only_indices?: number[];
 }
 
 /**
@@ -95,6 +99,8 @@ export interface EstimateBundleFeeRequest {
     signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional indices of transactions to estimate fees for (defaults to all if not specified) */
+    sign_only_indices?: number[];
 }
 
 /**

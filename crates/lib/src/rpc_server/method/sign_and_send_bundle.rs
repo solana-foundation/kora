@@ -31,7 +31,7 @@ pub struct SignAndSendBundleRequest {
     pub sig_verify: bool,
     /// Optional indices of transactions to sign (defaults to all if not specified)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transactions_to_sign: Option<Vec<usize>>,
+    pub sign_only_indices: Option<Vec<usize>>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -58,10 +58,10 @@ pub async fn sign_and_send_bundle(
     BundleValidator::validate_jito_bundle_size(&request.transactions)?;
 
     // Extract only the transactions we need to process
-    let (transactions_to_process, signed_indices) =
+    let (transactions_to_process, index_to_position) =
         BundleProcessor::extract_transactions_to_process(
             &request.transactions,
-            request.transactions_to_sign.as_deref(),
+            request.sign_only_indices,
         )?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
@@ -94,7 +94,7 @@ pub async fn sign_and_send_bundle(
     let signed_transactions = BundleProcessor::merge_signed_transactions(
         &request.transactions,
         encoded_signed,
-        &signed_indices,
+        &index_to_position,
     );
 
     Ok(SignAndSendBundleResponse {
@@ -123,7 +123,7 @@ mod tests {
             transactions: vec![],
             signer_key: None,
             sig_verify: true,
-            transactions_to_sign: None,
+            sign_only_indices: None,
         };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
@@ -144,7 +144,7 @@ mod tests {
             transactions: vec!["some_tx".to_string()],
             signer_key: None,
             sig_verify: true,
-            transactions_to_sign: None,
+            sign_only_indices: None,
         };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
@@ -168,7 +168,7 @@ mod tests {
             transactions: vec!["tx".to_string(); 6],
             signer_key: None,
             sig_verify: true,
-            transactions_to_sign: None,
+            sign_only_indices: None,
         };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
@@ -192,7 +192,7 @@ mod tests {
             transactions: vec!["some_tx".to_string()],
             signer_key: Some("invalid_pubkey".to_string()),
             sig_verify: true,
-            transactions_to_sign: None,
+            sign_only_indices: None,
         };
 
         let result = sign_and_send_bundle(&rpc_client, request).await;
@@ -214,23 +214,23 @@ mod tests {
         assert_eq!(request.transactions.len(), 3);
         assert_eq!(request.signer_key, Some("11111111111111111111111111111111".to_string()));
         assert!(!request.sig_verify);
-        assert!(request.transactions_to_sign.is_none());
+        assert!(request.sign_only_indices.is_none());
     }
 
     #[tokio::test]
-    async fn test_sign_and_send_bundle_request_deserialization_with_transactions_to_sign() {
+    async fn test_sign_and_send_bundle_request_deserialization_with_sign_only_indices() {
         let json = r#"{
             "transactions": ["tx1", "tx2", "tx3"],
             "signer_key": "11111111111111111111111111111111",
             "sig_verify": false,
-            "transactions_to_sign": [1, 2]
+            "sign_only_indices": [1, 2]
         }"#;
         let request: SignAndSendBundleRequest = serde_json::from_str(json).unwrap();
 
         assert_eq!(request.transactions.len(), 3);
         assert_eq!(request.signer_key, Some("11111111111111111111111111111111".to_string()));
         assert!(!request.sig_verify);
-        assert_eq!(request.transactions_to_sign, Some(vec![1, 2]));
+        assert_eq!(request.sign_only_indices, Some(vec![1, 2]));
     }
 
     #[tokio::test]

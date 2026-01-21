@@ -281,6 +281,7 @@ export class KoraClient {
      * @param request.transactions - Array of base64-encoded transactions to sign
      * @param request.signer_key - Optional signer address for the transactions
      * @param request.sig_verify - Optional signature verification (defaults to false)
+     * @param request.sign_only_indices - Optional indices of transactions to sign (defaults to all)
      * @returns Array of signed transactions and signer public key
      * @throws {Error} When the RPC call fails or validation fails
      *
@@ -303,6 +304,7 @@ export class KoraClient {
      * @param request.transactions - Array of base64-encoded transactions to sign and send
      * @param request.signer_key - Optional signer address for the transactions
      * @param request.sig_verify - Optional signature verification (defaults to false)
+     * @param request.sign_only_indices - Optional indices of transactions to sign (defaults to all)
      * @returns Array of signed transactions, signer public key, and Jito bundle UUID
      * @throws {Error} When the RPC call fails, validation fails, or Jito submission fails
      *
