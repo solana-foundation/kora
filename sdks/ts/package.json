@@ -1,6 +1,6 @@
 {
   "name": "@solana/kora",
-  "version": "0.2.0-beta.2",
+  "version": "0.2.0-beta.3",
   "description": "TypeScript SDK for Kora RPC",
   "main": "dist/src/index.js",
   "type": "module",
