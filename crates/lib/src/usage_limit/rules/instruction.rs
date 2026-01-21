@@ -10,14 +10,22 @@ use super::super::limiter::LimiterContext;
 
 const IX_KEY_PREFIX: &str = "kora:ix";
 
+// System Program instruction names
+const SYSTEM_CREATE_ACCOUNT: &str = "createaccount";
+const SYSTEM_CREATE_ACCOUNT_WITH_SEED: &str = "createaccountwithseed";
+
+// ATA Program instruction names
+const ATA_CREATE: &str = "create";
+const ATA_CREATE_IDEMPOTENT: &str = "createidempotent";
+
 /// Rule that limits specific instruction types per wallet
 ///
 /// Counts matching instructions in each transaction and enforces limits.
 /// Supports both lifetime limits (never resets) and time-windowed limits (resets periodically).
 ///
 /// Currently supported instruction types:
-/// - System: CreateAccount
-/// - ATA: CreateIdempotent
+/// - System: CreateAccount / CreateAccountWithSeed
+/// - ATA: CreateIdempotent / Create
 #[derive(Debug)]
 pub struct InstructionRule {
     program: Pubkey,
@@ -112,7 +120,7 @@ impl InstructionRule {
     ) {
         for (idx, rule) in rules {
             let matching_type = match rule.instruction.as_str() {
-                "createaccount" | "createaccountwithseed" => {
+                SYSTEM_CREATE_ACCOUNT | SYSTEM_CREATE_ACCOUNT_WITH_SEED => {
                     Some(ParsedSystemInstructionType::SystemCreateAccount)
                 }
                 _ => None,
@@ -144,11 +152,14 @@ impl InstructionRule {
     }
 
     /// Batch count using manual parsing
+    /// Only counts instructions where Kora is the payer (subsidized operations)
     fn count_batch_manual(
         rules: &[(usize, &InstructionRule)],
         ctx: &LimiterContext<'_>,
         counts: &mut [u64],
     ) {
+        let kora_signer = ctx.kora_signer;
+
         for instruction in ctx.transaction.all_instructions.iter() {
             for (idx, rule) in rules {
                 if instruction.program_id != rule.program {
@@ -159,7 +170,18 @@ impl InstructionRule {
                     InstructionIdentifier::identify(&instruction.program_id, &instruction.data)
                 {
                     if instr_type == rule.instruction {
-                        counts[*idx] += 1;
+                        // For ATA instructions, check if Kora is the payer (first account)
+                        if rule.program == ATA_PROGRAM_ID {
+                            match (instruction.accounts.first(), kora_signer) {
+                                (Some(payer), Some(kora)) if payer.pubkey == kora => {
+                                    counts[*idx] += 1;
+                                }
+                                _ => {}
+                            }
+                        } else {
+                            // For other programs, count all matching instructions
+                            counts[*idx] += 1;
+                        }
                     }
                 }
             }
@@ -209,16 +231,16 @@ impl InstructionIdentifier {
     fn system(data: &[u8]) -> Option<String> {
         let discriminator = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
         match discriminator {
-            0 => Some("createaccount".to_string()),
-            3 => Some("createaccountwithseed".to_string()),
+            0 => Some(SYSTEM_CREATE_ACCOUNT.to_string()),
+            3 => Some(SYSTEM_CREATE_ACCOUNT_WITH_SEED.to_string()),
             _ => None,
         }
     }
 
     fn ata(data: &[u8]) -> Option<String> {
         match data.first().copied() {
-            None | Some(0) => Some("create".to_string()),
-            Some(1) => Some("createidempotent".to_string()),
+            None | Some(0) => Some(ATA_CREATE.to_string()),
+            Some(1) => Some(ATA_CREATE_IDEMPOTENT.to_string()),
             _ => None,
         }
     }
@@ -231,7 +253,8 @@ mod tests {
 
     #[test]
     fn test_instruction_rule_lifetime_key() {
-        let rule = InstructionRule::lifetime(SYSTEM_PROGRAM_ID, "createaccount".to_string(), 10);
+        let rule =
+            InstructionRule::lifetime(SYSTEM_PROGRAM_ID, SYSTEM_CREATE_ACCOUNT.to_string(), 10);
         let user_id = "test-user-123";
 
         let key = rule.storage_key(user_id, 1000000);
@@ -240,8 +263,12 @@ mod tests {
 
     #[test]
     fn test_instruction_rule_windowed_key() {
-        let rule =
-            InstructionRule::windowed(SYSTEM_PROGRAM_ID, "createaccount".to_string(), 10, 3600);
+        let rule = InstructionRule::windowed(
+            SYSTEM_PROGRAM_ID,
+            SYSTEM_CREATE_ACCOUNT.to_string(),
+            10,
+            3600,
+        );
         let user_id = "test-user-456";
 
         let key1 = rule.storage_key(user_id, 3600);
@@ -255,7 +282,8 @@ mod tests {
 
     #[test]
     fn test_instruction_rule_count_no_match() {
-        let rule = InstructionRule::lifetime(SYSTEM_PROGRAM_ID, "createaccount".to_string(), 10);
+        let rule =
+            InstructionRule::lifetime(SYSTEM_PROGRAM_ID, SYSTEM_CREATE_ACCOUNT.to_string(), 10);
         let tx = create_mock_resolved_transaction();
         let user_id = "test-user-789".to_string();
         let mut tx = tx;
@@ -268,36 +296,39 @@ mod tests {
     #[test]
     fn test_instruction_rule_description() {
         let lifetime =
-            InstructionRule::lifetime(SYSTEM_PROGRAM_ID, "createaccount".to_string(), 10);
-        assert!(lifetime.description().contains("createaccount"));
+            InstructionRule::lifetime(SYSTEM_PROGRAM_ID, SYSTEM_CREATE_ACCOUNT.to_string(), 10);
+        assert!(lifetime.description().contains(SYSTEM_CREATE_ACCOUNT));
         assert!(lifetime.description().contains("lifetime"));
 
         let windowed =
-            InstructionRule::windowed(ATA_PROGRAM_ID, "createidempotent".to_string(), 5, 86400);
-        assert!(windowed.description().contains("createidempotent"));
+            InstructionRule::windowed(ATA_PROGRAM_ID, ATA_CREATE_IDEMPOTENT.to_string(), 5, 86400);
+        assert!(windowed.description().contains(ATA_CREATE_IDEMPOTENT));
         assert!(windowed.description().contains("per 86400s"));
     }
 
     #[test]
     fn test_instruction_case_insensitive() {
         let rule = InstructionRule::new(SYSTEM_PROGRAM_ID, "CreateAccount".to_string(), 10, None);
-        assert_eq!(rule.instruction, "createaccount");
+        assert_eq!(rule.instruction, SYSTEM_CREATE_ACCOUNT);
     }
 
     #[test]
     fn test_identify_system_instructions() {
-        assert_eq!(InstructionIdentifier::system(&[0, 0, 0, 0]), Some("createaccount".to_string()));
+        assert_eq!(
+            InstructionIdentifier::system(&[0, 0, 0, 0]),
+            Some(SYSTEM_CREATE_ACCOUNT.to_string())
+        );
         assert_eq!(
             InstructionIdentifier::system(&[3, 0, 0, 0]),
-            Some("createaccountwithseed".to_string())
+            Some(SYSTEM_CREATE_ACCOUNT_WITH_SEED.to_string())
         );
     }
 
     #[test]
     fn test_identify_ata_instructions() {
-        assert_eq!(InstructionIdentifier::ata(&[]), Some("create".to_string()));
-        assert_eq!(InstructionIdentifier::ata(&[0]), Some("create".to_string()));
-        assert_eq!(InstructionIdentifier::ata(&[1]), Some("createidempotent".to_string()));
+        assert_eq!(InstructionIdentifier::ata(&[]), Some(ATA_CREATE.to_string()));
+        assert_eq!(InstructionIdentifier::ata(&[0]), Some(ATA_CREATE.to_string()));
+        assert_eq!(InstructionIdentifier::ata(&[1]), Some(ATA_CREATE_IDEMPOTENT.to_string()));
     }
 
     #[test]
@@ -324,8 +355,9 @@ mod tests {
         let tx_batch = create_mock_resolved_transaction();
         let user_id = "test-user-individual".to_string();
 
-        let rule1 = InstructionRule::lifetime(SYSTEM_PROGRAM_ID, "createaccount".to_string(), 10);
-        let rule2 = InstructionRule::lifetime(ATA_PROGRAM_ID, "createidempotent".to_string(), 5);
+        let rule1 =
+            InstructionRule::lifetime(SYSTEM_PROGRAM_ID, SYSTEM_CREATE_ACCOUNT.to_string(), 10);
+        let rule2 = InstructionRule::lifetime(ATA_PROGRAM_ID, ATA_CREATE_IDEMPOTENT.to_string(), 5);
 
         // Count individually
         let mut tx1_mut = tx1;

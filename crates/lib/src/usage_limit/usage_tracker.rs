@@ -115,7 +115,8 @@ impl UsageTracker {
                         .await
                     {
                         Ok(account) => account,
-                        Err(_) => continue, // Skip missing accounts
+                        Err(KoraError::AccountNotFound(_)) => continue,
+                        Err(e) => return Err(e),
                     };
 
                 let token_program =
@@ -227,13 +228,18 @@ impl UsageTracker {
         }
 
         for (key, increment_count, window_seconds) in pending_increments {
-            for _ in 0..increment_count {
-                if let Some(window) = window_seconds.filter(|&w| w > 0) {
-                    // Calculate bucket boundary: key expires at end of current bucket
-                    // bucket = timestamp / window, so bucket_end = (bucket + 1) * window
-                    let expires_at = (ctx.timestamp / window + 1) * window;
-                    self.store.increment_with_expiry(&key, expires_at).await?;
-                } else {
+            if let Some(window) = window_seconds.filter(|&w| w > 0) {
+                // Calculate bucket boundary: key expires at end of current bucket
+                // bucket = timestamp / window, so bucket_end = (bucket + 1) * window
+                let expires_at = (ctx.timestamp / window + 1) * window;
+                // First increment with expiry
+                self.store.increment_with_expiry(&key, expires_at).await?;
+                // Subsequent increments without resetting expiry
+                for _ in 1..increment_count {
+                    self.store.increment(&key).await?;
+                }
+            } else {
+                for _ in 0..increment_count {
                     self.store.increment(&key).await?;
                 }
             }
@@ -295,6 +301,11 @@ impl UsageTracker {
 
                 (Arc::new(RedisUsageStore::new(pool)), "Redis")
             } else {
+                log::warn!(
+                    "Usage limiting configured with in-memory store. \
+                     Limits will NOT be shared across instances and will reset on restart. \
+                     Configure 'cache_url' in [kora.usage_limit] for production deployments."
+                );
                 (Arc::new(InMemoryUsageStore::new()), "in-memory")
             };
 
@@ -337,8 +348,8 @@ impl UsageTracker {
         };
 
         if tracker.has_instruction_rules() {
-            let _ = transaction.get_or_parse_system_instructions();
-            let _ = transaction.get_or_parse_spl_instructions();
+            transaction.get_or_parse_system_instructions()?;
+            transaction.get_or_parse_spl_instructions()?;
         }
 
         // Resolve user_id for usage tracking:
