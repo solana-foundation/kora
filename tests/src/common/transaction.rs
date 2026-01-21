@@ -633,4 +633,72 @@ impl TransactionBuilder {
         let serialized = bincode::serialize(&transaction)?;
         Ok(STANDARD.encode(serialized))
     }
+
+    /// Build a durable transaction using a nonce account's stored blockhash.
+    pub async fn build_with_nonce(self, nonce_pubkey: &Pubkey) -> Result<String> {
+        let rpc_client =
+            self.rpc_client.ok_or_else(|| anyhow::anyhow!("RPC client is required"))?;
+
+        let fee_payer = self.fee_payer.ok_or_else(|| anyhow::anyhow!("Fee payer is required"))?;
+
+        // Fetch the nonce account and extract the stored blockhash (durable nonce)
+        // Use Versions because nonce account data has a version prefix
+        let nonce_account = rpc_client.get_account(nonce_pubkey).await?;
+        let nonce_versions: solana_nonce::versions::Versions =
+            bincode::deserialize(&nonce_account.data)?;
+
+        let nonce_data = match nonce_versions.state() {
+            solana_nonce::state::State::Initialized(data) => data,
+            solana_nonce::state::State::Uninitialized => {
+                return Err(anyhow::anyhow!("Nonce account is not initialized"));
+            }
+        };
+        let durable_nonce = nonce_data.blockhash();
+
+        let message = match self.version {
+            TransactionVersion::V0 => {
+                let mut instructions = self.instructions;
+                let advance_ix = solana_system_interface::instruction::advance_nonce_account(
+                    nonce_pubkey,
+                    &nonce_data.authority,
+                );
+                instructions.insert(0, advance_ix);
+
+                let v0_message =
+                    V0Message::try_compile(&fee_payer, &instructions, &[], durable_nonce)?;
+                VersionedMessage::V0(v0_message)
+            }
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Durable nonce transactions are only supported for V0 transactions."
+                ));
+            }
+        };
+
+        let transaction = if self.signers.is_empty() {
+            // Unsigned transaction
+            TransactionUtil::new_unsigned_versioned_transaction(message)
+        } else {
+            // Signed transaction - create with proper number of signatures
+            let num_required_signatures = message.header().num_required_signatures as usize;
+            let mut tx = VersionedTransaction {
+                signatures: vec![Signature::default(); num_required_signatures],
+                message,
+            };
+
+            let message_bytes = tx.message.serialize();
+            for signer in &self.signers {
+                let account_keys = tx.message.static_account_keys();
+                if let Some(position) = account_keys.iter().position(|key| key == &signer.pubkey())
+                {
+                    let signature = signer.sign_message(&message_bytes);
+                    tx.signatures[position] = signature;
+                }
+            }
+            tx
+        };
+
+        let serialized = bincode::serialize(&transaction)?;
+        Ok(STANDARD.encode(serialized))
+    }
 }

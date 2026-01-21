@@ -7,10 +7,12 @@
 //        - Transaction signing with all formats and conditions
 //        - Transfer operations with various token types
 //        - Bundle signing operations (signBundle, signAndSendBundle)
+//        - Durable transaction blocking (nonce-based transactions)
 
 mod basic_endpoints;
 mod bundles;
 mod compute_budget;
+mod durable_transactions;
 mod fee_estimation;
 mod transaction_signing;
 mod transfers;
