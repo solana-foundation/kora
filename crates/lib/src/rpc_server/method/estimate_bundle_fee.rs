@@ -30,6 +30,9 @@ pub struct EstimateBundleFeeRequest {
     /// Whether to verify signatures during simulation (defaults to false)
     #[serde(default = "default_sig_verify")]
     pub sig_verify: bool,
+    /// Optional indices of transactions to estimate fees for (defaults to all if not specified)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_only_indices: Option<Vec<usize>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -52,14 +55,22 @@ pub async fn estimate_bundle_fee(
         return Err(BundleError::Jito(JitoError::NotEnabled).into());
     }
 
+    // Validate bundle size on ALL transactions first
     BundleValidator::validate_jito_bundle_size(&request.transactions)?;
+
+    // Extract only the transactions we need to process
+    let (transactions_to_process, _index_to_position) =
+        BundleProcessor::extract_transactions_to_process(
+            &request.transactions,
+            request.sign_only_indices,
+        )?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
     let processor = BundleProcessor::process_bundle(
-        &request.transactions,
+        &transactions_to_process,
         fee_payer,
         &payment_destination,
         config,
@@ -109,6 +120,7 @@ mod tests {
             fee_token: None,
             signer_key: None,
             sig_verify: true,
+            sign_only_indices: None,
         };
 
         let result = estimate_bundle_fee(&rpc_client, request).await;
@@ -130,6 +142,7 @@ mod tests {
             fee_token: None,
             signer_key: None,
             sig_verify: true,
+            sign_only_indices: None,
         };
 
         let result = estimate_bundle_fee(&rpc_client, request).await;
@@ -154,6 +167,7 @@ mod tests {
             fee_token: None,
             signer_key: None,
             sig_verify: true,
+            sign_only_indices: None,
         };
 
         let result = estimate_bundle_fee(&rpc_client, request).await;
@@ -178,6 +192,7 @@ mod tests {
             fee_token: None,
             signer_key: Some("invalid_pubkey".to_string()),
             sig_verify: true,
+            sign_only_indices: None,
         };
 
         let result = estimate_bundle_fee(&rpc_client, request).await;
@@ -207,6 +222,7 @@ mod tests {
             fee_token: None,
             signer_key: None,
             sig_verify: true,
+            sign_only_indices: None,
         };
 
         let result = estimate_bundle_fee(&rpc_client, request).await;
@@ -236,6 +252,7 @@ mod tests {
             fee_token: None,
             signer_key: None,
             sig_verify: true,
+            sign_only_indices: None,
         };
 
         let result = estimate_bundle_fee(&rpc_client, request).await;

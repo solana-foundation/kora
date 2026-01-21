@@ -32,6 +32,9 @@ pub struct SignBundleRequest {
     /// Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
+    /// Optional indices of transactions to sign (defaults to all if not specified)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_only_indices: Option<Vec<usize>>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -52,14 +55,22 @@ pub async fn sign_bundle(
         return Err(BundleError::Jito(JitoError::NotEnabled).into());
     }
 
+    // Validate bundle size on ALL transactions first
     BundleValidator::validate_jito_bundle_size(&request.transactions)?;
+
+    // Extract only the transactions we need to process
+    let (transactions_to_process, index_to_position) =
+        BundleProcessor::extract_transactions_to_process(
+            &request.transactions,
+            request.sign_only_indices,
+        )?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
     let processor = BundleProcessor::process_bundle(
-        &request.transactions,
+        &transactions_to_process,
         fee_payer,
         &payment_destination,
         config,
@@ -71,10 +82,18 @@ pub async fn sign_bundle(
 
     let signed_resolved = processor.sign_all(&signer, &fee_payer, rpc_client).await?;
 
-    let signed_transactions = signed_resolved
+    // Encode signed transactions
+    let encoded_signed: Vec<String> = signed_resolved
         .iter()
         .map(|r| TransactionUtil::encode_versioned_transaction(&r.transaction))
         .collect::<Result<Vec<_>, _>>()?;
+
+    // Merge signed transactions back into original positions
+    let signed_transactions = BundleProcessor::merge_signed_transactions(
+        &request.transactions,
+        encoded_signed,
+        &index_to_position,
+    );
 
     Ok(SignBundleResponse { signed_transactions, signer_pubkey: fee_payer.to_string() })
 }
@@ -106,6 +125,7 @@ mod tests {
             signer_key: None,
             sig_verify: true,
             user_id: None,
+            sign_only_indices: None,
         };
 
         let result = sign_bundle(&rpc_client, request).await;
@@ -127,6 +147,7 @@ mod tests {
             signer_key: None,
             sig_verify: true,
             user_id: None,
+            sign_only_indices: None,
         };
 
         let result = sign_bundle(&rpc_client, request).await;
@@ -151,6 +172,7 @@ mod tests {
             signer_key: None,
             sig_verify: true,
             user_id: None,
+            sign_only_indices: None,
         };
 
         let result = sign_bundle(&rpc_client, request).await;
@@ -175,6 +197,7 @@ mod tests {
             signer_key: Some("invalid_pubkey".to_string()),
             sig_verify: true,
             user_id: None,
+            sign_only_indices: None,
         };
 
         let result = sign_bundle(&rpc_client, request).await;
@@ -223,6 +246,7 @@ mod tests {
             signer_key: Some(signer_pubkey.to_string()),
             sig_verify: true,
             user_id: None,
+            sign_only_indices: None,
         };
 
         let result = sign_bundle(&rpc_client, request).await;
@@ -267,6 +291,7 @@ mod tests {
             signer_key: Some(signer_pubkey.to_string()),
             sig_verify: true,
             user_id: None,
+            sign_only_indices: None,
         };
 
         let result = sign_bundle(&rpc_client, request).await;
@@ -301,5 +326,22 @@ mod tests {
         assert_eq!(request.signer_key, Some("11111111111111111111111111111111".to_string()));
         assert!(!request.sig_verify);
         assert_eq!(request.user_id, Some("test-user-456".to_string()));
+        assert!(request.sign_only_indices.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_sign_bundle_request_deserialization_with_sign_only_indices() {
+        let json = r#"{
+            "transactions": ["tx1", "tx2", "tx3"],
+            "signer_key": "11111111111111111111111111111111",
+            "sig_verify": false,
+            "sign_only_indices": [0, 2]
+        }"#;
+        let request: SignBundleRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(request.transactions.len(), 3);
+        assert_eq!(request.signer_key, Some("11111111111111111111111111111111".to_string()));
+        assert!(!request.sig_verify);
+        assert_eq!(request.sign_only_indices, Some(vec![0, 2]));
     }
 }

@@ -61,6 +61,8 @@ export interface SignBundleRequest {
     sig_verify?: boolean;
     /** Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled) */
     user_id?: string;
+    /** Optional indices of transactions to sign (defaults to all if not specified) */
+    sign_only_indices?: number[];
 }
 
 /**
@@ -75,6 +77,8 @@ export interface SignAndSendBundleRequest {
     sig_verify?: boolean;
     /** Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled) */
     user_id?: string;
+    /** Optional indices of transactions to sign (defaults to all if not specified) */
+    sign_only_indices?: number[];
 }
 
 /**
@@ -103,6 +107,8 @@ export interface EstimateBundleFeeRequest {
     signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional indices of transactions to estimate fees for (defaults to all if not specified) */
+    sign_only_indices?: number[];
 }
 
 /**

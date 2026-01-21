@@ -5,7 +5,7 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
 use kora_lib::transaction::TransactionUtil;
-use solana_sdk::signature::Signer;
+use solana_sdk::signature::{Signature, Signer};
 use std::str::FromStr;
 
 // **************************************************************************************
@@ -663,5 +663,117 @@ async fn test_sign_bundle_insufficient_payment_error() {
     assert!(
         err.contains("insufficient") || err.contains("payment"),
         "Error should mention insufficient payment: {err}"
+    );
+}
+
+// **************************************************************************************
+// Partial signing tests (sign_only_indices parameter)
+// **************************************************************************************
+
+/// Test processing only specific transactions in a bundle using sign_only_indices parameter
+/// Response should contain ALL transactions in original order, with only specified ones signed.
+#[tokio::test]
+async fn test_sign_bundle_with_sign_only_indices_filter() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    // Create 3 transactions for the bundle
+    let mut transactions = Vec::new();
+    for i in 0..3 {
+        let tx = ctx
+            .transaction_builder()
+            .with_fee_payer(fee_payer)
+            .with_signer(&sender)
+            .with_spl_transfer(
+                &token_mint,
+                &sender.pubkey(),
+                &fee_payer,
+                tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+            )
+            .with_transfer(&sender.pubkey(), &recipient, 10 + i)
+            .build()
+            .await
+            .expect("Failed to create transaction");
+        transactions.push(tx);
+    }
+
+    // Process only transactions at indices 0 and 2
+    // Pass sign_only_indices as positional params: [transactions, signer_key, sig_verify, sign_only_indices]
+    let sign_only_indices: Vec<usize> = vec![0, 2];
+    let original_tx1 = transactions[1].clone();
+    let response: serde_json::Value = ctx
+        .rpc_call(
+            "signBundle",
+            rpc_params![transactions, Option::<String>::None, false, sign_only_indices],
+        )
+        .await
+        .expect("Failed to sign bundle");
+
+    response.assert_success();
+
+    let signed_txs = response["signed_transactions"].as_array().unwrap();
+    // All 3 transactions returned, preserving order
+    assert_eq!(signed_txs.len(), 3, "Expected all 3 transactions in response");
+
+    // Transactions at indices 0 and 2 should be signed
+    let tx0 = TransactionUtil::decode_b64_transaction(signed_txs[0].as_str().unwrap()).unwrap();
+    let tx2 = TransactionUtil::decode_b64_transaction(signed_txs[2].as_str().unwrap()).unwrap();
+
+    assert_ne!(tx0.signatures[0], Signature::default(), "Transaction at index 0 should be signed");
+    assert_ne!(tx2.signatures[0], Signature::default(), "Transaction at index 2 should be signed");
+
+    // Transaction at index 1 should remain unchanged (unsigned)
+    assert_eq!(
+        signed_txs[1].as_str().unwrap(),
+        original_tx1,
+        "Transaction at index 1 should be unchanged"
+    );
+}
+
+/// Test that out-of-bounds sign_only_indices index fails validation
+#[tokio::test]
+async fn test_sign_bundle_out_of_bounds_sign_only_indices_fails() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create transaction");
+
+    // Bundle has 1 transaction, try to sign index 5
+    // Pass sign_only_indices as positional params: [transactions, signer_key, sig_verify, sign_only_indices]
+    let transactions = vec![tx];
+    let sign_only_indices: Vec<usize> = vec![5];
+    let result: Result<serde_json::Value, _> = ctx
+        .rpc_call(
+            "signBundle",
+            rpc_params![transactions, Option::<String>::None, false, sign_only_indices],
+        )
+        .await;
+
+    assert!(result.is_err(), "Expected error for out-of-bounds index");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("out of bounds") || err.contains("out-of-bounds"),
+        "Error should mention out of bounds: {err}"
     );
 }
