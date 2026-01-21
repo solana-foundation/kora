@@ -708,7 +708,13 @@ async fn test_sign_bundle_with_sign_only_indices_filter() {
     let response: serde_json::Value = ctx
         .rpc_call(
             "signBundle",
-            rpc_params![transactions, Option::<String>::None, false, sign_only_indices],
+            rpc_params![
+                transactions,
+                Option::<String>::None,
+                false,
+                Option::<String>::None,
+                sign_only_indices
+            ],
         )
         .await
         .expect("Failed to sign bundle");
@@ -766,7 +772,13 @@ async fn test_sign_bundle_out_of_bounds_sign_only_indices_fails() {
     let result: Result<serde_json::Value, _> = ctx
         .rpc_call(
             "signBundle",
-            rpc_params![transactions, Option::<String>::None, false, sign_only_indices],
+            rpc_params![
+                transactions,
+                Option::<String>::None,
+                false,
+                Option::<String>::None,
+                sign_only_indices
+            ],
         )
         .await;
 
