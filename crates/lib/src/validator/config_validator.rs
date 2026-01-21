@@ -305,20 +305,16 @@ impl ConfigValidator {
             warnings.push("Using Mock price source - not suitable for production".to_string());
         }
 
-        // Warn about durable transactions with dynamic pricing (arbitrage risk)
-        if config.validation.allow_durable_transactions {
-            let is_dynamic_pricing =
-                matches!(config.validation.price.model, PriceModel::Margin { .. });
-
-            if is_dynamic_pricing {
-                warnings.push(
-                    "⚠️  SECURITY: allow_durable_transactions is enabled with dynamic pricing. \
-                    Risk: Users can hold signed transactions indefinitely and execute when token prices \
-                    drop, causing Kora to receive less value than intended. \
-                    Consider using fixed pricing or disabling durable transactions."
-                        .to_string(),
-                );
-            }
+        if config.validation.allow_durable_transactions
+            && matches!(config.validation.price.model, PriceModel::Margin { .. })
+        {
+            warnings.push(
+                "⚠️  SECURITY: allow_durable_transactions is enabled with dynamic pricing. \
+                Risk: Users can hold signed transactions indefinitely and execute when token prices \
+                drop, causing Kora to receive less value than intended. \
+                Consider using fixed pricing or disabling durable transactions."
+                    .to_string(),
+            );
         }
 
         // Validate allowed programs (warn if empty or missing system/token programs)
