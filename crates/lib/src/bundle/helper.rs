@@ -13,7 +13,7 @@ use crate::{
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 pub struct BundleProcessor {
     pub resolved_transactions: Vec<VersionedTransactionResolved>,
@@ -23,6 +23,55 @@ pub struct BundleProcessor {
 }
 
 impl BundleProcessor {
+    /// Extract transactions at specified indices for processing.
+    /// Returns (filtered_transactions, index_to_position_map).
+    /// If `sign_only_indices` is None, returns all transactions with all indices.
+    pub fn extract_transactions_to_process(
+        transactions: &[String],
+        sign_only_indices: Option<Vec<usize>>,
+    ) -> Result<(Vec<String>, HashMap<usize, usize>), KoraError> {
+        let indices = sign_only_indices.unwrap_or_else(|| (0..transactions.len()).collect());
+
+        // Build map and filtered list (duplicates silently ignored)
+        let mut index_to_position: HashMap<usize, usize> = HashMap::with_capacity(indices.len());
+        let mut filtered: Vec<String> = Vec::with_capacity(indices.len());
+
+        for idx in indices {
+            if index_to_position.contains_key(&idx) {
+                continue; // skip duplicate
+            }
+            let tx = transactions.get(idx).ok_or_else(|| {
+                KoraError::ValidationError(format!(
+                    "sign_only_indices index {} out of bounds (bundle has {} transactions)",
+                    idx,
+                    transactions.len()
+                ))
+            })?;
+            index_to_position.insert(idx, filtered.len());
+            filtered.push(tx.clone());
+        }
+
+        Ok((filtered, index_to_position))
+    }
+
+    /// Merge signed transactions back into the original list, preserving order.
+    /// `index_to_position` maps original transaction index -> position in signed_transactions vec.
+    pub fn merge_signed_transactions(
+        original_transactions: &[String],
+        signed_transactions: Vec<String>,
+        index_to_position: &std::collections::HashMap<usize, usize>,
+    ) -> Vec<String> {
+        (0..original_transactions.len())
+            .map(|idx| {
+                if let Some(&position) = index_to_position.get(&idx) {
+                    signed_transactions[position].clone()
+                } else {
+                    original_transactions[idx].clone()
+                }
+            })
+            .collect()
+    }
+
     pub async fn process_bundle(
         encoded_txs: &[String],
         fee_payer: Pubkey,
@@ -264,5 +313,117 @@ mod tests {
         assert_eq!(processor.total_payment_lamports, 6000);
         assert_eq!(processor.total_solana_estimated_fee, 2500);
         assert!(processor.resolved_transactions.is_empty());
+    }
+
+    #[test]
+    fn test_extract_transactions_none_returns_all() {
+        let txs = vec!["tx0".to_string(), "tx1".to_string(), "tx2".to_string()];
+        let (result, index_to_position) =
+            BundleProcessor::extract_transactions_to_process(&txs, None).unwrap();
+        assert_eq!(result, txs);
+        assert_eq!(index_to_position.len(), 3);
+        assert_eq!(index_to_position.get(&0), Some(&0));
+        assert_eq!(index_to_position.get(&1), Some(&1));
+        assert_eq!(index_to_position.get(&2), Some(&2));
+    }
+
+    #[test]
+    fn test_extract_transactions_specific_indices() {
+        let txs = vec!["tx0".to_string(), "tx1".to_string(), "tx2".to_string()];
+        let (result, index_to_position) =
+            BundleProcessor::extract_transactions_to_process(&txs, Some(vec![0, 2])).unwrap();
+        assert_eq!(result, vec!["tx0".to_string(), "tx2".to_string()]);
+        assert_eq!(index_to_position.len(), 2);
+        assert_eq!(index_to_position.get(&0), Some(&0));
+        assert_eq!(index_to_position.get(&2), Some(&1));
+    }
+
+    #[test]
+    fn test_extract_transactions_out_of_bounds() {
+        let txs = vec!["tx0".to_string(), "tx1".to_string()];
+        let result = BundleProcessor::extract_transactions_to_process(&txs, Some(vec![0, 5]));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, KoraError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_extract_transactions_empty_indices() {
+        let txs = vec!["tx0".to_string(), "tx1".to_string()];
+        let (result, index_to_position) =
+            BundleProcessor::extract_transactions_to_process(&txs, Some(vec![])).unwrap();
+        assert!(result.is_empty());
+        assert!(index_to_position.is_empty());
+    }
+
+    #[test]
+    fn test_extract_transactions_duplicate_indices_silently_skipped() {
+        let txs = vec!["tx0".to_string(), "tx1".to_string()];
+        let (result, index_to_position) =
+            BundleProcessor::extract_transactions_to_process(&txs, Some(vec![0, 0, 1])).unwrap();
+        // Duplicates are silently skipped, only unique indices processed
+        assert_eq!(result, vec!["tx0".to_string(), "tx1".to_string()]);
+        assert_eq!(index_to_position.len(), 2);
+        assert_eq!(index_to_position.get(&0), Some(&0)); // tx0 at position 0 in filtered
+        assert_eq!(index_to_position.get(&1), Some(&1)); // tx1 at position 1 in filtered
+    }
+
+    #[test]
+    fn test_merge_signed_transactions_preserves_order() {
+        let original =
+            vec!["tx0".to_string(), "tx1".to_string(), "tx2".to_string(), "tx3".to_string()];
+        let signed = vec!["signed_tx0".to_string(), "signed_tx2".to_string()];
+        // index 0 -> position 0, index 2 -> position 1
+        let index_to_position =
+            std::collections::HashMap::from([(0_usize, 0_usize), (2_usize, 1_usize)]);
+
+        let result =
+            BundleProcessor::merge_signed_transactions(&original, signed, &index_to_position);
+
+        assert_eq!(
+            result,
+            vec![
+                "signed_tx0".to_string(),
+                "tx1".to_string(),
+                "signed_tx2".to_string(),
+                "tx3".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_merge_signed_transactions_all_signed() {
+        let original = vec!["tx0".to_string(), "tx1".to_string()];
+        let signed = vec!["signed_tx0".to_string(), "signed_tx1".to_string()];
+        let index_to_position =
+            std::collections::HashMap::from([(0_usize, 0_usize), (1_usize, 1_usize)]);
+
+        let result =
+            BundleProcessor::merge_signed_transactions(&original, signed, &index_to_position);
+        assert_eq!(result, vec!["signed_tx0".to_string(), "signed_tx1".to_string()]);
+    }
+
+    #[test]
+    fn test_merge_signed_transactions_descending_indices() {
+        let original =
+            vec!["tx0".to_string(), "tx1".to_string(), "tx2".to_string(), "tx3".to_string()];
+        // indices [2, 0] means: signed[0] = tx2, signed[1] = tx0
+        let signed = vec!["signed_tx2".to_string(), "signed_tx0".to_string()];
+        // index 2 -> position 0, index 0 -> position 1
+        let index_to_position =
+            std::collections::HashMap::from([(2_usize, 0_usize), (0_usize, 1_usize)]);
+
+        let result =
+            BundleProcessor::merge_signed_transactions(&original, signed, &index_to_position);
+
+        assert_eq!(
+            result,
+            vec![
+                "signed_tx0".to_string(),
+                "tx1".to_string(),
+                "signed_tx2".to_string(),
+                "tx3".to_string(),
+            ]
+        );
     }
 }
