@@ -91,6 +91,7 @@ impl ConfigMockBuilder {
                     fee_payer_policy: FeePayerPolicy::default(),
                     price: PriceConfig::default(),
                     token_2022: Token2022Config::default(),
+                    allow_durable_transactions: false,
                 },
                 kora: KoraConfig {
                     rate_limit: 100,
@@ -232,6 +233,11 @@ impl ConfigMockBuilder {
         self
     }
 
+    pub fn with_allow_durable_transactions(mut self, allow: bool) -> Self {
+        self.config.validation.allow_durable_transactions = allow;
+        self
+    }
+
     /// Build and setup the config mock with mutex lock
     /// Returns a lock guard that should be held for the duration of the test
     pub fn build_and_setup(self) -> std::sync::MutexGuard<'static, ()> {
@@ -263,6 +269,7 @@ impl ValidationConfigBuilder {
                 fee_payer_policy: FeePayerPolicy::default(),
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
             },
         }
     }
