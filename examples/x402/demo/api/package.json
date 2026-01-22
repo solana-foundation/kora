@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "tsx src/api.ts"
+    "start": "tsx src/api.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -19,7 +20,9 @@
     "express": "^5.2.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "@types/node": "^24.5.2",
-    "tsx": "^4.20.5"
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.3"
   }
 }

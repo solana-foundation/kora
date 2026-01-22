@@ -4,7 +4,8 @@
   "description": "",
   "scripts": {
     "start": "tsx src/index.ts",
-    "setup": "tsx src/setup.ts"
+    "setup": "tsx src/setup.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "solana",

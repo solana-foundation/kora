@@ -33,8 +33,6 @@ import {
     Rpc,
     SolanaRpcSubscriptionsApi,
     MicroLamports,
-    CompilableTransactionMessage,
-    TransactionMessageWithBlockhashLifetime,
     Commitment,
     Signature,
     signTransactionMessageWithSigners,
@@ -44,6 +42,10 @@ import {
     getBase58Decoder,
     getBase58Encoder,
     KeyPairSigner,
+    TransactionMessage,
+    assertIsTransactionWithBlockhashLifetime,
+    TransactionMessageWithSigners,
+    TransactionMessageWithFeePayer,
 } from "@solana/kit";
 import {
     updateOrAppendSetComputeUnitLimitInstruction,
@@ -71,7 +73,7 @@ export const createDefaultTransaction = async (
     feePayer: TransactionSigner,
     computeLimit: number = MAX_COMPUTE_UNIT_LIMIT,
     feeMicroLamports: MicroLamports = 1n as MicroLamports
-): Promise<CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime> => {
+): Promise<TransactionMessage & TransactionMessageWithFeePayer & TransactionMessageWithSigners> => {
     const { value: latestBlockhash } = await client.rpc
         .getLatestBlockhash()
         .send();
@@ -86,13 +88,13 @@ export const createDefaultTransaction = async (
 
 export const signAndSendTransaction = async (
     client: Client,
-    transactionMessage: CompilableTransactionMessage &
-        TransactionMessageWithBlockhashLifetime,
+    transactionMessage: TransactionMessage & TransactionMessageWithFeePayer & TransactionMessageWithSigners,
     commitment: Commitment = 'confirmed'
 ) => {
     const signedTransaction =
         await signTransactionMessageWithSigners(transactionMessage);
     const signature = getSignatureFromTransaction(signedTransaction);
+    assertIsTransactionWithBlockhashLifetime(signedTransaction);
     await sendAndConfirmTransactionFactory(client)(signedTransaction, {
         commitment,
     });

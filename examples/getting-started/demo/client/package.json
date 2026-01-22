@@ -5,7 +5,8 @@
   "scripts": {
     "start": "tsx src/quick-start.ts",
     "full-demo": "tsx src/full-demo.ts",
-    "init-env": "tsx src/setup.ts"
+    "init-env": "tsx src/setup.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "solana",
@@ -21,9 +22,9 @@
     "@solana-program/memo": "^0.7.0",
     "@solana-program/system": "^0.7.0",
     "@solana-program/token": "^0.5.1",
-    "@solana/assertions": "^2.3.0",
-    "@solana/kit": "^2.3.0",
-    "@solana/transaction-confirmation": "^2.3.0",
+    "@solana/assertions": "^5.1.0",
+    "@solana/kit": "^5.1.0",
+    "@solana/transaction-confirmation": "^5.1.0",
     "dotenv": "^17.2.0"
   },
   "devDependencies": {

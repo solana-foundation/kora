@@ -9,7 +9,6 @@ import {
   Blockhash,
   Base64EncodedWireTransaction,
   partiallySignTransaction,
-  TransactionVersion,
   Instruction,
   KeyPairSigner,
   Rpc,
@@ -34,7 +33,6 @@ dotenv.config({ path: path.join(process.cwd(), "..", ".env") });
 const CONFIG = {
   computeUnitLimit: 200_000,
   computeUnitPrice: 1_000_000n as MicroLamports,
-  transactionVersion: 0,
   solanaRpcUrl: "http://127.0.0.1:8899",
   solanaWsUrl: "ws://127.0.0.1:8900",
   koraRpcUrl: "http://localhost:8080/",
@@ -149,7 +147,7 @@ async function getPaymentInstruction(
   // Create estimate transaction to get payment instruction
 
   const estimateTransaction = pipe(
-    createTransactionMessage({ version: CONFIG.transactionVersion as TransactionVersion }),
+    createTransactionMessage({ version: 0 }),
     (tx) => setTransactionMessageFeePayerSigner(noopSigner, tx),
     (tx) => setTransactionMessageLifetimeUsingBlockhash({
       blockhash: latestBlockhash.blockhash as Blockhash,
@@ -192,7 +190,7 @@ async function getFinalTransaction(
   const newBlockhash = await client.getBlockhash();
 
   const fullTransaction = pipe(
-    createTransactionMessage({ version: CONFIG.transactionVersion as TransactionVersion }),
+    createTransactionMessage({ version: 0 }),
     (tx) => setTransactionMessageFeePayerSigner(noopSigner, tx),
     (tx) => setTransactionMessageLifetimeUsingBlockhash({
       blockhash: newBlockhash.blockhash as Blockhash,
