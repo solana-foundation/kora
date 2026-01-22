@@ -1,0 +1,14 @@
+{
+  "name": "kora-plugins",
+  "description": "Kora project plugins for Claude Code",
+  "owner": {
+    "name": "Kora"
+  },
+  "plugins": [
+    {
+      "name": "kora-keychain-sync",
+      "description": "Sync solana-keychain dependency and generate signer adapters",
+      "source": "./.claude-plugin/kora-keychain-sync"
+    }
+  ]
+}
