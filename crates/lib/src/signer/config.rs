@@ -90,6 +90,33 @@ pub struct VaultSignerConfig {
     pub pubkey_env: String,
 }
 
+/// AWS KMS signer configuration
+#[derive(Clone, Serialize, Deserialize)]
+pub struct AwsKmsSignerConfig {
+    pub key_id_env: String,
+    pub public_key_env: String,
+    #[serde(default)]
+    pub region_env: Option<String>,
+}
+
+/// Fireblocks signer configuration
+#[derive(Clone, Serialize, Deserialize)]
+pub struct FireblocksSignerConfig {
+    pub api_key_env: String,
+    pub private_key_pem_env: String,
+    pub vault_account_id_env: String,
+    #[serde(default)]
+    pub asset_id: Option<String>,
+    #[serde(default)]
+    pub api_base_url: Option<String>,
+    #[serde(default)]
+    pub poll_interval_ms: Option<u64>,
+    #[serde(default)]
+    pub max_poll_attempts: Option<u32>,
+    #[serde(default)]
+    pub use_program_call: Option<bool>,
+}
+
 /// Signer type-specific configuration
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -113,6 +140,16 @@ pub enum SignerTypeConfig {
     Vault {
         #[serde(flatten)]
         config: VaultSignerConfig,
+    },
+    /// AWS KMS signer configuration
+    AwsKms {
+        #[serde(flatten)]
+        config: AwsKmsSignerConfig,
+    },
+    /// Fireblocks signer configuration
+    Fireblocks {
+        #[serde(flatten)]
+        config: FireblocksSignerConfig,
     },
 }
 
@@ -207,6 +244,12 @@ impl SignerConfig {
             SignerTypeConfig::Vault { config: vault_config } => {
                 Self::build_vault_signer(vault_config, &config.name)
             }
+            SignerTypeConfig::AwsKms { config: aws_kms_config } => {
+                Self::build_aws_kms_signer(aws_kms_config, &config.name).await
+            }
+            SignerTypeConfig::Fireblocks { config: fireblocks_config } => {
+                Self::build_fireblocks_signer(fireblocks_config, &config.name).await
+            }
         }
     }
 
@@ -281,6 +324,53 @@ impl SignerConfig {
         })
     }
 
+    async fn build_aws_kms_signer(
+        config: &AwsKmsSignerConfig,
+        signer_name: &str,
+    ) -> Result<Signer, KoraError> {
+        let key_id = get_env_var_for_signer(&config.key_id_env, signer_name)?;
+        let public_key = get_env_var_for_signer(&config.public_key_env, signer_name)?;
+        let region = config
+            .region_env
+            .as_ref()
+            .map(|env| get_env_var_for_signer(env, signer_name))
+            .transpose()?;
+
+        Signer::from_kms(key_id, public_key, region).await.map_err(|e| {
+            KoraError::SigningError(format!(
+                "Failed to create AWS KMS signer '{signer_name}': {}",
+                sanitize_error!(e)
+            ))
+        })
+    }
+
+    async fn build_fireblocks_signer(
+        config: &FireblocksSignerConfig,
+        signer_name: &str,
+    ) -> Result<Signer, KoraError> {
+        let api_key = get_env_var_for_signer(&config.api_key_env, signer_name)?;
+        let private_key_pem = get_env_var_for_signer(&config.private_key_pem_env, signer_name)?;
+        let vault_account_id = get_env_var_for_signer(&config.vault_account_id_env, signer_name)?;
+
+        let keychain_config = solana_keychain::FireblocksSignerConfig {
+            api_key,
+            private_key_pem,
+            vault_account_id,
+            asset_id: config.asset_id.clone(),
+            api_base_url: config.api_base_url.clone(),
+            poll_interval_ms: config.poll_interval_ms,
+            max_poll_attempts: config.max_poll_attempts,
+            use_program_call: config.use_program_call,
+        };
+
+        Signer::from_fireblocks(keychain_config).await.map_err(|e| {
+            KoraError::SigningError(format!(
+                "Failed to create Fireblocks signer '{signer_name}': {}",
+                sanitize_error!(e)
+            ))
+        })
+    }
+
     /// Validate an individual signer configuration
     pub fn validate_individual_signer_config(&self, index: usize) -> Result<(), KoraError> {
         if self.name.is_empty() {
@@ -296,6 +386,12 @@ impl SignerConfig {
             }
             SignerTypeConfig::Privy { config } => Self::validate_privy_config(config, &self.name),
             SignerTypeConfig::Vault { config } => Self::validate_vault_config(config, &self.name),
+            SignerTypeConfig::AwsKms { config } => {
+                Self::validate_aws_kms_config(config, &self.name)
+            }
+            SignerTypeConfig::Fireblocks { config } => {
+                Self::validate_fireblocks_config(config, &self.name)
+            }
         }
     }
 
@@ -368,6 +464,43 @@ impl SignerConfig {
             if env_var.is_empty() {
                 return Err(KoraError::ValidationError(format!(
                     "Vault signer '{signer_name}' must specify non-empty {field_name}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_aws_kms_config(
+        config: &AwsKmsSignerConfig,
+        signer_name: &str,
+    ) -> Result<(), KoraError> {
+        let env_vars =
+            [("key_id_env", &config.key_id_env), ("public_key_env", &config.public_key_env)];
+
+        for (field_name, env_var) in env_vars {
+            if env_var.is_empty() {
+                return Err(KoraError::ValidationError(format!(
+                    "AWS KMS signer '{signer_name}' must specify non-empty {field_name}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_fireblocks_config(
+        config: &FireblocksSignerConfig,
+        signer_name: &str,
+    ) -> Result<(), KoraError> {
+        let env_vars = [
+            ("api_key_env", &config.api_key_env),
+            ("private_key_pem_env", &config.private_key_pem_env),
+            ("vault_account_id_env", &config.vault_account_id_env),
+        ];
+
+        for (field_name, env_var) in env_vars {
+            if env_var.is_empty() {
+                return Err(KoraError::ValidationError(format!(
+                    "Fireblocks signer '{signer_name}' must specify non-empty {field_name}"
                 )));
             }
         }
