@@ -1,0 +1,152 @@
+name: Publish Docker Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      update-github-release:
+        description: 'Update GitHub release with Docker image info'
+        required: true
+        default: false
+        type: boolean
+  workflow_run:
+    workflows: ["Publish Rust Crates"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-docker
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  publish:
+    name: Build and publish Docker image
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Get current version
+        id: version
+        run: |
+          VERSION=$(grep "^version" Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Kora v$VERSION"
+
+      - name: Check if prerelease
+        id: prerelease
+        run: |
+          if [[ "${{ steps.version.outputs.version }}" == *"-"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "📦 Pre-release version detected"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "📦 Stable version detected"
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=v${{ steps.version.outputs.version }}
+            type=raw,value=beta,enable=${{ steps.prerelease.outputs.is_prerelease == 'true' }}
+            type=raw,value=latest,enable=${{ steps.prerelease.outputs.is_prerelease == 'false' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update GitHub Release with Docker info
+        if: ${{ github.event.inputs.update-github-release == 'true' || github.event_name == 'workflow_run' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tagName = `v${{ steps.version.outputs.version }}`;
+            const isPrerelease = '${{ steps.prerelease.outputs.is_prerelease }}' === 'true';
+            const imageTag = isPrerelease ? 'beta' : 'latest';
+
+            let release;
+            try {
+              release = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tagName,
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                console.log(`⏭️ Release ${tagName} not found, skipping update`);
+                return;
+              }
+              throw e;
+            }
+
+            const dockerInfo = `\n\n**Docker Image:**\n\`\`\`bash\ndocker pull ghcr.io/${{ github.repository }}:v${{ steps.version.outputs.version }}\n# or\ndocker pull ghcr.io/${{ github.repository }}:${imageTag}\n\`\`\``;
+
+            const currentBody = release.data.body || '';
+            if (currentBody.includes('Docker Image:')) {
+              console.log('⏭️ Docker info already in release, skipping');
+              return;
+            }
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              body: currentBody + dockerInfo,
+            });
+
+            console.log(`✅ Updated release ${tagName} with Docker image info`);
+
+      - name: Publish summary
+        run: |
+          echo "## 🐳 Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository }}:v${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.prerelease.outputs.is_prerelease }}" == "true" ]; then
+            echo "- \`ghcr.io/${{ github.repository }}:beta\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- \`ghcr.io/${{ github.repository }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull command:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/${{ github.repository }}:v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
