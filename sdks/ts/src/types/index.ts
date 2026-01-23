@@ -532,3 +532,131 @@ export interface KoraClientOptions {
     /** Optional HMAC secret for signature-based authentication */
     hmacSecret?: string;
 }
+
+/**
+ * Plugin Types - Kit-typed responses for the Kora plugin
+ */
+
+import type { Address, Blockhash, Instruction as KitInstruction, Base64EncodedWireTransaction } from '@solana/kit';
+
+/** Configuration options for the Kora Kit plugin */
+export interface KoraPluginConfig {
+    /** Kora RPC endpoint URL */
+    endpoint: string;
+    /** Optional API key for authentication */
+    apiKey?: string;
+    /** Optional HMAC secret for signature-based authentication */
+    hmacSecret?: string;
+}
+
+/** Plugin response for getPayerSigner with Kit Address types */
+export interface KitPayerSignerResponse {
+    /** Public key of the payer signer */
+    signer_address: Address;
+    /** Public key of the payment destination */
+    payment_address: Address;
+}
+
+/** Plugin response for getBlockhash with Kit Blockhash type */
+export interface KitBlockhashResponse {
+    /** Base58-encoded blockhash */
+    blockhash: Blockhash;
+}
+
+/** Plugin response for getSupportedTokens with Kit Address types */
+export interface KitSupportedTokensResponse {
+    /** Array of supported token mint addresses */
+    tokens: Address[];
+}
+
+/** Plugin response for estimateTransactionFee with Kit Address types */
+export interface KitEstimateFeeResponse {
+    /** Transaction fee in lamports */
+    fee_in_lamports: number;
+    /** Transaction fee in the requested token */
+    fee_in_token: number;
+    /** Public key of the signer used to estimate the fee */
+    signer_pubkey: Address;
+    /** Public key of the payment destination */
+    payment_address: Address;
+}
+
+/** Plugin response for signTransaction with Kit types */
+export interface KitSignTransactionResponse {
+    /** Base64-encoded signed transaction */
+    signed_transaction: Base64EncodedWireTransaction;
+    /** Public key of the signer used to sign the transaction */
+    signer_pubkey: Address;
+}
+
+/** Plugin response for signAndSendTransaction with Kit types */
+export interface KitSignAndSendTransactionResponse {
+    /** Base64-encoded signed transaction */
+    signed_transaction: Base64EncodedWireTransaction;
+    /** Public key of the signer used to send the transaction */
+    signer_pubkey: Address;
+}
+
+/** Plugin response for transferTransaction with Kit types */
+export interface KitTransferTransactionResponse {
+    /** Base64-encoded signed transaction */
+    transaction: Base64EncodedWireTransaction;
+    /** Base64-encoded message */
+    message: string;
+    /** Recent blockhash used in the transaction */
+    blockhash: Blockhash;
+    /** Public key of the signer used to send the transaction */
+    signer_pubkey: Address;
+    /** Parsed instructions from the transaction message */
+    instructions: KitInstruction[];
+}
+
+/** Plugin response for getPaymentInstruction with Kit types */
+export interface KitPaymentInstructionResponse {
+    /** Base64-encoded original transaction */
+    original_transaction: Base64EncodedWireTransaction;
+    /** Payment instruction */
+    payment_instruction: KitInstruction;
+    /** Payment amount in the requested token */
+    payment_amount: number;
+    /** Mint address of the token used for payment */
+    payment_token: Address;
+    /** Public key of the payment destination */
+    payment_address: Address;
+    /** Public key of the payer signer */
+    signer_address: Address;
+}
+
+/** Plugin response for getConfig with Kit Address types */
+export interface KitConfigResponse {
+    /** Array of public keys of the fee payer accounts (signer pool) */
+    fee_payers: Address[];
+    /** Validation rules and constraints */
+    validation_config: KitValidationConfig;
+    /** Enabled methods */
+    enabled_methods: EnabledMethods;
+}
+
+/** Plugin validation config with Kit Address types */
+export interface KitValidationConfig {
+    /** Maximum allowed transaction value in lamports */
+    max_allowed_lamports: number;
+    /** Maximum number of signatures allowed per transaction */
+    max_signatures: number;
+    /** Price oracle source for token conversions */
+    price_source: PriceSource;
+    /** List of allowed Solana program IDs */
+    allowed_programs: Address[];
+    /** List of allowed token mint addresses for fee payment */
+    allowed_tokens: Address[];
+    /** List of SPL tokens accepted for paid transactions */
+    allowed_spl_paid_tokens: Address[];
+    /** List of blocked account addresses */
+    disallowed_accounts: Address[];
+    /** Policy controlling fee payer permissions */
+    fee_payer_policy: FeePayerPolicy;
+    /** Pricing model configuration */
+    price: PriceConfig;
+    /** Token2022 configuration */
+    token2022: Token2022Config;
+}
