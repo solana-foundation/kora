@@ -6,13 +6,17 @@ import type {
     KitBlockhashResponse,
     KitSupportedTokensResponse,
     KitEstimateFeeResponse,
+    KitEstimateBundleFeeResponse,
     KitSignTransactionResponse,
     KitSignAndSendTransactionResponse,
+    KitSignBundleResponse,
+    KitSignAndSendBundleResponse,
     KitTransferTransactionResponse,
     KitPaymentInstructionResponse,
     KitConfigResponse,
+    GetVersionResponse,
 } from '../src/types/index.js';
-import type { Address, Blockhash, Base64EncodedWireTransaction } from '@solana/kit';
+import type { Address, Blockhash, Signature, Base64EncodedWireTransaction } from '@solana/kit';
 
 // Mock fetch globally
 const mockFetch = jest.fn();
@@ -61,10 +65,14 @@ describe('Kora Kit Plugin', () => {
             expect(typeof enhanced.kora.getConfig).toBe('function');
             expect(typeof enhanced.kora.getPayerSigner).toBe('function');
             expect(typeof enhanced.kora.getBlockhash).toBe('function');
+            expect(typeof enhanced.kora.getVersion).toBe('function');
             expect(typeof enhanced.kora.getSupportedTokens).toBe('function');
             expect(typeof enhanced.kora.estimateTransactionFee).toBe('function');
+            expect(typeof enhanced.kora.estimateBundleFee).toBe('function');
             expect(typeof enhanced.kora.signTransaction).toBe('function');
             expect(typeof enhanced.kora.signAndSendTransaction).toBe('function');
+            expect(typeof enhanced.kora.signBundle).toBe('function');
+            expect(typeof enhanced.kora.signAndSendBundle).toBe('function');
             expect(typeof enhanced.kora.transferTransaction).toBe('function');
             expect(typeof enhanced.kora.getPaymentInstruction).toBe('function');
         });
@@ -217,6 +225,20 @@ describe('Kora Kit Plugin', () => {
             });
         });
 
+        describe('getVersion', () => {
+            it('should return version string', async () => {
+                const rawResponse = {
+                    version: '2.0.0',
+                };
+
+                mockSuccessfulResponse(rawResponse);
+
+                const result: GetVersionResponse = await kora.getVersion();
+
+                expect(result.version).toBe('2.0.0');
+            });
+        });
+
         describe('getSupportedTokens', () => {
             it('should return Kit-typed Address array', async () => {
                 const rawResponse = {
@@ -267,6 +289,33 @@ describe('Kora Kit Plugin', () => {
             });
         });
 
+        describe('estimateBundleFee', () => {
+            it('should return Kit-typed Address fields for bundle', async () => {
+                const rawResponse = {
+                    fee_in_lamports: 15000,
+                    fee_in_token: 150,
+                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                    payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                };
+
+                mockSuccessfulResponse(rawResponse);
+
+                const result: KitEstimateBundleFeeResponse = await kora.estimateBundleFee({
+                    transactions: ['base64Tx1', 'base64Tx2', 'base64Tx3'],
+                    fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+                });
+
+                // Type assertions
+                const signerPubkey: Address = result.signer_pubkey;
+                const paymentAddr: Address = result.payment_address;
+
+                expect(result.fee_in_lamports).toBe(15000);
+                expect(result.fee_in_token).toBe(150);
+                expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
+                expect(paymentAddr).toBe('PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
+            });
+        });
+
         describe('signTransaction', () => {
             it('should return Kit-typed response with Base64EncodedWireTransaction', async () => {
                 const rawResponse = {
@@ -290,8 +339,12 @@ describe('Kora Kit Plugin', () => {
         });
 
         describe('signAndSendTransaction', () => {
-            it('should return Kit-typed response with Base64EncodedWireTransaction', async () => {
+            it('should return Kit-typed response with Signature and Base64EncodedWireTransaction', async () => {
+                // Use a valid base58 signature (88 characters, valid base58 alphabet)
+                const mockSignature =
+                    '5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW';
                 const rawResponse = {
+                    signature: mockSignature,
                     signed_transaction: 'base64SignedTransaction',
                     signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 };
@@ -303,11 +356,63 @@ describe('Kora Kit Plugin', () => {
                 });
 
                 // Type assertions - verify Kit types
+                const sig: Signature = result.signature;
                 const signedTx: Base64EncodedWireTransaction = result.signed_transaction;
                 const signerPubkey: Address = result.signer_pubkey;
 
+                expect(sig).toBe(mockSignature);
                 expect(signedTx).toBe('base64SignedTransaction');
                 expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
+            });
+        });
+
+        describe('signBundle', () => {
+            it('should return Kit-typed response with Base64EncodedWireTransaction array', async () => {
+                const rawResponse = {
+                    signed_transactions: ['base64SignedTx1', 'base64SignedTx2'],
+                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                };
+
+                mockSuccessfulResponse(rawResponse);
+
+                const result: KitSignBundleResponse = await kora.signBundle({
+                    transactions: ['base64Tx1', 'base64Tx2'],
+                });
+
+                // Type assertions - verify Kit types
+                const signedTxs: Base64EncodedWireTransaction[] = result.signed_transactions;
+                const signerPubkey: Address = result.signer_pubkey;
+
+                expect(signedTxs).toHaveLength(2);
+                expect(signedTxs[0]).toBe('base64SignedTx1');
+                expect(signedTxs[1]).toBe('base64SignedTx2');
+                expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
+            });
+        });
+
+        describe('signAndSendBundle', () => {
+            it('should return Kit-typed response with Base64EncodedWireTransaction array and bundle UUID', async () => {
+                const rawResponse = {
+                    signed_transactions: ['base64SignedTx1', 'base64SignedTx2'],
+                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                    bundle_uuid: 'jito-bundle-uuid-12345',
+                };
+
+                mockSuccessfulResponse(rawResponse);
+
+                const result: KitSignAndSendBundleResponse = await kora.signAndSendBundle({
+                    transactions: ['base64Tx1', 'base64Tx2'],
+                });
+
+                // Type assertions - verify Kit types
+                const signedTxs: Base64EncodedWireTransaction[] = result.signed_transactions;
+                const signerPubkey: Address = result.signer_pubkey;
+
+                expect(signedTxs).toHaveLength(2);
+                expect(signedTxs[0]).toBe('base64SignedTx1');
+                expect(signedTxs[1]).toBe('base64SignedTx2');
+                expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
+                expect(result.bundle_uuid).toBe('jito-bundle-uuid-12345');
             });
         });
 
@@ -427,10 +532,14 @@ describe('Kora Kit Plugin', () => {
             expect(typeof client.kora.getConfig).toBe('function');
             expect(typeof client.kora.getPayerSigner).toBe('function');
             expect(typeof client.kora.getBlockhash).toBe('function');
+            expect(typeof client.kora.getVersion).toBe('function');
             expect(typeof client.kora.getSupportedTokens).toBe('function');
             expect(typeof client.kora.estimateTransactionFee).toBe('function');
+            expect(typeof client.kora.estimateBundleFee).toBe('function');
             expect(typeof client.kora.signTransaction).toBe('function');
             expect(typeof client.kora.signAndSendTransaction).toBe('function');
+            expect(typeof client.kora.signBundle).toBe('function');
+            expect(typeof client.kora.signAndSendBundle).toBe('function');
             expect(typeof client.kora.transferTransaction).toBe('function');
             expect(typeof client.kora.getPaymentInstruction).toBe('function');
         });

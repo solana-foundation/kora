@@ -537,7 +537,13 @@ export interface KoraClientOptions {
  * Plugin Types - Kit-typed responses for the Kora plugin
  */
 
-import type { Address, Blockhash, Instruction as KitInstruction, Base64EncodedWireTransaction } from '@solana/kit';
+import type {
+    Address,
+    Blockhash,
+    Signature,
+    Instruction as KitInstruction,
+    Base64EncodedWireTransaction,
+} from '@solana/kit';
 
 /** Configuration options for the Kora Kit plugin */
 export interface KoraPluginConfig {
@@ -574,7 +580,7 @@ export interface KitEstimateFeeResponse {
     /** Transaction fee in lamports */
     fee_in_lamports: number;
     /** Transaction fee in the requested token */
-    fee_in_token: number;
+    fee_in_token?: number;
     /** Public key of the signer used to estimate the fee */
     signer_pubkey: Address;
     /** Public key of the payment destination */
@@ -591,6 +597,8 @@ export interface KitSignTransactionResponse {
 
 /** Plugin response for signAndSendTransaction with Kit types */
 export interface KitSignAndSendTransactionResponse {
+    /** Transaction signature */
+    signature: Signature;
     /** Base64-encoded signed transaction */
     signed_transaction: Base64EncodedWireTransaction;
     /** Public key of the signer used to send the transaction */
@@ -635,6 +643,36 @@ export interface KitConfigResponse {
     validation_config: KitValidationConfig;
     /** Enabled methods */
     enabled_methods: EnabledMethods;
+}
+
+/** Plugin response for estimateBundleFee with Kit types */
+export interface KitEstimateBundleFeeResponse {
+    /** Total bundle fee in lamports across all transactions */
+    fee_in_lamports: number;
+    /** Total bundle fee in the requested token */
+    fee_in_token?: number;
+    /** Public key of the signer used to estimate the fee */
+    signer_pubkey: Address;
+    /** Public key of the payment destination */
+    payment_address: Address;
+}
+
+/** Plugin response for signBundle with Kit types */
+export interface KitSignBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: Base64EncodedWireTransaction[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: Address;
+}
+
+/** Plugin response for signAndSendBundle with Kit types */
+export interface KitSignAndSendBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: Base64EncodedWireTransaction[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: Address;
+    /** UUID of the submitted Jito bundle */
+    bundle_uuid: string;
 }
 
 /** Plugin validation config with Kit Address types */

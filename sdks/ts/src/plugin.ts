@@ -1,4 +1,12 @@
-import { address, blockhash, type Address, type Blockhash, type Base64EncodedWireTransaction } from '@solana/kit';
+import {
+    address,
+    blockhash,
+    signature,
+    type Address,
+    type Blockhash,
+    type Signature,
+    type Base64EncodedWireTransaction,
+} from '@solana/kit';
 import { KoraClient } from './client.js';
 import type {
     KoraPluginConfig,
@@ -6,14 +14,21 @@ import type {
     KitBlockhashResponse,
     KitSupportedTokensResponse,
     KitEstimateFeeResponse,
+    KitEstimateBundleFeeResponse,
     KitSignTransactionResponse,
     KitSignAndSendTransactionResponse,
+    KitSignBundleResponse,
+    KitSignAndSendBundleResponse,
     KitTransferTransactionResponse,
     KitPaymentInstructionResponse,
     KitConfigResponse,
+    GetVersionResponse,
     EstimateTransactionFeeRequest,
+    EstimateBundleFeeRequest,
     SignTransactionRequest,
     SignAndSendTransactionRequest,
+    SignBundleRequest,
+    SignAndSendBundleRequest,
     TransferTransactionRequest,
     GetPaymentInstructionRequest,
 } from './types/index.js';
@@ -100,6 +115,13 @@ export function koraPlugin(config: KoraPluginConfig) {
             },
 
             /**
+             * Gets the version of the Kora server.
+             */
+            async getVersion(): Promise<GetVersionResponse> {
+                return client.getVersion();
+            },
+
+            /**
              * Retrieves the list of tokens supported for fee payment with Kit-typed addresses.
              */
             async getSupportedTokens(): Promise<KitSupportedTokensResponse> {
@@ -114,6 +136,19 @@ export function koraPlugin(config: KoraPluginConfig) {
              */
             async estimateTransactionFee(request: EstimateTransactionFeeRequest): Promise<KitEstimateFeeResponse> {
                 const result = await client.estimateTransactionFee(request);
+                return {
+                    fee_in_lamports: result.fee_in_lamports,
+                    fee_in_token: result.fee_in_token,
+                    signer_pubkey: address(result.signer_pubkey),
+                    payment_address: address(result.payment_address),
+                };
+            },
+
+            /**
+             * Estimates the bundle fee with Kit-typed addresses.
+             */
+            async estimateBundleFee(request: EstimateBundleFeeRequest): Promise<KitEstimateBundleFeeResponse> {
+                const result = await client.estimateBundleFee(request);
                 return {
                     fee_in_lamports: result.fee_in_lamports,
                     fee_in_token: result.fee_in_token,
@@ -141,8 +176,32 @@ export function koraPlugin(config: KoraPluginConfig) {
             ): Promise<KitSignAndSendTransactionResponse> {
                 const result = await client.signAndSendTransaction(request);
                 return {
+                    signature: signature(result.signature) as Signature,
                     signed_transaction: result.signed_transaction as Base64EncodedWireTransaction,
                     signer_pubkey: address(result.signer_pubkey),
+                };
+            },
+
+            /**
+             * Signs a bundle of transactions with Kit-typed response.
+             */
+            async signBundle(request: SignBundleRequest): Promise<KitSignBundleResponse> {
+                const result = await client.signBundle(request);
+                return {
+                    signed_transactions: result.signed_transactions as Base64EncodedWireTransaction[],
+                    signer_pubkey: address(result.signer_pubkey),
+                };
+            },
+
+            /**
+             * Signs and sends a bundle of transactions via Jito with Kit-typed response.
+             */
+            async signAndSendBundle(request: SignAndSendBundleRequest): Promise<KitSignAndSendBundleResponse> {
+                const result = await client.signAndSendBundle(request);
+                return {
+                    signed_transactions: result.signed_transactions as Base64EncodedWireTransaction[],
+                    signer_pubkey: address(result.signer_pubkey),
+                    bundle_uuid: result.bundle_uuid,
                 };
             },
 
