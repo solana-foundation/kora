@@ -11,7 +11,6 @@ import type {
     KitSignAndSendTransactionResponse,
     KitSignBundleResponse,
     KitSignAndSendBundleResponse,
-    KitTransferTransactionResponse,
     KitPaymentInstructionResponse,
     KitConfigResponse,
     GetVersionResponse,
@@ -73,7 +72,6 @@ describe('Kora Kit Plugin', () => {
             expect(typeof enhanced.kora.signAndSendTransaction).toBe('function');
             expect(typeof enhanced.kora.signBundle).toBe('function');
             expect(typeof enhanced.kora.signAndSendBundle).toBe('function');
-            expect(typeof enhanced.kora.transferTransaction).toBe('function');
             expect(typeof enhanced.kora.getPaymentInstruction).toBe('function');
         });
 
@@ -416,38 +414,6 @@ describe('Kora Kit Plugin', () => {
             });
         });
 
-        describe('transferTransaction', () => {
-            it('should return Kit-typed response with Base64EncodedWireTransaction and Blockhash', async () => {
-                const rawResponse = {
-                    transaction: 'base64Transaction',
-                    message: 'base64Message',
-                    blockhash: '4NxM2D4kQcipkzMWBWQME5YSVnj5kT8QKA7rvb3rKLvE',
-                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                    instructions: [],
-                };
-
-                mockSuccessfulResponse(rawResponse);
-
-                const result: KitTransferTransactionResponse = await kora.transferTransaction({
-                    amount: 1000000,
-                    token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-                    source: 'sourceWallet',
-                    destination: 'destWallet',
-                });
-
-                // Type assertions - verify Kit types
-                const tx: Base64EncodedWireTransaction = result.transaction;
-                const hash: Blockhash = result.blockhash;
-                const signerPubkey: Address = result.signer_pubkey;
-
-                expect(tx).toBe('base64Transaction');
-                expect(result.message).toBe('base64Message');
-                expect(hash).toBe('4NxM2D4kQcipkzMWBWQME5YSVnj5kT8QKA7rvb3rKLvE');
-                expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
-                expect(result.instructions).toEqual([]);
-            });
-        });
-
         describe('getPaymentInstruction', () => {
             it('should return Kit-typed response with Base64EncodedWireTransaction and Address fields', async () => {
                 const mockFeeEstimate = {
@@ -540,7 +506,6 @@ describe('Kora Kit Plugin', () => {
             expect(typeof client.kora.signAndSendTransaction).toBe('function');
             expect(typeof client.kora.signBundle).toBe('function');
             expect(typeof client.kora.signAndSendBundle).toBe('function');
-            expect(typeof client.kora.transferTransaction).toBe('function');
             expect(typeof client.kora.getPaymentInstruction).toBe('function');
         });
 

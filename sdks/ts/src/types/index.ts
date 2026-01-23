@@ -5,23 +5,6 @@ import { Instruction } from '@solana/kit';
  */
 
 /**
- * Parameters for creating a transfer transaction.
- * @deprecated Use `getPaymentInstruction` instead for fee payment flows.
- */
-export interface TransferTransactionRequest {
-    /** Amount to transfer in the token's smallest unit (e.g., lamports for SOL) */
-    amount: number;
-    /** Mint address of the token to transfer */
-    token: string;
-    /** Public key of the source wallet (not token account) */
-    source: string;
-    /** Public key of the destination wallet (not token account) */
-    destination: string;
-    /** Optional signer key to select a specific Kora signer */
-    signer_key?: string;
-}
-
-/**
  * Parameters for signing a transaction.
  */
 export interface SignTransactionRequest {
@@ -132,24 +115,6 @@ export interface GetPaymentInstructionRequest {
 /**
  * Response Types
  */
-
-/**
- * Response from creating a transfer transaction.
- * The transaction is unsigned.
- * @deprecated Use `getPaymentInstruction` instead for fee payment flows.
- */
-export interface TransferTransactionResponse {
-    /** Base64-encoded unsigned transaction */
-    transaction: string;
-    /** Base64-encoded unsigned message */
-    message: string;
-    /** Recent blockhash used in the transaction */
-    blockhash: string;
-    /** Public key of the Kora signer (fee payer) */
-    signer_pubkey: string;
-    /** Parsed instructions from the transaction message */
-    instructions: Instruction[];
-}
 
 /**
  * Response from signing a transaction.
@@ -603,20 +568,6 @@ export interface KitSignAndSendTransactionResponse {
     signed_transaction: Base64EncodedWireTransaction;
     /** Public key of the signer used to send the transaction */
     signer_pubkey: Address;
-}
-
-/** Plugin response for transferTransaction with Kit types */
-export interface KitTransferTransactionResponse {
-    /** Base64-encoded signed transaction */
-    transaction: Base64EncodedWireTransaction;
-    /** Base64-encoded message */
-    message: string;
-    /** Recent blockhash used in the transaction */
-    blockhash: Blockhash;
-    /** Public key of the signer used to send the transaction */
-    signer_pubkey: Address;
-    /** Parsed instructions from the transaction message */
-    instructions: KitInstruction[];
 }
 
 /** Plugin response for getPaymentInstruction with Kit types */

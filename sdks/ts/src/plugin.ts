@@ -19,7 +19,6 @@ import type {
     KitSignAndSendTransactionResponse,
     KitSignBundleResponse,
     KitSignAndSendBundleResponse,
-    KitTransferTransactionResponse,
     KitPaymentInstructionResponse,
     KitConfigResponse,
     GetVersionResponse,
@@ -29,7 +28,6 @@ import type {
     SignAndSendTransactionRequest,
     SignBundleRequest,
     SignAndSendBundleRequest,
-    TransferTransactionRequest,
     GetPaymentInstructionRequest,
 } from './types/index.js';
 
@@ -202,20 +200,6 @@ export function koraPlugin(config: KoraPluginConfig) {
                     signed_transactions: result.signed_transactions as Base64EncodedWireTransaction[],
                     signer_pubkey: address(result.signer_pubkey),
                     bundle_uuid: result.bundle_uuid,
-                };
-            },
-
-            /**
-             * Creates a token transfer transaction with Kit-typed response.
-             */
-            async transferTransaction(request: TransferTransactionRequest): Promise<KitTransferTransactionResponse> {
-                const result = await client.transferTransaction(request);
-                return {
-                    transaction: result.transaction as Base64EncodedWireTransaction,
-                    message: result.message,
-                    blockhash: blockhash(result.blockhash),
-                    signer_pubkey: address(result.signer_pubkey),
-                    instructions: result.instructions,
                 };
             },
 

@@ -14,8 +14,6 @@ import {
     SignBundleResponse,
     SignAndSendBundleRequest,
     SignAndSendBundleResponse,
-    TransferTransactionRequest,
-    TransferTransactionResponse,
     EstimateTransactionFeeResponse,
 } from '../src/types/index.js';
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
@@ -360,30 +358,6 @@ describe('KoraClient Unit Tests', () => {
         });
     });
 
-    describe('transferTransaction (DEPRECATED)', () => {
-        it('should create transfer transaction', async () => {
-            const request: TransferTransactionRequest = {
-                amount: 1000000,
-                token: 'SOL',
-                source: 'source_address',
-                destination: 'destination_address',
-            };
-            const mockResponse: TransferTransactionResponse = {
-                transaction: 'base64_encoded_transaction',
-                message: 'Transfer transaction created',
-                blockhash: 'test_blockhash',
-                signer_pubkey: 'test_signer_pubkey',
-                instructions: [],
-            };
-
-            await testSuccessfulRpcMethod(
-                'transferTransaction',
-                () => client.transferTransaction(request),
-                mockResponse,
-                request,
-            );
-        });
-    });
     describe('getPaymentInstruction', () => {
         const mockConfig: Config = {
             fee_payers: ['11111111111111111111111111111111'],
