@@ -1,22 +1,23 @@
+import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
+
 import { KoraClient } from '../src/client.js';
 import {
     Config,
     EstimateTransactionFeeRequest,
+    EstimateTransactionFeeResponse,
     GetBlockhashResponse,
-    GetSupportedTokensResponse,
     GetPayerSignerResponse,
+    GetSupportedTokensResponse,
     GetVersionResponse,
-    SignTransactionRequest,
-    SignTransactionResponse,
+    SignAndSendBundleRequest,
+    SignAndSendBundleResponse,
     SignAndSendTransactionRequest,
     SignAndSendTransactionResponse,
     SignBundleRequest,
     SignBundleResponse,
-    SignAndSendBundleRequest,
-    SignAndSendBundleResponse,
-    EstimateTransactionFeeResponse,
+    SignTransactionRequest,
+    SignTransactionResponse,
 } from '../src/types/index.js';
-import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import { getInstructionsFromBase64Message } from '../src/utils/transaction.js';
 
 // Mock fetch globally
@@ -31,8 +32,8 @@ describe('KoraClient Unit Tests', () => {
     const mockSuccessfulResponse = (result: any) => {
         mockFetch.mockResolvedValueOnce({
             json: jest.fn().mockResolvedValueOnce({
-                jsonrpc: '2.0',
                 id: 1,
+                jsonrpc: '2.0',
                 result,
             }),
         });
@@ -41,25 +42,25 @@ describe('KoraClient Unit Tests', () => {
     const mockErrorResponse = (error: any) => {
         mockFetch.mockResolvedValueOnce({
             json: jest.fn().mockResolvedValueOnce({
-                jsonrpc: '2.0',
-                id: 1,
                 error,
+                id: 1,
+                jsonrpc: '2.0',
             }),
         });
     };
 
     const expectRpcCall = (method: string, params: any = undefined) => {
         expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
             body: JSON.stringify({
-                jsonrpc: '2.0',
                 id: 1,
+                jsonrpc: '2.0',
                 method,
                 params,
             }),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            method: 'POST',
         });
     };
 
@@ -113,80 +114,80 @@ describe('KoraClient Unit Tests', () => {
     describe('getConfig', () => {
         it('should return configuration', async () => {
             const mockConfig: Config = {
+                enabled_methods: {
+                    estimate_bundle_fee: true,
+                    estimate_transaction_fee: true,
+                    get_blockhash: true,
+                    get_config: true,
+                    get_payer_signer: true,
+                    get_supported_tokens: true,
+                    get_version: true,
+                    liveness: true,
+                    sign_and_send_bundle: true,
+                    sign_and_send_transaction: true,
+                    sign_bundle: true,
+                    sign_transaction: true,
+                    transfer_transaction: true,
+                },
                 fee_payers: ['test_fee_payer_address'],
                 validation_config: {
-                    max_allowed_lamports: 1000000,
-                    max_signatures: 10,
-                    price_source: 'Jupiter',
                     allowed_programs: ['program1', 'program2'],
-                    allowed_tokens: ['token1', 'token2'],
                     allowed_spl_paid_tokens: ['spl_token1'],
+                    allowed_tokens: ['token1', 'token2'],
                     disallowed_accounts: ['account1'],
                     fee_payer_policy: {
-                        system: {
+                        spl_token: {
+                            allow_approve: true,
+                            allow_burn: true,
+                            allow_close_account: true,
+                            allow_freeze_account: true,
+                            allow_initialize_account: true,
+                            allow_initialize_mint: true,
+                            allow_initialize_multisig: true,
+                            allow_mint_to: true,
+                            allow_revoke: true,
+                            allow_set_authority: true,
+                            allow_thaw_account: true,
                             allow_transfer: true,
+                        },
+                        system: {
+                            allow_allocate: true,
                             allow_assign: true,
                             allow_create_account: true,
-                            allow_allocate: true,
+                            allow_transfer: true,
                             nonce: {
-                                allow_initialize: true,
                                 allow_advance: true,
                                 allow_authorize: true,
+                                allow_initialize: true,
                                 allow_withdraw: true,
                             },
                         },
-                        spl_token: {
-                            allow_transfer: true,
-                            allow_burn: true,
-                            allow_close_account: true,
-                            allow_approve: true,
-                            allow_revoke: true,
-                            allow_set_authority: true,
-                            allow_mint_to: true,
-                            allow_initialize_mint: true,
-                            allow_initialize_account: true,
-                            allow_initialize_multisig: true,
-                            allow_freeze_account: true,
-                            allow_thaw_account: true,
-                        },
                         token_2022: {
-                            allow_transfer: false,
+                            allow_approve: true,
                             allow_burn: true,
                             allow_close_account: true,
-                            allow_approve: true,
+                            allow_freeze_account: true,
+                            allow_initialize_account: true,
+                            allow_initialize_mint: true,
+                            allow_initialize_multisig: true,
+                            allow_mint_to: true,
                             allow_revoke: true,
                             allow_set_authority: true,
-                            allow_mint_to: true,
-                            allow_initialize_mint: true,
-                            allow_initialize_account: true,
-                            allow_initialize_multisig: true,
-                            allow_freeze_account: true,
                             allow_thaw_account: true,
+                            allow_transfer: false,
                         },
                     },
+                    max_allowed_lamports: 1000000,
+                    max_signatures: 10,
                     price: {
-                        type: 'margin',
                         margin: 0.1,
+                        type: 'margin',
                     },
+                    price_source: 'Jupiter',
                     token2022: {
-                        blocked_mint_extensions: ['extension1', 'extension2'],
                         blocked_account_extensions: ['account_extension1', 'account_extension2'],
+                        blocked_mint_extensions: ['extension1', 'extension2'],
                     },
-                },
-                enabled_methods: {
-                    liveness: true,
-                    estimate_transaction_fee: true,
-                    estimate_bundle_fee: true,
-                    get_supported_tokens: true,
-                    get_payer_signer: true,
-                    sign_transaction: true,
-                    sign_and_send_transaction: true,
-                    transfer_transaction: true,
-                    get_blockhash: true,
-                    get_config: true,
-                    get_version: true,
-                    sign_and_send_bundle: true,
-                    sign_bundle: true,
                 },
             };
 
@@ -227,8 +228,8 @@ describe('KoraClient Unit Tests', () => {
     describe('getPayerSigner', () => {
         it('should return payer signer and payment destination', async () => {
             const mockResponse: GetPayerSignerResponse = {
-                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             };
 
             await testSuccessfulRpcMethod('getPayerSigner', () => client.getPayerSigner(), mockResponse);
@@ -236,8 +237,8 @@ describe('KoraClient Unit Tests', () => {
 
         it('should return same address for signer and payment_destination when no separate paymaster', async () => {
             const mockResponse: GetPayerSignerResponse = {
-                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 payment_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             };
 
             await testSuccessfulRpcMethod('getPayerSigner', () => client.getPayerSigner(), mockResponse);
@@ -248,14 +249,14 @@ describe('KoraClient Unit Tests', () => {
     describe('estimateTransactionFee', () => {
         it('should estimate transaction fee', async () => {
             const request: EstimateTransactionFeeRequest = {
-                transaction: 'base64_encoded_transaction',
                 fee_token: 'SOL',
+                transaction: 'base64_encoded_transaction',
             };
             const mockResponse: EstimateTransactionFeeResponse = {
                 fee_in_lamports: 5000,
                 fee_in_token: 25,
-                signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             };
 
             await testSuccessfulRpcMethod(
@@ -335,9 +336,9 @@ describe('KoraClient Unit Tests', () => {
                 transactions: ['base64_tx_1', 'base64_tx_2'],
             };
             const mockResponse: SignAndSendBundleResponse = {
+                bundle_uuid: 'test-bundle-uuid-123',
                 signed_transactions: ['base64_signed_tx_1', 'base64_signed_tx_2'],
                 signer_pubkey: 'test_signer_pubkey',
-                bundle_uuid: 'test-bundle-uuid-123',
             };
 
             await testSuccessfulRpcMethod(
@@ -359,89 +360,89 @@ describe('KoraClient Unit Tests', () => {
     });
 
     describe('getPaymentInstruction', () => {
-        const mockConfig: Config = {
+        const _mockConfig: Config = {
+            enabled_methods: {
+                estimate_bundle_fee: true,
+                estimate_transaction_fee: true,
+                get_blockhash: true,
+                get_config: true,
+                get_payer_signer: true,
+                get_supported_tokens: true,
+                get_version: true,
+                liveness: true,
+                sign_and_send_bundle: true,
+                sign_and_send_transaction: true,
+                sign_bundle: true,
+                sign_transaction: true,
+                transfer_transaction: true,
+            },
             fee_payers: ['11111111111111111111111111111111'],
             validation_config: {
-                max_allowed_lamports: 1000000,
-                max_signatures: 10,
-                price_source: 'Jupiter',
                 allowed_programs: ['program1'],
-                allowed_tokens: ['token1'],
                 allowed_spl_paid_tokens: ['4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'],
+                allowed_tokens: ['token1'],
                 disallowed_accounts: [],
                 fee_payer_policy: {
-                    system: {
+                    spl_token: {
+                        allow_approve: true,
+                        allow_burn: true,
+                        allow_close_account: true,
+                        allow_freeze_account: true,
+                        allow_initialize_account: true,
+                        allow_initialize_mint: true,
+                        allow_initialize_multisig: true,
+                        allow_mint_to: true,
+                        allow_revoke: true,
+                        allow_set_authority: true,
+                        allow_thaw_account: true,
                         allow_transfer: true,
+                    },
+                    system: {
+                        allow_allocate: true,
                         allow_assign: true,
                         allow_create_account: true,
-                        allow_allocate: true,
+                        allow_transfer: true,
                         nonce: {
-                            allow_initialize: true,
                             allow_advance: true,
                             allow_authorize: true,
+                            allow_initialize: true,
                             allow_withdraw: true,
                         },
                     },
-                    spl_token: {
-                        allow_transfer: true,
-                        allow_burn: true,
-                        allow_close_account: true,
-                        allow_approve: true,
-                        allow_revoke: true,
-                        allow_set_authority: true,
-                        allow_mint_to: true,
-                        allow_initialize_mint: true,
-                        allow_initialize_account: true,
-                        allow_initialize_multisig: true,
-                        allow_freeze_account: true,
-                        allow_thaw_account: true,
-                    },
                     token_2022: {
-                        allow_transfer: true,
+                        allow_approve: true,
                         allow_burn: true,
                         allow_close_account: true,
-                        allow_approve: true,
+                        allow_freeze_account: true,
+                        allow_initialize_account: true,
+                        allow_initialize_mint: true,
+                        allow_initialize_multisig: true,
+                        allow_mint_to: true,
                         allow_revoke: true,
                         allow_set_authority: true,
-                        allow_mint_to: true,
-                        allow_initialize_mint: true,
-                        allow_initialize_account: true,
-                        allow_initialize_multisig: true,
-                        allow_freeze_account: true,
                         allow_thaw_account: true,
+                        allow_transfer: true,
                     },
                 },
+                max_allowed_lamports: 1000000,
+                max_signatures: 10,
                 price: {
-                    type: 'margin',
                     margin: 0.1,
+                    type: 'margin',
                 },
+                price_source: 'Jupiter',
                 token2022: {
-                    blocked_mint_extensions: [],
                     blocked_account_extensions: [],
+                    blocked_mint_extensions: [],
                 },
-            },
-            enabled_methods: {
-                liveness: true,
-                estimate_transaction_fee: true,
-                estimate_bundle_fee: true,
-                get_supported_tokens: true,
-                get_payer_signer: true,
-                sign_transaction: true,
-                sign_and_send_transaction: true,
-                transfer_transaction: true,
-                get_blockhash: true,
-                get_config: true,
-                get_version: true,
-                sign_and_send_bundle: true,
-                sign_bundle: true,
             },
         };
 
         const mockFeeEstimate: EstimateTransactionFeeResponse = {
             fee_in_lamports: 5000,
             fee_in_token: 50000,
-            signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+            signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
         };
 
         // Create a mock base64-encoded transaction
@@ -450,10 +451,10 @@ describe('KoraClient Unit Tests', () => {
             'Aoq7ymA5OGP+gmDXiY5m3cYXlY2Rz/a/gFjOgt9ZuoCS7UzuiGGaEnW2OOtvHvMQHkkD7Z4LRF5B63ftu+1oZwIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgECB1urjQEjgFgzqYhJ8IXJeSg4cJP1j1g2CJstOQTDchOKUzqH3PxgGW3c4V3vZV05A5Y30/MggOBs0Kd00s1JEwg5TaEeaV4+KL2y7fXIAuf6cN0ZQitbhY+G9ExtBSChspOXPgNcy9pYpETe4bmB+fg4bfZx1tnicA/kIyyubczAmbcIKIuniNOOQYG2ggKCz8NjEsHVezrWMatndu1wk6J5miGP26J6Vwp31AljiAajAFuP0D9mWJwSeFuA7J5rPwbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpd/O36SW02zRtNtqk6GFeip2+yBQsVTeSbLL4rWJRkd4CBgQCBQQBCgxAQg8AAAAAAAYGBAIFAwEKDBAnAAAAAAAABg==';
 
         const validRequest = {
-            transaction: mockTransactionBase64,
             fee_token: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
             source_wallet: '11111111111111111111111111111111',
             token_program_id: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+            transaction: mockTransactionBase64,
         };
 
         beforeEach(() => {
@@ -469,8 +470,8 @@ describe('KoraClient Unit Tests', () => {
             // Mock estimateTransactionFee call
             mockFetch.mockResolvedValueOnce({
                 json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
                     id: 1,
+                    jsonrpc: '2.0',
                     result: mockFeeEstimate,
                 }),
             });
@@ -479,8 +480,9 @@ describe('KoraClient Unit Tests', () => {
 
             expect(result).toEqual({
                 original_transaction: validRequest.transaction,
+                payment_address: mockFeeEstimate.payment_address,
+                payment_amount: mockFeeEstimate.fee_in_token,
                 payment_instruction: expect.objectContaining({
-                    programAddress: TOKEN_PROGRAM_ADDRESS,
                     accounts: [
                         expect.objectContaining({
                             role: 1, // writable
@@ -489,37 +491,37 @@ describe('KoraClient Unit Tests', () => {
                             role: 1, // writable
                         }), // Destination token account
                         expect.objectContaining({
-                            role: 2, // readonly-signer
+                            // readonly-signer
                             address: validRequest.source_wallet,
+                            role: 2,
                             signer: expect.objectContaining({
                                 address: validRequest.source_wallet,
                             }),
                         }), // Authority
                     ],
                     data: expect.any(Uint8Array),
+                    programAddress: TOKEN_PROGRAM_ADDRESS,
                 }),
-                payment_amount: mockFeeEstimate.fee_in_token,
                 payment_token: validRequest.fee_token,
-                payment_address: mockFeeEstimate.payment_address,
                 signer_address: mockFeeEstimate.signer_pubkey,
             });
 
             // Verify only estimateTransactionFee was called
             expect(mockFetch).toHaveBeenCalledTimes(1);
             expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
-                method: 'POST',
+                body: JSON.stringify({
+                    id: 1,
+                    jsonrpc: '2.0',
+                    method: 'estimateTransactionFee',
+                    params: {
+                        fee_token: validRequest.fee_token,
+                        transaction: validRequest.transaction,
+                    },
+                }),
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    method: 'estimateTransactionFee',
-                    params: {
-                        transaction: validRequest.transaction,
-                        fee_token: validRequest.fee_token,
-                    },
-                }),
+                method: 'POST',
             });
         });
 
@@ -527,8 +529,8 @@ describe('KoraClient Unit Tests', () => {
             // Mock estimateTransactionFee call
             mockFetch.mockResolvedValueOnce({
                 json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
                     id: 1,
+                    jsonrpc: '2.0',
                     result: mockFeeEstimate,
                 }),
             });
@@ -556,9 +558,9 @@ describe('KoraClient Unit Tests', () => {
             const mockError = { code: -32602, message: 'Invalid transaction' };
             mockFetch.mockResolvedValueOnce({
                 json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
-                    id: 1,
                     error: mockError,
+                    id: 1,
+                    jsonrpc: '2.0',
                 }),
             });
 
@@ -576,8 +578,8 @@ describe('KoraClient Unit Tests', () => {
         it('should return correct payment details in response', async () => {
             mockFetch.mockResolvedValueOnce({
                 json: jest.fn().mockResolvedValueOnce({
-                    jsonrpc: '2.0',
                     id: 1,
+                    jsonrpc: '2.0',
                     result: mockFeeEstimate,
                 }),
             });
@@ -586,10 +588,10 @@ describe('KoraClient Unit Tests', () => {
 
             expect(result).toMatchObject({
                 original_transaction: validRequest.transaction,
-                payment_instruction: expect.any(Object),
-                payment_amount: mockFeeEstimate.fee_in_token,
-                payment_token: validRequest.fee_token,
                 payment_address: mockFeeEstimate.payment_address,
+                payment_amount: mockFeeEstimate.fee_in_token,
+                payment_instruction: expect.any(Object),
+                payment_token: validRequest.fee_token,
                 signer_address: mockFeeEstimate.signer_pubkey,
             });
         });
