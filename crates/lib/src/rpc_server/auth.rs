@@ -4,7 +4,7 @@ use crate::{
         middleware_utils::{
             build_response_with_graceful_error, extract_parts_and_body_bytes, get_jsonrpc_method,
         },
-        recaptcha_util::RecaptchaConfig,
+        recaptcha_util::{RecaptchaConfig, RecaptchaValidated},
     },
 };
 use hmac::{Hmac, Mac};
@@ -75,14 +75,6 @@ where
             let unauthorized_response =
                 build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
 
-            let recaptcha_token = recaptcha_config.as_ref().and_then(|_| {
-                request
-                    .headers()
-                    .get(X_RECAPTCHA_TOKEN)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_string())
-            });
-
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
             let method = get_jsonrpc_method(&body_bytes).unwrap_or_default();
@@ -95,15 +87,18 @@ where
             }
 
             // Check for API key header
-            let req = Request::from_parts(parts, Body::from(body_bytes.clone()));
+            let mut req = Request::from_parts(parts, Body::from(body_bytes.clone()));
             if let Some(provided_key) = req.headers().get(X_API_KEY) {
                 // Constant-time comparison prevents timing attacks
                 if provided_key.as_bytes().ct_eq(api_key.as_bytes()).into() {
                     if let Some(config) = &recaptcha_config {
-                        if let Err(resp) =
-                            config.validate(recaptcha_token.as_deref(), &method).await
-                        {
-                            return Ok(resp);
+                        if req.extensions().get::<RecaptchaValidated>().is_none() {
+                            let recaptcha_token =
+                                req.headers().get(X_RECAPTCHA_TOKEN).and_then(|v| v.to_str().ok());
+                            if let Err(resp) = config.validate(recaptcha_token, &method).await {
+                                return Ok(resp);
+                            }
+                            req.extensions_mut().insert(RecaptchaValidated);
                         }
                     }
                     return inner.call(req).await;
@@ -187,15 +182,7 @@ where
             let signature_header = request.headers().get(X_HMAC_SIGNATURE).cloned();
             let timestamp_header = request.headers().get(X_TIMESTAMP).cloned();
 
-            let recaptcha_token = recaptcha_config.as_ref().and_then(|_| {
-                request
-                    .headers()
-                    .get(X_RECAPTCHA_TOKEN)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_string())
-            });
-
-            let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
+            let (mut parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
             // Get method name for bypass checks
             let method = get_jsonrpc_method(&body_bytes).unwrap_or_default();
@@ -268,8 +255,13 @@ where
             }
 
             if let Some(config) = &recaptcha_config {
-                if let Err(resp) = config.validate(recaptcha_token.as_deref(), &method).await {
-                    return Ok(resp);
+                if parts.extensions.get::<RecaptchaValidated>().is_none() {
+                    let recaptcha_token =
+                        parts.headers.get(X_RECAPTCHA_TOKEN).and_then(|v| v.to_str().ok());
+                    if let Err(resp) = config.validate(recaptcha_token, &method).await {
+                        return Ok(resp);
+                    }
+                    parts.extensions.insert(RecaptchaValidated);
                 }
             }
 
@@ -699,6 +691,61 @@ mod tests {
             .header(X_HMAC_SIGNATURE, &signature)
             .body(Body::from(body))
             .unwrap();
+
+        let response = service.ready().await.unwrap().call(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_api_key_skips_recaptcha_if_already_validated() {
+        let recaptcha_config = test_recaptcha_config();
+        let layer = ApiKeyAuthLayer::new("test-key".to_string()).with_recaptcha(recaptcha_config);
+        let mut service = layer.layer(MockService);
+
+        let body = r#"{"jsonrpc":"2.0","method":"signTransaction","id":1}"#;
+        let mut request = Request::builder()
+            .method(Method::POST)
+            .uri("/")
+            .header(X_API_KEY, "test-key")
+            .body(Body::from(body))
+            .unwrap();
+
+        request.extensions_mut().insert(RecaptchaValidated);
+
+        let response = service.ready().await.unwrap().call(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_hmac_skips_recaptcha_if_already_validated() {
+        let secret = "test-secret";
+        let recaptcha_config = test_recaptcha_config();
+        let layer = HmacAuthLayer::new(secret.to_string(), DEFAULT_MAX_TIMESTAMP_AGE)
+            .with_recaptcha(recaptcha_config);
+        let mut service = layer.layer(MockService);
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .to_string();
+
+        let body = r#"{"jsonrpc":"2.0","method":"signTransaction","id":1}"#;
+        let message = format!("{timestamp}{body}");
+
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(message.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+
+        let mut request = Request::builder()
+            .method(Method::POST)
+            .uri("/")
+            .header(X_TIMESTAMP, &timestamp)
+            .header(X_HMAC_SIGNATURE, &signature)
+            .body(Body::from(body))
+            .unwrap();
+
+        request.extensions_mut().insert(RecaptchaValidated);
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);

@@ -10,6 +10,8 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::time::Duration;
 
+pub struct RecaptchaValidated;
+
 #[derive(Debug, Deserialize)]
 struct RecaptchaVerifyResponse {
     success: bool,
@@ -76,11 +78,11 @@ impl RecaptchaConfig {
 
         if !response.status().is_success() {
             let status = response.status();
-            #[cfg(feature = "unsafe-debug")]
-            log::error!("reCAPTCHA API returned error status: {}", status);
-            #[cfg(not(feature = "unsafe-debug"))]
-            log::error!("reCAPTCHA API returned error status: {}", status.as_u16());
-
+            log::error!(
+                "reCAPTCHA API returned error status: {}, body: {}",
+                status.as_u16(),
+                sanitize_error!(response.text().await.unwrap_or_default())
+            );
             return Err(KoraError::RecaptchaError(format!(
                 "API returned status: {}",
                 status.as_u16()
