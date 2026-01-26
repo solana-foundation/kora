@@ -1,18 +1,22 @@
+import type { Address, Base64EncodedWireTransaction, Blockhash, Signature } from '@solana/kit';
 import { createEmptyClient } from '@solana/kit';
-import { koraPlugin, type KoraApi } from '../src/plugin.js';
+
+import { type KoraApi, koraPlugin } from '../src/plugin.js';
 import type {
-    KoraPluginConfig,
-    KitPayerSignerResponse,
+    GetVersionResponse,
     KitBlockhashResponse,
-    KitSupportedTokensResponse,
-    KitEstimateFeeResponse,
-    KitSignTransactionResponse,
-    KitSignAndSendTransactionResponse,
-    KitTransferTransactionResponse,
-    KitPaymentInstructionResponse,
     KitConfigResponse,
+    KitEstimateBundleFeeResponse,
+    KitEstimateFeeResponse,
+    KitPayerSignerResponse,
+    KitPaymentInstructionResponse,
+    KitSignAndSendBundleResponse,
+    KitSignAndSendTransactionResponse,
+    KitSignBundleResponse,
+    KitSignTransactionResponse,
+    KitSupportedTokensResponse,
+    KoraPluginConfig,
 } from '../src/types/index.js';
-import type { Address, Blockhash, Base64EncodedWireTransaction } from '@solana/kit';
 
 // Mock fetch globally
 const mockFetch = jest.fn();
@@ -28,8 +32,8 @@ describe('Kora Kit Plugin', () => {
     const mockSuccessfulResponse = (result: unknown) => {
         mockFetch.mockResolvedValueOnce({
             json: jest.fn().mockResolvedValueOnce({
-                jsonrpc: '2.0',
                 id: 1,
+                jsonrpc: '2.0',
                 result,
             }),
         });
@@ -39,9 +43,9 @@ describe('Kora Kit Plugin', () => {
     const mockErrorResponse = (error: { code: number; message: string }) => {
         mockFetch.mockResolvedValueOnce({
             json: jest.fn().mockResolvedValueOnce({
-                jsonrpc: '2.0',
-                id: 1,
                 error,
+                id: 1,
+                jsonrpc: '2.0',
             }),
         });
     };
@@ -61,11 +65,14 @@ describe('Kora Kit Plugin', () => {
             expect(typeof enhanced.kora.getConfig).toBe('function');
             expect(typeof enhanced.kora.getPayerSigner).toBe('function');
             expect(typeof enhanced.kora.getBlockhash).toBe('function');
+            expect(typeof enhanced.kora.getVersion).toBe('function');
             expect(typeof enhanced.kora.getSupportedTokens).toBe('function');
             expect(typeof enhanced.kora.estimateTransactionFee).toBe('function');
+            expect(typeof enhanced.kora.estimateBundleFee).toBe('function');
             expect(typeof enhanced.kora.signTransaction).toBe('function');
             expect(typeof enhanced.kora.signAndSendTransaction).toBe('function');
-            expect(typeof enhanced.kora.transferTransaction).toBe('function');
+            expect(typeof enhanced.kora.signBundle).toBe('function');
+            expect(typeof enhanced.kora.signAndSendBundle).toBe('function');
             expect(typeof enhanced.kora.getPaymentInstruction).toBe('function');
         });
 
@@ -78,8 +85,8 @@ describe('Kora Kit Plugin', () => {
 
         it('should support authentication options', () => {
             const authConfig: KoraPluginConfig = {
-                endpoint: mockEndpoint,
                 apiKey: 'test-api-key',
+                endpoint: mockEndpoint,
                 hmacSecret: 'test-hmac-secret',
             };
 
@@ -102,66 +109,66 @@ describe('Kora Kit Plugin', () => {
         describe('getConfig', () => {
             it('should return Kit-typed Address arrays', async () => {
                 const rawResponse = {
+                    enabled_methods: {
+                        estimate_transaction_fee: true,
+                        get_blockhash: true,
+                        get_config: true,
+                        get_supported_tokens: true,
+                        liveness: true,
+                        sign_and_send_transaction: true,
+                        sign_transaction: true,
+                        transfer_transaction: true,
+                    },
                     fee_payers: ['DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7'],
                     validation_config: {
-                        max_allowed_lamports: 1000000,
-                        max_signatures: 10,
-                        price_source: 'Jupiter',
                         allowed_programs: ['11111111111111111111111111111111'],
-                        allowed_tokens: ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'],
                         allowed_spl_paid_tokens: ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'],
+                        allowed_tokens: ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'],
                         disallowed_accounts: [],
                         fee_payer_policy: {
-                            system: {
+                            spl_token: {
+                                allow_approve: true,
+                                allow_burn: true,
+                                allow_close_account: true,
+                                allow_freeze_account: true,
+                                allow_mint_to: true,
+                                allow_revoke: true,
+                                allow_set_authority: true,
+                                allow_thaw_account: true,
                                 allow_transfer: true,
+                            },
+                            system: {
+                                allow_allocate: true,
                                 allow_assign: true,
                                 allow_create_account: true,
-                                allow_allocate: true,
+                                allow_transfer: true,
                                 nonce: {
-                                    allow_initialize: true,
                                     allow_advance: true,
                                     allow_authorize: true,
+                                    allow_initialize: true,
                                     allow_withdraw: true,
                                 },
                             },
-                            spl_token: {
-                                allow_transfer: true,
-                                allow_burn: true,
-                                allow_close_account: true,
-                                allow_approve: true,
-                                allow_revoke: true,
-                                allow_set_authority: true,
-                                allow_mint_to: true,
-                                allow_freeze_account: true,
-                                allow_thaw_account: true,
-                            },
                             token_2022: {
-                                allow_transfer: true,
+                                allow_approve: true,
                                 allow_burn: true,
                                 allow_close_account: true,
-                                allow_approve: true,
+                                allow_freeze_account: true,
+                                allow_mint_to: true,
                                 allow_revoke: true,
                                 allow_set_authority: true,
-                                allow_mint_to: true,
-                                allow_freeze_account: true,
                                 allow_thaw_account: true,
+                                allow_transfer: true,
                             },
                         },
-                        price: { type: 'margin', margin: 0.1 },
+                        max_allowed_lamports: 1000000,
+                        max_signatures: 10,
+                        price: { margin: 0.1, type: 'margin' },
+                        price_source: 'Jupiter',
                         token2022: {
-                            blocked_mint_extensions: [],
                             blocked_account_extensions: [],
+                            blocked_mint_extensions: [],
                         },
-                    },
-                    enabled_methods: {
-                        liveness: true,
-                        estimate_transaction_fee: true,
-                        get_supported_tokens: true,
-                        sign_transaction: true,
-                        sign_and_send_transaction: true,
-                        transfer_transaction: true,
-                        get_blockhash: true,
-                        get_config: true,
                     },
                 };
 
@@ -184,8 +191,8 @@ describe('Kora Kit Plugin', () => {
         describe('getPayerSigner', () => {
             it('should return Kit-typed Address fields', async () => {
                 const rawResponse = {
-                    signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                     payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                    signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 };
 
                 mockSuccessfulResponse(rawResponse);
@@ -217,6 +224,20 @@ describe('Kora Kit Plugin', () => {
             });
         });
 
+        describe('getVersion', () => {
+            it('should return version string', async () => {
+                const rawResponse = {
+                    version: '2.0.0',
+                };
+
+                mockSuccessfulResponse(rawResponse);
+
+                const result: GetVersionResponse = await kora.getVersion();
+
+                expect(result.version).toBe('2.0.0');
+            });
+        });
+
         describe('getSupportedTokens', () => {
             it('should return Kit-typed Address array', async () => {
                 const rawResponse = {
@@ -245,15 +266,15 @@ describe('Kora Kit Plugin', () => {
                 const rawResponse = {
                     fee_in_lamports: 5000,
                     fee_in_token: 50,
-                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                     payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 };
 
                 mockSuccessfulResponse(rawResponse);
 
                 const result: KitEstimateFeeResponse = await kora.estimateTransactionFee({
-                    transaction: 'base64EncodedTransaction',
                     fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+                    transaction: 'base64EncodedTransaction',
                 });
 
                 // Type assertions
@@ -262,6 +283,33 @@ describe('Kora Kit Plugin', () => {
 
                 expect(result.fee_in_lamports).toBe(5000);
                 expect(result.fee_in_token).toBe(50);
+                expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
+                expect(paymentAddr).toBe('PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
+            });
+        });
+
+        describe('estimateBundleFee', () => {
+            it('should return Kit-typed Address fields for bundle', async () => {
+                const rawResponse = {
+                    fee_in_lamports: 15000,
+                    fee_in_token: 150,
+                    payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                };
+
+                mockSuccessfulResponse(rawResponse);
+
+                const result: KitEstimateBundleFeeResponse = await kora.estimateBundleFee({
+                    fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+                    transactions: ['base64Tx1', 'base64Tx2', 'base64Tx3'],
+                });
+
+                // Type assertions
+                const signerPubkey: Address = result.signer_pubkey;
+                const paymentAddr: Address = result.payment_address;
+
+                expect(result.fee_in_lamports).toBe(15000);
+                expect(result.fee_in_token).toBe(150);
                 expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
                 expect(paymentAddr).toBe('PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
             });
@@ -290,8 +338,12 @@ describe('Kora Kit Plugin', () => {
         });
 
         describe('signAndSendTransaction', () => {
-            it('should return Kit-typed response with Base64EncodedWireTransaction', async () => {
+            it('should return Kit-typed response with Signature and Base64EncodedWireTransaction', async () => {
+                // Use a valid base58 signature (88 characters, valid base58 alphabet)
+                const mockSignature =
+                    '5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW';
                 const rawResponse = {
+                    signature: mockSignature,
                     signed_transaction: 'base64SignedTransaction',
                     signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 };
@@ -303,43 +355,63 @@ describe('Kora Kit Plugin', () => {
                 });
 
                 // Type assertions - verify Kit types
+                const sig: Signature = result.signature;
                 const signedTx: Base64EncodedWireTransaction = result.signed_transaction;
                 const signerPubkey: Address = result.signer_pubkey;
 
+                expect(sig).toBe(mockSignature);
                 expect(signedTx).toBe('base64SignedTransaction');
                 expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
             });
         });
 
-        describe('transferTransaction', () => {
-            it('should return Kit-typed response with Base64EncodedWireTransaction and Blockhash', async () => {
+        describe('signBundle', () => {
+            it('should return Kit-typed response with Base64EncodedWireTransaction array', async () => {
                 const rawResponse = {
-                    transaction: 'base64Transaction',
-                    message: 'base64Message',
-                    blockhash: '4NxM2D4kQcipkzMWBWQME5YSVnj5kT8QKA7rvb3rKLvE',
+                    signed_transactions: ['base64SignedTx1', 'base64SignedTx2'],
                     signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                    instructions: [],
                 };
 
                 mockSuccessfulResponse(rawResponse);
 
-                const result: KitTransferTransactionResponse = await kora.transferTransaction({
-                    amount: 1000000,
-                    token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-                    source: 'sourceWallet',
-                    destination: 'destWallet',
+                const result: KitSignBundleResponse = await kora.signBundle({
+                    transactions: ['base64Tx1', 'base64Tx2'],
                 });
 
                 // Type assertions - verify Kit types
-                const tx: Base64EncodedWireTransaction = result.transaction;
-                const hash: Blockhash = result.blockhash;
+                const signedTxs: Base64EncodedWireTransaction[] = result.signed_transactions;
                 const signerPubkey: Address = result.signer_pubkey;
 
-                expect(tx).toBe('base64Transaction');
-                expect(result.message).toBe('base64Message');
-                expect(hash).toBe('4NxM2D4kQcipkzMWBWQME5YSVnj5kT8QKA7rvb3rKLvE');
+                expect(signedTxs).toHaveLength(2);
+                expect(signedTxs[0]).toBe('base64SignedTx1');
+                expect(signedTxs[1]).toBe('base64SignedTx2');
                 expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
-                expect(result.instructions).toEqual([]);
+            });
+        });
+
+        describe('signAndSendBundle', () => {
+            it('should return Kit-typed response with Base64EncodedWireTransaction array and bundle UUID', async () => {
+                const rawResponse = {
+                    bundle_uuid: 'jito-bundle-uuid-12345',
+                    signed_transactions: ['base64SignedTx1', 'base64SignedTx2'],
+                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                };
+
+                mockSuccessfulResponse(rawResponse);
+
+                const result: KitSignAndSendBundleResponse = await kora.signAndSendBundle({
+                    transactions: ['base64Tx1', 'base64Tx2'],
+                });
+
+                // Type assertions - verify Kit types
+                const signedTxs: Base64EncodedWireTransaction[] = result.signed_transactions;
+                const signerPubkey: Address = result.signer_pubkey;
+
+                expect(signedTxs).toHaveLength(2);
+                expect(signedTxs[0]).toBe('base64SignedTx1');
+                expect(signedTxs[1]).toBe('base64SignedTx2');
+                expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
+                expect(result.bundle_uuid).toBe('jito-bundle-uuid-12345');
             });
         });
 
@@ -348,8 +420,8 @@ describe('Kora Kit Plugin', () => {
                 const mockFeeEstimate = {
                     fee_in_lamports: 5000,
                     fee_in_token: 50000,
-                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                     payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 };
 
                 const testTx =
@@ -358,10 +430,10 @@ describe('Kora Kit Plugin', () => {
                 mockSuccessfulResponse(mockFeeEstimate);
 
                 const result: KitPaymentInstructionResponse = await kora.getPaymentInstruction({
-                    transaction: testTx,
                     fee_token: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
                     source_wallet: '11111111111111111111111111111111',
                     token_program_id: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+                    transaction: testTx,
                 });
 
                 // Type assertions - verify Kit types
@@ -427,18 +499,21 @@ describe('Kora Kit Plugin', () => {
             expect(typeof client.kora.getConfig).toBe('function');
             expect(typeof client.kora.getPayerSigner).toBe('function');
             expect(typeof client.kora.getBlockhash).toBe('function');
+            expect(typeof client.kora.getVersion).toBe('function');
             expect(typeof client.kora.getSupportedTokens).toBe('function');
             expect(typeof client.kora.estimateTransactionFee).toBe('function');
+            expect(typeof client.kora.estimateBundleFee).toBe('function');
             expect(typeof client.kora.signTransaction).toBe('function');
             expect(typeof client.kora.signAndSendTransaction).toBe('function');
-            expect(typeof client.kora.transferTransaction).toBe('function');
+            expect(typeof client.kora.signBundle).toBe('function');
+            expect(typeof client.kora.signAndSendBundle).toBe('function');
             expect(typeof client.kora.getPaymentInstruction).toBe('function');
         });
 
         it('should work with authentication config', () => {
             const authConfig: KoraPluginConfig = {
-                endpoint: mockEndpoint,
                 apiKey: 'test-api-key',
+                endpoint: mockEndpoint,
                 hmacSecret: 'test-hmac-secret',
             };
 
@@ -466,8 +541,8 @@ describe('Kora Kit Plugin', () => {
 
         it('should call RPC methods correctly', async () => {
             const mockResponse = {
-                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                signer_address: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             };
 
             mockSuccessfulResponse(mockResponse);

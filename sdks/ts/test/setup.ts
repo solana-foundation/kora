@@ -1,3 +1,41 @@
+import {
+    Address,
+    airdropFactory,
+    appendTransactionMessageInstructions,
+    assertIsAddress,
+    assertIsSendableTransaction,
+    assertIsTransactionWithBlockhashLifetime,
+    Commitment,
+    createKeyPairSignerFromBytes,
+    createSolanaRpc,
+    createSolanaRpcSubscriptions,
+    createTransactionMessage,
+    getBase58Encoder,
+    getSignatureFromTransaction,
+    Instruction,
+    KeyPairSigner,
+    lamports,
+    MicroLamports,
+    pipe,
+    Rpc,
+    RpcSubscriptions,
+    sendAndConfirmTransactionFactory,
+    setTransactionMessageFeePayerSigner,
+    setTransactionMessageLifetimeUsingBlockhash,
+    Signature,
+    signTransactionMessageWithSigners,
+    SolanaRpcApi,
+    SolanaRpcSubscriptionsApi,
+    TransactionMessage,
+    TransactionMessageWithBlockhashLifetime,
+    TransactionMessageWithFeePayer,
+    TransactionSigner,
+} from '@solana/kit';
+import {
+    MAX_COMPUTE_UNIT_LIMIT,
+    updateOrAppendSetComputeUnitLimitInstruction,
+    updateOrAppendSetComputeUnitPriceInstruction,
+} from '@solana-program/compute-budget';
 import { getCreateAccountInstruction } from '@solana-program/system';
 import {
     findAssociatedTokenPda,
@@ -7,74 +45,49 @@ import {
     getMintToInstruction,
     TOKEN_PROGRAM_ADDRESS,
 } from '@solana-program/token';
-import {
-    airdropFactory,
-    createSolanaRpc,
-    createSolanaRpcSubscriptions,
-    lamports,
-    sendAndConfirmTransactionFactory,
-    pipe,
-    createTransactionMessage,
-    setTransactionMessageLifetimeUsingBlockhash,
-    setTransactionMessageFeePayerSigner,
-    appendTransactionMessageInstructions,
-    TransactionSigner,
-    SolanaRpcApi,
-    RpcSubscriptions,
-    Rpc,
-    SolanaRpcSubscriptionsApi,
-    MicroLamports,
-    TransactionMessage,
-    TransactionMessageWithFeePayer,
-    TransactionMessageWithBlockhashLifetime,
-    Commitment,
-    Signature,
-    signTransactionMessageWithSigners,
-    getSignatureFromTransaction,
-    Instruction,
-    KeyPairSigner,
-    Address,
-    assertIsAddress,
-    createKeyPairSignerFromBytes,
-    getBase58Encoder,
-    assertIsSendableTransaction,
-    assertIsTransactionWithBlockhashLifetime,
-} from '@solana/kit';
-import {
-    updateOrAppendSetComputeUnitLimitInstruction,
-    updateOrAppendSetComputeUnitPriceInstruction,
-    MAX_COMPUTE_UNIT_LIMIT,
-} from '@solana-program/compute-budget';
 import { config } from 'dotenv';
 import path from 'path';
+
 import { KoraClient } from '../src/index.js';
 
 config({ path: path.resolve(process.cwd(), '.env') });
 
 const DEFAULTS = {
-    DECIMALS: 6,
-    TOKEN_DROP_AMOUNT: 100_000,
-    KORA_RPC_URL: 'http://localhost:8080/',
-    SOLANA_RPC_URL: 'http://127.0.0.1:8899',
-    SOLANA_WS_URL: 'ws://127.0.0.1:8900',
     COMMITMENT: 'processed' as Commitment,
-    SOL_DROP_AMOUNT: 1_000_000_000,
+    DECIMALS: 6,
+
+    // Make sure this matches the USDC mint in kora.toml (9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ)
+    DESTINATION_ADDRESS: 'AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM',
 
     // DO NOT USE THESE KEYPAIRS IN PRODUCTION, TESTING KEYPAIRS ONLY
-    KORA_ADDRESS: '7AqpcUvgJ7Kh1VmJZ44rWp2XDow33vswo9VK9VqpPU2d', // Make sure this matches the kora-rpc signer address on launch (root .env)
-    SENDER_SECRET: 'tzgfgSWTE3KUA6qfRoFYLaSfJm59uUeZRDy4ybMrLn1JV2drA1mftiaEcVFvq1Lok6h6EX2C4Y9kSKLvQWyMpS5', // HhA5j2rRiPbMrpF2ZD36r69FyZf3zWmEHRNSZbbNdVjf
-    TEST_USDC_MINT_SECRET: '59kKmXphL5UJANqpFFjtH17emEq3oRNmYsx6a3P3vSGJRmhMgVdzH77bkNEi9bArRViT45e8L2TsuPxKNFoc3Qfg', // Make sure this matches the USDC mint in kora.toml (9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ)
-    DESTINATION_ADDRESS: 'AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM',
-    KORA_SIGNER_TYPE: 'memory', // Default signer type
+    KORA_ADDRESS: '7AqpcUvgJ7Kh1VmJZ44rWp2XDow33vswo9VK9VqpPU2d',
+
+    KORA_RPC_URL: 'http://localhost:8080/',
+
+    KORA_SIGNER_TYPE: 'memory',
+
+    // Make sure this matches the kora-rpc signer address on launch (root .env)
+    SENDER_SECRET: 'tzgfgSWTE3KUA6qfRoFYLaSfJm59uUeZRDy4ybMrLn1JV2drA1mftiaEcVFvq1Lok6h6EX2C4Y9kSKLvQWyMpS5',
+
+    SOLANA_RPC_URL: 'http://127.0.0.1:8899',
+
+    SOLANA_WS_URL: 'ws://127.0.0.1:8900',
+
+    SOL_DROP_AMOUNT: 1_000_000_000,
+
+    // HhA5j2rRiPbMrpF2ZD36r69FyZf3zWmEHRNSZbbNdVjf
+    TEST_USDC_MINT_SECRET: '59kKmXphL5UJANqpFFjtH17emEq3oRNmYsx6a3P3vSGJRmhMgVdzH77bkNEi9bArRViT45e8L2TsuPxKNFoc3Qfg',
+
+    TOKEN_DROP_AMOUNT: 100_000, // Default signer type
 };
 
 interface TestSuite {
+    destinationAddress: Address<string>;
+    koraAddress: Address<string>;
     koraClient: KoraClient;
     koraRpcUrl: string;
     testWallet: KeyPairSigner<string>;
     usdcMint: Address<string>;
-    destinationAddress: Address<string>;
-    koraAddress: Address<string>;
 }
 
 interface Client {
@@ -127,18 +140,18 @@ export function loadEnvironmentVariables() {
     assertIsAddress(koraAddress);
 
     return {
-        koraRpcUrl,
-        koraAddress,
-        koraSignerType,
         commitment,
-        tokenDecimals,
-        tokenDropAmount,
+        destinationAddress,
+        koraAddress,
+        koraRpcUrl,
+        koraSignerType,
         solDropAmount,
         solanaRpcUrl,
         solanaWsUrl,
-        testWalletSecret,
         testUsdcMintSecret,
-        destinationAddress,
+        testWalletSecret,
+        tokenDecimals,
+        tokenDropAmount,
     };
 }
 
@@ -147,9 +160,9 @@ async function createKeyPairSigners() {
     const testWallet = await createKeyPairSignerFromB58Secret(testWalletSecret);
     const usdcMint = await createKeyPairSignerFromB58Secret(testUsdcMintSecret);
     return {
+        destinationAddress,
         testWallet,
         usdcMint,
-        destinationAddress,
     };
 }
 
@@ -158,7 +171,7 @@ const createDefaultTransaction = async (
     feePayer: TransactionSigner,
     computeLimit: number = MAX_COMPUTE_UNIT_LIMIT,
     feeMicroLamports: MicroLamports = 1n as MicroLamports,
-): Promise<TransactionMessageWithFeePayer & TransactionMessage & TransactionMessageWithBlockhashLifetime> => {
+): Promise<TransactionMessage & TransactionMessageWithBlockhashLifetime & TransactionMessageWithFeePayer> => {
     const { value: latestBlockhash } = await client.rpc.getLatestBlockhash().send();
     return pipe(
         createTransactionMessage({ version: 0 }),
@@ -171,7 +184,7 @@ const createDefaultTransaction = async (
 
 const signAndSendTransaction = async (
     client: Client,
-    transactionMessage: TransactionMessageWithFeePayer & TransactionMessage & TransactionMessageWithBlockhashLifetime,
+    transactionMessage: TransactionMessage & TransactionMessageWithBlockhashLifetime & TransactionMessageWithFeePayer,
     commitment: Commitment,
 ) => {
     const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
@@ -228,13 +241,13 @@ async function initializeToken({
     otherAtaWallets,
 }: {
     client: Client;
-    mintAuthority: KeyPairSigner<string>;
-    payer: KeyPairSigner<string>;
-    owner: KeyPairSigner<string>;
-    mint: KeyPairSigner<string>;
-    dropAmount: number;
     decimals: number;
+    dropAmount: number;
+    mint: KeyPairSigner<string>;
+    mintAuthority: KeyPairSigner<string>;
     otherAtaWallets?: Address<string>[];
+    owner: KeyPairSigner<string>;
+    payer: KeyPairSigner<string>;
 }) {
     // Get Owner ATA
     const [ata] = await findAssociatedTokenPda({
@@ -249,30 +262,30 @@ async function initializeToken({
     const baseInstructions = [
         // Create the Mint Account
         getCreateAccountInstruction({
-            payer,
-            newAccount: mint,
             lamports: mintRent,
-            space: mintSpace,
+            newAccount: mint,
+            payer,
             programAddress: TOKEN_PROGRAM_ADDRESS,
+            space: mintSpace,
         }),
         // Initialize the Mint
         getInitializeMintInstruction({
-            mint: mint.address,
             decimals,
+            mint: mint.address,
             mintAuthority: mintAuthority.address,
         }),
         // Create Associated Token Account
         await getCreateAssociatedTokenIdempotentInstructionAsync({
             mint: mint.address,
-            payer,
             owner: owner.address,
+            payer,
         }),
         // Mint To the Destination Associated Token Account
         getMintToInstruction({
-            mint: mint.address,
-            token: ata,
             amount: BigInt(dropAmount * 10 ** decimals),
+            mint: mint.address,
             mintAuthority,
+            token: ata,
         }),
     ];
     // Generate Create ATA instructions for other token accounts we wish to add
@@ -282,28 +295,20 @@ async function initializeToken({
                   async wallet =>
                       await getCreateAssociatedTokenIdempotentInstructionAsync({
                           mint: mint.address,
-                          payer,
                           owner: wallet,
+                          payer,
                       }),
               ),
           )
         : [];
     const alreadyExists = await mintExists(client, mint.address);
-    let instructions = alreadyExists ? [...otherAtaInstructions] : [...baseInstructions, ...otherAtaInstructions];
+    const instructions = alreadyExists ? [...otherAtaInstructions] : [...baseInstructions, ...otherAtaInstructions];
     await sendAndConfirmInstructions(client, payer, instructions, 'Initialize token and ATAs', 'finalized');
 }
 
 async function setupTestSuite(): Promise<TestSuite> {
-    const {
-        koraAddress,
-        koraRpcUrl,
-        commitment,
-        tokenDecimals,
-        tokenDropAmount,
-        solDropAmount,
-        solanaRpcUrl,
-        solanaWsUrl,
-    } = await loadEnvironmentVariables();
+    const { koraAddress, koraRpcUrl, tokenDecimals, tokenDropAmount, solDropAmount, solanaRpcUrl, solanaWsUrl } =
+        loadEnvironmentVariables();
 
     // Load auth config from environment if not provided
     const authConfig =
@@ -341,22 +346,22 @@ async function setupTestSuite(): Promise<TestSuite> {
     // Initialize token and ATAs
     await initializeToken({
         client,
-        mintAuthority,
-        payer: mintAuthority,
-        owner: testWallet,
-        mint: usdcMint,
-        dropAmount: tokenDropAmount,
         decimals: tokenDecimals,
+        dropAmount: tokenDropAmount,
+        mint: usdcMint,
+        mintAuthority,
         otherAtaWallets: [testWallet.address, koraAddress, destinationAddress],
+        owner: testWallet,
+        payer: mintAuthority,
     });
 
     return {
+        destinationAddress,
+        koraAddress,
         koraClient: new KoraClient({ rpcUrl: koraRpcUrl, ...authConfig }),
         koraRpcUrl,
         testWallet,
         usdcMint: usdcMint.address,
-        destinationAddress,
-        koraAddress,
     };
 }
 
@@ -364,7 +369,7 @@ const mintExists = async (client: Client, mint: Address<string>) => {
     try {
         const mintAccount = await client.rpc.getAccountInfo(mint).send();
         return mintAccount.value !== null;
-    } catch (error) {
+    } catch {
         return false;
     }
 };

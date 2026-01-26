@@ -1,33 +1,31 @@
 import { assertIsAddress, createNoopSigner, Instruction } from '@solana/kit';
+import { findAssociatedTokenPda, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
+import crypto from 'crypto';
+
 import {
+    AuthenticationHeaders,
     Config,
-    EstimateTransactionFeeRequest,
-    EstimateTransactionFeeResponse,
     EstimateBundleFeeRequest,
     EstimateBundleFeeResponse,
+    EstimateTransactionFeeRequest,
+    EstimateTransactionFeeResponse,
     GetBlockhashResponse,
-    GetSupportedTokensResponse,
-    GetVersionResponse,
-    SignAndSendTransactionRequest,
-    SignAndSendTransactionResponse,
-    SignTransactionRequest,
-    SignTransactionResponse,
-    SignBundleRequest,
-    SignBundleResponse,
-    SignAndSendBundleRequest,
-    SignAndSendBundleResponse,
-    TransferTransactionRequest,
-    TransferTransactionResponse,
-    RpcError,
-    AuthenticationHeaders,
-    KoraClientOptions,
     GetPayerSignerResponse,
     GetPaymentInstructionRequest,
     GetPaymentInstructionResponse,
+    GetSupportedTokensResponse,
+    GetVersionResponse,
+    KoraClientOptions,
+    RpcError,
+    SignAndSendBundleRequest,
+    SignAndSendBundleResponse,
+    SignAndSendTransactionRequest,
+    SignAndSendTransactionResponse,
+    SignBundleRequest,
+    SignBundleResponse,
+    SignTransactionRequest,
+    SignTransactionResponse,
 } from './types/index.js';
-import crypto from 'crypto';
-import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS, getTransferInstruction } from '@solana-program/token';
-import { getInstructionsFromBase64Message } from './utils/transaction.js';
 
 /**
  * Kora RPC client for interacting with the Kora paymaster service.
@@ -67,7 +65,7 @@ export class KoraClient {
         this.hmacSecret = hmacSecret;
     }
 
-    private getHmacSignature({ timestamp, body }: { timestamp: string; body: string }): string {
+    private getHmacSignature({ timestamp, body }: { body: string; timestamp: string }): string {
         if (!this.hmacSecret) {
             throw new Error('HMAC secret is not set');
         }
@@ -82,7 +80,7 @@ export class KoraClient {
         }
         if (this.hmacSecret) {
             const timestamp = Math.floor(Date.now() / 1000).toString();
-            const signature = this.getHmacSignature({ timestamp, body });
+            const signature = this.getHmacSignature({ body, timestamp });
             headers['x-timestamp'] = timestamp;
             headers['x-hmac-signature'] = signature;
         }
@@ -91,22 +89,22 @@ export class KoraClient {
 
     private async rpcRequest<T, U>(method: string, params: U): Promise<T> {
         const body = JSON.stringify({
-            jsonrpc: '2.0',
             id: 1,
+            jsonrpc: '2.0',
             method,
             params,
         });
         const headers = this.getHeaders({ body });
         const response = await fetch(this.rpcUrl, {
-            method: 'POST',
-            headers: { ...headers, 'Content-Type': 'application/json' },
             body,
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            method: 'POST',
         });
 
         const json = (await response.json()) as { error?: RpcError; result: T };
 
         if (json.error) {
-            const error = json.error!;
+            const error = json.error;
             throw new Error(`RPC Error ${error.code}: ${error.message}`);
         }
 
@@ -126,7 +124,7 @@ export class KoraClient {
      * ```
      */
     async getConfig(): Promise<Config> {
-        return this.rpcRequest<Config, undefined>('getConfig', undefined);
+        return await this.rpcRequest<Config, undefined>('getConfig', undefined);
     }
 
     /**
@@ -137,7 +135,7 @@ export class KoraClient {
      * @example
      */
     async getPayerSigner(): Promise<GetPayerSignerResponse> {
-        return this.rpcRequest<GetPayerSignerResponse, undefined>('getPayerSigner', undefined);
+        return await this.rpcRequest<GetPayerSignerResponse, undefined>('getPayerSigner', undefined);
     }
 
     /**
@@ -152,7 +150,7 @@ export class KoraClient {
      * ```
      */
     async getBlockhash(): Promise<GetBlockhashResponse> {
-        return this.rpcRequest<GetBlockhashResponse, undefined>('getBlockhash', undefined);
+        return await this.rpcRequest<GetBlockhashResponse, undefined>('getBlockhash', undefined);
     }
 
     /**
@@ -167,7 +165,7 @@ export class KoraClient {
      * ```
      */
     async getVersion(): Promise<GetVersionResponse> {
-        return this.rpcRequest<GetVersionResponse, undefined>('getVersion', undefined);
+        return await this.rpcRequest<GetVersionResponse, undefined>('getVersion', undefined);
     }
 
     /**
@@ -183,7 +181,7 @@ export class KoraClient {
      * ```
      */
     async getSupportedTokens(): Promise<GetSupportedTokensResponse> {
-        return this.rpcRequest<GetSupportedTokensResponse, undefined>('getSupportedTokens', undefined);
+        return await this.rpcRequest<GetSupportedTokensResponse, undefined>('getSupportedTokens', undefined);
     }
 
     /**
@@ -205,7 +203,7 @@ export class KoraClient {
      * ```
      */
     async estimateTransactionFee(request: EstimateTransactionFeeRequest): Promise<EstimateTransactionFeeResponse> {
-        return this.rpcRequest<EstimateTransactionFeeResponse, EstimateTransactionFeeRequest>(
+        return await this.rpcRequest<EstimateTransactionFeeResponse, EstimateTransactionFeeRequest>(
             'estimateTransactionFee',
             request,
         );
@@ -230,7 +228,7 @@ export class KoraClient {
      * ```
      */
     async estimateBundleFee(request: EstimateBundleFeeRequest): Promise<EstimateBundleFeeResponse> {
-        return this.rpcRequest<EstimateBundleFeeResponse, EstimateBundleFeeRequest>('estimateBundleFee', request);
+        return await this.rpcRequest<EstimateBundleFeeResponse, EstimateBundleFeeRequest>('estimateBundleFee', request);
     }
 
     /**
@@ -250,7 +248,7 @@ export class KoraClient {
      * ```
      */
     async signTransaction(request: SignTransactionRequest): Promise<SignTransactionResponse> {
-        return this.rpcRequest<SignTransactionResponse, SignTransactionRequest>('signTransaction', request);
+        return await this.rpcRequest<SignTransactionResponse, SignTransactionRequest>('signTransaction', request);
     }
 
     /**
@@ -269,7 +267,7 @@ export class KoraClient {
      * ```
      */
     async signAndSendTransaction(request: SignAndSendTransactionRequest): Promise<SignAndSendTransactionResponse> {
-        return this.rpcRequest<SignAndSendTransactionResponse, SignAndSendTransactionRequest>(
+        return await this.rpcRequest<SignAndSendTransactionResponse, SignAndSendTransactionRequest>(
             'signAndSendTransaction',
             request,
         );
@@ -295,7 +293,7 @@ export class KoraClient {
      * ```
      */
     async signBundle(request: SignBundleRequest): Promise<SignBundleResponse> {
-        return this.rpcRequest<SignBundleResponse, SignBundleRequest>('signBundle', request);
+        return await this.rpcRequest<SignBundleResponse, SignBundleRequest>('signBundle', request);
     }
 
     /**
@@ -318,45 +316,7 @@ export class KoraClient {
      * ```
      */
     async signAndSendBundle(request: SignAndSendBundleRequest): Promise<SignAndSendBundleResponse> {
-        return this.rpcRequest<SignAndSendBundleResponse, SignAndSendBundleRequest>('signAndSendBundle', request);
-    }
-
-    /**
-     * Creates an unsigned transfer transaction.
-     *
-     * @deprecated Use `getPaymentInstruction` instead for fee payment flows.
-     *
-     * @param request - Transfer request parameters
-     * @param request.amount - Amount to transfer (in token's smallest unit)
-     * @param request.token - Mint address of the token to transfer
-     * @param request.source - Source wallet public key
-     * @param request.destination - Destination wallet public key
-     * @param request.signer_key - Optional signer key to select specific Kora signer
-     * @returns Unsigned transaction, message, blockhash, and signer info
-     * @throws {Error} When the RPC call fails or token is not supported
-     *
-     * @example
-     * ```typescript
-     * const transfer = await client.transferTransaction({
-     *   amount: 1000000, // 1 USDC (6 decimals)
-     *   token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-     *   source: 'sourceWalletPublicKey',
-     *   destination: 'destinationWalletPublicKey',
-     * });
-     * console.log('Signer:', transfer.signer_pubkey);
-     * ```
-     */
-    async transferTransaction(request: TransferTransactionRequest): Promise<TransferTransactionResponse> {
-        const response = await this.rpcRequest<TransferTransactionResponse, TransferTransactionRequest>(
-            'transferTransaction',
-            request,
-        );
-
-        // Parse instructions from the message to enhance developer experience
-        // Always set instructions, even for empty messages (for consistency)
-        response.instructions = getInstructionsFromBase64Message(response.message || '');
-
-        return response;
+        return await this.rpcRequest<SignAndSendBundleResponse, SignAndSendBundleRequest>('signAndSendBundle', request);
     }
 
     /**
@@ -399,23 +359,23 @@ export class KoraClient {
         assertIsAddress(token_program_id);
 
         const { fee_in_token, payment_address, signer_pubkey } = await this.estimateTransactionFee({
-            transaction,
             fee_token,
             sig_verify,
             signer_key,
+            transaction,
         });
         assertIsAddress(payment_address);
 
         const [sourceTokenAccount] = await findAssociatedTokenPda({
+            mint: fee_token,
             owner: source_wallet,
             tokenProgram: token_program_id,
-            mint: fee_token,
         });
 
         const [destinationTokenAccount] = await findAssociatedTokenPda({
+            mint: fee_token,
             owner: payment_address,
             tokenProgram: token_program_id,
-            mint: fee_token,
         });
 
         if (fee_in_token === undefined) {
@@ -423,18 +383,18 @@ export class KoraClient {
         }
 
         const paymentInstruction: Instruction = getTransferInstruction({
-            source: sourceTokenAccount,
-            destination: destinationTokenAccount,
-            authority: createNoopSigner(source_wallet),
             amount: fee_in_token,
+            authority: createNoopSigner(source_wallet),
+            destination: destinationTokenAccount,
+            source: sourceTokenAccount,
         });
 
         return {
             original_transaction: transaction,
-            payment_instruction: paymentInstruction,
-            payment_amount: fee_in_token,
-            payment_token: fee_token,
             payment_address,
+            payment_amount: fee_in_token,
+            payment_instruction: paymentInstruction,
+            payment_token: fee_token,
             signer_address: signer_pubkey,
         };
     }
