@@ -1,8 +1,35 @@
 # Kora TypeScript SDK
 
-A TypeScript SDK for interacting with the Kora RPC server. This SDK provides a type-safe interface to all Kora RPC methods.
+A TypeScript SDK for interacting with the Kora RPC server. This SDK provides a type-safe interface to all Kora RPC methods (requires a Kora RPC server to be running).
 
-## Development
+
+## Installation
+
+```bash
+pnpm install @solana/kora
+```
+
+## Quick Start
+
+```typescript
+import { KoraClient } from '@solana/kora';
+
+// Initialize the client with your RPC endpoint
+const client = new KoraClient({ rpcUrl: 'http://localhost:8080' });
+
+// Example: Get Kora to sign a transaction
+const result = await client.signTransaction({
+  transaction: 'myBase64EncodedTransaction'
+});
+
+// Access the signed transaction (base64 encoded)
+console.log('Signed transaction:', result.signed_transaction);
+```
+
+**[→ API Reference](https://launch.solana.com/docs/kora/json-rpc-api)**
+**[→ Quick Start](https://launch.solana.com/docs/kora/getting-started/quick-start)**
+
+## Local Development
 
 ### Building from Source
 
@@ -33,28 +60,3 @@ pnpm test:ci:integration
 
 This will start a local test validator and run all tests.
 
-
-## Quick Start
-
-```typescript
-import { KoraClient } from '@solana/kora';
-
-// Initialize the client with your RPC endpoint
-const client = new KoraClient({ rpcUrl: 'http://localhost:8080' });
-
-// Example: Transfer tokens
-const result = await client.transferTransaction({
-  amount: 1000000, // 1 USDC (6 decimals)
-  token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC mint
-  source: "sourceAddress",
-  destination: "destinationAddress"
-});
-
-// Access the base64 encoded transaction, base64 encoded message, and parsed instructions directly
-console.log('Transaction:', result.transaction);
-console.log('Message:', result.message);
-console.log('Instructions:', result.instructions);
-```
-
-**[→ API Reference](https://launch.solana.com/docs/kora/json-rpc-api)**
-**[→ Quick Start](https://launch.solana.com/docs/kora/getting-started/quick-start)**
