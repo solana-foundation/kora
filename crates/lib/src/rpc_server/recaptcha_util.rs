@@ -10,8 +10,6 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::time::Duration;
 
-pub struct RecaptchaValidated;
-
 #[derive(Debug, Deserialize)]
 struct RecaptchaVerifyResponse {
     success: bool,
@@ -36,11 +34,7 @@ impl RecaptchaConfig {
         self.protected_methods.iter().any(|m| m == method)
     }
 
-    pub async fn validate(&self, token: Option<&str>, method: &str) -> Result<(), Response<Body>> {
-        if !self.is_protected_method(method) {
-            return Ok(());
-        }
-
+    pub async fn validate(&self, token: Option<&str>) -> Result<(), Response<Body>> {
         let token = match token {
             Some(t) if !t.is_empty() => t,
             _ => {
@@ -69,19 +63,26 @@ impl RecaptchaConfig {
 
         let response = client
             .post(RECAPTCHA_VERIFY_URL)
-            .form(&[("secret", &self.secret), ("response", &token.to_string())])
+            .form(&[("secret", self.secret.as_str()), ("response", token)])
             .send()
             .await
             .map_err(|e| {
                 KoraError::RecaptchaError(format!("API call failed: {}", sanitize_error!(e)))
             })?;
 
-        if !response.status().is_success() {
-            let status = response.status();
+        let status = response.status();
+        let response_text = response.text().await.map_err(|e| {
+            KoraError::RecaptchaError(format!(
+                "Failed to read response body: {}",
+                sanitize_error!(e)
+            ))
+        })?;
+
+        if !status.is_success() {
             log::error!(
-                "reCAPTCHA API returned error status: {}, body: {}",
+                "reCAPTCHA API returned error status {}: {}",
                 status.as_u16(),
-                sanitize_error!(response.text().await.unwrap_or_default())
+                sanitize_error!(response_text)
             );
             return Err(KoraError::RecaptchaError(format!(
                 "API returned status: {}",
@@ -89,9 +90,13 @@ impl RecaptchaConfig {
             )));
         }
 
-        let verify_response: RecaptchaVerifyResponse = response.json().await.map_err(|e| {
-            KoraError::RecaptchaError(format!("Failed to parse response: {}", sanitize_error!(e)))
-        })?;
+        let verify_response: RecaptchaVerifyResponse = serde_json::from_str(&response_text)
+            .map_err(|e| {
+                KoraError::RecaptchaError(format!(
+                    "Failed to parse response: {}",
+                    sanitize_error!(e)
+                ))
+            })?;
 
         if !verify_response.success {
             let errors = verify_response.error_codes.unwrap_or_default().join(", ");

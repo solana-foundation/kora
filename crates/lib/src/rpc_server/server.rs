@@ -4,6 +4,7 @@ use crate::{
     rpc_server::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
         middleware_utils::MethodValidationLayer,
+        recaptcha::RecaptchaLayer,
         recaptcha_util::RecaptchaConfig,
         rpc::KoraRpc,
     },
@@ -89,24 +90,22 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
             metrics_layers.as_ref().and_then(|layers| layers.metrics_handler_layer.clone()),
         )
         .layer(cors)
-        // Method validation layer -  to fail fast
+        // Method validation layer - to fail fast
         .layer(MethodValidationLayer::new(allowed_methods.clone()))
         // Add metrics collection layer
         .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
-        // Add authentication layer for API key if configured (with integrated reCAPTCHA)
+        // Add authentication layer for API key if configured
         .option_layer(
             get_value_by_priority("KORA_API_KEY", config.kora.auth.api_key.clone())
-                .map(|key| ApiKeyAuthLayer::new(key).with_recaptcha(recaptcha_config.clone())),
+                .map(ApiKeyAuthLayer::new),
         )
-        // Add authentication layer for HMAC if configured (with integrated reCAPTCHA)
+        // Add authentication layer for HMAC if configured
         .option_layer(
-            get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone()).map(
-                |secret| {
-                    HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)
-                        .with_recaptcha(recaptcha_config.clone())
-                },
-            ),
-        );
+            get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone())
+                .map(|secret| HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)),
+        )
+        // Add reCAPTCHA verification layer if configured
+        .option_layer(recaptcha_config.map(RecaptchaLayer::new));
 
     // Configure and build the server with HTTP support
     let server = ServerBuilder::default()
