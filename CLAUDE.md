@@ -38,6 +38,8 @@ Kora supports two authentication methods that can be used individually or togeth
 1. **API Key Authentication**: Simple header-based auth using `x-api-key` header
 2. **HMAC Authentication**: Request signature auth using `x-timestamp` and `x-hmac-signature` headers
 
+Optional bot protection via **reCAPTCHA v3** can be integrated into either auth method.
+
 **Testing:**
 ```bash
 just test-integration           # Run all integration tests
@@ -663,6 +665,17 @@ Kora supports two optional authentication methods:
 2. **HMAC Auth** (`hmac_secret` in kora.toml): Secure signature-based auth using `x-timestamp` + `x-hmac-signature` (SHA256 of timestamp+body)
 
 Both skip `/liveness` endpoint and can be used simultaneously. Implementation uses async tower middleware for non-blocking concurrent requests.
+
+## Bot Protection
+
+**reCAPTCHA v3** (`recaptcha_secret` in kora.toml): Protects sensitive endpoints from automated abuse using the `x-recaptcha-token` header.
+
+reCAPTCHA is integrated into the auth layer flow - it runs *after* authentication succeeds for protected methods.
+
+**Configuration:**
+- `recaptcha_secret`: Your reCAPTCHA v3 secret key
+- `recaptcha_score_threshold`: Minimum score (0.0-1.0, default: 0.5)
+- `protected_methods`: Methods requiring verification (default: `["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"]`)
 
 ### Testing Guidelines
 
