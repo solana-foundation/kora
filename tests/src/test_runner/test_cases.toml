@@ -61,3 +61,10 @@ config = "tests/src/common/fixtures/usage-limit-test.toml"
 signers = "tests/src/common/fixtures/signers.toml"
 port = "8088"
 tests = ["usage_limit"]
+
+[test.lighthouse]
+name = "Lighthouse Tests"
+config = "tests/src/common/fixtures/lighthouse-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8090"
+tests = ["lighthouse"]

@@ -80,7 +80,8 @@ pub async fn sign_bundle(
     )
     .await?;
 
-    let signed_resolved = processor.sign_all(&signer, &fee_payer, rpc_client).await?;
+    let signed_resolved =
+        processor.sign_all(&signer, &fee_payer, rpc_client, config, false).await?;
 
     // Encode signed transactions
     let encoded_signed: Vec<String> = signed_resolved

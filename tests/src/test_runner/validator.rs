@@ -9,6 +9,9 @@ use tokio::process::Child;
 const TRANSFER_HOOK_PROGRAM_ID: &str = "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA";
 const TRANSFER_HOOK_PROGRAM_PATH: &str =
     "tests/src/common/transfer-hook-example/transfer_hook_example.so";
+const LIGHTHOUSE_PROGRAM_ID: &str = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
+
+const LIGHTHOUSE_PROGRAM_PATH: &str = "tests/src/common/fixtures/test-programs/lighthouse.so";
 
 pub async fn check_test_validator(rpc_url: &str) -> bool {
     let client = RpcClient::new_with_commitment(
@@ -29,7 +32,13 @@ pub async fn start_test_validator(
     } else {
         println!("⚠️  Transfer hook program not found at: {TRANSFER_HOOK_PROGRAM_PATH}");
         println!("   Starting validator without transfer hook program");
-        println!("   Run 'make build-transfer-hook' to build it if needed");
+    }
+
+    if Path::new(LIGHTHOUSE_PROGRAM_PATH).exists() {
+        cmd.arg("--bpf-program").arg(LIGHTHOUSE_PROGRAM_ID).arg(LIGHTHOUSE_PROGRAM_PATH);
+    } else {
+        println!("⚠️  Lighthouse program not found at: {LIGHTHOUSE_PROGRAM_PATH}");
+        println!("   Starting validator without lighthouse program");
     }
 
     if load_accounts {

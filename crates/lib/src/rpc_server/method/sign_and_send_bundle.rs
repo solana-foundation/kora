@@ -82,7 +82,7 @@ pub async fn sign_and_send_bundle(
     )
     .await?;
 
-    let signed_resolved = processor.sign_all(&signer, &fee_payer, rpc_client).await?;
+    let signed_resolved = processor.sign_all(&signer, &fee_payer, rpc_client, config, true).await?;
 
     // Send to Jito
     let jito_client = JitoBundleClient::new(&config.kora.bundle.jito);

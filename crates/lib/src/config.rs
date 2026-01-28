@@ -507,6 +507,9 @@ pub struct KoraConfig {
     /// Bundle support configuration
     #[serde(default)]
     pub bundle: BundleConfig,
+    /// Lighthouse configuration for fee payer balance protection
+    #[serde(default)]
+    pub lighthouse: LighthouseConfig,
 }
 
 impl Default for KoraConfig {
@@ -520,6 +523,7 @@ impl Default for KoraConfig {
             cache: CacheConfig::default(),
             usage_limit: UsageLimitConfig::default(),
             bundle: BundleConfig::default(),
+            lighthouse: LighthouseConfig::default(),
         }
     }
 }
@@ -533,6 +537,28 @@ pub struct BundleConfig {
     /// Jito-specific configuration
     #[serde(default)]
     pub jito: JitoConfig,
+}
+
+/// Configuration for Lighthouse assertions to protect fee payer balance
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct LighthouseConfig {
+    /// Enable Lighthouse assertions for fee payer protection
+    #[serde(default)]
+    pub enabled: bool,
+    /// If true, fail when adding assertion would exceed transaction size limit.
+    /// If false, skip adding the assertion silently.
+    #[serde(default = "default_fail_on_overflow")]
+    pub fail_if_transaction_size_overflow: bool,
+}
+
+fn default_fail_on_overflow() -> bool {
+    true
+}
+
+impl Default for LighthouseConfig {
+    fn default() -> Self {
+        Self { enabled: false, fail_if_transaction_size_overflow: true }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]

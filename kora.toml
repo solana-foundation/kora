@@ -20,6 +20,14 @@ rate_limit = 100
 # Optional: RPC methods that require reCAPTCHA verification
 # protected_methods = ["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"]
 
+# Lighthouse fee payer protection - adds balance assertions to prevent fee payer drainage
+# IMPORTANT: Only works with signTransaction/signBundle flows, NOT signAndSendTransaction/signAndSendBundle
+# When lighthouse modifies a transaction (adding assertion instruction), existing client signatures
+# become invalid. Use signTransaction → client re-signs → client sends pattern instead.
+[kora.lighthouse]
+enabled = false
+fail_if_transaction_size_overflow = true  # Reject transaction if adding assertion exceeds size limit
+
 # Cache configuration for Redis-based caching
 [kora.cache]
 enabled = false                    # Enable/disable caching (set to true with url to enable)
@@ -51,7 +59,8 @@ allowed_programs = [
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",   # Token Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",  # Associated Token Program
     "AddressLookupTab1e1111111111111111111111111",   # Address Lookup Table Program
-    "ComputeBudget111111111111111111111111111111", # Compute Budget Program
+    "ComputeBudget111111111111111111111111111111",   # Compute Budget Program
+    # "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95", # Lighthouse Program (uncomment when lighthouse enabled)
 ]
 allowed_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC

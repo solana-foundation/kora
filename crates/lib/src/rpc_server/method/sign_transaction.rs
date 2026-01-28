@@ -62,7 +62,7 @@ pub async fn sign_transaction(
     .await?;
 
     let (signed_transaction, _) =
-        resolved_transaction.sign_transaction(config, &signer, rpc_client).await?;
+        resolved_transaction.sign_transaction(config, &signer, rpc_client, false).await?;
 
     let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction)?;
 
