@@ -677,6 +677,33 @@ reCAPTCHA is integrated into the auth layer flow - it runs *after* authenticatio
 - `recaptcha_score_threshold`: Minimum score (0.0-1.0, default: 0.5)
 - `protected_methods`: Methods requiring verification (default: `["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"]`)
 
+## Lighthouse Fee Payer Protection
+
+**Lighthouse** adds balance assertion instructions to transactions, protecting the fee payer from drainage attacks by verifying the fee payer's balance doesn't drop below expected levels.
+
+**Configuration** (`[kora.lighthouse]` in kora.toml):
+- `enabled`: Enable/disable lighthouse protection (default: false)
+- `fail_if_transaction_size_overflow`: Reject transaction if adding assertion exceeds size limit (default: true)
+
+**IMPORTANT - Signature Compatibility:**
+Lighthouse **only works with `signTransaction` and `signBundle`** methods. It does NOT work with `signAndSendTransaction` or `signAndSendBundle`.
+
+**Why?** When lighthouse adds an assertion instruction to a transaction, it modifies the transaction message. This invalidates any pre-existing client signatures. The `signAndSend*` flows fail because:
+1. Client signs transaction
+2. Kora adds lighthouse assertion (modifies message)
+3. Client's signature is now invalid
+4. Network rejects with "signature verification failure"
+
+**Recommended pattern for lighthouse:**
+```
+signTransaction → client receives modified tx → client re-signs → client sends to network
+```
+
+**When enabling lighthouse, also add to `allowed_programs`:**
+```toml
+"L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95",  # Lighthouse Program
+```
+
 ### Testing Guidelines
 
 - **Test Organization**: Mirror source code structure in test file organization

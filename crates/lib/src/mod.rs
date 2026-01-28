@@ -9,6 +9,7 @@ pub mod config;
 pub mod constant;
 pub mod error;
 pub mod fee;
+pub mod lighthouse;
 pub mod log;
 pub mod metrics;
 pub mod oracle;
