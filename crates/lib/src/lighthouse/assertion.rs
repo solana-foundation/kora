@@ -28,21 +28,40 @@ const ACCOUNT_INFO_ASSERTION_LAMPORTS: u8 = 0;
 pub struct LighthouseUtil {}
 
 impl LighthouseUtil {
-    /// Add a fee payer balance assertion to a transaction if lighthouse is enabled.
+    /// Add a fee payer balance assertion to a transaction if lighthouse is enabled and not sending.
     /// Asserts that fee payer balance >= (current_balance - estimated_fee) at transaction end.
+    ///
+    /// The `will_send` parameter indicates if the transaction will be sent to the network directly.
+    /// When `will_send` is true, the assertion is skipped because modifying the message would
+    /// invalidate existing client signatures.
     pub async fn add_fee_payer_assertion(
         transaction: &mut VersionedTransaction,
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,
         estimated_fee: u64,
         config: &LighthouseConfig,
+        will_send: bool,
     ) -> Result<(), KoraError> {
-        if !config.enabled {
+        if !config.enabled || will_send {
             return Ok(());
         }
 
-        let current_balance = rpc_client.get_balance(fee_payer).await?;
+        let current_balance = rpc_client.get_balance(fee_payer).await.map_err(|e| {
+            KoraError::RpcError(format!(
+                "Failed to fetch fee payer balance for Lighthouse assertion: {}",
+                sanitize_error!(e)
+            ))
+        })?;
         let min_expected = current_balance.saturating_sub(estimated_fee);
+
+        if min_expected == 0 {
+            log::warn!(
+                "Fee payer {} has balance {} which may be insufficient for estimated fee {}",
+                fee_payer,
+                current_balance,
+                estimated_fee
+            );
+        }
 
         let assertion_ix = Self::build_fee_payer_assertion(fee_payer, min_expected);
         Self::append_lighthouse_assertion(transaction, assertion_ix, config)

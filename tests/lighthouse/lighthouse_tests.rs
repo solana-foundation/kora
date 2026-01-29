@@ -428,3 +428,125 @@ async fn test_lighthouse_end_to_end_v0_with_client_resign() {
         sim_result.value.err
     );
 }
+
+// **************************************************************************************
+// Negative Tests - Verify sign_and_send methods do NOT add lighthouse assertion
+// **************************************************************************************
+
+/// Verify that signAndSendTransaction does NOT add lighthouse assertion
+/// (because modifying the message would invalidate existing client signatures)
+#[tokio::test]
+async fn test_sign_and_send_transaction_no_lighthouse_assertion() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let base64_transaction = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create transaction");
+
+    let original_tx = TransactionUtil::decode_b64_transaction(&base64_transaction)
+        .expect("Failed to decode original transaction");
+    let original_ix_count = original_tx.message.instructions().len();
+
+    let response: serde_json::Value = ctx
+        .rpc_call("signAndSendTransaction", rpc_params![base64_transaction])
+        .await
+        .expect("Failed to sign and send transaction");
+
+    response.assert_success();
+
+    // The signed_transaction returned should NOT have lighthouse assertion added
+    let signed_tx_b64 = response["signed_transaction"].as_str().unwrap();
+    let signed_tx = TransactionUtil::decode_b64_transaction(signed_tx_b64)
+        .expect("Failed to decode signed transaction");
+
+    assert_eq!(
+        signed_tx.message.instructions().len(),
+        original_ix_count,
+        "signAndSendTransaction should NOT add lighthouse assertion (would invalidate client signature)"
+    );
+
+    assert!(
+        !verify_lighthouse_assertion_added(&signed_tx),
+        "signAndSendTransaction should NOT have lighthouse assertion"
+    );
+}
+
+/// Verify that signAndSendBundle does NOT add lighthouse assertion
+#[tokio::test]
+async fn test_sign_and_send_bundle_no_lighthouse_assertion() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let mut transactions = Vec::new();
+    let mut original_ix_counts = Vec::new();
+
+    for i in 0..2 {
+        let tx = ctx
+            .transaction_builder()
+            .with_fee_payer(fee_payer)
+            .with_signer(&sender)
+            .with_spl_transfer(
+                &token_mint,
+                &sender.pubkey(),
+                &fee_payer,
+                tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+            )
+            .with_transfer(&sender.pubkey(), &recipient, 10 + i)
+            .build()
+            .await
+            .expect("Failed to create transaction");
+
+        let decoded =
+            TransactionUtil::decode_b64_transaction(&tx).expect("Failed to decode transaction");
+        original_ix_counts.push(decoded.message.instructions().len());
+        transactions.push(tx);
+    }
+
+    let response: serde_json::Value = ctx
+        .rpc_call("signAndSendBundle", rpc_params![transactions])
+        .await
+        .expect("Failed to sign and send bundle");
+
+    response.assert_success();
+
+    let signed_txs = response["signed_transactions"].as_array().unwrap();
+
+    // Verify NO transaction in the bundle has lighthouse assertion added
+    for (i, signed_tx_value) in signed_txs.iter().enumerate() {
+        let signed_tx = TransactionUtil::decode_b64_transaction(signed_tx_value.as_str().unwrap())
+            .expect("Failed to decode signed transaction");
+
+        assert_eq!(
+            signed_tx.message.instructions().len(),
+            original_ix_counts[i],
+            "signAndSendBundle transaction {} should NOT have lighthouse assertion",
+            i
+        );
+
+        assert!(
+            !verify_lighthouse_assertion_added(&signed_tx),
+            "signAndSendBundle transaction {} should NOT have lighthouse assertion",
+            i
+        );
+    }
+}

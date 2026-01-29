@@ -305,18 +305,15 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let estimated_fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, self).await?;
         validator.validate_lamport_fee(estimated_fee)?;
 
-        // Add lighthouse assertion only when NOT sending (client will re-sign)
-        // Skip for sign-and-send flows as modifying the message would invalidate client signatures
-        if !will_send {
-            LighthouseUtil::add_fee_payer_assertion(
-                &mut transaction,
-                rpc_client,
-                &fee_payer,
-                estimated_fee,
-                &config.kora.lighthouse,
-            )
-            .await?;
-        }
+        LighthouseUtil::add_fee_payer_assertion(
+            &mut transaction,
+            rpc_client,
+            &fee_payer,
+            estimated_fee,
+            &config.kora.lighthouse,
+            will_send,
+        )
+        .await?;
 
         // Sign transaction
         let message_bytes = transaction.message.serialize();

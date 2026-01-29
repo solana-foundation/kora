@@ -227,15 +227,15 @@ impl BundleProcessor {
                 );
             }
 
-            // Add lighthouse assertion to last transaction only when NOT sending (client will re-sign)
-            // Skip for sign-and-send flows as modifying the message would invalidate client signatures
-            if !will_send && i == tx_count - 1 {
+            // Add lighthouse assertion only to last transaction in bundle
+            if i == tx_count - 1 {
                 LighthouseUtil::add_fee_payer_assertion(
                     &mut resolved.transaction,
                     rpc_client,
                     fee_payer,
                     self.total_solana_estimated_fee,
                     &config.kora.lighthouse,
+                    will_send,
                 )
                 .await?;
             }

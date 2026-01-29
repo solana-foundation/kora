@@ -356,6 +356,24 @@ impl ConfigValidator {
                     LIGHTHOUSE_PROGRAM_ID
                 ));
             }
+
+            // Warn about signAndSend methods not having lighthouse protection
+            let enabled_methods = &config.kora.enabled_methods;
+            let mut unprotected_methods = Vec::new();
+            if enabled_methods.sign_and_send_transaction {
+                unprotected_methods.push("signAndSendTransaction");
+            }
+            if enabled_methods.sign_and_send_bundle {
+                unprotected_methods.push("signAndSendBundle");
+            }
+            if !unprotected_methods.is_empty() {
+                warnings.push(format!(
+                    "Lighthouse is enabled but {} will NOT have fee payer protection. \
+                    These methods send transactions directly to the network, so adding assertions \
+                    would invalidate client signatures. Consider using signTransaction/signBundle instead.",
+                    unprotected_methods.join(", ")
+                ));
+            }
         }
 
         // Validate allowed tokens
