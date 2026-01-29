@@ -1,3 +1,26 @@
+## 2.2.0-beta.4 - 2026-01-29
+
+
+### Features
+
+- add Lighthouse protections for fee payer protection for sign endpoints (#315)
+
+## ts-sdk-v0.2.0-beta.3 - 2026-01-27
+
+
+### Documentation
+
+- update examples to @solana/kit v5.x and add typechecks (#309)
+
+
+### Features
+
+- add reCAPTCHA support for protected endpoints (#301)
+
+- add kit plugin with typed responses (#311)
+
+- update solana-keychain to v0.2.1 and add KMS and Fireblocks sig… (#308)
+
 ## 2.2.0-beta.3 - 2026-01-21
 
 

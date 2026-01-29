@@ -3084,7 +3084,7 @@ dependencies = [
 
 [[package]]
 name = "kora-cli"
-version = "2.2.0-beta.3"
+version = "2.2.0-beta.4"
 dependencies = [
  "clap",
  "dotenv",
@@ -3101,7 +3101,7 @@ dependencies = [
 
 [[package]]
 name = "kora-lib"
-version = "2.2.0-beta.3"
+version = "2.2.0-beta.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7455,7 +7455,7 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "tests"
-version = "2.2.0-beta.3"
+version = "2.2.0-beta.4"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
