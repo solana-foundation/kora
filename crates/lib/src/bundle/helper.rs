@@ -3,6 +3,7 @@ use crate::{
     config::Config,
     constant::ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
+    lighthouse::LighthouseUtil,
     signer::bundle_signer::BundleSigner,
     token::token::TokenUtil,
     transaction::{TransactionUtil, VersionedTransactionResolved},
@@ -207,12 +208,15 @@ impl BundleProcessor {
         signer: &Arc<solana_keychain::Signer>,
         fee_payer: &Pubkey,
         rpc_client: &RpcClient,
+        config: &Config,
+        will_send: bool,
     ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
         self.validate_payment()?;
 
         let mut blockhash = None;
+        let tx_count = self.resolved_transactions.len();
 
-        for resolved in self.resolved_transactions.iter_mut() {
+        for (i, resolved) in self.resolved_transactions.iter_mut().enumerate() {
             // Get latest blockhash if signatures are empty and blockhash is not set
             if blockhash.is_none() && resolved.transaction.signatures.is_empty() {
                 blockhash = Some(
@@ -221,6 +225,19 @@ impl BundleProcessor {
                         .await?
                         .0,
                 );
+            }
+
+            // Add lighthouse assertion only to last transaction in bundle
+            if i == tx_count - 1 {
+                LighthouseUtil::add_fee_payer_assertion(
+                    &mut resolved.transaction,
+                    rpc_client,
+                    fee_payer,
+                    self.total_solana_estimated_fee,
+                    &config.kora.lighthouse,
+                    will_send,
+                )
+                .await?;
             }
 
             BundleSigner::sign_transaction_for_bundle(resolved, signer, fee_payer, &blockhash)

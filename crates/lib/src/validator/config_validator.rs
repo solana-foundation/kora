@@ -3,7 +3,7 @@ use std::{path::Path, str::FromStr};
 use crate::{
     admin::token_util::find_missing_atas,
     config::{FeePayerPolicy, SplTokenConfig, Token2022Config},
-    constant::{MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
+    constant::{LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     fee::price::PriceModel,
     oracle::PriceSource,
     signer::SignerPoolConfig,
@@ -341,6 +341,41 @@ impl ConfigValidator {
             }
         }
 
+        // Validate lighthouse configuration
+        if config.kora.lighthouse.enabled {
+            let lighthouse_program = LIGHTHOUSE_PROGRAM_ID.to_string();
+            if !config.validation.allowed_programs.contains(&lighthouse_program) {
+                errors.push(format!(
+                    "Lighthouse is enabled but {} is not in allowed_programs. Consider adding it to allowed_programs.",
+                    LIGHTHOUSE_PROGRAM_ID
+                ));
+            }
+            if config.validation.disallowed_accounts.contains(&lighthouse_program) {
+                errors.push(format!(
+                    "Lighthouse is enabled but {} is in disallowed_accounts. Consider removing it from disallowed_accounts.",
+                    LIGHTHOUSE_PROGRAM_ID
+                ));
+            }
+
+            // Warn about signAndSend methods not having lighthouse protection
+            let enabled_methods = &config.kora.enabled_methods;
+            let mut unprotected_methods = Vec::new();
+            if enabled_methods.sign_and_send_transaction {
+                unprotected_methods.push("signAndSendTransaction");
+            }
+            if enabled_methods.sign_and_send_bundle {
+                unprotected_methods.push("signAndSendBundle");
+            }
+            if !unprotected_methods.is_empty() {
+                warnings.push(format!(
+                    "Lighthouse is enabled but {} will NOT have fee payer protection. \
+                    These methods send transactions directly to the network, so adding assertions \
+                    would invalidate client signatures. Consider using signTransaction/signBundle instead.",
+                    unprotected_methods.join(", ")
+                ));
+            }
+        }
+
         // Validate allowed tokens
         if config.validation.allowed_tokens.is_empty() {
             errors.push("No allowed tokens configured".to_string());
@@ -637,11 +672,11 @@ mod tests {
     use crate::{
         config::{
             AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy,
-            KoraConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
+            KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
             SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022InstructionPolicy,
             UsageLimitConfig, ValidationConfig,
         },
-        constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
+        constant::{DEFAULT_MAX_REQUEST_BODY_SIZE, LIGHTHOUSE_PROGRAM_ID},
         fee::price::PriceConfig,
         state::update_config,
         tests::{
@@ -779,6 +814,7 @@ mod tests {
                 cache: CacheConfig::default(),
                 usage_limit: UsageLimitConfig::default(),
                 bundle: BundleConfig::default(),
+                lighthouse: LighthouseConfig::default(),
             },
             metrics: MetricsConfig::default(),
         };
@@ -1833,5 +1869,139 @@ mod tests {
         let warnings = result.unwrap();
 
         assert!(!warnings.iter().any(|w| w.contains("allow_durable_transactions")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_lighthouse_enabled_not_in_allowed_programs_error() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ], // Lighthouse program NOT included
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+            },
+            kora: KoraConfig {
+                lighthouse: LighthouseConfig {
+                    enabled: true,
+                    fail_if_transaction_size_overflow: true,
+                },
+                ..Default::default()
+            },
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Lighthouse is enabled but")
+                && e.contains("is not in allowed_programs")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_lighthouse_enabled_in_disallowed_accounts_error() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                    LIGHTHOUSE_PROGRAM_ID.to_string(), // Lighthouse in allowed
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![LIGHTHOUSE_PROGRAM_ID.to_string()], // Also in disallowed!
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+            },
+            kora: KoraConfig {
+                lighthouse: LighthouseConfig {
+                    enabled: true,
+                    fail_if_transaction_size_overflow: true,
+                },
+                ..Default::default()
+            },
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Lighthouse is enabled but")
+                && e.contains("is in disallowed_accounts")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_lighthouse_disabled_no_validation() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ], // Lighthouse NOT included - but should be OK since disabled
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+            },
+            kora: KoraConfig {
+                lighthouse: LighthouseConfig {
+                    enabled: false, // Disabled
+                    fail_if_transaction_size_overflow: true,
+                },
+                ..Default::default()
+            },
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        // Should not have lighthouse errors since it's disabled
+        assert!(!warnings.iter().any(|w| w.contains("Lighthouse")));
     }
 }

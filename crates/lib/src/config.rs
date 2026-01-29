@@ -32,12 +32,12 @@ pub struct Config {
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct MetricsConfig {
     pub enabled: bool,
     pub endpoint: String,
     pub port: u16,
     pub scrape_interval: u64,
-    #[serde(default)]
     pub fee_payer_balance: FeePayerBalanceMetricsConfig,
 }
 
@@ -146,16 +146,15 @@ impl ValidationConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default)]
 pub struct FeePayerPolicy {
-    #[serde(default)]
     pub system: SystemInstructionPolicy,
-    #[serde(default)]
     pub spl_token: SplTokenInstructionPolicy,
-    #[serde(default)]
     pub token_2022: Token2022InstructionPolicy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default)]
 pub struct SystemInstructionPolicy {
     /// Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions
     pub allow_transfer: bool,
@@ -166,7 +165,6 @@ pub struct SystemInstructionPolicy {
     /// Allow fee payer to be the account in System Allocate/AllocateWithSeed instructions
     pub allow_allocate: bool,
     /// Nested policy for nonce account operations
-    #[serde(default)]
     pub nonce: NonceInstructionPolicy,
 }
 
@@ -323,6 +321,7 @@ impl Token2022Config {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct EnabledMethods {
     pub liveness: bool,
     pub estimate_transaction_fee: bool,
@@ -335,11 +334,8 @@ pub struct EnabledMethods {
     pub get_config: bool,
     pub get_version: bool,
     /// Bundle methods (require bundle.enabled = true)
-    #[serde(default)]
     pub estimate_bundle_fee: bool,
-    #[serde(default)]
     pub sign_and_send_bundle: bool,
-    #[serde(default)]
     pub sign_bundle: bool,
 }
 
@@ -454,18 +450,6 @@ impl Default for EnabledMethods {
     }
 }
 
-fn default_max_timestamp_age() -> i64 {
-    DEFAULT_MAX_TIMESTAMP_AGE
-}
-
-fn default_max_request_body_size() -> usize {
-    DEFAULT_MAX_REQUEST_BODY_SIZE
-}
-
-fn default_recaptcha_score_threshold() -> f64 {
-    DEFAULT_RECAPTCHA_SCORE_THRESHOLD
-}
-
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct CacheConfig {
     /// Redis URL for caching (e.g., "redis://localhost:6379")
@@ -490,23 +474,20 @@ impl Default for CacheConfig {
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct KoraConfig {
     pub rate_limit: u64,
-    #[serde(default = "default_max_request_body_size")]
     pub max_request_body_size: usize,
-    #[serde(default)]
     pub enabled_methods: EnabledMethods,
-    #[serde(default)]
     pub auth: AuthConfig,
     /// Optional payment address to receive payments (defaults to signer address)
     pub payment_address: Option<String>,
-    #[serde(default)]
     pub cache: CacheConfig,
-    #[serde(default)]
     pub usage_limit: UsageLimitConfig,
     /// Bundle support configuration
-    #[serde(default)]
     pub bundle: BundleConfig,
+    /// Lighthouse configuration for fee payer balance protection
+    pub lighthouse: LighthouseConfig,
 }
 
 impl Default for KoraConfig {
@@ -520,36 +501,47 @@ impl Default for KoraConfig {
             cache: CacheConfig::default(),
             usage_limit: UsageLimitConfig::default(),
             bundle: BundleConfig::default(),
+            lighthouse: LighthouseConfig::default(),
         }
     }
 }
 
 /// Configuration for bundle support (wraps provider-specific configs)
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct BundleConfig {
     /// Enable bundle support
-    #[serde(default)]
     pub enabled: bool,
     /// Jito-specific configuration
-    #[serde(default)]
     pub jito: JitoConfig,
 }
 
+/// Configuration for Lighthouse assertions to protect fee payer balance
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct LighthouseConfig {
+    /// Enable Lighthouse assertions for fee payer protection
+    pub enabled: bool,
+    /// If true, fail when adding assertion would exceed transaction size limit.
+    /// If false, skip adding the assertion silently.
+    pub fail_if_transaction_size_overflow: bool,
+}
+
+impl Default for LighthouseConfig {
+    fn default() -> Self {
+        Self { enabled: false, fail_if_transaction_size_overflow: true }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct AuthConfig {
     pub api_key: Option<String>,
     pub hmac_secret: Option<String>,
     pub recaptcha_secret: Option<String>,
-    #[serde(default = "default_recaptcha_score_threshold")]
     pub recaptcha_score_threshold: f64,
-    #[serde(default = "default_max_timestamp_age")]
     pub max_timestamp_age: i64,
-    #[serde(default = "default_protected_methods")]
     pub protected_methods: Vec<String>,
-}
-
-fn default_protected_methods() -> Vec<String> {
-    DEFAULT_PROTECTED_METHODS.iter().map(|s| s.to_string()).collect()
 }
 
 impl Default for AuthConfig {
@@ -560,7 +552,7 @@ impl Default for AuthConfig {
             recaptcha_secret: None,
             recaptcha_score_threshold: DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
             max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
-            protected_methods: default_protected_methods(),
+            protected_methods: DEFAULT_PROTECTED_METHODS.iter().map(|s| s.to_string()).collect(),
         }
     }
 }

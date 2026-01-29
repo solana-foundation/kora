@@ -1,9 +1,13 @@
+use solana_program::pubkey;
+use solana_sdk::pubkey::Pubkey;
+
 pub const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 pub const NATIVE_SOL: &str = "11111111111111111111111111111111";
 pub const LAMPORTS_PER_SIGNATURE: u64 = 5000;
 pub const ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION: u64 = 50;
 pub const MIN_BALANCE_FOR_RENT_EXEMPTION: u64 = 2_039_280;
 pub const DEFAULT_INTEREST_MULTIPLIER: u128 = 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60);
+pub const MAX_TRANSACTION_SIZE: usize = 1232;
 
 // HTTP Headers
 pub const X_RECAPTCHA_TOKEN: &str = "x-recaptcha-token";
@@ -22,6 +26,9 @@ pub const JUPITER_API_LITE_URL: &str = "https://lite-api.jup.ag";
 pub const JUPITER_API_PRO_URL: &str = "https://api.jup.ag";
 pub const RECAPTCHA_VERIFY_URL: &str = "https://www.google.com/recaptcha/api/siteverify";
 pub const RECAPTCHA_TIMEOUT_SECS: u64 = 5;
+
+// Lighthouse Program ID
+pub const LIGHTHOUSE_PROGRAM_ID: Pubkey = pubkey!("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
 
 // Metrics
 pub const DEFAULT_METRICS_ENDPOINT: &str = "/metrics";

@@ -1,7 +1,7 @@
 use crate::{
     config::{
         AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods,
-        FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, MetricsConfig,
+        FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, LighthouseConfig, MetricsConfig,
         NonceInstructionPolicy, SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
         Token2022Config, Token2022InstructionPolicy, ValidationConfig,
     },
@@ -108,6 +108,7 @@ impl ConfigMockBuilder {
                     },
                     usage_limit: UsageLimitConfig::default(),
                     bundle: BundleConfig::default(),
+                    lighthouse: LighthouseConfig::default(),
                 },
                 metrics: MetricsConfig::default(),
             },
@@ -348,6 +349,7 @@ impl KoraConfigBuilder {
                 },
                 usage_limit: UsageLimitConfig::default(),
                 bundle: BundleConfig::default(),
+                lighthouse: LighthouseConfig::default(),
             },
         }
     }
