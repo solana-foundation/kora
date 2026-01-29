@@ -482,6 +482,8 @@ export interface AuthenticationHeaders {
     'x-api-key'?: string;
     /** HMAC SHA256 signature of timestamp + body */
     'x-hmac-signature'?: string;
+    /** reCAPTCHA v3 token for bot protection */
+    'x-recaptcha-token'?: string;
     /** Unix timestamp for HMAC authentication */
     'x-timestamp'?: string;
 }
@@ -492,6 +494,13 @@ export interface AuthenticationHeaders {
 export interface KoraClientOptions {
     /** Optional API key for authentication */
     apiKey?: string;
+    /**
+     * Optional callback to get a reCAPTCHA v3 token for bot protection.
+     * Called for every request when provided; server determines which methods require it.
+     * @example Browser: `() => grecaptcha.execute('site-key', { action: 'sign' })`
+     * @example Testing: `() => 'test-token'`
+     */
+    getRecaptchaToken?: () => Promise<string> | string;
     /** Optional HMAC secret for signature-based authentication */
     hmacSecret?: string;
     /** URL of the Kora RPC server */
@@ -516,6 +525,13 @@ export interface KoraPluginConfig {
     apiKey?: string;
     /** Kora RPC endpoint URL */
     endpoint: string;
+    /**
+     * Optional callback to get a reCAPTCHA v3 token for bot protection.
+     * Called for every request when provided; server determines which methods require it.
+     * @example Browser: `() => grecaptcha.execute('site-key', { action: 'sign' })`
+     * @example Testing: `() => 'test-token'`
+     */
+    getRecaptchaToken?: () => Promise<string> | string;
     /** Optional HMAC secret for signature-based authentication */
     hmacSecret?: string;
 }

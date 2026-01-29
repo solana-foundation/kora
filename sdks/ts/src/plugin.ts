@@ -57,6 +57,7 @@ import type {
 export function koraPlugin(config: KoraPluginConfig) {
     const client = new KoraClient({
         apiKey: config.apiKey,
+        getRecaptchaToken: config.getRecaptchaToken,
         hmacSecret: config.hmacSecret,
         rpcUrl: config.endpoint,
     });

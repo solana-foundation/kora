@@ -51,6 +51,7 @@ export class KoraClient {
     private rpcUrl: string;
     private apiKey?: string;
     private hmacSecret?: string;
+    private getRecaptchaToken?: () => Promise<string> | string;
 
     /**
      * Creates a new Kora client instance.
@@ -58,11 +59,13 @@ export class KoraClient {
      * @param options.rpcUrl - The Kora RPC server URL
      * @param options.apiKey - Optional API key for authentication
      * @param options.hmacSecret - Optional HMAC secret for signature-based authentication
+     * @param options.getRecaptchaToken - Optional callback to get reCAPTCHA token for bot protection
      */
-    constructor({ rpcUrl, apiKey, hmacSecret }: KoraClientOptions) {
+    constructor({ rpcUrl, apiKey, hmacSecret, getRecaptchaToken }: KoraClientOptions) {
         this.rpcUrl = rpcUrl;
         this.apiKey = apiKey;
         this.hmacSecret = hmacSecret;
+        this.getRecaptchaToken = getRecaptchaToken;
     }
 
     private getHmacSignature({ timestamp, body }: { body: string; timestamp: string }): string {
@@ -73,7 +76,7 @@ export class KoraClient {
         return crypto.createHmac('sha256', this.hmacSecret).update(message).digest('hex');
     }
 
-    private getHeaders({ body }: { body: string }): AuthenticationHeaders {
+    private async getHeaders({ body }: { body: string }): Promise<AuthenticationHeaders> {
         const headers: AuthenticationHeaders = {};
         if (this.apiKey) {
             headers['x-api-key'] = this.apiKey;
@@ -83,6 +86,10 @@ export class KoraClient {
             const signature = this.getHmacSignature({ body, timestamp });
             headers['x-timestamp'] = timestamp;
             headers['x-hmac-signature'] = signature;
+        }
+        if (this.getRecaptchaToken) {
+            const token = await Promise.resolve(this.getRecaptchaToken());
+            headers['x-recaptcha-token'] = token;
         }
         return headers;
     }
@@ -94,7 +101,7 @@ export class KoraClient {
             method,
             params,
         });
-        const headers = this.getHeaders({ body });
+        const headers = await this.getHeaders({ body });
         const response = await fetch(this.rpcUrl, {
             body,
             headers: { ...headers, 'Content-Type': 'application/json' },
