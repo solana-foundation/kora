@@ -617,28 +617,130 @@ describe('KoraClient Unit Tests', () => {
         });
     });
 
-    // TODO: Add Authentication Tests (separate PR)
-    //
-    // describe('Authentication', () => {
-    //     describe('API Key Authentication', () => {
-    //         - Test that x-api-key header is included when apiKey is provided
-    //         - Test requests work without apiKey when not provided
-    //         - Test all RPC methods include the header
-    //     });
-    //
-    //     describe('HMAC Authentication', () => {
-    //         - Test x-timestamp and x-hmac-signature headers are included when hmacSecret is provided
-    //         - Test HMAC signature calculation is correct (SHA256 of timestamp + body)
-    //         - Test timestamp is current (within reasonable bounds)
-    //         - Test requests work without HMAC when not provided
-    //         - Test all RPC methods include the headers
-    //     });
-    //
-    //     describe('Combined Authentication', () => {
-    //         - Test both API key and HMAC headers are included when both are provided
-    //         - Test headers are correctly combined
-    //     });
-    // });
+    describe('reCAPTCHA Authentication', () => {
+        it('should include x-recaptcha-token header when getRecaptchaToken callback is provided (sync)', async () => {
+            const recaptchaClient = new KoraClient({
+                getRecaptchaToken: () => 'test-recaptcha-token',
+                rpcUrl: mockRpcUrl,
+            });
+
+            mockSuccessfulResponse({ version: '1.0.0' });
+            await recaptchaClient.getVersion();
+
+            expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
+                body: JSON.stringify({
+                    id: 1,
+                    jsonrpc: '2.0',
+                    method: 'getVersion',
+                    params: undefined,
+                }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-recaptcha-token': 'test-recaptcha-token',
+                },
+                method: 'POST',
+            });
+        });
+
+        it('should include x-recaptcha-token header when getRecaptchaToken callback returns Promise', async () => {
+            const recaptchaClient = new KoraClient({
+                getRecaptchaToken: () => Promise.resolve('async-recaptcha-token'),
+                rpcUrl: mockRpcUrl,
+            });
+
+            mockSuccessfulResponse({ version: '1.0.0' });
+            await recaptchaClient.getVersion();
+
+            expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
+                body: JSON.stringify({
+                    id: 1,
+                    jsonrpc: '2.0',
+                    method: 'getVersion',
+                    params: undefined,
+                }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-recaptcha-token': 'async-recaptcha-token',
+                },
+                method: 'POST',
+            });
+        });
+
+        it('should NOT include x-recaptcha-token header when getRecaptchaToken is not provided', async () => {
+            mockSuccessfulResponse({ version: '1.0.0' });
+            await client.getVersion();
+
+            expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
+                body: JSON.stringify({
+                    id: 1,
+                    jsonrpc: '2.0',
+                    method: 'getVersion',
+                    params: undefined,
+                }),
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                method: 'POST',
+            });
+        });
+
+        it('should include x-recaptcha-token along with other auth headers', async () => {
+            const combinedAuthClient = new KoraClient({
+                apiKey: 'test-api-key',
+                getRecaptchaToken: () => 'test-recaptcha-token',
+                rpcUrl: mockRpcUrl,
+            });
+
+            mockSuccessfulResponse({ version: '1.0.0' });
+            await combinedAuthClient.getVersion();
+
+            const callArgs = (mockFetch.mock.calls as Array<[string, { headers: Record<string, string> }]>)[0][1];
+            expect(callArgs.headers).toMatchObject({
+                'Content-Type': 'application/json',
+                'x-api-key': 'test-api-key',
+                'x-recaptcha-token': 'test-recaptcha-token',
+            });
+        });
+
+        it('should call getRecaptchaToken callback for each request', async () => {
+            let callCount = 0;
+            const recaptchaClient = new KoraClient({
+                getRecaptchaToken: () => `token-${++callCount}`,
+                rpcUrl: mockRpcUrl,
+            });
+
+            mockSuccessfulResponse({ version: '1.0.0' });
+            await recaptchaClient.getVersion();
+
+            mockSuccessfulResponse({ blockhash: 'test-blockhash' });
+            await recaptchaClient.getBlockhash();
+
+            expect(callCount).toBe(2);
+            const calls = mockFetch.mock.calls as Array<[string, { headers: Record<string, string> }]>;
+            expect(calls[0][1].headers['x-recaptcha-token']).toBe('token-1');
+            expect(calls[1][1].headers['x-recaptcha-token']).toBe('token-2');
+        });
+
+        it('should propagate errors when getRecaptchaToken callback throws', async () => {
+            const recaptchaClient = new KoraClient({
+                getRecaptchaToken: () => {
+                    throw new Error('reCAPTCHA failed to load');
+                },
+                rpcUrl: mockRpcUrl,
+            });
+
+            await expect(recaptchaClient.getVersion()).rejects.toThrow('reCAPTCHA failed to load');
+        });
+
+        it('should propagate errors when getRecaptchaToken returns rejected Promise', async () => {
+            const recaptchaClient = new KoraClient({
+                getRecaptchaToken: () => Promise.reject(new Error('Token generation failed')),
+                rpcUrl: mockRpcUrl,
+            });
+
+            await expect(recaptchaClient.getVersion()).rejects.toThrow('Token generation failed');
+        });
+    });
 });
 
 describe('Transaction Utils', () => {
