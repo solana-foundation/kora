@@ -22,8 +22,7 @@ pub const DEFAULT_PROTECTED_METHODS: &[&str] =
     &["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"];
 
 // External Services
-pub const JUPITER_API_LITE_URL: &str = "https://lite-api.jup.ag";
-pub const JUPITER_API_PRO_URL: &str = "https://api.jup.ag";
+pub const JUPITER_API_URL: &str = "https://api.jup.ag";
 pub const RECAPTCHA_VERIFY_URL: &str = "https://www.google.com/recaptcha/api/siteverify";
 pub const RECAPTCHA_TIMEOUT_SECS: u64 = 5;
 
