@@ -15,4 +15,4 @@ include makefiles/RELEASE.makefile
 all: check test build
 
 # Run all tests (unit + TypeScript + integration)
-test: build test test-ts test-integration
+test: build unit-test test-ts integration-test
