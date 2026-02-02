@@ -4,20 +4,30 @@ on:
   workflow_call:
   push:
     branches: [main, "release/*"]
-    paths:
-      - 'sdks/ts/**'
-      - '.github/workflows/typescript-unit.yml'
-
   pull_request:
     branches: [main, "release/*"]
-    paths:
-      - 'sdks/ts/**'
-      - '.github/workflows/typescript-unit.yml'
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.filter.outputs.ts }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ts:
+              - 'sdks/ts/**'
+              - '.github/workflows/typescript-unit.yml'
+
   typescript-unit:
     name: TypeScript SDK Unit Tests
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.should_run == 'true'
     permissions:
       contents: read
       pull-requests: write
@@ -75,12 +85,12 @@ jobs:
           script: |
             const fs = require('fs');
             let coverage = '0';
-            
+
             try {
               // Read coverage from Jest output in previous step
               const testOutput = `${{ steps.test.outputs.coverage || '0' }}`;
               coverage = testOutput || '0';
-              
+
               // If we couldn't get it from output, try to parse lcov.info
               if (coverage === '0') {
                 const lcov = fs.readFileSync('sdks/ts/coverage/lcov.info', 'utf8');
@@ -91,31 +101,31 @@ jobs:
             } catch (error) {
               console.log('Error reading coverage:', error);
             }
-            
+
             const comment = `## 📊 TypeScript Coverage Report
-            
+
             **Coverage:** ${coverage}%
-            
+
             <details>
             <summary>View detailed report</summary>
-            
+
             Coverage artifacts have been uploaded to this workflow run.
             [View Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            
+
             </details>`;
-            
+
             // Find existing comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
-            const botComment = comments.find(comment => 
-              comment.user.type === 'Bot' && 
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
               comment.body.includes('## 📊 TypeScript Coverage Report')
             );
-            
+
             if (botComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
@@ -139,3 +149,23 @@ jobs:
         uses: ./.github/actions/show-failure-logs
         with:
           test-type: "TypeScript unit"
+
+  # Summary job for branch protection - always reports status
+  typescript-unit-status:
+    name: TypeScript SDK Unit Tests
+    if: always()
+    needs: [changes, typescript-unit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status
+        run: |
+          if [[ "${{ needs.changes.outputs.should_run }}" == "false" ]]; then
+            echo "✅ Skipped - no TypeScript changes detected"
+            exit 0
+          fi
+          if [[ "${{ needs.typescript-unit.result }}" == "success" ]]; then
+            echo "✅ TypeScript unit tests passed"
+            exit 0
+          fi
+          echo "❌ TypeScript unit tests failed"
+          exit 1
