@@ -12,8 +12,7 @@ pub const X_TIMESTAMP: &str = "x-timestamp";
 pub const DEFAULT_MAX_TIMESTAMP_AGE: i64 = 300;
 
 // External Services
-pub const JUPITER_API_LITE_URL: &str = "https://lite-api.jup.ag";
-pub const JUPITER_API_PRO_URL: &str = "https://api.jup.ag";
+pub const JUPITER_API_URL: &str = "https://api.jup.ag";
 
 // Metrics
 pub const DEFAULT_METRICS_ENDPOINT: &str = "/metrics";

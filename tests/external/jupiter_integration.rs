@@ -6,7 +6,8 @@ use std::time::Duration;
 async fn test_jupiter_integration_usdc() {
     const USDC_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
-    let oracle = get_price_oracle(PriceSource::Jupiter);
+    let oracle = get_price_oracle(PriceSource::Jupiter)
+        .expect("JUPITER_API_KEY environment variable must be set");
     let retrying_oracle = RetryingPriceOracle::new(3, Duration::from_millis(500), oracle);
 
     let result = retrying_oracle.get_token_price(USDC_MINT).await;
@@ -38,7 +39,8 @@ async fn test_jupiter_integration_usdc() {
 async fn test_jupiter_integration_cbtc() {
     const CBTC_MINT: &str = "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij";
 
-    let oracle = get_price_oracle(PriceSource::Jupiter);
+    let oracle = get_price_oracle(PriceSource::Jupiter)
+        .expect("JUPITER_API_KEY environment variable must be set");
     let retrying_oracle = RetryingPriceOracle::new(3, Duration::from_millis(500), oracle);
 
     let result = retrying_oracle.get_token_price(CBTC_MINT).await;
@@ -70,7 +72,8 @@ async fn test_jupiter_integration_cbtc() {
 async fn test_jupiter_integration_sol() {
     const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 
-    let oracle = get_price_oracle(PriceSource::Jupiter);
+    let oracle = get_price_oracle(PriceSource::Jupiter)
+        .expect("JUPITER_API_KEY environment variable must be set");
     let retrying_oracle = RetryingPriceOracle::new(3, Duration::from_millis(500), oracle);
 
     let result = retrying_oracle.get_token_price(SOL_MINT).await;
@@ -100,7 +103,8 @@ async fn test_jupiter_integration_unknown_token() {
     // Invalid token mint
     const UNKNOWN_TOKEN_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1w";
 
-    let oracle = get_price_oracle(PriceSource::Jupiter);
+    let oracle = get_price_oracle(PriceSource::Jupiter)
+        .expect("JUPITER_API_KEY environment variable must be set");
     let retrying_oracle = RetryingPriceOracle::new(3, Duration::from_millis(500), oracle);
 
     let result = retrying_oracle
