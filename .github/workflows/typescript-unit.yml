@@ -8,26 +8,9 @@ on:
     branches: [main, "release/*"]
 
 jobs:
-  changes:
-    name: Detect Changes
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.filter.outputs.ts }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            ts:
-              - 'sdks/ts/**'
-              - '.github/workflows/typescript-unit.yml'
-
   typescript-unit:
     name: TypeScript SDK Unit Tests
     runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.should_run == 'true'
     permissions:
       contents: read
       pull-requests: write
@@ -149,27 +132,3 @@ jobs:
         uses: ./.github/actions/show-failure-logs
         with:
           test-type: "TypeScript unit"
-
-  # Summary job for branch protection - always reports status
-  typescript-unit-status:
-    name: TypeScript SDK Unit Tests
-    if: always()
-    needs: [changes, typescript-unit]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check status
-        run: |
-          if [[ "${{ needs.changes.outputs.should_run }}" == "false" ]]; then
-            echo "✅ Skipped - no TypeScript changes detected"
-            exit 0
-          fi
-          if [[ "${{ needs.typescript-unit.result }}" == "success" ]]; then
-            echo "✅ TypeScript unit tests passed"
-            exit 0
-          fi
-          if [[ "${{ needs.typescript-unit.result }}" == "skipped" ]]; then
-            echo "✅ Skipped - no TypeScript changes detected"
-            exit 0
-          fi
-          echo "❌ TypeScript unit tests failed"
-          exit 1

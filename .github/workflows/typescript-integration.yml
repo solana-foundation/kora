@@ -13,32 +13,8 @@ env:
   RUST_LOG: info
 
 jobs:
-  changes:
-    name: Detect Changes
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.filter.outputs.backend }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            backend:
-              - 'sdks/ts/**'
-              - 'crates/**'
-              - 'tests/**'
-              - 'Cargo.*'
-              - 'Makefile'
-              - 'makefiles/**'
-              - '.github/workflows/typescript-integration.yml'
-              - '.github/workflows/build-rust.yml'
-              - '.github/actions/run-test-runner/**'
-
   build:
     name: Build Rust Backend
-    needs: changes
-    if: needs.changes.outputs.should_run == 'true'
     uses: ./.github/workflows/build-rust.yml
     with:
       cache-key: "typescript-integration-build"
@@ -47,8 +23,7 @@ jobs:
   typescript-integration:
     name: TypeScript SDK Integration Tests
     runs-on: ubuntu-latest
-    needs: [changes, build]
-    if: needs.changes.outputs.should_run == 'true'
+    needs: build
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -119,30 +94,3 @@ jobs:
         uses: ./.github/actions/show-failure-logs
         with:
           test-type: "TypeScript integration (${{ matrix.test-group }})"
-
-  # Summary job for branch protection - always reports status (matrix to match old check names)
-  typescript-integration-status:
-    name: TypeScript SDK Integration Tests
-    if: always()
-    needs: [changes, typescript-integration]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        test-group: [typescript_basic, typescript_auth]
-    steps:
-      - name: Check status
-        run: |
-          if [[ "${{ needs.changes.outputs.should_run }}" == "false" ]]; then
-            echo "✅ Skipped (${{ matrix.test-group }}) - no relevant changes detected"
-            exit 0
-          fi
-          if [[ "${{ needs.typescript-integration.result }}" == "success" ]]; then
-            echo "✅ TypeScript integration tests passed (${{ matrix.test-group }})"
-            exit 0
-          fi
-          if [[ "${{ needs.typescript-integration.result }}" == "skipped" ]]; then
-            echo "✅ Skipped (${{ matrix.test-group }}) - no relevant changes detected"
-            exit 0
-          fi
-          echo "❌ TypeScript integration tests failed (${{ matrix.test-group }})"
-          exit 1

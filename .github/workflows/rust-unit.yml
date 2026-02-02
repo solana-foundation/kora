@@ -12,28 +12,9 @@ env:
   CI: true
 
 jobs:
-  changes:
-    name: Detect Changes
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.filter.outputs.rust }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            rust:
-              - 'crates/**'
-              - 'Cargo.*'
-              - 'Makefile'
-              - '.github/workflows/rust-unit.yml'
-
   test:
     name: Rust Unit Tests & Coverage
     runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.should_run == 'true'
     timeout-minutes: 15
     permissions:
       contents: read
@@ -135,27 +116,3 @@ jobs:
               pull_number: context.issue.number,
               body: newBody
             });
-
-  # Summary job for branch protection - always reports status
-  rust-unit-status:
-    name: Rust Unit Tests & Coverage
-    if: always()
-    needs: [changes, test]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check status
-        run: |
-          if [[ "${{ needs.changes.outputs.should_run }}" == "false" ]]; then
-            echo "✅ Skipped - no Rust changes detected"
-            exit 0
-          fi
-          if [[ "${{ needs.test.result }}" == "success" ]]; then
-            echo "✅ Rust unit tests passed"
-            exit 0
-          fi
-          if [[ "${{ needs.test.result }}" == "skipped" ]]; then
-            echo "✅ Skipped - no Rust changes detected"
-            exit 0
-          fi
-          echo "❌ Rust unit tests failed"
-          exit 1
