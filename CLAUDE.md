@@ -42,7 +42,7 @@ Optional bot protection via **reCAPTCHA v3** can be integrated into either auth 
 
 **Testing:**
 ```bash
-just test-integration           # Run all integration tests
+just integration-test           # Run all integration tests
 ```
 
 ## Common Development Commands
@@ -68,13 +68,13 @@ just fmt
 
 ```bash
 # Run unit tests
-just test
+just unit-test
 
 # Run integration tests (automatically handles environment setup)
-just test-integration
+just integration-test
 
 # Run all tests
-just test-all
+just test
 ```
 
 #### Integration Test Environment Setup
@@ -83,7 +83,7 @@ Integration tests are fully automated using a Rust test runner binary that handl
 
 **Quick Start:**
 ```bash
-just test-integration
+just integration-test
 ```
 
 **What happens automatically:**
@@ -146,21 +146,21 @@ tests/
 **Test Runner Commands:**
 ```bash
 # Run all integration tests (default)
-just test-integration
+just integration-test
 
 # Run with verbose output
-just test-integration --verbose
+just integration-test --verbose
 
 # Force refresh test accounts (ignore cached)
-just test-integration --force-refresh
+just integration-test --force-refresh
 
 # Run specific test phase
-just test-integration --filter regular
-just test-integration --filter auth
-just test-integration --filter payment_address
-just test-integration --filter multi_signer
-just test-integration --filter typescript_basic
-just test-integration --filter typescript_auth
+just integration-test --filter regular
+just integration-test --filter auth
+just integration-test --filter payment_address
+just integration-test --filter multi_signer
+just integration-test --filter typescript_basic
+just integration-test --filter typescript_auth
 ```
 
 #### Customize Test Environment
