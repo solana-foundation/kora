@@ -167,5 +167,9 @@ jobs:
             echo "✅ TypeScript unit tests passed"
             exit 0
           fi
+          if [[ "${{ needs.typescript-unit.result }}" == "skipped" ]]; then
+            echo "✅ Skipped - no TypeScript changes detected"
+            exit 0
+          fi
           echo "❌ TypeScript unit tests failed"
           exit 1

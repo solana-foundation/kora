@@ -120,22 +120,29 @@ jobs:
         with:
           test-type: "TypeScript integration (${{ matrix.test-group }})"
 
-  # Summary job for branch protection - always reports status
+  # Summary job for branch protection - always reports status (matrix to match old check names)
   typescript-integration-status:
     name: TypeScript SDK Integration Tests
     if: always()
     needs: [changes, typescript-integration]
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test-group: [typescript_basic, typescript_auth]
     steps:
       - name: Check status
         run: |
           if [[ "${{ needs.changes.outputs.should_run }}" == "false" ]]; then
-            echo "✅ Skipped - no relevant changes detected"
+            echo "✅ Skipped (${{ matrix.test-group }}) - no relevant changes detected"
             exit 0
           fi
           if [[ "${{ needs.typescript-integration.result }}" == "success" ]]; then
-            echo "✅ TypeScript integration tests passed"
+            echo "✅ TypeScript integration tests passed (${{ matrix.test-group }})"
             exit 0
           fi
-          echo "❌ TypeScript integration tests failed"
+          if [[ "${{ needs.typescript-integration.result }}" == "skipped" ]]; then
+            echo "✅ Skipped (${{ matrix.test-group }}) - no relevant changes detected"
+            exit 0
+          fi
+          echo "❌ TypeScript integration tests failed (${{ matrix.test-group }})"
           exit 1

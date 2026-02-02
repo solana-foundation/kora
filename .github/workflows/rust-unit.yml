@@ -153,5 +153,9 @@ jobs:
             echo "✅ Rust unit tests passed"
             exit 0
           fi
+          if [[ "${{ needs.test.result }}" == "skipped" ]]; then
+            echo "✅ Skipped - no Rust changes detected"
+            exit 0
+          fi
           echo "❌ Rust unit tests failed"
           exit 1
