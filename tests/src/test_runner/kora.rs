@@ -80,24 +80,29 @@ pub async fn start_kora_rpc_server(
         (std::process::Stdio::null(), std::process::Stdio::null())
     };
 
-    let kora_pid = tokio::process::Command::new(kora_binary_path)
-        .args([
-            "--config",
-            config_file,
-            "--rpc-url",
-            rpc_url.as_str(),
-            "rpc",
-            "start",
-            "--signers-config",
-            signers_config,
-            "--port",
-            &port.to_string(),
-        ])
-        .env("KORA_PRIVATE_KEY", fee_payer_key.trim())
-        .env("KORA_PRIVATE_KEY_2", signer_2.trim())
-        .stdout(std_out)
-        .stderr(std_err)
-        .spawn()?;
+    let mut cmd = tokio::process::Command::new(kora_binary_path);
+    cmd.args([
+        "--config",
+        config_file,
+        "--rpc-url",
+        rpc_url.as_str(),
+        "rpc",
+        "start",
+        "--signers-config",
+        signers_config,
+        "--port",
+        &port.to_string(),
+    ])
+    .env("KORA_PRIVATE_KEY", fee_payer_key.trim())
+    .env("KORA_PRIVATE_KEY_2", signer_2.trim())
+    .stdout(std_out)
+    .stderr(std_err);
+
+    if let Ok(jupiter_key) = std::env::var("JUPITER_API_KEY") {
+        cmd.env("JUPITER_API_KEY", jupiter_key);
+    }
+
+    let kora_pid = cmd.spawn()?;
 
     Ok((kora_pid, port))
 }

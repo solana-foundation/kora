@@ -44,10 +44,12 @@ pub struct RetryingPriceOracle {
     oracle: Arc<dyn PriceOracle + Send + Sync>,
 }
 
-pub fn get_price_oracle(source: PriceSource) -> Arc<dyn PriceOracle + Send + Sync> {
+pub fn get_price_oracle(
+    source: PriceSource,
+) -> Result<Arc<dyn PriceOracle + Send + Sync>, KoraError> {
     match source {
-        PriceSource::Jupiter => Arc::new(JupiterPriceOracle::new()),
-        PriceSource::Mock => OracleUtil::get_mock_oracle_price(),
+        PriceSource::Jupiter => Ok(Arc::new(JupiterPriceOracle::new()?)),
+        PriceSource::Mock => Ok(OracleUtil::get_mock_oracle_price()),
     }
 }
 

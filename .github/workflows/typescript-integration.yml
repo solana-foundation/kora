@@ -5,33 +5,8 @@ on:
   workflow_call:
   push:
     branches: [main, "release/*"]
-    paths:
-      # TS SDK changes
-      - "sdks/ts/**"
-      # Backend changes that affect TS integration
-      - "crates/**"
-      - "tests/**"
-      - "Cargo.*"
-      - "Makefile"
-      - "makefiles/**"
-      - ".github/workflows/typescript-integration.yml"
-      - ".github/workflows/build-rust.yml"
-      - ".github/actions/run-test-runner/**"
-
   pull_request:
     branches: [main, "release/*"]
-    paths:
-      # TS SDK changes
-      - "sdks/ts/**"
-      # Backend changes that affect TS integration
-      - "crates/**"
-      - "tests/**"
-      - "Cargo.*"
-      - "Makefile"
-      - "makefiles/**"
-      - ".github/workflows/typescript-integration.yml"
-      - ".github/workflows/build-rust.yml"
-      - ".github/actions/run-test-runner/**"
 
 env:
   CARGO_TERM_COLOR: always

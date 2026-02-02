@@ -51,6 +51,10 @@ impl TestCommandHelper {
             cmd.env(env_var, value);
         }
 
+        if let Ok(jupiter_key) = std::env::var("JUPITER_API_KEY") {
+            cmd.env("JUPITER_API_KEY", jupiter_key);
+        }
+
         let cmd_output = cmd.output().await?;
 
         if !cmd_output.status.success() {

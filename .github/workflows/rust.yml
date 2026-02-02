@@ -3,26 +3,8 @@ name: Rust Integration Tests
 on:
   push:
     branches: [main, "release/*"]
-    paths:
-      - "crates/**"
-      - "tests/**"
-      - "Cargo.*"
-      - "Makefile"
-      - "makefiles/**"
-      - ".github/workflows/rust.yml"
-      - ".github/workflows/build-rust.yml"
-      - ".github/actions/run-test-runner/**"
   pull_request:
     branches: [main, "release/*"]
-    paths:
-      - "crates/**"
-      - "tests/**"
-      - "Cargo.*"
-      - "Makefile"
-      - "makefiles/**"
-      - ".github/workflows/rust.yml"
-      - ".github/workflows/build-rust.yml"
-      - ".github/actions/run-test-runner/**"
 
 env:
   CARGO_TERM_COLOR: always
@@ -71,6 +53,8 @@ jobs:
         uses: ./.github/actions/run-test-runner
         with:
           filters: "--filter ${{ matrix.test-group }}"
+        env:
+          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
 
       - name: Cleanup test environment
         if: always()

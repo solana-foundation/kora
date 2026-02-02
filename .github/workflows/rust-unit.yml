@@ -3,18 +3,8 @@ name: Rust Unit Tests
 on:
   push:
     branches: [main, "release/*"]
-    paths:
-      - "crates/**"
-      - "Cargo.*"
-      - "Makefile"
-      - ".github/workflows/rust-unit.yml"
   pull_request:
     branches: [main, "release/*"]
-    paths:
-      - "crates/**"
-      - "Cargo.*"
-      - "Makefile"
-      - ".github/workflows/rust-unit.yml"
 
 env:
   CARGO_TERM_COLOR: always

@@ -97,7 +97,7 @@ impl TokenUtil {
         let decimals = Self::get_mint_decimals(rpc_client, mint).await?;
 
         let oracle =
-            RetryingPriceOracle::new(3, Duration::from_secs(1), get_price_oracle(price_source));
+            RetryingPriceOracle::new(3, Duration::from_secs(1), get_price_oracle(price_source)?);
 
         // Get token price in SOL directly
         let token_price = oracle
@@ -289,7 +289,7 @@ impl TokenUtil {
         let oracle = RetryingPriceOracle::new(
             3,
             Duration::from_secs(1),
-            get_price_oracle(price_source.clone()),
+            get_price_oracle(price_source.clone())?,
         );
 
         let prices = oracle.get_token_prices(&mint_addresses).await?;

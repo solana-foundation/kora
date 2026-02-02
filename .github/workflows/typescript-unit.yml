@@ -4,15 +4,8 @@ on:
   workflow_call:
   push:
     branches: [main, "release/*"]
-    paths:
-      - 'sdks/ts/**'
-      - '.github/workflows/typescript-unit.yml'
-
   pull_request:
     branches: [main, "release/*"]
-    paths:
-      - 'sdks/ts/**'
-      - '.github/workflows/typescript-unit.yml'
 
 jobs:
   typescript-unit:
@@ -75,12 +68,12 @@ jobs:
           script: |
             const fs = require('fs');
             let coverage = '0';
-            
+
             try {
               // Read coverage from Jest output in previous step
               const testOutput = `${{ steps.test.outputs.coverage || '0' }}`;
               coverage = testOutput || '0';
-              
+
               // If we couldn't get it from output, try to parse lcov.info
               if (coverage === '0') {
                 const lcov = fs.readFileSync('sdks/ts/coverage/lcov.info', 'utf8');
@@ -91,31 +84,31 @@ jobs:
             } catch (error) {
               console.log('Error reading coverage:', error);
             }
-            
+
             const comment = `## 📊 TypeScript Coverage Report
-            
+
             **Coverage:** ${coverage}%
-            
+
             <details>
             <summary>View detailed report</summary>
-            
+
             Coverage artifacts have been uploaded to this workflow run.
             [View Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            
+
             </details>`;
-            
+
             // Find existing comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
-            const botComment = comments.find(comment => 
-              comment.user.type === 'Bot' && 
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
               comment.body.includes('## 📊 TypeScript Coverage Report')
             );
-            
+
             if (botComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
