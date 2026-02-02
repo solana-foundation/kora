@@ -22,14 +22,6 @@ const MIN_REASONABLE_PRICE: f64 = 0.000_000_001;
 static GLOBAL_JUPITER_API_KEY: Lazy<Arc<RwLock<Option<String>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
-/// Initialize the global Jupiter API key from the environment variable
-pub fn init_jupiter_api_key() {
-    let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
-    if api_key_guard.is_none() {
-        *api_key_guard = std::env::var("JUPITER_API_KEY").ok();
-    }
-}
-
 /// Get the global Jupiter API key, falling back to environment variable
 fn get_jupiter_api_key() -> Option<String> {
     let api_key_guard = GLOBAL_JUPITER_API_KEY.read();
@@ -59,7 +51,10 @@ pub struct JupiterPriceOracle {
 
 impl JupiterPriceOracle {
     pub fn new() -> Result<Self, KoraError> {
-        let api_key = get_jupiter_api_key().ok_or(KoraError::ConfigError)?;
+        let api_key = get_jupiter_api_key().ok_or_else(|| {
+            log::error!("Jupiter API key not found. Set JUPITER_API_KEY environment variable.");
+            KoraError::ConfigError
+        })?;
 
         let api_url = Self::build_price_api_url(JUPITER_API_URL);
 
