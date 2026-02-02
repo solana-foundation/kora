@@ -127,7 +127,7 @@ make run
 And run all tests:
 
 ```bash
-make test-all
+make test
 ```
 
 ## Repository Structure

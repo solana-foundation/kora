@@ -7,7 +7,7 @@ check:
 	cargo fmt --all -- --check
 
 # Run all fixes and checks
-lint:
+fmt:
 	cargo clippy --fix --allow-dirty -- -D warnings
 	cargo fmt --all
 	cargo fmt --all -- --check
