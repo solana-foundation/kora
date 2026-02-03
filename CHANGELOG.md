@@ -1,3 +1,38 @@
+## 2.0.4 - 2026-02-03
+
+
+### Bug Fixes
+
+- clear JUPITER_API_KEY env var in jupiter oracle test (#329)
+
+- sign if create ata ix found (cherry-pick from #267) (#327)
+
+
+### Features
+
+- add Claude skill for automated full release workflow (#330)
+
+
+### Refactoring
+
+- migrate from jupiter lite API to v3 pro API (#321)
+
+## ts-sdk-v0.1.2 - 2026-01-28
+
+
+### Documentation
+
+- update sdk readme for release (#314)
+
+- update examples to @solana/kit v5.x and add typechecks (#309)
+
+- update readme with latest release and absolute logo path (#307)
+
+
+### Features
+
+- add kit plugin with typed responses (#311)
+
 ## 2.0.3 - 2026-01-21
 
 
