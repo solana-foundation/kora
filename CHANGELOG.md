@@ -1,3 +1,27 @@
+## 2.2.0-beta.5 - 2026-02-03
+
+
+### Cherry-pick
+
+- Hotfix example packages and Jupiter v3 API migration (#326)
+
+
+### Features
+
+- add Claude skill for automated full release workflow (#328)
+
+## ts-sdk-v0.2.0-beta.4 - 2026-01-29
+
+
+### Documentation
+
+- update sdk readme for release (#314)
+
+
+### Features
+
+- add reCAPTCHA support to TypeScript client (#317)
+
 ## 2.2.0-beta.4 - 2026-01-29
 
 
