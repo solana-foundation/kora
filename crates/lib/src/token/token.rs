@@ -1,4 +1,5 @@
 use crate::{
+    constant,
     error::KoraError,
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
     token::{
@@ -20,13 +21,6 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{instruction::Instruction, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use std::{collections::HashMap, str::FromStr, time::Duration};
-
-mod ata_instruction_indexes {
-    pub const ATA_ADDRESS_INDEX: usize = 1;
-    pub const WALLET_OWNER_INDEX: usize = 2;
-    pub const MINT_INDEX: usize = 3;
-    pub const MIN_ACCOUNTS: usize = 6;
-}
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -76,6 +70,7 @@ impl TokenUtil {
     }
 
     /// Check if the transaction contains an ATA creation instruction for the given destination address.
+    /// Supports both CreateAssociatedTokenAccount and CreateAssociatedTokenAccountIdempotent instructions.
     /// Returns Some((wallet_owner, mint)) if found, None otherwise.
     pub fn find_ata_creation_for_destination(
         instructions: &[Instruction],
@@ -85,13 +80,18 @@ impl TokenUtil {
 
         for ix in instructions {
             if ix.program_id == ata_program_id
-                && ix.accounts.len() >= ata_instruction_indexes::MIN_ACCOUNTS
+                && ix.accounts.len()
+                    >= constant::instruction_indexes::ata_instruction_indexes::MIN_ACCOUNTS
             {
-                let ata_address = ix.accounts[ata_instruction_indexes::ATA_ADDRESS_INDEX].pubkey;
+                let ata_address = ix.accounts
+                    [constant::instruction_indexes::ata_instruction_indexes::ATA_ADDRESS_INDEX]
+                    .pubkey;
                 if ata_address == *destination_address {
                     let wallet_owner =
-                        ix.accounts[ata_instruction_indexes::WALLET_OWNER_INDEX].pubkey;
-                    let mint = ix.accounts[ata_instruction_indexes::MINT_INDEX].pubkey;
+                        ix.accounts[constant::instruction_indexes::ata_instruction_indexes::WALLET_OWNER_INDEX].pubkey;
+                    let mint = ix.accounts
+                        [constant::instruction_indexes::ata_instruction_indexes::MINT_INDEX]
+                        .pubkey;
                     return Some((wallet_owner, mint));
                 }
             }
@@ -463,6 +463,53 @@ impl TokenUtil {
         Ok(())
     }
 
+    /// Validate Token2022 extensions for payment when destination ATA is being created.
+    /// Only validates mint and source account extensions (destination doesn't exist yet).
+    pub async fn validate_token2022_partial_for_ata_creation(
+        rpc_client: &RpcClient,
+        source_address: &Pubkey,
+        mint: &Pubkey,
+    ) -> Result<(), KoraError> {
+        let token2022_config = &get_config()?.validation.token_2022;
+        let token_program = Token2022Program::new();
+
+        // Get mint account data and validate mint extensions
+        let mint_account = CacheUtil::get_account(rpc_client, mint, true).await?;
+        let mint_state = token_program.unpack_mint(mint, &mint_account.data)?;
+
+        let mint_with_extensions =
+            mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast mint state.".to_string())
+            })?;
+
+        for extension_type in mint_with_extensions.get_extension_types() {
+            if token2022_config.is_mint_extension_blocked(*extension_type) {
+                return Err(KoraError::ValidationError(format!(
+                    "Blocked mint extension found on mint account {mint}",
+                )));
+            }
+        }
+
+        // Check source account extensions
+        let source_account = CacheUtil::get_account(rpc_client, source_address, true).await?;
+        let source_state = token_program.unpack_token_account(&source_account.data)?;
+
+        let source_with_extensions =
+            source_state.as_any().downcast_ref::<Token2022Account>().ok_or_else(|| {
+                KoraError::SerializationError("Failed to downcast source state.".to_string())
+            })?;
+
+        for extension_type in source_with_extensions.get_extension_types() {
+            if token2022_config.is_account_extension_blocked(*extension_type) {
+                return Err(KoraError::ValidationError(format!(
+                    "Blocked account extension found on source account {source_address}",
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn verify_token_payment(
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
@@ -532,6 +579,16 @@ impl TokenUtil {
                                         destination_address,
                                     )
                                 {
+                                    // For Token2022, validate mint and source extensions
+                                    if *is_2022 {
+                                        TokenUtil::validate_token2022_partial_for_ata_creation(
+                                            rpc_client,
+                                            source_address,
+                                            &ata_mint,
+                                        )
+                                        .await?;
+                                    }
+
                                     // ATA creation instruction found - use the wallet owner and mint from it
                                     (wallet_owner, ata_mint)
                                 } else {
