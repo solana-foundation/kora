@@ -196,4 +196,17 @@ pub mod instruction_indexes {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
         pub const FREEZE_AUTHORITY_INDEX: usize = 2;
     }
+
+    // ATA instruction indexes
+    pub mod ata_instruction_indexes {
+        pub const ATA_ADDRESS_INDEX: usize = 1;
+        pub const WALLET_OWNER_INDEX: usize = 2;
+        pub const MINT_INDEX: usize = 3;
+        pub const MIN_ACCOUNTS: usize = 6;
+    }
+
+    pub mod spl_transfer_instruction_indexes {
+        pub const DESTINATION_INDEX: usize = 1;
+        pub const MIN_ACCOUNTS: usize = 3;
+    }
 }
