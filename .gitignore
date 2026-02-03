@@ -30,5 +30,6 @@ sdks/ts/docs-html/
 sdks/ts/docs-md/
 docs/api-reference-generated/
 
-# AI
-.claude/
+# AI (ignore all except skills/)
+.claude/*
+!.claude/skills/
