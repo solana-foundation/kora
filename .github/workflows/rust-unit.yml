@@ -39,6 +39,8 @@ jobs:
         run: cargo install cargo-llvm-cov
 
       - name: Run unit tests with coverage
+        env:
+          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
         run: |
           echo "🧪 Running unit tests with coverage instrumentation..."
           cargo llvm-cov clean --workspace
