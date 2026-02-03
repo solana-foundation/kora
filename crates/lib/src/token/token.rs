@@ -130,7 +130,7 @@ impl TokenUtil {
         let oracle = RetryingPriceOracle::new(
             3,
             Duration::from_secs(1),
-            get_price_oracle(config.validation.price_source.clone()),
+            get_price_oracle(config.validation.price_source.clone())?,
         );
 
         // Get token price in SOL directly
@@ -325,7 +325,7 @@ impl TokenUtil {
         let oracle = RetryingPriceOracle::new(
             3,
             Duration::from_secs(1),
-            get_price_oracle(config.validation.price_source.clone()),
+            get_price_oracle(config.validation.price_source.clone())?,
         );
 
         let prices = oracle.get_token_prices(&mint_addresses).await?;

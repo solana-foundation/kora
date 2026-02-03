@@ -17,14 +17,14 @@
   "license": "MIT",
   "packageManager": "pnpm@10.12.3",
   "dependencies": {
-    "@solana/kora": "^0.1.0",
-    "@solana-program/compute-budget": "^0.8.0",
-    "@solana-program/memo": "^0.7.0",
-    "@solana-program/system": "^0.7.0",
-    "@solana-program/token": "^0.5.1",
-    "@solana/assertions": "^5.1.0",
-    "@solana/kit": "^5.1.0",
-    "@solana/transaction-confirmation": "^5.1.0",
+    "@solana/kora": "^0.1.2",
+    "@solana-program/compute-budget": "^0.12.0",
+    "@solana-program/memo": "^0.10.0",
+    "@solana-program/system": "^0.10.0",
+    "@solana-program/token": "^0.9.0",
+    "@solana/assertions": "^5.5.0",
+    "@solana/kit": "^5.5.0",
+    "@solana/transaction-confirmation": "^5.5.0",
     "dotenv": "^17.2.0"
   },
   "devDependencies": {

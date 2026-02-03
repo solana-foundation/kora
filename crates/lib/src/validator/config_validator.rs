@@ -314,6 +314,15 @@ impl ConfigValidator {
             warnings.push("Using Mock price source - not suitable for production".to_string());
         }
 
+        // Validate Jupiter API key is set when using Jupiter price source
+        if matches!(config.validation.price_source, PriceSource::Jupiter)
+            && std::env::var("JUPITER_API_KEY").is_err()
+        {
+            errors.push(
+                    "JUPITER_API_KEY environment variable not set. Required when price_source = Jupiter".to_string()
+                );
+        }
+
         if config.validation.allow_durable_transactions {
             warnings.push(
                 "⚠️  SECURITY: allow_durable_transactions is enabled. \
@@ -735,6 +744,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_successful_config() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
@@ -842,6 +852,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_missing_system_program_warning() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
@@ -1008,6 +1019,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_fixed_price_zero_amount_warning() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
@@ -1092,6 +1104,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_fee_and_any_spl_token_allowed() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
@@ -1231,6 +1244,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_rpc_validation_valid_token_mint() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = create_token_only_config();
 
         // Initialize global config
@@ -1315,6 +1329,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_skip_rpc_validation() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
@@ -1346,6 +1361,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_valid_token2022_extensions() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
@@ -1503,6 +1519,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_fee_payer_policy_warnings() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
@@ -1801,6 +1818,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_durable_transactions_warning_when_enabled() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
@@ -1838,6 +1856,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_durable_transactions_no_warning_when_disabled() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
@@ -1869,6 +1888,47 @@ mod tests {
         let warnings = result.unwrap();
 
         assert!(!warnings.iter().any(|w| w.contains("allow_durable_transactions")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_jupiter_price_source_requires_api_key() {
+        // Ensure JUPITER_API_KEY is not set
+        std::env::remove_var("JUPITER_API_KEY");
+
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter, // Jupiter requires API key
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+
+        // Should fail because JUPITER_API_KEY is not set
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("JUPITER_API_KEY")));
+        assert!(errors.iter().any(|e| e.contains("price_source = Jupiter")));
     }
 
     #[tokio::test]
@@ -1965,6 +2025,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_lighthouse_disabled_no_validation() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
