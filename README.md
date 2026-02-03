@@ -128,7 +128,7 @@ just run
 And run all tests:
 
 ```bash
-just test-all
+just test
 ```
 
 ## Repository Structure

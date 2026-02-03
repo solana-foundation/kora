@@ -2,8 +2,8 @@ set dotenv-load
 set quiet
 
 alias b := build
-alias t := test
-alias ti := test-integration
+alias t := unit-test
+alias ti := integration-test
 alias f := fmt
 alias r := run
 
@@ -13,7 +13,7 @@ alias r := run
 
 # Default: check, test, build
 [group('build')]
-default: fmt test build
+default: fmt unit-test build
 
 # Build all workspace packages
 [group('build')]
@@ -71,23 +71,23 @@ fmt:
 # Run unit tests
 [group('test')]
 [no-exit-message]
-test:
+unit-test:
     -cargo test --lib --workspace --exclude tests --quiet
 
 # Run all integration tests (use --verbose, --force-refresh, --filter X as needed)
 [group('test')]
-test-integration *args: build _ensure-transfer-hook
+integration-test *args: build _ensure-transfer-hook
     cargo run -p tests --bin test_runner -- {{args}}
 
 # Run TypeScript SDK unit tests
 [group('test')]
 [no-exit-message]
-test-ts: build
+unit-test-ts: build
     -cd sdks/ts && pnpm test:unit
 
 # Run all tests (unit + TypeScript + integration)
 [group('test')]
-test-all: build test test-ts test-integration
+test: build unit-test unit-test-ts integration-test
 
 # Build transfer hook test program
 [group('test')]
