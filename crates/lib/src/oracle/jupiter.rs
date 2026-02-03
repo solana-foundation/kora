@@ -228,6 +228,8 @@ mod tests {
     #[test]
     #[serial]
     fn test_new_fails_without_api_key() {
+        // Clear both the global state AND the environment variable
+        std::env::remove_var("JUPITER_API_KEY");
         {
             let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
             *api_key_guard = None;

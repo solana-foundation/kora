@@ -2025,6 +2025,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_lighthouse_disabled_no_validation() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
