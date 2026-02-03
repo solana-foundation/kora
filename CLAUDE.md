@@ -39,7 +39,7 @@ Kora supports two authentication methods that can be used individually or togeth
 
 **Testing:**
 ```bash
-make test-integration           # Run all integration tests
+make integration-test           # Run all integration tests
 ```
 
 ## Common Development Commands
@@ -60,24 +60,18 @@ make install
 # Check formatting
 make check
 
-# Format code
+# Format code and run linter with auto-fix
 make fmt
-
-# Run linter with warnings as errors
-make lint
-
-# Run linter with auto-fix
-make lint-fix-all
 ```
 
 ### Testing
 
 ```bash
 # Run unit tests
-make test
+make unit-test
 
 # Run integration tests (automatically handles environment setup)
-make test-integration
+make integration-test
 
 # Run all tests
 cargo test --workspace
@@ -89,7 +83,7 @@ Integration tests are fully automated using a Rust test runner binary that handl
 
 **Quick Start:**
 ```bash
-make test-integration
+make integration-test
 ```
 
 **What happens automatically:**
@@ -152,13 +146,13 @@ tests/
 **Test Runner Commands:**
 ```bash
 # Run all integration tests (default)
-make test-integration
+make integration-test
 
 # Run with verbose output
-make test-integration-verbose
+make integration-test-verbose
 
 # Force refresh test accounts (ignore cached)
-make test-integration-fresh
+make integration-test-fresh
 
 # Run specific test
 cargo run -p tests --bin test_runner -- --filter regular
