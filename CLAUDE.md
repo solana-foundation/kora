@@ -280,6 +280,26 @@ Kora uses synchronized versioning where all workspace crates share the same vers
 **GitHub Secrets Required:**
 - `KORA_CLI_REGISTRY_TOKEN` - crates.io API token for publishing
 
+### Claude Skill: Full Release Automation
+
+A Claude skill is available at `.claude/skills/release.md` that automates the complete release process for both Rust and TypeScript SDK.
+
+**What it does:**
+1. Detects release type (beta on `release/*` branch, stable on `main`)
+2. Detects build system (justfile or Makefile)
+3. Runs Rust release (updates versions, generates CHANGELOG, stages changes)
+4. Stashes Rust changes
+5. Runs TypeScript SDK release (updates package.json, stages changes)
+6. Unstashes Rust changes to combine both
+7. Commits everything together
+8. Creates PR against the appropriate base branch
+
+**PR targeting:**
+- On `release/*` branch → PR targets that release branch (beta)
+- On `main` → PR targets `main` (stable)
+
+**Usage:** Ask Claude to "run the full release" or "prepare a release for version X.Y.Z"
+
 ## Architecture Overview
 
 ### Core Library (`kora-lib/src/`)
