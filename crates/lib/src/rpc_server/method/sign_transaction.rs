@@ -4,6 +4,8 @@ use crate::{
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     usage_limit::UsageTracker,
     KoraError,
+    webhook::{emit_event, WebhookEvent},
+    webhook::events::TransactionSignedData,
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -51,6 +53,13 @@ pub async fn sign_transaction(
         resolved_transaction.sign_transaction(&signer, rpc_client).await?;
 
     let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction)?;
+
+    emit_event(WebhookEvent::TransactionSigned(TransactionSignedData {
+        transaction_id: encoded.clone(),
+        signer_pubkey: signer.pubkey().to_string(),
+        method: "signTransaction".to_string(),
+    }))
+    .await;
 
     Ok(SignTransactionResponse {
         signed_transaction: encoded,
