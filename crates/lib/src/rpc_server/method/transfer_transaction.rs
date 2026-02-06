@@ -142,6 +142,13 @@ pub async fn transfer_transaction(
     let encoded = resolved_transaction.encode_b64_transaction()?;
     let message_encoded = transaction.message.encode_b64_message()?;
 
+    emit_event(WebhookEvent::TransactionSigned(TransactionSignedData {
+        transaction_id: encoded.clone(),
+        signer_pubkey: fee_payer.to_string(),
+        method: "transferTransaction".to_string(),
+    }))
+    .await;
+
     Ok(TransferTransactionResponse {
         transaction: encoded,
         message: message_encoded,
