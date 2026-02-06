@@ -17,6 +17,7 @@ use crate::{
     fee::price::{PriceConfig, PriceModel},
     oracle::PriceSource,
     sanitize_error,
+    webhook::WebhookConfig,
 };
 
 #[derive(Clone, Deserialize)]
@@ -463,6 +464,8 @@ pub struct KoraConfig {
     pub cache: CacheConfig,
     #[serde(default)]
     pub usage_limit: UsageLimitConfig,
+    #[serde(default)]
+    pub webhook: WebhookConfig,
 }
 
 impl Default for KoraConfig {
