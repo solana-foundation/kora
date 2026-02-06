@@ -14,6 +14,7 @@ use crate::{
         signer_validator::SignerValidator,
     },
     KoraError,
+    webhook::WebhookConfig,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::Account, pubkey::Pubkey};
@@ -769,6 +770,7 @@ mod tests {
                 payment_address: None,
                 cache: CacheConfig::default(),
                 usage_limit: UsageLimitConfig::default(),
+                webhook: WebhookConfig::default(),
             },
             metrics: MetricsConfig::default(),
         };

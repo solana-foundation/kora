@@ -12,6 +12,7 @@ use crate::{
         MemorySignerConfig, PrivySignerConfig, SelectionStrategy, SignerConfig, SignerPoolConfig,
         SignerPoolSettings, SignerTypeConfig, TurnkeySignerConfig, VaultSignerConfig,
     },
+    webhook::WebhookConfig,
 };
 use solana_sdk::pubkey::Pubkey;
 
@@ -106,6 +107,7 @@ impl ConfigMockBuilder {
                         account_ttl: 60,
                     },
                     usage_limit: UsageLimitConfig::default(),
+                    webhook: WebhookConfig::default(),
                 },
                 metrics: MetricsConfig::default(),
             },
@@ -340,6 +342,7 @@ impl KoraConfigBuilder {
                     account_ttl: 60,
                 },
                 usage_limit: UsageLimitConfig::default(),
+                webhook: WebhookConfig::default(),
             },
         }
     }
