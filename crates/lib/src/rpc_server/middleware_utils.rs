@@ -4,7 +4,11 @@ use futures_util::TryStreamExt;
 use http::{Request, Response, StatusCode};
 use jsonrpsee::server::logger::Body;
 
-use crate::KoraError;
+use crate::{
+    KoraError,
+    webhook::{emit_event, WebhookEvent},
+    webhook::events::RateLimitHitData,
+};
 
 pub fn default_sig_verify() -> bool {
     false
@@ -119,6 +123,15 @@ where
             match verify_jsonrpc_method(&body_bytes, &allowed_methods) {
                 Ok(_) => {}
                 Err(_) => {
+                    // Emit rate limit hit webhook
+                    if let Some(method) = get_jsonrpc_method(&body_bytes) {
+                        emit_event(WebhookEvent::RateLimitHit(RateLimitHitData {
+                            identifier: method,
+                            limit: 0,
+                        }))
+                        .await;
+                    }
+
                     return Ok(build_response_with_graceful_error(
                         None,
                         StatusCode::METHOD_NOT_ALLOWED,

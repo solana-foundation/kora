@@ -3,6 +3,8 @@ use crate::{
     rpc_server::middleware_utils::{
         build_response_with_graceful_error, extract_parts_and_body_bytes, get_jsonrpc_method,
     },
+    webhook::{emit_event, WebhookEvent},
+    webhook::events::RateLimitHitData,
 };
 use hmac::{Hmac, Mac};
 use http::{Request, Response, StatusCode};
@@ -77,6 +79,17 @@ where
                 // Constant-time comparison prevents timing attacks
                 if provided_key.as_bytes().ct_eq(api_key.as_bytes()).into() {
                     return inner.call(req).await;
+                }
+            }
+
+            if let Some(method) = get_jsonrpc_method(&body_bytes) {
+                if method != "liveness" {
+                    // Emit rate limit webhook (treating auth failure as rate limit for now)
+                    emit_event(WebhookEvent::RateLimitHit(RateLimitHitData {
+                        identifier: "api_key_failure".to_string(),
+                        limit: 0,
+                    }))
+                    .await;
                 }
             }
 

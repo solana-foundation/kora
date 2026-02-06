@@ -6,7 +6,13 @@ use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 use tokio::sync::OnceCell;
 
 use super::usage_store::{RedisUsageStore, UsageStore};
-use crate::{error::KoraError, sanitize_error, state::get_signer_pool};
+use crate::{
+    error::KoraError, 
+    sanitize_error, 
+    state::get_signer_pool, 
+    webhook::{emit_event, WebhookEvent},
+    webhook::events::RateLimitHitData,
+};
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -76,6 +82,13 @@ impl UsageTracker {
         };
 
         if current_count >= self.max_transactions as u32 {
+            // Emit webhook event for rate limit hit
+            emit_event(WebhookEvent::RateLimitHit(RateLimitHitData {
+                identifier: wallet.to_string(),
+                limit: self.max_transactions as u32,
+            }))
+            .await;
+
             return Err(KoraError::UsageLimitExceeded(format!(
                 "Wallet {wallet} exceeded limit: {}/{}",
                 current_count + 1,
