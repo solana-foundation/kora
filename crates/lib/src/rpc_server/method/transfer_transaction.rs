@@ -44,7 +44,7 @@ pub async fn transfer_transaction(
     rpc_client: &Arc<RpcClient>,
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
-    let result = async {
+    let result: Result<TransferTransactionResponse, KoraError> = async {
         let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
         let fee_payer = signer.pubkey();
 

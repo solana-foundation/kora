@@ -35,7 +35,7 @@ pub async fn sign_and_send_transaction(
     rpc_client: &Arc<RpcClient>,
     request: SignAndSendTransactionRequest,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
-    let result = async {
+    let result: Result<SignAndSendTransactionResponse, KoraError> = async {
 
         let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 

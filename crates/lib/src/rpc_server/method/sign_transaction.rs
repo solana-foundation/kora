@@ -35,7 +35,7 @@ pub async fn sign_transaction(
     rpc_client: &Arc<RpcClient>,
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResponse, KoraError> {
-    let result = async {
+    let result: Result<SignTransactionResponse, KoraError> = async {
         let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
         UsageTracker::check_transaction_usage_limit(&transaction).await?;
         let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
