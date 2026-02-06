@@ -64,6 +64,11 @@ where
 
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
+            // Extract method early, before body_bytes is moved
+            // This is to fix the issue where method extraction fails for unauthorized requests because body_bytes has been consumed
+            // It is used used by webhook event but can be used by the other also
+            let method = get_jsonrpc_method(&body_bytes);
+
             // Bypass auth for liveness endpoint
             if let Some(method) = get_jsonrpc_method(&body_bytes) {
                 if method == "liveness" {
@@ -82,7 +87,7 @@ where
                 }
             }
 
-            if let Some(method) = get_jsonrpc_method(&body_bytes) {
+            if let Some(method) = method {
                 if method != "liveness" {
                     // Emit rate limit webhook (treating auth failure as rate limit for now)
                     emit_event(WebhookEvent::RateLimitHit(RateLimitHitData {
