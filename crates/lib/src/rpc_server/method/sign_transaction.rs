@@ -5,7 +5,7 @@ use crate::{
     usage_limit::UsageTracker,
     KoraError,
     webhook::{emit_event, WebhookEvent},
-    webhook::events::TransactionSignedData,
+    webhook::events::{TransactionSignedData, TransactionFailedData},
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -35,36 +35,52 @@ pub async fn sign_transaction(
     rpc_client: &Arc<RpcClient>,
     request: SignTransactionRequest,
 ) -> Result<SignTransactionResponse, KoraError> {
-    let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
+    let result = async {
+        let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
+        UsageTracker::check_transaction_usage_limit(&transaction).await?;
+        let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+        let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            rpc_client,
+            request.sig_verify,
+        )
+        .await?;
+        let (signed_transaction, _) =
+            resolved_transaction.sign_transaction(&signer, rpc_client).await?;
+        let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction)?;
 
-    // Check usage limit for transaction sender
-    UsageTracker::check_transaction_usage_limit(&transaction).await?;
+        // Emit success webhook
+        emit_event(WebhookEvent::TransactionSigned(TransactionSignedData {
+            transaction_id: encoded.clone(),
+            signer_pubkey: signer.pubkey().to_string(),
+            method: "signTransaction".to_string(),
+        }))
+        .await;
 
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
-
-    let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
-        &transaction,
-        rpc_client,
-        request.sig_verify,
-    )
-    .await?;
-
-    let (signed_transaction, _) =
-        resolved_transaction.sign_transaction(&signer, rpc_client).await?;
-
-    let encoded = TransactionUtil::encode_versioned_transaction(&signed_transaction)?;
-
-    emit_event(WebhookEvent::TransactionSigned(TransactionSignedData {
-        transaction_id: encoded.clone(),
-        signer_pubkey: signer.pubkey().to_string(),
-        method: "signTransaction".to_string(),
-    }))
+        Ok(SignTransactionResponse {
+            signed_transaction: encoded,
+            signer_pubkey: signer.pubkey().to_string(),
+        })
+    }
     .await;
 
-    Ok(SignTransactionResponse {
-        signed_transaction: encoded,
-        signer_pubkey: signer.pubkey().to_string(),
-    })
+    // Emit failure webhook if error occurred
+    if let Err(ref e) = result {
+        let signer_pubkey = request
+            .signer_key
+            .as_deref()
+            .and_then(|key| key.parse().ok())
+            .map(|pubkey: solana_sdk::pubkey::Pubkey| pubkey.to_string());
+
+        emit_event(WebhookEvent::TransactionFailed(TransactionFailedData {
+            error: e.to_string(),
+            method: "signTransaction".to_string(),
+            signer_pubkey,
+        }))
+        .await;
+    }
+
+    result
 }
 
 #[cfg(test)]
