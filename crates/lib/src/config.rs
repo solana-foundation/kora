@@ -478,6 +478,7 @@ impl Default for KoraConfig {
             payment_address: None,
             cache: CacheConfig::default(),
             usage_limit: UsageLimitConfig::default(),
+            webhook: WebhookConfig::default(),
         }
     }
 }
