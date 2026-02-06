@@ -14,6 +14,7 @@ mod durable_transactions;
 mod fee_estimation;
 mod transaction_signing;
 mod transfers;
+mod webhook_events;
 
 // Make common utilities available
 #[path = "../src/common/mod.rs"]

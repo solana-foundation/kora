@@ -122,4 +122,62 @@ impl TestContext {
     ) -> TransactionBuilder {
         TransactionBuilder::v0_with_lookup(lookup_tables).with_rpc_client(self.rpc_client().clone())
     }
+
+    /// Create test context with webhook configuration
+    pub async fn with_webhook(webhook_url: &str, secret: &str) -> Result<Self, anyhow::Error> {
+        let mut config = get_test_config()?;
+        
+        // Enable webhook
+        config.kora.webhook = WebhookConfig {
+            enabled: true,
+            url: Some(webhook_url.to_string()),
+            secret: Some(secret.to_string()),
+            events: vec![], // Empty = all events
+            timeout_ms: 5000,
+            retry_attempts: 3,
+        };
+        
+        Self::with_config(config).await
+    }
+
+    /// Create test context with webhook and specific events
+    pub async fn with_webhook_events(
+        webhook_url: &str,
+        secret: &str,
+        events: Vec<&str>,
+    ) -> Result<Self, anyhow::Error> {
+        let mut config = get_test_config()?;
+        
+        config.kora.webhook = WebhookConfig {
+            enabled: true,
+            url: Some(webhook_url.to_string()),
+            secret: Some(secret.to_string()),
+            events: events.iter().map(|s| s.to_string()).collect(),
+            timeout_ms: 5000,
+            retry_attempts: 3,
+        };
+        
+        Self::with_config(config).await
+    }
+    
+    // Helper to create context with custom config
+    async fn with_config(config: Config) -> Result<Self, anyhow::Error> {
+        update_config(config.clone())?;
+        
+        let signers_config = get_test_signers_config()?;
+        init_signer_pool(&signers_config)?;
+        UsageTracker::init_usage_limiter().await?;
+        
+        let rpc_client = Arc::new(create_test_rpc_client());
+        let kora_rpc = KoraRpc::new(rpc_client.clone());
+        
+        let server_handles = run_rpc_server(kora_rpc, config.kora.port)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start RPC server: {}", e))?;
+        
+        let rpc_url = format!("http://127.0.0.1:{}", config.kora.port);
+        let client = HttpClientBuilder::default().build(&rpc_url)?;
+        
+        Ok(Self { client: TestClient { client, rpc_client }, server_handles })
+    }
 }
