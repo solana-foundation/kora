@@ -8,7 +8,7 @@ fn default_retries() -> u32 {
     3
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 pub struct WebhookConfig {
     #[serde(default)]
     pub enabled: bool,
