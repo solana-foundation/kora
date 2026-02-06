@@ -49,6 +49,13 @@ pub async fn sign_and_send_transaction(
 
     let (_, signed_transaction) =
         resolved_transaction.sign_and_send_transaction(&signer, rpc_client).await?;
+    
+    emit_event(WebhookEvent::TransactionSigned(TransactionSignedData {
+        transaction_id: signed_transaction.clone(),
+        signer_pubkey: signer.pubkey().to_string(),
+        method: "signAndSendTransaction".to_string(),
+    }))
+    .await;
 
     Ok(SignAndSendTransactionResponse {
         signed_transaction,
