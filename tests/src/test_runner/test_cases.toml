@@ -54,3 +54,10 @@ config = "tests/src/common/fixtures/auth-test.toml"
 signers = "tests/src/common/fixtures/signers.toml"
 port = "8085"
 tests = ["typescript_auth"]
+
+[test.webhook]
+name = "Webhook Tests"
+config = "tests/fixtures/kora-test-webhook.toml"
+signers = "tests/fixtures/signers.toml"
+port = "8088"
+tests = ["webhook_events"]
