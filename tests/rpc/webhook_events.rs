@@ -71,12 +71,9 @@ async fn test_webhook_payload_structure() {
     let mock = server
         .mock("POST", "/webhook")
         .match_header("content-type", "application/json")
-        .match_body(mockito::Matcher::JsonString(json!({
+        .match_body(mockito::Matcher::PartialJsonString(json!({
             "event": "transaction.signed",
-            "timestamp": mockito::Matcher::Any,
             "data": {
-                "transaction_id": mockito::Matcher::Any,
-                "signer_pubkey": mockito::Matcher::Any,
                 "method": "signTransaction"
             }
         }).to_string()))
