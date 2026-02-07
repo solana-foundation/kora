@@ -22,6 +22,7 @@ pub enum TestPhaseColor {
     Payment,
     MultiSigner,
     FeePayerPolicy,
+    Webhook,
     TypeScriptBasic,
     TypeScriptAuth,
     TypeScriptTurnkey,
@@ -43,6 +44,7 @@ impl TestPhaseColor {
             name if name.to_lowercase().contains("auth") => Self::Auth,
             name if name.to_lowercase().contains("payment") => Self::Payment,
             name if name.to_lowercase().contains("multi") => Self::MultiSigner,
+            name if name.to_lowercase().contains("webhook") => Self::Webhook,
             name if name.to_lowercase().contains("typescript") => Self::TypeScriptBasic,
             _ => Self::Regular,
         }
@@ -65,6 +67,7 @@ impl TestPhaseColor {
             Self::Payment => "\x1b[33m",     // Yellow
             Self::MultiSigner => "\x1b[35m", // Magenta
             Self::FeePayerPolicy => "\x1b[39m",
+            Self::Webhook => "\x1b[96m",    // Bright Cyan
             Self::TypeScriptBasic => "\x1b[36m",   // Cyan
             Self::TypeScriptAuth => "\x1b[31m",    // Red
             Self::TypeScriptTurnkey => "\x1b[37m", // White
