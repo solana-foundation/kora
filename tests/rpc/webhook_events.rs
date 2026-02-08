@@ -1,7 +1,7 @@
 // Webhook Integration Tests
 //
-// These tests run via test_runner with kora-test-webhook.toml configuration
-// The test runner starts a Kora server with webhook enabled on port 8088
+// These tests ONLY run in the webhook test phase (port 8088)
+// They are ignored in regular test runs because webhooks are not enabled
 
 use crate::common::*;
 use jsonrpsee::rpc_params;
@@ -12,6 +12,7 @@ use tokio::time::sleep;
 
 /// Test that webhook is called after successful transaction signing
 #[tokio::test]
+#[ignore = "Only runs with webhook config (test_runner --tests webhook)"]
 async fn test_webhook_called_on_sign_transaction() {
     let mut server = Server::new_async().await;
     
@@ -27,7 +28,6 @@ async fn test_webhook_called_on_sign_transaction() {
         .await;
 
     println!("Mock webhook server: {}/webhook", server.url());
-    println!("Note: Update kora-test-webhook.toml webhook.url to match this URL");
 
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
@@ -58,6 +58,7 @@ async fn test_webhook_called_on_sign_transaction() {
 
 /// Test webhook payload structure
 #[tokio::test]
+#[ignore = "Only runs with webhook config (test_runner --tests webhook)"]
 async fn test_webhook_payload_structure() {
     let mut server = Server::new_async().await;
     
@@ -102,6 +103,7 @@ async fn test_webhook_payload_structure() {
 
 /// Test all RPC methods emit webhooks
 #[tokio::test]
+#[ignore = "Only runs with webhook config (test_runner --tests webhook)"]
 async fn test_webhook_on_all_methods() {
     let mut server = Server::new_async().await;
     
