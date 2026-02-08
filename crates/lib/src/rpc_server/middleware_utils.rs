@@ -6,8 +6,7 @@ use jsonrpsee::server::logger::Body;
 
 use crate::{
     KoraError,
-    webhook::{emit_event, WebhookEvent},
-    webhook::events::RateLimitHitData,
+    webhook::{emit_event, WebhookEvent, AuthFailedData},
 };
 
 pub fn default_sig_verify() -> bool {
@@ -123,11 +122,12 @@ where
             match verify_jsonrpc_method(&body_bytes, &allowed_methods) {
                 Ok(_) => {}
                 Err(_) => {
-                    // Emit rate limit hit webhook
+                    // Emit auth failed webhook for method not allowed
                     if let Some(method) = get_jsonrpc_method(&body_bytes) {
-                        emit_event(WebhookEvent::RateLimitHit(RateLimitHitData {
-                            identifier: method,
-                            limit: 0,
+                        emit_event(WebhookEvent::AuthFailed(AuthFailedData {
+                            auth_type: "method_validation".to_string(),
+                            reason: "method_not_allowed".to_string(),
+                            method: Some(method),
                         }))
                         .await;
                     }

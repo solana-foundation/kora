@@ -13,6 +13,9 @@ pub enum WebhookEvent {
     
     #[serde(rename = "rate_limit.hit")]
     RateLimitHit(RateLimitHitData),
+
+    #[serde(rename = "auth.failed")]
+    AuthFailed(AuthFailedData),
 }
 
 impl WebhookEvent {
@@ -21,6 +24,7 @@ impl WebhookEvent {
             WebhookEvent::TransactionSigned(_) => "transaction.signed",
             WebhookEvent::TransactionFailed(_) => "transaction.failed",
             WebhookEvent::RateLimitHit(_) => "rate_limit.hit",
+            WebhookEvent::AuthFailed(_) => "auth.failed",
         }
     }
 }
@@ -43,6 +47,13 @@ pub struct TransactionFailedData {
 pub struct RateLimitHitData {
     pub identifier: String,
     pub limit: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AuthFailedData {
+    pub auth_type: String, // "api_key" or "hmac"
+    pub reason: String,    // "invalid_key", "missing_header", "invalid_signature", "expired_timestamp"
+    pub method: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

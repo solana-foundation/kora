@@ -3,8 +3,7 @@ use crate::{
     rpc_server::middleware_utils::{
         build_response_with_graceful_error, extract_parts_and_body_bytes, get_jsonrpc_method,
     },
-    webhook::{emit_event, WebhookEvent},
-    webhook::events::RateLimitHitData,
+    webhook::{emit_event, WebhookEvent, AuthFailedData},
 };
 use hmac::{Hmac, Mac};
 use http::{Request, Response, StatusCode};
@@ -89,10 +88,14 @@ where
 
             if let Some(method) = method {
                 if method != "liveness" {
-                    // Emit rate limit webhook (treating auth failure as rate limit for now)
-                    emit_event(WebhookEvent::RateLimitHit(RateLimitHitData {
-                        identifier: "api_key_failure".to_string(),
-                        limit: 0,
+                    emit_event(WebhookEvent::AuthFailed(AuthFailedData {
+                        auth_type: "api_key".to_string(),
+                        reason: if req.headers().get(X_API_KEY).is_none() {
+                            "missing_header".to_string()
+                        } else {
+                            "invalid_key".to_string()
+                        },
+                        method: Some(method),
                     }))
                     .await;
                 }
