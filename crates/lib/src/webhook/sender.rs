@@ -70,8 +70,13 @@ async fn send_webhook(
         }
     };
 
+    let timestamp = payload.timestamp.timestamp();
+    
+    // Create signing string with clear delimiter
+    let signing_string = format!("{}.{}", timestamp, payload_json);
+
     // Generate HMAC signature
-    let signature = match generate_signature(&payload_json, &secret) {
+    let signature = match generate_signature(&signing_string, &secret) {
         Ok(sig) => sig,
         Err(e) => {
             error!("Failed to generate webhook signature: {}", e);
