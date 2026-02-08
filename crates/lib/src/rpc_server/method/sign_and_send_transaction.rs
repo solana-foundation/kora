@@ -78,7 +78,7 @@ pub async fn sign_and_send_transaction(
 
         emit_event(WebhookEvent::TransactionFailed(TransactionFailedData {
             error: e.to_string(),
-            method: "signTransaction".to_string(),
+            method: "signAndSendTransaction".to_string(),
             signer_pubkey,
         }))
         .await;
