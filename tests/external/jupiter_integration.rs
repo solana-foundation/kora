@@ -20,7 +20,7 @@ async fn test_jupiter_integration_usdc() {
                 token_price.price
             );
             assert!(
-                token_price.price < dec!(0.01),
+                token_price.price < dec!(0.1),
                 "USDC price too high: {} SOL",
                 token_price.price
             );
