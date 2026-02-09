@@ -60,7 +60,7 @@ body:
     attributes:
       label: RPC endpoint
       options:
-        - label: "Check box if using a public endpoint (e.g. `https://api.devnet.solana.com`)" (not recommended for production)
+        - label: "Check box if using a public endpoint (e.g. `https://api.devnet.solana.com`) (not recommended for production)"
 
   - type: textarea
     id: logs
