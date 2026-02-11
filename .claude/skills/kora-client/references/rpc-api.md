@@ -4,16 +4,33 @@ JSON-RPC 2.0 over HTTP POST. All transactions are base64-encoded.
 
 ## Table of Contents
 
+- [getVersion](#getversion)
 - [estimateTransactionFee](#estimatetransactionfee)
+- [estimateBundleFee](#estimatebundlefee)
 - [signTransaction](#signtransaction)
 - [signAndSendTransaction](#signandsendtransaction)
-- [transferTransaction](#transfertransaction)
+- [signBundle](#signbundle)
+- [signAndSendBundle](#signandsendBundle)
+- [transferTransaction](#transfertransaction) (deprecated)
 - [getPaymentInstruction](#getpaymentinstruction) (client-side only)
 - [getConfig](#getconfig)
 - [getBlockhash](#getblockhash)
 - [getSupportedTokens](#getsupportedtokens)
 - [getPayerSigner](#getpayersigner)
 - [liveness](#liveness)
+
+---
+
+## getVersion
+
+Returns the Kora server version string.
+
+**Request:** No params.
+
+**Response:**
+```ts
+{ version: string; }
+```
 
 ---
 
@@ -25,7 +42,7 @@ Estimates fee in lamports and specified token.
 ```ts
 {
   transaction: string;   // base64 encoded
-  fee_token: string;     // token mint address
+  fee_token?: string;    // token mint address
   signer_key?: string;   // optional: specific signer pubkey
   sig_verify?: boolean;  // optional: verify sigs during simulation (default: false)
 }
@@ -35,25 +52,49 @@ Estimates fee in lamports and specified token.
 ```ts
 {
   fee_in_lamports: number;
-  fee_in_token: number;     // in token's smallest unit (e.g. 10^6 for USDC)
+  fee_in_token?: number;    // in token's smallest unit (e.g. 10^6 for USDC)
   signer_pubkey: string;
   payment_address: string;
 }
 ```
 
-**cURL:**
-```bash
-curl -X POST http://localhost:8080 -H "Content-Type: application/json" -d '{
-  "jsonrpc": "2.0", "id": 1, "method": "estimateTransactionFee",
-  "params": { "transaction": "<base64>", "fee_token": "<mint>" }
-}'
+---
+
+## estimateBundleFee
+
+Estimates total fee for a bundle of transactions (max 5).
+
+**Request:**
+```ts
+{
+  transactions: string[];  // array of base64 encoded transactions
+  fee_token?: string;      // token mint address
+  sig_verify?: boolean;    // default: false
+  sign_only_indices?: number[];  // optional: estimate only specific indices
+  signer_key?: string;
+}
+```
+
+**Response:**
+```ts
+{
+  total_fee_in_lamports: string;
+  total_fee_in_token: string;
+  fee_token: string;
+  transaction_fees: Array<{
+    fee_in_lamports: string;
+    fee_in_token: string;
+  }>;
+}
 ```
 
 ---
 
 ## signTransaction
 
-Signs transaction with Kora fee payer without broadcasting.
+Signs transaction with Kora fee payer without broadcasting. Protected by reCAPTCHA when configured.
+
+When Lighthouse is enabled, may add a balance assertion instruction (invalidates client signatures — client must re-sign).
 
 **Request:**
 ```ts
@@ -61,6 +102,7 @@ Signs transaction with Kora fee payer without broadcasting.
   transaction: string;   // base64 encoded (user should have already signed)
   signer_key?: string;
   sig_verify?: boolean;  // default: false
+  user_id?: string;      // for usage tracking (required when free pricing + usage limits)
 }
 ```
 
@@ -76,23 +118,84 @@ Signs transaction with Kora fee payer without broadcasting.
 
 ## signAndSendTransaction
 
-Signs transaction and broadcasts to Solana network.
+Signs transaction and broadcasts to Solana network. Protected by reCAPTCHA when configured.
 
-**Request:** Same as `signTransaction` (sig_verify default: false).
+Lighthouse does NOT apply (would invalidate signatures before broadcast).
+
+**Request:** Same as `signTransaction`.
 
 **Response:**
 ```ts
 {
-  signed_transaction: string;  // transaction signature (hash)
+  signature: string;          // transaction signature
+  signed_transaction: string; // base64 encoded signed transaction
   signer_pubkey: string;
 }
 ```
 
 ---
 
+## signBundle
+
+Signs a bundle of transactions (max 5) without broadcasting. Protected by reCAPTCHA when configured.
+
+When Lighthouse is enabled, adds balance assertion to the **last transaction** in the bundle.
+
+**Request:**
+```ts
+{
+  transactions: string[];        // array of base64 encoded transactions
+  signer_key?: string;
+  sig_verify?: boolean;          // default: false
+  sign_only_indices?: number[];  // optional: only sign specific indices (defaults to all)
+  user_id?: string;              // for usage tracking
+}
+```
+
+**Response:**
+```ts
+{
+  signed_transactions: string[];  // array of base64 encoded signed transactions
+  signer_pubkey: string;
+}
+```
+
+### Partial Bundle Signing
+
+Use `sign_only_indices` to sign only specific transactions:
+```ts
+const result = await client.signBundle({
+  transactions: [tx1, tx2, tx3, tx4],
+  sign_only_indices: [0, 2],  // only sign tx1 and tx3
+});
+```
+
+---
+
+## signAndSendBundle
+
+Signs a bundle and submits to Jito's block engine for atomic execution. Protected by reCAPTCHA when configured.
+
+Lighthouse does NOT apply (would invalidate signatures before broadcast).
+
+**Request:** Same as `signBundle`.
+
+**Response:**
+```ts
+{
+  bundle_uuid: string;           // Jito bundle UUID for tracking
+  signed_transactions: string[]; // array of base64 encoded signed transactions
+  signer_pubkey: string;
+}
+```
+
+Note: When using Jito tips paid by Kora, ensure `allow_transfer = true` in `[validation.fee_payer_policy.system]`.
+
+---
+
 ## transferTransaction
 
-Creates a token transfer transaction with Kora as fee payer.
+> **Deprecated** as of Kora v2.2.0. Returns payment instruction data without signing. Use `@solana-program/token` instructions + `signTransaction`/`signAndSendTransaction` instead.
 
 **Request:**
 ```ts
@@ -115,8 +218,6 @@ Creates a token transfer transaction with Kora as fee payer.
   instructions: Instruction[];  // parsed instructions (SDK only, populated client-side)
 }
 ```
-
-Note: `instructions` is populated client-side by the SDK from the message. The raw RPC response does not include parsed instructions.
 
 ---
 
@@ -159,7 +260,7 @@ Returns server configuration including fee payers, validation rules, and enabled
 **Response:**
 ```ts
 {
-  fee_payers: string[];                    // array of signer pool public keys
+  fee_payers: string[];
   validation_config: {
     max_allowed_lamports: number;
     max_signatures: number;
@@ -174,10 +275,14 @@ Returns server configuration including fee payers, validation rules, and enabled
   };
   enabled_methods: {
     liveness: boolean;
+    get_version: boolean;
     estimate_transaction_fee: boolean;
+    estimate_bundle_fee: boolean;
     get_supported_tokens: boolean;
     sign_transaction: boolean;
     sign_and_send_transaction: boolean;
+    sign_bundle: boolean;
+    sign_and_send_bundle: boolean;
     transfer_transaction: boolean;
     get_blockhash: boolean;
     get_config: boolean;
@@ -237,16 +342,21 @@ All request/response types are exported from `@solana/kora`:
 
 ```ts
 import type {
-  TransferTransactionRequest,
   SignTransactionRequest,
   SignAndSendTransactionRequest,
+  SignBundleRequest,
+  SignAndSendBundleRequest,
   EstimateTransactionFeeRequest,
+  EstimateBundleFeeRequest,
   GetPaymentInstructionRequest,
-  TransferTransactionResponse,
   SignTransactionResponse,
   SignAndSendTransactionResponse,
+  SignBundleResponse,
+  SignAndSendBundleResponse,
   EstimateTransactionFeeResponse,
+  EstimateBundleFeeResponse,
   GetBlockhashResponse,
+  GetVersionResponse,
   GetSupportedTokensResponse,
   GetPayerSignerResponse,
   GetPaymentInstructionResponse,
@@ -272,8 +382,10 @@ import type {
   KitEstimateFeeResponse,
   KitSignTransactionResponse,
   KitSignAndSendTransactionResponse,
-  KitTransferTransactionResponse,
   KitPaymentInstructionResponse,
+  KitSignBundleResponse,
+  KitSignAndSendBundleResponse,
+  KitEstimateBundleFeeResponse,
 } from '@solana/kora';
 ```
 

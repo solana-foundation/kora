@@ -1,6 +1,6 @@
 ---
 name: kora-operator
-description: "Kora paymaster node operator guide. Use when the user asks about: configuring kora.toml (rate limits, validation, allowed programs/tokens, fee payer policy, pricing, auth, caching), setting up signers.toml (memory/Turnkey/Privy/Vault, pool strategies), running Kora (kora rpc start, config validate, CLI), deploying to Docker/Railway, fee calculation (margin/fixed/free pricing), Prometheus monitoring, or API key/HMAC authentication setup. Not for client SDK integration (use kora-client)."
+description: "Kora paymaster node operator guide. Use when the user asks about: configuring kora.toml (rate limits, validation, allowed programs/tokens, fee payer policy, pricing, auth, caching, bundles, lighthouse), setting up signers.toml (memory/Turnkey/Privy/Vault, pool strategies), running Kora (kora rpc start, config validate, CLI, justfile), deploying to Docker/Railway, fee calculation (margin/fixed/free pricing), Jito bundle config, Lighthouse fee payer protection, reCAPTCHA bot protection, Prometheus monitoring, usage limits with rules, or API key/HMAC authentication setup. Not for client SDK integration (use kora-client)."
 ---
 
 # Kora Node Operator Guide
@@ -9,6 +9,7 @@ Run Kora nodes to validate, sign, and sponsor Solana transaction fees for your u
 
 **Docs**: https://launch.solana.com/docs/kora/operators
 **Install**: `cargo install kora-cli`
+**Docker**: `docker pull ghcr.io/solana-foundation/kora:latest`
 **Source**: https://github.com/solana-foundation/kora
 
 ## Quick Start
@@ -58,7 +59,7 @@ Two config files required:
 
 | File | Purpose |
 |------|---------|
-| `kora.toml` | Server config: validation, auth, pricing, caching, methods, metrics |
+| `kora.toml` | Server config: validation, auth, pricing, caching, methods, bundles, lighthouse, metrics |
 | `signers.toml` | Signer pool: keys, types, selection strategy |
 
 ### Minimal kora.toml
@@ -118,15 +119,64 @@ weight = 1
 
 ### Authentication
 
-Both optional, can be used simultaneously:
+Three optional methods, can be used simultaneously:
 - **API Key**: Simple `x-api-key` header. Set `api_key` in `[kora.auth]` or `KORA_API_KEY` env var.
 - **HMAC**: Cryptographic signature with timestamp. Set `hmac_secret` in `[kora.auth]` or `KORA_HMAC_SECRET` env var.
+- **reCAPTCHA v3**: Bot protection for signing methods. Set `recaptcha_secret` in `[kora.auth]` or `KORA_RECAPTCHA_SECRET` env var. Configurable `recaptcha_score_threshold` (default: 0.5) and `protected_methods`.
 
 ### Fee Payer Policy
 
 Control what actions the fee payer can perform in transactions. All default to `false` (restrictive). Explicitly set to `true` only what you need.
 
 Critical for `fixed`/`free` pricing: ensure `allow_transfer` remains `false` (the default) on system and token programs to prevent fee payer fund drain.
+
+### Jito Bundle Support
+
+Enable atomic multi-transaction execution via Jito:
+```toml
+[kora.bundle]
+enabled = true
+
+[kora.bundle.jito]
+block_engine_url = "https://mainnet.block-engine.jito.wtf"
+```
+
+When using Jito tips paid by Kora, set `allow_transfer = true` in `[validation.fee_payer_policy.system]`.
+
+### Lighthouse Fee Payer Protection
+
+Adds balance assertion instructions to protect the fee payer from drainage attacks:
+```toml
+[kora.lighthouse]
+enabled = true
+fail_if_transaction_size_overflow = true
+```
+
+Only works with `signTransaction`/`signBundle` (not broadcast methods). Requires Lighthouse program in `allowed_programs`: `L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95`
+
+### Usage Limits
+
+Rule-based per-user limiting with Redis backend:
+```toml
+[kora.usage_limit]
+enabled = true
+cache_url = "redis://redis:6379"
+fallback_if_unavailable = false
+
+[[kora.usage_limit.rules]]
+type = "transaction"
+max = 100
+window_seconds = 3600
+
+[[kora.usage_limit.rules]]
+type = "instruction"
+program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+instruction = "Transfer"
+max = 10
+window_seconds = 3600
+```
+
+Requires `user_id` parameter in signing requests when enabled with free pricing.
 
 ### Caching
 
@@ -155,14 +205,14 @@ Key metrics: `kora_http_requests_total`, `kora_http_request_duration_seconds`, `
 
 ### Docker
 
-Pre-built image available:
+Pre-built image available (tags: `latest`, `beta`, `v<version>`):
 ```bash
-docker pull ghcr.io/solana-foundation/kora:v2.0.4
+docker pull ghcr.io/solana-foundation/kora:latest
 docker run -v ./kora.toml:/kora.toml -v ./signers.toml:/signers.toml \
   -e RPC_URL=https://api.mainnet-beta.solana.com \
   -e KORA_PRIVATE_KEY=<key> \
   -p 8080:8080 \
-  ghcr.io/solana-foundation/kora:v2.0.4
+  ghcr.io/solana-foundation/kora:latest
 ```
 
 Or build from source:
@@ -190,11 +240,11 @@ CMD ["kora", "rpc", "start", "--signers-config", "signers.toml"]
 For contributors working on the Kora codebase itself:
 
 ```bash
-make build          # Build all crates
-make build-lib      # Build kora-lib only
-make build-cli      # Build kora-cli only
-make check          # Check formatting
-make fmt            # Format + lint with auto-fix
-make unit-test      # Run unit tests
-make integration-test  # Run full integration test suite
+just build          # Build all crates
+just build-lib      # Build kora-lib only
+just build-cli      # Build kora-cli only
+just check          # Check formatting
+just fmt            # Format + lint with auto-fix
+just unit-test      # Run unit tests
+just integration-test  # Run full integration test suite
 ```

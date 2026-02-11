@@ -9,6 +9,8 @@ Complete reference for all kora.toml sections and fields.
 - [Caching](#caching)
 - [Usage Limits](#usage-limits)
 - [Enabled Methods](#enabled-methods)
+- [Bundle Configuration](#bundle-configuration)
+- [Lighthouse Protection](#lighthouse-protection)
 - [Validation](#validation)
 - [Token-2022 Extensions](#token-2022-extensions)
 - [Fee Payer Policy](#fee-payer-policy)
@@ -37,11 +39,23 @@ payment_address = "<pubkey>"  # Optional: payment destination (defaults to signe
 api_key = "your-api-key"           # or set KORA_API_KEY env var
 hmac_secret = "your-hmac-secret"   # or set KORA_HMAC_SECRET env var
 max_timestamp_age = 300            # HMAC timestamp validity in seconds (default: 300)
+recaptcha_secret = "your-secret"   # or set KORA_RECAPTCHA_SECRET env var
+recaptcha_score_threshold = 0.5    # Minimum score to pass (default: 0.5, range: 0.0-1.0)
+protected_methods = [              # Methods requiring reCAPTCHA (default: signing methods)
+    "sign_transaction",
+    "sign_and_send_transaction",
+    "sign_bundle",
+    "sign_and_send_bundle",
+]
 ```
 
-Both methods optional. Can use simultaneously. `/liveness` always exempt.
+All three methods optional. Can use simultaneously. `/liveness` always exempt.
+
+**API Key**: Client sends `x-api-key` header.
 
 **HMAC**: Client sends `x-timestamp` + `x-hmac-signature` (SHA256 of `timestamp + body`).
+
+**reCAPTCHA v3**: Bot protection. Client sends `x-recaptcha-token` header. Server verifies score against threshold. Only checked on `protected_methods` (signing methods by default).
 
 **Best practices**: 32+ char keys, regular rotation, HTTPS in production.
 
@@ -63,15 +77,34 @@ Caches token account lookups. Optional but recommended for high-throughput produ
 
 ## Usage Limits
 
+Rule-based per-user limiting with Redis backend.
+
 ```toml
 [kora.usage_limit]
-enabled = false                          # Enable per-wallet limits
+enabled = false                          # Enable per-user limits
 cache_url = "redis://redis:6379"         # Requires Redis
-max_transactions = 2                     # Max transactions per wallet
 fallback_if_unavailable = false          # Allow transactions if Redis is down
+
+# Transaction-level limit
+[[kora.usage_limit.rules]]
+type = "transaction"
+max = 100
+window_seconds = 3600                    # 100 transactions per hour
+
+# Instruction-level limit (specific program + instruction)
+[[kora.usage_limit.rules]]
+type = "instruction"
+program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+instruction = "Transfer"
+max = 10
+window_seconds = 3600                    # 10 token transfers per hour
 ```
 
-Currently permanent limits (no automatic reset). Manual Redis clear required to reset.
+**Rule types**:
+- `transaction`: Limits total transactions per user within the time window
+- `instruction`: Limits specific program instruction usage per user within the time window
+
+Requires `user_id` parameter in signing requests when enabled with `free` pricing.
 
 ---
 
@@ -80,17 +113,61 @@ Currently permanent limits (no automatic reset). Manual Redis clear required to 
 ```toml
 [kora.enabled_methods]
 liveness = true
+get_version = true
 estimate_transaction_fee = true
+estimate_bundle_fee = true
 get_supported_tokens = true
 sign_transaction = true
 sign_and_send_transaction = true
-transfer_transaction = true
+sign_bundle = true
+sign_and_send_bundle = true
+transfer_transaction = true        # Deprecated in v2.2.0
 get_blockhash = true
 get_config = true
 get_payer_signer = true
 ```
 
 All default to `true`. If section is included, ALL methods must be explicitly set.
+
+`transfer_transaction` is deprecated — use `@solana-program/token` instructions + `signTransaction`/`signAndSendTransaction` instead.
+
+---
+
+## Bundle Configuration
+
+Enable atomic multi-transaction execution via Jito block engine.
+
+```toml
+[kora.bundle]
+enabled = true
+
+[kora.bundle.jito]
+block_engine_url = "https://mainnet.block-engine.jito.wtf"
+```
+
+When Jito tips are paid by Kora, set `allow_transfer = true` in `[validation.fee_payer_policy.system]`.
+
+Enables `signBundle`, `signAndSendBundle`, and `estimateBundleFee` RPC methods. Max 5 transactions per bundle.
+
+---
+
+## Lighthouse Protection
+
+Adds balance assertion instructions to protect the fee payer from drainage attacks.
+
+```toml
+[kora.lighthouse]
+enabled = true
+fail_if_transaction_size_overflow = true   # Fail if assertion doesn't fit in transaction
+```
+
+Only applies to `signTransaction`/`signBundle` (not broadcast methods). Requires Lighthouse program in `allowed_programs`:
+
+```
+L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95
+```
+
+When enabled, the returned transaction message may be modified (balance assertion added), invalidating client signatures. Client must re-sign after receiving the modified transaction.
 
 ---
 
@@ -275,6 +352,8 @@ payment_address = "<payment-collection-pubkey>"
 [kora.auth]
 api_key = "prod-api-key-32chars-minimum-here"
 hmac_secret = "prod-hmac-secret-32chars-minimum"
+recaptcha_secret = "your-recaptcha-v3-secret"
+recaptcha_score_threshold = 0.5
 
 [kora.cache]
 enabled = true
@@ -285,8 +364,29 @@ account_ttl = 60
 [kora.usage_limit]
 enabled = true
 cache_url = "redis://redis:6379"
-max_transactions = 100
 fallback_if_unavailable = false
+
+[[kora.usage_limit.rules]]
+type = "transaction"
+max = 100
+window_seconds = 3600
+
+[[kora.usage_limit.rules]]
+type = "instruction"
+program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+instruction = "Transfer"
+max = 50
+window_seconds = 3600
+
+[kora.bundle]
+enabled = true
+
+[kora.bundle.jito]
+block_engine_url = "https://mainnet.block-engine.jito.wtf"
+
+[kora.lighthouse]
+enabled = true
+fail_if_transaction_size_overflow = true
 
 [validation]
 max_allowed_lamports = 5000000
@@ -299,6 +399,7 @@ allowed_programs = [
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
     "ComputeBudget111111111111111111111111111111",
+    "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95",
 ]
 
 allowed_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"]
@@ -310,7 +411,7 @@ type = "margin"
 margin = 0.05
 
 [validation.fee_payer_policy.system]
-allow_transfer = false
+allow_transfer = true              # Required for Jito tips
 allow_assign = false
 allow_create_account = false
 allow_allocate = false
