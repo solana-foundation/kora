@@ -11,7 +11,9 @@
   "pnpm": {
     "overrides": {
       "markdown-it": ">=14.1.1",
-      "diff": ">=4.0.4"
+      "diff": ">=4.0.4",
+      "js-yaml": ">=4.1.1",
+      "brace-expansion": ">=2.0.2"
     }
   }
 }
