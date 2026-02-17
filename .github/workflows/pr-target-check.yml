@@ -19,7 +19,7 @@ jobs:
             exit 0
           fi
 
-          if echo "$LABELS" | grep -q '"hotfix"'; then
+          if echo "$LABELS" | grep -iq '"hotfix"'; then
             echo "PR labeled as hotfix — allowed"
             exit 0
           fi
