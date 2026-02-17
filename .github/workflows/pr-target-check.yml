@@ -1,0 +1,31 @@
+name: PR target branch check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  check-target:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce PR source branch policy
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if [[ "$HEAD_REF" == release/* ]]; then
+            echo "PR from release branch ($HEAD_REF) — allowed"
+            exit 0
+          fi
+
+          if echo "$LABELS" | grep -q '"hotfix"'; then
+            echo "PR labeled as hotfix — allowed"
+            exit 0
+          fi
+
+          echo "PRs targeting main must come from a release/* branch or be labeled 'hotfix'."
+          echo ""
+          echo "The main branch contains audited code only."
+          echo "Please target the current release/* branch instead."
+          exit 1
