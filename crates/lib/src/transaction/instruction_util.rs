@@ -396,8 +396,8 @@ impl IxUtils {
                     // Reconstruct based on program type
                     if parsed.program_id == SYSTEM_PROGRAM_ID.to_string() {
                         Self::reconstruct_system_instruction(parsed, &account_keys_hashmap).ok()
-                    } else if parsed.program == spl_token_interface::ID.to_string()
-                        || parsed.program == spl_token_2022_interface::ID.to_string()
+                    } else if parsed.program_id == spl_token_interface::ID.to_string()
+                        || parsed.program_id == spl_token_2022_interface::ID.to_string()
                     {
                         Self::reconstruct_spl_token_instruction(parsed, &account_keys_hashmap).ok()
                     } else {
