@@ -405,9 +405,12 @@ impl TransactionValidator {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::FeePayerPolicy,
+        config::{Config, FeePayerPolicy},
         state::update_config,
-        tests::{config_mock::ConfigMockBuilder, rpc_mock::RpcMockBuilder},
+        tests::{
+            config_mock::{mock_state::setup_config_mock, ConfigMockBuilder},
+            rpc_mock::RpcMockBuilder,
+        },
         transaction::TransactionUtil,
     };
     use serial_test::serial;
@@ -422,6 +425,11 @@ mod tests {
         program::ID as SYSTEM_PROGRAM_ID,
     };
 
+    fn setup_both_configs(config: Config) {
+        drop(setup_config_mock(config.clone()));
+        update_config(config).unwrap();
+    }
+
     // Helper functions to reduce test duplication and setup config
     fn setup_default_config() {
         let config = ConfigMockBuilder::new()
@@ -430,7 +438,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(FeePayerPolicy::default())
             .build();
-        update_config(config).unwrap();
+        setup_both_configs(config);
     }
 
     fn setup_config_with_policy(policy: FeePayerPolicy) {
@@ -440,7 +448,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(policy)
             .build();
-        update_config(config).unwrap();
+        setup_both_configs(config);
     }
 
     fn setup_spl_config_with_policy(policy: FeePayerPolicy) {
@@ -450,7 +458,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(policy)
             .build();
-        update_config(config).unwrap();
+        setup_both_configs(config);
     }
 
     fn setup_token2022_config_with_policy(policy: FeePayerPolicy) {
@@ -460,7 +468,7 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(policy)
             .build();
-        update_config(config).unwrap();
+        setup_both_configs(config);
     }
 
     #[tokio::test]
@@ -725,9 +733,10 @@ mod tests {
 
         let fee_payer_token_account = Pubkey::new_unique();
         let recipient_token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
 
         // Test with allow_spl_transfers = true
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(2).build();
 
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_transfer = true;
@@ -735,13 +744,15 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let transfer_ix = spl_token_interface::instruction::transfer(
+        let transfer_ix = spl_token_interface::instruction::transfer_checked(
             &spl_token_interface::id(),
             &fee_payer_token_account,
+            &mint,
             &recipient_token_account,
             &fee_payer, // fee payer is the signer
             &[],
-            1000,
+            1,
+            2,
         )
         .unwrap();
 
@@ -751,7 +762,7 @@ mod tests {
         assert!(validator.validate_transaction(&mut transaction, &rpc_client).await.is_ok());
 
         // Test with allow_spl_transfers = false
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_mint_account(2).build();
 
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_transfer = false;
@@ -759,13 +770,15 @@ mod tests {
 
         let validator = TransactionValidator::new(fee_payer).unwrap();
 
-        let transfer_ix = spl_token_interface::instruction::transfer(
+        let transfer_ix = spl_token_interface::instruction::transfer_checked(
             &spl_token_interface::id(),
             &fee_payer_token_account,
+            &mint,
             &recipient_token_account,
             &fee_payer, // fee payer is the signer
             &[],
-            1000,
+            1,
+            2,
         )
         .unwrap();
 
@@ -776,13 +789,15 @@ mod tests {
 
         // Test with other account as source - should always pass
         let other_signer = Pubkey::new_unique();
-        let transfer_ix = spl_token_interface::instruction::transfer(
+        let transfer_ix = spl_token_interface::instruction::transfer_checked(
             &spl_token_interface::id(),
             &fee_payer_token_account,
+            &mint,
             &recipient_token_account,
             &other_signer, // other account is the signer
             &[],
-            1000,
+            1,
+            2,
         )
         .unwrap();
 
