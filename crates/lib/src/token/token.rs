@@ -251,7 +251,7 @@ impl TokenUtil {
                         *m
                     } else {
                         let source_account =
-                            CacheUtil::get_account(rpc_client, source_address, false).await?;
+                            CacheUtil::get_account(config, rpc_client, source_address, false).await?;
                         let token_program =
                             TokenType::get_token_program_from_owner(&source_account.owner)?;
                         let token_account = token_program
