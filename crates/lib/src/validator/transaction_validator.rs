@@ -413,6 +413,7 @@ mod tests {
         config::{Config, FeePayerPolicy},
         state::{get_config, update_config},
         tests::{
+            account_mock::{MintAccountMockBuilder, TokenAccountMockBuilder},
             config_mock::{mock_state::setup_config_mock, ConfigMockBuilder},
             rpc_mock::RpcMockBuilder,
         },
@@ -793,8 +794,13 @@ mod tests {
         let recipient_token_account = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        // Test with allow_spl_transfers = true
-        let rpc_client = RpcMockBuilder::new().with_mint_account(2).build();
+        let source_token_account =
+            TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        // Test with allow_spl_transfers = true (plain Transfer, mint resolved from source account)
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
 
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_transfer = true;
@@ -803,15 +809,13 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        let transfer_ix = spl_token_interface::instruction::transfer_checked(
+        let transfer_ix = spl_token_interface::instruction::transfer(
             &spl_token_interface::id(),
             &fee_payer_token_account,
-            &mint,
             &recipient_token_account,
             &fee_payer, // fee payer is the signer
             &[],
-            1,
-            2,
+            1000,
         )
         .unwrap();
 
@@ -824,7 +828,8 @@ mod tests {
             .is_ok());
 
         // Test with allow_spl_transfers = false
-        let rpc_client = RpcMockBuilder::new().with_mint_account(2).build();
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
 
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_transfer = false;
@@ -833,15 +838,13 @@ mod tests {
         let config = get_config().unwrap();
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
-        let transfer_ix = spl_token_interface::instruction::transfer_checked(
+        let transfer_ix = spl_token_interface::instruction::transfer(
             &spl_token_interface::id(),
             &fee_payer_token_account,
-            &mint,
             &recipient_token_account,
             &fee_payer, // fee payer is the signer
             &[],
-            1,
-            2,
+            1000,
         )
         .unwrap();
 
@@ -854,16 +857,15 @@ mod tests {
             .is_err());
 
         // Test with other account as source - should always pass
+        let rpc_client = RpcMockBuilder::new().build();
         let other_signer = Pubkey::new_unique();
-        let transfer_ix = spl_token_interface::instruction::transfer_checked(
+        let transfer_ix = spl_token_interface::instruction::transfer(
             &spl_token_interface::id(),
             &fee_payer_token_account,
-            &mint,
             &recipient_token_account,
             &other_signer, // other account is the signer
             &[],
-            1,
-            2,
+            1000,
         )
         .unwrap();
 
