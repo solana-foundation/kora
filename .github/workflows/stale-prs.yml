@@ -22,5 +22,5 @@ jobs:
             It will be closed in 5 days if there is no further activity.
           close-pr-message: 'Closed due to inactivity.'
           stale-pr-label: 'stale'
-          exempt-pr-labels: 'pinned,work-in-progress'
+          exempt-pr-labels: 'pinned,work-in-progress,release'
           operations-per-run: 100
