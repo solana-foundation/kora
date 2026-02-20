@@ -146,6 +146,32 @@ impl RpcMockBuilder {
         self
     }
 
+    pub fn build_with_sequential_accounts(self, accounts: Vec<&Account>) -> Arc<RpcClient> {
+        let mut entries: Vec<(RpcRequest, Value)> = self.mocks.into_iter().collect();
+
+        for account in accounts {
+            let encoded_data = STANDARD.encode(&account.data);
+            entries.push((
+                RpcRequest::GetAccountInfo,
+                json!({
+                    "context": { "slot": 1 },
+                    "value": {
+                        "data": [encoded_data, "base64"],
+                        "executable": account.executable,
+                        "lamports": account.lamports,
+                        "owner": account.owner.to_string(),
+                        "rentEpoch": account.rent_epoch
+                    }
+                }),
+            ));
+        }
+
+        Arc::new(RpcClient::new_mock_with_mocks_map(
+            DEFAULT_LOCAL_RPC_URL.to_string(),
+            entries.into_iter().collect(),
+        ))
+    }
+
     pub fn build(self) -> Arc<RpcClient> {
         Arc::new(RpcClient::new_mock_with_mocks(DEFAULT_LOCAL_RPC_URL.to_string(), self.mocks))
     }

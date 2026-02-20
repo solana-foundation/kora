@@ -4,13 +4,16 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  qs: '>=6.14.2'
+
 importers:
 
   .:
     dependencies:
       '@solana/kora':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.1.3
+        version: 0.1.3(@solana-program/token@0.5.1(@solana/kit@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.2)(ws@8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10))))(@solana/kit@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.2)(ws@8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)))
       '@x402/core':
         specifier: ^2.0.0
         version: 2.0.0
@@ -300,8 +303,11 @@ packages:
     peerDependencies:
       typescript: '>=5.3.3'
 
-  '@solana/kora@0.1.0':
-    resolution: {integrity: sha512-/Ycpq8XROKmv7NxVQb7vGk0IYGUr1us1Aa4fm/+sByDXya8/KkIhWfiXqUW8B+QON5T87eznyQ5KHPtlskbSRg==}
+  '@solana/kora@0.1.3':
+    resolution: {integrity: sha512-5lZOMvheT24sDP9bMo9MH4xJNDmnlrHBpzLF0azy85fCVdUy1rttnHPB7TWmqp2WX1OAA7IdHdTvOD+FZdYi1A==}
+    peerDependencies:
+      '@solana-program/token': ^0.9.0
+      '@solana/kit': ^5.0.0
 
   '@solana/nominal-types@2.3.0':
     resolution: {integrity: sha512-uKlMnlP4PWW5UTXlhKM8lcgIaNj8dvd8xO4Y9l+FVvh9RvW2TO0GwUO6JCo7JBzCB0PSqRJdWWaQ8pu1Ti/OkA==}
@@ -693,8 +699,8 @@ packages:
     resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
     engines: {node: '>= 0.10'}
 
-  qs@6.14.0:
-    resolution: {integrity: sha512-YWWTjgABSKcvs/nWBi9PycY/JiPJqOD4JA6o9Sej2AtvSGarXxKC3OQSk4pAarbdQlKAh5D4FCQkJNkW+GAn3w==}
+  qs@6.15.0:
+    resolution: {integrity: sha512-mAZTtNCeetKMH+pSjrb76NAM8V9a05I9aBZOHztWy/UqcJdQYNsf59vrRKWnojAT9Y+GbIvoTBC++CPHqpDBhQ==}
     engines: {node: '>=0.6'}
 
   range-parser@1.2.1:
@@ -1023,7 +1029,10 @@ snapshots:
       - fastestsmallesttextencoderdecoder
       - ws
 
-  '@solana/kora@0.1.0': {}
+  '@solana/kora@0.1.3(@solana-program/token@0.5.1(@solana/kit@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.2)(ws@8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10))))(@solana/kit@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.2)(ws@8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)))':
+    dependencies:
+      '@solana-program/token': 0.5.1(@solana/kit@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.2)(ws@8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)))
+      '@solana/kit': 2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.2)(ws@8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10))
 
   '@solana/nominal-types@2.3.0(typescript@5.9.2)':
     dependencies:
@@ -1330,7 +1339,7 @@ snapshots:
       http-errors: 2.0.0
       iconv-lite: 0.7.0
       on-finished: 2.4.1
-      qs: 6.14.0
+      qs: 6.15.0
       raw-body: 3.0.1
       type-is: 2.0.1
     transitivePeerDependencies:
@@ -1448,7 +1457,7 @@ snapshots:
       once: 1.4.0
       parseurl: 1.3.3
       proxy-addr: 2.0.7
-      qs: 6.14.0
+      qs: 6.15.0
       range-parser: 1.2.1
       router: 2.2.0
       send: 1.2.0
@@ -1567,7 +1576,7 @@ snapshots:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
 
-  qs@6.14.0:
+  qs@6.15.0:
     dependencies:
       side-channel: 1.1.0
 

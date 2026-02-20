@@ -240,15 +240,31 @@ impl TokenUtil {
                 amount,
                 owner,
                 mint,
+                source_address,
                 destination_address,
                 ..
             } = transfer
             {
                 // Check if fee payer is the source (outflow)
                 if *owner == *fee_payer {
-                    if let Some(mint_pubkey) = mint {
-                        mint_to_transfers.entry(*mint_pubkey).or_default().push((*amount, true));
-                    }
+                    let mint_pubkey = if let Some(m) = mint {
+                        *m
+                    } else {
+                        let source_account =
+                            CacheUtil::get_account(config, rpc_client, source_address, false).await?;
+                        let token_program =
+                            TokenType::get_token_program_from_owner(&source_account.owner)?;
+                        let token_account = token_program
+                            .unpack_token_account(&source_account.data)
+                            .map_err(|e| {
+                                KoraError::TokenOperationError(format!(
+                                    "Failed to unpack source token account {}: {}",
+                                    source_address, e
+                                ))
+                            })?;
+                        token_account.mint()
+                    };
+                    mint_to_transfers.entry(mint_pubkey).or_default().push((*amount, true));
                 } else {
                     // Check if fee payer owns the destination (inflow)
                     // We need to check the destination token account owner
