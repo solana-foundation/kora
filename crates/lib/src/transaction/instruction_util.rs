@@ -3359,6 +3359,70 @@ mod tests {
     }
 
     #[test]
+    fn test_dispatch_routes_spl_token_via_program_id() {
+        let source = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let token_program_id = spl_token_interface::ID;
+        let account_keys = vec![token_program_id, source, destination, authority];
+        let amount = 1000000u64;
+
+        let parsed = create_parsed_spl_token_transfer(&source, &destination, &authority, amount)
+            .expect("Failed to create parsed instruction");
+
+        let ui_instruction = UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed));
+
+        let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &account_keys);
+
+        assert!(result.is_some(), "SPL token transfer should be dispatched via program_id");
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_dispatch_routes_token2022_via_program_id() {
+        let source = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let token_program_id = spl_token_2022_interface::ID;
+        let account_keys = vec![token_program_id, source, destination, authority];
+        let amount = 1000000u64;
+
+        let parsed = create_parsed_token2022_transfer(&source, &destination, &authority, amount)
+            .expect("Failed to create parsed instruction");
+
+        let ui_instruction = UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed));
+
+        let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &account_keys);
+
+        assert!(result.is_some(), "Token2022 transfer should be dispatched via program_id");
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_dispatch_routes_system_program_via_program_id() {
+        let source = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+        let system_program_id = SYSTEM_PROGRAM_ID;
+        let account_keys = vec![system_program_id, source, destination];
+        let lamports = 1000000u64;
+
+        let parsed = create_parsed_system_transfer(&source, &destination, lamports)
+            .expect("Failed to create parsed instruction");
+
+        let ui_instruction = UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed));
+
+        let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &account_keys);
+
+        assert!(result.is_some(), "System transfer should be dispatched via program_id");
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+    }
+
+    #[test]
     fn test_reconstruct_unsupported_program_creates_stub() {
         let unsupported_program = Pubkey::new_unique();
         let account_keys = vec![unsupported_program];
