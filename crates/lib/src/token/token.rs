@@ -237,15 +237,31 @@ impl TokenUtil {
                 amount,
                 owner,
                 mint,
+                source_address,
                 destination_address,
                 ..
             } = transfer
             {
                 // Check if fee payer is the source (outflow)
                 if *owner == *fee_payer {
-                    if let Some(mint_pubkey) = mint {
-                        mint_to_transfers.entry(*mint_pubkey).or_default().push((*amount, true));
-                    }
+                    let mint_pubkey = if let Some(m) = mint {
+                        *m
+                    } else {
+                        let source_account =
+                            CacheUtil::get_account(rpc_client, source_address, false).await?;
+                        let token_program =
+                            TokenType::get_token_program_from_owner(&source_account.owner)?;
+                        let token_account = token_program
+                            .unpack_token_account(&source_account.data)
+                            .map_err(|e| {
+                                KoraError::TokenOperationError(format!(
+                                    "Failed to unpack source token account {}: {}",
+                                    source_address, e
+                                ))
+                            })?;
+                        token_account.mint()
+                    };
+                    mint_to_transfers.entry(mint_pubkey).or_default().push((*amount, true));
                 } else {
                     // Check if fee payer owns the destination (inflow)
                     // We need to check the destination token account owner
@@ -641,11 +657,15 @@ impl TokenUtil {
 #[cfg(test)]
 mod tests_token {
     use crate::{
-        oracle::utils::{USDC_DEVNET_MINT, WSOL_DEVNET_MINT},
+        oracle::{
+            utils::{USDC_DEVNET_MINT, WSOL_DEVNET_MINT},
+            PriceSource,
+        },
         tests::{
-            common::{RpcMockBuilder, TokenAccountMockBuilder},
+            common::{MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder},
             config_mock::ConfigMockBuilder,
         },
+        transaction::ParsedSPLInstructionData,
     };
 
     use super::*;
@@ -1286,5 +1306,84 @@ mod tests_token {
 
         let result = TokenUtil::find_ata_creation_for_destination(&instructions, &target_address);
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_calculate_spl_transfers_value_plain_transfer_resolves_mint() {
+        let fee_payer = Pubkey::new_unique();
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let usdc_mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+
+        // Plain Transfer: mint is None — the function must resolve it from the source account
+        let transfers = vec![ParsedSPLInstructionData::SplTokenTransfer {
+            amount: 1_000_000, // 1 USDC
+            owner: fee_payer,
+            mint: None,
+            source_address,
+            destination_address,
+            is_2022: false,
+        }];
+
+        // Sequential RPC responses:
+        // 1. Source token account (for mint resolution via CacheUtil::get_account)
+        // 2. Mint account (for decimals lookup via get_mint_decimals)
+        let source_token_account = TokenAccountMockBuilder::new()
+            .with_mint(&usdc_mint)
+            .with_owner(&fee_payer)
+            .with_amount(1_000_000)
+            .build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
+
+        let result = TokenUtil::calculate_spl_transfers_value_in_lamports(
+            &transfers,
+            &fee_payer,
+            &PriceSource::Mock,
+            &rpc_client,
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "Plain Transfer with mint=None should resolve mint from source account"
+        );
+        // 1 USDC * 0.0001 SOL/USDC = 0.0001 SOL = 100,000 lamports
+        assert_eq!(result.unwrap(), 100_000);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_spl_transfers_value_transfer_checked_has_mint() {
+        let fee_payer = Pubkey::new_unique();
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let usdc_mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+
+        // TransferChecked: mint is Some — no extra RPC call needed for mint resolution
+        let transfers = vec![ParsedSPLInstructionData::SplTokenTransfer {
+            amount: 1_000_000,
+            owner: fee_payer,
+            mint: Some(usdc_mint),
+            source_address,
+            destination_address,
+            is_2022: false,
+        }];
+
+        // Only need 1 RPC response: mint account (for decimals lookup)
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![&mint_account]);
+
+        let result = TokenUtil::calculate_spl_transfers_value_in_lamports(
+            &transfers,
+            &fee_payer,
+            &PriceSource::Mock,
+            &rpc_client,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 100_000);
     }
 }
