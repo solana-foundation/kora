@@ -80,3 +80,4 @@ base64 = { workspace = true }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
+mockito = { workspace = true }

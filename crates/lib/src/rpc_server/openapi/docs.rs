@@ -57,6 +57,11 @@ const JSON_CONTENT_TYPE: &str = "application/json";
         SignTransactionResponse,
         TransferTransactionRequest,
         TransferTransactionResponse,
+        TransactionSignedData,
+        TransactionFailedData,
+        WebhookConfig,
+        WebhookEvent,
+        RateLimitHitData,
     ))
 )]
 pub struct ApiDoc;

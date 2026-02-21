@@ -131,3 +131,11 @@ enabled = false
 cache_url = "redis://redis:6379"
 max_transactions = 2
 fallback_if_unavailable = false
+
+[webhook]
+enabled = false
+url = "https://your-app.com/webhooks/kora"
+secret = "your-webhook-secret-key"
+events = ["transaction.signed", "rate_limit.hit"]  # Empty array = all events
+timeout_ms = 5000
+retry_attempts = 3

@@ -9,6 +9,8 @@ use crate::{
     state::get_request_signer_with_signer_key,
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
+    webhook::{emit_event, WebhookEvent},
+    webhook::events::{TransactionSignedData, TransactionFailedData},
 };
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -33,27 +35,56 @@ pub async fn sign_and_send_transaction(
     rpc_client: &Arc<RpcClient>,
     request: SignAndSendTransactionRequest,
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
-    let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
+    let result: Result<SignAndSendTransactionResponse, KoraError> = async {
 
-    // Check usage limit for transaction sender
-    UsageTracker::check_transaction_usage_limit(&transaction).await?;
+        let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+        // Check usage limit for transaction sender
+        UsageTracker::check_transaction_usage_limit(&transaction).await?;
 
-    let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
-        &transaction,
-        rpc_client,
-        request.sig_verify,
-    )
-    .await?;
+        let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
 
-    let (_, signed_transaction) =
-        resolved_transaction.sign_and_send_transaction(&signer, rpc_client).await?;
+        let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            rpc_client,
+            request.sig_verify,
+        )
+        .await?;
 
-    Ok(SignAndSendTransactionResponse {
-        signed_transaction,
-        signer_pubkey: signer.pubkey().to_string(),
-    })
+        let (_, signed_transaction) =
+            resolved_transaction.sign_and_send_transaction(&signer, rpc_client).await?;
+        
+        emit_event(WebhookEvent::TransactionSigned(TransactionSignedData {
+            transaction_id: signed_transaction.clone(),
+            signer_pubkey: signer.pubkey().to_string(),
+            method: "signAndSendTransaction".to_string(),
+        }))
+        .await;
+
+        Ok(SignAndSendTransactionResponse {
+            signed_transaction,
+            signer_pubkey: signer.pubkey().to_string(),
+        })
+    }
+    .await;
+
+    // Emit failure webhook if error occurred
+    if let Err(ref e) = result {
+        let signer_pubkey = request
+            .signer_key
+            .as_deref()
+            .and_then(|key| key.parse().ok())
+            .map(|pubkey: solana_sdk::pubkey::Pubkey| pubkey.to_string());
+
+        emit_event(WebhookEvent::TransactionFailed(TransactionFailedData {
+            error: e.to_string(),
+            method: "signAndSendTransaction".to_string(),
+            signer_pubkey,
+        }))
+        .await;
+    }
+
+    result
 }
 
 #[cfg(test)]

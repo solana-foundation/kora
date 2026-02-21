@@ -3,6 +3,7 @@ use crate::{
     rpc_server::middleware_utils::{
         build_response_with_graceful_error, extract_parts_and_body_bytes, get_jsonrpc_method,
     },
+    webhook::{emit_event, WebhookEvent, AuthFailedData},
 };
 use hmac::{Hmac, Mac};
 use http::{Request, Response, StatusCode};
@@ -62,6 +63,11 @@ where
 
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
+            // Extract method early, before body_bytes is moved
+            // This is to fix the issue where method extraction fails for unauthorized requests because body_bytes has been consumed
+            // It is used used by webhook event but can be used by the other also
+            let method = get_jsonrpc_method(&body_bytes);
+
             // Bypass auth for liveness endpoint
             if let Some(method) = get_jsonrpc_method(&body_bytes) {
                 if method == "liveness" {
@@ -77,6 +83,21 @@ where
                 // Constant-time comparison prevents timing attacks
                 if provided_key.as_bytes().ct_eq(api_key.as_bytes()).into() {
                     return inner.call(req).await;
+                }
+            }
+
+            if let Some(method) = method {
+                if method != "liveness" {
+                    emit_event(WebhookEvent::AuthFailed(AuthFailedData {
+                        auth_type: "api_key".to_string(),
+                        reason: if req.headers().get(X_API_KEY).is_none() {
+                            "missing_header".to_string()
+                        } else {
+                            "invalid_key".to_string()
+                        },
+                        method: Some(method),
+                    }))
+                    .await;
                 }
             }
 

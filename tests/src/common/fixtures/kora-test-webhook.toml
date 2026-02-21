@@ -1,0 +1,121 @@
+# This file is used for webhook integration testing
+[kora]
+port = 8081  # Different port to avoid conflict with regular tests
+rate_limit = 100
+
+[kora.auth]
+
+# Cache configuration - disabled for testing
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60
+
+[kora.enabled_methods]
+liveness = false                 # Just to be able to test the false flag
+estimate_transaction_fee = true
+get_supported_tokens = true
+sign_transaction = true
+sign_and_send_transaction = true
+transfer_transaction = true
+get_blockhash = true
+get_config = true
+get_payer_signer = true
+
+# Webhook configuration for testing
+[kora.webhook]
+enabled = true
+url = "http://localhost:9999/webhook"  # Will be overridden by mockito in tests
+secret = "test-webhook-secret-key"
+events = []  # Empty = all events (transaction.signed, transaction.failed, rate_limit.hit)
+timeout_ms = 5000
+retry_attempts = 3
+
+[validation]
+max_allowed_lamports = 1000000
+max_signatures = 10
+price_source = "Mock"
+allow_durable_transactions = false
+allowed_programs = [
+    "11111111111111111111111111111111",             # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  # Token-2022 Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
+    "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
+    "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA", # Custom Transfer Hook Program Example
+]
+allowed_tokens = [
+    "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
+    "AtCGtK6HPgdpk2c2LcpZimbH8dtHXYmJdoKsawWNCh2m", # Test Interest Bearing mint 2022 for local testing
+]
+allowed_spl_paid_tokens = [
+    "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
+    "AtCGtK6HPgdpk2c2LcpZimbH8dtHXYmJdoKsawWNCh2m", # Test Interest Bearing mint 2022 for local testing
+]
+
+disallowed_accounts = [
+    "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek", # Test disallowed account for lookup table
+]
+
+[validation.price]
+type = "margin"
+margin = 0.0
+
+# Block specific extensions for testing (only affects extension test accounts)
+[validation.token_2022]
+blocked_mint_extensions = [
+    "interest_bearing_config", # Block mints with interest bearing config for extension testing
+]
+blocked_account_extensions = [
+    "memo_transfer", # Block token accounts with MemoTransfer extension for extension testing
+]
+
+[validation.fee_payer_policy]
+
+[validation.fee_payer_policy.system]
+allow_transfer = true
+allow_assign = true
+allow_create_account = true
+allow_allocate = true
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = true
+allow_advance = true
+allow_authorize = true
+allow_withdraw = true
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = true
+allow_burn = true
+allow_close_account = true
+allow_approve = true
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = true
+allow_burn = true
+allow_close_account = true
+allow_approve = true
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
+
+[kora.usage_limit]
+enabled = false
+cache_url = "redis://redis:6379"
+max_transactions = 2
+fallback_if_unavailable = false

@@ -641,12 +641,10 @@ mod tests {
         tests::{
             account_mock::create_mock_token2022_mint_with_extensions,
             common::{
-                create_mock_non_executable_account, create_mock_program_account,
-                create_mock_rpc_client_account_not_found, create_mock_rpc_client_with_account,
-                create_mock_rpc_client_with_mint, RpcMockBuilder,
+                RpcMockBuilder, create_mock_non_executable_account, create_mock_program_account, create_mock_rpc_client_account_not_found, create_mock_rpc_client_with_account, create_mock_rpc_client_with_mint
             },
             config_mock::ConfigMockBuilder,
-        },
+        }, webhook::WebhookConfig,
     };
     use serial_test::serial;
     use solana_commitment_config::CommitmentConfig;
@@ -769,6 +767,7 @@ mod tests {
                 payment_address: None,
                 cache: CacheConfig::default(),
                 usage_limit: UsageLimitConfig::default(),
+                webhook: WebhookConfig::default(),
             },
             metrics: MetricsConfig::default(),
         };
