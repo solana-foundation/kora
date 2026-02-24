@@ -385,6 +385,16 @@ impl ConfigValidator {
             }
         }
 
+        // Validate base58 pubkey format for allowed_programs
+        for pubkey_str in &config.validation.allowed_programs {
+            if Pubkey::from_str(pubkey_str).is_err() {
+                errors.push(format!(
+                    "Invalid base58 pubkey format in allowed_programs: '{}'",
+                    pubkey_str
+                ));
+            }
+        }
+
         // Validate allowed tokens
         if config.validation.allowed_tokens.is_empty() {
             errors.push("No allowed tokens configured".to_string());
@@ -857,7 +867,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec!["SomeOtherProgram".to_string()], // Missing system program
+                allowed_programs: vec!["11111111111111111111111111111112".to_string()], // Missing system program, but valid base58
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
