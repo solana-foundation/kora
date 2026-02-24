@@ -1,4 +1,4 @@
-import { Instruction } from '@solana/kit';
+import { Instruction, TransactionSigner } from '@solana/kit';
 
 /**
  * Request Types
@@ -176,6 +176,8 @@ export interface GetPaymentInstructionResponse {
     payment_address: string;
     /** Public key of the payer signer */
     signer_address: string;
+    /** NoopSigner for the source wallet authority — reuse this in your transaction to avoid duplicate signer conflicts */
+    signer: TransactionSigner;
 }
 
 /**

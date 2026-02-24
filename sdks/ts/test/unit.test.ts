@@ -494,7 +494,13 @@ describe('KoraClient Unit Tests', () => {
                 payment_token: validRequest.fee_token,
                 payment_address: mockFeeEstimate.payment_address,
                 signer_address: mockFeeEstimate.signer_pubkey,
+                signer: expect.objectContaining({
+                    address: validRequest.source_wallet,
+                }),
             });
+
+            expect(result.signer).toBeDefined();
+            expect(result.signer.address).toBe(validRequest.source_wallet);
 
             // Verify only estimateTransactionFee was called
             expect(mockFetch).toHaveBeenCalledTimes(1);

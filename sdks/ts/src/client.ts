@@ -326,10 +326,12 @@ export class KoraClient {
             mint: fee_token,
         });
 
+        const signer = createNoopSigner(source_wallet);
+
         const paymentInstruction: Instruction = getTransferInstruction({
             source: sourceTokenAccount,
             destination: destinationTokenAccount,
-            authority: createNoopSigner(source_wallet),
+            authority: signer,
             amount: fee_in_token,
         });
 
@@ -340,6 +342,7 @@ export class KoraClient {
             payment_token: fee_token,
             payment_address,
             signer_address: signer_pubkey,
+            signer,
         };
     }
 }
