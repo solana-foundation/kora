@@ -38,6 +38,11 @@ jobs:
               pull_number: prNumber,
             });
 
+            if (!pr.head.repo) {
+              core.setFailed(`PR #${prNumber} fork repository no longer exists.`);
+              return;
+            }
+
             core.setOutput("pr_number", String(pr.number));
             core.setOutput("head_sha", pr.head.sha);
             core.setOutput("is_fork", String(pr.head.repo.fork));

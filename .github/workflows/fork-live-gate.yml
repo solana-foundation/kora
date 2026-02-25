@@ -23,7 +23,7 @@ jobs:
               return;
             }
 
-            if (!pr.head.repo.fork) {
+            if (!pr.head.repo?.fork) {
               core.info("Internal PR detected; fork live gate is not required.");
               return;
             }
