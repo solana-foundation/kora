@@ -2534,19 +2534,13 @@ mod tests {
         let valid_number = serde_json::json!({
             "amount": 1000
         });
-        assert_eq!(
-            IxUtils::get_field_as_u64(&valid_number, "amount").unwrap(),
-            1000
-        );
+        assert_eq!(IxUtils::get_field_as_u64(&valid_number, "amount").unwrap(), 1000);
 
         // Valid JSON string containing a number
         let valid_string_number = serde_json::json!({
             "amount": "2000"
         });
-        assert_eq!(
-            IxUtils::get_field_as_u64(&valid_string_number, "amount").unwrap(),
-            2000
-        );
+        assert_eq!(IxUtils::get_field_as_u64(&valid_string_number, "amount").unwrap(), 2000);
 
         // Missing field
         let missing_field = serde_json::json!({
@@ -2579,27 +2573,24 @@ mod tests {
 
     #[test]
     fn test_parse_system_instructions_transfer() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
         use solana_sdk::{
             signature::{Keypair, Signer},
             transaction::VersionedTransaction,
         };
         use solana_system_interface::instruction::transfer;
-        use solana_message::{Message, VersionedMessage};
-        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
 
         let sender = Keypair::new();
         let receiver = Pubkey::new_unique();
         let lamports = 1000u64;
 
-        let instruction = transfer(
-            &sender.pubkey(),
-            &receiver,
-            lamports,
-        );
+        let instruction = transfer(&sender.pubkey(), &receiver, lamports);
 
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&sender.pubkey())));
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&sender.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&sender]).unwrap();
-        
+
         let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
             .expect("Failed to create resolved transaction");
 
@@ -2613,10 +2604,10 @@ mod tests {
         assert_eq!(transfers.len(), 1);
 
         match &transfers[0] {
-            ParsedSystemInstructionData::SystemTransfer { 
-                lamports: parsed_lamports, 
-                sender: parsed_sender, 
-                receiver: parsed_receiver 
+            ParsedSystemInstructionData::SystemTransfer {
+                lamports: parsed_lamports,
+                sender: parsed_sender,
+                receiver: parsed_receiver,
             } => {
                 assert_eq!(*parsed_lamports, lamports);
                 assert_eq!(*parsed_sender, sender.pubkey());
@@ -2628,13 +2619,13 @@ mod tests {
 
     #[test]
     fn test_parse_token_instructions_transfer() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
         use solana_sdk::{
             signature::{Keypair, Signer},
             transaction::VersionedTransaction,
         };
         use spl_token_interface::instruction::transfer;
-        use solana_message::{Message, VersionedMessage};
-        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
 
         let owner = Keypair::new();
         let source_address = Pubkey::new_unique();
@@ -2648,7 +2639,8 @@ mod tests {
             &owner.pubkey(),
             &[],
             amount,
-        ).expect("Failed to create transfer instruction");
+        )
+        .expect("Failed to create transfer instruction");
 
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&owner.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&owner]).unwrap();
@@ -2680,6 +2672,70 @@ mod tests {
                 assert_eq!(*parsed_destination, destination_address);
                 assert_eq!(*is_2022, false);
                 assert!(mint.is_none());
+            }
+            _ => panic!("Expected SplTokenTransfer variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_token_2022_instructions_transfer_checked() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use spl_token_2022_interface::instruction::transfer_checked;
+
+        let owner = Keypair::new();
+        let source_address = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let amount = 7500u64;
+        let decimals = 6u8;
+
+        let instruction = transfer_checked(
+            &spl_token_2022_interface::ID,
+            &source_address,
+            &mint,
+            &destination_address,
+            &owner.pubkey(),
+            &[],
+            amount,
+            decimals,
+        )
+        .expect("Failed to create transfer_checked instruction");
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&owner.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&owner]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_token_instructions(&resolved_tx)
+            .expect("Failed to parse token instructions");
+
+        let transfers = parsed_instructions
+            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+            .expect("Expected SplTokenTransfer instructions");
+
+        assert_eq!(transfers.len(), 1);
+
+        match &transfers[0] {
+            ParsedSPLInstructionData::SplTokenTransfer {
+                amount: parsed_amount,
+                owner: parsed_owner,
+                mint: parsed_mint,
+                source_address: parsed_source,
+                destination_address: parsed_destination,
+                is_2022,
+            } => {
+                assert_eq!(*parsed_amount, amount);
+                assert_eq!(*parsed_owner, owner.pubkey());
+                assert_eq!(*parsed_source, source_address);
+                assert_eq!(*parsed_destination, destination_address);
+                assert_eq!(*is_2022, true);
+                assert_eq!(parsed_mint.unwrap(), mint);
             }
             _ => panic!("Expected SplTokenTransfer variant"),
         }
