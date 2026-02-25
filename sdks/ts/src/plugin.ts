@@ -141,6 +141,7 @@ export function koraPlugin(config: KoraPluginConfig) {
             ): Promise<KitSignAndSendTransactionResponse> {
                 const result = await client.signAndSendTransaction(request);
                 return {
+                    signature: result.signature,
                     signed_transaction: result.signed_transaction as Base64EncodedWireTransaction,
                     signer_pubkey: address(result.signer_pubkey),
                 };

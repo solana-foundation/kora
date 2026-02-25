@@ -1165,10 +1165,15 @@
       "SignAndSendTransactionResponse": {
         "type": "object",
         "required": [
+          "signature",
           "signed_transaction",
           "signer_pubkey"
         ],
         "properties": {
+          "signature": {
+            "type": "string",
+            "description": "Transaction signature"
+          },
           "signed_transaction": {
             "type": "string"
           },

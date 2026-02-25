@@ -1,4 +1,4 @@
-import { Instruction } from '@solana/kit';
+import { Instruction, TransactionSigner } from '@solana/kit';
 
 /**
  * Request Types
@@ -110,6 +110,8 @@ export interface SignTransactionResponse {
  * Response from signing and sending a transaction.
  */
 export interface SignAndSendTransactionResponse {
+    /** Transaction signature */
+    signature: string;
     /** Base64-encoded signed transaction */
     signed_transaction: string;
     /** Public key of the signer used to send the transaction */
@@ -174,6 +176,8 @@ export interface GetPaymentInstructionResponse {
     payment_address: string;
     /** Public key of the payer signer */
     signer_address: string;
+    /** NoopSigner for the source wallet authority — reuse this in your transaction to avoid duplicate signer conflicts */
+    signer: TransactionSigner;
 }
 
 /**
@@ -466,6 +470,8 @@ export interface KitSignTransactionResponse {
 
 /** Plugin response for signAndSendTransaction with Kit types */
 export interface KitSignAndSendTransactionResponse {
+    /** Transaction signature */
+    signature: string;
     /** Base64-encoded signed transaction */
     signed_transaction: Base64EncodedWireTransaction;
     /** Public key of the signer used to send the transaction */
