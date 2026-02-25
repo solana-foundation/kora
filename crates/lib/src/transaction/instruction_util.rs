@@ -2578,6 +2578,55 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_system_instructions_transfer() {
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use solana_system_interface::instruction::transfer;
+        use solana_message::{Message, VersionedMessage};
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+
+        let sender = Keypair::new();
+        let receiver = Pubkey::new_unique();
+        let lamports = 1000u64;
+
+        let instruction = transfer(
+            &sender.pubkey(),
+            &receiver,
+            lamports,
+        );
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&sender.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&sender]).unwrap();
+        
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_system_instructions(&resolved_tx)
+            .expect("Failed to parse system instructions");
+
+        let transfers = parsed_instructions
+            .get(&ParsedSystemInstructionType::SystemTransfer)
+            .expect("Expected SystemTransfer instructions");
+
+        assert_eq!(transfers.len(), 1);
+
+        match &transfers[0] {
+            ParsedSystemInstructionData::SystemTransfer { 
+                lamports: parsed_lamports, 
+                sender: parsed_sender, 
+                receiver: parsed_receiver 
+            } => {
+                assert_eq!(*parsed_lamports, lamports);
+                assert_eq!(*parsed_sender, sender.pubkey());
+                assert_eq!(*parsed_receiver, receiver);
+            }
+            _ => panic!("Expected SystemTransfer variant"),
+        }
+    }
+
+    #[test]
     fn test_uncompile_instructions() {
         let program_id = Pubkey::new_unique();
         let account1 = Pubkey::new_unique();
