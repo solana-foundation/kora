@@ -24,28 +24,37 @@ use crate::tests::config_mock::mock_state::get_config;
 
 /// **DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.
 /// This endpoint will be removed in a future version.
+///
+/// Request payload for creating a simple token or SOL transfer transaction.
+/// This endpoint constructs an unsigned transfer where Kora acts as the fee payer,
+/// but the user must still sign the transaction before it can be submitted.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct TransferTransactionRequest {
+    /// Amount to transfer (in the token's smallest unit, e.g. lamports for SOL)
     pub amount: u64,
+    /// Token mint address to transfer (use native SOL address for SOL transfers)
     pub token: String,
-    /// The source wallet address
+    /// The source wallet address that will send the tokens
     pub source: String,
-    /// The destination wallet address
+    /// The destination wallet address that will receive the tokens
     pub destination: String,
-    /// Optional signer key to ensure consistency across related RPC calls
+    /// Optional public key of the signer to ensure consistency and prevent unauthorized creation
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
 }
 
 /// **DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.
+///
+/// Response payload containing the constructed transfer transaction.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TransferTransactionResponse {
-    /// Unsigned base64-encoded transaction
+    /// Unsigned base64-encoded transaction ready for the user to sign
     pub transaction: String,
     /// Unsigned base64-encoded message
     pub message: String,
+    /// The blockhash used when constructing the transaction
     pub blockhash: String,
-    /// Public key of the signer used (for client consistency)
+    /// Public key of the Kora signer used as the fee payer
     pub signer_pubkey: String,
 }
 
