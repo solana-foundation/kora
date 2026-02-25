@@ -3,7 +3,14 @@ name = "Regular Integration Tests"
 config = "tests/src/common/fixtures/kora-test.toml"
 signers = "tests/src/common/fixtures/signers.toml"
 port = "8080"
-tests = ["rpc", "tokens", "external", "adversarial"]
+tests = ["rpc", "tokens", "adversarial"]
+
+[test.external_live]
+name = "External Live Tests"
+config = "tests/src/common/fixtures/kora-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8089"
+tests = ["external"]
 
 [test.free_signing]
 name = "Free Signing Tests"
