@@ -1,0 +1,164 @@
+name: Fork External Live Tests (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Fork PR number to validate with external live tests"
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  external-live:
+    name: Run Fork External Live Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: external-live-tests
+    steps:
+      - name: Resolve PR context
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = Number("${{ inputs.pr_number }}");
+            if (!Number.isInteger(prNumber) || prNumber <= 0) {
+              core.setFailed("pr_number must be a positive integer.");
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            core.setOutput("pr_number", String(pr.number));
+            core.setOutput("head_sha", pr.head.sha);
+            core.setOutput("is_fork", String(pr.head.repo.fork));
+            core.setOutput("merge_ref", `refs/pull/${pr.number}/merge`);
+
+      - name: Ensure PR is from fork
+        if: steps.pr.outputs.is_fork != 'true'
+        run: |
+          echo "PR #${{ steps.pr.outputs.pr_number }} is not a fork PR."
+          echo "Use the normal CI workflows for internal branches."
+          exit 1
+
+      - name: Checkout PR merge ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.merge_ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-integration-fork-live-manual"
+
+      - name: Install just
+        uses: extractions/setup-just@v3
+
+      - name: Build workspace
+        run: just build
+
+      - name: Setup Solana CLI
+        uses: ./.github/actions/setup-solana
+
+      - name: Ensure Jupiter API key is configured
+        env:
+          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
+        run: |
+          if [ -z "${JUPITER_API_KEY}" ]; then
+            echo "JUPITER_API_KEY is required for fork external live tests." >&2
+            exit 1
+          fi
+
+      - name: Run external live tests
+        uses: ./.github/actions/run-test-runner
+        with:
+          filters: "--filter external_live"
+        env:
+          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
+
+      - name: Cleanup test environment
+        if: always()
+        uses: ./.github/actions/cleanup-test-env
+
+      - name: Show failure logs
+        if: failure()
+        uses: ./.github/actions/show-failure-logs
+        with:
+          test-type: "Rust integration (fork external live)"
+
+      - name: Verify PR head is unchanged
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = Number("${{ steps.pr.outputs.pr_number }}");
+            const testedSha = "${{ steps.pr.outputs.head_sha }}";
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            if (pr.head.sha !== testedSha) {
+              core.setFailed(
+                `PR head changed during manual validation. tested=${testedSha}, current=${pr.head.sha}.`
+              );
+              return;
+            }
+
+      - name: Record fork live approval marker
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = Number("${{ steps.pr.outputs.pr_number }}");
+            const headSha = "${{ steps.pr.outputs.head_sha }}";
+            const marker = `fork-external-live-pass:${headSha}`;
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `✅ Fork external live tests passed.\n\n${marker}\nrun: ${runUrl}`,
+            });
+
+      - name: Rerun fork live gate
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const headSha = "${{ steps.pr.outputs.head_sha }}";
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "fork-live-gate.yml",
+              event: "pull_request",
+              head_sha: headSha,
+              per_page: 20,
+            });
+
+            const gateRun = runs.data.workflow_runs.find((run) => run.status === "completed");
+            if (!gateRun) {
+              core.warning(
+                `No completed fork-live-gate workflow run found for ${headSha}. ` +
+                  "Re-run the gate workflow manually if required."
+              );
+              return;
+            }
+
+            await github.rest.actions.reRunWorkflow({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: gateRun.id,
+            });
