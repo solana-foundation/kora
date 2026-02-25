@@ -2627,6 +2627,65 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_token_instructions_transfer() {
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use spl_token_interface::instruction::transfer;
+        use solana_message::{Message, VersionedMessage};
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+
+        let owner = Keypair::new();
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let amount = 5000u64;
+
+        let instruction = transfer(
+            &spl_token_interface::ID,
+            &source_address,
+            &destination_address,
+            &owner.pubkey(),
+            &[],
+            amount,
+        ).expect("Failed to create transfer instruction");
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&owner.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&owner]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_token_instructions(&resolved_tx)
+            .expect("Failed to parse token instructions");
+
+        let transfers = parsed_instructions
+            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+            .expect("Expected SplTokenTransfer instructions");
+
+        assert_eq!(transfers.len(), 1);
+
+        match &transfers[0] {
+            ParsedSPLInstructionData::SplTokenTransfer {
+                amount: parsed_amount,
+                owner: parsed_owner,
+                mint,
+                source_address: parsed_source,
+                destination_address: parsed_destination,
+                is_2022,
+            } => {
+                assert_eq!(*parsed_amount, amount);
+                assert_eq!(*parsed_owner, owner.pubkey());
+                assert_eq!(*parsed_source, source_address);
+                assert_eq!(*parsed_destination, destination_address);
+                assert_eq!(*is_2022, false);
+                assert!(mint.is_none());
+            }
+            _ => panic!("Expected SplTokenTransfer variant"),
+        }
+    }
+
+    #[test]
     fn test_uncompile_instructions() {
         let program_id = Pubkey::new_unique();
         let account1 = Pubkey::new_unique();
