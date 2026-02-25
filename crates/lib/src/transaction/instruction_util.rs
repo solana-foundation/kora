@@ -2529,6 +2529,55 @@ mod tests {
     }
 
     #[test]
+    fn test_get_field_as_u64() {
+        // Valid JSON number
+        let valid_number = serde_json::json!({
+            "amount": 1000
+        });
+        assert_eq!(
+            IxUtils::get_field_as_u64(&valid_number, "amount").unwrap(),
+            1000
+        );
+
+        // Valid JSON string containing a number
+        let valid_string_number = serde_json::json!({
+            "amount": "2000"
+        });
+        assert_eq!(
+            IxUtils::get_field_as_u64(&valid_string_number, "amount").unwrap(),
+            2000
+        );
+
+        // Missing field
+        let missing_field = serde_json::json!({
+            "other": 3000
+        });
+        let err = IxUtils::get_field_as_u64(&missing_field, "amount").unwrap_err();
+        assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
+
+        // Invalid string that cannot be parsed as a u64
+        let invalid_string = serde_json::json!({
+            "amount": "invalid"
+        });
+        let err = IxUtils::get_field_as_u64(&invalid_string, "amount").unwrap_err();
+        assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
+
+        // JSON null or other unexpected type
+        let null_value = serde_json::json!({
+            "amount": null
+        });
+        let err = IxUtils::get_field_as_u64(&null_value, "amount").unwrap_err();
+        assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
+
+        // Unexpected type (array)
+        let array_value = serde_json::json!({
+            "amount": [1, 2, 3]
+        });
+        let err = IxUtils::get_field_as_u64(&array_value, "amount").unwrap_err();
+        assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
+    }
+
+    #[test]
     fn test_uncompile_instructions() {
         let program_id = Pubkey::new_unique();
         let account1 = Pubkey::new_unique();
