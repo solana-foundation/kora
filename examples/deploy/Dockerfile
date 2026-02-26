@@ -1,4 +1,4 @@
-FROM rust:1.87
+FROM rust:1.88
 
 # Install kora-rpc from crates.io
 RUN cargo install kora-cli
