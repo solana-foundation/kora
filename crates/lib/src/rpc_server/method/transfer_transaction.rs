@@ -129,8 +129,7 @@ pub async fn transfer_transaction(
         );
     }
 
-    let blockhash =
-        CacheUtil::get_or_fetch_latest_blockhash(config, rpc_client).await?;
+    let blockhash = CacheUtil::get_or_fetch_latest_blockhash(config, rpc_client).await?;
 
     let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &instructions,

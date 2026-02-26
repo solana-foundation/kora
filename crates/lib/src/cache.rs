@@ -3,11 +3,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
-use solana_sdk::{
-    account::Account,
-    hash::Hash,
-    pubkey::Pubkey,
-};
+use solana_sdk::{account::Account, hash::Hash, pubkey::Pubkey};
 use std::str::FromStr;
 use tokio::sync::OnceCell;
 
@@ -320,9 +316,7 @@ impl CacheUtil {
         match cached {
             Some(s) => {
                 let hash = Hash::from_str(&s).map_err(|e| {
-                    KoraError::InternalServerError(format!(
-                        "Failed to parse cached blockhash: {e}"
-                    ))
+                    KoraError::InternalServerError(format!("Failed to parse cached blockhash: {e}"))
                 })?;
                 Ok(Some(hash))
             }
@@ -460,5 +454,30 @@ mod tests {
         assert!(result.is_ok());
         let account = result.unwrap();
         assert_eq!(account.lamports, expected_account.lamports);
+    }
+
+    #[tokio::test]
+    async fn test_get_or_fetch_blockhash_cache_disabled() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let rpc_client = RpcMockBuilder::new().with_blockhash().build();
+
+        let config = get_config().unwrap();
+        let result = CacheUtil::get_or_fetch_latest_blockhash(&config, &rpc_client).await;
+
+        assert!(result.is_ok(), "Should successfully get blockhash with cache disabled");
+        let hash = result.unwrap();
+        assert_ne!(hash, Hash::default(), "Blockhash should not be the default hash");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_blockhash_from_rpc_success() {
+        let rpc_client = RpcMockBuilder::new().with_blockhash().build();
+
+        let result = CacheUtil::fetch_blockhash_from_rpc(&rpc_client).await;
+
+        assert!(result.is_ok(), "Should successfully fetch blockhash from RPC");
+        let hash = result.unwrap();
+        assert_ne!(hash, Hash::default(), "Blockhash should not be the default hash");
     }
 }
