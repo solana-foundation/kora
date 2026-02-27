@@ -98,109 +98,31 @@ impl From<ClientError> for KoraError {
     }
 }
 
-impl From<SignerError> for KoraError {
-    fn from(_e: SignerError) -> Self {
-        #[cfg(feature = "unsafe-debug")]
-        {
-            KoraError::SigningError(_e.to_string())
+macro_rules! impl_kora_error_from {
+    ($source:ty => $variant:ident) => {
+        impl From<$source> for KoraError {
+            fn from(e: $source) -> Self {
+                #[cfg(feature = "unsafe-debug")]
+                {
+                    KoraError::$variant(e.to_string())
+                }
+                #[cfg(not(feature = "unsafe-debug"))]
+                {
+                    KoraError::$variant(sanitize_message(&e.to_string()))
+                }
+            }
         }
-        #[cfg(not(feature = "unsafe-debug"))]
-        {
-            KoraError::SigningError(sanitize_message(&_e.to_string()))
-        }
-    }
+    };
 }
 
-impl From<bincode::Error> for KoraError {
-    fn from(_e: bincode::Error) -> Self {
-        #[cfg(feature = "unsafe-debug")]
-        {
-            KoraError::SerializationError(_e.to_string())
-        }
-        #[cfg(not(feature = "unsafe-debug"))]
-        {
-            KoraError::SerializationError(sanitize_message(&_e.to_string()))
-        }
-    }
-}
-
-impl From<bs58::decode::Error> for KoraError {
-    fn from(_e: bs58::decode::Error) -> Self {
-        #[cfg(feature = "unsafe-debug")]
-        {
-            KoraError::SerializationError(_e.to_string())
-        }
-        #[cfg(not(feature = "unsafe-debug"))]
-        {
-            KoraError::SerializationError(sanitize_message(&_e.to_string()))
-        }
-    }
-}
-
-impl From<bs58::encode::Error> for KoraError {
-    fn from(_e: bs58::encode::Error) -> Self {
-        #[cfg(feature = "unsafe-debug")]
-        {
-            KoraError::SerializationError(_e.to_string())
-        }
-        #[cfg(not(feature = "unsafe-debug"))]
-        {
-            KoraError::SerializationError(sanitize_message(&_e.to_string()))
-        }
-    }
-}
-
-impl From<std::io::Error> for KoraError {
-    fn from(_e: std::io::Error) -> Self {
-        #[cfg(feature = "unsafe-debug")]
-        {
-            KoraError::InternalServerError(_e.to_string())
-        }
-        #[cfg(not(feature = "unsafe-debug"))]
-        {
-            KoraError::InternalServerError(sanitize_message(&_e.to_string()))
-        }
-    }
-}
-
-impl From<Box<dyn StdError>> for KoraError {
-    fn from(_e: Box<dyn StdError>) -> Self {
-        #[cfg(feature = "unsafe-debug")]
-        {
-            KoraError::InternalServerError(_e.to_string())
-        }
-        #[cfg(not(feature = "unsafe-debug"))]
-        {
-            KoraError::InternalServerError(sanitize_message(&_e.to_string()))
-        }
-    }
-}
-
-impl From<Box<dyn StdError + Send + Sync>> for KoraError {
-    fn from(_e: Box<dyn StdError + Send + Sync>) -> Self {
-        #[cfg(feature = "unsafe-debug")]
-        {
-            KoraError::InternalServerError(_e.to_string())
-        }
-        #[cfg(not(feature = "unsafe-debug"))]
-        {
-            KoraError::InternalServerError(sanitize_message(&_e.to_string()))
-        }
-    }
-}
-
-impl From<ProgramError> for KoraError {
-    fn from(_err: ProgramError) -> Self {
-        #[cfg(feature = "unsafe-debug")]
-        {
-            KoraError::InvalidTransaction(_err.to_string())
-        }
-        #[cfg(not(feature = "unsafe-debug"))]
-        {
-            KoraError::InvalidTransaction(sanitize_message(&_err.to_string()))
-        }
-    }
-}
+impl_kora_error_from!(SignerError => SigningError);
+impl_kora_error_from!(bincode::Error => SerializationError);
+impl_kora_error_from!(bs58::decode::Error => SerializationError);
+impl_kora_error_from!(bs58::encode::Error => SerializationError);
+impl_kora_error_from!(std::io::Error => InternalServerError);
+impl_kora_error_from!(Box<dyn StdError> => InternalServerError);
+impl_kora_error_from!(Box<dyn StdError + Send + Sync> => InternalServerError);
+impl_kora_error_from!(ProgramError => InvalidTransaction);
 
 impl From<KoraError> for RpcError {
     fn from(err: KoraError) -> Self {
@@ -265,31 +187,8 @@ impl<T, E: Into<KoraError>> IntoKoraResponse<T> for Result<T, E> {
     }
 }
 
-impl From<anyhow::Error> for KoraError {
-    fn from(_err: anyhow::Error) -> Self {
-        #[cfg(feature = "unsafe-debug")]
-        {
-            KoraError::SigningError(_err.to_string())
-        }
-        #[cfg(not(feature = "unsafe-debug"))]
-        {
-            KoraError::SigningError(sanitize_message(&_err.to_string()))
-        }
-    }
-}
-
-impl From<solana_keychain::SignerError> for KoraError {
-    fn from(_err: solana_keychain::SignerError) -> Self {
-        #[cfg(feature = "unsafe-debug")]
-        {
-            KoraError::SigningError(_err.to_string())
-        }
-        #[cfg(not(feature = "unsafe-debug"))]
-        {
-            KoraError::SigningError(sanitize_message(&_err.to_string()))
-        }
-    }
-}
+impl_kora_error_from!(anyhow::Error => SigningError);
+impl_kora_error_from!(solana_keychain::SignerError => SigningError);
 
 impl From<BundleError> for KoraError {
     fn from(err: BundleError) -> Self {
