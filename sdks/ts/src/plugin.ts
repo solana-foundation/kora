@@ -1,4 +1,11 @@
-import { address, blockhash, type Address, type Blockhash, type Base64EncodedWireTransaction } from '@solana/kit';
+import {
+    address,
+    blockhash,
+    signature,
+    type Address,
+    type Blockhash,
+    type Base64EncodedWireTransaction,
+} from '@solana/kit';
 import { KoraClient } from './client.js';
 import type {
     KoraPluginConfig,
@@ -141,7 +148,7 @@ export function koraPlugin(config: KoraPluginConfig) {
             ): Promise<KitSignAndSendTransactionResponse> {
                 const result = await client.signAndSendTransaction(request);
                 return {
-                    signature: result.signature,
+                    signature: signature(result.signature),
                     signed_transaction: result.signed_transaction as Base64EncodedWireTransaction,
                     signer_pubkey: address(result.signer_pubkey),
                 };

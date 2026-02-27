@@ -75,6 +75,7 @@ interface TestSuite {
     usdcMint: Address<string>;
     destinationAddress: Address<string>;
     koraAddress: Address<string>;
+    authConfig?: { apiKey: string; hmacSecret: string };
 }
 
 interface Client {
@@ -357,6 +358,7 @@ async function setupTestSuite(): Promise<TestSuite> {
         usdcMint: usdcMint.address,
         destinationAddress,
         koraAddress,
+        authConfig,
     };
 }
 

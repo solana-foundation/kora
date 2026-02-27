@@ -1,8 +1,9 @@
-import { KoraClient } from '../src/index.js';
+import { KoraClient, createDefaultKoraClient, type KoraPaymasterClient } from '../src/index.js';
 import setupTestSuite from './setup.js';
 import { runAuthenticationTests } from './auth-setup.js';
 import {
     Address,
+    address,
     generateKeyPairSigner,
     getBase64EncodedWireTransaction,
     getBase64Encoder,
@@ -11,6 +12,7 @@ import {
     type KeyPairSigner,
     type Transaction,
 } from '@solana/kit';
+import { getTransferSolInstruction } from '@solana-program/system';
 import { ASSOCIATED_TOKEN_PROGRAM_ADDRESS, findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 
 function transactionFromBase64(base64: string): Transaction {
@@ -30,6 +32,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
     let usdcMint: Address;
     let koraAddress: Address;
     let koraRpcUrl: string;
+    let authConfig: { apiKey: string; hmacSecret: string } | undefined;
 
     beforeAll(async () => {
         const testSuite = await setupTestSuite();
@@ -40,6 +43,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         usdcMint = testSuite.usdcMint;
         koraAddress = testSuite.koraAddress;
         koraRpcUrl = testSuite.koraRpcUrl;
+        authConfig = testSuite.authConfig;
     }, 90000); // allow adequate time for airdrops and token initialization
 
     // Run authentication tests only when auth is enabled
@@ -364,6 +368,69 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             };
 
             await expect(client.transferTransaction(request)).rejects.toThrow();
+        });
+    });
+
+    describe('Paymaster Client (createDefaultKoraClient)', () => {
+        let paymasterClient: KoraPaymasterClient;
+
+        beforeAll(async () => {
+            paymasterClient = await createDefaultKoraClient({
+                endpoint: koraRpcUrl,
+                feeToken: usdcMint,
+                feePayerWallet: testWallet,
+                ...authConfig,
+            });
+        }, 30000);
+
+        it('should initialize with correct payer info', () => {
+            expect(paymasterClient.payerAddress).toBeDefined();
+            expect(paymasterClient.paymentAddress).toBeDefined();
+            expect(paymasterClient.payer).toBeDefined();
+            expect(paymasterClient.payer.address).toBe(paymasterClient.payerAddress);
+        });
+
+        it('should expose kora namespace', async () => {
+            const config = await paymasterClient.kora.getConfig();
+            expect(config.fee_payers.length).toBeGreaterThan(0);
+        });
+
+        it('should plan a transaction without sending', async () => {
+            const ix = getTransferSolInstruction({
+                source: testWallet,
+                destination: address(destinationAddress),
+                amount: 1000, // 1000 lamports
+            });
+
+            const message = await paymasterClient.planTransaction([ix]);
+            expect(message).toBeDefined();
+            expect('version' in message).toBe(true);
+            expect('instructions' in message).toBe(true);
+        });
+
+        it('should send a transaction end-to-end', async () => {
+            const ix = getTransferSolInstruction({
+                source: testWallet,
+                destination: address(destinationAddress),
+                amount: 1000, // 1000 lamports
+            });
+
+            const result = await paymasterClient.sendTransaction([ix]);
+            expect(result.status).toBe('successful');
+            expect(result.context.signature).toBeDefined();
+            expect(typeof result.context.signature).toBe('string');
+            // Signature should be base58-encoded (43-88 chars)
+            expect(result.context.signature.length).toBeGreaterThanOrEqual(43);
+        }, 30000);
+
+        it('should support plugin composition via .use()', () => {
+            const extended = paymasterClient.use(() => ({
+                custom: { hello: () => 'world' },
+            }));
+
+            expect(extended.custom.hello()).toBe('world');
+            expect(extended.kora).toBeDefined();
+            expect(typeof extended.sendTransaction).toBe('function');
         });
     });
 });
