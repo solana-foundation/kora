@@ -19,12 +19,19 @@ use crate::state::get_config;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
 
+/// Request payload for estimating the fee of a transaction.
+///
+/// This endpoint calculates the required fee for a given transaction based on current
+/// oracle prices and Kora's configuration. It can estimate fees in native SOL (lamports)
+/// or in a specific supported SPL token if `fee_token` is provided.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EstimateTransactionFeeRequest {
-    pub transaction: String, // Base64 encoded serialized transaction
+    /// Base64-encoded serialized transaction
+    pub transaction: String,
+    /// Optional mint address of the SPL token to calculate the fee in. If omitted, returns only the lamport fee.
     #[serde(default)]
     pub fee_token: Option<String>,
-    /// Optional signer signer_key to ensure consistency across related RPC calls
+    /// Optional public key of the signer to ensure consistency and prevent unauthorized estimation
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
     /// Whether to verify signatures during simulation (defaults to true)
@@ -32,13 +39,16 @@ pub struct EstimateTransactionFeeRequest {
     pub sig_verify: bool,
 }
 
+/// Response payload containing the estimated transaction fee.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EstimateTransactionFeeResponse {
+    /// The exact fee required in native SOL (lamports)
     pub fee_in_lamports: u64,
+    /// The estimated fee in the requested SPL token (if `fee_token` was provided in the request)
     pub fee_in_token: Option<u64>,
     /// Public key of the signer used for fee estimation (for client consistency)
     pub signer_pubkey: String,
-    /// Public key of the payment destination
+    /// Public key of the payment destination where the fee should be sent
     pub payment_address: String,
 }
 
