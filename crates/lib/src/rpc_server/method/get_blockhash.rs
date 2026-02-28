@@ -1,9 +1,13 @@
-use crate::error::KoraError;
-use nonblocking::rpc_client::RpcClient;
+use crate::{error::KoraError, CacheUtil};
 use serde::Serialize;
-use solana_client::nonblocking;
-use solana_commitment_config::CommitmentConfig;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use utoipa::ToSchema;
+
+#[cfg(not(test))]
+use crate::state::get_config;
+
+#[cfg(test)]
+use crate::tests::config_mock::mock_state::get_config;
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct GetBlockhashResponse {
@@ -11,11 +15,14 @@ pub struct GetBlockhashResponse {
 }
 
 pub async fn get_blockhash(rpc_client: &RpcClient) -> Result<GetBlockhashResponse, KoraError> {
-    let blockhash = rpc_client
-        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
-        .await
-        .map_err(|e| KoraError::RpcError(e.to_string()))?;
-    Ok(GetBlockhashResponse { blockhash: blockhash.0.to_string() })
+    let config = get_config()?;
+
+    #[cfg(not(test))]
+    let blockhash = CacheUtil::get_or_fetch_latest_blockhash(config, rpc_client).await?;
+    #[cfg(test)]
+    let blockhash = CacheUtil::get_or_fetch_latest_blockhash(&config, rpc_client).await?;
+
+    Ok(GetBlockhashResponse { blockhash: blockhash.to_string() })
 }
 
 #[cfg(test)]

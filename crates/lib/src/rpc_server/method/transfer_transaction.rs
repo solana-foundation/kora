@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_commitment_config::CommitmentConfig;
 use solana_keychain::SolanaSigner;
 use solana_message::Message;
 use solana_sdk::{message::VersionedMessage, pubkey::Pubkey};
@@ -130,13 +129,12 @@ pub async fn transfer_transaction(
         );
     }
 
-    let blockhash =
-        rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig::confirmed()).await?;
+    let blockhash = CacheUtil::get_or_fetch_latest_blockhash(config, rpc_client).await?;
 
     let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &instructions,
         Some(&signer_pubkey), // Kora as fee payer
-        &blockhash.0,
+        &blockhash,
     ));
     let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
 
@@ -146,7 +144,7 @@ pub async fn transfer_transaction(
     Ok(TransferTransactionResponse {
         transaction: encoded,
         message: message_encoded,
-        blockhash: blockhash.0.to_string(),
+        blockhash: blockhash.to_string(),
         signer_pubkey: signer_pubkey.to_string(),
     })
 }
