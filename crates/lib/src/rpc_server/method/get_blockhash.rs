@@ -15,8 +15,10 @@ pub struct GetBlockhashResponse {
 }
 
 pub async fn get_blockhash(rpc_client: &RpcClient) -> Result<GetBlockhashResponse, KoraError> {
-    let config = get_config()?;
-    let blockhash = CacheUtil::get_or_fetch_latest_blockhash(&config, rpc_client).await?;
+    let config = &get_config()?;
+
+    let blockhash = CacheUtil::get_or_fetch_latest_blockhash(config, rpc_client).await?;
+
     Ok(GetBlockhashResponse { blockhash: blockhash.to_string() })
 }
 
