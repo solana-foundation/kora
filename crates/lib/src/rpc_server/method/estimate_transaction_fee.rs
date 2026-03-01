@@ -23,7 +23,7 @@ use crate::tests::config_mock::mock_state::get_config;
 ///
 /// This endpoint calculates the required fee for a given transaction based on current
 /// oracle prices and Kora's configuration. It can estimate fees in native SOL (lamports)
-/// or in a specific supported SPL token if `fee_token` is provided.
+/// and in a specific supported SPL token if `fee_token` is provided.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EstimateTransactionFeeRequest {
     /// Base64-encoded serialized transaction
@@ -31,7 +31,7 @@ pub struct EstimateTransactionFeeRequest {
     /// Optional mint address of the SPL token to calculate the fee in. If omitted, returns only the lamport fee.
     #[serde(default)]
     pub fee_token: Option<String>,
-    /// Optional public key of the signer to ensure consistency and prevent unauthorized estimation
+    /// Optional public key of the signer to ensure consistency
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
     /// Whether to verify signatures during simulation (defaults to true)

@@ -38,7 +38,7 @@ pub struct TransferTransactionRequest {
     pub source: String,
     /// The destination wallet address that will receive the tokens
     pub destination: String,
-    /// Optional public key of the signer to ensure consistency and prevent unauthorized creation
+    /// Optional public key of the signer to ensure consistency
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
 }
@@ -54,7 +54,7 @@ pub struct TransferTransactionResponse {
     pub message: String,
     /// The blockhash used when constructing the transaction
     pub blockhash: String,
-    /// Public key of the Kora signer used as the fee payer
+    /// Public key of the Kora signer used as the fee payer (for client consistency)
     pub signer_pubkey: String,
 }
 

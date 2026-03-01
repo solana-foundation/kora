@@ -14,14 +14,14 @@ use utoipa::ToSchema;
 /// Request payload for signing a transaction.
 ///
 /// This endpoint accepts a base64-encoded Solana transaction, validates it against
-/// the configured fee payer policies, and if successful, signs it using Kora's configured
-/// backend (local keypair, AWS KMS, or Fireblocks)
+/// the configured fee payer policies, and if successful, signs it using Kora's
+/// configured signer policy
 /// but not broadcasted to the network.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SignTransactionRequest {
     /// Base64-encoded Solana transaction
     pub transaction: String,
-    /// Optional public key of the signer to ensure consistency and prevent unauthorized signing
+    /// Optional public key of the signer to ensure consistency
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
     /// Whether to verify signatures during simulation (defaults to true)
