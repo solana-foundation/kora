@@ -2,7 +2,9 @@ use deadpool_redis::{Pool, Runtime};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{account::Account, pubkey::Pubkey};
+use solana_commitment_config::CommitmentConfig;
+use solana_sdk::{account::Account, hash::Hash, pubkey::Pubkey};
+use std::str::FromStr;
 use tokio::sync::OnceCell;
 
 use crate::{config::Config, error::KoraError, sanitize_error};
@@ -14,6 +16,10 @@ use crate::state::get_config;
 use crate::tests::config_mock::mock_state::get_config;
 
 const ACCOUNT_CACHE_KEY: &str = "account";
+const BLOCKHASH_CACHE_KEY: &str = "kora:blockhash";
+/// TTL for cached blockhash in seconds. Blockhashes are valid for ~60s,
+/// but we use a short TTL to keep the hash fresh.
+const BLOCKHASH_TTL: u64 = 5;
 
 /// Global cache pool instance
 static CACHE_POOL: OnceCell<Option<Pool>> = OnceCell::const_new();
@@ -247,6 +253,92 @@ impl CacheUtil {
 
         Ok(account)
     }
+
+    /// Get the latest blockhash, using Redis cache when available.
+    ///
+    /// Reduces RPC load by caching the blockhash with a short TTL (5s).
+    /// If the cache is unavailable or errors occur, falls back to a direct RPC call.
+    pub async fn get_or_fetch_latest_blockhash(
+        config: &Config,
+        rpc_client: &RpcClient,
+    ) -> Result<Hash, KoraError> {
+        // If cache is disabled, fetch directly from RPC
+        if !CacheUtil::is_cache_enabled(config) {
+            return Self::fetch_blockhash_from_rpc(rpc_client).await;
+        }
+
+        // Get cache pool - if not initialized, fallback to RPC
+        let pool = match CACHE_POOL.get() {
+            Some(Some(pool)) => pool,
+            _ => return Self::fetch_blockhash_from_rpc(rpc_client).await,
+        };
+
+        // Try to get from cache first
+        match Self::get_blockhash_from_cache(pool).await {
+            Ok(Some(hash)) => return Ok(hash),
+            Ok(None) => { /* cache miss, fetch from RPC */ }
+            Err(e) => {
+                log::warn!("Failed to get blockhash from cache, falling back to RPC: {e}");
+            }
+        }
+
+        // Cache miss or error — fetch from RPC and cache it
+        let hash = Self::fetch_blockhash_from_rpc(rpc_client).await?;
+
+        if let Err(e) = Self::set_blockhash_in_cache(pool, &hash).await {
+            log::warn!("Failed to cache blockhash: {e}");
+            // Don't fail the request if caching fails
+        }
+
+        Ok(hash)
+    }
+
+    /// Fetch the latest blockhash directly from the Solana RPC.
+    async fn fetch_blockhash_from_rpc(rpc_client: &RpcClient) -> Result<Hash, KoraError> {
+        let (blockhash, _) = rpc_client
+            .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+            .await
+            .map_err(|e| KoraError::RpcError(e.to_string()))?;
+        Ok(blockhash)
+    }
+
+    /// Try to read a cached blockhash from Redis.
+    async fn get_blockhash_from_cache(pool: &Pool) -> Result<Option<Hash>, KoraError> {
+        let mut conn = Self::get_connection(pool).await?;
+
+        let cached: Option<String> = conn.get(BLOCKHASH_CACHE_KEY).await.map_err(|e| {
+            KoraError::InternalServerError(format!(
+                "Failed to get blockhash from cache: {}",
+                sanitize_error!(e)
+            ))
+        })?;
+
+        match cached {
+            Some(s) => {
+                let hash = Hash::from_str(&s).map_err(|e| {
+                    KoraError::InternalServerError(format!("Failed to parse cached blockhash: {e}"))
+                })?;
+                Ok(Some(hash))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Store a blockhash in Redis with TTL.
+    async fn set_blockhash_in_cache(pool: &Pool, hash: &Hash) -> Result<(), KoraError> {
+        let mut conn = Self::get_connection(pool).await?;
+
+        conn.set_ex::<_, _, ()>(BLOCKHASH_CACHE_KEY, hash.to_string(), BLOCKHASH_TTL)
+            .await
+            .map_err(|e| {
+                KoraError::InternalServerError(format!(
+                    "Failed to set blockhash in cache: {}",
+                    sanitize_error!(e)
+                ))
+            })?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -362,5 +454,30 @@ mod tests {
         assert!(result.is_ok());
         let account = result.unwrap();
         assert_eq!(account.lamports, expected_account.lamports);
+    }
+
+    #[tokio::test]
+    async fn test_get_or_fetch_blockhash_cache_disabled() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let rpc_client = RpcMockBuilder::new().with_blockhash().build();
+
+        let config = get_config().unwrap();
+        let result = CacheUtil::get_or_fetch_latest_blockhash(&config, &rpc_client).await;
+
+        assert!(result.is_ok(), "Should successfully get blockhash with cache disabled");
+        let hash = result.unwrap();
+        assert_ne!(hash, Hash::default(), "Blockhash should not be the default hash");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_blockhash_from_rpc_success() {
+        let rpc_client = RpcMockBuilder::new().with_blockhash().build();
+
+        let result = CacheUtil::fetch_blockhash_from_rpc(&rpc_client).await;
+
+        assert!(result.is_ok(), "Should successfully fetch blockhash from RPC");
+        let hash = result.unwrap();
+        assert_ne!(hash, Hash::default(), "Blockhash should not be the default hash");
     }
 }
