@@ -2601,4 +2601,63 @@ mod tests {
             .await
             .is_err());
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_initialize_multisig() {
+        let fee_payer = Pubkey::new_unique();
+        let multisig_account = Pubkey::new_unique();
+        let other_signer = Pubkey::new_unique();
+
+        // Test with allow_initialize_multisig = true
+        // fee_payer is one of the signers (parsed from accounts[2..])
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_initialize_multisig = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_multisig_ix = spl_token_interface::instruction::initialize_multisig(
+            &spl_token_interface::id(),
+            &multisig_account,
+            &[&fee_payer, &other_signer],
+            2,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_initialize_multisig = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_initialize_multisig = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_multisig_ix = spl_token_interface::instruction::initialize_multisig(
+            &spl_token_interface::id(),
+            &multisig_account,
+            &[&fee_payer, &other_signer],
+            2,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
 }
