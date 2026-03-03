@@ -2055,10 +2055,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[revoke_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for revoke policy");
+        }
     }
 
     #[tokio::test]
@@ -2112,10 +2114,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[revoke_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_revoke policy");
+        }
     }
 
     #[tokio::test]
@@ -2174,10 +2178,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[set_authority_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for set_authority policy");
+        }
     }
 
     #[tokio::test]
@@ -2236,10 +2242,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[set_authority_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_set_authority policy");
+        }
     }
 
     #[tokio::test]
@@ -2298,10 +2306,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for mint_to policy");
+        }
     }
 
     #[tokio::test]
@@ -2360,10 +2370,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_mint_to policy");
+        }
     }
 
     #[tokio::test]
@@ -2420,10 +2432,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[init_mint_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for initialize_mint policy");
+        }
     }
 
     #[tokio::test]
@@ -2479,10 +2493,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[init_mint_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_initialize_mint policy");
+        }
     }
 
     #[tokio::test]
@@ -2538,10 +2554,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[init_account_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for initialize_account policy");
+        }
     }
 
     #[tokio::test]
@@ -2596,10 +2614,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[init_account_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_initialize_account policy");
+        }
     }
 
     #[tokio::test]
@@ -2655,10 +2675,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for initialize_multisig policy");
+        }
     }
 
     #[tokio::test]
@@ -2713,10 +2735,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_initialize_multisig policy");
+        }
     }
 
     #[tokio::test]
@@ -2774,10 +2798,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for freeze_account policy");
+        }
     }
 
     #[tokio::test]
@@ -2834,10 +2860,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_freeze_account policy");
+        }
     }
 
     #[tokio::test]
@@ -2955,10 +2983,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[thaw_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_thaw_account policy");
+        }
     }
 
     #[tokio::test]
@@ -3023,10 +3053,12 @@ mod tests {
         ));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(
-            validator.validate_transaction(config, &mut transaction, &rpc_client).await.is_err(),
-            "revoke=true burn=false should fail because burn is blocked"
-        );
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for burn policy");
+        }
 
         // --- Test 3: revoke=false, burn=true → is_err() ---
         let rpc_client = RpcMockBuilder::new().build();
@@ -3044,9 +3076,11 @@ mod tests {
         ));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(
-            validator.validate_transaction(config, &mut transaction, &rpc_client).await.is_err(),
-            "revoke=false burn=true should fail because revoke is blocked"
-        );
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for revoke policy");
+        }
     }
 }
