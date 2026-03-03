@@ -2779,4 +2779,64 @@ mod tests {
             .await
             .is_err());
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_freeze_account() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Test with allow_freeze_account = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_freeze_account = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let freeze_ix = spl_token_2022_interface::instruction::freeze_account(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_freeze_account = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_freeze_account = false;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let freeze_ix = spl_token_2022_interface::instruction::freeze_account(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
 }
