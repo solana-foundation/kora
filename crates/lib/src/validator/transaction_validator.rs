@@ -2241,4 +2241,66 @@ mod tests {
             .await
             .is_err());
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_mint_to() {
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_token_account = Pubkey::new_unique();
+
+        // Test with allow_mint_to = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_mint_to = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let mint_to_ix = spl_token_interface::instruction::mint_to(
+            &spl_token_interface::id(),
+            &mint,
+            &destination_token_account,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_mint_to = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_mint_to = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let mint_to_ix = spl_token_interface::instruction::mint_to(
+            &spl_token_interface::id(),
+            &mint,
+            &destination_token_account,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
 }
