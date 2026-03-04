@@ -2923,11 +2923,12 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[thaw_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
-    }
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for thaw_account policy");
+        }
 
     #[tokio::test]
     #[serial]
