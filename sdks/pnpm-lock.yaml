@@ -23,11 +23,20 @@ importers:
         specifier: ^0.11.0
         version: 0.11.0(@solana/kit@6.1.0(typescript@5.8.3))
       '@solana-program/token':
-        specifier: ^0.10.0
-        version: 0.10.0(@solana/kit@6.1.0(typescript@5.8.3))
+        specifier: ^0.12.0
+        version: 0.12.0(@solana/kit@6.1.0(typescript@5.8.3))
       '@solana/kit':
         specifier: ^6.1.0
         version: 6.1.0(typescript@5.8.3)
+      '@solana/kit-plugin-instruction-plan':
+        specifier: ^0.6.0
+        version: 0.6.0(@solana/kit@6.1.0(typescript@5.8.3))
+      '@solana/kit-plugin-payer':
+        specifier: ^0.6.0
+        version: 0.6.0(@solana/kit@6.1.0(typescript@5.8.3))
+      '@solana/kit-plugin-rpc':
+        specifier: ^0.6.0
+        version: 0.6.0(@solana/kit@6.1.0(typescript@5.8.3))
       '@solana/prettier-config-solana':
         specifier: ^0.0.6
         version: 0.0.6(prettier@3.6.2)
@@ -441,15 +450,25 @@ packages:
     peerDependencies:
       '@solana/kit': ^6.0.0
 
+  '@solana-program/compute-budget@0.14.0':
+    resolution: {integrity: sha512-tgvey/2bT35gUlb1lC84Hh2VqkOLoSa6KvaVz5DT037Mg8ECM+f2Q5Prv6V9yKQjRGGF2Y8BZgpOoUg6lTUl/Q==}
+    peerDependencies:
+      '@solana/kit': ^6.1.0
+
   '@solana-program/system@0.11.0':
     resolution: {integrity: sha512-SJeQVTkqGZzIXd7XHlCxnfpKpvPZghB1IFwddPPG04ydVXtDLRWp9wLoTR5Prkl9FIWRe/c5VgT4nxyzW1cAuQ==}
     peerDependencies:
       '@solana/kit': ^6.0.0
 
-  '@solana-program/token@0.10.0':
-    resolution: {integrity: sha512-6JhgF4tywgbzIBnbEFiSLpXe9ZimPzNheRQU7ksgD98Y4YCakcRI5VIAt2CUh/lTiLUOxGerW/oaK1QGF00FMw==}
+  '@solana-program/system@0.12.0':
+    resolution: {integrity: sha512-ZnAAWeGVMWNtJhw3GdifI2HnhZ0A0H0qs8tBkcFvxp/8wIavvO+GOM4Jd0N22u2+Lni2zcwvcrxrsxj6Mjphng==}
     peerDependencies:
-      '@solana/kit': ^6.0.0
+      '@solana/kit': ^6.1.0
+
+  '@solana-program/token@0.12.0':
+    resolution: {integrity: sha512-hnidRNuFhmqUdW5aWkKTJ+cdzuotVMNwLsTyAk0Nd8VjLDld+vQC0fugHWqm5GPrvYe0hCNAhtpJcZVnNp7rOA==}
+    peerDependencies:
+      '@solana/kit': ^6.1.0
 
   '@solana/accounts@6.1.0':
     resolution: {integrity: sha512-0jhmhSSS71ClLtBQIDrLlhkiNER4M9RIXTl1eJ1yJoFlE608JaKHTjNWsdVKdke7uBD6exdjNZkIVmouQPHMcA==}
@@ -580,6 +599,21 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  '@solana/kit-plugin-instruction-plan@0.6.0':
+    resolution: {integrity: sha512-YqAAipZPkzJlADnXfhJ3Jz7AILrkfl6x+Wi0oyk26KgsgCrfcxr0ebhwQt2fUsyVceC++6AF0pK/UsFUj/HeZw==}
+    peerDependencies:
+      '@solana/kit': ^6.1.0
+
+  '@solana/kit-plugin-payer@0.6.0':
+    resolution: {integrity: sha512-dtPpzhGtv0RaFGJWtXM/LYrDrM9a2AJK7X1/0rXMmFNAFxQE9M8H7TO0bczaFpZ6HFHYcp3XjOYQh/aBakaE4g==}
+    peerDependencies:
+      '@solana/kit': ^6.1.0
+
+  '@solana/kit-plugin-rpc@0.6.0':
+    resolution: {integrity: sha512-RMrk499+mEciT2UlFeUbVtEgSX/n8acf+Qk4m4MoX9WZzB1qmCWBXhquDoh1pOoRovVExFfgEmyKX8HIu8rVRA==}
+    peerDependencies:
+      '@solana/kit': ^6.1.0
 
   '@solana/kit@6.1.0':
     resolution: {integrity: sha512-24exn11BPonquufyCkGgypVtmN4JOsdGMsbF3EZ4kFyk7ZNryCn/N8eELr1FCVrHWRXoc0xy/HFaESBULTMf6g==}
@@ -2611,12 +2645,21 @@ snapshots:
     dependencies:
       '@solana/kit': 6.1.0(typescript@5.8.3)
 
+  '@solana-program/compute-budget@0.14.0(@solana/kit@6.1.0(typescript@5.8.3))':
+    dependencies:
+      '@solana/kit': 6.1.0(typescript@5.8.3)
+
   '@solana-program/system@0.11.0(@solana/kit@6.1.0(typescript@5.8.3))':
     dependencies:
       '@solana/kit': 6.1.0(typescript@5.8.3)
 
-  '@solana-program/token@0.10.0(@solana/kit@6.1.0(typescript@5.8.3))':
+  '@solana-program/system@0.12.0(@solana/kit@6.1.0(typescript@5.8.3))':
     dependencies:
+      '@solana/kit': 6.1.0(typescript@5.8.3)
+
+  '@solana-program/token@0.12.0(@solana/kit@6.1.0(typescript@5.8.3))':
+    dependencies:
+      '@solana-program/system': 0.12.0(@solana/kit@6.1.0(typescript@5.8.3))
       '@solana/kit': 6.1.0(typescript@5.8.3)
 
   '@solana/accounts@6.1.0(typescript@5.8.3)':
@@ -2737,6 +2780,19 @@ snapshots:
       typescript: 5.8.3
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
+
+  '@solana/kit-plugin-instruction-plan@0.6.0(@solana/kit@6.1.0(typescript@5.8.3))':
+    dependencies:
+      '@solana/kit': 6.1.0(typescript@5.8.3)
+
+  '@solana/kit-plugin-payer@0.6.0(@solana/kit@6.1.0(typescript@5.8.3))':
+    dependencies:
+      '@solana/kit': 6.1.0(typescript@5.8.3)
+
+  '@solana/kit-plugin-rpc@0.6.0(@solana/kit@6.1.0(typescript@5.8.3))':
+    dependencies:
+      '@solana-program/compute-budget': 0.14.0(@solana/kit@6.1.0(typescript@5.8.3))
+      '@solana/kit': 6.1.0(typescript@5.8.3)
 
   '@solana/kit@6.1.0(typescript@5.8.3)':
     dependencies:

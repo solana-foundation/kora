@@ -1,4 +1,4 @@
-import { createDefaultKoraClient, type KoraPaymasterClient } from '../src/paymaster.js';
+import { createDefaultKoraClient, type KoraKitClient } from '../src/kit-client.js';
 import { address, createNoopSigner, type Address, signature as kitSignature } from '@solana/kit';
 
 // Mock fetch globally
@@ -6,6 +6,7 @@ const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
 const MOCK_ENDPOINT = 'http://localhost:8080';
+const MOCK_RPC_URL = 'http://127.0.0.1:8899';
 const MOCK_PAYER_ADDRESS = 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7';
 const MOCK_PAYMENT_ADDRESS = 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7';
 const MOCK_FEE_TOKEN = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU' as Address;
@@ -20,6 +21,25 @@ function mockRpcResponse(result: unknown) {
             id: 1,
             result,
         }),
+    });
+}
+
+function mockSimulateResponse(unitsConsumed = 50000) {
+    const body = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+            context: { slot: 1 },
+            value: { err: null, logs: [], unitsConsumed },
+        },
+    });
+    mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: jest.fn().mockResolvedValueOnce(body),
+        json: jest.fn().mockResolvedValueOnce(JSON.parse(body)),
     });
 }
 
@@ -51,14 +71,13 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
             });
 
-            expect(client.payerAddress).toBe(MOCK_PAYER_ADDRESS);
             expect(client.paymentAddress).toBe(MOCK_PAYMENT_ADDRESS);
-            expect(client.payerSigner.address).toBe(MOCK_PAYER_ADDRESS);
-            // ClientWithPayer: payer is same as payerSigner
+            // ClientWithPayer: payer is a NoopSigner for the Kora fee payer
             expect(client.payer.address).toBe(MOCK_PAYER_ADDRESS);
             expect(mockFetch).toHaveBeenCalledTimes(1);
 
@@ -72,6 +91,7 @@ describe('createDefaultKoraClient', () => {
             await expect(
                 createDefaultKoraClient({
                     endpoint: MOCK_ENDPOINT,
+                    rpcUrl: MOCK_RPC_URL,
                     feeToken: MOCK_FEE_TOKEN,
                     feePayerWallet: MOCK_WALLET,
                 }),
@@ -86,6 +106,7 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
             });
@@ -104,6 +125,7 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
             });
@@ -121,7 +143,7 @@ describe('createDefaultKoraClient', () => {
     });
 
     describe('sendTransaction', () => {
-        let client: KoraPaymasterClient;
+        let client: KoraKitClient;
 
         beforeEach(async () => {
             // Mock getPayerSigner for init
@@ -132,6 +154,7 @@ describe('createDefaultKoraClient', () => {
 
             client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
             });
@@ -139,10 +162,11 @@ describe('createDefaultKoraClient', () => {
             mockFetch.mockClear();
         });
 
-        it('should call getBlockhash, estimateTransactionFee, and signAndSendTransaction', async () => {
+        it('should call getBlockhash, simulateTransaction, estimateTransactionFee, and signAndSendTransaction', async () => {
             // Mock getBlockhash
             mockRpcResponse({ blockhash: '4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi' });
-
+            // Mock simulateTransaction (CU estimation)
+            mockSimulateResponse();
             // Mock estimateTransactionFee
             mockRpcResponse({
                 fee_in_lamports: 5000,
@@ -150,7 +174,6 @@ describe('createDefaultKoraClient', () => {
                 signer_pubkey: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
-
             // Mock signAndSendTransaction
             mockRpcResponse({
                 signature: MOCK_SIGNATURE,
@@ -166,20 +189,23 @@ describe('createDefaultKoraClient', () => {
 
             const result = await client.sendTransaction([dummyIx]);
 
-            // Returns SuccessfulSingleTransactionPlanResult with Signature in context
             expect(result.status).toBe('successful');
             expect(result.context.signature).toBe(MOCK_SIGNATURE);
-            expect(mockFetch).toHaveBeenCalledTimes(3);
+            expect(mockFetch).toHaveBeenCalledTimes(4);
 
-            // Verify call order
             const calls = mockFetch.mock.calls.map(c => JSON.parse(c[1].body).method);
-            expect(calls).toEqual(['getBlockhash', 'estimateTransactionFee', 'signAndSendTransaction']);
+            expect(calls).toEqual([
+                'getBlockhash',
+                'simulateTransaction',
+                'estimateTransactionFee',
+                'signAndSendTransaction',
+            ]);
         });
 
         it('should skip payment instruction when fee is 0', async () => {
             mockRpcResponse({ blockhash: '4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi' });
+            mockSimulateResponse();
 
-            // Mock estimateTransactionFee with 0 fee
             mockRpcResponse({
                 fee_in_lamports: 0,
                 fee_in_token: 0,
@@ -207,6 +233,7 @@ describe('createDefaultKoraClient', () => {
 
         it('should propagate fee estimation errors', async () => {
             mockRpcResponse({ blockhash: '4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi' });
+            mockSimulateResponse();
             mockRpcError(-32602, 'Invalid transaction');
 
             const dummyIx = {
@@ -223,6 +250,7 @@ describe('createDefaultKoraClient', () => {
 
         it('should propagate signAndSendTransaction errors', async () => {
             mockRpcResponse({ blockhash: '4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi' });
+            mockSimulateResponse();
             mockRpcResponse({
                 fee_in_lamports: 5000,
                 fee_in_token: 50000,
@@ -246,7 +274,7 @@ describe('createDefaultKoraClient', () => {
     });
 
     describe('planTransaction', () => {
-        let client: KoraPaymasterClient;
+        let client: KoraKitClient;
 
         beforeEach(async () => {
             mockRpcResponse({
@@ -256,6 +284,7 @@ describe('createDefaultKoraClient', () => {
 
             client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
             });
@@ -282,7 +311,7 @@ describe('createDefaultKoraClient', () => {
     });
 
     describe('plugin composition', () => {
-        it('should support .use() for extending the client', async () => {
+        it('should support .use() for extending the client with a Kit plugin', async () => {
             mockRpcResponse({
                 signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
@@ -290,25 +319,27 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
             });
 
-            // Add a custom plugin
-            const extended = client.use(() => ({
+            // Kit plugins must spread the client to preserve existing properties
+            const extended = client.use(<T extends object>(c: T) => ({
+                ...c,
                 custom: {
                     hello: () => 'world',
                 },
             }));
 
             expect(extended.custom.hello()).toBe('world');
-            // Original methods still available
+            // Original methods preserved via spread
             expect(extended.kora).toBeDefined();
             expect(typeof extended.sendTransaction).toBe('function');
             expect(typeof extended.planTransaction).toBe('function');
         });
 
-        it('should use correct spread order (plugin additions win over client)', async () => {
+        it('should preserve existing properties when extending via plugin spread', async () => {
             mockRpcResponse({
                 signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
@@ -316,18 +347,20 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
             });
 
-            // Plugin that adds extra property
-            const extended = client.use(() => ({
+            // Plugin that adds extra property (with spread)
+            const extended = client.use(<T extends object>(c: T) => ({
+                ...c,
                 extra: 42,
             }));
 
             expect(extended.extra).toBe(42);
-            // Original client methods preserved
-            expect(extended.payerAddress).toBe(MOCK_PAYER_ADDRESS);
+            expect(extended.payer.address).toBe(MOCK_PAYER_ADDRESS);
+            expect(extended.paymentAddress).toBe(MOCK_PAYMENT_ADDRESS);
         });
     });
 
@@ -340,6 +373,7 @@ describe('createDefaultKoraClient', () => {
 
             await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
                 apiKey: 'test-api-key',
@@ -362,6 +396,7 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
                 tokenProgramId: TOKEN_2022_PROGRAM_ADDRESS,
@@ -391,7 +426,7 @@ describe('createDefaultKoraClient', () => {
             ) as { programAddress: string; data: Uint8Array }[];
         }
 
-        it('should NOT include any ComputeBudget instructions by default', async () => {
+        it('should include provisory CU limit by default (simulation-based estimation)', async () => {
             mockRpcResponse({
                 signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
@@ -399,13 +434,17 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
             });
 
             const planned = await client.planTransaction([DUMMY_IX]);
             const cbIxs = getComputeBudgetIxs(planned);
-            expect(cbIxs).toHaveLength(0);
+            expect(cbIxs).toHaveLength(1);
+            expect(cbIxs[0].data[0]).toBe(CU_LIMIT_DISCRIMINATOR);
+            const units = new DataView(cbIxs[0].data.buffer, cbIxs[0].data.byteOffset).getUint32(1, true);
+            expect(units).toBe(0); // Provisory — resolved via simulation in executor
         });
 
         it('should include SetComputeUnitLimit with correct units when computeUnitLimit is set', async () => {
@@ -416,6 +455,7 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
                 computeUnitLimit: 200_000,
@@ -433,7 +473,7 @@ describe('createDefaultKoraClient', () => {
             expect(units).toBe(200_000);
         });
 
-        it('should include SetComputeUnitPrice with correct microLamports when computeUnitPrice is set', async () => {
+        it('should include SetComputeUnitPrice and provisory CU limit when computeUnitPrice is set', async () => {
             mockRpcResponse({
                 signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
@@ -441,6 +481,7 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
                 computeUnitPrice: 1000n as import('@solana/kit').MicroLamports,
@@ -448,9 +489,12 @@ describe('createDefaultKoraClient', () => {
 
             const planned = await client.planTransaction([DUMMY_IX]);
             const cbIxs = getComputeBudgetIxs(planned);
-            expect(cbIxs).toHaveLength(1);
+            // Price instruction + provisory CU limit (simulation-based estimation always on)
+            expect(cbIxs).toHaveLength(2);
 
-            const ix = cbIxs[0];
+            const priceIx = cbIxs.find(ix => ix.data[0] === CU_PRICE_DISCRIMINATOR);
+            expect(priceIx).toBeDefined();
+            const ix = priceIx!;
             // discriminator 0x03 = SetComputeUnitPrice
             expect(ix.data[0]).toBe(CU_PRICE_DISCRIMINATOR);
             // 1000 in u64 LE
@@ -467,6 +511,7 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
                 computeUnitLimit: 150_000,
@@ -488,7 +533,7 @@ describe('createDefaultKoraClient', () => {
             expect(microLamports).toBe(500n);
         });
 
-        it('should add provisory CU limit (units=0) when rpcUrl is set without explicit computeUnitLimit', async () => {
+        it('should use explicit computeUnitLimit over simulation when computeUnitLimit is set', async () => {
             mockRpcResponse({
                 signer_address: MOCK_PAYER_ADDRESS,
                 payment_address: MOCK_PAYMENT_ADDRESS,
@@ -496,34 +541,9 @@ describe('createDefaultKoraClient', () => {
 
             const client = await createDefaultKoraClient({
                 endpoint: MOCK_ENDPOINT,
+                rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
                 feePayerWallet: MOCK_WALLET,
-                rpcUrl: 'http://127.0.0.1:8899',
-            });
-
-            const planned = await client.planTransaction([DUMMY_IX]);
-            const cbIxs = getComputeBudgetIxs(planned);
-            expect(cbIxs).toHaveLength(1);
-
-            const ix = cbIxs[0];
-            // discriminator 0x02 = SetComputeUnitLimit
-            expect(ix.data[0]).toBe(CU_LIMIT_DISCRIMINATOR);
-            // Provisory limit is 0 (will be resolved via simulation in executor)
-            const units = new DataView(ix.data.buffer, ix.data.byteOffset).getUint32(1, true);
-            expect(units).toBe(0);
-        });
-
-        it('should use explicit computeUnitLimit (not provisory) when both rpcUrl and computeUnitLimit are set', async () => {
-            mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
-                payment_address: MOCK_PAYMENT_ADDRESS,
-            });
-
-            const client = await createDefaultKoraClient({
-                endpoint: MOCK_ENDPOINT,
-                feeToken: MOCK_FEE_TOKEN,
-                feePayerWallet: MOCK_WALLET,
-                rpcUrl: 'http://127.0.0.1:8899',
                 computeUnitLimit: 200_000,
             });
 
@@ -536,38 +556,6 @@ describe('createDefaultKoraClient', () => {
             // Should be the explicit 200_000, not 0 (provisory)
             const units = new DataView(ix.data.buffer, ix.data.byteOffset).getUint32(1, true);
             expect(units).toBe(200_000);
-        });
-
-        it('should add provisory CU limit AND price when rpcUrl + computeUnitPrice are set', async () => {
-            mockRpcResponse({
-                signer_address: MOCK_PAYER_ADDRESS,
-                payment_address: MOCK_PAYMENT_ADDRESS,
-            });
-
-            const client = await createDefaultKoraClient({
-                endpoint: MOCK_ENDPOINT,
-                feeToken: MOCK_FEE_TOKEN,
-                feePayerWallet: MOCK_WALLET,
-                rpcUrl: 'http://127.0.0.1:8899',
-                computeUnitPrice: 2000n as import('@solana/kit').MicroLamports,
-            });
-
-            const planned = await client.planTransaction([DUMMY_IX]);
-            const cbIxs = getComputeBudgetIxs(planned);
-            // Should have price instruction from config + provisory limit from rpcUrl
-            expect(cbIxs).toHaveLength(2);
-
-            // Price instruction (from buildComputeBudgetInstructions)
-            const priceIx = cbIxs.find(ix => ix.data[0] === CU_PRICE_DISCRIMINATOR);
-            expect(priceIx).toBeDefined();
-            const microLamports = new DataView(priceIx!.data.buffer, priceIx!.data.byteOffset).getBigUint64(1, true);
-            expect(microLamports).toBe(2000n);
-
-            // Provisory CU limit (from fillProvisorySetComputeUnitLimitInstruction)
-            const limitIx = cbIxs.find(ix => ix.data[0] === CU_LIMIT_DISCRIMINATOR);
-            expect(limitIx).toBeDefined();
-            const units = new DataView(limitIx!.data.buffer, limitIx!.data.byteOffset).getUint32(1, true);
-            expect(units).toBe(0);
         });
     });
 });

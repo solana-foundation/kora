@@ -26,7 +26,7 @@ import type {
 } from './types/index.js';
 
 /**
- * Creates a Kora Kit plugin that adds Kora paymaster functionality to a Kit client.
+ * Creates a Kora Kit plugin that adds Kora RPC functionality to a Kit client.
  *
  * The plugin exposes all Kora RPC methods with Kit-typed responses (Address, Blockhash).
  *

@@ -550,18 +550,19 @@ export interface KitValidationConfig {
 }
 
 /**
- * Configuration for creating a Kora paymaster client.
+ * Configuration for creating a Kora Kit client.
  *
  * @example
  * ```ts
  * const client = await createDefaultKoraClient({
  *   endpoint: 'https://kora.example.com',
+ *   rpcUrl: 'https://api.mainnet-beta.solana.com',
  *   feeToken: address('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
  *   feePayerWallet: myWalletSigner, // TransactionSigner that authorizes SPL fee payment
  * });
  * ```
  */
-export interface KoraPaymasterConfig {
+export interface KoraKitClientConfig {
     /** Kora RPC endpoint URL */
     readonly endpoint: string;
     /** SPL mint address for fee payment */
@@ -579,11 +580,11 @@ export interface KoraPaymasterConfig {
     /** Token program ID for fee payment (defaults to TOKEN_PROGRAM_ADDRESS; use TOKEN_2022_PROGRAM_ADDRESS for Token-2022) */
     readonly tokenProgramId?: Address;
     /**
-     * Optional Solana RPC URL for compute unit estimation via simulation.
-     * When provided, the client will simulate the transaction against a Solana
-     * RPC node to determine the optimal compute unit limit, resulting in lower fees.
+     * Solana RPC URL used for compute unit estimation and program plugin compatibility.
+     * The client simulates transactions against this RPC node to determine optimal
+     * compute unit limits (resulting in lower fees), and exposes it as `ClientWithRpc`
+     * so Kit program plugins like `tokenProgram()` work out of the box.
      * This must be a direct Solana RPC URL (not the Kora endpoint).
-     * When omitted, no compute unit limit instruction is added unless `computeUnitLimit` is set explicitly.
      */
-    readonly rpcUrl?: string;
+    readonly rpcUrl: string;
 }

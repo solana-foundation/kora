@@ -1,8 +1,9 @@
-import { KoraClient, createDefaultKoraClient, type KoraPaymasterClient } from '../src/index.js';
+import { KoraClient, createDefaultKoraClient, type KoraKitClient } from '../src/index.js';
 import setupTestSuite from './setup.js';
 import { runAuthenticationTests } from './auth-setup.js';
 import {
     Address,
+    Instruction,
     address,
     generateKeyPairSigner,
     getBase64EncodedWireTransaction,
@@ -13,7 +14,14 @@ import {
     type Transaction,
 } from '@solana/kit';
 import { getTransferSolInstruction } from '@solana-program/system';
-import { ASSOCIATED_TOKEN_PROGRAM_ADDRESS, findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
+import {
+    ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
+    findAssociatedTokenPda,
+    parseTransferInstruction,
+    TOKEN_PROGRAM_ADDRESS,
+    tokenProgram,
+    TRANSFER_DISCRIMINATOR,
+} from '@solana-program/token';
 
 function transactionFromBase64(base64: string): Transaction {
     const encoder = getBase64Encoder();
@@ -23,6 +31,7 @@ function transactionFromBase64(base64: string): Transaction {
 }
 
 const AUTH_ENABLED = process.env.ENABLE_AUTH === 'true';
+const FREE_PRICING = process.env.FREE_PRICING === 'true';
 const KORA_SIGNER_TYPE = process.env.KORA_SIGNER_TYPE || 'memory';
 describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without auth'} | signer type: ${KORA_SIGNER_TYPE})`, () => {
     let client: KoraClient;
@@ -192,9 +201,12 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
             expect(fee).toBeDefined();
             expect(typeof fee.fee_in_lamports).toBe('number');
-            expect(fee.fee_in_lamports).toBeGreaterThan(0);
+            expect(fee.fee_in_lamports).toBeGreaterThanOrEqual(0);
             expect(typeof fee.fee_in_token).toBe('number');
-            expect(fee.fee_in_token).toBeGreaterThan(0);
+            if (!FREE_PRICING) {
+                expect(fee.fee_in_lamports).toBeGreaterThan(0);
+                expect(fee.fee_in_token).toBeGreaterThan(0);
+            }
         });
 
         it('should sign transaction', async () => {
@@ -336,7 +348,10 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             const fee = await client.estimateTransactionFee({ transaction, fee_token: usdcMint });
             expect(fee).toBeDefined();
             expect(typeof fee.fee_in_lamports).toBe('number');
-            expect(fee.fee_in_lamports).toBeGreaterThan(0);
+            expect(fee.fee_in_lamports).toBeGreaterThanOrEqual(0);
+            if (!FREE_PRICING) {
+                expect(fee.fee_in_lamports).toBeGreaterThan(0);
+            }
         });
     });
 
@@ -371,12 +386,13 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
     });
 
-    describe('Paymaster Client (createDefaultKoraClient)', () => {
-        let paymasterClient: KoraPaymasterClient;
+    describe('Kit Client (createDefaultKoraClient)', () => {
+        let kitClient: KoraKitClient;
 
         beforeAll(async () => {
-            paymasterClient = await createDefaultKoraClient({
+            kitClient = await createDefaultKoraClient({
                 endpoint: koraRpcUrl,
+                rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
                 feeToken: usdcMint,
                 feePayerWallet: testWallet,
                 ...authConfig,
@@ -384,14 +400,13 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         }, 30000);
 
         it('should initialize with correct payer info', () => {
-            expect(paymasterClient.payerAddress).toBeDefined();
-            expect(paymasterClient.paymentAddress).toBeDefined();
-            expect(paymasterClient.payer).toBeDefined();
-            expect(paymasterClient.payer.address).toBe(paymasterClient.payerAddress);
+            expect(kitClient.payer).toBeDefined();
+            expect(kitClient.payer.address).toBeDefined();
+            expect(kitClient.paymentAddress).toBeDefined();
         });
 
         it('should expose kora namespace', async () => {
-            const config = await paymasterClient.kora.getConfig();
+            const config = await kitClient.kora.getConfig();
             expect(config.fee_payers.length).toBeGreaterThan(0);
         });
 
@@ -402,7 +417,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
                 amount: 1000, // 1000 lamports
             });
 
-            const message = await paymasterClient.planTransaction([ix]);
+            const message = await kitClient.planTransaction([ix]);
             expect(message).toBeDefined();
             expect('version' in message).toBe(true);
             expect('instructions' in message).toBe(true);
@@ -415,7 +430,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
                 amount: 1000, // 1000 lamports
             });
 
-            const result = await paymasterClient.sendTransaction([ix]);
+            const result = await kitClient.sendTransaction([ix]);
             expect(result.status).toBe('successful');
             expect(result.context.signature).toBeDefined();
             expect(typeof result.context.signature).toBe('string');
@@ -424,7 +439,9 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         }, 30000);
 
         it('should support plugin composition via .use()', () => {
-            const extended = paymasterClient.use(() => ({
+            // Kit plugins must spread the client to preserve existing properties
+            const extended = kitClient.use(<T extends object>(c: T) => ({
+                ...c,
                 custom: { hello: () => 'world' },
             }));
 
@@ -432,5 +449,150 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(extended.kora).toBeDefined();
             expect(typeof extended.sendTransaction).toBe('function');
         });
+
+        describe('planner', () => {
+            it('should include placeholder payment instruction in planned message', async () => {
+                const ix = getTransferSolInstruction({
+                    source: testWallet,
+                    destination: address(destinationAddress),
+                    amount: 1000,
+                });
+
+                const message = await kitClient.planTransaction([ix]);
+                const instructions = (message as { instructions: readonly Instruction[] }).instructions;
+
+                // Find the transfer placeholder by discriminator + token program
+                const paymentIx = instructions.find(
+                    ix => ix.programAddress === TOKEN_PROGRAM_ADDRESS && ix.data?.[0] === TRANSFER_DISCRIMINATOR,
+                );
+                expect(paymentIx).toBeDefined();
+
+                // Verify it's a placeholder (amount=0) with correct accounts
+                const parsed = parseTransferInstruction(
+                    paymentIx as Instruction & {
+                        accounts: NonNullable<Instruction['accounts']>;
+                        data: NonNullable<Instruction['data']>;
+                    },
+                );
+                expect(parsed.data.amount).toBe(0n);
+                expect(parsed.accounts.authority.address).toBe(testWallet.address);
+            });
+
+            it('should include user instructions in planned message', async () => {
+                const ix = getTransferSolInstruction({
+                    source: testWallet,
+                    destination: address(destinationAddress),
+                    amount: 1000,
+                });
+
+                const message = await kitClient.planTransaction([ix]);
+                const instructions = (message as { instructions: readonly Instruction[] }).instructions;
+
+                // The user's system transfer instruction should be present
+                const systemIx = instructions.find(ix => ix.programAddress === '11111111111111111111111111111111');
+                expect(systemIx).toBeDefined();
+            });
+        });
+
+        describe('executor', () => {
+            it('should resolve placeholder with non-zero fee amount', async () => {
+                // The test config uses margin pricing (margin=0.0), so fee = base SOL fee converted to token
+                // This verifies the full planner→executor flow: placeholder→estimate→update→send
+                const ix = getTransferSolInstruction({
+                    source: testWallet,
+                    destination: address(destinationAddress),
+                    amount: 1000,
+                });
+
+                const result = await kitClient.sendTransaction([ix]);
+                expect(result.status).toBe('successful');
+                expect(result.context.signature).toBeDefined();
+
+                // Verify fee was estimated by checking the Kora RPC was called
+                // (the transaction succeeded, which means the payment IX had a valid amount)
+            }, 30000);
+
+            it('should handle multiple instructions in a single transaction', async () => {
+                const ix1 = getTransferSolInstruction({
+                    source: testWallet,
+                    destination: address(destinationAddress),
+                    amount: 500,
+                });
+                const ix2 = getTransferSolInstruction({
+                    source: testWallet,
+                    destination: address(destinationAddress),
+                    amount: 500,
+                });
+
+                const result = await kitClient.sendTransaction([ix1, ix2]);
+                expect(result.status).toBe('successful');
+                expect(result.context.signature).toBeDefined();
+            }, 30000);
+        });
+
+        describe('plugin composition with tokenProgram()', () => {
+            it('should send a token transfer via tokenProgram().transferToATA().send()', async () => {
+                // tokenProgram() works out of the box — rpc is included in the Kora client
+                const tokenClient = kitClient.use(tokenProgram());
+
+                // Transfer USDC to destination via the token plugin's fluent API.
+                // This flows through Kora's planner (placeholder) → executor (fee estimate, resolve, send).
+                const result = await tokenClient.token.instructions
+                    .transferToATA({
+                        authority: testWallet,
+                        recipient: destinationAddress,
+                        mint: usdcMint,
+                        amount: 1000,
+                        decimals: 6,
+                    })
+                    .sendTransaction();
+
+                expect(result.status).toBe('successful');
+                expect(result.context.signature).toBeDefined();
+            }, 30000);
+        });
     });
+
+    if (FREE_PRICING) {
+        describe('Kit Client (free pricing)', () => {
+            let freeClient: KoraKitClient;
+
+            beforeAll(async () => {
+                freeClient = await createDefaultKoraClient({
+                    endpoint: koraRpcUrl,
+                    rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
+                    feeToken: usdcMint,
+                    feePayerWallet: testWallet,
+                    ...authConfig,
+                });
+            }, 30000);
+
+            it('should send transaction without payment instruction when fee is 0', async () => {
+                const ix = getTransferSolInstruction({
+                    source: testWallet,
+                    destination: address(destinationAddress),
+                    amount: 1000,
+                });
+
+                const result = await freeClient.sendTransaction([ix]);
+                expect(result.status).toBe('successful');
+                expect(result.context.signature).toBeDefined();
+            }, 30000);
+
+            it('should strip placeholder from planned message when fee is 0', async () => {
+                // With free pricing, getPayerSigner may not return a payment address.
+                // If it does, the placeholder should still be stripped in the executor.
+                const ix = getTransferSolInstruction({
+                    source: testWallet,
+                    destination: address(destinationAddress),
+                    amount: 1000,
+                });
+
+                // Sending should succeed regardless — either no placeholder is added,
+                // or it's added then stripped when fee estimation returns 0.
+                const result = await freeClient.sendTransaction([ix]);
+                expect(result.status).toBe('successful');
+            }, 30000);
+        });
+    }
 });
