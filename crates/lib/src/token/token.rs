@@ -108,8 +108,9 @@ impl TokenUtil {
         let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
 
         token_program
-            .unpack_mint(mint_pubkey, &mint_account.data)
-            .map_err(|e| KoraError::TokenOperationError(format!("Failed to unpack mint: {e}")))
+            .get_mint(rpc_client, mint_pubkey)
+            .await
+            .map_err(|e| KoraError::TokenOperationError(format!("Failed to get mint: {e}")))
     }
 
     pub async fn get_mint_decimals(

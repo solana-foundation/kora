@@ -403,6 +403,18 @@ impl TokenInterface for Token2022Program {
             extensions,
         }))
     }
+
+    async fn get_mint(
+        &self,
+        rpc_client: &solana_client::nonblocking::rpc_client::RpcClient,
+        mint: &Pubkey,
+    ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
+        let mint_account = rpc_client
+            .get_account(mint)
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        self.unpack_mint(mint, &mint_account.data)
+    }
 }
 
 /// Trait for Token-2022 extension validation and fee calculation
