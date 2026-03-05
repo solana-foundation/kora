@@ -4,7 +4,6 @@ use crate::{
     token::token::TokenType,
     transaction::TransactionUtil,
 };
-use futures::{stream, StreamExt};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_keychain::SolanaSigner;
@@ -185,12 +184,7 @@ async fn create_atas_for_signer(
 
         match rpc_client.send_and_confirm_transaction_with_spinner(&tx).await {
             Ok(_signature) => {
-                // Print the ATAs created in this chunk
                 let chunk_end = std::cmp::min(created_atas_idx + chunk.len(), atas_to_create.len());
-
-                (created_atas_idx..chunk_end).for_each(|i| {
-                    let ATAToCreate { mint, ata, token_program } = &atas_to_create[i];
-                });
                 created_atas_idx = chunk_end;
             }
             Err(e) => {
@@ -224,23 +218,36 @@ pub async fn find_missing_atas(
     if token_mints.is_empty() {
         return Ok(Vec::new());
     }
+    let mut atas_to_create = Vec::new();
+    // Check each token mint for existing ATA
+    for mint in &token_mints {
+        let ata = get_associated_token_address(payment_address, mint);
 
-    let atas_to_create: Vec<ATAToCreate> = stream::iter(token_mints.iter())
-        .filter_map(|mint| async move {
-            let ata = get_associated_token_address(payment_address, mint);
-
-            if CacheUtil::get_account(rpc_client, &ata, false).await.is_ok() {
-                return None; // skip — ATA exists
+        match CacheUtil::get_account(rpc_client, &ata, false).await {
+            Ok(_) => {
+                println!("✓ ATA already exists for token {mint}: {ata}");
             }
+            Err(KoraError::AccountNotFound(_)) => {
+                // expected case — ATA doesn't exist yet, safe to create
+                let mint_account =
+                    CacheUtil::get_account(rpc_client, mint, false).await.map_err(|e| {
+                        KoraError::RpcError(format!("Failed to fetch mint account for {mint}: {e}"))
+                    })?;
 
-            let mint_account = CacheUtil::get_account(rpc_client, mint, false).await.ok()?;
-            let token_program =
-                TokenType::get_token_program_from_owner(&mint_account.owner).ok()?;
-
-            Some(ATAToCreate { mint: *mint, ata, token_program: token_program.program_id() })
-        })
-        .collect()
-        .await;
+                let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
+                println!("Creating ATA for token {mint}: {ata}");
+                atas_to_create.push(ATAToCreate {
+                    mint: *mint,
+                    ata,
+                    token_program: token_program.program_id(),
+                });
+            }
+            Err(e) => {
+                // real RPC or unexpected error — propagate it
+                return Err(KoraError::RpcError(format!("Failed to check ATA for {mint}: {e}")));
+            }
+        }
+    }
     Ok(atas_to_create)
 }
 
