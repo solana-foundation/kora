@@ -6,7 +6,7 @@ use crate::{
     fee::price::PriceModel,
     oracle::PriceSource,
     token::{
-        spl_token_2022::Token2022Mint,
+        spl_token_2022::Token2022ProgramMint,
         token::{TokenType, TokenUtil},
         TokenState,
     },
@@ -183,12 +183,12 @@ impl FeeConfigUtil {
                                 token_program.unpack_mint(mint_pubkey, &mint_account.data)?;
 
                             if let Some(token2022_mint) =
-                                mint_state.as_any().downcast_ref::<Token2022Mint>()
+                                mint_state.as_any().downcast_ref::<Token2022ProgramMint>()
                             {
                                 let current_epoch = rpc_client.get_epoch_info().await?.epoch;
 
-                                if let Some(fee_amount) =
-                                    token2022_mint.calculate_transfer_fee(*amount, current_epoch)?
+                                let fee_amount =
+                                    token2022_mint.calculate_transfer_fee(*amount, current_epoch).unwrap_or(0); // 
                                 {
                                     total_transfer_fees = total_transfer_fees
                                         .checked_add(fee_amount)

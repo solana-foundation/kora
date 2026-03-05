@@ -355,13 +355,12 @@ impl TransactionValidator {
         transaction_resolved: &mut VersionedTransactionResolved,
         required_lamports: u64,
         rpc_client: &RpcClient,
-        expected_payment_destination: &Pubkey,
+        _expected_payment_destination: &Pubkey,
     ) -> Result<(), KoraError> {
         if TokenUtil::verify_token_payment(
-            transaction_resolved,
             rpc_client,
+            transaction_resolved,
             required_lamports,
-            expected_payment_destination,
         )
         .await?
         {
