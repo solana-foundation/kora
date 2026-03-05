@@ -4,6 +4,7 @@ use crate::{
     token::token::TokenType,
     transaction::TransactionUtil,
 };
+use futures::{stream, StreamExt};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_keychain::SolanaSigner;
@@ -92,12 +93,9 @@ pub async fn initialize_atas_with_chunk_size(
     chunk_size: usize,
 ) -> Result<(), KoraError> {
     for address in addresses_to_initialize_atas {
-        println!("Initializing ATAs for address: {address}");
-
         let atas_to_create = find_missing_atas(rpc_client, address).await?;
 
         if atas_to_create.is_empty() {
-            println!("✓ All required ATAs already exist for address: {address}");
             continue;
         }
 
@@ -112,8 +110,6 @@ pub async fn initialize_atas_with_chunk_size(
         )
         .await?;
     }
-
-    println!("✓ Successfully created all ATAs");
 
     Ok(())
 }
@@ -145,15 +141,10 @@ async fn create_atas_for_signer(
     let chunks: Vec<_> = instructions.chunks(chunk_size).collect();
     let num_chunks = chunks.len();
 
-    println!(
-        "Creating {total_atas} ATAs in {num_chunks} transaction(s) (chunk size: {chunk_size})..."
-    );
-
     let mut created_atas_idx = 0;
 
     for (chunk_idx, chunk) in chunks.iter().enumerate() {
         let chunk_num = chunk_idx + 1;
-        println!("Processing chunk {chunk_num}/{num_chunks}");
 
         // Build instructions for this chunk with compute budget
         let mut chunk_instructions = Vec::new();
@@ -193,53 +184,22 @@ async fn create_atas_for_signer(
         tx.signatures = vec![signature];
 
         match rpc_client.send_and_confirm_transaction_with_spinner(&tx).await {
-            Ok(signature) => {
-                println!(
-                    "✓ Chunk {chunk_num}/{num_chunks} successful. Transaction signature: {signature}"
-                );
-
+            Ok(_signature) => {
                 // Print the ATAs created in this chunk
                 let chunk_end = std::cmp::min(created_atas_idx + chunk.len(), atas_to_create.len());
 
                 (created_atas_idx..chunk_end).for_each(|i| {
                     let ATAToCreate { mint, ata, token_program } = &atas_to_create[i];
-                    println!("  - Token {mint}: ATA {ata} (Token program: {token_program})");
                 });
                 created_atas_idx = chunk_end;
             }
             Err(e) => {
-                println!("✗ Chunk {chunk_num}/{num_chunks} failed: {e}");
-
-                if created_atas_idx > 0 {
-                    println!("\nSuccessfully created ATAs ({created_atas_idx}/{total_atas}):");
-                    println!(
-                        "{}",
-                        atas_to_create[0..created_atas_idx]
-                            .iter()
-                            .map(|ata| format!("  ✓ {ata}"))
-                            .collect::<Vec<String>>()
-                            .join("\n")
-                    );
-                    println!("\nRemaining ATAs to create: {}", total_atas - created_atas_idx);
-                } else {
-                    println!("No ATAs were successfully created.");
-                }
-
-                println!("This may be a temporary network issue. Please re-run the command to retry ATA creation.");
                 return Err(KoraError::RpcError(format!(
                     "Failed to send ATA creation transaction for chunk {chunk_num}/{num_chunks}: {e}"
                 )));
             }
         }
     }
-
-    // Show summary of all successfully created ATAs
-    println!("\n🎉 All ATA creation completed successfully!");
-    println!("Successfully created ATAs ({total_atas}/{total_atas}):");
-    println!(
-        "{}",
-        atas_to_create.iter().map(|ata| format!("  ✓ {ata}")).collect::<Vec<String>>().join("\n")
-    );
 
     Ok(total_atas)
 }
@@ -256,47 +216,31 @@ pub async fn find_missing_atas(
         match Pubkey::from_str(token_str) {
             Ok(mint) => token_mints.push(mint),
             Err(_) => {
-                println!("⚠️  Skipping invalid token mint: {token_str}");
                 continue;
             }
         }
     }
 
     if token_mints.is_empty() {
-        println!("✓ No SPL payment tokens configured");
         return Ok(Vec::new());
     }
 
-    let mut atas_to_create = Vec::new();
+    let atas_to_create: Vec<ATAToCreate> = stream::iter(token_mints.iter())
+        .filter_map(|mint| async move {
+            let ata = get_associated_token_address(payment_address, mint);
 
-    // Check each token mint for existing ATA
-    for mint in &token_mints {
-        let ata = get_associated_token_address(payment_address, mint);
-
-        match CacheUtil::get_account(rpc_client, &ata, false).await {
-            Ok(_) => {
-                println!("✓ ATA already exists for token {mint}: {ata}");
+            if CacheUtil::get_account(rpc_client, &ata, false).await.is_ok() {
+                return None; // skip — ATA exists
             }
-            Err(_) => {
-                // Fetch mint account to determine if it's SPL or Token2022
-                let mint_account =
-                    CacheUtil::get_account(rpc_client, mint, false).await.map_err(|e| {
-                        KoraError::RpcError(format!("Failed to fetch mint account for {mint}: {e}"))
-                    })?;
 
-                let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
+            let mint_account = CacheUtil::get_account(rpc_client, mint, false).await.ok()?;
+            let token_program =
+                TokenType::get_token_program_from_owner(&mint_account.owner).ok()?;
 
-                println!("Creating ATA for token {mint}: {ata}");
-
-                atas_to_create.push(ATAToCreate {
-                    mint: *mint,
-                    ata,
-                    token_program: token_program.program_id(),
-                });
-            }
-        }
-    }
-
+            Some(ATAToCreate { mint: *mint, ata, token_program: token_program.program_id() })
+        })
+        .collect()
+        .await;
     Ok(atas_to_create)
 }
 
