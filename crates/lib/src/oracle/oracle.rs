@@ -183,4 +183,15 @@ mod tests {
         let price = result.unwrap();
         assert_eq!(price.price, Decimal::from(42));
     }
+    #[tokio::test]
+    async fn test_get_token_price_not_found() {
+        let mut mock_oracle = MockPriceOracle::new();
+        // Return Ok with an empty HashMap — the queried mint won't be in it
+        mock_oracle.expect_get_prices().times(1).returning(|_, _| Ok(HashMap::new()));
+
+        let oracle = RetryingPriceOracle::new(3, Duration::from_millis(10), Arc::new(mock_oracle));
+        let result = oracle.get_token_price("missing_mint").await;
+        assert!(result.is_err());
+        assert!(matches!(result.err(), Some(KoraError::InternalServerError(_))));
+    }
 }
