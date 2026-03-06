@@ -166,6 +166,32 @@ impl TransactionValidator {
         &self,
         transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
+        // Ensure fee_payer is NOT a signer for any instruction unless explicitly allowed
+        // This prevents "unauthorized signing" vulnerabilities where an allowed program
+        // could be used to make the fee_payer sign a malicious instruction.
+        for (i, instruction) in transaction_resolved.all_instructions.iter().enumerate() {
+            let is_signer = instruction.accounts.iter().any(|acc| acc.pubkey == self.fee_payer_pubkey && acc.is_signer);
+            
+            if is_signer {
+                // If fee_payer is a signer, it MUST be a program we explicitly validate
+                // List of programs for which the fee_payer IS allowed to be a signer
+                // (provided the instruction is also validated by specific logic below)
+                let is_allowed_program = 
+                    instruction.program_id == solana_system_interface::program::ID ||
+                    instruction.program_id == spl_token_interface::id() ||
+                    instruction.program_id == spl_token_2022_interface::id() ||
+                    instruction.program_id == spl_associated_token_account_interface::program::id() ||
+                    instruction.program_id.to_string() == "ComputeBudget111111111111111111111111111111";
+
+                if !is_allowed_program {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Fee payer cannot be a signer for unauthorized program {} at instruction index {}",
+                        instruction.program_id, i
+                    )));
+                }
+            }
+        }
+
         let system_instructions = transaction_resolved.get_or_parse_system_instructions()?;
 
         // Check for durable transactions (nonce-based) - reject if not allowed

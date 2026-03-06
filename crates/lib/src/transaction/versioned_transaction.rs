@@ -103,9 +103,19 @@ impl VersionedTransactionResolved {
         all_account_keys.extend(resolved_addresses.clone());
         resolved.all_account_keys = all_account_keys.clone();
 
+        let header = transaction.message.header();
+        let num_required_signatures = header.num_required_signatures as usize;
+        let num_readonly_signed_accounts = header.num_readonly_signed_accounts as usize;
+        let num_readonly_unsigned_accounts = header.num_readonly_unsigned_accounts as usize;
+
         // 2. Fetch all instructions
-        let outer_instructions =
-            IxUtils::uncompile_instructions(transaction.message.instructions(), &all_account_keys)?;
+        let outer_instructions = IxUtils::uncompile_instructions(
+            transaction.message.instructions(),
+            &all_account_keys,
+            num_required_signatures,
+            num_readonly_signed_accounts,
+            num_readonly_unsigned_accounts,
+        )?;
 
         let inner_instructions = resolved.fetch_inner_instructions(rpc_client, sig_verify).await?;
 
@@ -119,16 +129,26 @@ impl VersionedTransactionResolved {
     pub fn from_kora_built_transaction(
         transaction: &VersionedTransaction,
     ) -> Result<Self, KoraError> {
-        Ok(Self {
+        let header = transaction.message.header();
+        let num_required_signatures = header.num_required_signatures as usize;
+        let num_readonly_signed_accounts = header.num_readonly_signed_accounts as usize;
+        let num_readonly_unsigned_accounts = header.num_readonly_unsigned_accounts as usize;
+
+        let mut resolved = VersionedTransactionResolved {
             transaction: transaction.clone(),
             all_account_keys: transaction.message.static_account_keys().to_vec(),
             all_instructions: IxUtils::uncompile_instructions(
                 transaction.message.instructions(),
                 transaction.message.static_account_keys(),
+                num_required_signatures,
+                num_readonly_signed_accounts,
+                num_readonly_unsigned_accounts,
             )?,
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
-        })
+        };
+
+        Ok(resolved)
     }
 
     /// Fetch inner instructions via simulation
@@ -182,9 +202,17 @@ impl VersionedTransactionResolved {
                 });
             });
 
+            let header = self.transaction.message.header();
+            let num_required_signatures = header.num_required_signatures as usize;
+            let num_readonly_signed_accounts = header.num_readonly_signed_accounts as usize;
+            let num_readonly_unsigned_accounts = header.num_readonly_unsigned_accounts as usize;
+
             return IxUtils::uncompile_instructions(
                 &compiled_inner_instructions,
                 &self.all_account_keys,
+                num_required_signatures,
+                num_readonly_signed_accounts,
+                num_readonly_unsigned_accounts,
             );
         }
 

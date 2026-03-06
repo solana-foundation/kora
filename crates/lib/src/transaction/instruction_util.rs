@@ -342,6 +342,9 @@ impl IxUtils {
     pub fn uncompile_instructions(
         instructions: &[CompiledInstruction],
         account_keys: &[Pubkey],
+        num_required_signatures: usize,
+        num_readonly_signed_accounts: usize,
+        num_readonly_unsigned_accounts: usize,
     ) -> Result<Vec<Instruction>, KoraError> {
         instructions
             .iter()
@@ -352,10 +355,20 @@ impl IxUtils {
                     .accounts
                     .iter()
                     .map(|idx| {
+                        let index = *idx as usize;
+                        let pubkey = Self::get_account_key_required(account_keys, index)?;
+                        
+                        let is_signer = index < num_required_signatures;
+                        let is_writable = if is_signer {
+                            index < (num_required_signatures - num_readonly_signed_accounts)
+                        } else {
+                            index < (account_keys.len() - num_readonly_unsigned_accounts)
+                        };
+
                         Ok(AccountMeta {
-                            pubkey: Self::get_account_key_required(account_keys, *idx as usize)?,
-                            is_signer: false,
-                            is_writable: true,
+                            pubkey,
+                            is_signer,
+                            is_writable,
                         })
                     })
                     .collect();
@@ -2541,7 +2554,7 @@ mod tests {
             data: vec![1, 2, 3],
         };
 
-        let instructions = IxUtils::uncompile_instructions(&[compiled_ix], &account_keys).unwrap();
+        let instructions = IxUtils::uncompile_instructions(&[compiled_ix], &account_keys, 0, 0, 0).unwrap();
 
         assert_eq!(instructions.len(), 1);
         let uncompiled = &instructions[0];
