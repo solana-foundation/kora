@@ -554,7 +554,7 @@ export interface KitValidationConfig {
  *
  * @example
  * ```ts
- * const client = await createDefaultKoraClient({
+ * const client = await createKitKoraClient({
  *   endpoint: 'https://kora.example.com',
  *   rpcUrl: 'https://api.mainnet-beta.solana.com',
  *   feeToken: address('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),

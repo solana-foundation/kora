@@ -1,4 +1,4 @@
-import { createDefaultKoraClient, type KoraKitClient } from '../src/kit-client.js';
+import { createKitKoraClient, type KoraKitClient } from '../src/kit/index.js';
 import { address, createNoopSigner, type Address, signature as kitSignature } from '@solana/kit';
 
 // Mock fetch globally
@@ -53,7 +53,7 @@ function mockRpcError(code: number, message: string) {
     });
 }
 
-describe('createDefaultKoraClient', () => {
+describe('createKitKoraClient', () => {
     beforeEach(() => {
         mockFetch.mockClear();
     });
@@ -69,7 +69,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -89,7 +89,7 @@ describe('createDefaultKoraClient', () => {
             mockRpcError(-32000, 'Server error');
 
             await expect(
-                createDefaultKoraClient({
+                createKitKoraClient({
                     endpoint: MOCK_ENDPOINT,
                     rpcUrl: MOCK_RPC_URL,
                     feeToken: MOCK_FEE_TOKEN,
@@ -104,7 +104,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -123,7 +123,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -152,7 +152,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            client = await createDefaultKoraClient({
+            client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -282,7 +282,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            client = await createDefaultKoraClient({
+            client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -317,7 +317,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -345,7 +345,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -371,7 +371,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            await createDefaultKoraClient({
+            await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -394,7 +394,7 @@ describe('createDefaultKoraClient', () => {
 
             const TOKEN_2022_PROGRAM_ADDRESS = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' as Address;
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -432,7 +432,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -453,7 +453,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -479,7 +479,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -509,7 +509,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,
@@ -539,7 +539,7 @@ describe('createDefaultKoraClient', () => {
                 payment_address: MOCK_PAYMENT_ADDRESS,
             });
 
-            const client = await createDefaultKoraClient({
+            const client = await createKitKoraClient({
                 endpoint: MOCK_ENDPOINT,
                 rpcUrl: MOCK_RPC_URL,
                 feeToken: MOCK_FEE_TOKEN,

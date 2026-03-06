@@ -1,4 +1,4 @@
-import { KoraClient, createDefaultKoraClient, type KoraKitClient } from '../src/index.js';
+import { KoraClient, createKitKoraClient, type KoraKitClient } from '../src/index.js';
 import setupTestSuite from './setup.js';
 import { runAuthenticationTests } from './auth-setup.js';
 import {
@@ -386,11 +386,11 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
     });
 
-    describe('Kit Client (createDefaultKoraClient)', () => {
+    describe('Kit Client (createKitKoraClient)', () => {
         let kitClient: KoraKitClient;
 
         beforeAll(async () => {
-            kitClient = await createDefaultKoraClient({
+            kitClient = await createKitKoraClient({
                 endpoint: koraRpcUrl,
                 rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
                 feeToken: usdcMint,
@@ -558,7 +558,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             let freeClient: KoraKitClient;
 
             beforeAll(async () => {
-                freeClient = await createDefaultKoraClient({
+                freeClient = await createKitKoraClient({
                     endpoint: koraRpcUrl,
                     rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
                     feeToken: usdcMint,
