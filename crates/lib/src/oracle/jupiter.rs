@@ -325,4 +325,32 @@ mod tests {
             ))
         );
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_jupiter_rate_limit_429() {
+        {
+            let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
+            *api_key_guard = Some("test-api-key".to_string());
+        }
+
+        let mut server = Server::new_async().await;
+        let _m = server
+            .mock("GET", "/price/v3")
+            .match_header("x-api-key", "test-api-key")
+            .match_query(Matcher::Any)
+            .with_status(429)
+            .with_body("Too Many Requests")
+            .create();
+
+        let client = Client::new();
+        let mut oracle = JupiterPriceOracle::new().unwrap();
+        oracle.api_url = format!("{}/price/v3", server.url());
+
+        let result = oracle
+            .get_prices(&client, &["So11111111111111111111111111111111111111112".to_string()])
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.err(), Some(KoraError::RateLimitExceeded));
+    }
 }
