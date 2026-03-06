@@ -1,5 +1,5 @@
 import { createEmptyClient } from '@solana/kit';
-import { koraPlugin, type KoraApi } from '../src/plugin.js';
+import { koraPlugin, type KoraPlugin } from '../src/kit/plugin.js';
 import type {
     KoraPluginConfig,
     KitPayerSignerResponse,
@@ -91,7 +91,7 @@ describe('Kora Kit Plugin', () => {
     });
 
     describe('Type Casting', () => {
-        let kora: KoraApi;
+        let kora: KoraPlugin;
 
         beforeEach(() => {
             const plugin = koraPlugin(mockConfig);
@@ -292,6 +292,8 @@ describe('Kora Kit Plugin', () => {
         describe('signAndSendTransaction', () => {
             it('should return Kit-typed response with Base64EncodedWireTransaction', async () => {
                 const rawResponse = {
+                    signature:
+                        '5wBzExmp8yR5M6m4KjV8WT9T6B1NMQkaMbsFWqBoDPBMYWxDx6EuSGxNqKfXnBhDhAkEqMiGRjEwKnGhSN3pi3n',
                     signed_transaction: 'base64SignedTransaction',
                     signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 };
@@ -380,7 +382,7 @@ describe('Kora Kit Plugin', () => {
     });
 
     describe('Error Handling', () => {
-        let kora: KoraApi;
+        let kora: KoraPlugin;
 
         beforeEach(() => {
             const plugin = koraPlugin(mockConfig);
@@ -401,14 +403,14 @@ describe('Kora Kit Plugin', () => {
         });
     });
 
-    describe('KoraApi Type Export', () => {
-        it('should export KoraApi type correctly', () => {
-            // This test verifies the KoraApi type is correctly exported
+    describe('KoraPlugin Type Export', () => {
+        it('should export KoraPlugin type correctly', () => {
+            // This test verifies the KoraPlugin type is correctly exported
             const plugin = koraPlugin(mockConfig);
             const client = plugin({});
 
-            // Type check - assign to KoraApi type
-            const api: KoraApi = client.kora;
+            // Type check - assign to KoraPlugin type
+            const api: KoraPlugin = client.kora;
             expect(api).toBeDefined();
         });
     });

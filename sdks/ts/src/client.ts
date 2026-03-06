@@ -25,20 +25,9 @@ import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS, getTransferInstruction }
 /**
  * Kora RPC client for interacting with the Kora paymaster service.
  *
- * Provides methods to estimate fees, sign transactions, and perform gasless transfers
- * on Solana as specified by the Kora paymaster operator.
- *
- * @example Kora Initialization
+ * @example
  * ```typescript
- * const client = new KoraClient({
- *   rpcUrl: 'http://localhost:8080',
- *   // apiKey may be required by some operators
- *   // apiKey: 'your-api-key',
- *   // hmacSecret may be required by some operators
- *   // hmacSecret: 'your-hmac-secret'
- * });
- *
- * // Sample usage: Get config
+ * const client = new KoraClient({ rpcUrl: 'http://localhost:8080' });
  * const config = await client.getConfig();
  * ```
  */
@@ -47,13 +36,6 @@ export class KoraClient {
     private apiKey?: string;
     private hmacSecret?: string;
 
-    /**
-     * Creates a new Kora client instance.
-     * @param options - Client configuration options
-     * @param options.rpcUrl - The Kora RPC server URL
-     * @param options.apiKey - Optional API key for authentication
-     * @param options.hmacSecret - Optional HMAC secret for signature-based authentication
-     */
     constructor({ rpcUrl, apiKey, hmacSecret }: KoraClientOptions) {
         this.rpcUrl = rpcUrl;
         this.apiKey = apiKey;
@@ -106,82 +88,22 @@ export class KoraClient {
         return json.result;
     }
 
-    /**
-     * Retrieves the current Kora server configuration.
-     * @returns The server configuration including fee payer address and validation rules
-     * @throws {Error} When the RPC call fails
-     *
-     * @example
-     * ```typescript
-     * const config = await client.getConfig();
-     * console.log('Fee payer:', config.fee_payer);
-     * console.log('Validation config:', JSON.stringify(config.validation_config, null, 2));
-     * ```
-     */
     async getConfig(): Promise<Config> {
         return this.rpcRequest<Config, undefined>('getConfig', undefined);
     }
 
-    /**
-     * Retrieves the payer signer and payment destination from the Kora server.
-     * @returns Object containing the payer signer and payment destination
-     * @throws {Error} When the RPC call fails
-     *
-     * @example
-     */
     async getPayerSigner(): Promise<GetPayerSignerResponse> {
         return this.rpcRequest<GetPayerSignerResponse, undefined>('getPayerSigner', undefined);
     }
 
-    /**
-     * Gets the latest blockhash from the Solana RPC that the Kora server is connected to.
-     * @returns Object containing the current blockhash
-     * @throws {Error} When the RPC call fails
-     *
-     * @example
-     * ```typescript
-     * const { blockhash } = await client.getBlockhash();
-     * console.log('Current blockhash:', blockhash);
-     * ```
-     */
     async getBlockhash(): Promise<GetBlockhashResponse> {
         return this.rpcRequest<GetBlockhashResponse, undefined>('getBlockhash', undefined);
     }
 
-    /**
-     * Retrieves the list of tokens supported for fee payment.
-     * @returns Object containing an array of supported token mint addresses
-     * @throws {Error} When the RPC call fails
-     *
-     * @example
-     * ```typescript
-     * const { tokens } = await client.getSupportedTokens();
-     * console.log('Supported tokens:', tokens);
-     * // Output: ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', ...]
-     * ```
-     */
     async getSupportedTokens(): Promise<GetSupportedTokensResponse> {
         return this.rpcRequest<GetSupportedTokensResponse, undefined>('getSupportedTokens', undefined);
     }
 
-    /**
-     * Estimates the transaction fee in both lamports and the specified token.
-     * @param request - Fee estimation request parameters
-     * @param request.transaction - Base64-encoded transaction to estimate fees for
-     * @param request.fee_token - Mint address of the token to calculate fees in
-     * @returns Fee amounts in both lamports and the specified token
-     * @throws {Error} When the RPC call fails, the transaction is invalid, or the token is not supported
-     *
-     * @example
-     * ```typescript
-     * const fees = await client.estimateTransactionFee({
-     *   transaction: 'base64EncodedTransaction',
-     *   fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' // USDC
-     * });
-     * console.log('Fee in lamports:', fees.fee_in_lamports);
-     * console.log('Fee in USDC:', fees.fee_in_token);
-     * ```
-     */
     async estimateTransactionFee(request: EstimateTransactionFeeRequest): Promise<EstimateTransactionFeeResponse> {
         return this.rpcRequest<EstimateTransactionFeeResponse, EstimateTransactionFeeRequest>(
             'estimateTransactionFee',
@@ -189,41 +111,10 @@ export class KoraClient {
         );
     }
 
-    /**
-     * Signs a transaction with the Kora fee payer without broadcasting it.
-     * @param request - Sign request parameters
-     * @param request.transaction - Base64-encoded transaction to sign
-     * @returns Signature and the signed transaction
-     * @throws {Error} When the RPC call fails or transaction validation fails
-     *
-     * @example
-     * ```typescript
-     * const result = await client.signTransaction({
-     *   transaction: 'base64EncodedTransaction'
-     * });
-     * console.log('Signature:', result.signature);
-     * console.log('Signed tx:', result.signed_transaction);
-     * ```
-     */
     async signTransaction(request: SignTransactionRequest): Promise<SignTransactionResponse> {
         return this.rpcRequest<SignTransactionResponse, SignTransactionRequest>('signTransaction', request);
     }
 
-    /**
-     * Signs a transaction and immediately broadcasts it to the Solana network.
-     * @param request - Sign and send request parameters
-     * @param request.transaction - Base64-encoded transaction to sign and send
-     * @returns Signature and the signed transaction
-     * @throws {Error} When the RPC call fails, validation fails, or broadcast fails
-     *
-     * @example
-     * ```typescript
-     * const result = await client.signAndSendTransaction({
-     *   transaction: 'base64EncodedTransaction'
-     * });
-     * console.log('Transaction signature:', result.signature);
-     * ```
-     */
     async signAndSendTransaction(request: SignAndSendTransactionRequest): Promise<SignAndSendTransactionResponse> {
         return this.rpcRequest<SignAndSendTransactionResponse, SignAndSendTransactionRequest>(
             'signAndSendTransaction',
@@ -231,58 +122,20 @@ export class KoraClient {
         );
     }
 
-    /**
-     * Creates a token transfer transaction with Kora as the fee payer.
-     * @param request - Transfer request parameters
-     * @param request.amount - Amount to transfer (in token's smallest unit)
-     * @param request.token - Mint address of the token to transfer
-     * @param request.source - Source wallet public key
-     * @param request.destination - Destination wallet public key
-     * @returns Base64-encoded signed transaction, base64-encoded message, blockhash, and parsed instructions
-     * @throws {Error} When the RPC call fails or token is not supported
-     *
-     * @example
-     * ```typescript
-     * const transfer = await client.transferTransaction({
-     *   amount: 1000000, // 1 USDC (6 decimals)
-     *   token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-     *   source: 'sourceWalletPublicKey',
-     *   destination: 'destinationWalletPublicKey'
-     * });
-     * console.log('Transaction:', transfer.transaction);
-     * console.log('Message:', transfer.message);
-     * console.log('Instructions:', transfer.instructions);
-     * ```
-     */
     async transferTransaction(request: TransferTransactionRequest): Promise<TransferTransactionResponse> {
         const response = await this.rpcRequest<TransferTransactionResponse, TransferTransactionRequest>(
             'transferTransaction',
             request,
         );
 
-        // Parse instructions from the message to enhance developer experience
-        // Always set instructions, even for empty messages (for consistency)
         response.instructions = getInstructionsFromBase64Message(response.message || '');
 
         return response;
     }
 
     /**
-     * Creates a payment instruction to append to a transaction for fee payment to the Kora paymaster.
-     *
-     * This method estimates the required fee and generates a token transfer instruction
-     * from the source wallet to the Kora payment address. The server handles decimal
-     * conversion internally, so the raw token amount is used directly.
-     *
-     * @param request - Payment instruction request parameters
-     * @param request.transaction - Base64-encoded transaction to estimate fees for
-     * @param request.fee_token - Mint address of the token to use for payment
-     * @param request.source_wallet - Public key of the wallet paying the fees
-     * @param request.token_program_id - Optional token program ID (defaults to TOKEN_PROGRAM_ADDRESS)
-     * @param request.signer_key - Optional signer address for the transaction
-     * @param request.sig_verify - Optional signer verification during transaction simulation (defaults to false)
-     * @returns Payment instruction details including the instruction, amount, and addresses
-     * @throws {Error} When the token is not supported, payment is not required, or invalid addresses are provided
+     * Estimates the fee and builds a payment transfer instruction from the source wallet
+     * to the Kora payment address. The server handles decimal conversion internally.
      *
      * @example
      * ```typescript
