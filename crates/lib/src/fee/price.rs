@@ -42,7 +42,8 @@ impl PriceConfig {
                     log::error!("Invalid Pubkey for price {e}");
 
                     KoraError::ConfigError(
-                        "Fee config is required for this price model".to_string(),
+                        "Invalid token address in fee config: failed to parse as Solana pubkey"
+                            .to_string(),
                     )
                 })?,
                 rpc_client,
@@ -51,7 +52,9 @@ impl PriceConfig {
             .await;
         }
 
-        Err(KoraError::ConfigError("Invalid price model for margin pricing".to_string()))
+        Err(KoraError::ConfigError(
+            "Price model is not 'Fixed': cannot compute fixed fee".to_string(),
+        ))
     }
 
     pub async fn get_required_lamports_with_margin(
@@ -95,7 +98,9 @@ impl PriceConfig {
             });
         }
 
-        Err(KoraError::ConfigError("Invalid price model for fixed pricing".to_string()))
+        Err(KoraError::ConfigError(
+            "Price model is not 'Margin': cannot compute margin fee".to_string(),
+        ))
     }
 }
 
