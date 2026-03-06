@@ -141,4 +141,17 @@ mod tests {
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
+    #[tokio::test]
+    async fn test_price_oracle_retries_all_fail() {
+        let mut mock_oracle = MockPriceOracle::new();
+        mock_oracle
+            .expect_get_prices()
+            .times(3)
+            .returning(|_, _| Err(KoraError::RpcError("mock error".to_string())));
+
+        let oracle = RetryingPriceOracle::new(3, Duration::from_millis(10), Arc::new(mock_oracle));
+        let result = oracle.get_token_prices(&["test_mint".to_string()]).await;
+        assert!(result.is_err());
+        assert_eq!(result.err(), Some(KoraError::RpcError("mock error".to_string())));
+    }
 }
