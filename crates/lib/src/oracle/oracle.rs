@@ -154,4 +154,33 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.err(), Some(KoraError::RpcError("mock error".to_string())));
     }
+    #[tokio::test]
+    async fn test_price_oracle_retry_then_succeed() {
+        let mut mock_oracle = MockPriceOracle::new();
+        let mut call_count = 0u32;
+        mock_oracle.expect_get_prices().times(2).returning(move |_, mint_addresses| {
+            call_count += 1;
+            if call_count == 1 {
+                return Err(KoraError::RpcError("temporary error".to_string()));
+            }
+            let mut result = HashMap::new();
+            for mint in mint_addresses {
+                result.insert(
+                    mint.clone(),
+                    TokenPrice {
+                        price: Decimal::from(42),
+                        confidence: 0.95,
+                        source: PriceSource::Jupiter,
+                    },
+                );
+            }
+            Ok(result)
+        });
+
+        let oracle = RetryingPriceOracle::new(3, Duration::from_millis(10), Arc::new(mock_oracle));
+        let result = oracle.get_token_price("test_mint").await;
+        assert!(result.is_ok());
+        let price = result.unwrap();
+        assert_eq!(price.price, Decimal::from(42));
+    }
 }
