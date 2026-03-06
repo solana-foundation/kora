@@ -53,7 +53,9 @@ impl JupiterPriceOracle {
     pub fn new() -> Result<Self, KoraError> {
         let api_key = get_jupiter_api_key().ok_or_else(|| {
             log::error!("Jupiter API key not found. Set JUPITER_API_KEY environment variable.");
-            KoraError::ConfigError
+            KoraError::ConfigError(
+                "Jupiter API key not found. Set JUPITER_API_KEY environment variable".to_string(),
+            )
         })?;
 
         let api_url = Self::build_price_api_url(JUPITER_API_URL);
@@ -237,7 +239,7 @@ mod tests {
 
         let result = JupiterPriceOracle::new();
         assert!(result.is_err());
-        assert_eq!(result.err(), Some(KoraError::ConfigError));
+        assert!(matches!(result.err(), Some(KoraError::ConfigError(_))));
     }
 
     #[tokio::test]
