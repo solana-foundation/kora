@@ -47,16 +47,16 @@ describe('KoraClient Unit Tests', () => {
 
     const expectRpcCall = (method: string, params: any = undefined) => {
         expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
             body: JSON.stringify({
-                jsonrpc: '2.0',
                 id: 1,
+                jsonrpc: '2.0',
                 method,
                 params,
             }),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            method: 'POST',
         });
     };
 
@@ -505,19 +505,19 @@ describe('KoraClient Unit Tests', () => {
             // Verify only estimateTransactionFee was called
             expect(mockFetch).toHaveBeenCalledTimes(1);
             expect(mockFetch).toHaveBeenCalledWith(mockRpcUrl, {
-                method: 'POST',
+                body: JSON.stringify({
+                    id: 1,
+                    jsonrpc: '2.0',
+                    method: 'estimateTransactionFee',
+                    params: {
+                        fee_token: validRequest.fee_token,
+                        transaction: validRequest.transaction,
+                    },
+                }),
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    method: 'estimateTransactionFee',
-                    params: {
-                        transaction: validRequest.transaction,
-                        fee_token: validRequest.fee_token,
-                    },
-                }),
+                method: 'POST',
             });
         });
 

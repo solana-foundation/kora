@@ -32,7 +32,7 @@ export function getInstructionsFromBase64Message(message: string): Instruction[]
     try {
         const decompiledMessage = deserializeBase64Message(message);
         return decompiledMessage.instructions as Instruction[];
-    } catch (error) {
+    } catch {
         // Silently handle parsing errors and return empty array
         return [];
     }

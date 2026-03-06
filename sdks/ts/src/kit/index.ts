@@ -1,21 +1,22 @@
-import { type Address, address, createEmptyClient, createNoopSigner, createSolanaRpc } from '@solana/kit';
+import { address, createEmptyClient, createNoopSigner, createSolanaRpc } from '@solana/kit';
 import {
-    estimateComputeUnitLimitFactory,
-    estimateAndUpdateProvisoryComputeUnitLimitFactory,
-} from '@solana-program/compute-budget';
-import { payer } from '@solana/kit-plugin-payer';
-import {
-    transactionPlanner as transactionPlannerPlugin,
-    transactionPlanExecutor as transactionPlanExecutorPlugin,
     planAndSendTransactions,
+    transactionPlanExecutor as transactionPlanExecutorPlugin,
+    transactionPlanner as transactionPlannerPlugin,
 } from '@solana/kit-plugin-instruction-plan';
+import { payer } from '@solana/kit-plugin-payer';
 import { rpc } from '@solana/kit-plugin-rpc';
+import {
+    estimateAndUpdateProvisoryComputeUnitLimitFactory,
+    estimateComputeUnitLimitFactory,
+} from '@solana-program/compute-budget';
+
 import { KoraClient } from '../client.js';
-import { koraPlugin } from './plugin.js';
 import type { KoraKitClientConfig } from '../types/index.js';
-import { koraPaymentAddress, buildPlaceholderPaymentInstruction } from './payment.js';
-import { buildComputeBudgetInstructions, createKoraTransactionPlanner } from './planner.js';
 import { createKoraTransactionPlanExecutor } from './executor.js';
+import { buildPlaceholderPaymentInstruction, koraPaymentAddress } from './payment.js';
+import { buildComputeBudgetInstructions, createKoraTransactionPlanner } from './planner.js';
+import { koraPlugin } from './plugin.js';
 
 /** The type returned by {@link createKitKoraClient}. */
 export type KoraKitClient = Awaited<ReturnType<typeof createKitKoraClient>>;
@@ -45,9 +46,9 @@ export type KoraKitClient = Awaited<ReturnType<typeof createKitKoraClient>>;
  */
 export async function createKitKoraClient(config: KoraKitClientConfig) {
     const koraClient = new KoraClient({
-        rpcUrl: config.endpoint,
         apiKey: config.apiKey,
         hmacSecret: config.hmacSecret,
+        rpcUrl: config.endpoint,
     });
 
     const { signer_address, payment_address } = await koraClient.getPayerSigner();
@@ -84,8 +85,8 @@ export async function createKitKoraClient(config: KoraKitClientConfig) {
         payerSigner,
         payment
             ? {
-                  sourceTokenAccount: payment.sourceTokenAccount,
                   destinationTokenAccount: payment.destinationTokenAccount,
+                  sourceTokenAccount: payment.sourceTokenAccount,
               }
             : undefined,
         resolveProvisoryComputeUnitLimit,
@@ -93,7 +94,7 @@ export async function createKitKoraClient(config: KoraKitClientConfig) {
 
     return createEmptyClient()
         .use(rpc(config.rpcUrl))
-        .use(koraPlugin({ endpoint: config.endpoint, apiKey: config.apiKey, hmacSecret: config.hmacSecret }))
+        .use(koraPlugin({ apiKey: config.apiKey, endpoint: config.endpoint, hmacSecret: config.hmacSecret }))
         .use(payer(payerSigner))
         .use(koraPaymentAddress(paymentAddr))
         .use(transactionPlannerPlugin(koraTransactionPlanner))

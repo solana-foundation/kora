@@ -10,70 +10,70 @@ import { Instruction, TransactionSigner } from '@solana/kit';
 export interface TransferTransactionRequest {
     /** Amount to transfer in the token's smallest unit (e.g., lamports for SOL) */
     amount: number;
-    /** Mint address of the token to transfer */
-    token: string;
-    /** Public key of the source wallet (not token account) */
-    source: string;
     /** Public key of the destination wallet (not token account) */
     destination: string;
     /** Optional signer address for the transaction */
     signer_key?: string;
+    /** Public key of the source wallet (not token account) */
+    source: string;
+    /** Mint address of the token to transfer */
+    token: string;
 }
 
 /**
  * Parameters for signing a transaction.
  */
 export interface SignTransactionRequest {
-    /** Base64-encoded transaction to sign */
-    transaction: string;
-    /** Optional signer address for the transaction */
-    signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional signer address for the transaction */
+    signer_key?: string;
+    /** Base64-encoded transaction to sign */
+    transaction: string;
 }
 
 /**
  * Parameters for signing and sending a transaction.
  */
 export interface SignAndSendTransactionRequest {
-    /** Base64-encoded transaction to sign and send */
-    transaction: string;
-    /** Optional signer address for the transaction */
-    signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional signer address for the transaction */
+    signer_key?: string;
+    /** Base64-encoded transaction to sign and send */
+    transaction: string;
 }
 
 /**
  * Parameters for estimating transaction fees.
  */
 export interface EstimateTransactionFeeRequest {
-    /** Base64-encoded transaction to estimate fees for */
-    transaction: string;
     /** Mint address of the token to calculate fees in */
     fee_token: string;
-    /** Optional signer address for the transaction */
-    signer_key?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
+    /** Optional signer address for the transaction */
+    signer_key?: string;
+    /** Base64-encoded transaction to estimate fees for */
+    transaction: string;
 }
 
 /**
  * Parameters for getting a payment instruction.
  */
 export interface GetPaymentInstructionRequest {
-    /** Base64-encoded transaction to estimate fees for */
-    transaction: string;
     /** Mint address of the token to calculate fees in */
     fee_token: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+    /** Optional signer address for the transaction */
+    signer_key?: string;
     /** The wallet owner (not token account) that will be making the token payment */
     source_wallet: string;
     /** The token program id to use for the payment (defaults to TOKEN_PROGRAM_ID) */
     token_program_id?: string;
-    /** Optional signer address for the transaction */
-    signer_key?: string;
-    /** Optional signer verification during transaction simulation (defaults to false) */
-    sig_verify?: boolean;
+    /** Base64-encoded transaction to estimate fees for */
+    transaction: string;
 }
 
 /**
@@ -84,16 +84,16 @@ export interface GetPaymentInstructionRequest {
  * Response from creating a transfer transaction.
  */
 export interface TransferTransactionResponse {
-    /** Base64-encoded signed transaction */
-    transaction: string;
-    /** Base64-encoded message */
-    message: string;
     /** Recent blockhash used in the transaction */
     blockhash: string;
-    /** Public key of the signer used to send the transaction */
-    signer_pubkey: string;
     /** Parsed instructions from the transaction message */
     instructions: Instruction[];
+    /** Base64-encoded message */
+    message: string;
+    /** Public key of the signer used to send the transaction */
+    signer_pubkey: string;
+    /** Base64-encoded signed transaction */
+    transaction: string;
 }
 
 /**
@@ -144,20 +144,20 @@ export interface EstimateTransactionFeeResponse {
      * Transaction fee in the requested token (in decimals value of the token, e.g. 10^6 for USDC)
      */
     fee_in_token: number;
-    /** Public key of the signer used to estimate the fee */
-    signer_pubkey: string;
     /** Public key of the payment destination */
     payment_address: string;
+    /** Public key of the signer used to estimate the fee */
+    signer_pubkey: string;
 }
 
 /**
  * Response containing the payer signer and payment destination.
  */
 export interface GetPayerSignerResponse {
-    /** Public key of the payer signer */
-    signer_address: string;
     /** Public key of the payment destination */
     payment_address: string;
+    /** Public key of the payer signer */
+    signer_address: string;
 }
 
 /**
@@ -166,18 +166,18 @@ export interface GetPayerSignerResponse {
 export interface GetPaymentInstructionResponse {
     /** Base64-encoded original transaction */
     original_transaction: string;
-    /** Base64-encoded payment instruction */
-    payment_instruction: Instruction;
-    /** Payment amount in the requested token */
-    payment_amount: number;
-    /** Mint address of the token used for payment */
-    payment_token: string;
     /** Public key of the payment destination */
     payment_address: string;
-    /** Public key of the payer signer */
-    signer_address: string;
+    /** Payment amount in the requested token */
+    payment_amount: number;
+    /** Base64-encoded payment instruction */
+    payment_instruction: Instruction;
+    /** Mint address of the token used for payment */
+    payment_token: string;
     /** NoopSigner for the source wallet authority — reuse this in your transaction to avoid duplicate signer conflicts */
     signer: TransactionSigner;
+    /** Public key of the payer signer */
+    signer_address: string;
 }
 
 /**
@@ -190,24 +190,24 @@ export type PriceSource = 'Jupiter' | 'Mock';
  * Validation configuration for the Kora server.
  */
 export interface ValidationConfig {
-    /** Maximum allowed transaction value in lamports */
-    max_allowed_lamports: number;
-    /** Maximum number of signatures allowed per transaction */
-    max_signatures: number;
-    /** Price oracle source for token conversions */
-    price_source: PriceSource;
     /** List of allowed Solana program IDs */
     allowed_programs: string[];
-    /** List of allowed token mint addresses for fee payment */
-    allowed_tokens: string[];
     /** List of SPL tokens accepted for paid transactions */
     allowed_spl_paid_tokens: string[];
+    /** List of allowed token mint addresses for fee payment */
+    allowed_tokens: string[];
     /** List of blocked account addresses */
     disallowed_accounts: string[];
     /** Policy controlling fee payer permissions */
     fee_payer_policy: FeePayerPolicy;
+    /** Maximum allowed transaction value in lamports */
+    max_allowed_lamports: number;
+    /** Maximum number of signatures allowed per transaction */
+    max_signatures: number;
     /** Pricing model configuration */
     price: PriceConfig;
+    /** Price oracle source for token conversions */
+    price_source: PriceSource;
     /** Token2022 configuration */
     token2022: Token2022Config;
 }
@@ -216,10 +216,10 @@ export interface ValidationConfig {
  * Blocked extensions for Token2022.
  */
 export interface Token2022Config {
-    /** List of blocked mint extensions */
-    blocked_mint_extensions: string[];
     /** List of blocked account extensions */
     blocked_account_extensions: string[];
+    /** List of blocked mint extensions */
+    blocked_mint_extensions: string[];
 }
 
 /**
@@ -230,8 +230,8 @@ export interface Token2022Config {
  * - `free`: No additional fees charged
  */
 export type PriceModel =
-    | { type: 'margin'; margin: number }
-    | { type: 'fixed'; amount: number; token: string }
+    | { amount: number; token: string; type: 'fixed' }
+    | { margin: number; type: 'margin' }
     | { type: 'free' };
 
 export type PriceConfig = PriceModel;
@@ -240,46 +240,46 @@ export type PriceConfig = PriceModel;
  * Enabled status for methods for the Kora server.
  */
 export interface EnabledMethods {
-    /** Whether the liveness method is enabled */
-    liveness: boolean;
     /** Whether the estimate_transaction_fee method is enabled */
     estimate_transaction_fee: boolean;
-    /** Whether the get_supported_tokens method is enabled */
-    get_supported_tokens: boolean;
-    /** Whether the sign_transaction method is enabled */
-    sign_transaction: boolean;
-    /** Whether the sign_and_send_transaction method is enabled */
-    sign_and_send_transaction: boolean;
-    /** Whether the transfer_transaction method is enabled */
-    transfer_transaction: boolean;
     /** Whether the get_blockhash method is enabled */
     get_blockhash: boolean;
     /** Whether the get_config method is enabled */
     get_config: boolean;
+    /** Whether the get_supported_tokens method is enabled */
+    get_supported_tokens: boolean;
+    /** Whether the liveness method is enabled */
+    liveness: boolean;
+    /** Whether the sign_and_send_transaction method is enabled */
+    sign_and_send_transaction: boolean;
+    /** Whether the sign_transaction method is enabled */
+    sign_transaction: boolean;
+    /** Whether the transfer_transaction method is enabled */
+    transfer_transaction: boolean;
 }
 
 /**
  * Kora server configuration.
  */
 export interface Config {
+    /** Enabled methods */
+    enabled_methods: EnabledMethods;
     /** Array of public keys of the fee payer accounts (signer pool) */
     fee_payers: string[];
     /** Validation rules and constraints */
     validation_config: ValidationConfig;
-    /** Enabled methods */
-    enabled_methods: EnabledMethods;
 }
 
 /**
  * Nonce instruction policy
  */
 export interface NonceInstructionPolicy {
-    /** Allow fee payer to initialize nonce accounts */
-    allow_initialize: boolean;
     /** Allow fee payer to advance nonce accounts */
     allow_advance: boolean;
     /** Allow fee payer to authorize nonce accounts */
     allow_authorize: boolean;
+    /** Allow fee payer to initialize nonce accounts */
+    allow_initialize: boolean;
     /** Allow fee payer to withdraw from nonce accounts */
     allow_withdraw: boolean;
 }
@@ -288,14 +288,14 @@ export interface NonceInstructionPolicy {
  * System instruction policy
  */
 export interface SystemInstructionPolicy {
-    /** Allow fee payer to be the sender in System Transfer/TransferWithSeed */
-    allow_transfer: boolean;
+    /** Allow fee payer to be the account in System Allocate/AllocateWithSeed */
+    allow_allocate: boolean;
     /** Allow fee payer to be the authority in System Assign/AssignWithSeed */
     allow_assign: boolean;
     /** Allow fee payer to be the payer in System CreateAccount/CreateAccountWithSeed */
     allow_create_account: boolean;
-    /** Allow fee payer to be the account in System Allocate/AllocateWithSeed */
-    allow_allocate: boolean;
+    /** Allow fee payer to be the sender in System Transfer/TransferWithSeed */
+    allow_transfer: boolean;
     /** Nested policy for nonce account operations */
     nonce: NonceInstructionPolicy;
 }
@@ -304,58 +304,58 @@ export interface SystemInstructionPolicy {
  * SPL Token instruction policy
  */
 export interface SplTokenInstructionPolicy {
-    /** Allow fee payer to be source in SPL token transfers */
-    allow_transfer: boolean;
+    /** Allow fee payer to approve SPL token delegates */
+    allow_approve: boolean;
     /** Allow fee payer to burn SPL tokens */
     allow_burn: boolean;
     /** Allow fee payer to close SPL token accounts */
     allow_close_account: boolean;
-    /** Allow fee payer to approve SPL token delegates */
-    allow_approve: boolean;
+    /** Allow fee payer to freeze SPL token accounts */
+    allow_freeze_account: boolean;
+    /** Allow fee payer to mint SPL tokens */
+    allow_mint_to: boolean;
     /** Allow fee payer to revoke SPL token delegates */
     allow_revoke: boolean;
     /** Allow fee payer to set authority on SPL token accounts */
     allow_set_authority: boolean;
-    /** Allow fee payer to mint SPL tokens */
-    allow_mint_to: boolean;
-    /** Allow fee payer to freeze SPL token accounts */
-    allow_freeze_account: boolean;
     /** Allow fee payer to thaw SPL token accounts */
     allow_thaw_account: boolean;
+    /** Allow fee payer to be source in SPL token transfers */
+    allow_transfer: boolean;
 }
 
 /**
  * Token2022 instruction policy
  */
 export interface Token2022InstructionPolicy {
-    /** Allow fee payer to be source in Token2022 transfers */
-    allow_transfer: boolean;
+    /** Allow fee payer to approve Token2022 delegates */
+    allow_approve: boolean;
     /** Allow fee payer to burn Token2022 tokens */
     allow_burn: boolean;
     /** Allow fee payer to close Token2022 accounts */
     allow_close_account: boolean;
-    /** Allow fee payer to approve Token2022 delegates */
-    allow_approve: boolean;
+    /** Allow fee payer to freeze Token2022 accounts */
+    allow_freeze_account: boolean;
+    /** Allow fee payer to mint Token2022 tokens */
+    allow_mint_to: boolean;
     /** Allow fee payer to revoke Token2022 delegates */
     allow_revoke: boolean;
     /** Allow fee payer to set authority on Token2022 accounts */
     allow_set_authority: boolean;
-    /** Allow fee payer to mint Token2022 tokens */
-    allow_mint_to: boolean;
-    /** Allow fee payer to freeze Token2022 accounts */
-    allow_freeze_account: boolean;
     /** Allow fee payer to thaw Token2022 accounts */
     allow_thaw_account: boolean;
+    /** Allow fee payer to be source in Token2022 transfers */
+    allow_transfer: boolean;
 }
 
 /**
  * Policy controlling what actions the fee payer can perform.
  */
 export interface FeePayerPolicy {
-    /** System program instruction policies */
-    system: SystemInstructionPolicy;
     /** SPL Token program instruction policies */
     spl_token: SplTokenInstructionPolicy;
+    /** System program instruction policies */
+    system: SystemInstructionPolicy;
     /** Token2022 program instruction policies */
     token_2022: Token2022InstructionPolicy;
 }
@@ -379,10 +379,10 @@ export interface RpcError {
  * @typeParam T - Type of the params object
  */
 export interface RpcRequest<T> {
-    /** JSON-RPC version */
-    jsonrpc: '2.0';
     /** Request ID */
     id: number;
+    /** JSON-RPC version */
+    jsonrpc: '2.0';
     /** RPC method name */
     method: string;
     /** Method parameters */
@@ -394,22 +394,22 @@ export interface RpcRequest<T> {
 export interface AuthenticationHeaders {
     /** API key for simple authentication */
     'x-api-key'?: string;
-    /** Unix timestamp for HMAC authentication */
-    'x-timestamp'?: string;
     /** HMAC SHA256 signature of timestamp + body */
     'x-hmac-signature'?: string;
+    /** Unix timestamp for HMAC authentication */
+    'x-timestamp'?: string;
 }
 
 /**
  * Options for initializing a Kora client.
  */
 export interface KoraClientOptions {
-    /** URL of the Kora RPC server */
-    rpcUrl: string;
     /** Optional API key for authentication */
     apiKey?: string;
     /** Optional HMAC secret for signature-based authentication */
     hmacSecret?: string;
+    /** URL of the Kora RPC server */
+    rpcUrl: string;
 }
 
 /**
@@ -418,29 +418,29 @@ export interface KoraClientOptions {
 
 import type {
     Address,
+    Base64EncodedWireTransaction,
     Blockhash,
     Instruction as KitInstruction,
-    Base64EncodedWireTransaction,
     MicroLamports,
     Signature,
 } from '@solana/kit';
 
 /** Configuration options for the Kora Kit plugin */
 export interface KoraPluginConfig {
-    /** Kora RPC endpoint URL */
-    endpoint: string;
     /** Optional API key for authentication */
     apiKey?: string;
+    /** Kora RPC endpoint URL */
+    endpoint: string;
     /** Optional HMAC secret for signature-based authentication */
     hmacSecret?: string;
 }
 
 /** Plugin response for getPayerSigner with Kit Address types */
 export interface KitPayerSignerResponse {
-    /** Public key of the payer signer */
-    signer_address: Address;
     /** Public key of the payment destination */
     payment_address: Address;
+    /** Public key of the payer signer */
+    signer_address: Address;
 }
 
 /** Plugin response for getBlockhash with Kit Blockhash type */
@@ -461,10 +461,10 @@ export interface KitEstimateFeeResponse {
     fee_in_lamports: number;
     /** Transaction fee in the requested token */
     fee_in_token: number;
-    /** Public key of the signer used to estimate the fee */
-    signer_pubkey: Address;
     /** Public key of the payment destination */
     payment_address: Address;
+    /** Public key of the signer used to estimate the fee */
+    signer_pubkey: Address;
 }
 
 /** Plugin response for signTransaction with Kit types */
@@ -487,64 +487,64 @@ export interface KitSignAndSendTransactionResponse {
 
 /** Plugin response for transferTransaction with Kit types */
 export interface KitTransferTransactionResponse {
-    /** Base64-encoded signed transaction */
-    transaction: Base64EncodedWireTransaction;
-    /** Base64-encoded message */
-    message: string;
     /** Recent blockhash used in the transaction */
     blockhash: Blockhash;
-    /** Public key of the signer used to send the transaction */
-    signer_pubkey: Address;
     /** Parsed instructions from the transaction message */
     instructions: KitInstruction[];
+    /** Base64-encoded message */
+    message: string;
+    /** Public key of the signer used to send the transaction */
+    signer_pubkey: Address;
+    /** Base64-encoded signed transaction */
+    transaction: Base64EncodedWireTransaction;
 }
 
 /** Plugin response for getPaymentInstruction with Kit types */
 export interface KitPaymentInstructionResponse {
     /** Base64-encoded original transaction */
     original_transaction: Base64EncodedWireTransaction;
-    /** Payment instruction */
-    payment_instruction: KitInstruction;
-    /** Payment amount in the requested token */
-    payment_amount: number;
-    /** Mint address of the token used for payment */
-    payment_token: Address;
     /** Public key of the payment destination */
     payment_address: Address;
+    /** Payment amount in the requested token */
+    payment_amount: number;
+    /** Payment instruction */
+    payment_instruction: KitInstruction;
+    /** Mint address of the token used for payment */
+    payment_token: Address;
     /** Public key of the payer signer */
     signer_address: Address;
 }
 
 /** Plugin response for getConfig with Kit Address types */
 export interface KitConfigResponse {
+    /** Enabled methods */
+    enabled_methods: EnabledMethods;
     /** Array of public keys of the fee payer accounts (signer pool) */
     fee_payers: Address[];
     /** Validation rules and constraints */
     validation_config: KitValidationConfig;
-    /** Enabled methods */
-    enabled_methods: EnabledMethods;
 }
 
 /** Plugin validation config with Kit Address types */
 export interface KitValidationConfig {
-    /** Maximum allowed transaction value in lamports */
-    max_allowed_lamports: number;
-    /** Maximum number of signatures allowed per transaction */
-    max_signatures: number;
-    /** Price oracle source for token conversions */
-    price_source: PriceSource;
     /** List of allowed Solana program IDs */
     allowed_programs: Address[];
-    /** List of allowed token mint addresses for fee payment */
-    allowed_tokens: Address[];
     /** List of SPL tokens accepted for paid transactions */
     allowed_spl_paid_tokens: Address[];
+    /** List of allowed token mint addresses for fee payment */
+    allowed_tokens: Address[];
     /** List of blocked account addresses */
     disallowed_accounts: Address[];
     /** Policy controlling fee payer permissions */
     fee_payer_policy: FeePayerPolicy;
+    /** Maximum allowed transaction value in lamports */
+    max_allowed_lamports: number;
+    /** Maximum number of signatures allowed per transaction */
+    max_signatures: number;
     /** Pricing model configuration */
     price: PriceConfig;
+    /** Price oracle source for token conversions */
+    price_source: PriceSource;
     /** Token2022 configuration */
     token2022: Token2022Config;
 }
@@ -563,22 +563,20 @@ export interface KitValidationConfig {
  * ```
  */
 export interface KoraKitClientConfig {
-    /** Kora RPC endpoint URL */
-    readonly endpoint: string;
-    /** SPL mint address for fee payment */
-    readonly feeToken: Address;
-    /** Wallet signer paying SPL fees (must be a real signer so the payment transfer is authorized) */
-    readonly feePayerWallet: TransactionSigner;
     /** Optional API key for authentication */
     readonly apiKey?: string;
-    /** Optional HMAC secret for signature-based authentication */
-    readonly hmacSecret?: string;
     /** Optional compute unit limit (uses provisory/simulation if not set) */
     readonly computeUnitLimit?: number;
     /** Optional priority fee in micro-lamports */
     readonly computeUnitPrice?: MicroLamports;
-    /** Token program ID for fee payment (defaults to TOKEN_PROGRAM_ADDRESS; use TOKEN_2022_PROGRAM_ADDRESS for Token-2022) */
-    readonly tokenProgramId?: Address;
+    /** Kora RPC endpoint URL */
+    readonly endpoint: string;
+    /** Wallet signer paying SPL fees (must be a real signer so the payment transfer is authorized) */
+    readonly feePayerWallet: TransactionSigner;
+    /** SPL mint address for fee payment */
+    readonly feeToken: Address;
+    /** Optional HMAC secret for signature-based authentication */
+    readonly hmacSecret?: string;
     /**
      * Solana RPC URL used for compute unit estimation and program plugin compatibility.
      * The client simulates transactions against this RPC node to determine optimal
@@ -587,4 +585,6 @@ export interface KoraKitClientConfig {
      * This must be a direct Solana RPC URL (not the Kora endpoint).
      */
     readonly rpcUrl: string;
+    /** Token program ID for fee payment (defaults to TOKEN_PROGRAM_ADDRESS; use TOKEN_2022_PROGRAM_ADDRESS for Token-2022) */
+    readonly tokenProgramId?: Address;
 }

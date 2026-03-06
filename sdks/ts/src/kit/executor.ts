@@ -1,34 +1,37 @@
 import {
     type Address,
+    appendTransactionMessageInstructions,
     type Base64EncodedWireTransaction,
-    type Instruction,
-    type TransactionSigner,
     blockhash,
     createTransactionMessage,
     createTransactionPlanExecutor,
-    setTransactionMessageFeePayerSigner,
-    setTransactionMessageLifetimeUsingBlockhash,
-    appendTransactionMessageInstructions,
-    partiallySignTransactionMessageWithSigners,
     getBase64EncodedWireTransaction,
     getBase64Encoder,
     getSignatureFromTransaction,
     getTransactionDecoder,
-    signature,
+    type Instruction,
+    partiallySignTransactionMessageWithSigners,
     pipe,
+    setTransactionMessageFeePayerSigner,
+    setTransactionMessageLifetimeUsingBlockhash,
+    signature,
+    type TransactionMessage,
+    type TransactionMessageWithFeePayer,
+    type TransactionSigner,
 } from '@solana/kit';
 
 import { KoraClient } from '../client.js';
 import type { KoraKitClientConfig } from '../types/index.js';
-import { updatePaymentInstructionAmount, removePaymentInstruction } from './payment.js';
+import { removePaymentInstruction, updatePaymentInstructionAmount } from './payment.js';
 
 export function createKoraTransactionPlanExecutor(
     koraClient: KoraClient,
     config: KoraKitClientConfig,
     payerSigner: TransactionSigner,
-    payment: { sourceTokenAccount: Address; destinationTokenAccount: Address } | undefined,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolveProvisoryComputeUnitLimit: ((transactionMessage: any) => Promise<any>) | undefined,
+    payment: { destinationTokenAccount: Address; sourceTokenAccount: Address } | undefined,
+    resolveProvisoryComputeUnitLimit:
+        | (<T extends TransactionMessage & TransactionMessageWithFeePayer>(transactionMessage: T) => Promise<T>)
+        | undefined,
 ) {
     return createTransactionPlanExecutor({
         async executeTransactionMessage(_context, transactionMessage) {
@@ -55,8 +58,8 @@ export function createKoraTransactionPlanExecutor(
             if (payment) {
                 const { sourceTokenAccount, destinationTokenAccount } = payment;
                 const { fee_in_token } = await koraClient.estimateTransactionFee({
-                    transaction: prePaymentTx,
                     fee_token: config.feeToken,
+                    transaction: prePaymentTx,
                 });
 
                 if (fee_in_token < 0) {
@@ -65,7 +68,10 @@ export function createKoraTransactionPlanExecutor(
                     );
                 }
 
-                const currentIxs = 'instructions' in msgForEstimation ? msgForEstimation.instructions : undefined;
+                const currentIxs =
+                    'instructions' in msgForEstimation
+                        ? (msgForEstimation as { instructions: readonly Instruction[] }).instructions
+                        : undefined;
 
                 if (!currentIxs) {
                     throw new Error(
