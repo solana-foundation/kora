@@ -130,4 +130,15 @@ mod tests {
         let result = oracle.get_token_price("test").await;
         assert!(result.is_ok());
     }
+    #[tokio::test]
+    async fn test_price_oracle_empty_mints() {
+        let mut mock_oracle = MockPriceOracle::new();
+        // Expect zero calls — empty mints should short-circuit
+        mock_oracle.expect_get_prices().times(0);
+
+        let oracle = RetryingPriceOracle::new(3, Duration::from_millis(10), Arc::new(mock_oracle));
+        let result = oracle.get_token_prices(&[]).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
 }
