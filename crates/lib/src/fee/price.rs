@@ -41,7 +41,9 @@ impl PriceConfig {
                 &Pubkey::from_str(token).map_err(|e| {
                     log::error!("Invalid Pubkey for price {e}");
 
-                    KoraError::ConfigError
+                    KoraError::ConfigError(
+                        "Fee config is required for this price model".to_string(),
+                    )
                 })?,
                 rpc_client,
                 config,
@@ -49,7 +51,7 @@ impl PriceConfig {
             .await;
         }
 
-        Err(KoraError::ConfigError)
+        Err(KoraError::ConfigError("Invalid price model for margin pricing".to_string()))
     }
 
     pub async fn get_required_lamports_with_margin(
@@ -93,7 +95,7 @@ impl PriceConfig {
             });
         }
 
-        Err(KoraError::ConfigError)
+        Err(KoraError::ConfigError("Invalid price model for fixed pricing".to_string()))
     }
 }
 

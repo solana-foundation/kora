@@ -60,8 +60,8 @@ pub enum KoraError {
     #[error("Usage limit exceeded: {0}")]
     UsageLimitExceeded(String),
 
-    #[error("Invalid configuration for Kora")]
-    ConfigError,
+    #[error("Invalid configuration: {0}")]
+    ConfigError(String),
 
     #[error("Jito error: {0}")]
     JitoError(String),

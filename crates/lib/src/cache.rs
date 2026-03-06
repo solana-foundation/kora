@@ -41,7 +41,9 @@ impl CacheUtil {
 
         #[allow(clippy::needless_borrow)]
         let pool = if CacheUtil::is_cache_enabled(&config) {
-            let redis_url = config.kora.cache.url.as_ref().ok_or(KoraError::ConfigError)?;
+            let redis_url = config.kora.cache.url.as_ref().ok_or(KoraError::ConfigError(
+                "Redis URL is required when cache is enabled. Set redis_url in config".to_string(),
+            ))?;
 
             let cfg = deadpool_redis::Config::from_url(redis_url);
             let pool = cfg.create_pool(Some(Runtime::Tokio1)).map_err(|e| {
