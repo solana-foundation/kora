@@ -2003,4 +2003,1086 @@ mod tests {
             .await
             .is_ok());
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_revoke() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+
+        // Test with allow_revoke = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_revoke = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let revoke_ix = spl_token_interface::instruction::revoke(
+            &spl_token_interface::id(),
+            &fee_payer_token_account,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[revoke_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_revoke = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_revoke = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let revoke_ix = spl_token_interface::instruction::revoke(
+            &spl_token_interface::id(),
+            &fee_payer_token_account,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[revoke_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for revoke policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_revoke() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+
+        // Test with allow_revoke = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_revoke = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let revoke_ix = spl_token_2022_interface::instruction::revoke(
+            &spl_token_2022_interface::id(),
+            &fee_payer_token_account,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[revoke_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_revoke = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_revoke = false;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let revoke_ix = spl_token_2022_interface::instruction::revoke(
+            &spl_token_2022_interface::id(),
+            &fee_payer_token_account,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[revoke_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_revoke policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_set_authority() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let new_authority = Pubkey::new_unique();
+
+        // Test with allow_set_authority = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_set_authority = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let set_authority_ix = spl_token_interface::instruction::set_authority(
+            &spl_token_interface::id(),
+            &fee_payer_token_account,
+            Some(&new_authority),
+            spl_token_interface::instruction::AuthorityType::AccountOwner,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[set_authority_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_set_authority = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_set_authority = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let set_authority_ix = spl_token_interface::instruction::set_authority(
+            &spl_token_interface::id(),
+            &fee_payer_token_account,
+            Some(&new_authority),
+            spl_token_interface::instruction::AuthorityType::AccountOwner,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[set_authority_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for set_authority policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_set_authority() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let new_authority = Pubkey::new_unique();
+
+        // Test with allow_set_authority = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_set_authority = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let set_authority_ix = spl_token_2022_interface::instruction::set_authority(
+            &spl_token_2022_interface::id(),
+            &fee_payer_token_account,
+            Some(&new_authority),
+            spl_token_2022_interface::instruction::AuthorityType::AccountOwner,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[set_authority_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_set_authority = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_set_authority = false;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let set_authority_ix = spl_token_2022_interface::instruction::set_authority(
+            &spl_token_2022_interface::id(),
+            &fee_payer_token_account,
+            Some(&new_authority),
+            spl_token_2022_interface::instruction::AuthorityType::AccountOwner,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[set_authority_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_set_authority policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_mint_to() {
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_token_account = Pubkey::new_unique();
+
+        // Test with allow_mint_to = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_mint_to = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let mint_to_ix = spl_token_interface::instruction::mint_to(
+            &spl_token_interface::id(),
+            &mint,
+            &destination_token_account,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_mint_to = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_mint_to = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let mint_to_ix = spl_token_interface::instruction::mint_to(
+            &spl_token_interface::id(),
+            &mint,
+            &destination_token_account,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for mint_to policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_mint_to() {
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_token_account = Pubkey::new_unique();
+
+        // Test with allow_mint_to = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_mint_to = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let mint_to_ix = spl_token_2022_interface::instruction::mint_to(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &destination_token_account,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_mint_to = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_mint_to = false;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let mint_to_ix = spl_token_2022_interface::instruction::mint_to(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &destination_token_account,
+            &fee_payer,
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[mint_to_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_mint_to policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_initialize_mint() {
+        let fee_payer = Pubkey::new_unique();
+        let mint_account = Pubkey::new_unique();
+
+        // Test with allow_initialize_mint = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_initialize_mint = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // fee_payer is the mint_authority (encoded in instruction data)
+        let init_mint_ix = spl_token_interface::instruction::initialize_mint(
+            &spl_token_interface::id(),
+            &mint_account,
+            &fee_payer,
+            None,
+            6,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_mint_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_initialize_mint = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_initialize_mint = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_mint_ix = spl_token_interface::instruction::initialize_mint(
+            &spl_token_interface::id(),
+            &mint_account,
+            &fee_payer,
+            None,
+            6,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_mint_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for initialize_mint policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_initialize_mint() {
+        let fee_payer = Pubkey::new_unique();
+        let mint_account = Pubkey::new_unique();
+
+        // Test with allow_initialize_mint = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_initialize_mint = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_mint_ix = spl_token_2022_interface::instruction::initialize_mint(
+            &spl_token_2022_interface::id(),
+            &mint_account,
+            &fee_payer,
+            None,
+            6,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_mint_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_initialize_mint = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_initialize_mint = false;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_mint_ix = spl_token_2022_interface::instruction::initialize_mint(
+            &spl_token_2022_interface::id(),
+            &mint_account,
+            &fee_payer,
+            None,
+            6,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_mint_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_initialize_mint policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_initialize_account() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Test with allow_initialize_account = true
+        // initialize_account puts owner at account index 2 (token_account, mint, owner, rent_sysvar)
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_initialize_account = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_account_ix = spl_token_interface::instruction::initialize_account(
+            &spl_token_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_account_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_initialize_account = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_initialize_account = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_account_ix = spl_token_interface::instruction::initialize_account(
+            &spl_token_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_account_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for initialize_account policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_initialize_account() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Test with allow_initialize_account = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_initialize_account = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_account_ix = spl_token_2022_interface::instruction::initialize_account(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_account_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_initialize_account = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_initialize_account = false;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_account_ix = spl_token_2022_interface::instruction::initialize_account(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_account_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_initialize_account policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_initialize_multisig() {
+        let fee_payer = Pubkey::new_unique();
+        let multisig_account = Pubkey::new_unique();
+        let other_signer = Pubkey::new_unique();
+
+        // Test with allow_initialize_multisig = true
+        // fee_payer is one of the signers (parsed from accounts[2..])
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_initialize_multisig = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_multisig_ix = spl_token_interface::instruction::initialize_multisig(
+            &spl_token_interface::id(),
+            &multisig_account,
+            &[&fee_payer, &other_signer],
+            2,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_initialize_multisig = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_initialize_multisig = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_multisig_ix = spl_token_interface::instruction::initialize_multisig(
+            &spl_token_interface::id(),
+            &multisig_account,
+            &[&fee_payer, &other_signer],
+            2,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for initialize_multisig policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_initialize_multisig() {
+        let fee_payer = Pubkey::new_unique();
+        let multisig_account = Pubkey::new_unique();
+        let other_signer = Pubkey::new_unique();
+
+        // Test with allow_initialize_multisig = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_initialize_multisig = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_multisig_ix = spl_token_2022_interface::instruction::initialize_multisig(
+            &spl_token_2022_interface::id(),
+            &multisig_account,
+            &[&fee_payer, &other_signer],
+            2,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_initialize_multisig = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_initialize_multisig = false;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let init_multisig_ix = spl_token_2022_interface::instruction::initialize_multisig(
+            &spl_token_2022_interface::id(),
+            &multisig_account,
+            &[&fee_payer, &other_signer],
+            2,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[init_multisig_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_initialize_multisig policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_freeze_account() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Test with allow_freeze_account = true
+        // freeze_account(program_id, account, mint, freeze_authority, signers) — freeze_authority at index 2
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_freeze_account = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let freeze_ix = spl_token_interface::instruction::freeze_account(
+            &spl_token_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_freeze_account = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_freeze_account = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let freeze_ix = spl_token_interface::instruction::freeze_account(
+            &spl_token_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for freeze_account policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_freeze_account() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Test with allow_freeze_account = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_freeze_account = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let freeze_ix = spl_token_2022_interface::instruction::freeze_account(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_freeze_account = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_freeze_account = false;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let freeze_ix = spl_token_2022_interface::instruction::freeze_account(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_freeze_account policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_thaw_account() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Test with allow_thaw_account = true
+        // thaw_account(program_id, account, mint, freeze_authority, signers) — freeze_authority at index 2
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_thaw_account = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let thaw_ix = spl_token_interface::instruction::thaw_account(
+            &spl_token_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[thaw_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_thaw_account = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_thaw_account = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let thaw_ix = spl_token_interface::instruction::thaw_account(
+            &spl_token_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[thaw_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for thaw_account policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_thaw_account() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Test with allow_thaw_account = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_thaw_account = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let thaw_ix = spl_token_2022_interface::instruction::thaw_account(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[thaw_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_thaw_account = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_thaw_account = false;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let thaw_ix = spl_token_2022_interface::instruction::thaw_account(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            &mint,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[thaw_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022_thaw_account policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_mixed_instructions() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let revoke_ix = spl_token_interface::instruction::revoke(
+            &spl_token_interface::id(),
+            &fee_payer_token_account,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+
+        let burn_ix = spl_token_interface::instruction::burn(
+            &spl_token_interface::id(),
+            &fee_payer_token_account,
+            &mint,
+            &fee_payer,
+            &[],
+            500,
+        )
+        .unwrap();
+
+        // --- Test 1: revoke=true, burn=true → is_ok() ---
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_revoke = true;
+        policy.spl_token.allow_burn = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[revoke_ix.clone(), burn_ix.clone()],
+            Some(&fee_payer),
+        ));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(
+            validator.validate_transaction(config, &mut transaction, &rpc_client).await.is_ok(),
+            "Both policies true should pass"
+        );
+
+        // --- Test 2: revoke=true, burn=false → is_err() ---
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_revoke = true;
+        policy.spl_token.allow_burn = false;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[revoke_ix.clone(), burn_ix.clone()],
+            Some(&fee_payer),
+        ));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for burn policy");
+        }
+
+        // --- Test 3: revoke=false, burn=true → is_err() ---
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_revoke = false;
+        policy.spl_token.allow_burn = true;
+        setup_spl_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[revoke_ix.clone(), burn_ix.clone()],
+            Some(&fee_payer),
+        ));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Fee payer cannot be used for"));
+        } else {
+            panic!("Expected InvalidTransaction error for revoke policy");
+        }
+    }
 }
