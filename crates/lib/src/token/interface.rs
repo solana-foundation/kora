@@ -76,10 +76,4 @@ pub trait TokenInterface: Send + Sync {
         mint_data: &[u8],
     ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>>;
 
-    async fn get_mint(
-        &self,
-        rpc_client: &solana_client::nonblocking::rpc_client::RpcClient,
-        mint: &Pubkey,
-        account_data: Option<Vec<u8>>,
-    ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>>;
 }

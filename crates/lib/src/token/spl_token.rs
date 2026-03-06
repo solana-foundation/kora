@@ -174,20 +174,4 @@ impl TokenInterface for TokenProgram {
             mint: mint_account,
         }))
     }
-
-    async fn get_mint(
-        &self,
-        rpc_client: &solana_client::nonblocking::rpc_client::RpcClient,
-        mint: &Pubkey,
-        account_data: Option<Vec<u8>>,
-    ) -> Result<Box<dyn TokenMint + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
-        let data = match account_data {
-            Some(d) => d,
-            None => {
-                let account = rpc_client.get_account(mint).await?;
-                account.data
-            }
-        };
-        self.unpack_mint(mint, &data)
-    }
 }
