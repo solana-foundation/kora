@@ -24,29 +24,29 @@ export async function buildPlaceholderPaymentInstruction(
     paymentAddress: Address,
     feeToken: Address,
     tokenProgramId?: Address,
-): Promise<{ instruction: Instruction; sourceTokenAccount: Address; destinationTokenAccount: Address }> {
+): Promise<{ destinationTokenAccount: Address; instruction: Instruction; sourceTokenAccount: Address }> {
     const tokenProgram = tokenProgramId ?? TOKEN_PROGRAM_ADDRESS;
 
     const [sourceTokenAccount] = await findAssociatedTokenPda({
+        mint: feeToken,
         owner: feePayerWallet.address,
         tokenProgram,
-        mint: feeToken,
     });
 
     const [destinationTokenAccount] = await findAssociatedTokenPda({
+        mint: feeToken,
         owner: paymentAddress,
         tokenProgram,
-        mint: feeToken,
     });
 
     const instruction = getTransferInstruction({
-        source: sourceTokenAccount,
-        destination: destinationTokenAccount,
-        authority: feePayerWallet,
         amount: 0,
+        authority: feePayerWallet,
+        destination: destinationTokenAccount,
+        source: sourceTokenAccount,
     });
 
-    return { instruction, sourceTokenAccount, destinationTokenAccount };
+    return { destinationTokenAccount, instruction, sourceTokenAccount };
 }
 
 function isPlaceholderPaymentInstruction(
@@ -77,7 +77,7 @@ export function updatePaymentInstructionAmount(
     feePayerWallet: TransactionSigner,
     sourceTokenAccount: Address,
     destinationTokenAccount: Address,
-    amount: number | bigint,
+    amount: bigint | number,
     tokenProgramId?: Address,
 ): Instruction[] {
     let replaced = false;
@@ -95,10 +95,10 @@ export function updatePaymentInstructionAmount(
         }
         replaced = true;
         return getTransferInstruction({
-            source: sourceTokenAccount,
-            destination: destinationTokenAccount,
-            authority: feePayerWallet,
             amount,
+            authority: feePayerWallet,
+            destination: destinationTokenAccount,
+            source: sourceTokenAccount,
         });
     });
 

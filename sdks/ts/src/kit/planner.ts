@@ -1,18 +1,18 @@
 import {
-    type Address,
-    type Instruction,
-    type TransactionSigner,
+    appendTransactionMessageInstructions,
     createTransactionMessage,
     createTransactionPlanner,
-    setTransactionMessageFeePayerSigner,
-    appendTransactionMessageInstructions,
+    type Instruction,
     pipe,
+    setTransactionMessageFeePayerSigner,
+    type TransactionSigner,
 } from '@solana/kit';
 import {
+    fillProvisorySetComputeUnitLimitInstruction,
     getSetComputeUnitLimitInstruction,
     getSetComputeUnitPriceInstruction,
-    fillProvisorySetComputeUnitLimitInstruction,
 } from '@solana-program/compute-budget';
+
 import type { KoraKitClientConfig } from '../types/index.js';
 
 export function buildComputeBudgetInstructions(config: KoraKitClientConfig): Instruction[] {
