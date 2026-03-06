@@ -2929,7 +2929,6 @@ mod tests {
         } else {
             panic!("Expected InvalidTransaction error for thaw_account policy");
         }
-        }
     }
 
     #[tokio::test]
