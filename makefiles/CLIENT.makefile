@@ -18,4 +18,8 @@ build-ts-sdk:
 
 # format ts sdk
 format-ts-sdk:
-	cd sdks/ts && pnpm format
+	cd sdks/ts && pnpm format 
+
+# lint ts sdk
+lint-ts-sdk:
+	cd sdks/ts && pnpm lint
