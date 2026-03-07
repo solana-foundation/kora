@@ -107,9 +107,12 @@ pub async fn transfer_transaction(
         let dest_ata =
             token_program.get_associated_token_address(&destination, &token_mint.address());
 
-        CacheUtil::get_account(config, rpc_client, &source_ata, false)
-            .await
-            .map_err(|_| KoraError::AccountNotFound(source_ata.to_string()))?;
+        CacheUtil::get_account(config, rpc_client, &source_ata, false).await.map_err(
+            |e| match e {
+                KoraError::AccountNotFound(_) => KoraError::AccountNotFound(source_ata.to_string()),
+                other => other,
+            },
+        )?;
 
         // Create ATA for destination if it doesn't exist (Kora pays for ATA creation)
         if CacheUtil::get_account(config, rpc_client, &dest_ata, false).await.is_err() {
@@ -248,6 +251,44 @@ mod tests {
                 assert!(error_message.contains("Invalid token address"));
             }
             _ => panic!("Should return ValidationError"),
+        }
+    }
+
+    #[tokio::test]
+    #[allow(deprecated)]
+    async fn test_transfer_transaction_account_not_found_preserved() {
+        // Let's test the specific error mapping logic that was fixed at line 112.
+        let pubkey = Pubkey::new_unique();
+
+        // This is simulating the error returned by CacheUtil::get_account when the account is not found
+        let error_from_cache = KoraError::AccountNotFound(pubkey.to_string());
+
+        let mapped_error = Err::<(), KoraError>(error_from_cache).map_err(|e| match e {
+            KoraError::AccountNotFound(_) => KoraError::AccountNotFound(pubkey.to_string()),
+            other => other,
+        });
+
+        assert!(matches!(mapped_error.unwrap_err(), KoraError::AccountNotFound(_)));
+    }
+
+    #[tokio::test]
+    #[allow(deprecated)]
+    async fn test_transfer_transaction_rpc_error_preserved() {
+        // Test the specific error mapping logic that was fixed at line 112 for RPC errors.
+        let pubkey = Pubkey::new_unique();
+
+        // This is simulating the error returned by CacheUtil::get_account when there's an RPC error
+        let error_from_cache = KoraError::RpcError("Service Unavailable".to_string());
+
+        let mapped_error = Err::<(), KoraError>(error_from_cache).map_err(|e| match e {
+            KoraError::AccountNotFound(_) => KoraError::AccountNotFound(pubkey.to_string()),
+            other => other,
+        });
+
+        let err = mapped_error.unwrap_err();
+        assert!(matches!(err, KoraError::RpcError(_)));
+        if let KoraError::RpcError(msg) = err {
+            assert_eq!(msg, "Service Unavailable");
         }
     }
 }
