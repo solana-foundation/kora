@@ -114,13 +114,17 @@ pub async fn transfer_transaction(
             },
         )?;
 
-        // Create ATA for destination if it doesn't exist (Kora pays for ATA creation)
-        if CacheUtil::get_account(config, rpc_client, &dest_ata, false).await.is_err() {
-            instructions.push(token_program.create_associated_token_account_instruction(
-                &signer_pubkey, // Kora pays for ATA creation
-                &destination,
-                &token_mint.address(),
-            ));
+        match CacheUtil::get_account(config, rpc_client, &dest_ata, false).await {
+            Ok(_) => {} // account exists, no ATA needed
+            Err(KoraError::AccountNotFound(_)) => {
+                // Create ATA for destination if it doesn't exist (Kora pays for ATA creation)
+                instructions.push(token_program.create_associated_token_account_instruction(
+                    &signer_pubkey, // Kora pays for ATA creation
+                    &destination,
+                    &token_mint.address(),
+                ));
+            }
+            Err(e) => return Err(e), // propagate real errors
         }
 
         instructions.push(
