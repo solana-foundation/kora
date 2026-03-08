@@ -568,15 +568,17 @@ weight = 2
                 name: "test_signer".to_string(),
                 weight: Some(1),
                 config: SignerTypeConfig::Memory {
-                    config: MemorySignerConfig { private_key_env: "TEST_PRIVATE_KEY".to_string() },
+                    config: MemorySignerConfig {
+                        private_key_env: "KORA_VALIDATE_SUCCESS_KEY_99".to_string(),
+                    },
                 },
             }],
         };
 
-        std::env::set_var("TEST_PRIVATE_KEY", "dummy");
+        std::env::set_var("KORA_VALIDATE_SUCCESS_KEY_99", "dummy");
         assert!(config.validate_signer_config().is_ok());
         assert!(config.validate_strategy_weights().is_ok());
-        std::env::remove_var("TEST_PRIVATE_KEY");
+        std::env::remove_var("KORA_VALIDATE_SUCCESS_KEY_99");
     }
 
     #[test]
@@ -627,18 +629,18 @@ strategy = "round_robin"
 [[signers]]
 name = "test_signer"
 type = "memory"
-private_key_env = "TEST_PRIVATE_KEY"
+private_key_env = "KORA_LOAD_CONFIG_KEY_99"
 "#;
 
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(toml_content.as_bytes()).unwrap();
         temp_file.flush().unwrap();
 
-        std::env::set_var("TEST_PRIVATE_KEY", "dummy");
+        std::env::set_var("KORA_LOAD_CONFIG_KEY_99", "dummy");
         let config = SignerPoolConfig::load_config(temp_file.path()).unwrap();
         assert_eq!(config.signers.len(), 1);
         assert_eq!(config.signers[0].name, "test_signer");
-        std::env::remove_var("TEST_PRIVATE_KEY");
+        std::env::remove_var("KORA_LOAD_CONFIG_KEY_99");
     }
 
     #[test]
