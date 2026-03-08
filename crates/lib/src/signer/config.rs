@@ -404,6 +404,7 @@ impl SignerConfig {
                 "Memory signer '{signer_name}' must specify non-empty private_key_env"
             )));
         }
+        get_env_var_for_signer(&config.private_key_env, signer_name)?;
         Ok(())
     }
 
@@ -425,6 +426,7 @@ impl SignerConfig {
                     "Turnkey signer '{signer_name}' must specify non-empty {field_name}"
                 )));
             }
+            get_env_var_for_signer(env_var, signer_name)?;
         }
         Ok(())
     }
@@ -445,6 +447,7 @@ impl SignerConfig {
                     "Privy signer '{signer_name}' must specify non-empty {field_name}"
                 )));
             }
+            get_env_var_for_signer(env_var, signer_name)?;
         }
         Ok(())
     }
@@ -466,6 +469,7 @@ impl SignerConfig {
                     "Vault signer '{signer_name}' must specify non-empty {field_name}"
                 )));
             }
+            get_env_var_for_signer(env_var, signer_name)?;
         }
         Ok(())
     }
@@ -483,6 +487,7 @@ impl SignerConfig {
                     "AWS KMS signer '{signer_name}' must specify non-empty {field_name}"
                 )));
             }
+            get_env_var_for_signer(env_var, signer_name)?;
         }
         Ok(())
     }
@@ -503,6 +508,7 @@ impl SignerConfig {
                     "Fireblocks signer '{signer_name}' must specify non-empty {field_name}"
                 )));
             }
+            get_env_var_for_signer(env_var, signer_name)?;
         }
         Ok(())
     }
@@ -567,8 +573,10 @@ weight = 2
             }],
         };
 
+        std::env::set_var("TEST_PRIVATE_KEY", "dummy");
         assert!(config.validate_signer_config().is_ok());
         assert!(config.validate_strategy_weights().is_ok());
+        std::env::remove_var("TEST_PRIVATE_KEY");
     }
 
     #[test]
@@ -626,8 +634,56 @@ private_key_env = "TEST_PRIVATE_KEY"
         temp_file.write_all(toml_content.as_bytes()).unwrap();
         temp_file.flush().unwrap();
 
+        std::env::set_var("TEST_PRIVATE_KEY", "dummy");
         let config = SignerPoolConfig::load_config(temp_file.path()).unwrap();
         assert_eq!(config.signers.len(), 1);
         assert_eq!(config.signers[0].name, "test_signer");
+        std::env::remove_var("TEST_PRIVATE_KEY");
+    }
+
+    #[test]
+    fn test_validate_memory_config_missing_env_var() {
+        let _m = crate::tests::config_mock::ConfigMockBuilder::new().build_and_setup();
+
+        let config = SignerPoolConfig {
+            signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
+            signers: vec![SignerConfig {
+                name: "test_signer_missing".to_string(),
+                weight: Some(1),
+                config: SignerTypeConfig::Memory {
+                    config: MemorySignerConfig {
+                        private_key_env: "KORA_TEST_MISSING_KEY_12345".to_string(),
+                    },
+                },
+            }],
+        };
+
+        std::env::remove_var("KORA_TEST_MISSING_KEY_12345");
+        let result = config.validate_signer_config();
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KoraError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_validate_memory_config_env_var_present() {
+        let _m = crate::tests::config_mock::ConfigMockBuilder::new().build_and_setup();
+
+        let config = SignerPoolConfig {
+            signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
+            signers: vec![SignerConfig {
+                name: "test_signer_present".to_string(),
+                weight: Some(1),
+                config: SignerTypeConfig::Memory {
+                    config: MemorySignerConfig {
+                        private_key_env: "KORA_TEST_PRESENT_KEY_12345".to_string(),
+                    },
+                },
+            }],
+        };
+
+        std::env::set_var("KORA_TEST_PRESENT_KEY_12345", "dummy_value");
+        let result = config.validate_signer_config();
+        assert!(result.is_ok());
+        std::env::remove_var("KORA_TEST_PRESENT_KEY_12345");
     }
 }
