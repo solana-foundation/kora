@@ -547,6 +547,14 @@ impl ConfigValidator {
             warnings.extend(usage_warnings);
         }
 
+        // Validate RPC cache config
+        if config.kora.cache.enabled {
+            let (cache_errors, cache_warnings) =
+                CacheValidator::validate_rpc_cache(&config.kora.cache).await;
+            errors.extend(cache_errors);
+            warnings.extend(cache_warnings);
+        }
+
         // RPC validation - only if not skipped
         if !skip_rpc_validation {
             // Validate allowed programs - should be executable
