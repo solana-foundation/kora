@@ -43,6 +43,11 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/solana-foundation/kora",
+    "directory": "sdks/ts"
+  },
   "peerDependencies": {
     "@solana-program/compute-budget": "^0.13.0",
     "@solana-program/token": "^0.12.0",
