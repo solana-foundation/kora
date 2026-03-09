@@ -76,6 +76,7 @@ mod tests {
 
     #[test]
     fn test_validate_with_result_warnings() {
+        let _m = crate::tests::config_mock::ConfigMockBuilder::new().build_and_setup();
         let config = SignerPoolConfig {
             signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
             signers: vec![SignerConfig {
@@ -87,10 +88,13 @@ mod tests {
             }],
         };
 
+        std::env::set_var("TEST_KEY", "dummy");
         let (warnings, errors) = SignerValidator::validate_with_result(&config);
+
         assert!(errors.is_empty());
         assert!(!warnings.is_empty());
         assert!(warnings[0].contains("weight will be ignored"));
+        std::env::remove_var("TEST_KEY");
     }
 
     #[test]
