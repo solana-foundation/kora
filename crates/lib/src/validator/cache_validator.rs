@@ -87,7 +87,8 @@ impl CacheValidator {
     /// Returns (errors, warnings) — errors block startup, warnings are informational.
     pub async fn validate_rpc_cache(cache_config: &CacheConfig) -> (Vec<String>, Vec<String>) {
         let mut errors = Vec::new();
-        let warnings = Vec::new();
+        // warnings reserved for future soft-fail scenarios (e.g. fallback mode)
+        let warnings: Vec<String> = Vec::new();
 
         if !cache_config.enabled {
             return (errors, warnings);
@@ -274,5 +275,22 @@ mod tests {
 
         assert!(!errors.is_empty());
         assert!(errors[0].contains("must start with redis://"));
+    }
+
+    // Cache enabled, valid URL format but Redis unreachable — should return connection error
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_rpc_cache_connection_failed() {
+        let config = ConfigMockBuilder::new().build();
+        let cache_config = CacheConfig {
+            enabled: true,
+            url: Some("redis://localhost:54321".to_string()),
+            ..config.kora.cache
+        };
+
+        let (errors, _) = CacheValidator::validate_rpc_cache(&cache_config).await;
+
+        assert!(!errors.is_empty());
+        assert!(errors[0].contains("RPC cache Redis connection failed"));
     }
 }
