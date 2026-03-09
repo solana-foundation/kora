@@ -47,9 +47,10 @@ impl CacheValidator {
             Some(cache_url) => {
                 // Validate cache_url format
                 if !cache_url.starts_with("redis://") && !cache_url.starts_with("rediss://") {
-                    errors.push(format!(
-                        "Invalid cache_url format: '{cache_url}' - must start with redis:// or rediss://"
-                    ));
+                    errors.push(
+                        "Invalid cache_url format: must start with redis:// or rediss://"
+                            .to_string(),
+                    );
                 }
             }
         }
@@ -100,11 +101,12 @@ impl CacheValidator {
             }
             Some(cache_url) => {
                 if !cache_url.starts_with("redis://") && !cache_url.starts_with("rediss://") {
-                    errors.push(format!(
-                        "Invalid cache_url format: '{cache_url}' - must start with redis:// or rediss://"
-                    ));
-                } else if let Err(e) = Self::test_redis_connection(cache_url).await {
-                    errors.push(format!("RPC cache Redis connection failed: {e}"));
+                    errors.push(
+                        "Invalid cache_url format: must start with redis:// or rediss://"
+                            .to_string(),
+                    );
+                } else if let Err(_e) = Self::test_redis_connection(cache_url).await {
+                    errors.push("RPC cache Redis connection failed".to_string());
                 }
             }
         }
