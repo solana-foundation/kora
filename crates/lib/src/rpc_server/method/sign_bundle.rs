@@ -26,7 +26,7 @@ pub struct SignBundleRequest {
     /// Optional signer key to ensure consistency across related RPC calls
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
-    /// Whether to verify signatures during simulation (defaults to true)
+    /// Whether to verify signatures during simulation (defaults to false)
     #[serde(default = "default_sig_verify")]
     pub sig_verify: bool,
     /// Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)
@@ -69,13 +69,14 @@ pub async fn sign_bundle(
     let fee_payer = signer.pubkey();
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
+    let sig_verify = request.sig_verify || config.kora.force_sig_verify;
     let processor = BundleProcessor::process_bundle(
         &transactions_to_process,
         fee_payer,
         &payment_destination,
         config,
         rpc_client,
-        request.sig_verify,
+        sig_verify,
         BundleProcessingMode::CheckUsage(request.user_id.as_deref()),
     )
     .await?;

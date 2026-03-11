@@ -93,6 +93,7 @@ impl ConfigMockBuilder {
                     price: PriceConfig::default(),
                     token_2022: Token2022Config::default(),
                     allow_durable_transactions: false,
+                    max_price_staleness_slots: 0,
                 },
                 kora: KoraConfig {
                     rate_limit: 100,
@@ -109,6 +110,7 @@ impl ConfigMockBuilder {
                     usage_limit: UsageLimitConfig::default(),
                     bundle: BundleConfig::default(),
                     lighthouse: LighthouseConfig::default(),
+                    force_sig_verify: false,
                 },
                 metrics: MetricsConfig::default(),
             },
@@ -278,6 +280,7 @@ impl ValidationConfigBuilder {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
         }
     }
@@ -350,6 +353,7 @@ impl KoraConfigBuilder {
                 usage_limit: UsageLimitConfig::default(),
                 bundle: BundleConfig::default(),
                 lighthouse: LighthouseConfig::default(),
+                force_sig_verify: false,
             },
         }
     }

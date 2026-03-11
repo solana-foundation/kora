@@ -56,6 +56,42 @@ impl TokenType {
 pub struct TokenUtil;
 
 impl TokenUtil {
+    async fn check_price_staleness(
+        rpc_client: &RpcClient,
+        config: &Config,
+        price: &TokenPrice,
+        label: &str,
+        current_slot: Option<u64>,
+    ) -> Result<(), KoraError> {
+        let max_staleness = config.validation.max_price_staleness_slots;
+        if max_staleness > 0 {
+            match price.block_id {
+                Some(block_id) => {
+                    let slot = match current_slot {
+                        Some(s) => s,
+                        None => rpc_client.get_slot().await.map_err(|e| {
+                            KoraError::RpcError(format!("Failed to get current slot: {e}"))
+                        })?,
+                    };
+                    let age = slot.saturating_sub(block_id);
+                    if age > max_staleness {
+                        return Err(KoraError::ValidationError(format!(
+                            "Oracle price data{} is stale: age {} slots exceeds max {} slots",
+                            label, age, max_staleness
+                        )));
+                    }
+                }
+                None => {
+                    return Err(KoraError::ValidationError(format!(
+                        "Oracle price data{} has no block_id; cannot verify staleness",
+                        label
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn check_valid_tokens(tokens: &[String]) -> Result<Vec<Pubkey>, KoraError> {
         tokens
             .iter()
@@ -138,6 +174,8 @@ impl TokenUtil {
             .get_token_price(&mint.to_string())
             .await
             .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {e}")))?;
+
+        Self::check_price_staleness(rpc_client, config, &token_price, "", None).await?;
 
         Ok((token_price, decimals))
     }
@@ -347,6 +385,28 @@ impl TokenUtil {
 
         let prices = oracle.get_token_prices(&mint_addresses).await?;
 
+        let current_slot = if config.validation.max_price_staleness_slots > 0 {
+            Some(
+                rpc_client
+                    .get_slot()
+                    .await
+                    .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?,
+            )
+        } else {
+            None
+        };
+
+        for (mint_addr, price) in &prices {
+            Self::check_price_staleness(
+                rpc_client,
+                config,
+                price,
+                &format!(" for {mint_addr}"),
+                current_slot,
+            )
+            .await?;
+        }
+
         let mut mint_decimals = std::collections::HashMap::new();
         for mint in mint_to_transfers.keys() {
             let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
@@ -549,6 +609,7 @@ impl TokenUtil {
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<Option<u64>, KoraError> {
         let mut total_lamport_value = 0u64;
+        let mut cached_epoch: Option<u64> = None;
 
         let all_instructions = bundle_instructions
             .map(|bi| bi.to_vec())
@@ -646,8 +707,40 @@ impl TokenUtil {
                     continue;
                 }
 
+                let effective_amount = if *is_2022 {
+                    let mint_account =
+                        CacheUtil::get_account(config, rpc_client, &token_mint, false).await?;
+                    let token_program = Token2022Program::new();
+                    let mint_state = token_program.unpack_mint(&token_mint, &mint_account.data)?;
+                    let mint_2022 =
+                        mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
+                            KoraError::SerializationError(
+                                "Failed to downcast mint state for transfer fee check".to_string(),
+                            )
+                        })?;
+                    let current_epoch = match cached_epoch {
+                        Some(epoch) => epoch,
+                        None => {
+                            let epoch = rpc_client
+                                .get_epoch_info()
+                                .await
+                                .map_err(|e| KoraError::RpcError(e.to_string()))?
+                                .epoch;
+                            cached_epoch = Some(epoch);
+                            epoch
+                        }
+                    };
+                    if let Some(fee) = mint_2022.calculate_transfer_fee(*amount, current_epoch)? {
+                        amount.saturating_sub(fee)
+                    } else {
+                        *amount
+                    }
+                } else {
+                    *amount
+                };
+
                 let lamport_value = TokenUtil::calculate_token_value_in_lamports(
-                    *amount,
+                    effective_amount,
                     &token_mint,
                     rpc_client,
                     config,

@@ -34,7 +34,7 @@ pub struct EstimateTransactionFeeRequest {
     /// Optional public key of the signer to ensure consistency
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
-    /// Whether to verify signatures during simulation (defaults to true)
+    /// Whether to verify signatures during simulation (defaults to false)
     #[serde(default = "default_sig_verify")]
     pub sig_verify: bool,
 }
@@ -65,11 +65,12 @@ pub async fn estimate_transaction_fee(
     let validation_config = &config.validation;
     let fee_payer = signer.pubkey();
 
+    let sig_verify = request.sig_verify || config.kora.force_sig_verify;
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
         config,
         rpc_client,
-        request.sig_verify,
+        sig_verify,
     )
     .await?;
 

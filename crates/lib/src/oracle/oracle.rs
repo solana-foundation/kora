@@ -15,6 +15,8 @@ pub struct TokenPrice {
     pub price: Decimal,
     pub confidence: f64,
     pub source: PriceSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -120,6 +122,7 @@ mod tests {
                         price: Decimal::from(1),
                         confidence: 0.95,
                         source: PriceSource::Jupiter,
+                        block_id: None,
                     },
                 );
             }
@@ -171,6 +174,7 @@ mod tests {
                         price: Decimal::from(42),
                         confidence: 0.95,
                         source: PriceSource::Jupiter,
+                        block_id: None,
                     },
                 );
             }

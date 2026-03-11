@@ -397,9 +397,9 @@ async fn test_transfer_fee_sufficient_payment() {
     .expect("Failed to mint tokens to sender");
 
     // Build transaction with SUFFICIENT payment
-    // To get 10,000 micro-USDC after 1% fee, we need to send:
-    // amount / (1 - 0.01) = 10,000 / 0.99 ≈ 10,101
-    let payment_amount = 10_101; // This should result in ~10,000 after 1% fee
+    // Server deducts Token-2022 transfer fee before crediting payment.
+    // With 1% fee: floor(10_500 * 100 / 10_000) = 105, effective = 10_395 lamports
+    let payment_amount = 10_500;
 
     let transaction = TransactionBuilder::v0()
         .with_rpc_client(ctx.rpc_client().clone())
