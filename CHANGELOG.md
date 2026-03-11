@@ -1,3 +1,23 @@
+## 2.0.5 - 2026-03-11
+
+
+### Bug Fixes
+
+- update Rust version to 1.88 for time crate compatibility (#364)
+
+- add missing signature field to SignAndSendTransactionResponse (#353)
+
+- handle missing mint in transfer fee calculation and fix program_id checks (#349)
+
+- patch remaining dependabot security vulnerabilities (#348)
+
+- patch 6 dependabot security vulnerabilities (#346)
+
+
+### Documentation
+
+- add CONTRIBUTING.md and SECURITY.md (#340)
+
 ## 2.0.4 - 2026-02-03
 
 

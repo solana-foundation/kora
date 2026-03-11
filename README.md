@@ -1,6 +1,6 @@
 <div align="center">
   <br />
-  <img src="https://github.com/solana-foundation/kora/blob/main/kora.svg" alt="Kora" width="140" />
+  <img src="https://raw.githubusercontent.com/solana-foundation/kora/main/kora.svg" alt="Kora" width="140" />
   <br />
   <br />
   
