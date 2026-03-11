@@ -693,18 +693,21 @@ mod tests {
             .with_extensions(vec![ExtensionType::TransferFeeConfig])
             .build_as_custom_token2022_mint(mint_pubkey, extensions);
 
-        // Test fee calculation with transfer fee
-        let test_cases = vec![
-            (10000, 250),   // 10000 * 2.5% = 250
-            (100000, 1000), // Would be 2500, but capped at 1000
-            (1000, 25),     // 1000 * 2.5% = 25
+        // Test fee calculation with transfer fee (ceiling division to match on-chain)
+        let test_cases: Vec<(u64, u64)> = vec![
+            (10000, 250),   // ceil(10000 * 250 / 10000) = 250
+            (100000, 1000), // ceil(100000 * 250 / 10000) = 2500, capped at max 1000
+            (1000, 25),     // ceil(1000 * 250 / 10000) = 25
+            (101, 3),       // ceil(101 * 250 / 10000) = ceil(2.525) = 3
             (0, 0),         // Zero amount = zero fee
         ];
 
-        for (amount, _expected_adjusted) in test_cases {
-            let expected_fee = mint.calculate_transfer_fee(amount, 0).unwrap().unwrap_or(0);
-            let expected_result = amount.saturating_sub(expected_fee);
-            assert_eq!(expected_result, expected_result);
+        for (amount, expected_fee) in test_cases {
+            let fee = mint.calculate_transfer_fee(amount, 0).unwrap().unwrap_or(0);
+            assert_eq!(
+                fee, expected_fee,
+                "Fee mismatch for amount={amount}: got={fee}, expected={expected_fee}"
+            );
         }
     }
 
