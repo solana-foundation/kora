@@ -412,7 +412,7 @@ impl FeeConfigUtil {
             .get(&ParsedSystemInstructionType::SystemCreateAccount)
             .unwrap_or(&vec![])
         {
-            if let ParsedSystemInstructionData::SystemCreateAccount { lamports, payer } =
+            if let ParsedSystemInstructionData::SystemCreateAccount { lamports, payer, .. } =
                 instruction
             {
                 if *payer == *fee_payer_pubkey {
