@@ -32,7 +32,7 @@ pub enum ParsedSystemInstructionData {
     // Includes transfer and transfer with seed
     SystemTransfer { lamports: u64, sender: Pubkey, receiver: Pubkey },
     // Includes create account and create account with seed
-    SystemCreateAccount { lamports: u64, payer: Pubkey },
+    SystemCreateAccount { lamports: u64, payer: Pubkey, new_account: Pubkey },
     // Includes withdraw nonce account
     SystemWithdrawNonceAccount { lamports: u64, nonce_authority: Pubkey, recipient: Pubkey },
     // Includes assign and assign with seed
@@ -1214,7 +1214,8 @@ impl IxUtils {
                     | Ok(SystemInstruction::CreateAccountWithSeed { lamports, .. }) => {
                         parse_system_instruction!(parsed_instructions, instruction, system_create_account, SystemCreateAccount, SystemCreateAccount {
                             lamports: lamports;
-                            payer: instruction_indexes::system_create_account::PAYER_INDEX
+                            payer: instruction_indexes::system_create_account::PAYER_INDEX,
+                            new_account: instruction_indexes::system_create_account::NEW_ACCOUNT_INDEX
                         });
                     }
                     Ok(SystemInstruction::Transfer { lamports }) => {
