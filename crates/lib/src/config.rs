@@ -133,6 +133,10 @@ pub struct ValidationConfig {
     /// WARNING: Enabling with dynamic pricing creates price arbitrage risk.
     #[serde(default)]
     pub allow_durable_transactions: bool,
+    /// Maximum allowed age of oracle price data in slots. 0 = disabled (default).
+    /// When >0, prices with a block_id older than `current_slot - max_price_staleness_slots` are rejected.
+    #[serde(default)]
+    pub max_price_staleness_slots: u64,
 }
 
 impl ValidationConfig {
@@ -488,6 +492,9 @@ pub struct KoraConfig {
     pub bundle: BundleConfig,
     /// Lighthouse configuration for fee payer balance protection
     pub lighthouse: LighthouseConfig,
+    /// When true, forces signature verification on all requests regardless of client's sig_verify parameter.
+    /// Prevents TOCTOU attacks where simulation passes but on-chain execution differs.
+    pub force_sig_verify: bool,
 }
 
 impl Default for KoraConfig {
@@ -502,6 +509,7 @@ impl Default for KoraConfig {
             usage_limit: UsageLimitConfig::default(),
             bundle: BundleConfig::default(),
             lighthouse: LighthouseConfig::default(),
+            force_sig_verify: false,
         }
     }
 }

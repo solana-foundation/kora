@@ -24,7 +24,7 @@ impl OracleUtil {
                     WSOL_DEVNET_MINT => DEFAULT_MOCKED_WSOL_PRICE, // SOL
                     _ => DEFAULT_MOCKED_PRICE, // Default price for unknown tokens
                 };
-                Ok(TokenPrice { price, confidence: 1.0, source: PriceSource::Mock })
+                Ok(TokenPrice { price, confidence: 1.0, source: PriceSource::Mock, block_id: None })
             });
 
         mock.expect_get_prices()
@@ -39,7 +39,12 @@ impl OracleUtil {
                     };
                     result.insert(
                         mint_address.clone(),
-                        TokenPrice { price, confidence: 1.0, source: PriceSource::Mock },
+                        TokenPrice {
+                            price,
+                            confidence: 1.0,
+                            source: PriceSource::Mock,
+                            block_id: None,
+                        },
                     );
                 }
                 Ok(result)

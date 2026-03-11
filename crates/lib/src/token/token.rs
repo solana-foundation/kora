@@ -139,6 +139,23 @@ impl TokenUtil {
             .await
             .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {e}")))?;
 
+        let max_staleness = config.validation.max_price_staleness_slots;
+        if max_staleness > 0 {
+            if let Some(block_id) = token_price.block_id {
+                let current_slot = rpc_client
+                    .get_slot()
+                    .await
+                    .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?;
+                let age = current_slot.saturating_sub(block_id);
+                if age > max_staleness {
+                    return Err(KoraError::RpcError(format!(
+                        "Oracle price data is stale: age {} slots exceeds max {} slots",
+                        age, max_staleness
+                    )));
+                }
+            }
+        }
+
         Ok((token_price, decimals))
     }
 
@@ -346,6 +363,24 @@ impl TokenUtil {
         );
 
         let prices = oracle.get_token_prices(&mint_addresses).await?;
+
+        let max_staleness = config.validation.max_price_staleness_slots;
+        if max_staleness > 0 {
+            for (mint_addr, price) in &prices {
+                if let Some(block_id) = price.block_id {
+                    let current_slot = rpc_client.get_slot().await.map_err(|e| {
+                        KoraError::RpcError(format!("Failed to get current slot: {e}"))
+                    })?;
+                    let age = current_slot.saturating_sub(block_id);
+                    if age > max_staleness {
+                        return Err(KoraError::RpcError(format!(
+                            "Oracle price data for {} is stale: age {} slots exceeds max {} slots",
+                            mint_addr, age, max_staleness
+                        )));
+                    }
+                }
+            }
+        }
 
         let mut mint_decimals = std::collections::HashMap::new();
         for mint in mint_to_transfers.keys() {
@@ -646,8 +681,33 @@ impl TokenUtil {
                     continue;
                 }
 
+                let effective_amount = if *is_2022 {
+                    let mint_account =
+                        CacheUtil::get_account(config, rpc_client, &token_mint, false).await?;
+                    let token_program = Token2022Program::new();
+                    let mint_state = token_program.unpack_mint(&token_mint, &mint_account.data)?;
+                    let mint_2022 =
+                        mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
+                            KoraError::SerializationError(
+                                "Failed to downcast mint state for transfer fee check".to_string(),
+                            )
+                        })?;
+                    let current_epoch = rpc_client
+                        .get_epoch_info()
+                        .await
+                        .map_err(|e| KoraError::RpcError(e.to_string()))?
+                        .epoch;
+                    if let Some(fee) = mint_2022.calculate_transfer_fee(*amount, current_epoch)? {
+                        amount.saturating_sub(fee)
+                    } else {
+                        *amount
+                    }
+                } else {
+                    *amount
+                };
+
                 let lamport_value = TokenUtil::calculate_token_value_in_lamports(
-                    *amount,
+                    effective_amount,
                     &token_mint,
                     rpc_client,
                     config,

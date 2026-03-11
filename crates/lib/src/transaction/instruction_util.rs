@@ -748,8 +748,10 @@ impl IxUtils {
                 })
             }
             _ => {
-                log::error!("Unsupported system instruction type: {}", instruction_type);
-                Ok(Self::build_default_compiled_instruction(program_id_index))
+                Err(KoraError::InvalidTransaction(format!(
+                    "Unrecognized system instruction type '{}' in CPI — cannot validate fee payer policy",
+                    instruction_type
+                )))
             }
         }
     }
@@ -1185,8 +1187,10 @@ impl IxUtils {
                 })
             }
             _ => {
-                log::error!("Unsupported token instruction type: {}", instruction_type);
-                Ok(Self::build_default_compiled_instruction(program_id_index))
+                Err(KoraError::InvalidTransaction(format!(
+                    "Unrecognized SPL Token instruction type '{}' in CPI — cannot validate fee payer policy",
+                    instruction_type
+                )))
             }
         }
     }

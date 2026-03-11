@@ -69,13 +69,14 @@ pub async fn estimate_bundle_fee(
     let fee_payer = signer.pubkey();
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
+    let sig_verify = request.sig_verify || config.kora.force_sig_verify;
     let processor = BundleProcessor::process_bundle(
         &transactions_to_process,
         fee_payer,
         &payment_destination,
         config,
         rpc_client,
-        request.sig_verify,
+        sig_verify,
         BundleProcessingMode::SkipUsage,
     )
     .await?;

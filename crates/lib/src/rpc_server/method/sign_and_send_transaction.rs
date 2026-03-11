@@ -17,7 +17,7 @@ pub struct SignAndSendTransactionRequest {
     /// Optional signer signer_key to ensure consistency across related RPC calls
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
-    /// Whether to verify signatures during simulation (defaults to true)
+    /// Whether to verify signatures during simulation (defaults to false)
     #[serde(default = "default_sig_verify")]
     pub sig_verify: bool,
     /// Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)
@@ -45,11 +45,12 @@ pub async fn sign_and_send_transaction(
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
 
+    let sig_verify = request.sig_verify || config.kora.force_sig_verify;
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
         config,
         rpc_client,
-        request.sig_verify,
+        sig_verify,
     )
     .await?;
 

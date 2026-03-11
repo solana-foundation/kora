@@ -35,7 +35,6 @@ struct JupiterPriceData {
     #[serde(rename = "usdPrice")]
     usd_price: f64,
     #[serde(rename = "blockId")]
-    #[allow(dead_code)]
     block_id: u64,
     #[allow(dead_code)]
     decimals: u8,
@@ -203,6 +202,7 @@ impl JupiterPriceOracle {
                         price: price_in_sol,
                         confidence: JUPITER_DEFAULT_CONFIDENCE,
                         source: PriceSource::Jupiter,
+                        block_id: Some(price_data.block_id),
                     },
                 );
             } else {
