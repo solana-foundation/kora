@@ -176,6 +176,7 @@ impl Token2022Mint {
 
             let fee_amount = (amount as u128)
                 .checked_mul(basis_points as u128)
+                .and_then(|product| product.checked_add(10_000 - 1))
                 .and_then(|product| product.checked_div(10_000))
                 .and_then(
                     |result| if result <= u64::MAX as u128 { Some(result as u64) } else { None },

@@ -202,7 +202,7 @@ impl JupiterPriceOracle {
                         price: price_in_sol,
                         confidence: JUPITER_DEFAULT_CONFIDENCE,
                         source: PriceSource::Jupiter,
-                        block_id: Some(price_data.block_id),
+                        block_id: Some(std::cmp::min(price_data.block_id, sol_price.block_id)),
                     },
                 );
             } else {
