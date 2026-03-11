@@ -56,6 +56,31 @@ impl TokenType {
 pub struct TokenUtil;
 
 impl TokenUtil {
+    async fn check_price_staleness(
+        rpc_client: &RpcClient,
+        config: &Config,
+        price: &TokenPrice,
+        label: &str,
+    ) -> Result<(), KoraError> {
+        let max_staleness = config.validation.max_price_staleness_slots;
+        if max_staleness > 0 {
+            if let Some(block_id) = price.block_id {
+                let current_slot = rpc_client
+                    .get_slot()
+                    .await
+                    .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?;
+                let age = current_slot.saturating_sub(block_id);
+                if age > max_staleness {
+                    return Err(KoraError::RpcError(format!(
+                        "Oracle price data{} is stale: age {} slots exceeds max {} slots",
+                        label, age, max_staleness
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn check_valid_tokens(tokens: &[String]) -> Result<Vec<Pubkey>, KoraError> {
         tokens
             .iter()
@@ -139,22 +164,7 @@ impl TokenUtil {
             .await
             .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {e}")))?;
 
-        let max_staleness = config.validation.max_price_staleness_slots;
-        if max_staleness > 0 {
-            if let Some(block_id) = token_price.block_id {
-                let current_slot = rpc_client
-                    .get_slot()
-                    .await
-                    .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?;
-                let age = current_slot.saturating_sub(block_id);
-                if age > max_staleness {
-                    return Err(KoraError::RpcError(format!(
-                        "Oracle price data is stale: age {} slots exceeds max {} slots",
-                        age, max_staleness
-                    )));
-                }
-            }
-        }
+        Self::check_price_staleness(rpc_client, config, &token_price, "").await?;
 
         Ok((token_price, decimals))
     }
@@ -364,22 +374,9 @@ impl TokenUtil {
 
         let prices = oracle.get_token_prices(&mint_addresses).await?;
 
-        let max_staleness = config.validation.max_price_staleness_slots;
-        if max_staleness > 0 {
-            for (mint_addr, price) in &prices {
-                if let Some(block_id) = price.block_id {
-                    let current_slot = rpc_client.get_slot().await.map_err(|e| {
-                        KoraError::RpcError(format!("Failed to get current slot: {e}"))
-                    })?;
-                    let age = current_slot.saturating_sub(block_id);
-                    if age > max_staleness {
-                        return Err(KoraError::RpcError(format!(
-                            "Oracle price data for {} is stale: age {} slots exceeds max {} slots",
-                            mint_addr, age, max_staleness
-                        )));
-                    }
-                }
-            }
+        for (mint_addr, price) in &prices {
+            Self::check_price_staleness(rpc_client, config, price, &format!(" for {mint_addr}"))
+                .await?;
         }
 
         let mut mint_decimals = std::collections::HashMap::new();
