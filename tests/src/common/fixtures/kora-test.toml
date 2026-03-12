@@ -24,6 +24,11 @@ get_payer_signer = true
 get_version = true
 sign_bundle = true
 sign_and_send_bundle = true
+swap_for_gas = true
+
+[kora.swap_for_gas]
+quote_provider = "Mock"
+spread_bps = 25
 
 [validation]
 max_allowed_lamports = 1000000

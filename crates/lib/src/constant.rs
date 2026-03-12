@@ -41,6 +41,7 @@ pub const DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS: u64 = 30; // 30 seco
 
 pub const DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS: u64 = 0; // 0 = unlimited
 pub const DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE: bool = false;
+pub const DEFAULT_SWAP_FOR_GAS_SPREAD_BPS: u16 = 25;
 
 // Request body size limit
 pub const DEFAULT_MAX_REQUEST_BODY_SIZE: usize = 2 * 1024 * 1024; // 2 MB

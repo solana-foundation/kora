@@ -12,7 +12,7 @@ use crate::{
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
         DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
         DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_PROTECTED_METHODS,
-        DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
+        DEFAULT_RECAPTCHA_SCORE_THRESHOLD, DEFAULT_SWAP_FOR_GAS_SPREAD_BPS,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
@@ -501,7 +501,10 @@ pub struct SwapForGasConfig {
 
 impl Default for SwapForGasConfig {
     fn default() -> Self {
-        Self { quote_provider: SwapQuoteProviderType::default(), spread_bps: 25 }
+        Self {
+            quote_provider: SwapQuoteProviderType::default(),
+            spread_bps: DEFAULT_SWAP_FOR_GAS_SPREAD_BPS,
+        }
     }
 }
 
