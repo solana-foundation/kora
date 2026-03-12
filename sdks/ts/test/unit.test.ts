@@ -11,14 +11,12 @@ import {
     GetVersionResponse,
     SignAndSendBundleRequest,
     SignAndSendBundleResponse,
-    SignAndSendSwapForGasRequest,
-    SignAndSendSwapForGasResponse,
     SignAndSendTransactionRequest,
     SignAndSendTransactionResponse,
     SignBundleRequest,
     SignBundleResponse,
-    SignSwapForGasRequest,
-    SignSwapForGasResponse,
+    SwapForGasRequest,
+    SwapForGasResponse,
     SignTransactionRequest,
     SignTransactionResponse,
 } from '../src/types/index.js';
@@ -128,10 +126,9 @@ describe('KoraClient Unit Tests', () => {
                     get_version: true,
                     liveness: true,
                     sign_and_send_bundle: true,
-                    sign_and_send_swap_for_gas: true,
                     sign_and_send_transaction: true,
                     sign_bundle: true,
-                    sign_swap_for_gas: true,
+                    swap_for_gas: true,
                     sign_transaction: true,
                     transfer_transaction: true,
                 },
@@ -365,14 +362,14 @@ describe('KoraClient Unit Tests', () => {
         });
     });
 
-    describe('signSwapForGas', () => {
+    describe('swapForGas', () => {
         it('should build and sign swap-for-gas transaction', async () => {
-            const request: SignSwapForGasRequest = {
+            const request: SwapForGasRequest = {
                 fee_token: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
                 lamports_out: 10000,
                 source_wallet: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             };
-            const mockResponse: SignSwapForGasResponse = {
+            const mockResponse: SwapForGasResponse = {
                 destination_wallet: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 fee_token: request.fee_token,
                 lamports_out: 10000,
@@ -383,33 +380,7 @@ describe('KoraClient Unit Tests', () => {
                 transaction: 'base64_signed_swap_tx',
             };
 
-            await testSuccessfulRpcMethod(
-                'signSwapForGas',
-                () => client.signSwapForGas(request),
-                mockResponse,
-                request,
-            );
-        });
-    });
-
-    describe('signAndSendSwapForGas', () => {
-        it('should sign and send swap-for-gas transaction', async () => {
-            const request: SignAndSendSwapForGasRequest = {
-                signer_key: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                transaction: 'base64_signed_swap_tx',
-            };
-            const mockResponse: SignAndSendSwapForGasResponse = {
-                signature: '5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW',
-                signed_transaction: request.transaction,
-                signer_pubkey: request.signer_key!,
-            };
-
-            await testSuccessfulRpcMethod(
-                'signAndSendSwapForGas',
-                () => client.signAndSendSwapForGas(request),
-                mockResponse,
-                request,
-            );
+            await testSuccessfulRpcMethod('swapForGas', () => client.swapForGas(request), mockResponse, request);
         });
     });
 
@@ -425,10 +396,9 @@ describe('KoraClient Unit Tests', () => {
                 get_version: true,
                 liveness: true,
                 sign_and_send_bundle: true,
-                sign_and_send_swap_for_gas: false,
                 sign_and_send_transaction: true,
                 sign_bundle: true,
-                sign_swap_for_gas: false,
+                swap_for_gas: false,
                 sign_transaction: true,
                 transfer_transaction: true,
             },

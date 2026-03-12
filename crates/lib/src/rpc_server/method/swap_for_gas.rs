@@ -24,7 +24,7 @@ use crate::tests::config_mock::mock_state::get_config;
 /// The resulting transaction transfers `fee_token` from `source_wallet` to Kora's payment address,
 /// and transfers `lamports_out` SOL from Kora fee payer to `destination_wallet`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct SignSwapForGasRequest {
+pub struct SwapForGasRequest {
     /// Wallet that pays the token side of the swap.
     pub source_wallet: String,
     /// Optional recipient wallet for SOL output (defaults to source_wallet).
@@ -44,7 +44,7 @@ pub struct SignSwapForGasRequest {
 
 /// Response payload containing a Kora-signed swap-for-gas transaction.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct SignSwapForGasResponse {
+pub struct SwapForGasResponse {
     /// Base64-encoded transaction signed by Kora fee payer.
     pub transaction: String,
     /// Public key of the signer used as fee payer.
@@ -63,10 +63,10 @@ pub struct SignSwapForGasResponse {
     pub destination_wallet: String,
 }
 
-pub async fn sign_swap_for_gas(
+pub async fn swap_for_gas(
     rpc_client: &Arc<RpcClient>,
-    request: SignSwapForGasRequest,
-) -> Result<SignSwapForGasResponse, KoraError> {
+    request: SwapForGasRequest,
+) -> Result<SwapForGasResponse, KoraError> {
     if request.lamports_out == 0 {
         return Err(KoraError::ValidationError(
             "lamports_out must be greater than zero".to_string(),
@@ -93,7 +93,7 @@ pub async fn sign_swap_for_gas(
 
     let encoded = TransactionUtil::encode_versioned_transaction(&built.transaction)?;
 
-    Ok(SignSwapForGasResponse {
+    Ok(SwapForGasResponse {
         transaction: encoded,
         signer_pubkey: signer_pubkey.to_string(),
         payment_address: built.payment_address.to_string(),
@@ -110,21 +110,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sign_swap_for_gas_request_defaults() {
+    fn test_swap_for_gas_request_defaults() {
         let json = r#"{
             "source_wallet": "11111111111111111111111111111111",
             "fee_token": "So11111111111111111111111111111111111111112",
             "lamports_out": 5000
         }"#;
 
-        let request: SignSwapForGasRequest = serde_json::from_str(json).unwrap();
+        let request: SwapForGasRequest = serde_json::from_str(json).unwrap();
         assert!(!request.sig_verify);
         assert!(request.destination_wallet.is_none());
     }
 
     #[tokio::test]
-    async fn test_sign_swap_for_gas_rejects_zero_lamports() {
-        let request = SignSwapForGasRequest {
+    async fn test_swap_for_gas_rejects_zero_lamports() {
+        let request = SwapForGasRequest {
             source_wallet: "11111111111111111111111111111111".to_string(),
             destination_wallet: None,
             fee_token: "So11111111111111111111111111111111111111112".to_string(),
@@ -134,7 +134,7 @@ mod tests {
         };
 
         let rpc_client = Arc::new(crate::tests::rpc_mock::RpcMockBuilder::new().build());
-        let result = sign_swap_for_gas(&rpc_client, request).await;
+        let result = swap_for_gas(&rpc_client, request).await;
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), KoraError::ValidationError(_)));

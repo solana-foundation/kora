@@ -6,7 +6,6 @@ pub mod get_payer_signer;
 pub mod get_supported_tokens;
 pub mod get_version;
 pub mod sign_and_send_bundle;
-pub mod sign_and_send_swap_for_gas;
 pub mod sign_and_send_transaction;
 pub mod sign_bundle;
 pub mod sign_transaction;

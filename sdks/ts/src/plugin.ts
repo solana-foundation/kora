@@ -13,18 +13,16 @@ import type {
     KitPayerSignerResponse,
     KitPaymentInstructionResponse,
     KitSignAndSendBundleResponse,
-    KitSignAndSendSwapForGasResponse,
     KitSignAndSendTransactionResponse,
     KitSignBundleResponse,
-    KitSignSwapForGasResponse,
+    KitSwapForGasResponse,
     KitSignTransactionResponse,
     KitSupportedTokensResponse,
     KoraPluginConfig,
     SignAndSendBundleRequest,
-    SignAndSendSwapForGasRequest,
     SignAndSendTransactionRequest,
     SignBundleRequest,
-    SignSwapForGasRequest,
+    SwapForGasRequest,
     SignTransactionRequest,
 } from './types/index.js';
 
@@ -183,8 +181,8 @@ export function koraPlugin(config: KoraPluginConfig) {
             /**
              * Builds and signs a swap-for-gas transaction with Kit-typed addresses.
              */
-            async signSwapForGas(request: SignSwapForGasRequest): Promise<KitSignSwapForGasResponse> {
-                const result = await client.signSwapForGas(request);
+            async swapForGas(request: SwapForGasRequest): Promise<KitSwapForGasResponse> {
+                const result = await client.swapForGas(request);
                 return {
                     destination_wallet: address(result.destination_wallet),
                     fee_token: address(result.fee_token),
@@ -194,20 +192,6 @@ export function koraPlugin(config: KoraPluginConfig) {
                     signer_pubkey: address(result.signer_pubkey),
                     transaction: result.transaction as Base64EncodedWireTransaction,
                     token_amount_in: result.token_amount_in,
-                };
-            },
-
-            /**
-             * Sends a signed swap-for-gas transaction with Kit-typed response.
-             */
-            async signAndSendSwapForGas(
-                request: SignAndSendSwapForGasRequest,
-            ): Promise<KitSignAndSendSwapForGasResponse> {
-                const result = await client.signAndSendSwapForGas(request);
-                return {
-                    signature: signature(result.signature),
-                    signed_transaction: result.signed_transaction as Base64EncodedWireTransaction,
-                    signer_pubkey: address(result.signer_pubkey),
                 };
             },
 

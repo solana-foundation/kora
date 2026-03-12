@@ -115,7 +115,7 @@ export interface GetPaymentInstructionRequest {
 /**
  * Parameters for building and signing a swap-for-gas transaction.
  */
-export interface SignSwapForGasRequest {
+export interface SwapForGasRequest {
     /** Recipient wallet for SOL output (defaults to source_wallet when omitted) */
     destination_wallet?: string;
     /** Mint address of token used for swap payment */
@@ -128,20 +128,6 @@ export interface SignSwapForGasRequest {
     signer_key?: string;
     /** Wallet owner paying token side of swap */
     source_wallet: string;
-}
-
-/**
- * Parameters for sending a signed swap-for-gas transaction.
- */
-export interface SignAndSendSwapForGasRequest {
-    /** Optional signer verification during simulation (defaults to false) */
-    sig_verify?: boolean;
-    /** Optional signer address for Kora signer selection */
-    signer_key?: string;
-    /** Base64-encoded signed transaction */
-    transaction: string;
-    /** Optional user ID for usage tracking */
-    user_id?: string;
 }
 
 /**
@@ -279,7 +265,7 @@ export interface GetPaymentInstructionResponse {
 /**
  * Response containing a signed swap-for-gas transaction.
  */
-export interface SignSwapForGasResponse {
+export interface SwapForGasResponse {
     /** SOL recipient wallet */
     destination_wallet: string;
     /** Fee token mint used in swap */
@@ -296,18 +282,6 @@ export interface SignSwapForGasResponse {
     transaction: string;
     /** Token amount charged from source wallet */
     token_amount_in: number;
-}
-
-/**
- * Response from signing and sending a swap-for-gas transaction.
- */
-export interface SignAndSendSwapForGasResponse {
-    /** Transaction signature */
-    signature: string;
-    /** Base64-encoded signed transaction */
-    signed_transaction: string;
-    /** Public key of the signer used to send the transaction */
-    signer_pubkey: string;
 }
 
 /**
@@ -394,10 +368,8 @@ export interface EnabledMethods {
     sign_bundle: boolean;
     /** Whether the sign_transaction method is enabled */
     sign_transaction: boolean;
-    /** Whether the sign_and_send_swap_for_gas method is enabled */
-    sign_and_send_swap_for_gas: boolean;
-    /** Whether the sign_swap_for_gas method is enabled */
-    sign_swap_for_gas: boolean;
+    /** Whether the swap_for_gas method is enabled */
+    swap_for_gas: boolean;
     /** Whether the transfer_transaction method is enabled */
     transfer_transaction: boolean;
 }
@@ -712,8 +684,8 @@ export interface KitSignAndSendBundleResponse {
     signer_pubkey: Address;
 }
 
-/** Plugin response for signSwapForGas with Kit types */
-export interface KitSignSwapForGasResponse {
+/** Plugin response for swapForGas with Kit types */
+export interface KitSwapForGasResponse {
     /** SOL recipient wallet */
     destination_wallet: Address;
     /** Fee token mint used in swap */
@@ -730,16 +702,6 @@ export interface KitSignSwapForGasResponse {
     transaction: Base64EncodedWireTransaction;
     /** Token amount charged from source wallet */
     token_amount_in: number;
-}
-
-/** Plugin response for signAndSendSwapForGas with Kit types */
-export interface KitSignAndSendSwapForGasResponse {
-    /** Transaction signature */
-    signature: Signature;
-    /** Base64-encoded signed transaction */
-    signed_transaction: Base64EncodedWireTransaction;
-    /** Public key of the signer used to send the transaction */
-    signer_pubkey: Address;
 }
 
 /** Plugin validation config with Kit Address types */

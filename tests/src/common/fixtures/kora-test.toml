@@ -24,8 +24,7 @@ get_payer_signer = true
 get_version = true
 sign_bundle = true
 sign_and_send_bundle = true
-sign_swap_for_gas = true
-sign_and_send_swap_for_gas = true
+swap_for_gas = true
 
 [kora.swap_for_gas]
 quote_provider = "Mock"

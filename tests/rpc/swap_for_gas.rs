@@ -5,7 +5,7 @@ use solana_sdk::{pubkey::Pubkey, signature::Signature, signer::Signer};
 use std::str::FromStr;
 
 #[tokio::test]
-async fn test_sign_swap_for_gas_builds_kora_signed_transaction() {
+async fn test_swap_for_gas_builds_kora_signed_transaction() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
     let source_keypair = SenderTestHelper::get_test_sender_keypair();
@@ -15,7 +15,7 @@ async fn test_sign_swap_for_gas_builds_kora_signed_transaction() {
 
     let response: serde_json::Value = ctx
         .rpc_call(
-            "signSwapForGas",
+            "swapForGas",
             rpc_params![
                 source_wallet.to_string(),
                 Option::<String>::None,
@@ -26,7 +26,7 @@ async fn test_sign_swap_for_gas_builds_kora_signed_transaction() {
             ],
         )
         .await
-        .expect("Failed to build signSwapForGas transaction");
+        .expect("Failed to build swapForGas transaction");
 
     response.assert_success();
     response.assert_has_field("transaction");
@@ -45,7 +45,7 @@ async fn test_sign_swap_for_gas_builds_kora_signed_transaction() {
     assert!(response["token_amount_in"].as_u64().unwrap() > 0);
 
     let tx = TransactionUtil::decode_b64_transaction(response["transaction"].as_str().unwrap())
-        .expect("Failed to decode signSwapForGas transaction");
+        .expect("Failed to decode swapForGas transaction");
 
     assert_eq!(tx.signatures.len(), tx.message.header().num_required_signatures as usize);
 
@@ -71,141 +71,7 @@ async fn test_sign_swap_for_gas_builds_kora_signed_transaction() {
 }
 
 #[tokio::test]
-async fn test_sign_and_send_swap_for_gas_after_user_signature() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-
-    let source_keypair = SenderTestHelper::get_test_sender_keypair();
-    let source_wallet = source_keypair.pubkey();
-    let destination_wallet = RecipientTestHelper::get_recipient_pubkey();
-    let fee_token = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-
-    let signed_by_kora_response: serde_json::Value = ctx
-        .rpc_call(
-            "signSwapForGas",
-            rpc_params![
-                source_wallet.to_string(),
-                Some(destination_wallet.to_string()),
-                fee_token.to_string(),
-                25_000u64,
-                Option::<String>::None,
-                false
-            ],
-        )
-        .await
-        .expect("Failed to build signSwapForGas transaction");
-
-    signed_by_kora_response.assert_success();
-    let signer_pubkey = signed_by_kora_response["signer_pubkey"]
-        .as_str()
-        .expect("Missing signer_pubkey")
-        .to_string();
-
-    let mut tx = TransactionUtil::decode_b64_transaction(
-        signed_by_kora_response["transaction"].as_str().expect("Missing transaction"),
-    )
-    .expect("Failed to decode signSwapForGas transaction");
-
-    let message_bytes = tx.message.serialize();
-    let source_index = tx
-        .message
-        .static_account_keys()
-        .iter()
-        .position(|key| key == &source_wallet)
-        .expect("Source wallet not found in account keys");
-    tx.signatures[source_index] = source_keypair.sign_message(&message_bytes);
-
-    let fully_signed = TransactionUtil::encode_versioned_transaction(&tx)
-        .expect("Failed to encode fully signed transaction");
-
-    let result: serde_json::Value = ctx
-        .rpc_call(
-            "signAndSendSwapForGas",
-            rpc_params![fully_signed, Some(signer_pubkey), false, Option::<String>::None],
-        )
-        .await
-        .expect("signAndSendSwapForGas should succeed");
-
-    result.assert_success();
-    result.assert_has_field("signed_transaction");
-    result.assert_has_field("signer_pubkey");
-    result.assert_has_field("signature");
-}
-
-#[tokio::test]
-async fn test_sign_and_send_swap_for_gas_signs_when_kora_signature_missing() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-
-    let source_keypair = SenderTestHelper::get_test_sender_keypair();
-    let source_wallet = source_keypair.pubkey();
-    let destination_wallet = RecipientTestHelper::get_recipient_pubkey();
-    let fee_token = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-
-    let sign_response: serde_json::Value = ctx
-        .rpc_call(
-            "signSwapForGas",
-            rpc_params![
-                source_wallet.to_string(),
-                Some(destination_wallet.to_string()),
-                fee_token.to_string(),
-                25_000u64,
-                Option::<String>::None,
-                false
-            ],
-        )
-        .await
-        .expect("Failed to build signSwapForGas transaction");
-
-    sign_response.assert_success();
-    let signer_pubkey =
-        Pubkey::from_str(sign_response["signer_pubkey"].as_str().expect("Missing signer_pubkey"))
-            .expect("Invalid signer_pubkey");
-
-    let mut tx = TransactionUtil::decode_b64_transaction(
-        sign_response["transaction"].as_str().expect("Missing transaction"),
-    )
-    .expect("Failed to decode signSwapForGas transaction");
-
-    let signer_index = tx
-        .message
-        .static_account_keys()
-        .iter()
-        .position(|key| key == &signer_pubkey)
-        .expect("Signer wallet not found in account keys");
-    tx.signatures[signer_index] = Signature::default();
-
-    let message_bytes = tx.message.serialize();
-    let source_index = tx
-        .message
-        .static_account_keys()
-        .iter()
-        .position(|key| key == &source_wallet)
-        .expect("Source wallet not found in account keys");
-    tx.signatures[source_index] = source_keypair.sign_message(&message_bytes);
-
-    let partially_signed = TransactionUtil::encode_versioned_transaction(&tx)
-        .expect("Failed to encode partially signed transaction");
-
-    let result: serde_json::Value = ctx
-        .rpc_call(
-            "signAndSendSwapForGas",
-            rpc_params![
-                partially_signed,
-                Some(signer_pubkey.to_string()),
-                false,
-                Option::<String>::None
-            ],
-        )
-        .await
-        .expect("signAndSendSwapForGas should succeed and sign with Kora");
-
-    result.assert_success();
-    result.assert_has_field("signed_transaction");
-    result.assert_has_field("signer_pubkey");
-    result.assert_has_field("signature");
-}
-
-#[tokio::test]
-async fn test_sign_swap_for_gas_rejects_zero_lamports() {
+async fn test_swap_for_gas_rejects_zero_lamports() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
     let source_wallet = SenderTestHelper::get_test_sender_keypair().pubkey();
@@ -213,7 +79,7 @@ async fn test_sign_swap_for_gas_rejects_zero_lamports() {
 
     let result = ctx
         .rpc_call::<serde_json::Value, _>(
-            "signSwapForGas",
+            "swapForGas",
             rpc_params![
                 source_wallet.to_string(),
                 Option::<String>::None,
@@ -230,7 +96,7 @@ async fn test_sign_swap_for_gas_rejects_zero_lamports() {
 }
 
 #[tokio::test]
-async fn test_sign_swap_for_gas_rejects_source_wallet_equal_to_kora_signer() {
+async fn test_swap_for_gas_rejects_source_wallet_equal_to_kora_signer() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
     let payer_signer: serde_json::Value =
@@ -243,7 +109,7 @@ async fn test_sign_swap_for_gas_rejects_source_wallet_equal_to_kora_signer() {
 
     let result = ctx
         .rpc_call::<serde_json::Value, _>(
-            "signSwapForGas",
+            "swapForGas",
             rpc_params![
                 signer_address.clone(),
                 Some(destination_wallet.to_string()),

@@ -11,10 +11,9 @@ import type {
     KitPayerSignerResponse,
     KitPaymentInstructionResponse,
     KitSignAndSendBundleResponse,
-    KitSignAndSendSwapForGasResponse,
     KitSignAndSendTransactionResponse,
     KitSignBundleResponse,
-    KitSignSwapForGasResponse,
+    KitSwapForGasResponse,
     KitSignTransactionResponse,
     KitSupportedTokensResponse,
     KoraPluginConfig,
@@ -75,8 +74,7 @@ describe('Kora Kit Plugin', () => {
             expect(typeof enhanced.kora.signAndSendTransaction).toBe('function');
             expect(typeof enhanced.kora.signBundle).toBe('function');
             expect(typeof enhanced.kora.signAndSendBundle).toBe('function');
-            expect(typeof enhanced.kora.signSwapForGas).toBe('function');
-            expect(typeof enhanced.kora.signAndSendSwapForGas).toBe('function');
+            expect(typeof enhanced.kora.swapForGas).toBe('function');
             expect(typeof enhanced.kora.getPaymentInstruction).toBe('function');
         });
 
@@ -369,7 +367,7 @@ describe('Kora Kit Plugin', () => {
             });
         });
 
-        describe('signSwapForGas', () => {
+        describe('swapForGas', () => {
             it('should return Kit-typed Address fields for swap response', async () => {
                 const rawResponse = {
                     destination_wallet: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
@@ -384,7 +382,7 @@ describe('Kora Kit Plugin', () => {
 
                 mockSuccessfulResponse(rawResponse);
 
-                const result: KitSignSwapForGasResponse = await kora.signSwapForGas({
+                const result: KitSwapForGasResponse = await kora.swapForGas({
                     fee_token: rawResponse.fee_token,
                     lamports_out: rawResponse.lamports_out,
                     source_wallet: rawResponse.destination_wallet,
@@ -400,31 +398,6 @@ describe('Kora Kit Plugin', () => {
                 expect(paymentAddress).toBe(rawResponse.payment_address);
                 expect(signerPubkey).toBe(rawResponse.signer_pubkey);
                 expect(result.token_amount_in).toBe(rawResponse.token_amount_in);
-            });
-        });
-
-        describe('signAndSendSwapForGas', () => {
-            it('should return Kit-typed response with Signature and Base64EncodedWireTransaction', async () => {
-                const rawResponse = {
-                    signature:
-                        '5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW',
-                    signed_transaction: 'base64SignedSwapTransaction',
-                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                };
-
-                mockSuccessfulResponse(rawResponse);
-
-                const result: KitSignAndSendSwapForGasResponse = await kora.signAndSendSwapForGas({
-                    transaction: rawResponse.signed_transaction as Base64EncodedWireTransaction,
-                });
-
-                const sig: Signature = result.signature;
-                const signedTx: Base64EncodedWireTransaction = result.signed_transaction;
-                const signerPubkey: Address = result.signer_pubkey;
-
-                expect(sig).toBe(rawResponse.signature);
-                expect(signedTx).toBe(rawResponse.signed_transaction);
-                expect(signerPubkey).toBe(rawResponse.signer_pubkey);
             });
         });
 
