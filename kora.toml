@@ -18,7 +18,7 @@ rate_limit = 100
 # recaptcha_score_threshold = 0.5
 
 # Optional: RPC methods that require reCAPTCHA verification
-# protected_methods = ["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"]
+# protected_methods = ["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle", "swapForGas"]
 
 # Lighthouse fee payer protection - adds balance assertions to prevent fee payer drainage
 # IMPORTANT: Only works with signTransaction/signBundle flows, NOT signAndSendTransaction/signAndSendBundle

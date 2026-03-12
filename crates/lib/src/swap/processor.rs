@@ -1,6 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_keychain::SolanaSigner;
 use solana_message::{Message, VersionedMessage};
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 use solana_system_interface::instruction::transfer as system_transfer;
@@ -8,10 +9,9 @@ use solana_system_interface::instruction::transfer as system_transfer;
 use crate::{
     config::Config,
     error::KoraError,
-    signer::bundle_signer::BundleSigner,
     swap::get_swap_quote_provider,
     token::token::TokenUtil,
-    transaction::{TransactionUtil, VersionedTransactionResolved},
+    transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     validator::transaction_validator::TransactionValidator,
     CacheUtil,
 };
@@ -33,6 +33,13 @@ pub struct SwapForGasBuildOutput {
     pub destination_wallet: Pubkey,
 }
 
+struct ValidatedSwapForGasInput {
+    source_wallet: Pubkey,
+    destination_wallet: Pubkey,
+    fee_token: Pubkey,
+    lamports_out: u64,
+}
+
 pub struct SwapForGasProcessor;
 
 impl SwapForGasProcessor {
@@ -51,13 +58,11 @@ impl SwapForGasProcessor {
             .map_err(|_| KoraError::ValidationError("Spread-adjusted amount overflow".to_string()))
     }
 
-    pub async fn build_and_sign_transaction(
+    fn validate_build_input(
         input: &SwapForGasBuildInput,
-        signer: &Arc<solana_keychain::Signer>,
         signer_pubkey: Pubkey,
         config: &Config,
-        rpc_client: &Arc<RpcClient>,
-    ) -> Result<SwapForGasBuildOutput, KoraError> {
+    ) -> Result<ValidatedSwapForGasInput, KoraError> {
         if input.lamports_out == 0 {
             return Err(KoraError::ValidationError(
                 "lamports_out must be greater than zero".to_string(),
@@ -90,6 +95,7 @@ impl SwapForGasProcessor {
                 "Source wallet {source_wallet} is disallowed"
             )));
         }
+
         if validator.is_disallowed_account(&destination_wallet) {
             return Err(KoraError::InvalidTransaction(format!(
                 "Destination wallet {destination_wallet} is disallowed"
@@ -102,28 +108,46 @@ impl SwapForGasProcessor {
             return Err(KoraError::UnsupportedFeeToken(fee_token.to_string()));
         }
 
+        Ok(ValidatedSwapForGasInput {
+            source_wallet,
+            destination_wallet,
+            fee_token,
+            lamports_out: input.lamports_out,
+        })
+    }
+
+    async fn quote_token_amount_with_spread(
+        config: &Config,
+        rpc_client: &Arc<RpcClient>,
+        fee_token: &Pubkey,
+        lamports_out: u64,
+    ) -> Result<(u64, u16), KoraError> {
         let quote_provider = get_swap_quote_provider(config);
         let quoted_token_amount = quote_provider
-            .quote_token_amount_in_for_lamports_out(
-                rpc_client,
-                &fee_token,
-                input.lamports_out,
-                config,
-            )
+            .quote_token_amount_in_for_lamports_out(rpc_client, fee_token, lamports_out, config)
             .await?;
 
         let spread_bps = config.kora.swap_for_gas.spread_bps;
         let token_amount_in = Self::apply_spread_bps(quoted_token_amount, spread_bps)?;
-        let payment_destination = config.kora.get_payment_address(&signer_pubkey)?;
+        Ok((token_amount_in, spread_bps))
+    }
 
-        let token_mint = TokenUtil::get_mint(config, rpc_client, &fee_token).await?;
+    async fn build_swap_message(
+        config: &Config,
+        rpc_client: &Arc<RpcClient>,
+        signer_pubkey: Pubkey,
+        validated: &ValidatedSwapForGasInput,
+        payment_destination: &Pubkey,
+        token_amount_in: u64,
+    ) -> Result<VersionedMessage, KoraError> {
+        let token_mint = TokenUtil::get_mint(config, rpc_client, &validated.fee_token).await?;
         let token_program = token_mint.get_token_program();
         let token_decimals = token_mint.decimals();
 
-        let source_token_account =
-            token_program.get_associated_token_address(&source_wallet, &fee_token);
+        let source_token_account = token_program
+            .get_associated_token_address(&validated.source_wallet, &validated.fee_token);
         let destination_token_account =
-            token_program.get_associated_token_address(&payment_destination, &fee_token);
+            token_program.get_associated_token_address(payment_destination, &validated.fee_token);
 
         CacheUtil::get_account(config, rpc_client, &source_token_account, false).await.map_err(
             |e| match e {
@@ -140,8 +164,8 @@ impl SwapForGasProcessor {
             Err(KoraError::AccountNotFound(_)) => {
                 instructions.push(token_program.create_associated_token_account_instruction(
                     &signer_pubkey,
-                    &payment_destination,
-                    &fee_token,
+                    payment_destination,
+                    &validated.fee_token,
                 ));
             }
             Err(e) => return Err(e),
@@ -151,9 +175,9 @@ impl SwapForGasProcessor {
             token_program
                 .create_transfer_checked_instruction(
                     &source_token_account,
-                    &fee_token,
+                    &validated.fee_token,
                     &destination_token_account,
-                    &source_wallet,
+                    &validated.source_wallet,
                     token_amount_in,
                     token_decimals,
                 )
@@ -162,34 +186,78 @@ impl SwapForGasProcessor {
                 })?,
         );
 
-        instructions.push(system_transfer(&signer_pubkey, &destination_wallet, input.lamports_out));
+        instructions.push(system_transfer(
+            &signer_pubkey,
+            &validated.destination_wallet,
+            validated.lamports_out,
+        ));
 
         let blockhash = CacheUtil::get_or_fetch_latest_blockhash(config, rpc_client).await?;
-        let message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        Ok(VersionedMessage::Legacy(Message::new_with_blockhash(
             &instructions,
             Some(&signer_pubkey),
             &blockhash,
-        ));
+        )))
+    }
 
-        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+    async fn sign_with_fee_payer(
+        message: VersionedMessage,
+        signer: &Arc<solana_keychain::Signer>,
+        signer_pubkey: Pubkey,
+    ) -> Result<VersionedTransaction, KoraError> {
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
         let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&transaction)?;
-        BundleSigner::sign_transaction_for_bundle(
-            &mut resolved,
-            signer,
-            &signer_pubkey,
-            &Some(blockhash),
+
+        let message_bytes = resolved.transaction.message.serialize();
+        let signature = signer
+            .sign_message(&message_bytes)
+            .await
+            .map_err(|e| KoraError::SigningError(e.to_string()))?;
+
+        let signer_position = resolved.find_signer_position(&signer_pubkey)?;
+        resolved.transaction.signatures[signer_position] = signature;
+
+        Ok(resolved.transaction)
+    }
+
+    pub async fn build_and_sign_transaction(
+        input: &SwapForGasBuildInput,
+        signer: &Arc<solana_keychain::Signer>,
+        signer_pubkey: Pubkey,
+        config: &Config,
+        rpc_client: &Arc<RpcClient>,
+    ) -> Result<SwapForGasBuildOutput, KoraError> {
+        let validated = Self::validate_build_input(input, signer_pubkey, config)?;
+
+        let (token_amount_in, spread_bps) = Self::quote_token_amount_with_spread(
+            config,
+            rpc_client,
+            &validated.fee_token,
+            validated.lamports_out,
         )
         .await?;
-        transaction = resolved.transaction;
+
+        let payment_destination = config.kora.get_payment_address(&signer_pubkey)?;
+        let message = Self::build_swap_message(
+            config,
+            rpc_client,
+            signer_pubkey,
+            &validated,
+            &payment_destination,
+            token_amount_in,
+        )
+        .await?;
+
+        let transaction = Self::sign_with_fee_payer(message, signer, signer_pubkey).await?;
 
         Ok(SwapForGasBuildOutput {
             transaction,
             payment_address: payment_destination,
-            fee_token,
+            fee_token: validated.fee_token,
             token_amount_in,
-            lamports_out: input.lamports_out,
+            lamports_out: validated.lamports_out,
             spread_bps,
-            destination_wallet,
+            destination_wallet: validated.destination_wallet,
         })
     }
 }

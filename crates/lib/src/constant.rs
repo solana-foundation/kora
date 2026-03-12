@@ -19,7 +19,7 @@ pub const MIN_RECAPTCHA_SCORE: f64 = 0.0;
 pub const MAX_RECAPTCHA_SCORE: f64 = 1.0;
 pub const DEFAULT_RECAPTCHA_SCORE_THRESHOLD: f64 = 0.5;
 pub const DEFAULT_PROTECTED_METHODS: &[&str] =
-    &["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"];
+    &["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle", "swapForGas"];
 
 // External Services
 pub const JUPITER_API_URL: &str = "https://api.jup.ag";
