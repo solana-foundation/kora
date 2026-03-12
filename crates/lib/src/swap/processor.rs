@@ -86,6 +86,11 @@ impl SwapForGasProcessor {
             .transpose()
             .map_err(|e| KoraError::ValidationError(format!("Invalid destination_wallet: {e}")))?
             .unwrap_or(source_wallet);
+        if destination_wallet == signer_pubkey {
+            return Err(KoraError::ValidationError(
+                "destination_wallet must not be the Kora fee payer".to_string(),
+            ));
+        }
 
         let fee_token = Pubkey::from_str(&input.fee_token)
             .map_err(|e| KoraError::ValidationError(format!("Invalid fee_token mint: {e}")))?;

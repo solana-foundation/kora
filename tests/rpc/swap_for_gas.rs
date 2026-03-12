@@ -124,3 +124,35 @@ async fn test_swap_for_gas_rejects_source_wallet_equal_to_kora_signer() {
     assert!(result.is_err());
     result.unwrap_err().assert_contains_message("source_wallet must not be the Kora fee payer");
 }
+
+#[tokio::test]
+async fn test_swap_for_gas_rejects_destination_wallet_equal_to_kora_signer() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let payer_signer: serde_json::Value =
+        ctx.rpc_call("getPayerSigner", rpc_params![]).await.expect("Failed to get payer signer");
+    let signer_address =
+        payer_signer["signer_address"].as_str().expect("Missing signer_address").to_string();
+
+    let source_wallet = SenderTestHelper::get_test_sender_keypair().pubkey();
+    let fee_token = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let result = ctx
+        .rpc_call::<serde_json::Value, _>(
+            "swapForGas",
+            rpc_params![
+                source_wallet.to_string(),
+                Some(signer_address.clone()),
+                fee_token.to_string(),
+                25_000u64,
+                Some(signer_address),
+                true
+            ],
+        )
+        .await;
+
+    assert!(result.is_err());
+    result
+        .unwrap_err()
+        .assert_contains_message("destination_wallet must not be the Kora fee payer");
+}
