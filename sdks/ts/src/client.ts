@@ -19,14 +19,16 @@ import {
     RpcError,
     SignAndSendBundleRequest,
     SignAndSendBundleResponse,
+    SignAndSendSwapForGasRequest,
+    SignAndSendSwapForGasResponse,
     SignAndSendTransactionRequest,
     SignAndSendTransactionResponse,
     SignBundleRequest,
     SignBundleResponse,
+    SignSwapForGasRequest,
+    SignSwapForGasResponse,
     SignTransactionRequest,
     SignTransactionResponse,
-    SwapForGasRequest,
-    SwapForGasResponse,
 } from './types/index.js';
 
 /**
@@ -329,13 +331,26 @@ export class KoraClient {
     }
 
     /**
-     * Builds a gas-station style swap transaction that exchanges a fee token for SOL.
-     * @param request - Swap-for-gas request parameters
-     * @returns Built transaction plus quote metadata
+     * Builds and signs a gas-station style swap transaction that exchanges a fee token for SOL.
+     * @param request - signSwapForGas request parameters
+     * @returns Signed transaction plus quote metadata
      * @throws {Error} When request validation or quoting fails
      */
-    async swapForGas(request: SwapForGasRequest): Promise<SwapForGasResponse> {
-        return await this.rpcRequest<SwapForGasResponse, SwapForGasRequest>('swapForGas', request);
+    async signSwapForGas(request: SignSwapForGasRequest): Promise<SignSwapForGasResponse> {
+        return await this.rpcRequest<SignSwapForGasResponse, SignSwapForGasRequest>('signSwapForGas', request);
+    }
+
+    /**
+     * Sends a signed swap-for-gas transaction.
+     * @param request - signAndSendSwapForGas request parameters
+     * @returns Transaction signature and signed transaction payload
+     * @throws {Error} When request validation or send fails
+     */
+    async signAndSendSwapForGas(request: SignAndSendSwapForGasRequest): Promise<SignAndSendSwapForGasResponse> {
+        return await this.rpcRequest<SignAndSendSwapForGasResponse, SignAndSendSwapForGasRequest>(
+            'signAndSendSwapForGas',
+            request,
+        );
     }
 
     /**

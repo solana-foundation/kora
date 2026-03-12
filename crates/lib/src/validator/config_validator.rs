@@ -331,20 +331,20 @@ impl ConfigValidator {
             );
         }
 
-        if config.kora.enabled_methods.swap_for_gas
+        if config.kora.enabled_methods.sign_swap_for_gas
             && matches!(config.kora.swap_for_gas.quote_provider, SwapQuoteProviderType::Jupiter)
             && std::env::var("JUPITER_API_KEY").is_err()
         {
             errors.push(
-                "JUPITER_API_KEY environment variable not set. Required when swap_for_gas.quote_provider = Jupiter and swapForGas is enabled".to_string()
+                "JUPITER_API_KEY environment variable not set. Required when swap_for_gas.quote_provider = Jupiter and signSwapForGas is enabled".to_string()
             );
         }
 
-        if config.kora.enabled_methods.swap_for_gas
+        if config.kora.enabled_methods.sign_swap_for_gas
             && matches!(config.kora.swap_for_gas.quote_provider, SwapQuoteProviderType::Mock)
         {
             warnings.push(
-                "Using Mock swap quote provider for swapForGas. Not suitable for production."
+                "Using Mock swap quote provider for signSwapForGas. Not suitable for production."
                     .to_string(),
             );
         }
@@ -865,7 +865,8 @@ mod tests {
                     estimate_bundle_fee: false,
                     sign_and_send_bundle: false,
                     sign_bundle: false,
-                    swap_for_gas: false,
+                    sign_swap_for_gas: false,
+                    sign_and_send_swap_for_gas: false,
                 },
                 auth: AuthConfig::default(),
                 payment_address: None,
@@ -2030,7 +2031,7 @@ mod tests {
             metrics: MetricsConfig::default(),
         };
 
-        config.kora.enabled_methods.swap_for_gas = true;
+        config.kora.enabled_methods.sign_swap_for_gas = true;
         config.kora.swap_for_gas.quote_provider = SwapQuoteProviderType::Mock;
 
         let _ = update_config(config);

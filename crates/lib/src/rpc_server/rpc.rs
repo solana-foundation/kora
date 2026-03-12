@@ -25,12 +25,15 @@ use crate::rpc_server::method::{
     sign_and_send_bundle::{
         sign_and_send_bundle, SignAndSendBundleRequest, SignAndSendBundleResponse,
     },
+    sign_and_send_swap_for_gas::{
+        sign_and_send_swap_for_gas, SignAndSendSwapForGasRequest, SignAndSendSwapForGasResponse,
+    },
     sign_and_send_transaction::{
         sign_and_send_transaction, SignAndSendTransactionRequest, SignAndSendTransactionResponse,
     },
     sign_bundle::{sign_bundle, SignBundleRequest, SignBundleResponse},
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResponse},
-    swap_for_gas::{swap_for_gas, SwapForGasRequest, SwapForGasResponse},
+    swap_for_gas::{sign_swap_for_gas, SignSwapForGasRequest, SignSwapForGasResponse},
     transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
     },
@@ -170,13 +173,23 @@ impl KoraRpc {
         result
     }
 
-    pub async fn swap_for_gas(
+    pub async fn sign_swap_for_gas(
         &self,
-        request: SwapForGasRequest,
-    ) -> Result<SwapForGasResponse, KoraError> {
-        info!("Swap for gas request: {request:?}");
-        let result = swap_for_gas(&self.rpc_client, request).await;
-        info!("Swap for gas response: {result:?}");
+        request: SignSwapForGasRequest,
+    ) -> Result<SignSwapForGasResponse, KoraError> {
+        info!("Sign swap for gas request: {request:?}");
+        let result = sign_swap_for_gas(&self.rpc_client, request).await;
+        info!("Sign swap for gas response: {result:?}");
+        result
+    }
+
+    pub async fn sign_and_send_swap_for_gas(
+        &self,
+        request: SignAndSendSwapForGasRequest,
+    ) -> Result<SignAndSendSwapForGasResponse, KoraError> {
+        info!("Sign and send swap for gas request: {request:?}");
+        let result = sign_and_send_swap_for_gas(&self.rpc_client, request).await;
+        info!("Sign and send swap for gas response: {result:?}");
         result
     }
 
@@ -244,9 +257,14 @@ impl KoraRpc {
                 response: SignAndSendBundleResponse::schema().1,
             },
             OpenApiSpec {
-                name: "swapForGas".to_string(),
-                request: Some(SwapForGasRequest::schema().1),
-                response: SwapForGasResponse::schema().1,
+                name: "signSwapForGas".to_string(),
+                request: Some(SignSwapForGasRequest::schema().1),
+                response: SignSwapForGasResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "signAndSendSwapForGas".to_string(),
+                request: Some(SignAndSendSwapForGasRequest::schema().1),
+                response: SignAndSendSwapForGasResponse::schema().1,
             },
         ]
     }

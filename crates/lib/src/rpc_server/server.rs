@@ -242,9 +242,17 @@ fn build_rpc_module(rpc: KoraRpc) -> Result<RpcModule<KoraRpc>, anyhow::Error> {
     register_method_if_enabled!(
         module,
         enabled_methods,
-        swap_for_gas,
-        "swapForGas",
-        swap_for_gas,
+        sign_swap_for_gas,
+        "signSwapForGas",
+        sign_swap_for_gas,
+        with_params
+    );
+    register_method_if_enabled!(
+        module,
+        enabled_methods,
+        sign_and_send_swap_for_gas,
+        "signAndSendSwapForGas",
+        sign_and_send_swap_for_gas,
         with_params
     );
 
@@ -340,7 +348,8 @@ mod tests {
             estimate_bundle_fee: false,
             sign_and_send_bundle: false,
             sign_bundle: false,
-            swap_for_gas: false,
+            sign_swap_for_gas: false,
+            sign_and_send_swap_for_gas: false,
         };
 
         let kora_config = KoraConfigBuilder::new().with_enabled_methods(enabled_methods).build();
@@ -375,7 +384,8 @@ mod tests {
             estimate_bundle_fee: false,
             sign_and_send_bundle: false,
             sign_bundle: false,
-            swap_for_gas: false,
+            sign_swap_for_gas: false,
+            sign_and_send_swap_for_gas: false,
         };
 
         let kora_config = KoraConfigBuilder::new().with_enabled_methods(enabled_methods).build();

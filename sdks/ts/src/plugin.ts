@@ -13,17 +13,19 @@ import type {
     KitPayerSignerResponse,
     KitPaymentInstructionResponse,
     KitSignAndSendBundleResponse,
+    KitSignAndSendSwapForGasResponse,
     KitSignAndSendTransactionResponse,
     KitSignBundleResponse,
+    KitSignSwapForGasResponse,
     KitSignTransactionResponse,
-    KitSwapForGasResponse,
     KitSupportedTokensResponse,
     KoraPluginConfig,
     SignAndSendBundleRequest,
+    SignAndSendSwapForGasRequest,
     SignAndSendTransactionRequest,
     SignBundleRequest,
+    SignSwapForGasRequest,
     SignTransactionRequest,
-    SwapForGasRequest,
 } from './types/index.js';
 
 /**
@@ -179,20 +181,33 @@ export function koraPlugin(config: KoraPluginConfig) {
             },
 
             /**
-             * Builds a swap-for-gas transaction with Kit-typed addresses.
+             * Builds and signs a swap-for-gas transaction with Kit-typed addresses.
              */
-            async swapForGas(request: SwapForGasRequest): Promise<KitSwapForGasResponse> {
-                const result = await client.swapForGas(request);
+            async signSwapForGas(request: SignSwapForGasRequest): Promise<KitSignSwapForGasResponse> {
+                const result = await client.signSwapForGas(request);
                 return {
                     destination_wallet: address(result.destination_wallet),
                     fee_token: address(result.fee_token),
-                    is_signed_by_kora: result.is_signed_by_kora,
                     lamports_out: result.lamports_out,
                     payment_address: address(result.payment_address),
                     spread_bps: result.spread_bps,
                     signer_pubkey: address(result.signer_pubkey),
                     transaction: result.transaction as Base64EncodedWireTransaction,
                     token_amount_in: result.token_amount_in,
+                };
+            },
+
+            /**
+             * Sends a signed swap-for-gas transaction with Kit-typed response.
+             */
+            async signAndSendSwapForGas(
+                request: SignAndSendSwapForGasRequest,
+            ): Promise<KitSignAndSendSwapForGasResponse> {
+                const result = await client.signAndSendSwapForGas(request);
+                return {
+                    signature: signature(result.signature),
+                    signed_transaction: result.signed_transaction as Base64EncodedWireTransaction,
+                    signer_pubkey: address(result.signer_pubkey),
                 };
             },
 

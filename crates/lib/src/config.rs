@@ -341,7 +341,8 @@ pub struct EnabledMethods {
     pub estimate_bundle_fee: bool,
     pub sign_and_send_bundle: bool,
     pub sign_bundle: bool,
-    pub swap_for_gas: bool,
+    pub sign_swap_for_gas: bool,
+    pub sign_and_send_swap_for_gas: bool,
 }
 
 impl EnabledMethods {
@@ -360,7 +361,8 @@ impl EnabledMethods {
             self.estimate_bundle_fee,
             self.sign_and_send_bundle,
             self.sign_bundle,
-            self.swap_for_gas,
+            self.sign_swap_for_gas,
+            self.sign_and_send_swap_for_gas,
         ]
         .into_iter()
     }
@@ -407,8 +409,11 @@ impl EnabledMethods {
         if self.sign_bundle {
             methods.push("signBundle".to_string());
         }
-        if self.swap_for_gas {
-            methods.push("swapForGas".to_string());
+        if self.sign_swap_for_gas {
+            methods.push("signSwapForGas".to_string());
+        }
+        if self.sign_and_send_swap_for_gas {
+            methods.push("signAndSendSwapForGas".to_string());
         }
         methods
     }
@@ -416,7 +421,7 @@ impl EnabledMethods {
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 14>;
+    type IntoIter = std::array::IntoIter<bool, 15>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
@@ -433,7 +438,8 @@ impl IntoIterator for &EnabledMethods {
             self.estimate_bundle_fee,
             self.sign_and_send_bundle,
             self.sign_bundle,
-            self.swap_for_gas,
+            self.sign_swap_for_gas,
+            self.sign_and_send_swap_for_gas,
         ]
         .into_iter()
     }
@@ -456,7 +462,8 @@ impl Default for EnabledMethods {
             estimate_bundle_fee: false,
             sign_and_send_bundle: false,
             sign_bundle: false,
-            swap_for_gas: false,
+            sign_swap_for_gas: false,
+            sign_and_send_swap_for_gas: false,
         }
     }
 }
