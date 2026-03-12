@@ -186,12 +186,12 @@ export function koraPlugin(config: KoraPluginConfig) {
                 return {
                     destination_wallet: address(result.destination_wallet),
                     fee_token: address(result.fee_token),
-                    lamports_out: result.lamports_out,
+                    lamports_received: result.lamports_received,
                     payment_address: address(result.payment_address),
-                    spread_bps: result.spread_bps,
+                    buffer_bps: result.buffer_bps,
                     signer_pubkey: address(result.signer_pubkey),
                     transaction: result.transaction as Base64EncodedWireTransaction,
-                    token_amount_in: result.token_amount_in,
+                    token_amount_paid: result.token_amount_paid,
                 };
             },
 

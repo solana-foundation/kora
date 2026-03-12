@@ -1,6 +1,6 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
-use kora_lib::{constant::DEFAULT_SWAP_FOR_GAS_SPREAD_BPS, transaction::TransactionUtil};
+use kora_lib::{constant::DEFAULT_SWAP_FOR_GAS_BUFFER_BPS, transaction::TransactionUtil};
 use solana_sdk::{pubkey::Pubkey, signature::Signature, signer::Signer};
 use std::str::FromStr;
 
@@ -11,7 +11,7 @@ async fn test_swap_for_gas_builds_kora_signed_transaction() {
     let source_keypair = SenderTestHelper::get_test_sender_keypair();
     let source_wallet = source_keypair.pubkey();
     let fee_token = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-    let lamports_out = 10_000u64;
+    let desired_lamports = 10_000u64;
 
     let response: serde_json::Value = ctx
         .rpc_call(
@@ -20,9 +20,8 @@ async fn test_swap_for_gas_builds_kora_signed_transaction() {
                 source_wallet.to_string(),
                 Option::<String>::None,
                 fee_token.to_string(),
-                lamports_out,
-                Option::<String>::None,
-                false
+                desired_lamports,
+                Option::<u64>::None
             ],
         )
         .await
@@ -32,17 +31,17 @@ async fn test_swap_for_gas_builds_kora_signed_transaction() {
     response.assert_has_field("transaction");
     response.assert_has_field("signer_pubkey");
     response.assert_has_field("payment_address");
-    response.assert_has_field("token_amount_in");
-    response.assert_has_field("spread_bps");
+    response.assert_has_field("token_amount_paid");
+    response.assert_has_field("buffer_bps");
 
     assert_eq!(response["destination_wallet"].as_str().unwrap(), source_wallet.to_string());
     assert_eq!(response["fee_token"].as_str().unwrap(), fee_token.to_string());
-    assert_eq!(response["lamports_out"].as_u64().unwrap(), lamports_out);
+    assert_eq!(response["lamports_received"].as_u64().unwrap(), desired_lamports);
     assert_eq!(
-        response["spread_bps"].as_u64().unwrap(),
-        u64::from(DEFAULT_SWAP_FOR_GAS_SPREAD_BPS)
+        response["buffer_bps"].as_u64().unwrap(),
+        u64::from(DEFAULT_SWAP_FOR_GAS_BUFFER_BPS)
     );
-    assert!(response["token_amount_in"].as_u64().unwrap() > 0);
+    assert!(response["token_amount_paid"].as_u64().unwrap() > 0);
 
     let tx = TransactionUtil::decode_b64_transaction(response["transaction"].as_str().unwrap())
         .expect("Failed to decode swapForGas transaction");
@@ -85,14 +84,13 @@ async fn test_swap_for_gas_rejects_zero_lamports() {
                 Option::<String>::None,
                 fee_token.to_string(),
                 0u64,
-                Option::<String>::None,
-                false
+                Option::<u64>::None
             ],
         )
         .await;
 
     assert!(result.is_err());
-    result.unwrap_err().assert_contains_message("lamports_out must be greater than zero");
+    result.unwrap_err().assert_contains_message("desired_lamports must be greater than zero");
 }
 
 #[tokio::test]
@@ -115,8 +113,7 @@ async fn test_swap_for_gas_rejects_source_wallet_equal_to_kora_signer() {
                 Some(destination_wallet.to_string()),
                 fee_token.to_string(),
                 25_000u64,
-                Some(signer_address),
-                true
+                Option::<u64>::None
             ],
         )
         .await;
@@ -145,8 +142,7 @@ async fn test_swap_for_gas_rejects_destination_wallet_equal_to_kora_signer() {
                 Some(signer_address.clone()),
                 fee_token.to_string(),
                 25_000u64,
-                Some(signer_address),
-                true
+                Option::<u64>::None
             ],
         )
         .await;
@@ -155,4 +151,52 @@ async fn test_swap_for_gas_rejects_destination_wallet_equal_to_kora_signer() {
     result
         .unwrap_err()
         .assert_contains_message("destination_wallet must not be the Kora fee payer");
+}
+
+#[tokio::test]
+async fn test_swap_for_gas_rejects_when_quoted_amount_exceeds_max_token_amount_in() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let source_wallet = SenderTestHelper::get_test_sender_keypair().pubkey();
+    let fee_token = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let result = ctx
+        .rpc_call::<serde_json::Value, _>(
+            "swapForGas",
+            rpc_params![
+                source_wallet.to_string(),
+                Option::<String>::None,
+                fee_token.to_string(),
+                10_000u64,
+                Some(1u64)
+            ],
+        )
+        .await;
+
+    assert!(result.is_err());
+    result.unwrap_err().assert_contains_message("exceeds max_token_amount_in");
+}
+
+#[tokio::test]
+async fn test_swap_for_gas_rejects_when_desired_lamports_exceeds_swap_max_lamports_out() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let source_wallet = SenderTestHelper::get_test_sender_keypair().pubkey();
+    let fee_token = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let result = ctx
+        .rpc_call::<serde_json::Value, _>(
+            "swapForGas",
+            rpc_params![
+                source_wallet.to_string(),
+                Option::<String>::None,
+                fee_token.to_string(),
+                600_000u64,
+                Option::<u64>::None
+            ],
+        )
+        .await;
+
+    assert!(result.is_err());
+    result.unwrap_err().assert_contains_message("swap_for_gas.max_lamports_out");
 }

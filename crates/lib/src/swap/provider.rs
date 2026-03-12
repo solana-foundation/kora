@@ -9,7 +9,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 
 use crate::{
-    config::{Config, SwapQuoteProviderType},
+    config::Config,
     error::KoraError,
     oracle::{get_price_oracle, PriceSource, RetryingPriceOracle},
     token::token::TokenUtil,
@@ -27,14 +27,7 @@ pub trait SwapQuoteProvider: Send + Sync {
 }
 
 pub fn get_swap_quote_provider(config: &Config) -> Arc<dyn SwapQuoteProvider + Send + Sync> {
-    match config.kora.swap_for_gas.quote_provider {
-        SwapQuoteProviderType::Jupiter => {
-            Arc::new(OracleBackedSwapQuoteProvider { price_source: PriceSource::Jupiter })
-        }
-        SwapQuoteProviderType::Mock => {
-            Arc::new(OracleBackedSwapQuoteProvider { price_source: PriceSource::Mock })
-        }
-    }
+    Arc::new(OracleBackedSwapQuoteProvider { price_source: config.validation.price_source.clone() })
 }
 
 struct OracleBackedSwapQuoteProvider {

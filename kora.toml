@@ -50,8 +50,8 @@ get_version = true
 swap_for_gas = false
 
 [kora.swap_for_gas]
-quote_provider = "Jupiter"
-spread_bps = 25
+buffer_bps = 25
+max_lamports_out = 1000000
 
 [validation]
 max_allowed_lamports = 1000000

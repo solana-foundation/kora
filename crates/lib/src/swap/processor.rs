@@ -20,16 +20,17 @@ pub struct SwapForGasBuildInput {
     pub source_wallet: String,
     pub destination_wallet: Option<String>,
     pub fee_token: String,
-    pub lamports_out: u64,
+    pub desired_lamports: u64,
+    pub max_token_amount_in: Option<u64>,
 }
 
 pub struct SwapForGasBuildOutput {
     pub transaction: VersionedTransaction,
     pub payment_address: Pubkey,
     pub fee_token: Pubkey,
-    pub token_amount_in: u64,
-    pub lamports_out: u64,
-    pub spread_bps: u16,
+    pub token_amount_paid: u64,
+    pub lamports_received: u64,
+    pub buffer_bps: u16,
     pub destination_wallet: Pubkey,
 }
 
@@ -37,25 +38,29 @@ struct ValidatedSwapForGasInput {
     source_wallet: Pubkey,
     destination_wallet: Pubkey,
     fee_token: Pubkey,
-    lamports_out: u64,
+    desired_lamports: u64,
+    max_token_amount_in: Option<u64>,
 }
 
 pub struct SwapForGasProcessor;
 
 impl SwapForGasProcessor {
-    pub fn apply_spread_bps(base_amount: u64, spread_bps: u16) -> Result<u64, KoraError> {
-        let multiplier = 10_000u128.checked_add(spread_bps as u128).ok_or_else(|| {
-            KoraError::ValidationError("Spread configuration overflow".to_string())
-        })?;
+    const BPS_DENOMINATOR: u128 = 10_000;
+
+    fn apply_buffer_bps(base_amount: u64, buffer_bps: u16) -> Result<u64, KoraError> {
+        let multiplier =
+            Self::BPS_DENOMINATOR.checked_add(buffer_bps as u128).ok_or_else(|| {
+                KoraError::ValidationError("Buffer configuration overflow".to_string())
+            })?;
 
         let adjusted = (base_amount as u128)
             .checked_mul(multiplier)
-            .and_then(|v| v.checked_add(9_999))
-            .and_then(|v| v.checked_div(10_000))
-            .ok_or_else(|| KoraError::ValidationError("Spread calculation overflow".to_string()))?;
+            .and_then(|v| v.checked_add(Self::BPS_DENOMINATOR - 1))
+            .and_then(|v| v.checked_div(Self::BPS_DENOMINATOR))
+            .ok_or_else(|| KoraError::ValidationError("Buffer calculation overflow".to_string()))?;
 
         u64::try_from(adjusted)
-            .map_err(|_| KoraError::ValidationError("Spread-adjusted amount overflow".to_string()))
+            .map_err(|_| KoraError::ValidationError("Buffer-adjusted amount overflow".to_string()))
     }
 
     fn validate_build_input(
@@ -63,9 +68,9 @@ impl SwapForGasProcessor {
         signer_pubkey: Pubkey,
         config: &Config,
     ) -> Result<ValidatedSwapForGasInput, KoraError> {
-        if input.lamports_out == 0 {
+        if input.desired_lamports == 0 {
             return Err(KoraError::ValidationError(
-                "lamports_out must be greater than zero".to_string(),
+                "desired_lamports must be greater than zero".to_string(),
             ));
         }
 
@@ -107,7 +112,20 @@ impl SwapForGasProcessor {
             )));
         }
 
-        validator.validate_lamport_fee(input.lamports_out)?;
+        validator.validate_lamport_fee(input.desired_lamports)?;
+        if input.desired_lamports > config.kora.swap_for_gas.max_lamports_out {
+            return Err(KoraError::ValidationError(format!(
+                "desired_lamports {} exceeds swap_for_gas.max_lamports_out {}",
+                input.desired_lamports, config.kora.swap_for_gas.max_lamports_out
+            )));
+        }
+        if let Some(max_token_amount_in) = input.max_token_amount_in {
+            if max_token_amount_in == 0 {
+                return Err(KoraError::ValidationError(
+                    "max_token_amount_in must be greater than zero".to_string(),
+                ));
+            }
+        }
 
         if !config.validation.supports_token(&fee_token.to_string()) {
             return Err(KoraError::UnsupportedFeeToken(fee_token.to_string()));
@@ -117,24 +135,25 @@ impl SwapForGasProcessor {
             source_wallet,
             destination_wallet,
             fee_token,
-            lamports_out: input.lamports_out,
+            desired_lamports: input.desired_lamports,
+            max_token_amount_in: input.max_token_amount_in,
         })
     }
 
-    async fn quote_token_amount_with_spread(
+    async fn quote_token_amount_with_buffer(
         config: &Config,
         rpc_client: &Arc<RpcClient>,
         fee_token: &Pubkey,
-        lamports_out: u64,
+        desired_lamports: u64,
     ) -> Result<(u64, u16), KoraError> {
         let quote_provider = get_swap_quote_provider(config);
         let quoted_token_amount = quote_provider
-            .quote_token_amount_in_for_lamports_out(rpc_client, fee_token, lamports_out, config)
+            .quote_token_amount_in_for_lamports_out(rpc_client, fee_token, desired_lamports, config)
             .await?;
 
-        let spread_bps = config.kora.swap_for_gas.spread_bps;
-        let token_amount_in = Self::apply_spread_bps(quoted_token_amount, spread_bps)?;
-        Ok((token_amount_in, spread_bps))
+        let buffer_bps = config.kora.swap_for_gas.buffer_bps;
+        let token_amount_paid = Self::apply_buffer_bps(quoted_token_amount, buffer_bps)?;
+        Ok((token_amount_paid, buffer_bps))
     }
 
     async fn build_swap_message(
@@ -143,7 +162,7 @@ impl SwapForGasProcessor {
         signer_pubkey: Pubkey,
         validated: &ValidatedSwapForGasInput,
         payment_destination: &Pubkey,
-        token_amount_in: u64,
+        token_amount_paid: u64,
     ) -> Result<VersionedMessage, KoraError> {
         let token_mint = TokenUtil::get_mint(config, rpc_client, &validated.fee_token).await?;
         let token_program = token_mint.get_token_program();
@@ -183,7 +202,7 @@ impl SwapForGasProcessor {
                     &validated.fee_token,
                     &destination_token_account,
                     &validated.source_wallet,
-                    token_amount_in,
+                    token_amount_paid,
                     token_decimals,
                 )
                 .map_err(|e| {
@@ -194,7 +213,7 @@ impl SwapForGasProcessor {
         instructions.push(system_transfer(
             &signer_pubkey,
             &validated.destination_wallet,
-            validated.lamports_out,
+            validated.desired_lamports,
         ));
 
         let blockhash = CacheUtil::get_or_fetch_latest_blockhash(config, rpc_client).await?;
@@ -234,13 +253,21 @@ impl SwapForGasProcessor {
     ) -> Result<SwapForGasBuildOutput, KoraError> {
         let validated = Self::validate_build_input(input, signer_pubkey, config)?;
 
-        let (token_amount_in, spread_bps) = Self::quote_token_amount_with_spread(
+        let (token_amount_paid, buffer_bps) = Self::quote_token_amount_with_buffer(
             config,
             rpc_client,
             &validated.fee_token,
-            validated.lamports_out,
+            validated.desired_lamports,
         )
         .await?;
+        if let Some(max_token_amount_in) = validated.max_token_amount_in {
+            if token_amount_paid > max_token_amount_in {
+                return Err(KoraError::ValidationError(format!(
+                    "Quoted token amount {} exceeds max_token_amount_in {}",
+                    token_amount_paid, max_token_amount_in
+                )));
+            }
+        }
 
         let payment_destination = config.kora.get_payment_address(&signer_pubkey)?;
         let message = Self::build_swap_message(
@@ -249,7 +276,7 @@ impl SwapForGasProcessor {
             signer_pubkey,
             &validated,
             &payment_destination,
-            token_amount_in,
+            token_amount_paid,
         )
         .await?;
 
@@ -259,9 +286,9 @@ impl SwapForGasProcessor {
             transaction,
             payment_address: payment_destination,
             fee_token: validated.fee_token,
-            token_amount_in,
-            lamports_out: validated.lamports_out,
-            spread_bps,
+            token_amount_paid,
+            lamports_received: validated.desired_lamports,
+            buffer_bps,
             destination_wallet: validated.destination_wallet,
         })
     }
@@ -272,14 +299,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_apply_spread_bps_zero() {
-        let result = SwapForGasProcessor::apply_spread_bps(1_000_000, 0).unwrap();
+    fn test_apply_buffer_bps_zero() {
+        let result = SwapForGasProcessor::apply_buffer_bps(1_000_000, 0).unwrap();
         assert_eq!(result, 1_000_000);
     }
 
     #[test]
-    fn test_apply_spread_bps_rounds_up() {
-        let result = SwapForGasProcessor::apply_spread_bps(1, 25).unwrap();
+    fn test_apply_buffer_bps_rounds_up() {
+        let result = SwapForGasProcessor::apply_buffer_bps(1, 25).unwrap();
         assert_eq!(result, 2);
     }
 }

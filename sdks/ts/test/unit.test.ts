@@ -366,17 +366,17 @@ describe('KoraClient Unit Tests', () => {
         it('should build and sign swap-for-gas transaction', async () => {
             const request: SwapForGasRequest = {
                 fee_token: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
-                lamports_out: 10000,
+                desired_lamports: 10000,
                 source_wallet: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
             };
             const mockResponse: SwapForGasResponse = {
                 destination_wallet: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
                 fee_token: request.fee_token,
-                lamports_out: 10000,
+                lamports_received: 10000,
                 payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                spread_bps: 25,
+                buffer_bps: 25,
                 signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
-                token_amount_in: 1334,
+                token_amount_paid: 1334,
                 transaction: 'base64_signed_swap_tx',
             };
 

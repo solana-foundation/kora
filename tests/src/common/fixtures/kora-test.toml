@@ -27,8 +27,8 @@ sign_and_send_bundle = true
 swap_for_gas = true
 
 [kora.swap_for_gas]
-quote_provider = "Mock"
-spread_bps = 25
+buffer_bps = 25
+max_lamports_out = 500000
 
 [validation]
 max_allowed_lamports = 1000000

@@ -2,7 +2,7 @@ use std::{path::Path, str::FromStr};
 
 use crate::{
     admin::token_util::find_missing_atas,
-    config::{FeePayerPolicy, SplTokenConfig, SwapQuoteProviderType, Token2022Config},
+    config::{FeePayerPolicy, SplTokenConfig, Token2022Config},
     constant::{LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     fee::price::PriceModel,
     oracle::PriceSource,
@@ -291,11 +291,17 @@ impl ConfigValidator {
         }
 
         // Validate swap-for-gas configuration
-        if config.kora.swap_for_gas.spread_bps > 10_000 {
+        if config.kora.swap_for_gas.buffer_bps > 10_000 {
             errors.push(format!(
-                "swap_for_gas.spread_bps must be between 0 and 10000, got: {}",
-                config.kora.swap_for_gas.spread_bps
+                "swap_for_gas.buffer_bps must be between 0 and 10000, got: {}",
+                config.kora.swap_for_gas.buffer_bps
             ));
+        }
+        if config.kora.swap_for_gas.max_lamports_out == 0 {
+            warnings.push(
+                "swap_for_gas.max_lamports_out is 0 - swapForGas will reject all requests"
+                    .to_string(),
+            );
         }
 
         // Validate enabled methods (warn if all false)
@@ -328,24 +334,6 @@ impl ConfigValidator {
         {
             errors.push(
                 "JUPITER_API_KEY environment variable not set. Required when price_source = Jupiter".to_string()
-            );
-        }
-
-        if config.kora.enabled_methods.swap_for_gas
-            && matches!(config.kora.swap_for_gas.quote_provider, SwapQuoteProviderType::Jupiter)
-            && std::env::var("JUPITER_API_KEY").is_err()
-        {
-            errors.push(
-                "JUPITER_API_KEY environment variable not set. Required when swap_for_gas.quote_provider = Jupiter and swapForGas is enabled".to_string()
-            );
-        }
-
-        if config.kora.enabled_methods.swap_for_gas
-            && matches!(config.kora.swap_for_gas.quote_provider, SwapQuoteProviderType::Mock)
-        {
-            warnings.push(
-                "Using Mock swap quote provider for swapForGas. Not suitable for production."
-                    .to_string(),
             );
         }
 
@@ -2003,8 +1991,8 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_swap_for_gas_mock_provider_warns_when_enabled() {
-        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+    async fn test_swap_for_gas_jupiter_requires_api_key_when_enabled() {
+        std::env::remove_var("JUPITER_API_KEY");
 
         let mut config = Config {
             validation: ValidationConfig {
@@ -2031,7 +2019,49 @@ mod tests {
         };
 
         config.kora.enabled_methods.swap_for_gas = true;
-        config.kora.swap_for_gas.quote_provider = SwapQuoteProviderType::Mock;
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("JUPITER_API_KEY")));
+        assert!(errors.iter().any(|e| e.contains("price_source = Jupiter")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_swap_for_gas_zero_max_lamports_out_warns() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+
+        let mut config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Mock,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        config.kora.enabled_methods.swap_for_gas = true;
+        config.kora.swap_for_gas.max_lamports_out = 0;
 
         let _ = update_config(config);
 
@@ -2040,7 +2070,7 @@ mod tests {
 
         assert!(result.is_ok());
         let warnings = result.unwrap();
-        assert!(warnings.iter().any(|w| w.contains("Using Mock swap quote provider")));
+        assert!(warnings.iter().any(|w| w.contains("swap_for_gas.max_lamports_out is 0")));
     }
 
     #[tokio::test]

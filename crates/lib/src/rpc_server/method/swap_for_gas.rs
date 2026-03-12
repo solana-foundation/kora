@@ -7,7 +7,6 @@ use utoipa::ToSchema;
 
 use crate::{
     error::KoraError,
-    rpc_server::middleware_utils::default_sig_verify,
     state::get_request_signer_with_signer_key,
     swap::{SwapForGasBuildInput, SwapForGasProcessor},
     transaction::TransactionUtil,
@@ -22,7 +21,7 @@ use crate::tests::config_mock::mock_state::get_config;
 /// Request payload for building and Kora-signing a gas-station style swap transaction.
 ///
 /// The resulting transaction transfers `fee_token` from `source_wallet` to Kora's payment address,
-/// and transfers `lamports_out` SOL from Kora fee payer to `destination_wallet`.
+/// and transfers `desired_lamports` SOL from Kora fee payer to `destination_wallet`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SwapForGasRequest {
     /// Wallet that pays the token side of the swap.
@@ -33,13 +32,10 @@ pub struct SwapForGasRequest {
     /// Mint address of token used for swap payment (for example USDC).
     pub fee_token: String,
     /// Desired SOL output amount in lamports.
-    pub lamports_out: u64,
-    /// Optional signer selection key for Kora signer consistency.
+    pub desired_lamports: u64,
+    /// Optional max token input user is willing to pay.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signer_key: Option<String>,
-    /// Whether to verify signatures during simulation (defaults to false).
-    #[serde(default = "default_sig_verify")]
-    pub sig_verify: bool,
+    pub max_token_amount_in: Option<u64>,
 }
 
 /// Response payload containing a Kora-signed swap-for-gas transaction.
@@ -53,12 +49,12 @@ pub struct SwapForGasResponse {
     pub payment_address: String,
     /// Mint address of fee token used in swap.
     pub fee_token: String,
-    /// Total token amount charged (includes spread).
-    pub token_amount_in: u64,
+    /// Total token amount charged (includes configured buffer).
+    pub token_amount_paid: u64,
     /// Exact SOL output in lamports.
-    pub lamports_out: u64,
-    /// Applied spread in basis points.
-    pub spread_bps: u16,
+    pub lamports_received: u64,
+    /// Applied buffer in basis points.
+    pub buffer_bps: u16,
     /// SOL recipient wallet.
     pub destination_wallet: String,
 }
@@ -67,13 +63,7 @@ pub async fn swap_for_gas(
     rpc_client: &Arc<RpcClient>,
     request: SwapForGasRequest,
 ) -> Result<SwapForGasResponse, KoraError> {
-    if request.lamports_out == 0 {
-        return Err(KoraError::ValidationError(
-            "lamports_out must be greater than zero".to_string(),
-        ));
-    }
-
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let signer = get_request_signer_with_signer_key(None)?;
     let config = &get_config()?;
     let signer_pubkey = signer.pubkey();
 
@@ -82,7 +72,8 @@ pub async fn swap_for_gas(
             source_wallet: request.source_wallet,
             destination_wallet: request.destination_wallet,
             fee_token: request.fee_token,
-            lamports_out: request.lamports_out,
+            desired_lamports: request.desired_lamports,
+            max_token_amount_in: request.max_token_amount_in,
         },
         &signer,
         signer_pubkey,
@@ -98,9 +89,9 @@ pub async fn swap_for_gas(
         signer_pubkey: signer_pubkey.to_string(),
         payment_address: built.payment_address.to_string(),
         fee_token: built.fee_token.to_string(),
-        token_amount_in: built.token_amount_in,
-        lamports_out: built.lamports_out,
-        spread_bps: built.spread_bps,
+        token_amount_paid: built.token_amount_paid,
+        lamports_received: built.lamports_received,
+        buffer_bps: built.buffer_bps,
         destination_wallet: built.destination_wallet.to_string(),
     })
 }
@@ -114,12 +105,12 @@ mod tests {
         let json = r#"{
             "source_wallet": "11111111111111111111111111111111",
             "fee_token": "So11111111111111111111111111111111111111112",
-            "lamports_out": 5000
+            "desired_lamports": 5000
         }"#;
 
         let request: SwapForGasRequest = serde_json::from_str(json).unwrap();
-        assert!(!request.sig_verify);
         assert!(request.destination_wallet.is_none());
+        assert!(request.max_token_amount_in.is_none());
     }
 
     #[tokio::test]
@@ -128,9 +119,8 @@ mod tests {
             source_wallet: "11111111111111111111111111111111".to_string(),
             destination_wallet: None,
             fee_token: "So11111111111111111111111111111111111111112".to_string(),
-            lamports_out: 0,
-            signer_key: None,
-            sig_verify: false,
+            desired_lamports: 0,
+            max_token_amount_in: None,
         };
 
         let rpc_client = Arc::new(crate::tests::rpc_mock::RpcMockBuilder::new().build());

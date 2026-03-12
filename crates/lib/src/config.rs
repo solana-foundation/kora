@@ -12,7 +12,8 @@ use crate::{
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
         DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
         DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_PROTECTED_METHODS,
-        DEFAULT_RECAPTCHA_SCORE_THRESHOLD, DEFAULT_SWAP_FOR_GAS_SPREAD_BPS,
+        DEFAULT_RECAPTCHA_SCORE_THRESHOLD, DEFAULT_SWAP_FOR_GAS_BUFFER_BPS,
+        DEFAULT_SWAP_FOR_GAS_MAX_LAMPORTS_OUT,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
@@ -484,26 +485,20 @@ impl Default for CacheConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq, Default)]
-pub enum SwapQuoteProviderType {
-    #[default]
-    Jupiter,
-    Mock,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct SwapForGasConfig {
-    pub quote_provider: SwapQuoteProviderType,
-    /// Spread added on top of quote in basis points (100 bps = 1%)
-    pub spread_bps: u16,
+    /// Buffer added on top of quote in basis points (100 bps = 1%)
+    pub buffer_bps: u16,
+    /// Max SOL output allowed for swapForGas in lamports
+    pub max_lamports_out: u64,
 }
 
 impl Default for SwapForGasConfig {
     fn default() -> Self {
         Self {
-            quote_provider: SwapQuoteProviderType::default(),
-            spread_bps: DEFAULT_SWAP_FOR_GAS_SPREAD_BPS,
+            buffer_bps: DEFAULT_SWAP_FOR_GAS_BUFFER_BPS,
+            max_lamports_out: DEFAULT_SWAP_FOR_GAS_MAX_LAMPORTS_OUT,
         }
     }
 }
@@ -521,7 +516,7 @@ pub struct KoraConfig {
     pub usage_limit: UsageLimitConfig,
     /// Bundle support configuration
     pub bundle: BundleConfig,
-    /// Swap-for-gas quote and spread configuration
+    /// Swap-for-gas pricing buffer and limits
     pub swap_for_gas: SwapForGasConfig,
     /// Lighthouse configuration for fee payer balance protection
     pub lighthouse: LighthouseConfig,

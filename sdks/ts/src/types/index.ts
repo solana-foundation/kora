@@ -120,12 +120,10 @@ export interface SwapForGasRequest {
     destination_wallet?: string;
     /** Mint address of token used for swap payment */
     fee_token: string;
+    /** Optional max token input user is willing to pay */
+    max_token_amount_in?: number;
     /** Desired SOL output amount in lamports */
-    lamports_out: number;
-    /** Optional signer verification during simulation (defaults to false) */
-    sig_verify?: boolean;
-    /** Optional signer address for Kora signer selection */
-    signer_key?: string;
+    desired_lamports: number;
     /** Wallet owner paying token side of swap */
     source_wallet: string;
 }
@@ -270,18 +268,18 @@ export interface SwapForGasResponse {
     destination_wallet: string;
     /** Fee token mint used in swap */
     fee_token: string;
-    /** Desired SOL output amount in lamports */
-    lamports_out: number;
+    /** Exact SOL output in lamports */
+    lamports_received: number;
     /** Public key receiving token payments */
     payment_address: string;
-    /** Applied spread in basis points */
-    spread_bps: number;
+    /** Applied buffer in basis points */
+    buffer_bps: number;
     /** Public key of signer used as fee payer */
     signer_pubkey: string;
     /** Base64-encoded swap transaction */
     transaction: string;
-    /** Token amount charged from source wallet */
-    token_amount_in: number;
+    /** Total token amount charged from source wallet */
+    token_amount_paid: number;
 }
 
 /**
@@ -690,18 +688,18 @@ export interface KitSwapForGasResponse {
     destination_wallet: Address;
     /** Fee token mint used in swap */
     fee_token: Address;
-    /** Desired SOL output amount in lamports */
-    lamports_out: number;
+    /** Exact SOL output in lamports */
+    lamports_received: number;
     /** Public key receiving token payments */
     payment_address: Address;
-    /** Applied spread in basis points */
-    spread_bps: number;
+    /** Applied buffer in basis points */
+    buffer_bps: number;
     /** Public key of signer used as fee payer */
     signer_pubkey: Address;
     /** Base64-encoded swap transaction */
     transaction: Base64EncodedWireTransaction;
-    /** Token amount charged from source wallet */
-    token_amount_in: number;
+    /** Total token amount charged from source wallet */
+    token_amount_paid: number;
 }
 
 /** Plugin validation config with Kit Address types */
