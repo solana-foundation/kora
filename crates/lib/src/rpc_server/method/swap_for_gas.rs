@@ -108,6 +108,11 @@ pub async fn swap_for_gas(
 
     let source_wallet = Pubkey::from_str(&request.source_wallet)
         .map_err(|e| KoraError::ValidationError(format!("Invalid source_wallet: {e}")))?;
+    if source_wallet == signer_pubkey {
+        return Err(KoraError::ValidationError(
+            "source_wallet must not be the Kora fee payer".to_string(),
+        ));
+    }
     let destination_wallet = request
         .destination_wallet
         .as_deref()
