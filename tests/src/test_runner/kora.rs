@@ -95,7 +95,6 @@ pub async fn start_kora_rpc_server(
     ])
     .env("KORA_PRIVATE_KEY", fee_payer_key.trim())
     .env("KORA_PRIVATE_KEY_2", signer_2.trim())
-    .env("KORA_ALLOW_MOCK_SWAP_QUOTE_PROVIDER", "true")
     .stdout(std_out)
     .stderr(std_err);
 
