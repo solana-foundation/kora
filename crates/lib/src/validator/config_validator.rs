@@ -340,6 +340,15 @@ impl ConfigValidator {
             );
         }
 
+        if config.kora.enabled_methods.swap_for_gas
+            && matches!(config.kora.swap_for_gas.quote_provider, SwapQuoteProviderType::Mock)
+        {
+            errors.push(
+                "swap_for_gas.quote_provider = Mock is not allowed when swapForGas is enabled"
+                    .to_string(),
+            );
+        }
+
         if config.validation.allow_durable_transactions {
             warnings.push(
                 "⚠️  SECURITY: allow_durable_transactions is enabled. \
@@ -1990,6 +1999,50 @@ mod tests {
         let errors = result.unwrap_err();
         assert!(errors.iter().any(|e| e.contains("JUPITER_API_KEY")));
         assert!(errors.iter().any(|e| e.contains("price_source = Jupiter")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_swap_for_gas_mock_provider_rejected_when_enabled() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+
+        let mut config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        config.kora.enabled_methods.swap_for_gas = true;
+        config.kora.swap_for_gas.quote_provider = SwapQuoteProviderType::Mock;
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("swap_for_gas.quote_provider = Mock is not allowed")));
     }
 
     #[tokio::test]

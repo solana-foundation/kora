@@ -46,6 +46,7 @@ impl OracleBackedSwapQuoteProvider {
         &self,
         rpc_client: &RpcClient,
         token_mint: &Pubkey,
+        config: &Config,
     ) -> Result<Decimal, KoraError> {
         let oracle = RetryingPriceOracle::new(
             3,
@@ -55,13 +56,7 @@ impl OracleBackedSwapQuoteProvider {
 
         let token_price = oracle.get_token_price(&token_mint.to_string()).await?;
 
-        let config = match self.price_source {
-            // For Jupiter provider, enforce staleness checks by reusing runtime config settings.
-            PriceSource::Jupiter => Some(crate::state::get_config()?),
-            PriceSource::Mock => None,
-        };
-
-        if let Some(config) = config {
+        if matches!(self.price_source, PriceSource::Jupiter) {
             let max_staleness = config.validation.max_price_staleness_slots;
             if max_staleness > 0 {
                 let block_id = token_price.block_id.ok_or_else(|| {
@@ -121,7 +116,7 @@ impl SwapQuoteProvider for OracleBackedSwapQuoteProvider {
         lamports_out: u64,
         config: &Config,
     ) -> Result<u64, KoraError> {
-        let token_price_in_sol = self.get_price_in_sol(rpc_client, token_mint).await?;
+        let token_price_in_sol = self.get_price_in_sol(rpc_client, token_mint, config).await?;
         let token_decimals = TokenUtil::get_mint_decimals(config, rpc_client, token_mint).await?;
 
         self.calculate_token_amount_in(lamports_out, token_price_in_sol, token_decimals)
