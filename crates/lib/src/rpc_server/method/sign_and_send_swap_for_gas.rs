@@ -1,14 +1,13 @@
 use crate::{
     rpc_server::middleware_utils::default_sig_verify,
     state::{get_config, get_request_signer_with_signer_key},
-    transaction::{TransactionUtil, VersionedTransactionResolved},
-    usage_limit::UsageTracker,
+    swap::SwapForGasProcessor,
+    transaction::TransactionUtil,
     KoraError,
 };
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_keychain::SolanaSigner;
-use solana_sdk::signature::Signature;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
@@ -43,63 +42,25 @@ pub async fn sign_and_send_swap_for_gas(
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let signer_pubkey = signer.pubkey();
 
-    let account_keys = transaction.message.static_account_keys();
-    let required_signers = transaction.message.header().num_required_signatures as usize;
-
-    let signer_position =
-        account_keys.iter().position(|key| key == &signer_pubkey).ok_or_else(|| {
-            KoraError::InvalidTransaction(format!(
-                "Signer {signer_pubkey} not found in transaction account keys. \
-                 Pass signer_key returned by signSwapForGas."
-            ))
-        })?;
-
-    if signer_position >= required_signers {
-        return Err(KoraError::InvalidTransaction(format!(
-            "Signer {signer_pubkey} is not a required signer for this transaction"
-        )));
-    }
-
-    let signer_signature = transaction.signatures[signer_position];
-    if signer_signature == Signature::default() {
-        return Err(KoraError::ValidationError(
-            "Missing Kora signer signature. Call signSwapForGas first and pass signer_key in signAndSendSwapForGas."
-                .to_string(),
-        ));
-    }
-
-    let message_bytes = transaction.message.serialize();
-    if !signer_signature.verify(signer_pubkey.as_ref(), &message_bytes) {
-        return Err(KoraError::InvalidTransaction(
-            "Invalid Kora signer signature for the provided transaction".to_string(),
-        ));
-    }
-
     let config = get_config()?;
     let sig_verify = request.sig_verify || config.kora.force_sig_verify;
-    let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
+    let signed_transaction = SwapForGasProcessor::validate_transaction_for_send(
         &transaction,
+        &signer_pubkey,
+        &signer,
         config,
         rpc_client,
         sig_verify,
-    )
-    .await?;
-
-    UsageTracker::check_transaction_usage_limit(
-        config,
-        &mut resolved_transaction,
         request.user_id.as_deref(),
-        &signer_pubkey,
-        rpc_client,
     )
     .await?;
 
     let signature = rpc_client
-        .send_and_confirm_transaction(&transaction)
+        .send_and_confirm_transaction(&signed_transaction)
         .await
         .map_err(|e| KoraError::RpcError(e.to_string()))?;
 
-    let signed_transaction = TransactionUtil::encode_versioned_transaction(&transaction)?;
+    let signed_transaction = TransactionUtil::encode_versioned_transaction(&signed_transaction)?;
 
     Ok(SignAndSendSwapForGasResponse {
         signed_transaction,
