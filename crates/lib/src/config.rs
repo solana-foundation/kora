@@ -341,7 +341,6 @@ pub struct EnabledMethods {
     pub estimate_bundle_fee: bool,
     pub sign_and_send_bundle: bool,
     pub sign_bundle: bool,
-    /// Swap-for-gas method (builds a swap transaction; no user transaction co-signing)
     pub swap_for_gas: bool,
 }
 

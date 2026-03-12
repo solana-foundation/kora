@@ -159,7 +159,6 @@ pub async fn swap_for_gas(
     let destination_token_account =
         token_program.get_associated_token_address(&payment_destination, &fee_token);
 
-    // Source ATA must exist because user is paying from it.
     CacheUtil::get_account(config, rpc_client, &source_token_account, false).await.map_err(
         |e| match e {
             KoraError::AccountNotFound(_) => {

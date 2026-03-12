@@ -131,7 +131,6 @@ mod tests {
     fn test_calculate_token_amount_in_rounds_up() {
         let provider = OracleBackedSwapQuoteProvider { price_source: PriceSource::Mock };
 
-        // 1 lamport at 1 SOL/token with 6 decimals => 0.001 token base units, should ceil to 1.
         let amount = provider
             .calculate_token_amount_in(1, Decimal::from(1), 6)
             .expect("quote calculation should succeed");
