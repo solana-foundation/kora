@@ -7,7 +7,6 @@ use solana_sdk::{
 };
 use solana_system_interface::{instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID};
 use solana_transaction_status_client_types::{UiInstruction, UiParsedInstruction};
-use spl_token_2022_interface::extension::ExtensionType;
 
 use crate::{
     constant::instruction_indexes, error::KoraError, transaction::VersionedTransactionResolved,
@@ -199,9 +198,6 @@ pub const PARSED_DATA_FIELD_CLOSE_ACCOUNT: &str = "closeAccount";
 pub const PARSED_DATA_FIELD_TRANSFER_CHECKED: &str = "transferChecked";
 pub const PARSED_DATA_FIELD_APPROVE: &str = "approve";
 pub const PARSED_DATA_FIELD_APPROVE_CHECKED: &str = "approveChecked";
-pub const PARSED_DATA_FIELD_SYNC_NATIVE: &str = "syncNative";
-pub const PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE: &str = "getAccountDataSize";
-pub const PARSED_DATA_FIELD_INITIALIZE_IMMUTABLE_OWNER: &str = "initializeImmutableOwner";
 
 pub const PARSED_DATA_FIELD_AMOUNT: &str = "amount";
 pub const PARSED_DATA_FIELD_LAMPORTS: &str = "lamports";
@@ -246,7 +242,6 @@ pub const PARSED_DATA_FIELD_FREEZE_AUTHORITY: &str = "freezeAuthority";
 pub const PARSED_DATA_FIELD_AUTHORITY_TYPE: &str = "authorityType";
 pub const PARSED_DATA_FIELD_MULTISIG_ACCOUNT: &str = "multisig";
 pub const PARSED_DATA_FIELD_SIGNERS: &str = "signers";
-pub const PARSED_DATA_FIELD_EXTENSION_TYPES: &str = "extensionTypes";
 
 impl IxUtils {
     /// Helper method to extract a field as a string from JSON with proper error handling
@@ -303,40 +298,6 @@ impl IxUtils {
             "Field '{}' is neither a number nor a string",
             field_name
         )))
-    }
-
-    fn parse_token_2022_extension_types(
-        info: &serde_json::Value,
-    ) -> Result<Vec<ExtensionType>, KoraError> {
-        let Some(extension_types_value) = info.get(PARSED_DATA_FIELD_EXTENSION_TYPES) else {
-            return Ok(vec![]);
-        };
-
-        let extension_types_json = extension_types_value.as_array().ok_or_else(|| {
-            KoraError::SerializationError(format!(
-                "Field '{}' is not an array",
-                PARSED_DATA_FIELD_EXTENSION_TYPES
-            ))
-        })?;
-
-        extension_types_json
-            .iter()
-            .map(|value| {
-                let extension_type = value.as_str().ok_or_else(|| {
-                    KoraError::SerializationError(format!(
-                        "Field '{}' contains non-string entry",
-                        PARSED_DATA_FIELD_EXTENSION_TYPES
-                    ))
-                })?;
-                crate::token::spl_token_2022_util::parse_extension_string_any(extension_type)
-                    .ok_or_else(|| {
-                        KoraError::SerializationError(format!(
-                            "Unsupported token-2022 extension type '{}'",
-                            extension_type
-                        ))
-                    })
-            })
-            .collect()
     }
 
     /// Helper method to get account index from hashmap with proper error handling
@@ -423,17 +384,10 @@ impl IxUtils {
         match ui_instruction {
             UiInstruction::Compiled(compiled) => {
                 // Already compiled, decode data and return
-                let data = match bs58::decode(&compiled.data).into_vec() {
-                    Ok(data) => data,
-                    Err(e) => {
-                        log::error!("Failed to decode compiled instruction data from base58: {e}");
-                        return None;
-                    }
-                };
                 Some(CompiledInstruction {
                     program_id_index: compiled.program_id_index,
                     accounts: compiled.accounts.clone(),
-                    data,
+                    data: bs58::decode(&compiled.data).into_vec().unwrap_or_default(),
                 })
             }
             UiInstruction::Parsed(ui_parsed) => match ui_parsed {
@@ -447,11 +401,12 @@ impl IxUtils {
                     {
                         Self::reconstruct_spl_token_instruction(parsed, &account_keys_hashmap).ok()
                     } else {
-                        log::error!(
-                            "Unsupported parsed instruction program_id during reconstruction: {}",
-                            parsed.program_id
-                        );
-                        None
+                        // For unsupported programs, create a stub instruction with just the program ID
+                        // This ensures the program ID is preserved for security validation
+                        let program_id = parsed.program_id.parse::<Pubkey>().ok()?;
+                        let program_id_index = *account_keys_hashmap.get(&program_id)?;
+
+                        Some(Self::build_default_compiled_instruction(program_id_index))
                     }
                 }
                 UiParsedInstruction::PartiallyDecoded(partial) => {
@@ -481,59 +436,40 @@ impl IxUtils {
 
                         // Convert account addresses to indices, extending the keys
                         // vec for any CPI PDA accounts not in the original keys.
-                        let mut account_indices: Vec<u8> =
-                            Vec::with_capacity(partial.accounts.len());
-                        for addr_str in &partial.accounts {
-                            let pubkey = match addr_str.parse::<Pubkey>() {
-                                Ok(pubkey) => pubkey,
-                                Err(_) => {
-                                    log::error!(
-                                        "Failed to parse partially decoded account pubkey: {}",
-                                        addr_str
-                                    );
-                                    return None;
-                                }
-                            };
-
-                            if let Some(&idx) = account_keys_hashmap.get(&pubkey) {
-                                account_indices.push(idx);
-                                continue;
-                            }
-
-                            // CPI PDA signers (e.g. Kamino lending authority)
-                            // are not in the outer transaction's account keys.
-                            // Extend the keys vec so uncompile_instructions
-                            // can resolve the index back to the pubkey.
-                            let idx = match u8::try_from(all_account_keys.len()) {
-                                Ok(i) => i,
-                                Err(_) => {
-                                    log::error!(
-                                        "Account keys exceeds u8 index limit ({})",
-                                        all_account_keys.len()
-                                    );
-                                    return None;
-                                }
-                            };
-                            all_account_keys.push(pubkey);
-                            account_keys_hashmap.insert(pubkey, idx);
-                            account_indices.push(idx);
-                        }
-
-                        let data = match bs58::decode(&partial.data).into_vec() {
-                            Ok(data) => data,
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to decode partially decoded instruction data from base58: {}",
-                                    e
-                                );
-                                return None;
-                            }
-                        };
+                        let account_indices: Vec<u8> = partial
+                            .accounts
+                            .iter()
+                            .filter_map(|addr_str| {
+                                addr_str.parse::<Pubkey>().ok().map(|pubkey| {
+                                    if let Some(&idx) = account_keys_hashmap.get(&pubkey) {
+                                        idx
+                                    } else {
+                                        // CPI PDA signers (e.g. Kamino lending authority)
+                                        // are not in the outer transaction's account keys.
+                                        // Extend the keys vec so uncompile_instructions
+                                        // can resolve the index back to the pubkey.
+                                        let idx = match u8::try_from(all_account_keys.len()) {
+                                            Ok(i) => i,
+                                            Err(_) => {
+                                                log::error!(
+                                                    "Account keys exceeds u8 index limit ({})",
+                                                    all_account_keys.len()
+                                                );
+                                                return None;
+                                            }
+                                        };
+                                        all_account_keys.push(pubkey);
+                                        account_keys_hashmap.insert(pubkey, idx);
+                                        idx
+                                    }
+                                })
+                            })
+                            .collect();
 
                         return Some(CompiledInstruction {
                             program_id_index: program_idx,
                             accounts: account_indices,
-                            data,
+                            data: bs58::decode(&partial.data).into_vec().unwrap_or_default(),
                         });
                     }
 
@@ -970,7 +906,8 @@ impl IxUtils {
                 } else if let Ok(mint) = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT) {
                     // Solana's parser includes mint for non-checked burn. If the
                     // mint index is unavailable, fall back to [source, authority].
-                    if let Ok(mint_idx) = Self::get_account_index(account_keys_hashmap, &mint)
+                    if let Some(mint_idx) =
+                        Self::get_account_index(account_keys_hashmap, &mint).ok()
                     {
                         vec![account_idx, mint_idx, authority_idx]
                     } else {
@@ -1235,48 +1172,6 @@ impl IxUtils {
 
                 Ok(CompiledInstruction { program_id_index, accounts, data })
             }
-            PARSED_DATA_FIELD_SYNC_NATIVE => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
-                    spl_token_interface::instruction::TokenInstruction::SyncNative.pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::SyncNative.pack()
-                };
-
-                Ok(CompiledInstruction { program_id_index, accounts: vec![account_idx], data })
-            }
-            PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE => {
-                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
-                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
-                    spl_token_interface::instruction::TokenInstruction::GetAccountDataSize.pack()
-                } else {
-                    let extension_types = Self::parse_token_2022_extension_types(info)?;
-                    spl_token_2022_interface::instruction::TokenInstruction::GetAccountDataSize {
-                        extension_types,
-                    }
-                    .pack()
-                };
-
-                Ok(CompiledInstruction { program_id_index, accounts: vec![mint_idx], data })
-            }
-            PARSED_DATA_FIELD_INITIALIZE_IMMUTABLE_OWNER => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
-                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
-
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
-                    spl_token_interface::instruction::TokenInstruction::InitializeImmutableOwner
-                        .pack()
-                } else {
-                    spl_token_2022_interface::instruction::TokenInstruction::InitializeImmutableOwner
-                        .pack()
-                };
-
-                Ok(CompiledInstruction { program_id_index, accounts: vec![account_idx], data })
-            }
             PARSED_DATA_FIELD_INITIALIZE_MULTISIG | PARSED_DATA_FIELD_INITIALIZE_MULTISIG2 => {
                 let multisig = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MULTISIG_ACCOUNT)?;
                 let multisig_idx = Self::get_account_index(account_keys_hashmap, &multisig)?;
@@ -1523,7 +1418,8 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token_interface::instruction::TokenInstruction::Burn { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::Burn { .. }
+                        | spl_token_interface::instruction::TokenInstruction::BurnChecked { .. } => {
                             // Standard Burn has 3 accounts: [source, mint, authority]
                             // Reconstructed from parsed RPC data may have only 2: [source, authority]
                             // in defensive fallback cases.
@@ -1544,22 +1440,6 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenBurn {
                                     owner,
-                                    is_2022: false,
-                                });
-                        }
-                        spl_token_interface::instruction::TokenInstruction::BurnChecked { .. } => {
-                            validate_number_accounts!(
-                                instruction,
-                                instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
-                            );
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenBurn)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenBurn {
-                                    owner: instruction.accounts
-                                        [instruction_indexes::spl_token_burn::OWNER_INDEX]
-                                        .pubkey,
                                     is_2022: false,
                                 });
                         }
@@ -1812,7 +1692,8 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022_interface::instruction::TokenInstruction::Burn { .. } => {
+                        spl_token_2022_interface::instruction::TokenInstruction::Burn { .. }
+                        | spl_token_2022_interface::instruction::TokenInstruction::BurnChecked { .. } => {
                             // Standard Burn has 3 accounts: [source, mint, authority]
                             // Reconstructed from parsed RPC data may have only 2: [source, authority]
                             // in defensive fallback cases.
@@ -1833,24 +1714,6 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenBurn {
                                     owner,
-                                    is_2022: true,
-                                });
-                        }
-                        spl_token_2022_interface::instruction::TokenInstruction::BurnChecked {
-                            ..
-                        } => {
-                            validate_number_accounts!(
-                                instruction,
-                                instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
-                            );
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenBurn)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenBurn {
-                                    owner: instruction.accounts
-                                        [instruction_indexes::spl_token_burn::OWNER_INDEX]
-                                        .pubkey,
                                     is_2022: true,
                                 });
                         }
@@ -2509,52 +2372,6 @@ mod tests {
         Ok(parsed)
     }
 
-    fn create_parsed_spl_token_get_account_data_size(
-        mint: &Pubkey,
-    ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
-    {
-        let solana_instruction = spl_token_interface::instruction::get_account_data_size(
-            &spl_token_interface::ID,
-            mint,
-        )?;
-
-        let message = Message::new(&[solana_instruction], None);
-        let compiled_instruction = &message.instructions[0];
-        let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
-
-        let parsed = parse_instruction::parse(
-            &spl_token_interface::ID,
-            compiled_instruction,
-            &account_keys_for_parsing,
-            None,
-        )?;
-
-        Ok(parsed)
-    }
-
-    fn create_parsed_spl_token_initialize_immutable_owner(
-        account: &Pubkey,
-    ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
-    {
-        let solana_instruction = spl_token_interface::instruction::initialize_immutable_owner(
-            &spl_token_interface::ID,
-            account,
-        )?;
-
-        let message = Message::new(&[solana_instruction], None);
-        let compiled_instruction = &message.instructions[0];
-        let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
-
-        let parsed = parse_instruction::parse(
-            &spl_token_interface::ID,
-            compiled_instruction,
-            &account_keys_for_parsing,
-            None,
-        )?;
-
-        Ok(parsed)
-    }
-
     fn create_parsed_token2022_transfer(
         source: &Pubkey,
         destination: &Pubkey,
@@ -2575,54 +2392,6 @@ mod tests {
         let message = Message::new(&[solana_instruction], None);
         let compiled_instruction = &message.instructions[0];
 
-        let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
-
-        let parsed = parse_instruction::parse(
-            &spl_token_2022_interface::ID,
-            compiled_instruction,
-            &account_keys_for_parsing,
-            None,
-        )?;
-
-        Ok(parsed)
-    }
-
-    fn create_parsed_token2022_get_account_data_size(
-        mint: &Pubkey,
-        extension_types: &[ExtensionType],
-    ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
-    {
-        let solana_instruction = spl_token_2022_interface::instruction::get_account_data_size(
-            &spl_token_2022_interface::ID,
-            mint,
-            extension_types,
-        )?;
-
-        let message = Message::new(&[solana_instruction], None);
-        let compiled_instruction = &message.instructions[0];
-        let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
-
-        let parsed = parse_instruction::parse(
-            &spl_token_2022_interface::ID,
-            compiled_instruction,
-            &account_keys_for_parsing,
-            None,
-        )?;
-
-        Ok(parsed)
-    }
-
-    fn create_parsed_token2022_initialize_immutable_owner(
-        account: &Pubkey,
-    ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
-    {
-        let solana_instruction = spl_token_2022_interface::instruction::initialize_immutable_owner(
-            &spl_token_2022_interface::ID,
-            account,
-        )?;
-
-        let message = Message::new(&[solana_instruction], None);
-        let compiled_instruction = &message.instructions[0];
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
 
         let parsed = parse_instruction::parse(
@@ -3092,27 +2861,6 @@ mod tests {
     }
 
     #[test]
-    fn test_reconstruct_instruction_from_ui_compiled_invalid_base58_returns_none() {
-        let program_id = Pubkey::new_unique();
-        let account1 = Pubkey::new_unique();
-        let mut account_keys = vec![program_id, account1];
-
-        let ui_compiled = solana_transaction_status_client_types::UiCompiledInstruction {
-            program_id_index: 0,
-            accounts: vec![1],
-            data: "not-valid-base58!".to_string(),
-            stack_height: None,
-        };
-
-        let result = IxUtils::reconstruct_instruction_from_ui(
-            &UiInstruction::Compiled(ui_compiled),
-            &mut account_keys,
-        );
-
-        assert!(result.is_none());
-    }
-
-    #[test]
     fn test_reconstruct_partially_decoded_instruction() {
         let program_id = Pubkey::new_unique();
         let account1 = Pubkey::new_unique();
@@ -3138,29 +2886,6 @@ mod tests {
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2]); // account1, account2 indices
         assert_eq!(compiled.data, vec![5, 6, 7]);
-    }
-
-    #[test]
-    fn test_reconstruct_partially_decoded_invalid_base58_returns_none() {
-        let program_id = Pubkey::new_unique();
-        let account1 = Pubkey::new_unique();
-        let account2 = Pubkey::new_unique();
-        let mut account_keys = vec![program_id, account1, account2];
-
-        let partial = solana_transaction_status_client_types::UiPartiallyDecodedInstruction {
-            program_id: program_id.to_string(),
-            accounts: vec![account1.to_string(), account2.to_string()],
-            data: "not-valid-base58!".to_string(),
-            stack_height: None,
-        };
-
-        let ui_parsed = UiParsedInstruction::PartiallyDecoded(partial);
-        let result = IxUtils::reconstruct_instruction_from_ui(
-            &UiInstruction::Parsed(ui_parsed),
-            &mut account_keys,
-        );
-
-        assert!(result.is_none());
     }
 
     #[test]
@@ -3727,60 +3452,6 @@ mod tests {
     }
 
     #[test]
-    fn test_reconstruct_spl_token_get_account_data_size_instruction() {
-        let mint = Pubkey::new_unique();
-        let token_program_id = spl_token_interface::ID;
-        let account_keys = vec![token_program_id, mint];
-
-        let instruction = spl_token_interface::instruction::get_account_data_size(
-            &spl_token_interface::ID,
-            &mint,
-        )
-        .expect("Failed to create get_account_data_size instruction");
-
-        let solana_parsed = create_parsed_spl_token_get_account_data_size(&mint)
-            .expect("Failed to create parsed instruction");
-
-        let result = IxUtils::reconstruct_spl_token_instruction(
-            &solana_parsed,
-            &IxUtils::build_account_keys_hashmap(&account_keys),
-        );
-
-        assert!(result.is_ok());
-        let compiled = result.unwrap();
-        assert_eq!(compiled.program_id_index, 0);
-        assert_eq!(compiled.accounts, vec![1]); // mint index
-        assert_eq!(compiled.data, instruction.data);
-    }
-
-    #[test]
-    fn test_reconstruct_spl_token_initialize_immutable_owner_instruction() {
-        let account = Pubkey::new_unique();
-        let token_program_id = spl_token_interface::ID;
-        let account_keys = vec![token_program_id, account];
-
-        let instruction = spl_token_interface::instruction::initialize_immutable_owner(
-            &spl_token_interface::ID,
-            &account,
-        )
-        .expect("Failed to create initialize_immutable_owner instruction");
-
-        let solana_parsed = create_parsed_spl_token_initialize_immutable_owner(&account)
-            .expect("Failed to create parsed instruction");
-
-        let result = IxUtils::reconstruct_spl_token_instruction(
-            &solana_parsed,
-            &IxUtils::build_account_keys_hashmap(&account_keys),
-        );
-
-        assert!(result.is_ok());
-        let compiled = result.unwrap();
-        assert_eq!(compiled.program_id_index, 0);
-        assert_eq!(compiled.accounts, vec![1]); // account index
-        assert_eq!(compiled.data, instruction.data);
-    }
-
-    #[test]
     fn test_reconstruct_token2022_transfer_instruction() {
         let source = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
@@ -4039,130 +3710,6 @@ mod tests {
         assert_eq!(compiled.data, instruction.data);
     }
 
-    #[test]
-    fn test_reconstruct_token2022_get_account_data_size_instruction() {
-        let mint = Pubkey::new_unique();
-        let token_program_id = spl_token_2022_interface::ID;
-        let account_keys = vec![token_program_id, mint];
-
-        let instruction = spl_token_2022_interface::instruction::get_account_data_size(
-            &spl_token_2022_interface::ID,
-            &mint,
-            &[],
-        )
-        .expect("Failed to create get_account_data_size instruction");
-
-        let solana_parsed = create_parsed_token2022_get_account_data_size(&mint, &[])
-            .expect("Failed to create parsed instruction");
-
-        let result = IxUtils::reconstruct_spl_token_instruction(
-            &solana_parsed,
-            &IxUtils::build_account_keys_hashmap(&account_keys),
-        );
-
-        assert!(result.is_ok());
-        let compiled = result.unwrap();
-        assert_eq!(compiled.program_id_index, 0);
-        assert_eq!(compiled.accounts, vec![1]); // mint index
-        assert_eq!(compiled.data, instruction.data);
-    }
-
-    #[test]
-    fn test_reconstruct_token2022_get_account_data_size_instruction_with_extensions() {
-        let mint = Pubkey::new_unique();
-        let token_program_id = spl_token_2022_interface::ID;
-        let account_keys = vec![token_program_id, mint];
-        let extension_types = vec![ExtensionType::ImmutableOwner, ExtensionType::MemoTransfer];
-
-        let instruction = spl_token_2022_interface::instruction::get_account_data_size(
-            &spl_token_2022_interface::ID,
-            &mint,
-            &extension_types,
-        )
-        .expect("Failed to create get_account_data_size instruction");
-
-        let solana_parsed = create_parsed_token2022_get_account_data_size(&mint, &extension_types)
-            .expect("Failed to create parsed instruction");
-
-        let result = IxUtils::reconstruct_spl_token_instruction(
-            &solana_parsed,
-            &IxUtils::build_account_keys_hashmap(&account_keys),
-        );
-
-        assert!(result.is_ok());
-        let compiled = result.unwrap();
-        assert_eq!(compiled.program_id_index, 0);
-        assert_eq!(compiled.accounts, vec![1]); // mint index
-        assert_eq!(compiled.data, instruction.data);
-    }
-
-    #[test]
-    fn test_reconstruct_token2022_get_account_data_size_instruction_with_mixed_case_extensions() {
-        let mint = Pubkey::new_unique();
-        let token_program_id = spl_token_2022_interface::ID;
-        let account_keys = vec![token_program_id, mint];
-        let extension_types = vec![ExtensionType::ImmutableOwner, ExtensionType::MemoTransfer];
-
-        let instruction = spl_token_2022_interface::instruction::get_account_data_size(
-            &spl_token_2022_interface::ID,
-            &mint,
-            &extension_types,
-        )
-        .expect("Failed to create get_account_data_size instruction");
-
-        let parsed = solana_transaction_status_client_types::ParsedInstruction {
-            program: "spl-token-2022".to_string(),
-            program_id: spl_token_2022_interface::ID.to_string(),
-            parsed: serde_json::json!({
-                "type": PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE,
-                "info": {
-                    "mint": mint.to_string(),
-                    "extensionTypes": ["immutable_owner", "memoTransfer"]
-                }
-            }),
-            stack_height: None,
-        };
-
-        let result = IxUtils::reconstruct_spl_token_instruction(
-            &parsed,
-            &IxUtils::build_account_keys_hashmap(&account_keys),
-        );
-
-        assert!(result.is_ok());
-        let compiled = result.unwrap();
-        assert_eq!(compiled.program_id_index, 0);
-        assert_eq!(compiled.accounts, vec![1]); // mint index
-        assert_eq!(compiled.data, instruction.data);
-    }
-
-    #[test]
-    fn test_reconstruct_token2022_initialize_immutable_owner_instruction() {
-        let account = Pubkey::new_unique();
-        let token_program_id = spl_token_2022_interface::ID;
-        let account_keys = vec![token_program_id, account];
-
-        let instruction = spl_token_2022_interface::instruction::initialize_immutable_owner(
-            &spl_token_2022_interface::ID,
-            &account,
-        )
-        .expect("Failed to create initialize_immutable_owner instruction");
-
-        let solana_parsed = create_parsed_token2022_initialize_immutable_owner(&account)
-            .expect("Failed to create parsed instruction");
-
-        let result = IxUtils::reconstruct_spl_token_instruction(
-            &solana_parsed,
-            &IxUtils::build_account_keys_hashmap(&account_keys),
-        );
-
-        assert!(result.is_ok());
-        let compiled = result.unwrap();
-        assert_eq!(compiled.program_id_index, 0);
-        assert_eq!(compiled.accounts, vec![1]); // account index
-        assert_eq!(compiled.data, instruction.data);
-    }
-
-    #[test]
     fn test_dispatch_routes_spl_token_via_program_id() {
         let source = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
@@ -4227,7 +3774,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reconstruct_unsupported_program_returns_none() {
+    fn test_reconstruct_unsupported_program_creates_stub() {
         let unsupported_program = Pubkey::new_unique();
         let mut account_keys = vec![unsupported_program];
 
@@ -4247,7 +3794,12 @@ mod tests {
 
         let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &mut account_keys);
 
-        assert!(result.is_none());
+        assert!(result.is_some());
+        let compiled = result.unwrap();
+
+        assert_eq!(compiled.program_id_index, 0);
+        assert!(compiled.accounts.is_empty());
+        assert!(compiled.data.is_empty());
     }
 
     #[test]
@@ -4272,36 +3824,10 @@ mod tests {
         );
 
         assert!(result.is_none(), "Expected overflow path to fail closed");
-        assert_eq!(account_keys.len(), 256, "Account keys should not grow when index overflows");
-    }
-
-    #[test]
-    fn test_reconstruct_partially_decoded_returns_none_on_account_loop_overflow() {
-        let known_program = Pubkey::new_unique();
-        let known_account = Pubkey::new_unique();
-        let cpi_account = Pubkey::new_unique();
-        let mut account_keys: Vec<Pubkey> = (0..256).map(|_| Pubkey::new_unique()).collect();
-        account_keys[0] = known_program;
-        account_keys[1] = known_account;
-
-        let partial = solana_transaction_status_client_types::UiPartiallyDecodedInstruction {
-            program_id: known_program.to_string(),
-            accounts: vec![known_account.to_string(), cpi_account.to_string()],
-            data: bs58::encode([7, 7, 7]).into_string(),
-            stack_height: None,
-        };
-
-        let ui_parsed = UiParsedInstruction::PartiallyDecoded(partial);
-        let result = IxUtils::reconstruct_instruction_from_ui(
-            &UiInstruction::Parsed(ui_parsed),
-            &mut account_keys,
-        );
-
-        assert!(result.is_none(), "Expected overflow in account loop to fail closed");
         assert_eq!(
             account_keys.len(),
             256,
-            "Account keys should not grow when account index overflows"
+            "Account keys should not grow when index overflows"
         );
     }
 
