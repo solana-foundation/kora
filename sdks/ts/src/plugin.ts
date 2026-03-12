@@ -16,12 +16,14 @@ import type {
     KitSignAndSendTransactionResponse,
     KitSignBundleResponse,
     KitSignTransactionResponse,
+    KitSwapForGasResponse,
     KitSupportedTokensResponse,
     KoraPluginConfig,
     SignAndSendBundleRequest,
     SignAndSendTransactionRequest,
     SignBundleRequest,
     SignTransactionRequest,
+    SwapForGasRequest,
 } from './types/index.js';
 
 /**
@@ -173,6 +175,24 @@ export function koraPlugin(config: KoraPluginConfig) {
                     bundle_uuid: result.bundle_uuid,
                     signed_transactions: result.signed_transactions as Base64EncodedWireTransaction[],
                     signer_pubkey: address(result.signer_pubkey),
+                };
+            },
+
+            /**
+             * Builds a swap-for-gas transaction with Kit-typed addresses.
+             */
+            async swapForGas(request: SwapForGasRequest): Promise<KitSwapForGasResponse> {
+                const result = await client.swapForGas(request);
+                return {
+                    destination_wallet: address(result.destination_wallet),
+                    fee_token: address(result.fee_token),
+                    is_signed_by_kora: result.is_signed_by_kora,
+                    lamports_out: result.lamports_out,
+                    payment_address: address(result.payment_address),
+                    spread_bps: result.spread_bps,
+                    signer_pubkey: address(result.signer_pubkey),
+                    transaction: result.transaction as Base64EncodedWireTransaction,
+                    token_amount_in: result.token_amount_in,
                 };
             },
 

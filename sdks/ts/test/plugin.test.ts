@@ -14,6 +14,7 @@ import type {
     KitSignAndSendTransactionResponse,
     KitSignBundleResponse,
     KitSignTransactionResponse,
+    KitSwapForGasResponse,
     KitSupportedTokensResponse,
     KoraPluginConfig,
 } from '../src/types/index.js';
@@ -73,6 +74,7 @@ describe('Kora Kit Plugin', () => {
             expect(typeof enhanced.kora.signAndSendTransaction).toBe('function');
             expect(typeof enhanced.kora.signBundle).toBe('function');
             expect(typeof enhanced.kora.signAndSendBundle).toBe('function');
+            expect(typeof enhanced.kora.swapForGas).toBe('function');
             expect(typeof enhanced.kora.getPaymentInstruction).toBe('function');
         });
 
@@ -362,6 +364,41 @@ describe('Kora Kit Plugin', () => {
                 expect(sig).toBe(mockSignature);
                 expect(signedTx).toBe('base64SignedTransaction');
                 expect(signerPubkey).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');
+            });
+        });
+
+        describe('swapForGas', () => {
+            it('should return Kit-typed Address fields for swap response', async () => {
+                const rawResponse = {
+                    destination_wallet: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                    fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+                    is_signed_by_kora: true,
+                    lamports_out: 10000,
+                    payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                    spread_bps: 25,
+                    signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                    token_amount_in: 1334,
+                    transaction: 'base64SignedSwapTx',
+                };
+
+                mockSuccessfulResponse(rawResponse);
+
+                const result: KitSwapForGasResponse = await kora.swapForGas({
+                    fee_token: rawResponse.fee_token,
+                    lamports_out: rawResponse.lamports_out,
+                    source_wallet: rawResponse.destination_wallet,
+                });
+
+                const destinationWallet: Address = result.destination_wallet;
+                const feeToken: Address = result.fee_token;
+                const paymentAddress: Address = result.payment_address;
+                const signerPubkey: Address = result.signer_pubkey;
+
+                expect(destinationWallet).toBe(rawResponse.destination_wallet);
+                expect(feeToken).toBe(rawResponse.fee_token);
+                expect(paymentAddress).toBe(rawResponse.payment_address);
+                expect(signerPubkey).toBe(rawResponse.signer_pubkey);
+                expect(result.token_amount_in).toBe(rawResponse.token_amount_in);
             });
         });
 

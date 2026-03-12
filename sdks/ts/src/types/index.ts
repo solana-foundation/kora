@@ -113,6 +113,26 @@ export interface GetPaymentInstructionRequest {
 }
 
 /**
+ * Parameters for building a swap-for-gas transaction.
+ */
+export interface SwapForGasRequest {
+    /** Recipient wallet for SOL output (defaults to source_wallet when omitted) */
+    destination_wallet?: string;
+    /** Mint address of token used for swap payment */
+    fee_token: string;
+    /** Desired SOL output amount in lamports */
+    lamports_out: number;
+    /** Optional signer verification during simulation (defaults to false) */
+    sig_verify?: boolean;
+    /** If true, Kora signs fee payer signature on the returned transaction */
+    sign_swap_transaction?: boolean;
+    /** Optional signer address for Kora signer selection */
+    signer_key?: string;
+    /** Wallet owner paying token side of swap */
+    source_wallet: string;
+}
+
+/**
  * Response Types
  */
 
@@ -245,6 +265,30 @@ export interface GetPaymentInstructionResponse {
 }
 
 /**
+ * Response containing a swap-for-gas transaction.
+ */
+export interface SwapForGasResponse {
+    /** SOL recipient wallet */
+    destination_wallet: string;
+    /** Fee token mint used in swap */
+    fee_token: string;
+    /** True when Kora fee payer signature is already present */
+    is_signed_by_kora: boolean;
+    /** Desired SOL output amount in lamports */
+    lamports_out: number;
+    /** Public key receiving token payments */
+    payment_address: string;
+    /** Applied spread in basis points */
+    spread_bps: number;
+    /** Public key of signer used as fee payer */
+    signer_pubkey: string;
+    /** Base64-encoded swap transaction */
+    transaction: string;
+    /** Token amount charged from source wallet */
+    token_amount_in: number;
+}
+
+/**
  * Configuration Types
  */
 
@@ -328,6 +372,8 @@ export interface EnabledMethods {
     sign_bundle: boolean;
     /** Whether the sign_transaction method is enabled */
     sign_transaction: boolean;
+    /** Whether the swap_for_gas method is enabled */
+    swap_for_gas: boolean;
     /** Whether the transfer_transaction method is enabled */
     transfer_transaction: boolean;
 }
@@ -640,6 +686,28 @@ export interface KitSignAndSendBundleResponse {
     signed_transactions: Base64EncodedWireTransaction[];
     /** Public key of the signer used to sign the transactions */
     signer_pubkey: Address;
+}
+
+/** Plugin response for swapForGas with Kit types */
+export interface KitSwapForGasResponse {
+    /** SOL recipient wallet */
+    destination_wallet: Address;
+    /** Fee token mint used in swap */
+    fee_token: Address;
+    /** True when Kora fee payer signature is already present */
+    is_signed_by_kora: boolean;
+    /** Desired SOL output amount in lamports */
+    lamports_out: number;
+    /** Public key receiving token payments */
+    payment_address: Address;
+    /** Applied spread in basis points */
+    spread_bps: number;
+    /** Public key of signer used as fee payer */
+    signer_pubkey: Address;
+    /** Base64-encoded swap transaction */
+    transaction: Base64EncodedWireTransaction;
+    /** Token amount charged from source wallet */
+    token_amount_in: number;
 }
 
 /** Plugin validation config with Kit Address types */

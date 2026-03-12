@@ -2,7 +2,7 @@ use std::{path::Path, str::FromStr};
 
 use crate::{
     admin::token_util::find_missing_atas,
-    config::{FeePayerPolicy, SplTokenConfig, Token2022Config},
+    config::{FeePayerPolicy, SplTokenConfig, SwapQuoteProviderType, Token2022Config},
     constant::{LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     fee::price::PriceModel,
     oracle::PriceSource,
@@ -290,6 +290,14 @@ impl ConfigValidator {
             ));
         }
 
+        // Validate swap-for-gas configuration
+        if config.kora.swap_for_gas.spread_bps > 10_000 {
+            errors.push(format!(
+                "swap_for_gas.spread_bps must be between 0 and 10000, got: {}",
+                config.kora.swap_for_gas.spread_bps
+            ));
+        }
+
         // Validate enabled methods (warn if all false)
         let methods = &config.kora.enabled_methods;
         if !methods.iter().any(|enabled| enabled) {
@@ -319,8 +327,17 @@ impl ConfigValidator {
             && std::env::var("JUPITER_API_KEY").is_err()
         {
             errors.push(
-                    "JUPITER_API_KEY environment variable not set. Required when price_source = Jupiter".to_string()
-                );
+                "JUPITER_API_KEY environment variable not set. Required when price_source = Jupiter".to_string()
+            );
+        }
+
+        if config.kora.enabled_methods.swap_for_gas
+            && matches!(config.kora.swap_for_gas.quote_provider, SwapQuoteProviderType::Jupiter)
+            && std::env::var("JUPITER_API_KEY").is_err()
+        {
+            errors.push(
+                "JUPITER_API_KEY environment variable not set. Required when swap_for_gas.quote_provider = Jupiter and swapForGas is enabled".to_string()
+            );
         }
 
         if config.validation.allow_durable_transactions {
@@ -700,8 +717,8 @@ mod tests {
         config::{
             AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy,
             KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
-            SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022InstructionPolicy,
-            UsageLimitConfig, ValidationConfig,
+            SplTokenInstructionPolicy, SwapForGasConfig, SystemInstructionPolicy,
+            Token2022InstructionPolicy, UsageLimitConfig, ValidationConfig,
         },
         constant::{DEFAULT_MAX_REQUEST_BODY_SIZE, LIGHTHOUSE_PROGRAM_ID},
         fee::price::PriceConfig,
@@ -839,12 +856,14 @@ mod tests {
                     estimate_bundle_fee: false,
                     sign_and_send_bundle: false,
                     sign_bundle: false,
+                    swap_for_gas: false,
                 },
                 auth: AuthConfig::default(),
                 payment_address: None,
                 cache: CacheConfig::default(),
                 usage_limit: UsageLimitConfig::default(),
                 bundle: BundleConfig::default(),
+                swap_for_gas: SwapForGasConfig::default(),
                 lighthouse: LighthouseConfig::default(),
                 force_sig_verify: false,
             },

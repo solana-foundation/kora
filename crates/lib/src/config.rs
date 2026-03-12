@@ -341,6 +341,8 @@ pub struct EnabledMethods {
     pub estimate_bundle_fee: bool,
     pub sign_and_send_bundle: bool,
     pub sign_bundle: bool,
+    /// Swap-for-gas method (builds a swap transaction; no user transaction co-signing)
+    pub swap_for_gas: bool,
 }
 
 impl EnabledMethods {
@@ -359,6 +361,7 @@ impl EnabledMethods {
             self.estimate_bundle_fee,
             self.sign_and_send_bundle,
             self.sign_bundle,
+            self.swap_for_gas,
         ]
         .into_iter()
     }
@@ -405,13 +408,16 @@ impl EnabledMethods {
         if self.sign_bundle {
             methods.push("signBundle".to_string());
         }
+        if self.swap_for_gas {
+            methods.push("swapForGas".to_string());
+        }
         methods
     }
 }
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 13>;
+    type IntoIter = std::array::IntoIter<bool, 14>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
@@ -428,6 +434,7 @@ impl IntoIterator for &EnabledMethods {
             self.estimate_bundle_fee,
             self.sign_and_send_bundle,
             self.sign_bundle,
+            self.swap_for_gas,
         ]
         .into_iter()
     }
@@ -450,6 +457,7 @@ impl Default for EnabledMethods {
             estimate_bundle_fee: false,
             sign_and_send_bundle: false,
             sign_bundle: false,
+            swap_for_gas: false,
         }
     }
 }
@@ -477,6 +485,27 @@ impl Default for CacheConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq, Default)]
+pub enum SwapQuoteProviderType {
+    #[default]
+    Jupiter,
+    Mock,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct SwapForGasConfig {
+    pub quote_provider: SwapQuoteProviderType,
+    /// Spread added on top of quote in basis points (100 bps = 1%)
+    pub spread_bps: u16,
+}
+
+impl Default for SwapForGasConfig {
+    fn default() -> Self {
+        Self { quote_provider: SwapQuoteProviderType::default(), spread_bps: 25 }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct KoraConfig {
@@ -490,6 +519,8 @@ pub struct KoraConfig {
     pub usage_limit: UsageLimitConfig,
     /// Bundle support configuration
     pub bundle: BundleConfig,
+    /// Swap-for-gas quote and spread configuration
+    pub swap_for_gas: SwapForGasConfig,
     /// Lighthouse configuration for fee payer balance protection
     pub lighthouse: LighthouseConfig,
     /// When true, forces signature verification on all requests regardless of client's sig_verify parameter.
@@ -508,6 +539,7 @@ impl Default for KoraConfig {
             cache: CacheConfig::default(),
             usage_limit: UsageLimitConfig::default(),
             bundle: BundleConfig::default(),
+            swap_for_gas: SwapForGasConfig::default(),
             lighthouse: LighthouseConfig::default(),
             force_sig_verify: false,
         }

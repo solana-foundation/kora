@@ -17,6 +17,8 @@ import {
     SignBundleResponse,
     SignTransactionRequest,
     SignTransactionResponse,
+    SwapForGasRequest,
+    SwapForGasResponse,
 } from '../src/types/index.js';
 import { getInstructionsFromBase64Message } from '../src/utils/transaction.js';
 
@@ -127,6 +129,7 @@ describe('KoraClient Unit Tests', () => {
                     sign_and_send_transaction: true,
                     sign_bundle: true,
                     sign_transaction: true,
+                    swap_for_gas: true,
                     transfer_transaction: true,
                 },
                 fee_payers: ['test_fee_payer_address'],
@@ -359,6 +362,29 @@ describe('KoraClient Unit Tests', () => {
         });
     });
 
+    describe('swapForGas', () => {
+        it('should build swap-for-gas transaction', async () => {
+            const request: SwapForGasRequest = {
+                fee_token: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+                lamports_out: 10000,
+                source_wallet: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+            };
+            const mockResponse: SwapForGasResponse = {
+                destination_wallet: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                fee_token: request.fee_token,
+                is_signed_by_kora: false,
+                lamports_out: 10000,
+                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                spread_bps: 25,
+                signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                token_amount_in: 1334,
+                transaction: 'base64_unsigned_swap_tx',
+            };
+
+            await testSuccessfulRpcMethod('swapForGas', () => client.swapForGas(request), mockResponse, request);
+        });
+    });
+
     describe('getPaymentInstruction', () => {
         const _mockConfig: Config = {
             enabled_methods: {
@@ -374,6 +400,7 @@ describe('KoraClient Unit Tests', () => {
                 sign_and_send_transaction: true,
                 sign_bundle: true,
                 sign_transaction: true,
+                swap_for_gas: false,
                 transfer_transaction: true,
             },
             fee_payers: ['11111111111111111111111111111111'],

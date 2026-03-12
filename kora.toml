@@ -47,6 +47,11 @@ get_blockhash = true
 get_config = true
 get_payer_signer = true
 get_version = true
+swap_for_gas = false
+
+[kora.swap_for_gas]
+quote_provider = "Jupiter"
+spread_bps = 25
 
 [validation]
 max_allowed_lamports = 1000000
