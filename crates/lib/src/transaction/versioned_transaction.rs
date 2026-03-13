@@ -161,6 +161,9 @@ impl VersionedTransactionResolved {
 
         if let Some(inner_instructions) = simulation_result.value.inner_instructions {
             let mut compiled_inner_instructions: Vec<CompiledInstruction> = vec![];
+            // Clone so we can extend with CPI-only PDA accounts discovered
+            // during inner instruction reconstruction.
+            let mut extended_account_keys = self.all_account_keys.clone();
 
             inner_instructions.iter().for_each(|ix| {
                 ix.instructions.iter().for_each(|inner_ix| match inner_ix {
@@ -174,7 +177,7 @@ impl VersionedTransactionResolved {
                     UiInstruction::Parsed(ui_parsed) => {
                         if let Some(compiled) = IxUtils::reconstruct_instruction_from_ui(
                             &UiInstruction::Parsed(ui_parsed.clone()),
-                            &self.all_account_keys,
+                            &mut extended_account_keys,
                         ) {
                             compiled_inner_instructions.push(compiled);
                         }
@@ -184,7 +187,7 @@ impl VersionedTransactionResolved {
 
             return IxUtils::uncompile_instructions(
                 &compiled_inner_instructions,
-                &self.all_account_keys,
+                &extended_account_keys,
             );
         }
 
