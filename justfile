@@ -85,6 +85,14 @@ integration-test *args: build _ensure-transfer-hook
 unit-test-ts: build
     -cd sdks/ts && pnpm test:unit
 
+# Run all TypeScript SDK tests (unit + integration)
+[group('test')]
+[no-exit-message]
+test-ts: build _ensure-transfer-hook
+    cd sdks/ts && pnpm test:unit
+    cargo run -p tests --bin test_runner -- --filter typescript_basic
+    cargo run -p tests --bin test_runner -- --filter typescript_auth
+
 # Run all tests (unit + TypeScript + integration)
 [group('test')]
 test: build unit-test unit-test-ts integration-test

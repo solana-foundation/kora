@@ -1,4 +1,4 @@
-import { Instruction } from '@solana/kit';
+import { Instruction, type MicroLamports, type TransactionSigner } from '@solana/kit';
 
 /**
  * Request Types
@@ -664,4 +664,23 @@ export interface KitValidationConfig {
     price_source: PriceSource;
     /** Token2022 configuration */
     token2022: Token2022Config;
+}
+
+/**
+ * Kit Client Types
+ */
+
+/** Configuration for {@link createKitKoraClient}. */
+export interface KoraKitClientConfig {
+    readonly apiKey?: string;
+    readonly computeUnitLimit?: number;
+    readonly computeUnitPrice?: MicroLamports;
+    readonly endpoint: string;
+    readonly feePayerWallet: TransactionSigner;
+    readonly feeToken: Address;
+    readonly getRecaptchaToken?: () => Promise<string> | string;
+    readonly hmacSecret?: string;
+    readonly rpcUrl: string;
+    readonly tokenProgramId?: Address;
+    readonly userId?: string;
 }
