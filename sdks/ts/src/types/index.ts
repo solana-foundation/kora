@@ -113,6 +113,22 @@ export interface GetPaymentInstructionRequest {
 }
 
 /**
+ * Parameters for building and signing a swap-for-gas transaction.
+ */
+export interface SwapForGasRequest {
+    /** Recipient wallet for SOL output (defaults to source_wallet when omitted) */
+    destination_wallet?: string;
+    /** Mint address of token used for swap payment */
+    fee_token: string;
+    /** Optional max token input user is willing to pay */
+    max_token_amount_in?: number;
+    /** Desired SOL output amount in lamports */
+    desired_lamports: number;
+    /** Wallet owner paying token side of swap */
+    source_wallet: string;
+}
+
+/**
  * Response Types
  */
 
@@ -245,6 +261,28 @@ export interface GetPaymentInstructionResponse {
 }
 
 /**
+ * Response containing a signed swap-for-gas transaction.
+ */
+export interface SwapForGasResponse {
+    /** SOL recipient wallet */
+    destination_wallet: string;
+    /** Fee token mint used in swap */
+    fee_token: string;
+    /** Exact SOL output in lamports */
+    lamports_received: number;
+    /** Public key receiving token payments */
+    payment_address: string;
+    /** Applied buffer in basis points */
+    buffer_bps: number;
+    /** Public key of signer used as fee payer */
+    signer_pubkey: string;
+    /** Base64-encoded swap transaction */
+    transaction: string;
+    /** Total token amount charged from source wallet */
+    token_amount_paid: number;
+}
+
+/**
  * Configuration Types
  */
 
@@ -328,6 +366,8 @@ export interface EnabledMethods {
     sign_bundle: boolean;
     /** Whether the sign_transaction method is enabled */
     sign_transaction: boolean;
+    /** Whether the swap_for_gas method is enabled */
+    swap_for_gas: boolean;
     /** Whether the transfer_transaction method is enabled */
     transfer_transaction: boolean;
 }
@@ -640,6 +680,26 @@ export interface KitSignAndSendBundleResponse {
     signed_transactions: Base64EncodedWireTransaction[];
     /** Public key of the signer used to sign the transactions */
     signer_pubkey: Address;
+}
+
+/** Plugin response for swapForGas with Kit types */
+export interface KitSwapForGasResponse {
+    /** SOL recipient wallet */
+    destination_wallet: Address;
+    /** Fee token mint used in swap */
+    fee_token: Address;
+    /** Exact SOL output in lamports */
+    lamports_received: number;
+    /** Public key receiving token payments */
+    payment_address: Address;
+    /** Applied buffer in basis points */
+    buffer_bps: number;
+    /** Public key of signer used as fee payer */
+    signer_pubkey: Address;
+    /** Base64-encoded swap transaction */
+    transaction: Base64EncodedWireTransaction;
+    /** Total token amount charged from source wallet */
+    token_amount_paid: number;
 }
 
 /** Plugin validation config with Kit Address types */

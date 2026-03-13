@@ -18,6 +18,7 @@ pub mod rpc_server;
 pub mod sanitize;
 pub mod signer;
 pub mod state;
+pub mod swap;
 pub mod token;
 pub mod transaction;
 pub mod usage_limit;

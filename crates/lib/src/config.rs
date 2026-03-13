@@ -12,7 +12,8 @@ use crate::{
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
         DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
         DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_PROTECTED_METHODS,
-        DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
+        DEFAULT_RECAPTCHA_SCORE_THRESHOLD, DEFAULT_SWAP_FOR_GAS_BUFFER_BPS,
+        DEFAULT_SWAP_FOR_GAS_MAX_LAMPORTS_OUT,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
@@ -341,6 +342,7 @@ pub struct EnabledMethods {
     pub estimate_bundle_fee: bool,
     pub sign_and_send_bundle: bool,
     pub sign_bundle: bool,
+    pub swap_for_gas: bool,
 }
 
 impl EnabledMethods {
@@ -359,6 +361,7 @@ impl EnabledMethods {
             self.estimate_bundle_fee,
             self.sign_and_send_bundle,
             self.sign_bundle,
+            self.swap_for_gas,
         ]
         .into_iter()
     }
@@ -405,13 +408,16 @@ impl EnabledMethods {
         if self.sign_bundle {
             methods.push("signBundle".to_string());
         }
+        if self.swap_for_gas {
+            methods.push("swapForGas".to_string());
+        }
         methods
     }
 }
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 13>;
+    type IntoIter = std::array::IntoIter<bool, 14>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
@@ -428,6 +434,7 @@ impl IntoIterator for &EnabledMethods {
             self.estimate_bundle_fee,
             self.sign_and_send_bundle,
             self.sign_bundle,
+            self.swap_for_gas,
         ]
         .into_iter()
     }
@@ -450,6 +457,7 @@ impl Default for EnabledMethods {
             estimate_bundle_fee: false,
             sign_and_send_bundle: false,
             sign_bundle: false,
+            swap_for_gas: false,
         }
     }
 }
@@ -477,6 +485,24 @@ impl Default for CacheConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct SwapForGasConfig {
+    /// Buffer added on top of quote in basis points (100 bps = 1%)
+    pub buffer_bps: u16,
+    /// Max SOL output allowed for swapForGas in lamports
+    pub max_lamports_out: u64,
+}
+
+impl Default for SwapForGasConfig {
+    fn default() -> Self {
+        Self {
+            buffer_bps: DEFAULT_SWAP_FOR_GAS_BUFFER_BPS,
+            max_lamports_out: DEFAULT_SWAP_FOR_GAS_MAX_LAMPORTS_OUT,
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct KoraConfig {
@@ -490,6 +516,8 @@ pub struct KoraConfig {
     pub usage_limit: UsageLimitConfig,
     /// Bundle support configuration
     pub bundle: BundleConfig,
+    /// Swap-for-gas pricing buffer and limits
+    pub swap_for_gas: SwapForGasConfig,
     /// Lighthouse configuration for fee payer balance protection
     pub lighthouse: LighthouseConfig,
     /// When true, forces signature verification on all requests regardless of client's sig_verify parameter.
@@ -508,6 +536,7 @@ impl Default for KoraConfig {
             cache: CacheConfig::default(),
             usage_limit: UsageLimitConfig::default(),
             bundle: BundleConfig::default(),
+            swap_for_gas: SwapForGasConfig::default(),
             lighthouse: LighthouseConfig::default(),
             force_sig_verify: false,
         }

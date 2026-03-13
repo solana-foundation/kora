@@ -19,7 +19,7 @@ pub const MIN_RECAPTCHA_SCORE: f64 = 0.0;
 pub const MAX_RECAPTCHA_SCORE: f64 = 1.0;
 pub const DEFAULT_RECAPTCHA_SCORE_THRESHOLD: f64 = 0.5;
 pub const DEFAULT_PROTECTED_METHODS: &[&str] =
-    &["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"];
+    &["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle", "swapForGas"];
 
 // External Services
 pub const JUPITER_API_URL: &str = "https://api.jup.ag";
@@ -41,6 +41,8 @@ pub const DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS: u64 = 30; // 30 seco
 
 pub const DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS: u64 = 0; // 0 = unlimited
 pub const DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE: bool = false;
+pub const DEFAULT_SWAP_FOR_GAS_BUFFER_BPS: u16 = 25;
+pub const DEFAULT_SWAP_FOR_GAS_MAX_LAMPORTS_OUT: u64 = 1_000_000;
 
 // Request body size limit
 pub const DEFAULT_MAX_REQUEST_BODY_SIZE: usize = 2 * 1024 * 1024; // 2 MB

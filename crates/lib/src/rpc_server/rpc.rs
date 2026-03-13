@@ -30,6 +30,7 @@ use crate::rpc_server::method::{
     },
     sign_bundle::{sign_bundle, SignBundleRequest, SignBundleResponse},
     sign_transaction::{sign_transaction, SignTransactionRequest, SignTransactionResponse},
+    swap_for_gas::{swap_for_gas, SwapForGasRequest, SwapForGasResponse},
     transfer_transaction::{
         transfer_transaction, TransferTransactionRequest, TransferTransactionResponse,
     },
@@ -169,6 +170,16 @@ impl KoraRpc {
         result
     }
 
+    pub async fn swap_for_gas(
+        &self,
+        request: SwapForGasRequest,
+    ) -> Result<SwapForGasResponse, KoraError> {
+        info!("swapForGas request: {request:?}");
+        let result = swap_for_gas(&self.rpc_client, request).await;
+        info!("swapForGas response: {result:?}");
+        result
+    }
+
     #[cfg(feature = "docs")]
     pub fn build_docs_spec() -> Vec<OpenApiSpec> {
         vec![
@@ -231,6 +242,11 @@ impl KoraRpc {
                 name: "signAndSendBundle".to_string(),
                 request: Some(SignAndSendBundleRequest::schema().1),
                 response: SignAndSendBundleResponse::schema().1,
+            },
+            OpenApiSpec {
+                name: "swapForGas".to_string(),
+                request: Some(SwapForGasRequest::schema().1),
+                response: SwapForGasResponse::schema().1,
             },
         ]
     }

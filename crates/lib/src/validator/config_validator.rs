@@ -290,6 +290,20 @@ impl ConfigValidator {
             ));
         }
 
+        // Validate swap-for-gas configuration
+        if config.kora.swap_for_gas.buffer_bps > 10_000 {
+            errors.push(format!(
+                "swap_for_gas.buffer_bps must be between 0 and 10000, got: {}",
+                config.kora.swap_for_gas.buffer_bps
+            ));
+        }
+        if config.kora.swap_for_gas.max_lamports_out == 0 {
+            warnings.push(
+                "swap_for_gas.max_lamports_out is 0 - swapForGas will reject all requests"
+                    .to_string(),
+            );
+        }
+
         // Validate enabled methods (warn if all false)
         let methods = &config.kora.enabled_methods;
         if !methods.iter().any(|enabled| enabled) {
@@ -319,8 +333,8 @@ impl ConfigValidator {
             && std::env::var("JUPITER_API_KEY").is_err()
         {
             errors.push(
-                    "JUPITER_API_KEY environment variable not set. Required when price_source = Jupiter".to_string()
-                );
+                "JUPITER_API_KEY environment variable not set. Required when price_source = Jupiter".to_string()
+            );
         }
 
         if config.validation.allow_durable_transactions {
@@ -700,8 +714,8 @@ mod tests {
         config::{
             AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy,
             KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
-            SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022InstructionPolicy,
-            UsageLimitConfig, ValidationConfig,
+            SplTokenInstructionPolicy, SwapForGasConfig, SystemInstructionPolicy,
+            Token2022InstructionPolicy, UsageLimitConfig, ValidationConfig,
         },
         constant::{DEFAULT_MAX_REQUEST_BODY_SIZE, LIGHTHOUSE_PROGRAM_ID},
         fee::price::PriceConfig,
@@ -839,12 +853,14 @@ mod tests {
                     estimate_bundle_fee: false,
                     sign_and_send_bundle: false,
                     sign_bundle: false,
+                    swap_for_gas: false,
                 },
                 auth: AuthConfig::default(),
                 payment_address: None,
                 cache: CacheConfig::default(),
                 usage_limit: UsageLimitConfig::default(),
                 bundle: BundleConfig::default(),
+                swap_for_gas: SwapForGasConfig::default(),
                 lighthouse: LighthouseConfig::default(),
                 force_sig_verify: false,
             },
@@ -1971,6 +1987,90 @@ mod tests {
         let errors = result.unwrap_err();
         assert!(errors.iter().any(|e| e.contains("JUPITER_API_KEY")));
         assert!(errors.iter().any(|e| e.contains("price_source = Jupiter")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_swap_for_gas_jupiter_requires_api_key_when_enabled() {
+        std::env::remove_var("JUPITER_API_KEY");
+
+        let mut config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        config.kora.enabled_methods.swap_for_gas = true;
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("JUPITER_API_KEY")));
+        assert!(errors.iter().any(|e| e.contains("price_source = Jupiter")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_swap_for_gas_zero_max_lamports_out_warns() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+
+        let mut config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Mock,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        config.kora.enabled_methods.swap_for_gas = true;
+        config.kora.swap_for_gas.max_lamports_out = 0;
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+        assert!(warnings.iter().any(|w| w.contains("swap_for_gas.max_lamports_out is 0")));
     }
 
     #[tokio::test]

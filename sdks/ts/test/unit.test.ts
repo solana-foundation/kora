@@ -15,6 +15,8 @@ import {
     SignAndSendTransactionResponse,
     SignBundleRequest,
     SignBundleResponse,
+    SwapForGasRequest,
+    SwapForGasResponse,
     SignTransactionRequest,
     SignTransactionResponse,
 } from '../src/types/index.js';
@@ -126,6 +128,7 @@ describe('KoraClient Unit Tests', () => {
                     sign_and_send_bundle: true,
                     sign_and_send_transaction: true,
                     sign_bundle: true,
+                    swap_for_gas: true,
                     sign_transaction: true,
                     transfer_transaction: true,
                 },
@@ -359,6 +362,28 @@ describe('KoraClient Unit Tests', () => {
         });
     });
 
+    describe('swapForGas', () => {
+        it('should build and sign swap-for-gas transaction', async () => {
+            const request: SwapForGasRequest = {
+                fee_token: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+                desired_lamports: 10000,
+                source_wallet: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+            };
+            const mockResponse: SwapForGasResponse = {
+                destination_wallet: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                fee_token: request.fee_token,
+                lamports_received: 10000,
+                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                buffer_bps: 25,
+                signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                token_amount_paid: 1334,
+                transaction: 'base64_signed_swap_tx',
+            };
+
+            await testSuccessfulRpcMethod('swapForGas', () => client.swapForGas(request), mockResponse, request);
+        });
+    });
+
     describe('getPaymentInstruction', () => {
         const _mockConfig: Config = {
             enabled_methods: {
@@ -373,6 +398,7 @@ describe('KoraClient Unit Tests', () => {
                 sign_and_send_bundle: true,
                 sign_and_send_transaction: true,
                 sign_bundle: true,
+                swap_for_gas: false,
                 sign_transaction: true,
                 transfer_transaction: true,
             },
