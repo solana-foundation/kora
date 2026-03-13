@@ -31,8 +31,26 @@ git branch -r --sort=-committerdate | grep 'origin/release/' | head -5
 
 ### 2. Determine commits to cherry-pick
 
+**Find the last sync point first.** Prior cherry-pick syncs are often squash-merged, so `git cherry` and `git log` cannot detect them as equivalent. Instead:
+
 ```bash
 git fetch origin main <release-branch>
+
+# Find the most recent cherry-pick sync PR on the release branch
+git log --oneline origin/<release-branch> | grep -i -E "cherry.pick|sync.*main|bring back commits from main" | head -3
+```
+
+Read the PR body of the most recent sync (use `gh pr view <number>`) to identify which main commits it included. The **last main commit referenced** in that PR is your sync baseline.
+
+Then list only commits **after** the sync baseline:
+
+```bash
+git log --oneline --reverse <last-synced-sha>..origin/main
+```
+
+If no prior sync PR exists, fall back to the full range:
+
+```bash
 git log --oneline --reverse origin/<release-branch>..origin/main
 ```
 
@@ -41,6 +59,7 @@ git log --oneline --reverse origin/<release-branch>..origin/main
 - User said to skip certain commits → exclude them.
 - Default → take ALL commits from the log above.
 - **Auto-skip** release-only commits: version bumps, CHANGELOG updates, "chore: release v*". Flag these as skipped with reason.
+- **Auto-skip** commits already on release: use `git cherry -v origin/<release-branch> origin/main` as a secondary check — lines starting with `-` are already applied.
 - Show the final commit list to the user and confirm before proceeding.
 
 ### 3. Check preconditions
