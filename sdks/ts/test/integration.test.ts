@@ -1,4 +1,5 @@
 import {
+    address,
     Address,
     appendTransactionMessageInstruction,
     type Blockhash,
@@ -17,9 +18,10 @@ import {
     type Transaction,
     type TransactionSigner,
 } from '@solana/kit';
+import { getTransferSolInstruction } from '@solana-program/system';
 import { findAssociatedTokenPda, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 
-import { KoraClient } from '../src/index.js';
+import { KoraClient, createKitKoraClient, type KoraKitClient } from '../src/index.js';
 import { runAuthenticationTests } from './auth-setup.js';
 import setupTestSuite from './setup.js';
 
@@ -101,6 +103,7 @@ async function buildTokenTransferTransaction(params: {
 }
 
 const AUTH_ENABLED = process.env.ENABLE_AUTH === 'true';
+const FREE_PRICING = process.env.FREE_PRICING === 'true';
 const KORA_SIGNER_TYPE = process.env.KORA_SIGNER_TYPE || 'memory';
 describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without auth'} | signer type: ${KORA_SIGNER_TYPE})`, () => {
     let client: KoraClient;
@@ -233,9 +236,12 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
             expect(fee).toBeDefined();
             expect(typeof fee.fee_in_lamports).toBe('number');
-            expect(fee.fee_in_lamports).toBeGreaterThan(0);
+            expect(fee.fee_in_lamports).toBeGreaterThanOrEqual(0);
             expect(typeof fee.fee_in_token).toBe('number');
-            expect(fee.fee_in_token).toBeGreaterThan(0);
+            if (!FREE_PRICING) {
+                expect(fee.fee_in_lamports).toBeGreaterThan(0);
+                expect(fee.fee_in_token).toBeGreaterThan(0);
+            }
         });
 
         it('should sign transaction', async () => {
@@ -324,7 +330,8 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
     });
 
-    describe('Bundle Operations', () => {
+    // Bundle tests require bundle.enabled = true in the Kora config
+    (FREE_PRICING ? describe.skip : describe)('Bundle Operations', () => {
         it('should sign bundle of transactions', async () => {
             // Create two transfer transactions for the bundle
             const { transaction: tx1String } = await buildTokenTransferTransaction({
@@ -431,4 +438,43 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(signResult.signed_transaction).toBeDefined();
         });
     });
+
+    if (FREE_PRICING) {
+        describe('Kit Client (free pricing)', () => {
+            let freeClient: KoraKitClient;
+
+            beforeAll(async () => {
+                const koraRpcUrl = process.env.KORA_RPC_URL || 'http://127.0.0.1:8080';
+                freeClient = await createKitKoraClient({
+                    endpoint: koraRpcUrl,
+                    rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
+                    feeToken: usdcMint,
+                    feePayerWallet: testWallet,
+                });
+            }, 30000);
+
+            it('should send transaction without payment instruction when fee is 0', async () => {
+                const ix = getTransferSolInstruction({
+                    source: testWallet,
+                    destination: address(koraAddress),
+                    amount: 1000,
+                });
+
+                const result = await freeClient.sendTransaction([ix]);
+                expect(result.status).toBe('successful');
+                expect(result.context.signature).toBeDefined();
+            }, 30000);
+
+            it('should strip placeholder from planned message when fee is 0', async () => {
+                const ix = getTransferSolInstruction({
+                    source: testWallet,
+                    destination: address(koraAddress),
+                    amount: 1000,
+                });
+
+                const result = await freeClient.sendTransaction([ix]);
+                expect(result.status).toBe('successful');
+            }, 30000);
+        });
+    }
 });

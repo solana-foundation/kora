@@ -84,6 +84,7 @@ impl TestCommandHelper {
         let pnpm_command = match test_name {
             "typescript_basic" => "test:integration",
             "typescript_auth" => "test:integration:auth",
+            "typescript_free" => "test:integration:free",
             "typescript_turnkey" => "test:integration:turnkey",
             "typescript_privy" => "test:integration:privy",
             _ => return Err(format!("Unknown TypeScript test: {test_name}").into()),
