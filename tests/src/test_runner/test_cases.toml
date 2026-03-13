@@ -62,6 +62,13 @@ signers = "tests/src/common/fixtures/signers.toml"
 port = "8085"
 tests = ["typescript_auth"]
 
+[test.typescript_free]
+name = "TypeScript Free Pricing Tests"
+config = "tests/src/common/fixtures/kora-free-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8091"
+tests = ["typescript_free"]
+
 [test.usage_limit]
 name = "Usage Limit Tests"
 config = "tests/src/common/fixtures/usage-limit-test.toml"
