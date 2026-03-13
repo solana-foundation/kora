@@ -137,6 +137,11 @@ pub struct ValidationConfig {
     /// When >0, prices with a block_id older than `current_slot - max_price_staleness_slots` are rejected.
     #[serde(default)]
     pub max_price_staleness_slots: u64,
+    /// When enabled, deducts ATA creation rent from client fee
+    /// if operator payment address ATA does not exist.
+    /// Default: false.
+    #[serde(default)]
+    pub dynamic_ata_deduction: bool,
 }
 
 impl ValidationConfig {

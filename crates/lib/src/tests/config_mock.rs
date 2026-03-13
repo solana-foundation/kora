@@ -94,6 +94,7 @@ impl ConfigMockBuilder {
                     token_2022: Token2022Config::default(),
                     allow_durable_transactions: false,
                     max_price_staleness_slots: 0,
+                    dynamic_ata_deduction: false,
                 },
                 kora: KoraConfig {
                     rate_limit: 100,
@@ -281,6 +282,7 @@ impl ValidationConfigBuilder {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                dynamic_ata_deduction: false,
             },
         }
     }
