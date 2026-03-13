@@ -44,6 +44,10 @@ export type KoraKitClient = Awaited<ReturnType<typeof createKitKoraClient>>;
  * const result = await client.sendTransaction([myInstruction]);
  * ```
  */
+// TODO: Bundle support — the plan/execute pipeline currently handles single transactions only.
+// For Jito bundles, users must manually encode transactions and call `client.kora.signAndSendBundle()`.
+// A future `createKitKoraBundleClient` (or a bundle-aware executor plugin) could extend this to
+// plan multiple transaction messages and submit them as a single bundle.
 export async function createKitKoraClient(config: KoraKitClientConfig) {
     const koraClient = new KoraClient({
         apiKey: config.apiKey,

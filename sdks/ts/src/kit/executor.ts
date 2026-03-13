@@ -24,6 +24,11 @@ import { KoraClient } from '../client.js';
 import type { KoraKitClientConfig } from '../types/index.js';
 import { removePaymentInstruction, updatePaymentInstructionAmount } from './payment.js';
 
+// TODO: Create a bundle-aware executor (e.g. `createKoraBundlePlanExecutor`) that collects
+// multiple planned transaction messages into a single `signAndSendBundle` call instead of
+// submitting each one individually via `signAndSendTransaction`. This would let users
+// compose Jito bundles through the Kit plan/execute pipeline rather than manually encoding
+// transactions and calling `client.kora.signAndSendBundle()`.
 export function createKoraTransactionPlanExecutor(
     koraClient: KoraClient,
     config: KoraKitClientConfig,
