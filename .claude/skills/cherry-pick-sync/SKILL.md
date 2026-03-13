@@ -26,7 +26,7 @@ git branch -r --sort=-committerdate | grep 'origin/release/' | head -5
 ```
 
 - One active `release/*` branch → use it.
-- Multiple → ask the user.
+- Multiple → ask the user; suggest the most recently committed as the default.
 - User specified one → use that.
 
 ### 2. Determine commits to cherry-pick
@@ -54,11 +54,13 @@ If dirty, ask the user to commit or stash first.
 
 ### 4. Create working branch
 
+Replace `/` with `-` in the release branch name when constructing the working branch:
+
 ```bash
-git checkout -b chore/cherry-pick-main-into-<release>-YYYYMMDD origin/<release-branch>
+git checkout -b chore/cherry-pick-main-into-$(echo <release-branch> | tr '/' '-')-YYYYMMDD origin/<release-branch>
 ```
 
-Use today's date (e.g., `chore/cherry-pick-main-into-release-2.2.0-20260313`).
+Example: `release/2.2.0` → `chore/cherry-pick-main-into-release-2.2.0-20260313`.
 
 ### 5. Cherry-pick commits
 
@@ -76,6 +78,14 @@ git cherry-pick <sha>
 5. If a commit cannot be applied and user agrees → `git cherry-pick --skip`.
 
 Track all skipped and conflict-resolved commits for the PR body.
+
+**Abort/rollback:** If the user wants to cancel the entire operation:
+```bash
+git cherry-pick --abort
+git checkout -
+git branch -D <working-branch>
+```
+Inform the user the repo has been restored to its original state.
 
 **Already applied:** If cherry-pick says "already applied" or produces an empty commit, skip silently.
 
@@ -119,4 +129,4 @@ Cherry-pick commits from `main` into `<release-branch>` to keep the release bran
 
 - **No new commits** → tell user branches are in sync. Do not create empty PR.
 - **User on wrong branch** → always create working branch from `origin/<release-branch>` regardless of current branch.
-- **Multiple release branches** → ask which one. Default to most recently committed.
+- **Multiple release branches** → ask which one; suggest the most recently committed as default.
