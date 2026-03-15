@@ -479,11 +479,17 @@ impl FeeConfigUtil {
                 let mut seen_atas = std::collections::HashSet::new();
                 for ata_instruction in ata_creates {
                     let ParsedATAInstructionData::CreateAssociatedTokenAccount {
-                        wallet_owner, mint, ..
+                        payer,
+                        wallet_owner,
+                        mint,
+                        ..
                     } = ata_instruction;
                     // Only deduct rent if the ATA being created is for the operator's payment address
-                    if *wallet_owner == payment_destination 
-                        && seen_atas.insert((*wallet_owner, *mint)) {
+                    // and the fee payer is the one paying for it
+                    if *payer == *fee_payer_pubkey
+                        && *wallet_owner == payment_destination
+                        && seen_atas.insert((*wallet_owner, *mint))
+                    {
                         total =
                             total.saturating_sub(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION);
                         log::info!(
@@ -1424,24 +1430,35 @@ mod tests {
         let payment_destination = config.kora.get_payment_address(&fee_payer.pubkey()).unwrap();
 
         let transfer_amount = 5_000_000;
-        let transfer_instruction = transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), transfer_amount);
+        let transfer_instruction =
+            transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), transfer_amount);
 
-        // Client maliciously includes TWO creation instructions for the same ATA
+        let other_payer = Keypair::new();
+
+        // 1. Valid instruction (should deduct)
         let ata_instruction_1 = create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &payment_destination,
             &mint,
             &spl_token_interface::ID,
         );
+        // 2. Different payer for second instruction (should NOT deduct)
         let ata_instruction_2 = create_associated_token_account_idempotent(
+            &other_payer.pubkey(),
+            &payment_destination,
+            &mint,
+            &spl_token_interface::ID,
+        );
+        // 3. Duplicate instruction with original payer (should NOT deduct)
+        let ata_instruction_3 = create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &payment_destination,
             &mint,
-            &spl_token_interface::ID, // Duplicate instruction
+            &spl_token_interface::ID,
         );
 
         let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_instruction, ata_instruction_1, ata_instruction_2],
+            &[transfer_instruction, ata_instruction_1, ata_instruction_2, ata_instruction_3],
             Some(&fee_payer.pubkey()),
         ));
 
@@ -1449,7 +1466,7 @@ mod tests {
         config.validation.dynamic_ata_deduction = true;
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-            
+
         let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
             &fee_payer.pubkey(),
             &mut resolved_transaction,
@@ -1460,7 +1477,8 @@ mod tests {
         .unwrap();
 
         // Deduction should be applied ONLY ONCE
-        let expected_reduced = transfer_amount.saturating_sub(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION);
+        let expected_reduced =
+            transfer_amount.saturating_sub(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION);
         assert_eq!(
             outflow, expected_reduced,
             "Outflow deduction should be applied exactly once even if multiple identical creation instructions exist"
