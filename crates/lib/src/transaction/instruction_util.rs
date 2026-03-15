@@ -132,6 +132,22 @@ pub enum ParsedSPLInstructionData {
     },
 }
 
+// ATA instruction types
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParsedATAInstructionType {
+    CreateAssociatedTokenAccount,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParsedATAInstructionData {
+    CreateAssociatedTokenAccount {
+        payer: Pubkey,
+        ata_address: Pubkey,
+        wallet_owner: Pubkey,
+        mint: Pubkey,
+    },
+}
+
 /// Macro to validate that an instruction has the required number of accounts
 /// Usage: validate_accounts!(instruction, min_count)
 macro_rules! validate_number_accounts {
@@ -1874,6 +1890,48 @@ impl IxUtils {
         }
         Ok(parsed_instructions)
     }
+
+    pub fn parse_ata_instructions(
+        transaction: &VersionedTransactionResolved,
+    ) -> Result<HashMap<ParsedATAInstructionType, Vec<ParsedATAInstructionData>>, KoraError> {
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+        let mut parsed_instructions: HashMap<
+            ParsedATAInstructionType,
+            Vec<ParsedATAInstructionData>,
+        > = HashMap::new();
+
+        for instruction in &transaction.all_instructions {
+            if instruction.program_id == ata_program_id
+                && instruction.accounts.len()
+                    >= instruction_indexes::ata_instruction_indexes::MIN_ACCOUNTS
+            {
+                // Both Create and CreateIdempotent have the same account layout:
+                //   [0] payer, [1] ata_address, [2] wallet_owner, [3] mint, ...
+                // Discriminator byte: 0 = Create, 1 = CreateIdempotent
+                // We parse both variants the same way.
+                let discriminator = instruction.data.first().copied().unwrap_or(0);
+                if discriminator <= 1 {
+                    parsed_instructions
+                        .entry(ParsedATAInstructionType::CreateAssociatedTokenAccount)
+                        .or_default()
+                        .push(ParsedATAInstructionData::CreateAssociatedTokenAccount {
+                            payer: instruction.accounts[0].pubkey,
+                            ata_address: instruction.accounts
+                                [instruction_indexes::ata_instruction_indexes::ATA_ADDRESS_INDEX]
+                                .pubkey,
+                            wallet_owner: instruction.accounts
+                                [instruction_indexes::ata_instruction_indexes::WALLET_OWNER_INDEX]
+                                .pubkey,
+                            mint: instruction.accounts
+                                [instruction_indexes::ata_instruction_indexes::MINT_INDEX]
+                                .pubkey,
+                        });
+                }
+            }
+        }
+
+        Ok(parsed_instructions)
+    }
 }
 
 #[cfg(test)]
@@ -3603,5 +3661,76 @@ mod tests {
         assert_eq!(compiled.program_id_index, 0);
         assert!(compiled.accounts.is_empty());
         assert!(compiled.data.is_empty());
+    }
+
+    #[test]
+    fn test_parse_ata_instructions_create_idempotent() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent;
+
+        let payer = Keypair::new();
+        let wallet_owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let ata_address =
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &wallet_owner,
+                &mint,
+            );
+
+        // 1. Test with ATA instruction
+        let instruction = create_associated_token_account_idempotent(
+            &payer.pubkey(),
+            &wallet_owner,
+            &mint,
+            &spl_token_interface::ID,
+        );
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_ata_instructions(&resolved_tx)
+            .expect("Failed to parse ATA instructions");
+
+        let creates = parsed_instructions
+            .get(&ParsedATAInstructionType::CreateAssociatedTokenAccount)
+            .expect("Expected CreateAssociatedTokenAccount instructions");
+
+        assert_eq!(creates.len(), 1);
+
+        match &creates[0] {
+            ParsedATAInstructionData::CreateAssociatedTokenAccount {
+                payer: parsed_payer,
+                ata_address: parsed_ata_address,
+                wallet_owner: parsed_wallet,
+                mint: parsed_mint,
+            } => {
+                assert_eq!(*parsed_payer, payer.pubkey());
+                assert_eq!(*parsed_ata_address, ata_address);
+                assert_eq!(*parsed_wallet, wallet_owner);
+                assert_eq!(*parsed_mint, mint);
+            } // enum has only one variant
+        }
+
+        // 2. Test empty (no ATA instructions)
+        let empty_message = VersionedMessage::Legacy(Message::new(&[], Some(&payer.pubkey())));
+        let empty_tx = VersionedTransaction::try_new(empty_message, &[&payer]).unwrap();
+        let empty_resolved_tx =
+            VersionedTransactionResolved::from_kora_built_transaction(&empty_tx)
+                .expect("Failed to create empty resolved transaction");
+        let empty_parsed = IxUtils::parse_ata_instructions(&empty_resolved_tx)
+            .expect("Failed to parse ATA instructions from empty tx");
+
+        assert!(
+            empty_parsed.is_empty(),
+            "HashMap should be empty when no ATA instructions are present"
+        );
     }
 }

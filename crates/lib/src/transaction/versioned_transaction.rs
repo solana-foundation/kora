@@ -17,8 +17,9 @@ use crate::{
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
     lighthouse::LighthouseUtil,
     transaction::{
-        instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
-        ParsedSystemInstructionData, ParsedSystemInstructionType,
+        instruction_util::IxUtils, ParsedATAInstructionData, ParsedATAInstructionType,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
+        ParsedSystemInstructionType,
     },
     validator::transaction_validator::TransactionValidator,
     CacheUtil,
@@ -42,6 +43,10 @@ pub struct VersionedTransactionResolved {
     // Parsed SPL instructions by type (None if not parsed yet)
     parsed_spl_instructions:
         Option<HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>>,
+
+    // Parsed ATA instructions by type (None if not parsed yet)
+    parsed_ata_instructions:
+        Option<HashMap<ParsedATAInstructionType, Vec<ParsedATAInstructionData>>>,
 }
 
 impl Deref for VersionedTransactionResolved {
@@ -85,6 +90,7 @@ impl VersionedTransactionResolved {
             all_instructions: vec![],
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
+            parsed_ata_instructions: None,
         };
 
         // 1. Resolve lookup table addresses based on transaction type
@@ -134,6 +140,7 @@ impl VersionedTransactionResolved {
             )?,
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
+            parsed_ata_instructions: None,
         })
     }
 
@@ -219,6 +226,18 @@ impl VersionedTransactionResolved {
 
         self.parsed_spl_instructions.as_ref().ok_or_else(|| {
             KoraError::SerializationError("Parsed SPL instructions not found".to_string())
+        })
+    }
+
+    pub fn get_or_parse_ata_instructions(
+        &mut self,
+    ) -> Result<&HashMap<ParsedATAInstructionType, Vec<ParsedATAInstructionData>>, KoraError> {
+        if self.parsed_ata_instructions.is_none() {
+            self.parsed_ata_instructions = Some(IxUtils::parse_ata_instructions(self)?);
+        }
+
+        self.parsed_ata_instructions.as_ref().ok_or_else(|| {
+            KoraError::SerializationError("Parsed ATA instructions not found".to_string())
         })
     }
 }
