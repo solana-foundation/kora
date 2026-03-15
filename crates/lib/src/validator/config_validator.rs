@@ -334,6 +334,19 @@ impl ConfigValidator {
             );
         }
 
+        if config.validation.dynamic_ata_deduction
+            && !matches!(config.validation.price.model, crate::fee::price::PriceModel::Free)
+        {
+            warnings.push(
+                "NOTICE: dynamic_ata_deduction is enabled. \
+                ATA creation rent (2,039,280 lamports) will be subtracted from the client's \
+                fee amount when the operator payment address ATA doesn't exist. \
+                Ensure operator ATAs are initialized via 'kora rpc initialize-atas' \
+                to avoid unexpected fee reductions."
+                    .to_string(),
+            );
+        }
+
         // Validate allowed programs (warn if empty or missing system/token programs)
         if config.validation.allowed_programs.is_empty() {
             warnings.push(
@@ -1912,6 +1925,85 @@ mod tests {
 
         assert!(warnings.iter().any(|w| w.contains("allow_durable_transactions is enabled")));
         assert!(warnings.iter().any(|w| w.contains("hold signed transactions indefinitely")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_dynamic_ata_deduction_warning_with_dynamic_pricing() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                dynamic_ata_deduction: true, // Enabled - should warn
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        assert!(warnings.iter().any(|w| w.contains("dynamic_ata_deduction is enabled")));
+        assert!(warnings.iter().any(|w| w.contains("2,039,280 lamports")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_dynamic_ata_deduction_no_warning_with_free_pricing() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                dynamic_ata_deduction: true, // Enabled, but Free pricing -> should NOT warn
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        assert!(!warnings.iter().any(|w| w.contains("dynamic_ata_deduction is enabled")));
     }
 
     #[tokio::test]

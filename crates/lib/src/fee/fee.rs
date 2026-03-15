@@ -11,8 +11,9 @@ use crate::{
         TokenState,
     },
     transaction::{
-        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
-        ParsedSystemInstructionType, VersionedTransactionResolved,
+        ParsedATAInstructionData, ParsedATAInstructionType, ParsedSPLInstructionData,
+        ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
+        VersionedTransactionResolved,
     },
 };
 
@@ -465,6 +466,31 @@ impl FeeConfigUtil {
                 log::error!("Fee payer outflow overflow: sol={}, spl={}", total, spl_outflow);
                 KoraError::ValidationError("Fee payer outflow calculation overflow".to_string())
             })?;
+        }
+        // If dynamic_ata_deduction is enabled, subtract rent for ATA creation instructions
+        // that create ATAs for the operator's payment address
+        if config.validation.dynamic_ata_deduction {
+            let payment_destination = config.kora.get_payment_address(fee_payer_pubkey)?;
+            let parsed_ata_instructions = transaction.get_or_parse_ata_instructions()?;
+
+            if let Some(ata_creates) =
+                parsed_ata_instructions.get(&ParsedATAInstructionType::CreateAssociatedTokenAccount)
+            {
+                for ata_instruction in ata_creates {
+                    let ParsedATAInstructionData::CreateAssociatedTokenAccount {
+                        wallet_owner, ..
+                    } = ata_instruction;
+                    // Only deduct rent if the ATA being created is for the operator's payment address
+                    if *wallet_owner == payment_destination {
+                        total =
+                            total.saturating_sub(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION);
+                        log::info!(
+                            "Dynamic ATA deduction: subtracted {} lamports rent for operator ATA creation",
+                            crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION
+                        );
+                    }
+                }
+            }
         }
 
         Ok(total)
@@ -1259,5 +1285,127 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, 12500, "Should return mocked base fee for V0 message");
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_with_ata_deduction() {
+        use spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent;
+
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let mut config = get_config().unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let fee_payer = Keypair::new();
+        let mint = Pubkey::new_unique();
+        let payment_destination = config.kora.get_payment_address(&fee_payer.pubkey()).unwrap();
+
+        // Instruction 1: System transfer to simulate some base outflow
+        let transfer_amount = 5_000_000;
+        let transfer_instruction =
+            transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), transfer_amount);
+
+        // Instruction 2: Create ATA for the payment destination
+        let ata_instruction = create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &payment_destination,
+            &mint,
+            &spl_token_interface::ID,
+        );
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[transfer_instruction, ata_instruction],
+            Some(&fee_payer.pubkey()),
+        ));
+
+        // Scenario 1: dynamic_ata_deduction = true
+        config.validation.dynamic_ata_deduction = true;
+        let mut resolved_transaction_true =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message.clone()).unwrap();
+
+        let outflow_true = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer.pubkey(),
+            &mut resolved_transaction_true,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        // The expected value should be transfer_amount - MIN_BALANCE_FOR_RENT_EXEMPTION
+        let expected_reduced =
+            transfer_amount.saturating_sub(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION);
+        assert_eq!(
+            outflow_true, expected_reduced,
+            "Outflow should be reduced by rent exemption amount"
+        );
+
+        // Scenario 2: dynamic_ata_deduction = false
+        config.validation.dynamic_ata_deduction = false;
+        let mut resolved_transaction_false =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let outflow_false = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer.pubkey(),
+            &mut resolved_transaction_false,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outflow_false, transfer_amount,
+            "Outflow should NOT be reduced when deduction is disabled"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_ata_deduction_wrong_owner() {
+        use spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent;
+
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let mut config = get_config().unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let fee_payer = Keypair::new();
+        let mint = Pubkey::new_unique();
+
+        // This is the "wrong" owner - NOT the operator payment address
+        let wrong_wallet_owner = Pubkey::new_unique();
+
+        let transfer_amount = 5_000_000;
+        let transfer_instruction =
+            transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), transfer_amount);
+
+        let ata_instruction = create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &wrong_wallet_owner,
+            &mint,
+            &spl_token_interface::ID,
+        );
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[transfer_instruction, ata_instruction],
+            Some(&fee_payer.pubkey()),
+        ));
+
+        // Enable deduction, but since it's the wrong owner, it shouldn't apply
+        config.validation.dynamic_ata_deduction = true;
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer.pubkey(),
+            &mut resolved_transaction,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outflow, transfer_amount,
+            "Outflow should NOT be reduced for non-payment-address ATA creations"
+        );
     }
 }

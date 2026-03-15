@@ -140,6 +140,8 @@ pub struct ValidationConfig {
     /// When enabled, deducts ATA creation rent from client fee
     /// if operator payment address ATA does not exist.
     /// Default: false.
+    /// WARNING: Enabling with dynamic pricing may allow clients to satisfy fees
+    /// using rent lamports whose SOL value exceeds the required token payment.
     #[serde(default)]
     pub dynamic_ata_deduction: bool,
 }
