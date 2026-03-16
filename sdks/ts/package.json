@@ -13,6 +13,7 @@
     "test:coverage": "jest --coverage",
     "test:integration": "pnpm test integration.test.ts",
     "test:integration:auth": "ENABLE_AUTH=true pnpm test integration.test.ts",
+    "test:integration:free": "FREE_PRICING=true pnpm test integration.test.ts",
     "test:integration:privy": "KORA_SIGNER_TYPE=privy pnpm test integration.test.ts",
     "test:integration:turnkey": "KORA_SIGNER_TYPE=turnkey pnpm test integration.test.ts",
     "test:unit": "pnpm test unit.test.ts",
@@ -49,7 +50,10 @@
   },
   "peerDependencies": {
     "@solana-program/token": "^0.10.0",
-    "@solana/kit": "^6.0.0"
+    "@solana/kit": "^6.1.0",
+    "@solana/kit-plugin-instruction-plan": "^0.6.0",
+    "@solana/kit-plugin-payer": "^0.6.0",
+    "@solana/kit-plugin-rpc": "^0.6.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
@@ -57,7 +61,10 @@
     "@solana-program/system": "^0.11.0",
     "@solana-program/token": "^0.10.0",
     "@solana/eslint-config-solana": "6.0.0",
-    "@solana/kit": "^6.0.0",
+    "@solana/kit-plugin-instruction-plan": "^0.6.0",
+    "@solana/kit-plugin-payer": "^0.6.0",
+    "@solana/kit-plugin-rpc": "^0.6.0",
+    "@solana/kit": "^6.1.0",
     "@solana/prettier-config-solana": "^0.0.6",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.17.27",
