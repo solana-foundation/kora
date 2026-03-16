@@ -518,6 +518,7 @@ import type {
     Instruction as KitInstruction,
     Signature,
 } from '@solana/kit';
+import { KoraClient } from '../client.js';
 
 /** Configuration options for the Kora Kit plugin */
 export interface KoraPluginConfig {
@@ -534,6 +535,8 @@ export interface KoraPluginConfig {
     getRecaptchaToken?: () => Promise<string> | string;
     /** Optional HMAC secret for signature-based authentication */
     hmacSecret?: string;
+    /** Existing Kora Client for reusing existing instance */
+    koraClient?: KoraClient;
 }
 
 /** Plugin response for getPayerSigner with Kit Address types */

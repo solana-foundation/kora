@@ -64,6 +64,10 @@ fmt:
     cargo fmt --all
     cd sdks/ts && pnpm format
 
+# Format TypeScript Files
+fmt-ts:
+    cd sdks/ts && pnpm format
+
 # ******************************************************************************
 # Testing
 # ******************************************************************************

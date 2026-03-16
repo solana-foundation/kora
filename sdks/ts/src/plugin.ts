@@ -55,12 +55,14 @@ import type {
  * ```
  */
 export function koraPlugin(config: KoraPluginConfig) {
-    const client = new KoraClient({
-        apiKey: config.apiKey,
-        getRecaptchaToken: config.getRecaptchaToken,
-        hmacSecret: config.hmacSecret,
-        rpcUrl: config.endpoint,
-    });
+    const client =
+        config.koraClient ??
+        new KoraClient({
+            apiKey: config.apiKey,
+            getRecaptchaToken: config.getRecaptchaToken,
+            hmacSecret: config.hmacSecret,
+            rpcUrl: config.endpoint,
+        });
 
     return <T extends object>(c: T) => ({
         ...c,

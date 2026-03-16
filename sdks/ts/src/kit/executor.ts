@@ -67,6 +67,12 @@ export function createKoraTransactionPlanExecutor(
                     transaction: prePaymentTx,
                 });
 
+                if (fee_in_token == null) {
+                    console.warn(
+                        '[kora] fee_in_token is undefined — defaulting to 0. ' +
+                            'If paid pricing is expected, check that the fee token is correctly configured on the server.',
+                    );
+                }
                 const feeInToken = fee_in_token ?? 0;
 
                 if (feeInToken < 0) {

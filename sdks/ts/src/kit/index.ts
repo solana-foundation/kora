@@ -101,10 +101,8 @@ export async function createKitKoraClient(config: KoraKitClientConfig) {
         .use(rpc(config.rpcUrl))
         .use(
             koraPlugin({
-                apiKey: config.apiKey,
                 endpoint: config.endpoint,
-                getRecaptchaToken: config.getRecaptchaToken,
-                hmacSecret: config.hmacSecret,
+                koraClient,
             }),
         )
         .use(payer(payerSigner))
