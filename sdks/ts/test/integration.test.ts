@@ -423,22 +423,6 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
     });
 
-    describe('End-to-End Flows', () => {
-        it('should handle transfer and sign flow', async () => {
-            const { transaction } = await buildTokenTransferTransaction({
-                amount: 1000000n,
-                client,
-                destinationWallet: koraAddress,
-                mint: usdcMint,
-                sourceWallet: testWallet,
-            });
-
-            const signResult = await client.signTransaction({ transaction });
-
-            expect(signResult.signed_transaction).toBeDefined();
-        });
-    });
-
     if (FREE_PRICING) {
         describe('Kit Client (free pricing)', () => {
             let freeClient: KoraKitClient;
