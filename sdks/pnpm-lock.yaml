@@ -15,28 +15,16 @@ importers:
   .: {}
 
   ts:
-    devDependencies:
-      '@eslint/js':
-        specifier: ^9.39.3
-        version: 9.39.4
+    dependencies:
       '@solana-program/compute-budget':
         specifier: ^0.15.0
         version: 0.15.0(@solana/kit@6.3.1(typescript@5.9.3))
-      '@solana-program/system':
-        specifier: ^0.12.0
-        version: 0.12.0(@solana/kit@6.3.1(typescript@5.9.3))
       '@solana-program/token':
         specifier: ^0.12.0
         version: 0.12.0(@solana/kit@6.3.1(typescript@5.9.3))
-      '@solana/eslint-config-solana':
-        specifier: 6.0.0
-        version: 6.0.0(@eslint/js@9.39.4)(@types/eslint@9.6.1)(@types/eslint__js@9.14.0)(eslint-plugin-jest@29.15.0(@typescript-eslint/eslint-plugin@8.57.0(@typescript-eslint/parser@8.57.0(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(jest@29.7.0(@types/node@20.19.9)(ts-node@10.9.2(@types/node@20.19.9)(typescript@5.9.3)))(typescript@5.9.3))(eslint-plugin-react-hooks@7.0.1(eslint@9.39.4))(eslint-plugin-simple-import-sort@12.1.1(eslint@9.39.4))(eslint-plugin-sort-keys-fix@1.1.2)(eslint-plugin-typescript-sort-keys@3.3.0(@typescript-eslint/parser@8.57.0(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(globals@16.5.0)(jest@29.7.0(@types/node@20.19.9)(ts-node@10.9.2(@types/node@20.19.9)(typescript@5.9.3)))(typescript-eslint@8.57.0(eslint@9.39.4)(typescript@5.9.3))(typescript@5.9.3)
       '@solana/kit':
         specifier: ^6.3.0
         version: 6.3.1(typescript@5.9.3)
-      '@solana/kit-client-litesvm':
-        specifier: ^0.7.0
-        version: 0.7.0(@solana/kit@6.3.1(typescript@5.9.3))(typescript@5.9.3)
       '@solana/kit-plugin-instruction-plan':
         specifier: ^0.7.0
         version: 0.7.0(@solana/kit@6.3.1(typescript@5.9.3))
@@ -46,6 +34,19 @@ importers:
       '@solana/kit-plugin-rpc':
         specifier: ^0.7.0
         version: 0.7.0(@solana/kit@6.3.1(typescript@5.9.3))
+    devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.3
+        version: 9.39.4
+      '@solana-program/system':
+        specifier: ^0.12.0
+        version: 0.12.0(@solana/kit@6.3.1(typescript@5.9.3))
+      '@solana/eslint-config-solana':
+        specifier: 6.0.0
+        version: 6.0.0(@eslint/js@9.39.4)(@types/eslint@9.6.1)(@types/eslint__js@9.14.0)(eslint-plugin-jest@29.15.0(@typescript-eslint/eslint-plugin@8.57.0(@typescript-eslint/parser@8.57.0(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(jest@29.7.0(@types/node@20.19.9)(ts-node@10.9.2(@types/node@20.19.9)(typescript@5.9.3)))(typescript@5.9.3))(eslint-plugin-react-hooks@7.0.1(eslint@9.39.4))(eslint-plugin-simple-import-sort@12.1.1(eslint@9.39.4))(eslint-plugin-sort-keys-fix@1.1.2)(eslint-plugin-typescript-sort-keys@3.3.0(@typescript-eslint/parser@8.57.0(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(globals@16.5.0)(jest@29.7.0(@types/node@20.19.9)(ts-node@10.9.2(@types/node@20.19.9)(typescript@5.9.3)))(typescript-eslint@8.57.0(eslint@9.39.4)(typescript@5.9.3))(typescript@5.9.3)
+      '@solana/kit-client-litesvm':
+        specifier: ^0.7.0
+        version: 0.7.0(@solana/kit@6.3.1(typescript@5.9.3))(typescript@5.9.3)
       '@solana/prettier-config-solana':
         specifier: ^0.0.6
         version: 0.0.6(prettier@3.6.2)
@@ -100,9 +101,6 @@ importers:
       typescript-eslint:
         specifier: ^8.56.1
         version: 8.57.0(eslint@9.39.4)(typescript@5.9.3)
-      ws:
-        specifier: ^8.18.3
-        version: 8.18.3
 
 packages:
 
@@ -2784,18 +2782,6 @@ packages:
   write-file-atomic@4.0.2:
     resolution: {integrity: sha512-7KxauUdBmSdWnmpaGFg+ppNjKF8uNLry8LyzjauQDOVONfFLNKrKvQOxZ/VuTIcS/gge/YNahf5RIIQWTSarlg==}
     engines: {node: ^12.13.0 || ^14.15.0 || >=16.0.0}
-
-  ws@8.18.3:
-    resolution: {integrity: sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
-    peerDependenciesMeta:
-      bufferutil:
-        optional: true
-      utf-8-validate:
-        optional: true
 
   ws@8.19.0:
     resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
@@ -5990,8 +5976,6 @@ snapshots:
     dependencies:
       imurmurhash: 0.1.4
       signal-exit: 3.0.7
-
-  ws@8.18.3: {}
 
   ws@8.19.0: {}
 
