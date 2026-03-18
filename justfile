@@ -221,16 +221,17 @@ generate-key:
 [group('release')]
 branch-info:
     @echo "Branch Workflow:"
-    @echo "  main           → Audited code only, stable releases"
-    @echo "  release/X.Y.Z  → Pre-audit features for version X.Y.Z"
-    @echo "  hotfix/*       → Hotfixes from main"
+    @echo "  main           → Integration branch (audited + unaudited commits)"
+    @echo "  tags vX.Y.Z    → Stable release snapshots"
+    @echo "  release/*      → Optional short-lived stabilization only"
+    @echo "  hotfix/*       → Urgent fixes from main"
     @echo ""
     @echo "Releasing:"
-    @echo "  Stable: checkout main, run 'just release'"
-    @echo "  Beta:   checkout release/X.Y.Z, run 'just release'"
+    @echo "  Stable/RC: checkout main, run 'just release'"
+    @echo "  Pre-release: use semver suffix (e.g. 2.3.0-beta.1) with 'just release'"
     @echo "  Hotfix: run 'just hotfix' (branches from main)"
 
-# Prepare a new release (run from main for stable, release/X.Y.Z for beta)
+# Prepare a new release (run from main; use semver prerelease suffixes for beta/rc)
 [group('release')]
 [confirm('Start release process?')]
 release:
@@ -278,7 +279,7 @@ release:
     echo "  git push origin HEAD"
     echo "  Create PR → merge → trigger 'Publish Rust Crates' workflow"
 
-# Start a hotfix branch from main (main is always audited/stable)
+# Start a hotfix branch from main
 [group('release')]
 hotfix name='':
     #!/usr/bin/env bash

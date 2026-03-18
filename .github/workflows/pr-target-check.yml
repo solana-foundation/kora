@@ -9,23 +9,13 @@ jobs:
   check-target:
     runs-on: ubuntu-latest
     steps:
-      - name: Enforce PR source branch policy
+      - name: Enforce mainline PR policy
         env:
           HEAD_REF: ${{ github.head_ref }}
-          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           if [[ "$HEAD_REF" == release/* ]]; then
-            echo "PR from release branch ($HEAD_REF) — allowed"
-            exit 0
+            echo "::warning::Source branch '$HEAD_REF' matches deprecated release/* flow."
+            echo "::warning::Create feature/fix branches from main and open PRs to main."
           fi
 
-          if echo "$LABELS" | grep -iq '"hotfix"'; then
-            echo "PR labeled as hotfix — allowed"
-            exit 0
-          fi
-
-          echo "PRs targeting main must come from a release/* branch or be labeled 'hotfix'."
-          echo ""
-          echo "The main branch contains audited code only."
-          echo "Please target the current release/* branch instead."
-          exit 1
+          echo "Mainline PR policy check passed."

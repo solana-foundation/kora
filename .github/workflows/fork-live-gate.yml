@@ -2,7 +2,7 @@ name: Fork Live Gate
 
 on:
   pull_request:
-    branches: [main, "release/*"]
+    branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
