@@ -471,6 +471,15 @@ impl FeeConfigUtil {
         // that create ATAs for the operator's payment address
         if config.validation.dynamic_ata_deduction {
             let payment_destination = config.kora.get_payment_address(fee_payer_pubkey)?;
+
+            // Parse both first to ensure they are cached
+            transaction.get_or_parse_ata_instructions()?;
+            let system_creates = transaction
+                .get_or_parse_system_instructions()?
+                .get(&ParsedSystemInstructionType::SystemCreateAccount)
+                .cloned()
+                .unwrap_or_default();
+
             let parsed_ata_instructions = transaction.get_or_parse_ata_instructions()?;
 
             if let Some(ata_creates) =
@@ -482,12 +491,30 @@ impl FeeConfigUtil {
                         payer,
                         wallet_owner,
                         mint,
+                        ata_address,
                         ..
                     } = ata_instruction;
+
+                    // Check if there's a matching SystemCreateAccount for this ATA to verify rent was actually paid
+                    let has_create_account = system_creates.iter().any(|system_ix| {
+                        if let ParsedSystemInstructionData::SystemCreateAccount {
+                            new_account,
+                            lamports,
+                            ..
+                        } = system_ix
+                        {
+                            *new_account == *ata_address
+                                && *lamports == crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION
+                        } else {
+                            false
+                        }
+                    });
+
                     // Only deduct rent if the ATA being created is for the operator's payment address
-                    // and the fee payer is the one paying for it
+                    // and the fee payer is the one paying for it, and rent was actually paid (SystemCreateAccount exists)
                     if *payer == *fee_payer_pubkey
                         && *wallet_owner == payment_destination
+                        && has_create_account
                         && seen_atas.insert((*wallet_owner, *mint))
                     {
                         total =
@@ -554,6 +581,8 @@ mod tests {
         token::{interface::TokenInterface, spl_token::TokenProgram},
         transaction::TransactionUtil,
     };
+    use serde_json::json;
+    use solana_client::rpc_request::RpcRequest;
     use solana_message::{v0, Message, VersionedMessage};
     use solana_sdk::{
         account::Account,
@@ -569,7 +598,11 @@ mod tests {
         },
         program::ID as SYSTEM_PROGRAM_ID,
     };
-    use spl_associated_token_account_interface::address::get_associated_token_address;
+    use spl_associated_token_account_interface::{
+        address::get_associated_token_address,
+        instruction::create_associated_token_account_idempotent,
+    };
+    use std::collections::HashMap;
 
     #[test]
     fn test_is_fee_payer_in_signers_legacy_fee_payer_is_signer() {
@@ -1320,8 +1353,18 @@ mod tests {
             &spl_token_interface::ID,
         );
 
+        // Instruction 3: System create account for the ATA (to simulate ATA actually being created)
+        let ata_address = get_associated_token_address(&payment_destination, &mint);
+        let system_create_instruction = create_account(
+            &fee_payer.pubkey(), // payer
+            &ata_address,        // new account
+            crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
+            0,
+            &Pubkey::default(),
+        );
+
         let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_instruction, ata_instruction],
+            &[transfer_instruction, ata_instruction, system_create_instruction],
             Some(&fee_payer.pubkey()),
         ));
 
@@ -1339,12 +1382,12 @@ mod tests {
         .await
         .unwrap();
 
-        // The expected value should be transfer_amount - MIN_BALANCE_FOR_RENT_EXEMPTION
-        let expected_reduced =
-            transfer_amount.saturating_sub(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION);
+        // The expected value should be (transfer_amount + rent) - rent = transfer_amount
+        // Because calculate_fee_payer_outflow adds the rent from SystemCreateAccount,
+        // then dynamic_ata_deduction subtracts it back.
         assert_eq!(
-            outflow_true, expected_reduced,
-            "Outflow should be reduced by rent exemption amount"
+            outflow_true, transfer_amount,
+            "Outflow should remain transfer_amount as operator subsidizes the rent"
         );
 
         // Scenario 2: dynamic_ata_deduction = false
@@ -1362,15 +1405,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            outflow_false, transfer_amount,
-            "Outflow should NOT be reduced when deduction is disabled"
+            outflow_false,
+            transfer_amount + crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
+            "Outflow should NOT be reduced when deduction is disabled (rent is paid by client)"
         );
     }
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_ata_deduction_wrong_owner() {
-        use spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent;
-
         let _m = ConfigMockBuilder::new().build_and_setup();
         let mut config = get_config().unwrap();
         let rpc_client = RpcMockBuilder::new().build();
@@ -1392,8 +1434,17 @@ mod tests {
             &spl_token_interface::ID,
         );
 
+        let ata_address = get_associated_token_address(&wrong_wallet_owner, &mint);
+        let system_create_instruction = create_account(
+            &fee_payer.pubkey(),
+            &ata_address,
+            crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
+            0,
+            &Pubkey::default(),
+        );
+
         let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_instruction, ata_instruction],
+            &[transfer_instruction, ata_instruction, system_create_instruction],
             Some(&fee_payer.pubkey()),
         ));
 
@@ -1412,15 +1463,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            outflow, transfer_amount,
-            "Outflow should NOT be reduced for non-payment-address ATA creations"
+            outflow,
+            transfer_amount + crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
+            "Outflow should include rent when owner is NOT operator's payment address"
         );
     }
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_ata_deduction_no_duplicate() {
-        use spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent;
-
         let _m = ConfigMockBuilder::new().build_and_setup();
         let mut config = get_config().unwrap();
         let rpc_client = RpcMockBuilder::new().build();
@@ -1457,8 +1507,23 @@ mod tests {
             &spl_token_interface::ID,
         );
 
+        let ata_address = get_associated_token_address(&payment_destination, &mint);
+        let system_create_instruction = create_account(
+            &fee_payer.pubkey(),
+            &ata_address,
+            crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
+            0,
+            &Pubkey::default(),
+        );
+
         let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_instruction, ata_instruction_1, ata_instruction_2, ata_instruction_3],
+            &[
+                transfer_instruction,
+                ata_instruction_1,
+                ata_instruction_2,
+                ata_instruction_3,
+                system_create_instruction,
+            ],
             Some(&fee_payer.pubkey()),
         ));
 
@@ -1477,11 +1542,147 @@ mod tests {
         .unwrap();
 
         // Deduction should be applied ONLY ONCE
-        let expected_reduced =
-            transfer_amount.saturating_sub(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION);
         assert_eq!(
-            outflow, expected_reduced,
-            "Outflow deduction should be applied exactly once even if multiple identical creation instructions exist"
+            outflow, transfer_amount,
+            "Outflow should remain transfer_amount as operator subsidizes the rent only once"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_ata_already_exists() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let fee_payer = Keypair::new();
+        let mint = Pubkey::new_unique();
+        let payment_destination = config.kora.get_payment_address(&fee_payer.pubkey()).unwrap();
+
+        let transfer_amount = 5_000_000;
+        let transfer_instruction =
+            transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), transfer_amount);
+
+        // ATA instruction present, but it's idempotent and account already exists (no CPI to System Program)
+        let ata_instruction = create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &payment_destination,
+            &mint,
+            &spl_token_interface::ID,
+        );
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[transfer_instruction, ata_instruction],
+            Some(&fee_payer.pubkey()),
+        ));
+
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer.pubkey(),
+            &mut resolved_transaction,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outflow, transfer_amount,
+            "Outflow should NOT be reduced when ATA already exists (no SystemCreateAccount instruction)"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_ata_deduction_from_transaction() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let mut config = get_config().unwrap();
+        config.validation.dynamic_ata_deduction = true;
+
+        let fee_payer = Keypair::new();
+        let mint = Pubkey::new_unique();
+        let payment_destination = config.kora.get_payment_address(&fee_payer.pubkey()).unwrap();
+        let ata_address = get_associated_token_address(&payment_destination, &mint);
+
+        let transfer_amount = 5_000_000;
+        let transfer_instruction =
+            transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), transfer_amount);
+
+        let ata_instruction = create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &payment_destination,
+            &mint,
+            &spl_token_interface::ID,
+        );
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[transfer_instruction, ata_instruction],
+            Some(&fee_payer.pubkey()),
+        ));
+
+        let transaction =
+            solana_sdk::transaction::VersionedTransaction::try_new(message, &[&fee_payer]).unwrap();
+
+        // 1. Mock Simulation to include SystemCreateAccount as an inner instruction
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": ["Program ... success"],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": [
+                        {
+                            "index": 1, // index of ata_instruction in top-level instructions
+                            "instructions": [
+                                {
+                                    // System Program CreateAccount
+                                    "parsed": {
+                                        "info": {
+                                            "lamports": crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
+                                            "newAccount": ata_address.to_string(),
+                                            "owner": spl_token_interface::ID.to_string(),
+                                            "source": fee_payer.pubkey().to_string(),
+                                            "space": 165
+                                        },
+                                        "type": "createAccount"
+                                    },
+                                    "program": "system",
+                                    "programId": SYSTEM_PROGRAM_ID.to_string()
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }),
+        );
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
+            &transaction,
+            &config,
+            &rpc_client,
+            true,
+        )
+        .await
+        .expect("Failed to create resolved transaction from simulation");
+
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer.pubkey(),
+            &mut resolved_transaction,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        // Should be transfer_amount because rent is added then subtracted
+        assert_eq!(
+            outflow, transfer_amount,
+            "Outflow should handle inner instructions from simulation and apply deduction"
         );
     }
 }
