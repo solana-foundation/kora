@@ -13,5 +13,11 @@ jobs:
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |
+          if [[ "$HEAD_REF" == release/* ]]; then
+            echo "::error::Source branch '$HEAD_REF' matches deprecated release/* flow."
+            echo "::error::Use topic branches from main (feat/*, fix/*, chore/*, hotfix/*) and target main."
+            exit 1
+          fi
+
           echo "PR source branch: $HEAD_REF"
           echo "Mainline PR policy check passed."

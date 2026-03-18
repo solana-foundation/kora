@@ -31,8 +31,20 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
+      - name: Guard allowed source branch
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::Publish Docker Image must be dispatched from main. Current ref: ${{ github.ref }}"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ github.event.workflow_run.head_branch }}" != "main" ]; then
+            echo "::error::Publish Docker Image via workflow_run is only allowed from main. Source branch: ${{ github.event.workflow_run.head_branch }}"
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
