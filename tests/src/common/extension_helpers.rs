@@ -22,6 +22,25 @@ use std::sync::Arc;
 pub struct ExtensionHelpers;
 
 impl ExtensionHelpers {
+    async fn send_and_confirm_or_account_exists(
+        rpc_client: &Arc<RpcClient>,
+        transaction: &Transaction,
+        account_to_verify: &Pubkey,
+    ) -> Result<()> {
+        match rpc_client.send_and_confirm_transaction(transaction).await {
+            Ok(_) => Ok(()),
+            Err(send_error) => {
+                // Integration tests can race on shared static keypairs. If another test created
+                // the target account first, treat this as idempotent success.
+                if rpc_client.get_account(account_to_verify).await.is_ok() {
+                    Ok(())
+                } else {
+                    Err(send_error.into())
+                }
+            }
+        }
+    }
+
     /// Create a mint with InterestBearingConfig extension
     pub async fn create_mint_with_interest_bearing(
         rpc_client: &Arc<RpcClient>,
@@ -181,51 +200,58 @@ impl ExtensionHelpers {
         mint_keypair: &Keypair,
         hook_program_id: &Pubkey,
     ) -> Result<()> {
-        if (rpc_client.get_account(&mint_keypair.pubkey()).await).is_ok() {
-            return Ok(());
+        if rpc_client.get_account(&mint_keypair.pubkey()).await.is_err() {
+            // Calculate space for mint with TransferHook extension
+            let space = ExtensionType::try_calculate_account_len::<Token2022Mint>(&[
+                ExtensionType::TransferHook,
+            ])?;
+
+            let rent = rpc_client.get_minimum_balance_for_rent_exemption(space).await?;
+
+            let create_account_instruction = create_account(
+                &payer.pubkey(),
+                &mint_keypair.pubkey(),
+                rent,
+                space as u64,
+                &spl_token_2022_interface::id(),
+            );
+
+            // Initialize the transfer hook extension
+            let initialize_hook_instruction = transfer_hook::instruction::initialize(
+                &spl_token_2022_interface::id(),
+                &mint_keypair.pubkey(),
+                Some(payer.pubkey()),
+                Some(*hook_program_id),
+            )?;
+
+            let initialize_mint_instruction = token_2022_instruction::initialize_mint2(
+                &spl_token_2022_interface::id(),
+                &mint_keypair.pubkey(),
+                &payer.pubkey(),
+                Some(&payer.pubkey()),
+                USDCMintTestHelper::get_test_usdc_mint_decimals(),
+            )?;
+
+            let recent_blockhash = rpc_client.get_latest_blockhash().await?;
+
+            let transaction = Transaction::new_signed_with_payer(
+                &[
+                    create_account_instruction,
+                    initialize_hook_instruction,
+                    initialize_mint_instruction,
+                ],
+                Some(&payer.pubkey()),
+                &[payer, mint_keypair],
+                recent_blockhash,
+            );
+
+            Self::send_and_confirm_or_account_exists(
+                rpc_client,
+                &transaction,
+                &mint_keypair.pubkey(),
+            )
+            .await?;
         }
-
-        // Calculate space for mint with TransferHook extension
-        let space = ExtensionType::try_calculate_account_len::<Token2022Mint>(&[
-            ExtensionType::TransferHook,
-        ])?;
-
-        let rent = rpc_client.get_minimum_balance_for_rent_exemption(space).await?;
-
-        let create_account_instruction = create_account(
-            &payer.pubkey(),
-            &mint_keypair.pubkey(),
-            rent,
-            space as u64,
-            &spl_token_2022_interface::id(),
-        );
-
-        // Initialize the transfer hook extension
-        let initialize_hook_instruction = transfer_hook::instruction::initialize(
-            &spl_token_2022_interface::id(),
-            &mint_keypair.pubkey(),
-            Some(payer.pubkey()),
-            Some(*hook_program_id),
-        )?;
-
-        let initialize_mint_instruction = token_2022_instruction::initialize_mint2(
-            &spl_token_2022_interface::id(),
-            &mint_keypair.pubkey(),
-            &payer.pubkey(),
-            Some(&payer.pubkey()),
-            USDCMintTestHelper::get_test_usdc_mint_decimals(),
-        )?;
-
-        let recent_blockhash = rpc_client.get_latest_blockhash().await?;
-
-        let transaction = Transaction::new_signed_with_payer(
-            &[create_account_instruction, initialize_hook_instruction, initialize_mint_instruction],
-            Some(&payer.pubkey()),
-            &[payer, mint_keypair],
-            recent_blockhash,
-        );
-
-        rpc_client.send_and_confirm_transaction(&transaction).await?;
 
         // After mint is created, we need to initialize the Extra Account Meta List
         Self::initialize_extra_account_meta_list(
@@ -276,7 +302,12 @@ impl ExtensionHelpers {
             recent_blockhash,
         );
 
-        rpc_client.send_and_confirm_transaction(&transaction).await?;
+        Self::send_and_confirm_or_account_exists(
+            rpc_client,
+            &transaction,
+            &extra_account_metas_address,
+        )
+        .await?;
 
         Ok(())
     }
