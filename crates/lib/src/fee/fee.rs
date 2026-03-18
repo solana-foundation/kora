@@ -490,6 +490,11 @@ impl FeeConfigUtil {
                         if *owner == *fee_payer_pubkey {
                             // If mint is already parsed (TransferChecked), use it directly
                             if let Some(mint_pubkey) = mint {
+                                // Only deduct for explicitly allowed payment tokens to prevent
+                                // non-allowed tokens from reducing the drain protection check.
+                                if !config.validation.supports_token(&mint_pubkey.to_string()) {
+                                    continue;
+                                }
                                 let program_id = if *is_2022 {
                                     spl_token_2022_interface::id()
                                 } else {
@@ -520,8 +525,13 @@ impl FeeConfigUtil {
                                         if let Ok(token_account) =
                                             token_program.unpack_token_account(&dest_account.data)
                                         {
-                                            if token_account.owner() == payment_destination {
-                                                payment_mints.insert(token_account.mint());
+                                            let token_mint = token_account.mint();
+                                            if token_account.owner() == payment_destination
+                                                && config
+                                                    .validation
+                                                    .supports_token(&token_mint.to_string())
+                                            {
+                                                payment_mints.insert(token_mint);
                                             }
                                         }
                                     }
@@ -560,39 +570,46 @@ impl FeeConfigUtil {
                         ..
                     } = ata_instruction;
 
-                    // Check if there's a matching SystemCreateAccount for this ATA to verify rent was actually paid
-                    let has_create_account = system_creates.iter().any(|system_ix| {
+                    // Find the matching SystemCreateAccount to get the actual rent paid.
+                    // - Only verify new_account == ata_address, no hardcoded lamport check, so
+                    //   Token-2022 ATAs (higher rent due to ImmutableOwner extension) work too.
+                    // - Verify payer == fee_payer_pubkey so we only deduct rent that was actually
+                    //   added to `total` in the outflow loop above (which gates on payer == fee_payer).
+                    let actual_rent: Option<u64> = system_creates.iter().find_map(|system_ix| {
                         if let ParsedSystemInstructionData::SystemCreateAccount {
                             new_account,
                             lamports,
-                            ..
+                            payer: sys_payer,
                         } = system_ix
                         {
-                            *new_account == *ata_address
-                                && *lamports == crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION
+                            if *new_account == *ata_address && *sys_payer == *fee_payer_pubkey {
+                                Some(*lamports)
+                            } else {
+                                None
+                            }
                         } else {
-                            false
+                            None
                         }
                     });
 
                     // Only deduct rent if:
                     // 1. The ATA being created is for the operator's payment address
                     // 2. The fee payer is the one paying for it
-                    // 3. Rent was actually paid (SystemCreateAccount exists)
+                    // 3. Rent was actually paid (SystemCreateAccount exists) — use actual lamports
                     // 4. The ATA matches the specific mint used for fee payment
-                    if *payer == *fee_payer_pubkey
-                        && *wallet_owner == payment_destination
-                        && has_create_account
-                        && payment_mints.contains(mint)
-                        && seen_atas.insert((*wallet_owner, *mint))
-                    {
-                        total =
-                            total.saturating_sub(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION);
-                        log::info!(
-                            "Dynamic ATA deduction: subtracted {} lamports rent for operator ATA creation for mint {}",
-                            crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
-                            mint
-                        );
+                    if let Some(rent_lamports) = actual_rent {
+                        if *payer == *fee_payer_pubkey
+                            && *wallet_owner == payment_destination
+                            && payment_mints.contains(mint)
+                            && seen_atas.insert((*wallet_owner, *mint))
+                        {
+                            total = total.saturating_sub(rent_lamports);
+                            log::info!(
+                                "Dynamic ATA deduction: subtracted {} lamports rent for operator ATA creation for mint {}",
+                                rent_lamports,
+                                mint
+                            );
+                        }
                     }
                 }
             }
@@ -1402,6 +1419,8 @@ mod tests {
     async fn test_calculate_fee_payer_outflow_with_ata_deduction() {
         let _m = ConfigMockBuilder::new().build_and_setup();
         let mut config = get_config().unwrap();
+        // Allow any token so the random test mint passes the allowlist check.
+        config.validation.allowed_spl_paid_tokens = crate::config::SplTokenConfig::All;
         let mint_account = MintAccountMockBuilder::new().with_decimals(9).build();
         let rpc_client = RpcMockBuilder::new().with_slot(1).build_with_sequential_accounts(vec![
             &mint_account,
@@ -1586,6 +1605,8 @@ mod tests {
     async fn test_calculate_fee_payer_outflow_ata_deduction_no_duplicate() {
         let _m = ConfigMockBuilder::new().build_and_setup();
         let mut config = get_config().unwrap();
+        // Allow any token so the random test mint passes the allowlist check.
+        config.validation.allowed_spl_paid_tokens = crate::config::SplTokenConfig::All;
         let rpc_client = RpcMockBuilder::new().with_slot(1).with_mint_account(9).build();
 
         let fee_payer = Keypair::new();
@@ -1736,10 +1757,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_ata_deduction_non_allowed_token_no_deduction() {
+        // Security: a non-allowed token should NOT trigger the deduction even if the ATA is
+        // being created for the operator's payment address, preventing drain-check bypass.
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let mut config = get_config().unwrap();
+        config.validation.dynamic_ata_deduction = true;
+        // Leave allowed_spl_paid_tokens as the default allowlist (USDC only) — do NOT set All.
+        let rpc_client = RpcMockBuilder::new().with_slot(1).with_mint_account(9).build();
+
+        let fee_payer = Keypair::new();
+        let non_allowed_mint = Pubkey::new_unique(); // Not in the allowlist
+        let payment_destination = config.kora.get_payment_address(&fee_payer.pubkey()).unwrap();
+
+        let transfer_amount = 5_000_000;
+        let transfer_instruction =
+            transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), transfer_amount);
+
+        let ata_instruction = create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
+            &payment_destination,
+            &non_allowed_mint,
+            &spl_token_interface::ID,
+        );
+
+        let ata_address = get_associated_token_address(&payment_destination, &non_allowed_mint);
+        let system_create_instruction = create_account(
+            &fee_payer.pubkey(),
+            &ata_address,
+            crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
+            0,
+            &Pubkey::default(),
+        );
+
+        // SPL transfer of non-allowed token to operator's ATA (trying to trigger deduction)
+        let fee_payment_instruction = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::ID,
+            &Pubkey::new_unique(),
+            &non_allowed_mint,
+            &ata_address,
+            &fee_payer.pubkey(),
+            &[],
+            1_000_000,
+            9,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[
+                transfer_instruction,
+                ata_instruction,
+                system_create_instruction,
+                fee_payment_instruction,
+            ],
+            Some(&fee_payer.pubkey()),
+        ));
+
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer.pubkey(),
+            &mut resolved_transaction,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        // Rent must NOT be deducted — non-allowed token cannot trigger the drain-check bypass.
+        // Outflow = system transfer + ATA rent (not deducted) + SPL mock value (1000 lamports).
+        assert_eq!(
+            outflow,
+            transfer_amount + crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION + 1000,
+            "Deduction must not apply for non-allowed tokens"
+        );
+    }
+
+    #[tokio::test]
     async fn test_calculate_fee_payer_outflow_ata_deduction_from_transaction() {
         let _m = ConfigMockBuilder::new().build_and_setup();
         let mut config = get_config().unwrap();
         config.validation.dynamic_ata_deduction = true;
+        // Allow any token so the random test mint passes the allowlist check.
+        config.validation.allowed_spl_paid_tokens = crate::config::SplTokenConfig::All;
 
         let fee_payer = Keypair::new();
         let mint = Pubkey::new_unique();

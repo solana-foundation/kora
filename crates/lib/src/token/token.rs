@@ -111,6 +111,8 @@ impl TokenUtil {
         destination_address: &Pubkey,
     ) -> Option<(Pubkey, Pubkey)> {
         let ata_program_id = spl_associated_token_account_interface::program::id();
+        // Token program is the 6th account (index 5) in the ATA instruction layout.
+        const TOKEN_PROGRAM_INDEX: usize = 5;
 
         for ix in instructions {
             if ix.program_id == ata_program_id
@@ -126,6 +128,19 @@ impl TokenUtil {
                     let mint = ix.accounts
                         [constant::instruction_indexes::ata_instruction_indexes::MINT_INDEX]
                         .pubkey;
+                    let token_program = ix.accounts[TOKEN_PROGRAM_INDEX].pubkey;
+
+                    // Verify the ATA address matches the derived PDA to prevent crafted instructions
+                    // from triggering a deduction with mismatched wallet_owner/mint values.
+                    let expected_ata = get_associated_token_address_with_program_id(
+                        &wallet_owner,
+                        &mint,
+                        &token_program,
+                    );
+                    if expected_ata != ata_address {
+                        continue;
+                    }
+
                     return Some((wallet_owner, mint));
                 }
             }

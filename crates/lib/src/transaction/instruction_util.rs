@@ -1911,20 +1911,38 @@ impl IxUtils {
                 // We parse both variants the same way.
                 let discriminator = instruction.data.first().copied().unwrap_or(0);
                 if discriminator <= 1 {
+                    // ATA instruction layout: [0]=payer, [1]=ata, [2]=wallet_owner, [3]=mint,
+                    //                         [4]=system_program, [5]=token_program
+                    const TOKEN_PROGRAM_INDEX: usize = 5;
+                    let ata_address = instruction.accounts
+                        [instruction_indexes::ata_instruction_indexes::ATA_ADDRESS_INDEX]
+                        .pubkey;
+                    let wallet_owner = instruction.accounts
+                        [instruction_indexes::ata_instruction_indexes::WALLET_OWNER_INDEX]
+                        .pubkey;
+                    let mint = instruction.accounts
+                        [instruction_indexes::ata_instruction_indexes::MINT_INDEX]
+                        .pubkey;
+                    let token_program = instruction.accounts[TOKEN_PROGRAM_INDEX].pubkey;
+
+                    // Verify ata_address is the real PDA to reject crafted instructions with
+                    // mismatched wallet_owner/mint/ata_address values.
+                    let expected_ata =
+                        spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+                            &wallet_owner, &mint, &token_program,
+                        );
+                    if expected_ata != ata_address {
+                        continue;
+                    }
+
                     parsed_instructions
                         .entry(ParsedATAInstructionType::CreateAssociatedTokenAccount)
                         .or_default()
                         .push(ParsedATAInstructionData::CreateAssociatedTokenAccount {
                             payer: instruction.accounts[0].pubkey,
-                            ata_address: instruction.accounts
-                                [instruction_indexes::ata_instruction_indexes::ATA_ADDRESS_INDEX]
-                                .pubkey,
-                            wallet_owner: instruction.accounts
-                                [instruction_indexes::ata_instruction_indexes::WALLET_OWNER_INDEX]
-                                .pubkey,
-                            mint: instruction.accounts
-                                [instruction_indexes::ata_instruction_indexes::MINT_INDEX]
-                                .pubkey,
+                            ata_address,
+                            wallet_owner,
+                            mint,
                         });
                 }
             }
