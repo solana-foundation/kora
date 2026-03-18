@@ -4,9 +4,11 @@ Kora is developed in public and we appreciate contributions.
 
 ## Important: Branch Targeting
 
-The `main` branch only contains **audited releases** plus minor hotfixes and docs. All feature work and bug fixes should target the latest `release/*` branch (check [open PRs](https://github.com/solana-foundation/kora/pulls) or the [README](https://github.com/solana-foundation/kora#readme) for the current one).
+The `main` branch is the integration branch. All feature work and bug fixes should target `main`.
 
-PRs opened against `main` for non-audited code will be asked to rebase onto the active release branch.
+Audit status is commit-based, not branch-based. Audited baselines are tracked in [`audits/AUDIT_STATUS.md`](./audits/AUDIT_STATUS.md), and stable releases are represented by immutable tags/releases.
+
+Long-lived `release/*` branches are deprecated. If a release branch is used, it must be short-lived stabilization only and deleted after the release is cut.
 
 ## Security
 

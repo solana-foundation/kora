@@ -2,14 +2,14 @@ name: Rust Unit Tests
 
 on:
   push:
-    branches: [main, "release/*"]
+    branches: [main]
     paths:
       - "crates/**"
       - "Cargo.*"
       - "justfile"
       - ".github/workflows/rust-unit.yml"
   pull_request:
-    branches: [main, "release/*"]
+    branches: [main]
     paths:
       - "crates/**"
       - "Cargo.*"

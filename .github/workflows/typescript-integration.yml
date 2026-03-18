@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   workflow_call:
   push:
-    branches: [main, "release/*"]
+    branches: [main]
     paths:
       # TS SDK changes
       - "sdks/ts/**"
@@ -16,9 +16,8 @@ on:
       - ".github/workflows/typescript-integration.yml"
       - ".github/workflows/build-rust.yml"
       - ".github/actions/run-test-runner/**"
-
   pull_request:
-    branches: [main, "release/*"]
+    branches: [main]
     paths:
       # TS SDK changes
       - "sdks/ts/**"

@@ -2,7 +2,7 @@ name: Rust Integration Tests
 
 on:
   push:
-    branches: [main, "release/*"]
+    branches: [main]
     paths:
       - "crates/**"
       - "tests/**"
@@ -12,7 +12,7 @@ on:
       - ".github/workflows/build-rust.yml"
       - ".github/actions/run-test-runner/**"
   pull_request:
-    branches: [main, "release/*"]
+    branches: [main]
     paths:
       - "crates/**"
       - "tests/**"
