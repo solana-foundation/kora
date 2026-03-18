@@ -3,9 +3,9 @@ name: TypeScript Unit Tests
 on:
   workflow_call:
   push:
-    branches: [main, "release/*"]
+    branches: [main]
   pull_request:
-    branches: [main, "release/*"]
+    branches: [main]
 
 jobs:
   typescript-unit:

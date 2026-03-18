@@ -6,7 +6,7 @@ This skill automates the complete release process for both Rust crates and TypeS
 ## When to Use
 Use this skill when the user wants to:
 - Release both Rust and TypeScript packages together
-- Create a release PR for either beta (release/* branch) or stable (main branch)
+- Create a release PR (stable or prerelease) targeting `main`
 
 ## Prerequisites
 Before starting, verify these tools are installed:
@@ -18,14 +18,14 @@ Before starting, verify these tools are installed:
 ## Release Flow
 
 ### Step 1: Determine Release Type and Base Branch
-Check the current branch to determine the release type:
+Check the current branch for context:
 ```bash
 current_branch=$(git branch --show-current)
 ```
 
-- If on `main` → Stable release, base branch is `main`
-- If on `release/*` → Beta release, base branch is that release branch (e.g., `release/2.2.0`)
-- If on any other branch → Ask user which base branch to use
+- Base branch is always `main`
+- Stable vs prerelease is determined by version format (for example `2.3.0` vs `2.3.0-beta.1`)
+- If not on `main`, ask user whether to continue and still target `main`
 
 ### Step 2: Detect Build System
 Check which build system is available:
@@ -129,11 +129,10 @@ git commit -m "chore: release v${RUST_VERSION} (rust) + ts-sdk v${TS_VERSION}"
 git push -u origin "$release_branch"
 
 # Determine PR base branch
-if [[ "$current_branch" == release/* ]]; then
-    base_branch="$current_branch"
-    pr_title="chore: beta release v${RUST_VERSION}"
+base_branch="main"
+if [[ "$RUST_VERSION" == *"-"* ]]; then
+    pr_title="chore: prerelease v${RUST_VERSION}"
 else
-    base_branch="main"
     pr_title="chore: release v${RUST_VERSION}"
 fi
 
@@ -161,7 +160,7 @@ After merging, trigger the **Publish Rust Crates** workflow to:
 - Publish to crates.io
 
 ### TypeScript SDK
-Trigger the **Publish TypeScript SDK (Manual)** workflow to publish to npm.
+Trigger the **Publish TypeScript SDK** workflow to publish to npm.
 EOF
 )"
 ```
@@ -169,8 +168,8 @@ EOF
 ## Important Notes
 
 1. **Version Format**: Use semantic versioning (e.g., `2.2.0`, `2.2.0-beta.1`)
-2. **Beta Releases**: When on a `release/*` branch, the PR targets that branch
-3. **Stable Releases**: When on `main`, the PR targets `main`
+2. **Prereleases**: Use semver prerelease suffixes (for example `-beta.1`, `-rc.1`)
+3. **PR Target**: Release PRs always target `main`
 4. **Changelog**: Only generated for Rust releases, not TypeScript SDK
 5. **Tags**: Created by CI workflows after PR merge, not during release prep
 

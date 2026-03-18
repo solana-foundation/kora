@@ -221,16 +221,16 @@ generate-key:
 [group('release')]
 branch-info:
     @echo "Branch Workflow:"
-    @echo "  main           → Audited code only, stable releases"
-    @echo "  release/X.Y.Z  → Pre-audit features for version X.Y.Z"
-    @echo "  hotfix/*       → Hotfixes from main"
+    @echo "  main                → Integration branch (audited + unaudited commits)"
+    @echo "  feat/*,fix/*,chore/* → Topic branches from main"
+    @echo "  hotfix/*            → Urgent fixes from deployed stable tag"
     @echo ""
     @echo "Releasing:"
-    @echo "  Stable: checkout main, run 'just release'"
-    @echo "  Beta:   checkout release/X.Y.Z, run 'just release'"
-    @echo "  Hotfix: run 'just hotfix' (branches from main)"
+    @echo "  Stable/Beta/RC: checkout main, run 'just release'"
+    @echo "  Pre-release versions use semver suffixes (e.g. 2.3.0-beta.1)"
+    @echo "  Hotfix: run 'just hotfix' from deployed stable tag"
 
-# Prepare a new release (run from main for stable, release/X.Y.Z for beta)
+# Prepare a new release (run from main; use semver pre-release suffixes for beta/rc)
 [group('release')]
 [confirm('Start release process?')]
 release:
@@ -239,6 +239,12 @@ release:
 
     if [ -n "$(git status --porcelain)" ]; then
         echo "Error: Working directory not clean"
+        exit 1
+    fi
+
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+    if [ "$current_branch" != "main" ]; then
+        echo "Error: Releases must be prepared from main (current branch: $current_branch)"
         exit 1
     fi
 
@@ -278,23 +284,45 @@ release:
     echo "  git push origin HEAD"
     echo "  Create PR → merge → trigger 'Publish Rust Crates' workflow"
 
-# Start a hotfix branch from main (main is always audited/stable)
+# Start a hotfix branch from a deployed stable tag
 [group('release')]
-hotfix name='':
+hotfix name='' base_tag='':
     #!/usr/bin/env bash
     set -euo pipefail
 
     if [ -z "{{name}}" ]; then
-        read -p "Hotfix branch name (hotfix/___): " name
+        read -p "Hotfix branch name (without 'hotfix/'): " name
         [ -z "$name" ] && { echo "Name required"; exit 1; }
     else
         name="{{name}}"
     fi
 
+    name="${name#hotfix/}"
     branch_name="hotfix/$name"
 
-    # Ensure we're up to date with main
-    git fetch origin main
+    git fetch --tags origin
+
+    latest_tag=$(git tag -l "v*" --sort=-version:refname | head -1)
+    if [ -z "{{base_tag}}" ]; then
+        read -p "Base deployed tag [$latest_tag]: " base_tag
+        base_tag="${base_tag:-$latest_tag}"
+    else
+        base_tag="{{base_tag}}"
+    fi
+
+    if [ -z "$base_tag" ]; then
+        echo "Error: Base tag required"
+        exit 1
+    fi
+
+    if ! git rev-parse -q --verify "refs/tags/$base_tag" >/dev/null; then
+        if [[ "$base_tag" != v* ]] && git rev-parse -q --verify "refs/tags/v$base_tag" >/dev/null; then
+            base_tag="v$base_tag"
+        else
+            echo "Error: Tag '$base_tag' not found"
+            exit 1
+        fi
+    fi
 
     # Check if branch already exists
     if git show-ref --verify --quiet "refs/heads/$branch_name"; then
@@ -303,12 +331,18 @@ hotfix name='':
         if [[ "$switch" =~ ^[Yy]$ ]]; then
             git checkout "$branch_name"
         fi
+    elif git show-ref --verify --quiet "refs/remotes/origin/$branch_name"; then
+        echo "Remote branch origin/$branch_name already exists"
+        read -p "Create local tracking branch? [y/N] " track
+        if [[ "$track" =~ ^[Yy]$ ]]; then
+            git checkout -b "$branch_name" --track "origin/$branch_name"
+        fi
     else
-        read -p "Create branch $branch_name from main? [y/N] " create
+        read -p "Create branch $branch_name from tag $base_tag? [y/N] " create
         if [[ "$create" =~ ^[Yy]$ ]]; then
-            git checkout -b "$branch_name" origin/main
+            git checkout -b "$branch_name" "$base_tag"
             echo ""
-            echo "✅ Created $branch_name from main"
+            echo "Created $branch_name from tag $base_tag"
         else
             echo "Aborted"
             exit 0

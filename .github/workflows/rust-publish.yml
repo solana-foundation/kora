@@ -31,6 +31,13 @@ jobs:
     name: Publish Kora crates to crates.io
     runs-on: ubuntu-latest
     steps:
+      - name: Guard main branch for release publish
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::Publish Rust Crates must be run from main. Current ref: ${{ github.ref }}"
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
