@@ -44,6 +44,14 @@ path = "payment_address/main.rs"
 name = "free_signing"
 path = "free_signing/main.rs"
 
+[[test]]
+name = "usage_limit"
+path = "usage_limit/main.rs"
+
+[[test]]
+name = "lighthouse"
+path = "lighthouse/main.rs"
+
 [dependencies]
 kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }

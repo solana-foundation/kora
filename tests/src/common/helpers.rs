@@ -7,6 +7,8 @@ use solana_sdk::{
 use std::str::FromStr;
 
 use crate::common::constants::*;
+#[cfg(test)]
+use crate::common::TestContext;
 
 /// Default fee for a transaction with 2 signers (5000 lamports each)
 /// This is used for a lot of tests that only has sender and fee payer as signers
@@ -206,4 +208,21 @@ impl FeePayerPolicyMintTestHelper {
     pub fn get_fee_payer_policy_mint_2022_pubkey() -> Pubkey {
         Self::get_fee_payer_policy_mint_2022_keypair().pubkey()
     }
+}
+
+#[cfg(test)]
+pub async fn create_funded_wallet(ctx: &TestContext) -> Keypair {
+    let wallet = Keypair::new();
+    let sig = ctx
+        .rpc_client()
+        .request_airdrop(&wallet.pubkey(), 1_000_000_000)
+        .await
+        .expect("Failed to request airdrop");
+    loop {
+        if ctx.rpc_client().confirm_transaction(&sig).await.unwrap_or(false) {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+    wallet
 }

@@ -35,7 +35,6 @@ struct JupiterPriceData {
     #[serde(rename = "usdPrice")]
     usd_price: f64,
     #[serde(rename = "blockId")]
-    #[allow(dead_code)]
     block_id: u64,
     #[allow(dead_code)]
     decimals: u8,
@@ -53,7 +52,9 @@ impl JupiterPriceOracle {
     pub fn new() -> Result<Self, KoraError> {
         let api_key = get_jupiter_api_key().ok_or_else(|| {
             log::error!("Jupiter API key not found. Set JUPITER_API_KEY environment variable.");
-            KoraError::ConfigError
+            KoraError::ConfigError(
+                "Jupiter API key not found. Set JUPITER_API_KEY environment variable".to_string(),
+            )
         })?;
 
         let api_url = Self::build_price_api_url(JUPITER_API_URL);
@@ -201,6 +202,7 @@ impl JupiterPriceOracle {
                         price: price_in_sol,
                         confidence: JUPITER_DEFAULT_CONFIDENCE,
                         source: PriceSource::Jupiter,
+                        block_id: Some(std::cmp::min(price_data.block_id, sol_price.block_id)),
                     },
                 );
             } else {
@@ -237,7 +239,7 @@ mod tests {
 
         let result = JupiterPriceOracle::new();
         assert!(result.is_err());
-        assert_eq!(result.err(), Some(KoraError::ConfigError));
+        assert!(matches!(result.err(), Some(KoraError::ConfigError(_))));
     }
 
     #[tokio::test]
@@ -323,6 +325,126 @@ mod tests {
                 "No price data from Jupiter for mint JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
                     .to_string()
             ))
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_jupiter_rate_limit_429() {
+        {
+            let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
+            *api_key_guard = Some("test-api-key".to_string());
+        }
+
+        let mut server = Server::new_async().await;
+        let _m = server
+            .mock("GET", "/price/v3")
+            .match_header("x-api-key", "test-api-key")
+            .match_query(Matcher::Any)
+            .with_status(429)
+            .with_body("Too Many Requests")
+            .create();
+
+        let client = Client::new();
+        let mut oracle = JupiterPriceOracle::new().unwrap();
+        oracle.api_url = format!("{}/price/v3", server.url());
+
+        let result = oracle
+            .get_prices(&client, &["So11111111111111111111111111111111111111112".to_string()])
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.err(), Some(KoraError::RateLimitExceeded));
+    }
+    #[tokio::test]
+    #[serial]
+    async fn test_jupiter_price_exceeds_max_bounds() {
+        {
+            let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
+            *api_key_guard = Some("test-api-key".to_string());
+        }
+
+        // SOL price is normal, but the queried token price exceeds MAX_REASONABLE_PRICE
+        let mock_response = r#"{
+            "So11111111111111111111111111111111111111112": {
+                "usdPrice": 100.0,
+                "blockId": 12345,
+                "decimals": 9,
+                "priceChange24h": 2.5
+            },
+            "TokenMintExceedsMaxBounds1111111111111111": {
+                "usdPrice": 9999999.0,
+                "blockId": 12345,
+                "decimals": 6,
+                "priceChange24h": 0.0
+            }
+        }"#;
+
+        let mut server = Server::new_async().await;
+        let _m = server
+            .mock("GET", "/price/v3")
+            .match_header("x-api-key", "test-api-key")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_response)
+            .create();
+
+        let client = Client::new();
+        let mut oracle = JupiterPriceOracle::new().unwrap();
+        oracle.api_url = format!("{}/price/v3", server.url());
+
+        let result = oracle
+            .get_prices(&client, &["TokenMintExceedsMaxBounds1111111111111111".to_string()])
+            .await;
+        assert!(result.is_err());
+        assert!(
+            matches!(result.err(), Some(KoraError::RpcError(msg)) if msg.contains("exceeds reasonable bounds"))
+        );
+    }
+    #[tokio::test]
+    #[serial]
+    async fn test_jupiter_price_below_min_bounds() {
+        {
+            let mut api_key_guard = GLOBAL_JUPITER_API_KEY.write();
+            *api_key_guard = Some("test-api-key".to_string());
+        }
+
+        // SOL price is normal, but the queried token price is below MIN_REASONABLE_PRICE
+        let mock_response = r#"{
+            "So11111111111111111111111111111111111111112": {
+                "usdPrice": 100.0,
+                "blockId": 12345,
+                "decimals": 9,
+                "priceChange24h": 2.5
+            },
+            "TokenMintBelowMinBounds11111111111111111111": {
+                "usdPrice": 0.0000000001,
+                "blockId": 12345,
+                "decimals": 6,
+                "priceChange24h": 0.0
+            }
+        }"#;
+
+        let mut server = Server::new_async().await;
+        let _m = server
+            .mock("GET", "/price/v3")
+            .match_header("x-api-key", "test-api-key")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_response)
+            .create();
+
+        let client = Client::new();
+        let mut oracle = JupiterPriceOracle::new().unwrap();
+        oracle.api_url = format!("{}/price/v3", server.url());
+
+        let result = oracle
+            .get_prices(&client, &["TokenMintBelowMinBounds11111111111111111111".to_string()])
+            .await;
+        assert!(result.is_err());
+        assert!(
+            matches!(result.err(), Some(KoraError::RpcError(msg)) if msg.contains("below reasonable bounds"))
         );
     }
 }

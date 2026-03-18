@@ -6,18 +6,22 @@ use toml;
 use utoipa::ToSchema;
 
 use crate::{
+    bundle::JitoConfig,
     constant::{
         DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL,
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
         DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
-        DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE,
-        DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
+        DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_PROTECTED_METHODS,
+        DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
     },
     error::KoraError,
     fee::price::{PriceConfig, PriceModel},
     oracle::PriceSource,
     sanitize_error,
 };
+
+// Re-export usage limit configs
+pub use crate::usage_limit::{UsageLimitConfig, UsageLimitRuleConfig};
 
 #[derive(Clone, Deserialize)]
 pub struct Config {
@@ -28,12 +32,12 @@ pub struct Config {
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct MetricsConfig {
     pub enabled: bool,
     pub endpoint: String,
     pub port: u16,
     pub scrape_interval: u64,
-    #[serde(default)]
     pub fee_payer_balance: FeePayerBalanceMetricsConfig,
 }
 
@@ -129,6 +133,10 @@ pub struct ValidationConfig {
     /// WARNING: Enabling with dynamic pricing creates price arbitrage risk.
     #[serde(default)]
     pub allow_durable_transactions: bool,
+    /// Maximum allowed age of oracle price data in slots. 0 = disabled (default).
+    /// When >0, prices with a block_id older than `current_slot - max_price_staleness_slots` are rejected.
+    #[serde(default)]
+    pub max_price_staleness_slots: u64,
 }
 
 impl ValidationConfig {
@@ -142,16 +150,15 @@ impl ValidationConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default)]
 pub struct FeePayerPolicy {
-    #[serde(default)]
     pub system: SystemInstructionPolicy,
-    #[serde(default)]
     pub spl_token: SplTokenInstructionPolicy,
-    #[serde(default)]
     pub token_2022: Token2022InstructionPolicy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default)]
 pub struct SystemInstructionPolicy {
     /// Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions
     pub allow_transfer: bool,
@@ -162,7 +169,6 @@ pub struct SystemInstructionPolicy {
     /// Allow fee payer to be the account in System Allocate/AllocateWithSeed instructions
     pub allow_allocate: bool,
     /// Nested policy for nonce account operations
-    #[serde(default)]
     pub nonce: NonceInstructionPolicy,
 }
 
@@ -319,6 +325,7 @@ impl Token2022Config {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct EnabledMethods {
     pub liveness: bool,
     pub estimate_transaction_fee: bool,
@@ -329,6 +336,11 @@ pub struct EnabledMethods {
     pub transfer_transaction: bool,
     pub get_blockhash: bool,
     pub get_config: bool,
+    pub get_version: bool,
+    /// Bundle methods (require bundle.enabled = true)
+    pub estimate_bundle_fee: bool,
+    pub sign_and_send_bundle: bool,
+    pub sign_bundle: bool,
 }
 
 impl EnabledMethods {
@@ -343,6 +355,10 @@ impl EnabledMethods {
             self.transfer_transaction,
             self.get_blockhash,
             self.get_config,
+            self.get_version,
+            self.estimate_bundle_fee,
+            self.sign_and_send_bundle,
+            self.sign_bundle,
         ]
         .into_iter()
     }
@@ -355,6 +371,9 @@ impl EnabledMethods {
         }
         if self.estimate_transaction_fee {
             methods.push("estimateTransactionFee".to_string());
+        }
+        if self.estimate_bundle_fee {
+            methods.push("estimateBundleFee".to_string());
         }
         if self.get_supported_tokens {
             methods.push("getSupportedTokens".to_string());
@@ -377,13 +396,22 @@ impl EnabledMethods {
         if self.get_config {
             methods.push("getConfig".to_string());
         }
+        if self.get_version {
+            methods.push("getVersion".to_string());
+        }
+        if self.sign_and_send_bundle {
+            methods.push("signAndSendBundle".to_string());
+        }
+        if self.sign_bundle {
+            methods.push("signBundle".to_string());
+        }
         methods
     }
 }
 
 impl IntoIterator for &EnabledMethods {
     type Item = bool;
-    type IntoIter = std::array::IntoIter<bool, 9>;
+    type IntoIter = std::array::IntoIter<bool, 13>;
 
     fn into_iter(self) -> Self::IntoIter {
         [
@@ -396,6 +424,10 @@ impl IntoIterator for &EnabledMethods {
             self.transfer_transaction,
             self.get_blockhash,
             self.get_config,
+            self.get_version,
+            self.estimate_bundle_fee,
+            self.sign_and_send_bundle,
+            self.sign_bundle,
         ]
         .into_iter()
     }
@@ -413,16 +445,13 @@ impl Default for EnabledMethods {
             transfer_transaction: true,
             get_blockhash: true,
             get_config: true,
+            get_version: true,
+            // Bundle methods default to false (opt-in)
+            estimate_bundle_fee: false,
+            sign_and_send_bundle: false,
+            sign_bundle: false,
         }
     }
-}
-
-fn default_max_timestamp_age() -> i64 {
-    DEFAULT_MAX_TIMESTAMP_AGE
-}
-
-fn default_max_request_body_size() -> usize {
-    DEFAULT_MAX_REQUEST_BODY_SIZE
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
@@ -449,20 +478,23 @@ impl Default for CacheConfig {
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct KoraConfig {
     pub rate_limit: u64,
-    #[serde(default = "default_max_request_body_size")]
     pub max_request_body_size: usize,
-    #[serde(default)]
     pub enabled_methods: EnabledMethods,
-    #[serde(default)]
     pub auth: AuthConfig,
     /// Optional payment address to receive payments (defaults to signer address)
     pub payment_address: Option<String>,
-    #[serde(default)]
     pub cache: CacheConfig,
-    #[serde(default)]
     pub usage_limit: UsageLimitConfig,
+    /// Bundle support configuration
+    pub bundle: BundleConfig,
+    /// Lighthouse configuration for fee payer balance protection
+    pub lighthouse: LighthouseConfig,
+    /// When true, forces signature verification on all requests regardless of client's sig_verify parameter.
+    /// Prevents TOCTOU attacks where simulation passes but on-chain execution differs.
+    pub force_sig_verify: bool,
 }
 
 impl Default for KoraConfig {
@@ -475,44 +507,61 @@ impl Default for KoraConfig {
             payment_address: None,
             cache: CacheConfig::default(),
             usage_limit: UsageLimitConfig::default(),
+            bundle: BundleConfig::default(),
+            lighthouse: LighthouseConfig::default(),
+            force_sig_verify: false,
         }
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
-pub struct UsageLimitConfig {
-    /// Enable per-wallet usage limiting
+/// Configuration for bundle support (wraps provider-specific configs)
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct BundleConfig {
+    /// Enable bundle support
     pub enabled: bool,
-    /// Cache URL for shared usage limiting across multiple Kora instances
-    pub cache_url: Option<String>,
-    /// Default maximum transactions per wallet (0 = unlimited)
-    pub max_transactions: u64,
-    /// Fallback behavior when cache is unavailable
-    pub fallback_if_unavailable: bool,
+    /// Jito-specific configuration
+    pub jito: JitoConfig,
 }
 
-impl Default for UsageLimitConfig {
+/// Configuration for Lighthouse assertions to protect fee payer balance
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct LighthouseConfig {
+    /// Enable Lighthouse assertions for fee payer protection
+    pub enabled: bool,
+    /// If true, fail when adding assertion would exceed transaction size limit.
+    /// If false, skip adding the assertion silently.
+    pub fail_if_transaction_size_overflow: bool,
+}
+
+impl Default for LighthouseConfig {
     fn default() -> Self {
-        Self {
-            enabled: false,
-            cache_url: None,
-            max_transactions: DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS,
-            fallback_if_unavailable: DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE,
-        }
+        Self { enabled: false, fail_if_transaction_size_overflow: true }
     }
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct AuthConfig {
     pub api_key: Option<String>,
     pub hmac_secret: Option<String>,
-    #[serde(default = "default_max_timestamp_age")]
+    pub recaptcha_secret: Option<String>,
+    pub recaptcha_score_threshold: f64,
     pub max_timestamp_age: i64,
+    pub protected_methods: Vec<String>,
 }
 
 impl Default for AuthConfig {
     fn default() -> Self {
-        Self { api_key: None, hmac_secret: None, max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE }
+        Self {
+            api_key: None,
+            hmac_secret: None,
+            recaptcha_secret: None,
+            recaptcha_score_threshold: DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
+            max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
+            protected_methods: DEFAULT_PROTECTED_METHODS.iter().map(|s| s.to_string()).collect(),
+        }
     }
 }
 
@@ -609,6 +658,7 @@ mod tests {
                 ("get_blockhash", true),
                 ("get_config", true),
                 ("get_payer_signer", true),
+                ("get_version", true),
             ])
             .build_config()
             .unwrap();
@@ -815,43 +865,6 @@ mod tests {
         assert!(!config.kora.cache.enabled);
         assert_eq!(config.kora.cache.default_ttl, 300);
         assert_eq!(config.kora.cache.account_ttl, 60);
-    }
-
-    #[test]
-    fn test_usage_limit_config_parsing() {
-        let config = ConfigBuilder::new()
-            .with_usage_limit_config(true, Some("redis://localhost:6379"), 10, false)
-            .build_config()
-            .unwrap();
-
-        assert!(config.kora.usage_limit.enabled);
-        assert_eq!(config.kora.usage_limit.cache_url, Some("redis://localhost:6379".to_string()));
-        assert_eq!(config.kora.usage_limit.max_transactions, 10);
-        assert!(!config.kora.usage_limit.fallback_if_unavailable);
-    }
-
-    #[test]
-    fn test_usage_limit_config_default() {
-        let config = ConfigBuilder::new().build_config().unwrap();
-
-        assert!(!config.kora.usage_limit.enabled);
-        assert_eq!(config.kora.usage_limit.cache_url, None);
-        assert_eq!(config.kora.usage_limit.max_transactions, DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS);
-        assert_eq!(
-            config.kora.usage_limit.fallback_if_unavailable,
-            DEFAULT_USAGE_LIMIT_FALLBACK_IF_UNAVAILABLE
-        );
-    }
-
-    #[test]
-    fn test_usage_limit_config_unlimited() {
-        let config = ConfigBuilder::new()
-            .with_usage_limit_config(true, None, 0, true)
-            .build_config()
-            .unwrap();
-
-        assert!(config.kora.usage_limit.enabled);
-        assert_eq!(config.kora.usage_limit.max_transactions, 0); // 0 = unlimited
     }
 
     #[test]

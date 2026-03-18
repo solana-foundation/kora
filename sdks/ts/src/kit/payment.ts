@@ -39,12 +39,15 @@ export async function buildPlaceholderPaymentInstruction(
         tokenProgram,
     });
 
-    const instruction = getTransferInstruction({
-        amount: 0,
-        authority: feePayerWallet,
-        destination: destinationTokenAccount,
-        source: sourceTokenAccount,
-    });
+    const instruction = getTransferInstruction(
+        {
+            amount: 0,
+            authority: feePayerWallet,
+            destination: destinationTokenAccount,
+            source: sourceTokenAccount,
+        },
+        { programAddress: tokenProgram },
+    );
 
     return { destinationTokenAccount, instruction, sourceTokenAccount };
 }
@@ -94,12 +97,16 @@ export function updatePaymentInstructionAmount(
             return ix;
         }
         replaced = true;
-        return getTransferInstruction({
-            amount,
-            authority: feePayerWallet,
-            destination: destinationTokenAccount,
-            source: sourceTokenAccount,
-        });
+        const tokenProgram = tokenProgramId ?? TOKEN_PROGRAM_ADDRESS;
+        return getTransferInstruction(
+            {
+                amount,
+                authority: feePayerWallet,
+                destination: destinationTokenAccount,
+                source: sourceTokenAccount,
+            },
+            { programAddress: tokenProgram },
+        );
     });
 
     if (!replaced) {

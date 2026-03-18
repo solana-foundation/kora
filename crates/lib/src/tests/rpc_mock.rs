@@ -91,6 +91,23 @@ impl RpcMockBuilder {
         self
     }
 
+    pub fn with_simulation(mut self) -> Self {
+        self.mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": [],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": []
+                }
+            }),
+        );
+        self
+    }
+
     pub fn with_epoch_info_mock(mut self) -> Self {
         self.mocks.insert(
             RpcRequest::GetEpochInfo,

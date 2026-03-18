@@ -1,0 +1,139 @@
+# Usage Limit Integration Test Configuration
+# This file is used for testing usage limit functionality
+[kora]
+rate_limit = 100
+
+[kora.auth]
+
+# Cache configuration - disabled for testing
+[kora.cache]
+enabled = false
+default_ttl = 300
+account_ttl = 60
+
+[kora.bundle]
+enabled = true
+
+[kora.bundle.jito]
+block_engine_url = "https://mainnet.block-engine.jito.wtf"
+
+[kora.enabled_methods]
+liveness = true
+estimate_transaction_fee = true
+estimate_bundle_fee = true
+get_supported_tokens = true
+sign_transaction = true
+sign_and_send_transaction = true
+sign_bundle = true
+sign_and_send_bundle = true
+transfer_transaction = true
+get_blockhash = true
+get_config = true
+get_payer_signer = true
+get_version = true
+
+[validation]
+max_allowed_lamports = 10000000
+max_signatures = 10
+price_source = "Mock"
+allowed_programs = [
+    "11111111111111111111111111111111",             # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  # Token-2022 Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
+    "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
+]
+allowed_tokens = [
+    "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
+]
+allowed_spl_paid_tokens = [
+    "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
+    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
+]
+
+disallowed_accounts = []
+
+[validation.price]
+type = "free"
+
+[validation.token_2022]
+blocked_mint_extensions = []
+blocked_account_extensions = []
+
+[validation.fee_payer_policy]
+
+[validation.fee_payer_policy.system]
+allow_transfer = true
+allow_assign = true
+allow_create_account = true
+allow_allocate = true
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = true
+allow_advance = true
+allow_authorize = true
+allow_withdraw = true
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = true
+allow_burn = true
+allow_close_account = true
+allow_approve = true
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = true
+allow_burn = true
+allow_close_account = true
+allow_approve = true
+allow_revoke = true
+allow_set_authority = true
+allow_mint_to = true
+allow_initialize_mint = true
+allow_initialize_account = true
+allow_initialize_multisig = true
+allow_freeze_account = true
+allow_thaw_account = true
+
+# Usage limit configuration - enabled for testing (in-memory store)
+[kora.usage_limit]
+enabled = true
+# cache_url omitted = uses in-memory store (no Redis required)
+fallback_if_unavailable = false
+
+# Transaction lifetime limit: 5 transactions per wallet
+[[kora.usage_limit.rules]]
+type = "transaction"
+max = 5
+# window_seconds omitted = lifetime limit
+
+# Transaction time-windowed limit: 4 transactions per 30 seconds
+# (higher than instruction limit of 3 to allow instruction tests to work)
+[[kora.usage_limit.rules]]
+type = "transaction"
+max = 4
+window_seconds = 30
+
+# Instruction-level limit: 3 System CreateAccount instructions per wallet (lifetime)
+[[kora.usage_limit.rules]]
+type = "instruction"
+program = "11111111111111111111111111111111"
+instruction = "CreateAccount"
+max = 3
+# window_seconds omitted = lifetime limit
+
+# Instruction-level limit: 3 ATA CreateIdempotent instructions per wallet (lifetime)
+[[kora.usage_limit.rules]]
+type = "instruction"
+program = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+instruction = "CreateIdempotent"
+max = 3
+# window_seconds omitted = lifetime limit

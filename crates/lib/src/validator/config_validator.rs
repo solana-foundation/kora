@@ -3,6 +3,7 @@ use std::{path::Path, str::FromStr};
 use crate::{
     admin::token_util::find_missing_atas,
     config::{FeePayerPolicy, SplTokenConfig, Token2022Config},
+    constant::{LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     fee::price::PriceModel,
     oracle::PriceSource,
     signer::SignerPoolConfig,
@@ -281,6 +282,14 @@ impl ConfigValidator {
             }
         }
 
+        // Validate reCAPTCHA score threshold (must be between MIN and MAX inclusive)
+        let score_threshold = config.kora.auth.recaptcha_score_threshold;
+        if !(MIN_RECAPTCHA_SCORE..=MAX_RECAPTCHA_SCORE).contains(&score_threshold) {
+            errors.push(format!(
+                "recaptcha_score_threshold must be between {MIN_RECAPTCHA_SCORE} and {MAX_RECAPTCHA_SCORE}, got: {score_threshold}"
+            ));
+        }
+
         // Validate enabled methods (warn if all false)
         let methods = &config.kora.enabled_methods;
         if !methods.iter().any(|enabled| enabled) {
@@ -338,6 +347,51 @@ impl ConfigValidator {
                 && !config.validation.allowed_programs.contains(&TOKEN_2022_PROGRAM_ID.to_string())
             {
                 warnings.push("Missing Token Program in allowed programs - SPL token operations will be blocked".to_string());
+            }
+        }
+
+        // Validate lighthouse configuration
+        if config.kora.lighthouse.enabled {
+            let lighthouse_program = LIGHTHOUSE_PROGRAM_ID.to_string();
+            if !config.validation.allowed_programs.contains(&lighthouse_program) {
+                errors.push(format!(
+                    "Lighthouse is enabled but {} is not in allowed_programs. Consider adding it to allowed_programs.",
+                    LIGHTHOUSE_PROGRAM_ID
+                ));
+            }
+            if config.validation.disallowed_accounts.contains(&lighthouse_program) {
+                errors.push(format!(
+                    "Lighthouse is enabled but {} is in disallowed_accounts. Consider removing it from disallowed_accounts.",
+                    LIGHTHOUSE_PROGRAM_ID
+                ));
+            }
+
+            // Warn about signAndSend methods not having lighthouse protection
+            let enabled_methods = &config.kora.enabled_methods;
+            let mut unprotected_methods = Vec::new();
+            if enabled_methods.sign_and_send_transaction {
+                unprotected_methods.push("signAndSendTransaction");
+            }
+            if enabled_methods.sign_and_send_bundle {
+                unprotected_methods.push("signAndSendBundle");
+            }
+            if !unprotected_methods.is_empty() {
+                warnings.push(format!(
+                    "Lighthouse is enabled but {} will NOT have fee payer protection. \
+                    These methods send transactions directly to the network, so adding assertions \
+                    would invalidate client signatures. Consider using signTransaction/signBundle instead.",
+                    unprotected_methods.join(", ")
+                ));
+            }
+        }
+
+        // Validate base58 pubkey format for allowed_programs
+        for pubkey_str in &config.validation.allowed_programs {
+            if Pubkey::from_str(pubkey_str).is_err() {
+                errors.push(format!(
+                    "Invalid base58 pubkey format in allowed_programs: '{}'",
+                    pubkey_str
+                ));
             }
         }
 
@@ -493,14 +547,26 @@ impl ConfigValidator {
             warnings.extend(usage_warnings);
         }
 
+        // Validate RPC cache config
+        if config.kora.cache.enabled {
+            let (cache_errors, cache_warnings) =
+                CacheValidator::validate_rpc_cache(&config.kora.cache).await;
+            errors.extend(cache_errors);
+            warnings.extend(cache_warnings);
+        }
+
         // RPC validation - only if not skipped
         if !skip_rpc_validation {
             // Validate allowed programs - should be executable
             for program_str in &config.validation.allowed_programs {
                 if let Ok(program_pubkey) = Pubkey::from_str(program_str) {
-                    if let Err(e) =
-                        validate_account(rpc_client, &program_pubkey, Some(AccountType::Program))
-                            .await
+                    if let Err(e) = validate_account(
+                        config,
+                        rpc_client,
+                        &program_pubkey,
+                        Some(AccountType::Program),
+                    )
+                    .await
                     {
                         errors.push(format!("Program {program_str} validation failed: {e}"));
                     }
@@ -511,7 +577,8 @@ impl ConfigValidator {
             for token_str in &config.validation.allowed_tokens {
                 if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
                     if let Err(e) =
-                        validate_account(rpc_client, &token_pubkey, Some(AccountType::Mint)).await
+                        validate_account(config, rpc_client, &token_pubkey, Some(AccountType::Mint))
+                            .await
                     {
                         errors.push(format!("Token {token_str} validation failed: {e}"));
                     }
@@ -522,7 +589,8 @@ impl ConfigValidator {
             for token_str in &config.validation.allowed_spl_paid_tokens {
                 if let Ok(token_pubkey) = Pubkey::from_str(token_str) {
                     if let Err(e) =
-                        validate_account(rpc_client, &token_pubkey, Some(AccountType::Mint)).await
+                        validate_account(config, rpc_client, &token_pubkey, Some(AccountType::Mint))
+                            .await
                     {
                         errors.push(format!("SPL paid token {token_str} validation failed: {e}"));
                     }
@@ -540,7 +608,7 @@ impl ConfigValidator {
             // Validate missing ATAs for payment address
             if let Some(payment_address) = &config.kora.payment_address {
                 if let Ok(payment_address) = Pubkey::from_str(payment_address) {
-                    match find_missing_atas(rpc_client, &payment_address).await {
+                    match find_missing_atas(config, rpc_client, &payment_address).await {
                         Ok(atas_to_create) => {
                             if !atas_to_create.is_empty() {
                                 errors.push(format!(
@@ -630,12 +698,12 @@ fn validate_token2022_extensions(config: &Token2022Config) -> Result<(), String>
 mod tests {
     use crate::{
         config::{
-            AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy, KoraConfig,
-            MetricsConfig, NonceInstructionPolicy, SplTokenConfig, SplTokenInstructionPolicy,
-            SystemInstructionPolicy, Token2022InstructionPolicy, UsageLimitConfig,
-            ValidationConfig,
+            AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy,
+            KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
+            SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022InstructionPolicy,
+            UsageLimitConfig, ValidationConfig,
         },
-        constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
+        constant::{DEFAULT_MAX_REQUEST_BODY_SIZE, LIGHTHOUSE_PROGRAM_ID},
         fee::price::PriceConfig,
         state::update_config,
         tests::{
@@ -670,6 +738,7 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -713,6 +782,7 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -750,6 +820,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             kora: KoraConfig {
                 rate_limit: 0, // Should warn
@@ -764,11 +835,18 @@ mod tests {
                     get_blockhash: false,
                     get_config: false,
                     get_payer_signer: false,
+                    get_version: false,
+                    estimate_bundle_fee: false,
+                    sign_and_send_bundle: false,
+                    sign_bundle: false,
                 },
                 auth: AuthConfig::default(),
                 payment_address: None,
                 cache: CacheConfig::default(),
                 usage_limit: UsageLimitConfig::default(),
+                bundle: BundleConfig::default(),
+                lighthouse: LighthouseConfig::default(),
+                force_sig_verify: false,
             },
             metrics: MetricsConfig::default(),
         };
@@ -801,7 +879,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec!["SomeOtherProgram".to_string()], // Missing system program
+                allowed_programs: vec!["11111111111111111111111111111112".to_string()], // Missing system program, but valid base58
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -810,6 +888,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -850,6 +929,7 @@ mod tests {
                 },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -895,6 +975,7 @@ mod tests {
                 },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -937,6 +1018,7 @@ mod tests {
                 },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -988,6 +1070,7 @@ mod tests {
                 },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1024,6 +1107,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1065,6 +1149,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1104,6 +1189,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1136,6 +1222,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1157,6 +1244,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1221,6 +1309,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1254,6 +1343,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1287,6 +1377,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1326,6 +1417,7 @@ mod tests {
                     config
                 },
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1361,6 +1453,7 @@ mod tests {
                     config
                 },
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1400,6 +1493,7 @@ mod tests {
                     config
                 },
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1524,6 +1618,7 @@ mod tests {
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1781,6 +1876,7 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: true, // Enabled - should warn
+                max_price_staleness_slots: 0,
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1819,6 +1915,7 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false, // Disabled - should not warn
+                max_price_staleness_slots: 0,
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1858,6 +1955,7 @@ mod tests {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1873,5 +1971,143 @@ mod tests {
         let errors = result.unwrap_err();
         assert!(errors.iter().any(|e| e.contains("JUPITER_API_KEY")));
         assert!(errors.iter().any(|e| e.contains("price_source = Jupiter")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_lighthouse_enabled_not_in_allowed_programs_error() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ], // Lighthouse program NOT included
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+            },
+            kora: KoraConfig {
+                lighthouse: LighthouseConfig {
+                    enabled: true,
+                    fail_if_transaction_size_overflow: true,
+                },
+                ..Default::default()
+            },
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Lighthouse is enabled but")
+                && e.contains("is not in allowed_programs")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_lighthouse_enabled_in_disallowed_accounts_error() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                    LIGHTHOUSE_PROGRAM_ID.to_string(), // Lighthouse in allowed
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![LIGHTHOUSE_PROGRAM_ID.to_string()], // Also in disallowed!
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+            },
+            kora: KoraConfig {
+                lighthouse: LighthouseConfig {
+                    enabled: true,
+                    fail_if_transaction_size_overflow: true,
+                },
+                ..Default::default()
+            },
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Lighthouse is enabled but")
+                && e.contains("is in disallowed_accounts")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_lighthouse_disabled_no_validation() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ], // Lighthouse NOT included - but should be OK since disabled
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+            },
+            kora: KoraConfig {
+                lighthouse: LighthouseConfig {
+                    enabled: false, // Disabled
+                    fail_if_transaction_size_overflow: true,
+                },
+                ..Default::default()
+            },
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        // Should not have lighthouse errors since it's disabled
+        assert!(!warnings.iter().any(|w| w.contains("Lighthouse")));
     }
 }

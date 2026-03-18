@@ -18,6 +18,7 @@ use crate::rpc_server::{
         get_config::GetConfigResponse,
         get_payer_signer::GetPayerSignerResponse,
         get_supported_tokens::GetSupportedTokensResponse,
+        get_version::GetVersionResponse,
         sign_and_send_transaction::{
             SignAndSendTransactionRequest, SignAndSendTransactionResponse,
         },
@@ -51,6 +52,7 @@ const JSON_CONTENT_TYPE: &str = "application/json";
         GetConfigResponse,
         GetPayerSignerResponse,
         GetSupportedTokensResponse,
+        GetVersionResponse,
         SignAndSendTransactionRequest,
         SignAndSendTransactionResponse,
         SignTransactionRequest,

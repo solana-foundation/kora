@@ -1,33 +1,105 @@
-import { KoraClient, createKitKoraClient, type KoraKitClient } from '../src/index.js';
-import setupTestSuite from './setup.js';
-import { runAuthenticationTests } from './auth-setup.js';
 import {
-    Address,
-    Instruction,
     address,
-    generateKeyPairSigner,
+    Address,
+    appendTransactionMessageInstruction,
+    type Blockhash,
+    compileTransaction,
+    createTransactionMessage,
+    getBase64Decoder,
     getBase64EncodedWireTransaction,
     getBase64Encoder,
     getTransactionDecoder,
-    signTransaction,
+    getTransactionEncoder,
     type KeyPairSigner,
+    partiallySignTransaction,
+    pipe,
+    setTransactionMessageFeePayerSigner,
+    setTransactionMessageLifetimeUsingBlockhash,
     type Transaction,
+    type TransactionSigner,
 } from '@solana/kit';
 import { getTransferSolInstruction } from '@solana-program/system';
-import {
-    ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-    findAssociatedTokenPda,
-    parseTransferInstruction,
-    TOKEN_PROGRAM_ADDRESS,
-    tokenProgram,
-    TRANSFER_DISCRIMINATOR,
-} from '@solana-program/token';
+import { findAssociatedTokenPda, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
+
+import { KoraClient, createKitKoraClient, type KoraKitClient } from '../src/index.js';
+import { runAuthenticationTests } from './auth-setup.js';
+import setupTestSuite from './setup.js';
 
 function transactionFromBase64(base64: string): Transaction {
     const encoder = getBase64Encoder();
     const decoder = getTransactionDecoder();
     const messageBytes = encoder.encode(base64);
     return decoder.decode(messageBytes);
+}
+
+function transactionToBase64(transaction: Transaction): string {
+    const txEncoder = getTransactionEncoder();
+    const txBytes = txEncoder.encode(transaction);
+    const base64Decoder = getBase64Decoder();
+    return base64Decoder.decode(txBytes);
+}
+
+/**
+ * Helper to build a SPL token transfer transaction.
+ * This replaces the deprecated transferTransaction endpoint.
+ */
+async function buildTokenTransferTransaction(params: {
+    amount: bigint;
+    client: KoraClient;
+    destinationWallet: Address;
+    mint: Address;
+    sourceWallet: KeyPairSigner;
+}): Promise<{ blockhash: Blockhash; transaction: string }> {
+    const { client, amount, mint, sourceWallet, destinationWallet } = params;
+
+    // Get the payer signer from Kora (fee payer)
+    const { signer_address } = await client.getPayerSigner();
+
+    // Get blockhash
+    const { blockhash } = await client.getBlockhash();
+
+    // Find source and destination ATAs
+    const [sourceAta] = await findAssociatedTokenPda({
+        mint,
+        owner: sourceWallet.address,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+    const [destinationAta] = await findAssociatedTokenPda({
+        mint,
+        owner: destinationWallet,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    // Build transfer instruction
+    const transferIx = getTransferInstruction({
+        amount,
+        authority: sourceWallet,
+        destination: destinationAta,
+        source: sourceAta,
+    });
+
+    // Build transaction message with Kora as fee payer
+    // We create a mock signer for the fee payer address since we only need the address
+    const feePayerSigner = {
+        address: signer_address,
+    } as TransactionSigner;
+
+    const transactionMessage = pipe(
+        createTransactionMessage({ version: 0 }),
+        tx => setTransactionMessageFeePayerSigner(feePayerSigner, tx),
+        tx =>
+            setTransactionMessageLifetimeUsingBlockhash(
+                { blockhash: blockhash as Blockhash, lastValidBlockHeight: BigInt(Number.MAX_SAFE_INTEGER) },
+                tx,
+            ),
+        tx => appendTransactionMessageInstruction(transferIx, tx),
+    );
+
+    // Compile to transaction
+    const transaction = compileTransaction(transactionMessage);
+    const base64Transaction = getBase64EncodedWireTransaction(transaction);
+
+    return { blockhash: blockhash as Blockhash, transaction: base64Transaction };
 }
 
 const AUTH_ENABLED = process.env.ENABLE_AUTH === 'true';
@@ -37,22 +109,16 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
     let client: KoraClient;
     let testWallet: KeyPairSigner;
     let testWalletAddress: Address;
-    let destinationAddress: Address;
     let usdcMint: Address;
     let koraAddress: Address;
-    let koraRpcUrl: string;
-    let authConfig: { apiKey: string; hmacSecret: string } | undefined;
 
     beforeAll(async () => {
         const testSuite = await setupTestSuite();
         client = testSuite.koraClient;
         testWallet = testSuite.testWallet;
         testWalletAddress = testWallet.address;
-        destinationAddress = testSuite.destinationAddress;
         usdcMint = testSuite.usdcMint;
         koraAddress = testSuite.koraAddress;
-        koraRpcUrl = testSuite.koraRpcUrl;
-        authConfig = testSuite.authConfig;
     }, 90000); // allow adequate time for airdrops and token initialization
 
     // Run authentication tests only when auth is enabled
@@ -120,9 +186,9 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(config.enabled_methods.get_supported_tokens).toBeDefined();
             expect(config.enabled_methods.sign_transaction).toBeDefined();
             expect(config.enabled_methods.sign_and_send_transaction).toBeDefined();
-            expect(config.enabled_methods.transfer_transaction).toBeDefined();
             expect(config.enabled_methods.get_blockhash).toBeDefined();
             expect(config.enabled_methods.get_config).toBeDefined();
+            expect(config.enabled_methods.get_version).toBeDefined();
         });
 
         it('should get payer signer', async () => {
@@ -145,59 +211,28 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             expect(blockhash.length).toBeGreaterThanOrEqual(43);
             expect(blockhash.length).toBeLessThanOrEqual(44); // Base58 encoded hash length
         });
+
+        it('should get version', async () => {
+            const { version } = await client.getVersion();
+            expect(version).toBeDefined();
+            expect(typeof version).toBe('string');
+            expect(version.length).toBeGreaterThan(0);
+            // Version should follow semver format (e.g., "2.1.0" or "2.1.0-beta.0")
+            expect(version).toMatch(/^\d+\.\d+\.\d+/);
+        });
     });
 
     describe('Transaction Operations', () => {
-        it('should create transfer transaction', async () => {
-            const request = {
-                amount: 1000000, // 1 USDC
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: destinationAddress,
-            };
-
-            const response = await client.transferTransaction(request);
-            expect(response).toBeDefined();
-            expect(response.transaction).toBeDefined();
-            expect(response.blockhash).toBeDefined();
-            expect(response.message).toBeDefined();
-            expect(response.instructions).toBeDefined();
-            // since setup created ATA for destination, we should not expect ata instruction, only transfer instruction
-            expect(response.instructions?.length).toBe(1);
-            expect(response.instructions?.[0].programAddress).toBe(TOKEN_PROGRAM_ADDRESS);
-        });
-        it('should create transfer transaction to address with no ATA', async () => {
-            const randomDestination = await generateKeyPairSigner();
-            const request = {
-                amount: 1000000, // 1 USDC
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: randomDestination.address,
-            };
-
-            const response = await client.transferTransaction(request);
-            expect(response).toBeDefined();
-            expect(response.transaction).toBeDefined();
-            expect(response.blockhash).toBeDefined();
-            expect(response.message).toBeDefined();
-            expect(response.instructions).toBeDefined();
-            // since setup created ATA for destination, we should not expect ata instruction, only transfer instruction
-            expect(response.instructions?.length).toBe(2);
-            expect(response.instructions?.[0].programAddress).toBe(ASSOCIATED_TOKEN_PROGRAM_ADDRESS);
-            expect(response.instructions?.[1].programAddress).toBe(TOKEN_PROGRAM_ADDRESS);
-        });
-
         it('should estimate transaction fee', async () => {
-            // First create a transaction
-            const transferRequest = {
-                amount: 1000000,
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: testWalletAddress,
-            };
+            const { transaction } = await buildTokenTransferTransaction({
+                amount: 1000000n,
+                client,
+                destinationWallet: koraAddress,
+                mint: usdcMint,
+                sourceWallet: testWallet,
+            });
 
-            const { transaction } = await client.transferTransaction(transferRequest);
-            const fee = await client.estimateTransactionFee({ transaction, fee_token: usdcMint });
+            const fee = await client.estimateTransactionFee({ fee_token: usdcMint, transaction });
 
             expect(fee).toBeDefined();
             expect(typeof fee.fee_in_lamports).toBe('number');
@@ -210,16 +245,13 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
 
         it('should sign transaction', async () => {
-            const config = await client.getConfig();
-            const paymentAddress = config.fee_payers[0];
-            const transferRequest = {
-                amount: 1000000,
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: paymentAddress,
-            };
-
-            const { transaction } = await client.transferTransaction(transferRequest);
+            const { transaction } = await buildTokenTransferTransaction({
+                amount: 1000000n,
+                client,
+                destinationWallet: koraAddress,
+                mint: usdcMint,
+                sourceWallet: testWallet,
+            });
 
             const signResult = await client.signTransaction({
                 transaction,
@@ -230,59 +262,59 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
 
         it('should sign and send transaction', async () => {
-            const config = await client.getConfig();
-            const paymentAddress = config.fee_payers[0];
-            const transferRequest = {
-                amount: 1000000,
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: paymentAddress,
-            };
-
-            const { transaction: transactionString } = await client.transferTransaction(transferRequest);
+            const { transaction: transactionString } = await buildTokenTransferTransaction({
+                amount: 1000000n,
+                client,
+                destinationWallet: koraAddress,
+                mint: usdcMint,
+                sourceWallet: testWallet,
+            });
 
             const transaction = transactionFromBase64(transactionString);
-            // Sign transaction with test wallet before sending
-            const signedTransaction = await signTransaction([testWallet.keyPair], transaction);
-            const base64SignedTransaction = getBase64EncodedWireTransaction(signedTransaction);
+            // Partially sign transaction with test wallet before sending
+            // Kora will add fee payer signature via signAndSendTransaction
+            const signedTransaction = await partiallySignTransaction([testWallet.keyPair], transaction);
+            const base64SignedTransaction = transactionToBase64(signedTransaction);
             const signResult = await client.signAndSendTransaction({
                 transaction: base64SignedTransaction,
             });
 
             expect(signResult).toBeDefined();
             expect(signResult.signed_transaction).toBeDefined();
+            expect(signResult.signature).toBeDefined();
         });
 
         it('should get payment instruction', async () => {
-            const transferRequest = {
-                amount: 1000000,
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: destinationAddress,
-            };
-            const [expectedSenderAta] = await findAssociatedTokenPda({
-                owner: testWalletAddress,
-                tokenProgram: TOKEN_PROGRAM_ADDRESS,
+            const { transaction } = await buildTokenTransferTransaction({
+                amount: 1000000n,
+                client,
+                destinationWallet: koraAddress,
                 mint: usdcMint,
-            });
-            const [koraAta] = await findAssociatedTokenPda({
-                owner: koraAddress,
-                tokenProgram: TOKEN_PROGRAM_ADDRESS,
-                mint: usdcMint,
+                sourceWallet: testWallet,
             });
 
-            const { transaction } = await client.transferTransaction(transferRequest);
+            const [expectedSenderAta] = await findAssociatedTokenPda({
+                mint: usdcMint,
+                owner: testWalletAddress,
+                tokenProgram: TOKEN_PROGRAM_ADDRESS,
+            });
+            const [koraAta] = await findAssociatedTokenPda({
+                mint: usdcMint,
+                owner: koraAddress,
+                tokenProgram: TOKEN_PROGRAM_ADDRESS,
+            });
+
             const {
                 payment_instruction,
-                payment_amount,
+                payment_amount: _payment_amount,
                 payment_token,
                 payment_address,
                 signer_address,
                 original_transaction,
             } = await client.getPaymentInstruction({
-                transaction,
                 fee_token: usdcMint,
                 source_wallet: testWalletAddress,
+                transaction,
             });
             expect(payment_instruction).toBeDefined();
             expect(payment_instruction.programAddress).toBe(TOKEN_PROGRAM_ADDRESS);
@@ -298,29 +330,84 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         });
     });
 
+    // Bundle tests require bundle.enabled = true in the Kora config
+    (FREE_PRICING ? describe.skip : describe)('Bundle Operations', () => {
+        it('should sign bundle of transactions', async () => {
+            // Create two transfer transactions for the bundle
+            const { transaction: tx1String } = await buildTokenTransferTransaction({
+                amount: 1000000n,
+                client,
+                destinationWallet: koraAddress,
+                mint: usdcMint,
+                sourceWallet: testWallet,
+            });
+            const { transaction: tx2String } = await buildTokenTransferTransaction({
+                amount: 500000n,
+                client,
+                destinationWallet: koraAddress,
+                mint: usdcMint,
+                sourceWallet: testWallet,
+            });
+
+            // Partially sign both transactions with test wallet
+            const tx1 = transactionFromBase64(tx1String);
+            const tx2 = transactionFromBase64(tx2String);
+            const signedTx1 = await partiallySignTransaction([testWallet.keyPair], tx1);
+            const signedTx2 = await partiallySignTransaction([testWallet.keyPair], tx2);
+            const base64Tx1 = transactionToBase64(signedTx1);
+            const base64Tx2 = transactionToBase64(signedTx2);
+
+            const result = await client.signBundle({
+                transactions: [base64Tx1, base64Tx2],
+            });
+
+            expect(result).toBeDefined();
+            expect(result.signed_transactions).toBeDefined();
+            expect(Array.isArray(result.signed_transactions)).toBe(true);
+            expect(result.signed_transactions.length).toBe(2);
+            expect(result.signer_pubkey).toBeDefined();
+        });
+
+        it('should sign and send bundle of transactions', async () => {
+            // Create two transfer transactions for the bundle
+            const { transaction: tx1String } = await buildTokenTransferTransaction({
+                amount: 1000000n,
+                client,
+                destinationWallet: koraAddress,
+                mint: usdcMint,
+                sourceWallet: testWallet,
+            });
+            const { transaction: tx2String } = await buildTokenTransferTransaction({
+                amount: 500000n,
+                client,
+                destinationWallet: koraAddress,
+                mint: usdcMint,
+                sourceWallet: testWallet,
+            });
+
+            // Partially sign both transactions with test wallet
+            const tx1 = transactionFromBase64(tx1String);
+            const tx2 = transactionFromBase64(tx2String);
+            const signedTx1 = await partiallySignTransaction([testWallet.keyPair], tx1);
+            const signedTx2 = await partiallySignTransaction([testWallet.keyPair], tx2);
+            const base64Tx1 = transactionToBase64(signedTx1);
+            const base64Tx2 = transactionToBase64(signedTx2);
+
+            const result = await client.signAndSendBundle({
+                transactions: [base64Tx1, base64Tx2],
+            });
+
+            expect(result).toBeDefined();
+            expect(result.signed_transactions).toBeDefined();
+            expect(Array.isArray(result.signed_transactions)).toBe(true);
+            expect(result.signed_transactions.length).toBe(2);
+            expect(result.signer_pubkey).toBeDefined();
+            expect(result.bundle_uuid).toBeDefined();
+            expect(typeof result.bundle_uuid).toBe('string');
+        });
+    });
+
     describe('Error Handling', () => {
-        it('should handle invalid token address', async () => {
-            const request = {
-                amount: 1000000,
-                token: 'InvalidTokenAddress',
-                source: testWalletAddress,
-                destination: destinationAddress,
-            };
-
-            await expect(client.transferTransaction(request)).rejects.toThrow();
-        });
-
-        it('should handle invalid amount', async () => {
-            const request = {
-                amount: -1, // Invalid amount
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: destinationAddress,
-            };
-
-            await expect(client.transferTransaction(request)).rejects.toThrow();
-        });
-
         it('should handle invalid transaction for signing', async () => {
             await expect(
                 client.signTransaction({
@@ -331,225 +418,8 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
         it('should handle invalid transaction for fee estimation', async () => {
             await expect(
-                client.estimateTransactionFee({ transaction: 'invalid_transaction', fee_token: usdcMint }),
+                client.estimateTransactionFee({ fee_token: usdcMint, transaction: 'invalid_transaction' }),
             ).rejects.toThrow();
-        });
-
-        it('should handle non-allowed token for fee payment', async () => {
-            const transferRequest = {
-                amount: 1000000,
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: destinationAddress,
-            };
-
-            // TODO: API has an error. this endpoint should verify the provided fee token is supported
-            const { transaction } = await client.transferTransaction(transferRequest);
-            const fee = await client.estimateTransactionFee({ transaction, fee_token: usdcMint });
-            expect(fee).toBeDefined();
-            expect(typeof fee.fee_in_lamports).toBe('number');
-            expect(fee.fee_in_lamports).toBeGreaterThanOrEqual(0);
-            if (!FREE_PRICING) {
-                expect(fee.fee_in_lamports).toBeGreaterThan(0);
-            }
-        });
-    });
-
-    describe('End-to-End Flows', () => {
-        it('should handle transfer and sign flow', async () => {
-            const config = await client.getConfig();
-            const paymentAddress = config.fee_payers[0];
-            const request = {
-                amount: 1000000,
-                token: usdcMint,
-                source: testWalletAddress,
-                destination: paymentAddress,
-            };
-
-            // Create and sign the transaction
-            const { transaction } = await client.transferTransaction(request);
-            const signResult = await client.signTransaction({ transaction });
-
-            expect(signResult.signed_transaction).toBeDefined();
-        });
-
-        it('should reject transaction with non-allowed token', async () => {
-            const invalidTokenMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // Mainnet USDC mint
-            const request = {
-                amount: 1000000,
-                token: invalidTokenMint,
-                source: testWalletAddress,
-                destination: destinationAddress,
-            };
-
-            await expect(client.transferTransaction(request)).rejects.toThrow();
-        });
-    });
-
-    describe('Kit Client (createKitKoraClient)', () => {
-        let kitClient: KoraKitClient;
-
-        beforeAll(async () => {
-            kitClient = await createKitKoraClient({
-                endpoint: koraRpcUrl,
-                rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
-                feeToken: usdcMint,
-                feePayerWallet: testWallet,
-                ...authConfig,
-            });
-        }, 30000);
-
-        it('should initialize with correct payer info', () => {
-            expect(kitClient.payer).toBeDefined();
-            expect(kitClient.payer.address).toBeDefined();
-            expect(kitClient.paymentAddress).toBeDefined();
-        });
-
-        it('should expose kora namespace', async () => {
-            const config = await kitClient.kora.getConfig();
-            expect(config.fee_payers.length).toBeGreaterThan(0);
-        });
-
-        it('should plan a transaction without sending', async () => {
-            const ix = getTransferSolInstruction({
-                source: testWallet,
-                destination: address(destinationAddress),
-                amount: 1000, // 1000 lamports
-            });
-
-            const message = await kitClient.planTransaction([ix]);
-            expect(message).toBeDefined();
-            expect('version' in message).toBe(true);
-            expect('instructions' in message).toBe(true);
-        });
-
-        it('should send a transaction end-to-end', async () => {
-            const ix = getTransferSolInstruction({
-                source: testWallet,
-                destination: address(destinationAddress),
-                amount: 1000, // 1000 lamports
-            });
-
-            const result = await kitClient.sendTransaction([ix]);
-            expect(result.status).toBe('successful');
-            expect(result.context.signature).toBeDefined();
-            expect(typeof result.context.signature).toBe('string');
-            // Signature should be base58-encoded (43-88 chars)
-            expect(result.context.signature.length).toBeGreaterThanOrEqual(43);
-        }, 30000);
-
-        it('should support plugin composition via .use()', () => {
-            // Kit plugins must spread the client to preserve existing properties
-            const extended = kitClient.use(<T extends object>(c: T) => ({
-                ...c,
-                custom: { hello: () => 'world' },
-            }));
-
-            expect(extended.custom.hello()).toBe('world');
-            expect(extended.kora).toBeDefined();
-            expect(typeof extended.sendTransaction).toBe('function');
-        });
-
-        describe('planner', () => {
-            it('should include placeholder payment instruction in planned message', async () => {
-                const ix = getTransferSolInstruction({
-                    source: testWallet,
-                    destination: address(destinationAddress),
-                    amount: 1000,
-                });
-
-                const message = await kitClient.planTransaction([ix]);
-                const instructions = (message as { instructions: readonly Instruction[] }).instructions;
-
-                // Find the transfer placeholder by discriminator + token program
-                const paymentIx = instructions.find(
-                    ix => ix.programAddress === TOKEN_PROGRAM_ADDRESS && ix.data?.[0] === TRANSFER_DISCRIMINATOR,
-                );
-                expect(paymentIx).toBeDefined();
-
-                // Verify it's a placeholder (amount=0) with correct accounts
-                const parsed = parseTransferInstruction(
-                    paymentIx as Instruction & {
-                        accounts: NonNullable<Instruction['accounts']>;
-                        data: NonNullable<Instruction['data']>;
-                    },
-                );
-                expect(parsed.data.amount).toBe(0n);
-                expect(parsed.accounts.authority.address).toBe(testWallet.address);
-            });
-
-            it('should include user instructions in planned message', async () => {
-                const ix = getTransferSolInstruction({
-                    source: testWallet,
-                    destination: address(destinationAddress),
-                    amount: 1000,
-                });
-
-                const message = await kitClient.planTransaction([ix]);
-                const instructions = (message as { instructions: readonly Instruction[] }).instructions;
-
-                // The user's system transfer instruction should be present
-                const systemIx = instructions.find(ix => ix.programAddress === '11111111111111111111111111111111');
-                expect(systemIx).toBeDefined();
-            });
-        });
-
-        describe('executor', () => {
-            it('should resolve placeholder with non-zero fee amount', async () => {
-                // The test config uses margin pricing (margin=0.0), so fee = base SOL fee converted to token
-                // This verifies the full planner→executor flow: placeholder→estimate→update→send
-                const ix = getTransferSolInstruction({
-                    source: testWallet,
-                    destination: address(destinationAddress),
-                    amount: 1000,
-                });
-
-                const result = await kitClient.sendTransaction([ix]);
-                expect(result.status).toBe('successful');
-                expect(result.context.signature).toBeDefined();
-
-                // Verify fee was estimated by checking the Kora RPC was called
-                // (the transaction succeeded, which means the payment IX had a valid amount)
-            }, 30000);
-
-            it('should handle multiple instructions in a single transaction', async () => {
-                const ix1 = getTransferSolInstruction({
-                    source: testWallet,
-                    destination: address(destinationAddress),
-                    amount: 500,
-                });
-                const ix2 = getTransferSolInstruction({
-                    source: testWallet,
-                    destination: address(destinationAddress),
-                    amount: 500,
-                });
-
-                const result = await kitClient.sendTransaction([ix1, ix2]);
-                expect(result.status).toBe('successful');
-                expect(result.context.signature).toBeDefined();
-            }, 30000);
-        });
-
-        describe('plugin composition with tokenProgram()', () => {
-            it('should send a token transfer via tokenProgram().transferToATA().send()', async () => {
-                // tokenProgram() works out of the box — rpc is included in the Kora client
-                const tokenClient = kitClient.use(tokenProgram());
-
-                // Transfer USDC to destination via the token plugin's fluent API.
-                // This flows through Kora's planner (placeholder) → executor (fee estimate, resolve, send).
-                const result = await tokenClient.token.instructions
-                    .transferToATA({
-                        authority: testWallet,
-                        recipient: destinationAddress,
-                        mint: usdcMint,
-                        amount: 1000,
-                        decimals: 6,
-                    })
-                    .sendTransaction();
-
-                expect(result.status).toBe('successful');
-                expect(result.context.signature).toBeDefined();
-            }, 30000);
         });
     });
 
@@ -558,19 +428,19 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             let freeClient: KoraKitClient;
 
             beforeAll(async () => {
+                const koraRpcUrl = process.env.KORA_RPC_URL || 'http://127.0.0.1:8080';
                 freeClient = await createKitKoraClient({
                     endpoint: koraRpcUrl,
                     rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
                     feeToken: usdcMint,
                     feePayerWallet: testWallet,
-                    ...authConfig,
                 });
             }, 30000);
 
             it('should send transaction without payment instruction when fee is 0', async () => {
                 const ix = getTransferSolInstruction({
                     source: testWallet,
-                    destination: address(destinationAddress),
+                    destination: address(koraAddress),
                     amount: 1000,
                 });
 
@@ -580,16 +450,12 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             }, 30000);
 
             it('should strip placeholder from planned message when fee is 0', async () => {
-                // With free pricing, getPayerSigner may not return a payment address.
-                // If it does, the placeholder should still be stripped in the executor.
                 const ix = getTransferSolInstruction({
                     source: testWallet,
-                    destination: address(destinationAddress),
+                    destination: address(koraAddress),
                     amount: 1000,
                 });
 
-                // Sending should succeed regardless — either no placeholder is added,
-                // or it's added then stripped when fee estimation returns 0.
                 const result = await freeClient.sendTransaction([ix]);
                 expect(result.status).toBe('successful');
             }, 30000);

@@ -20,6 +20,7 @@ transfer_transaction = true
 get_blockhash = true
 get_config = true
 get_payer_signer = true
+get_version = true
 
 [validation]
 max_allowed_lamports = 1000000
@@ -107,5 +108,8 @@ allow_thaw_account = true
 [kora.usage_limit]
 enabled = false
 cache_url = "redis://redis:6379"
-max_transactions = 2
 fallback_if_unavailable = false
+rules = []
+
+[kora.bundle]
+enabled = false

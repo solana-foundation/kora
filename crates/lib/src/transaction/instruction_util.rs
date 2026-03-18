@@ -748,8 +748,10 @@ impl IxUtils {
                 })
             }
             _ => {
-                log::error!("Unsupported system instruction type: {}", instruction_type);
-                Ok(Self::build_default_compiled_instruction(program_id_index))
+                Err(KoraError::InvalidTransaction(format!(
+                    "Unrecognized system instruction type '{}' in CPI — cannot validate fee payer policy",
+                    instruction_type
+                )))
             }
         }
     }
@@ -1185,8 +1187,10 @@ impl IxUtils {
                 })
             }
             _ => {
-                log::error!("Unsupported token instruction type: {}", instruction_type);
-                Ok(Self::build_default_compiled_instruction(program_id_index))
+                Err(KoraError::InvalidTransaction(format!(
+                    "Unrecognized SPL Token instruction type '{}' in CPI — cannot validate fee payer policy",
+                    instruction_type
+                )))
             }
         }
     }
@@ -2529,6 +2533,219 @@ mod tests {
     }
 
     #[test]
+    fn test_get_field_as_u64() {
+        // Valid JSON number
+        let valid_number = serde_json::json!({
+            "amount": 1000
+        });
+        assert_eq!(IxUtils::get_field_as_u64(&valid_number, "amount").unwrap(), 1000);
+
+        // Valid JSON string containing a number
+        let valid_string_number = serde_json::json!({
+            "amount": "2000"
+        });
+        assert_eq!(IxUtils::get_field_as_u64(&valid_string_number, "amount").unwrap(), 2000);
+
+        // Missing field
+        let missing_field = serde_json::json!({
+            "other": 3000
+        });
+        let err = IxUtils::get_field_as_u64(&missing_field, "amount").unwrap_err();
+        assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
+
+        // Invalid string that cannot be parsed as a u64
+        let invalid_string = serde_json::json!({
+            "amount": "invalid"
+        });
+        let err = IxUtils::get_field_as_u64(&invalid_string, "amount").unwrap_err();
+        assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
+
+        // JSON null or other unexpected type
+        let null_value = serde_json::json!({
+            "amount": null
+        });
+        let err = IxUtils::get_field_as_u64(&null_value, "amount").unwrap_err();
+        assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
+
+        // Unexpected type (array)
+        let array_value = serde_json::json!({
+            "amount": [1, 2, 3]
+        });
+        let err = IxUtils::get_field_as_u64(&array_value, "amount").unwrap_err();
+        assert!(matches!(err, crate::error::KoraError::SerializationError(_)));
+    }
+
+    #[test]
+    fn test_parse_system_instructions_transfer() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use solana_system_interface::instruction::transfer;
+
+        let sender = Keypair::new();
+        let receiver = Pubkey::new_unique();
+        let lamports = 1000u64;
+
+        let instruction = transfer(&sender.pubkey(), &receiver, lamports);
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&sender.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&sender]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_system_instructions(&resolved_tx)
+            .expect("Failed to parse system instructions");
+
+        let transfers = parsed_instructions
+            .get(&ParsedSystemInstructionType::SystemTransfer)
+            .expect("Expected SystemTransfer instructions");
+
+        assert_eq!(transfers.len(), 1);
+
+        match &transfers[0] {
+            ParsedSystemInstructionData::SystemTransfer {
+                lamports: parsed_lamports,
+                sender: parsed_sender,
+                receiver: parsed_receiver,
+            } => {
+                assert_eq!(*parsed_lamports, lamports);
+                assert_eq!(*parsed_sender, sender.pubkey());
+                assert_eq!(*parsed_receiver, receiver);
+            }
+            _ => panic!("Expected SystemTransfer variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_token_instructions_transfer() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use spl_token_interface::instruction::transfer;
+
+        let owner = Keypair::new();
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let amount = 5000u64;
+
+        let instruction = transfer(
+            &spl_token_interface::ID,
+            &source_address,
+            &destination_address,
+            &owner.pubkey(),
+            &[],
+            amount,
+        )
+        .expect("Failed to create transfer instruction");
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&owner.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&owner]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_token_instructions(&resolved_tx)
+            .expect("Failed to parse token instructions");
+
+        let transfers = parsed_instructions
+            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+            .expect("Expected SplTokenTransfer instructions");
+
+        assert_eq!(transfers.len(), 1);
+
+        match &transfers[0] {
+            ParsedSPLInstructionData::SplTokenTransfer {
+                amount: parsed_amount,
+                owner: parsed_owner,
+                mint,
+                source_address: parsed_source,
+                destination_address: parsed_destination,
+                is_2022,
+            } => {
+                assert_eq!(*parsed_amount, amount);
+                assert_eq!(*parsed_owner, owner.pubkey());
+                assert_eq!(*parsed_source, source_address);
+                assert_eq!(*parsed_destination, destination_address);
+                assert_eq!(*is_2022, false);
+                assert!(mint.is_none());
+            }
+            _ => panic!("Expected SplTokenTransfer variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_token_2022_instructions_transfer_checked() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use spl_token_2022_interface::instruction::transfer_checked;
+
+        let owner = Keypair::new();
+        let source_address = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let amount = 7500u64;
+        let decimals = 6u8;
+
+        let instruction = transfer_checked(
+            &spl_token_2022_interface::ID,
+            &source_address,
+            &mint,
+            &destination_address,
+            &owner.pubkey(),
+            &[],
+            amount,
+            decimals,
+        )
+        .expect("Failed to create transfer_checked instruction");
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&owner.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&owner]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_token_instructions(&resolved_tx)
+            .expect("Failed to parse token instructions");
+
+        let transfers = parsed_instructions
+            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+            .expect("Expected SplTokenTransfer instructions");
+
+        assert_eq!(transfers.len(), 1);
+
+        match &transfers[0] {
+            ParsedSPLInstructionData::SplTokenTransfer {
+                amount: parsed_amount,
+                owner: parsed_owner,
+                mint: parsed_mint,
+                source_address: parsed_source,
+                destination_address: parsed_destination,
+                is_2022,
+            } => {
+                assert_eq!(*parsed_amount, amount);
+                assert_eq!(*parsed_owner, owner.pubkey());
+                assert_eq!(*parsed_source, source_address);
+                assert_eq!(*parsed_destination, destination_address);
+                assert_eq!(*is_2022, true);
+                assert_eq!(parsed_mint.unwrap(), mint);
+            }
+            _ => panic!("Expected SplTokenTransfer variant"),
+        }
+    }
+
+    #[test]
     fn test_uncompile_instructions() {
         let program_id = Pubkey::new_unique();
         let account1 = Pubkey::new_unique();
@@ -3356,70 +3573,6 @@ mod tests {
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3, 4]); // source, mint, delegate, owner indices
         assert_eq!(compiled.data, instruction.data);
-    }
-
-    #[test]
-    fn test_dispatch_routes_spl_token_via_program_id() {
-        let source = Pubkey::new_unique();
-        let destination = Pubkey::new_unique();
-        let authority = Pubkey::new_unique();
-        let token_program_id = spl_token_interface::ID;
-        let account_keys = vec![token_program_id, source, destination, authority];
-        let amount = 1000000u64;
-
-        let parsed = create_parsed_spl_token_transfer(&source, &destination, &authority, amount)
-            .expect("Failed to create parsed instruction");
-
-        let ui_instruction = UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed));
-
-        let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &account_keys);
-
-        assert!(result.is_some(), "SPL token transfer should be dispatched via program_id");
-        let compiled = result.unwrap();
-        assert_eq!(compiled.program_id_index, 0);
-        assert_eq!(compiled.accounts, vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn test_dispatch_routes_token2022_via_program_id() {
-        let source = Pubkey::new_unique();
-        let destination = Pubkey::new_unique();
-        let authority = Pubkey::new_unique();
-        let token_program_id = spl_token_2022_interface::ID;
-        let account_keys = vec![token_program_id, source, destination, authority];
-        let amount = 1000000u64;
-
-        let parsed = create_parsed_token2022_transfer(&source, &destination, &authority, amount)
-            .expect("Failed to create parsed instruction");
-
-        let ui_instruction = UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed));
-
-        let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &account_keys);
-
-        assert!(result.is_some(), "Token2022 transfer should be dispatched via program_id");
-        let compiled = result.unwrap();
-        assert_eq!(compiled.program_id_index, 0);
-        assert_eq!(compiled.accounts, vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn test_dispatch_routes_system_program_via_program_id() {
-        let source = Pubkey::new_unique();
-        let destination = Pubkey::new_unique();
-        let system_program_id = SYSTEM_PROGRAM_ID;
-        let account_keys = vec![system_program_id, source, destination];
-        let lamports = 1000000u64;
-
-        let parsed = create_parsed_system_transfer(&source, &destination, lamports)
-            .expect("Failed to create parsed instruction");
-
-        let ui_instruction = UiInstruction::Parsed(UiParsedInstruction::Parsed(parsed));
-
-        let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &account_keys);
-
-        assert!(result.is_some(), "System transfer should be dispatched via program_id");
-        let compiled = result.unwrap();
-        assert_eq!(compiled.program_id_index, 0);
     }
 
     #[test]

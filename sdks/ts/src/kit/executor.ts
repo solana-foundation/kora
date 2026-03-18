@@ -24,6 +24,11 @@ import { KoraClient } from '../client.js';
 import type { KoraKitClientConfig } from '../types/index.js';
 import { removePaymentInstruction, updatePaymentInstructionAmount } from './payment.js';
 
+// TODO: Create a bundle-aware executor (e.g. `createKoraBundlePlanExecutor`) that collects
+// multiple planned transaction messages into a single `signAndSendBundle` call instead of
+// submitting each one individually via `signAndSendTransaction`. This would let users
+// compose Jito bundles through the Kit plan/execute pipeline rather than manually encoding
+// transactions and calling `client.kora.signAndSendBundle()`.
 export function createKoraTransactionPlanExecutor(
     koraClient: KoraClient,
     config: KoraKitClientConfig,
@@ -62,9 +67,17 @@ export function createKoraTransactionPlanExecutor(
                     transaction: prePaymentTx,
                 });
 
-                if (fee_in_token < 0) {
+                if (fee_in_token == null) {
+                    console.warn(
+                        '[kora] fee_in_token is undefined — defaulting to 0. ' +
+                            'If paid pricing is expected, check that the fee token is correctly configured on the server.',
+                    );
+                }
+                const feeInToken = fee_in_token ?? 0;
+
+                if (feeInToken < 0) {
                     throw new Error(
-                        `Kora fee estimation returned a negative fee (${fee_in_token}). This indicates a server-side error.`,
+                        `Kora fee estimation returned a negative fee (${feeInToken}). This indicates a server-side error.`,
                     );
                 }
 
@@ -82,13 +95,13 @@ export function createKoraTransactionPlanExecutor(
 
                 // Replace placeholder with real fee amount, or strip it if fee is 0
                 const finalIxs =
-                    fee_in_token > 0
+                    feeInToken > 0
                         ? updatePaymentInstructionAmount(
                               currentIxs,
                               config.feePayerWallet,
                               sourceTokenAccount,
                               destinationTokenAccount,
-                              fee_in_token,
+                              feeInToken,
                               config.tokenProgramId,
                           )
                         : removePaymentInstruction(
@@ -120,7 +133,10 @@ export function createKoraTransactionPlanExecutor(
                 finalTx = prePaymentTx;
             }
 
-            const result = await koraClient.signAndSendTransaction({ transaction: finalTx });
+            const result = await koraClient.signAndSendTransaction({
+                transaction: finalTx,
+                user_id: config.userId,
+            });
 
             if (result.signature) {
                 return signature(result.signature);

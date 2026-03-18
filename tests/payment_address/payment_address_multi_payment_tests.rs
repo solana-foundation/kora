@@ -122,8 +122,8 @@ async fn test_sign_transaction_if_paid_with_multiple_sources_legacy() {
 
     let required_fee = get_fee_for_default_transaction_in_usdc();
     let payment_amount = required_fee / 2;
-    // We need to add 50 lamports, because on that mint for 2022 the transfer fee config is 1%
-    let payment_amount_2 = payment_amount + 50;
+    // Server deducts Token-2022 transfer fee (1%) before crediting; add margin for fee variance
+    let payment_amount_2 = payment_amount + 200;
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
 

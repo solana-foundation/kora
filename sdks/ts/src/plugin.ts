@@ -1,49 +1,88 @@
 import { address, type Base64EncodedWireTransaction, blockhash, signature } from '@solana/kit';
 
-import { KoraClient } from '../client.js';
+import { KoraClient } from './client.js';
 import type {
+    EstimateBundleFeeRequest,
     EstimateTransactionFeeRequest,
     GetPaymentInstructionRequest,
+    GetVersionResponse,
     KitBlockhashResponse,
     KitConfigResponse,
+    KitEstimateBundleFeeResponse,
     KitEstimateFeeResponse,
     KitPayerSignerResponse,
     KitPaymentInstructionResponse,
+    KitSignAndSendBundleResponse,
     KitSignAndSendTransactionResponse,
+    KitSignBundleResponse,
     KitSignTransactionResponse,
     KitSupportedTokensResponse,
-    KitTransferTransactionResponse,
     KoraPluginConfig,
+    SignAndSendBundleRequest,
     SignAndSendTransactionRequest,
+    SignBundleRequest,
     SignTransactionRequest,
-    TransferTransactionRequest,
-} from '../types/index.js';
+} from './types/index.js';
 
 /**
- * Kit plugin that adds `.kora` namespace with all Kora RPC methods.
- * Responses are cast to Kit types (Address, Blockhash, Signature).
+ * Creates a Kora Kit plugin that adds Kora paymaster functionality to a Kit client.
  *
- * Requires `@solana/kit` v5.4.0+ for the `createEmptyClient().use()` pattern.
+ * The plugin exposes all Kora RPC methods with Kit-typed responses (Address, Blockhash).
+ *
+ * **Note:** The plugin pattern with `createEmptyClient().use()` requires `@solana/kit` v5.4.0+.
+ * For older kit versions, use `KoraClient` directly instead.
+ *
+ * @param config - Plugin configuration
+ * @param config.endpoint - Kora RPC endpoint URL
+ * @param config.apiKey - Optional API key for authentication
+ * @param config.hmacSecret - Optional HMAC secret for signature-based authentication
+ * @returns A Kit plugin function that adds `.kora` to the client
  *
  * @example
  * ```typescript
+ * import { createEmptyClient } from '@solana/kit';
+ * import { koraPlugin } from '@solana/kora';
+ *
  * const client = createEmptyClient()
  *   .use(koraPlugin({ endpoint: 'https://kora.example.com' }));
  *
+ * // All responses have Kit-typed fields
  * const config = await client.kora.getConfig();
+ * // config.fee_payers is Address[] not string[]
+ *
  * const { signer_pubkey } = await client.kora.signTransaction({ transaction: tx });
+ * // signer_pubkey is Address not string
  * ```
  */
 export function koraPlugin(config: KoraPluginConfig) {
-    const client = new KoraClient({
-        apiKey: config.apiKey,
-        hmacSecret: config.hmacSecret,
-        rpcUrl: config.endpoint,
-    });
+    const client =
+        config.koraClient ??
+        new KoraClient({
+            apiKey: config.apiKey,
+            getRecaptchaToken: config.getRecaptchaToken,
+            hmacSecret: config.hmacSecret,
+            rpcUrl: config.endpoint,
+        });
 
     return <T extends object>(c: T) => ({
         ...c,
         kora: {
+            /**
+             * Estimates the bundle fee with Kit-typed addresses.
+             */
+            async estimateBundleFee(request: EstimateBundleFeeRequest): Promise<KitEstimateBundleFeeResponse> {
+                const result = await client.estimateBundleFee(request);
+                return {
+                    fee_in_lamports: result.fee_in_lamports,
+                    fee_in_token: result.fee_in_token,
+                    payment_address: address(result.payment_address),
+                    signer_pubkey: address(result.signer_pubkey),
+                };
+            },
+
+            /**
+             * Estimates the transaction fee with Kit-typed addresses.
+             */
             async estimateTransactionFee(request: EstimateTransactionFeeRequest): Promise<KitEstimateFeeResponse> {
                 const result = await client.estimateTransactionFee(request);
                 return {
@@ -54,6 +93,9 @@ export function koraPlugin(config: KoraPluginConfig) {
                 };
             },
 
+            /**
+             * Gets the latest blockhash with Kit Blockhash type.
+             */
             async getBlockhash(): Promise<KitBlockhashResponse> {
                 const result = await client.getBlockhash();
                 return {
@@ -61,6 +103,9 @@ export function koraPlugin(config: KoraPluginConfig) {
                 };
             },
 
+            /**
+             * Retrieves the current Kora server configuration with Kit-typed addresses.
+             */
             async getConfig(): Promise<KitConfigResponse> {
                 const result = await client.getConfig();
                 return {
@@ -78,6 +123,9 @@ export function koraPlugin(config: KoraPluginConfig) {
                 };
             },
 
+            /**
+             * Retrieves the payer signer and payment destination with Kit-typed addresses.
+             */
             async getPayerSigner(): Promise<KitPayerSignerResponse> {
                 const result = await client.getPayerSigner();
                 return {
@@ -86,6 +134,9 @@ export function koraPlugin(config: KoraPluginConfig) {
                 };
             },
 
+            /**
+             * Creates a payment instruction with Kit-typed response.
+             */
             async getPaymentInstruction(request: GetPaymentInstructionRequest): Promise<KitPaymentInstructionResponse> {
                 const result = await client.getPaymentInstruction(request);
                 return {
@@ -98,6 +149,9 @@ export function koraPlugin(config: KoraPluginConfig) {
                 };
             },
 
+            /**
+             * Retrieves the list of tokens supported for fee payment with Kit-typed addresses.
+             */
             async getSupportedTokens(): Promise<KitSupportedTokensResponse> {
                 const result = await client.getSupportedTokens();
                 return {
@@ -105,6 +159,28 @@ export function koraPlugin(config: KoraPluginConfig) {
                 };
             },
 
+            /**
+             * Gets the version of the Kora server.
+             */
+            async getVersion(): Promise<GetVersionResponse> {
+                return await client.getVersion();
+            },
+
+            /**
+             * Signs and sends a bundle of transactions via Jito with Kit-typed response.
+             */
+            async signAndSendBundle(request: SignAndSendBundleRequest): Promise<KitSignAndSendBundleResponse> {
+                const result = await client.signAndSendBundle(request);
+                return {
+                    bundle_uuid: result.bundle_uuid,
+                    signed_transactions: result.signed_transactions as Base64EncodedWireTransaction[],
+                    signer_pubkey: address(result.signer_pubkey),
+                };
+            },
+
+            /**
+             * Signs and sends a transaction with Kit-typed response.
+             */
             async signAndSendTransaction(
                 request: SignAndSendTransactionRequest,
             ): Promise<KitSignAndSendTransactionResponse> {
@@ -116,6 +192,20 @@ export function koraPlugin(config: KoraPluginConfig) {
                 };
             },
 
+            /**
+             * Signs a bundle of transactions with Kit-typed response.
+             */
+            async signBundle(request: SignBundleRequest): Promise<KitSignBundleResponse> {
+                const result = await client.signBundle(request);
+                return {
+                    signed_transactions: result.signed_transactions as Base64EncodedWireTransaction[],
+                    signer_pubkey: address(result.signer_pubkey),
+                };
+            },
+
+            /**
+             * Signs a transaction with Kit-typed response.
+             */
             async signTransaction(request: SignTransactionRequest): Promise<KitSignTransactionResponse> {
                 const result = await client.signTransaction(request);
                 return {
@@ -123,20 +213,9 @@ export function koraPlugin(config: KoraPluginConfig) {
                     signer_pubkey: address(result.signer_pubkey),
                 };
             },
-
-            async transferTransaction(request: TransferTransactionRequest): Promise<KitTransferTransactionResponse> {
-                const result = await client.transferTransaction(request);
-                return {
-                    blockhash: blockhash(result.blockhash),
-                    instructions: result.instructions,
-                    message: result.message,
-                    signer_pubkey: address(result.signer_pubkey),
-                    transaction: result.transaction as Base64EncodedWireTransaction,
-                };
-            },
         },
     });
 }
 
-/** Type representing the Kora plugin namespace on the client. */
-export type KoraPlugin = ReturnType<ReturnType<typeof koraPlugin>>['kora'];
+/** Type representing the Kora API exposed by the plugin */
+export type KoraApi = ReturnType<ReturnType<typeof koraPlugin>>['kora'];

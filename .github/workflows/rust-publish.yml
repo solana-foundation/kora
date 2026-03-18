@@ -3,8 +3,13 @@ name: Publish Rust Crates
 on:
   workflow_dispatch:
     inputs:
-      publish-to-crates-io:
-        description: 'Publish to crates.io registry'
+      publish-kora-lib:
+        description: 'Publish kora-lib to crates.io'
+        required: true
+        default: true
+        type: boolean
+      publish-kora-cli:
+        description: 'Publish kora-cli to crates.io'
         required: true
         default: true
         type: boolean
@@ -46,17 +51,34 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Kora v$VERSION"
 
+      - name: Check if prerelease
+        id: prerelease
+        run: |
+          if [[ "${{ steps.version.outputs.version }}" == *"-"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "📦 Pre-release version detected"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create and push git tags
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ steps.version.outputs.version }}"
-          git tag "kora-lib-v${{ steps.version.outputs.version }}"
-          git tag "kora-cli-v${{ steps.version.outputs.version }}"
-          git push origin --tags
+
+          VERSION="${{ steps.version.outputs.version }}"
+          for tag in "v$VERSION" "kora-lib-v$VERSION" "kora-cli-v$VERSION"; do
+            if git rev-parse "$tag" >/dev/null 2>&1; then
+              echo "⏭️ Tag $tag already exists, skipping"
+            else
+              git tag "$tag"
+              echo "✅ Created tag $tag"
+            fi
+          done
+          git push origin --tags 2>/dev/null || echo "⏭️ Tags already pushed"
 
       - name: Publish kora-lib to crates.io
-        if: ${{ github.event.inputs.publish-to-crates-io == 'true' }}
+        if: ${{ github.event.inputs.publish-kora-lib == 'true' }}
         run: |
           echo "📦 Publishing kora-lib@${{ steps.version.outputs.version }} to crates.io..."
           cargo publish -p kora-lib --locked
@@ -64,13 +86,13 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_CLI_REGISTRY_TOKEN }}
 
       - name: Wait for kora-lib to be available on crates.io
-        if: ${{ github.event.inputs.publish-to-crates-io == 'true' }}
+        if: ${{ github.event.inputs.publish-kora-lib == 'true' }}
         run: |
           echo "Waiting 30 seconds for crates.io to index kora-lib..."
           sleep 30
 
       - name: Publish kora-cli to crates.io
-        if: ${{ github.event.inputs.publish-to-crates-io == 'true' }}
+        if: ${{ github.event.inputs.publish-kora-cli == 'true' }}
         run: |
           echo "📦 Publishing kora-cli@${{ steps.version.outputs.version }} to crates.io..."
           cargo publish -p kora-cli --locked
@@ -85,6 +107,20 @@ jobs:
           script: |
             const tagName = `v${{ steps.version.outputs.version }}`;
             const releaseName = `Kora v${{ steps.version.outputs.version }}`;
+            const isPrerelease = '${{ steps.prerelease.outputs.is_prerelease }}' === 'true';
+
+            // Check if release already exists
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tagName,
+              });
+              console.log(`⏭️ Release ${tagName} already exists, skipping`);
+              return;
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
 
             await github.rest.repos.createRelease({
               owner: context.repo.owner,
@@ -93,7 +129,7 @@ jobs:
               name: releaseName,
               body: `Release of Kora v${{ steps.version.outputs.version }}\n\n**Crates:**\n- kora-lib v${{ steps.version.outputs.version }}\n- kora-cli v${{ steps.version.outputs.version }}`,
               draft: false,
-              prerelease: false,
+              prerelease: isPrerelease,
             });
 
             console.log(`✅ Created release: ${releaseName}`);
@@ -103,21 +139,17 @@ jobs:
           echo "## 🎉 Kora Crates Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version**: \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Crates**:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`kora-lib\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`kora-cli\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tags**:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`v${{ steps.version.outputs.version }}\` (generic)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`kora-lib-v${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`kora-cli-v${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ github.event.inputs.publish-to-crates-io }}" == "true" ]; then
-            echo "✅ Published to crates.io:" >> $GITHUB_STEP_SUMMARY
-            echo "- https://crates.io/crates/kora-lib/${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-            echo "- https://crates.io/crates/kora-cli/${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**crates.io:**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.publish-kora-lib }}" == "true" ]; then
+            echo "- ✅ kora-lib: https://crates.io/crates/kora-lib/${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           else
-            echo "⏭️ Skipped crates.io publish (dry run)" >> $GITHUB_STEP_SUMMARY
+            echo "- ⏭️ kora-lib: skipped" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ github.event.inputs.publish-kora-cli }}" == "true" ]; then
+            echo "- ✅ kora-cli: https://crates.io/crates/kora-cli/${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ kora-cli: skipped" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.event.inputs.create-github-release }}" == "true" ]; then

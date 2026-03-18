@@ -317,6 +317,19 @@ impl TransactionBuilder {
         self
     }
 
+    /// Add ATA creation idempotent instruction for SPL Token
+    pub fn with_create_ata_idempotent(mut self, mint: &Pubkey, owner: &Pubkey) -> Self {
+        let instruction =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &self.fee_payer.expect("Fee payer must be set before creating ATA"),
+                owner,
+                mint,
+                &spl_token_interface::id(),
+            );
+        self.instructions.push(instruction);
+        self
+    }
+
     /// Add ATA creation instruction for Token2022
     pub fn with_create_token2022_ata(mut self, mint: &Pubkey, owner: &Pubkey) -> Self {
         let instruction =

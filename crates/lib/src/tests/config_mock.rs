@@ -1,9 +1,9 @@
 use crate::{
     config::{
-        AuthConfig, CacheConfig, Config, EnabledMethods, FeePayerBalanceMetricsConfig,
-        FeePayerPolicy, KoraConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
-        SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
-        Token2022InstructionPolicy, UsageLimitConfig, ValidationConfig,
+        AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods,
+        FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, LighthouseConfig, MetricsConfig,
+        NonceInstructionPolicy, SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
+        Token2022Config, Token2022InstructionPolicy, ValidationConfig,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::PriceConfig,
@@ -12,6 +12,7 @@ use crate::{
         MemorySignerConfig, PrivySignerConfig, SelectionStrategy, SignerConfig, SignerPoolConfig,
         SignerPoolSettings, SignerTypeConfig, TurnkeySignerConfig, VaultSignerConfig,
     },
+    usage_limit::{UsageLimitConfig, UsageLimitRuleConfig},
 };
 use solana_sdk::pubkey::Pubkey;
 
@@ -92,6 +93,7 @@ impl ConfigMockBuilder {
                     price: PriceConfig::default(),
                     token_2022: Token2022Config::default(),
                     allow_durable_transactions: false,
+                    max_price_staleness_slots: 0,
                 },
                 kora: KoraConfig {
                     rate_limit: 100,
@@ -106,6 +108,9 @@ impl ConfigMockBuilder {
                         account_ttl: 60,
                     },
                     usage_limit: UsageLimitConfig::default(),
+                    bundle: BundleConfig::default(),
+                    lighthouse: LighthouseConfig::default(),
+                    force_sig_verify: false,
                 },
                 metrics: MetricsConfig::default(),
             },
@@ -211,13 +216,18 @@ impl ConfigMockBuilder {
         self
     }
 
-    pub fn with_usage_limit_max_transactions(mut self, max_transactions: u64) -> Self {
-        self.config.kora.usage_limit.max_transactions = max_transactions;
+    pub fn with_usage_limit_rules(mut self, rules: Vec<UsageLimitRuleConfig>) -> Self {
+        self.config.kora.usage_limit.rules = rules;
         self
     }
 
     pub fn with_disallowed_accounts(mut self, accounts: Vec<String>) -> Self {
         self.config.validation.disallowed_accounts = accounts;
+        self
+    }
+
+    pub fn with_bundle_enabled(mut self, enabled: bool) -> Self {
+        self.config.kora.bundle.enabled = enabled;
         self
     }
 
@@ -270,6 +280,7 @@ impl ValidationConfigBuilder {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
             },
         }
     }
@@ -340,6 +351,9 @@ impl KoraConfigBuilder {
                     account_ttl: 60,
                 },
                 usage_limit: UsageLimitConfig::default(),
+                bundle: BundleConfig::default(),
+                lighthouse: LighthouseConfig::default(),
+                force_sig_verify: false,
             },
         }
     }
@@ -437,7 +451,19 @@ impl Default for AuthConfigBuilder {
 
 impl AuthConfigBuilder {
     pub fn new() -> Self {
-        Self { config: AuthConfig { api_key: None, hmac_secret: None, max_timestamp_age: 10 } }
+        Self {
+            config: AuthConfig {
+                api_key: None,
+                hmac_secret: None,
+                recaptcha_secret: None,
+                recaptcha_score_threshold: crate::constant::DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
+                max_timestamp_age: 10,
+                protected_methods: crate::constant::DEFAULT_PROTECTED_METHODS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            },
+        }
     }
 
     pub fn build(self) -> AuthConfig {
@@ -457,6 +483,22 @@ impl AuthConfigBuilder {
     pub fn with_both_auth(mut self, api_key: String, hmac_secret: String) -> Self {
         self.config.api_key = Some(api_key);
         self.config.hmac_secret = Some(hmac_secret);
+        self
+    }
+
+    pub fn with_recaptcha(
+        mut self,
+        secret: String,
+        score_threshold: Option<f64>,
+        protected_methods: Option<Vec<String>>,
+    ) -> Self {
+        self.config.recaptcha_secret = Some(secret);
+        if let Some(threshold) = score_threshold {
+            self.config.recaptcha_score_threshold = threshold;
+        }
+        if let Some(methods) = protected_methods {
+            self.config.protected_methods = methods;
+        }
         self
     }
 }

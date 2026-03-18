@@ -6,8 +6,21 @@ rate_limit = 100
 [kora.auth]
 # Optional: API key for simple authentication
 # api_key = "your-api-key-here"
+
 # Optional: HMAC secret for signed requests
 # hmac_secret = "your-hmac-secret-here"
+
+# Optional: Maximum age in seconds for HMAC timestamp validation (default: 300)
+# max_timestamp_age = 300
+
+# Optional: reCAPTCHA v3 secret key for bot protection
+# recaptcha_secret = "your-recaptcha-secret"
+
+# Optional: Minimum reCAPTCHA score threshold (0.0 to 1.0, default: 0.5)
+# recaptcha_score_threshold = 0.5
+
+# Optional: RPC methods that require reCAPTCHA verification
+# protected_methods = ["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"]
 
 [kora.cache]
 enabled = false
@@ -84,6 +97,7 @@ allow_thaw_account = true
 [kora.enabled_methods]
 liveness = false
 estimate_transaction_fee = true
+estimate_bundle_fee = true
 get_supported_tokens = true
 sign_transaction = true
 sign_and_send_transaction = true
@@ -91,6 +105,7 @@ transfer_transaction = true
 get_blockhash = true
 get_config = true
 get_payer_signer = true
+get_version = true
 
 [validation.price]
 type = "margin" # free / margin / fixed
@@ -134,3 +149,6 @@ enabled = false
 cache_url = "redis://redis:6379"
 max_transactions = 2
 fallback_if_unavailable = false
+
+[kora.bundle]
+enabled = false

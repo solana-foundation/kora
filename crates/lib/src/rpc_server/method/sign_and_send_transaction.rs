@@ -1,15 +1,15 @@
-use crate::{rpc_server::middleware_utils::default_sig_verify, usage_limit::UsageTracker};
+use crate::{
+    rpc_server::middleware_utils::default_sig_verify,
+    state::{get_config, get_request_signer_with_signer_key},
+    transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
+    usage_limit::UsageTracker,
+    KoraError,
+};
 use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_keychain::SolanaSigner;
 use std::sync::Arc;
 use utoipa::ToSchema;
-
-use crate::{
-    state::get_request_signer_with_signer_key,
-    transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
-    KoraError,
-};
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SignAndSendTransactionRequest {
@@ -17,18 +17,21 @@ pub struct SignAndSendTransactionRequest {
     /// Optional signer signer_key to ensure consistency across related RPC calls
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_key: Option<String>,
-    /// Whether to verify signatures during simulation (defaults to true)
+    /// Whether to verify signatures during simulation (defaults to false)
     #[serde(default = "default_sig_verify")]
     pub sig_verify: bool,
+    /// Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SignAndSendTransactionResponse {
-    /// Transaction signature
-    pub signature: String,
     pub signed_transaction: String,
     /// Public key of the signer used (for client consistency)
     pub signer_pubkey: String,
+    /// Transaction signature
+    pub signature: String,
 }
 
 pub async fn sign_and_send_transaction(
@@ -37,25 +40,37 @@ pub async fn sign_and_send_transaction(
 ) -> Result<SignAndSendTransactionResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
-    // Check usage limit for transaction sender
-    UsageTracker::check_transaction_usage_limit(&transaction).await?;
+    let config = get_config()?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let fee_payer = signer.pubkey();
 
+    let sig_verify = request.sig_verify || config.kora.force_sig_verify;
     let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
         &transaction,
+        config,
         rpc_client,
-        request.sig_verify,
+        sig_verify,
+    )
+    .await?;
+
+    // Check usage limit for transaction sender
+    UsageTracker::check_transaction_usage_limit(
+        config,
+        &mut resolved_transaction,
+        request.user_id.as_deref(),
+        &fee_payer,
+        rpc_client,
     )
     .await?;
 
     let (signature, signed_transaction) =
-        resolved_transaction.sign_and_send_transaction(&signer, rpc_client).await?;
+        resolved_transaction.sign_and_send_transaction(config, &signer, rpc_client).await?;
 
     Ok(SignAndSendTransactionResponse {
-        signature,
         signed_transaction,
         signer_pubkey: signer.pubkey().to_string(),
+        signature,
     })
 }
 
@@ -81,6 +96,7 @@ mod tests {
             transaction: "invalid_base64!@#$".to_string(),
             signer_key: None,
             sig_verify: true,
+            user_id: None,
         };
 
         let result = sign_and_send_transaction(&rpc_client, request).await;
@@ -101,6 +117,7 @@ mod tests {
             transaction: create_mock_encoded_transaction(),
             signer_key: Some("invalid_pubkey".to_string()),
             sig_verify: true,
+            user_id: None,
         };
 
         let result = sign_and_send_transaction(&rpc_client, request).await;

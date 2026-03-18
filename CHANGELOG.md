@@ -1,71 +1,125 @@
-## 2.0.5 - 2026-03-11
+## 2.2.0-beta.5 - 2026-02-03
 
 
-### Bug Fixes
+### Cherry-pick
 
-- update Rust version to 1.88 for time crate compatibility (#364)
-
-- add missing signature field to SignAndSendTransactionResponse (#353)
-
-- handle missing mint in transfer fee calculation and fix program_id checks (#349)
-
-- patch remaining dependabot security vulnerabilities (#348)
-
-- patch 6 dependabot security vulnerabilities (#346)
-
-
-### Documentation
-
-- add CONTRIBUTING.md and SECURITY.md (#340)
-
-## 2.0.4 - 2026-02-03
-
-
-### Bug Fixes
-
-- clear JUPITER_API_KEY env var in jupiter oracle test (#329)
-
-- sign if create ata ix found (cherry-pick from #267) (#327)
+- Hotfix example packages and Jupiter v3 API migration (#326)
 
 
 ### Features
 
-- add Claude skill for automated full release workflow (#330)
+- add Claude skill for automated full release workflow (#328)
 
-
-### Refactoring
-
-- migrate from jupiter lite API to v3 pro API (#321)
-
-## ts-sdk-v0.1.2 - 2026-01-28
+## ts-sdk-v0.2.0-beta.4 - 2026-01-29
 
 
 ### Documentation
 
 - update sdk readme for release (#314)
 
-- update examples to @solana/kit v5.x and add typechecks (#309)
 
-- update readme with latest release and absolute logo path (#307)
+### Features
+
+- add reCAPTCHA support to TypeScript client (#317)
+
+## 2.2.0-beta.4 - 2026-01-29
 
 
 ### Features
 
+- add Lighthouse protections for fee payer protection for sign endpoints (#315)
+
+## ts-sdk-v0.2.0-beta.3 - 2026-01-27
+
+
+### Documentation
+
+- update examples to @solana/kit v5.x and add typechecks (#309)
+
+
+### Features
+
+- add reCAPTCHA support for protected endpoints (#301)
+
 - add kit plugin with typed responses (#311)
 
-## 2.0.3 - 2026-01-21
+- update solana-keychain to v0.2.1 and add KMS and Fireblocks sig… (#308)
+
+## 2.2.0-beta.3 - 2026-01-21
 
 
-### Hotfix
+### Features
 
-- (PRO-747) Improved Durable Nonce handling & security (#303)
+- add transactions_to_sign parameter to bundle endpoints (#302)
+- implement granular usage tracking with rule-based limits (#300)
 
-## 2.0.2 - 2026-01-12
+## 2.2.0-beta.2 - 2026-01-12
+
+
+### Documentation
+
+- add jito bundle example code (#295)
+
+
+### Features
+
+- (PRO-638) Estimate fee for Jito bundle endpoint (#296)
 
 
 ### Hotfix
 
 - (PRO-639) Fix big transaction causing error when using v0 transaction (#297)
+
+## 2.2.0-beta.1 - 2026-01-09
+
+
+### Bug Fixes
+
+
+### Documentation
+
+
+### Features
+
+- (PRO-605) Jito bundle support (#291)
+
+### Refactoring
+
+
+### Bugfix
+
+
+## 2.1.0-beta.0 - 2026-01-05
+
+
+### Features
+
+- add prerelease detection for Rust and TypeScript SDK workflows
+
+## ts-sdk-v0.1.1 - 2026-01-05
+
+
+### Bug Fixes
+
+- resolve race condition in usage tracker (#273)
+
+- add missing signature field to SignAndSendTransactionResponse (#270)
+
+- update readme url to docs (#269)
+
+- sign if create ata ix found (#267)
+
+
+### Documentation
+
+- update x402 guide to x402 v2 spec (#272)
+
+- add deploy sample & cleanup (#265)
+
+
+### Refactoring
+
+- limit access to config's singleton (#263)
 
 ## 2.0.1 - 2025-11-24
 
@@ -183,3 +237,4 @@
 - remove net-ts SDK and related scripts (#145)
 
 - CI workflows and add reusable GitHub Actions
+

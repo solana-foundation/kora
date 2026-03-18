@@ -3,8 +3,18 @@ name: Rust Unit Tests
 on:
   push:
     branches: [main, "release/*"]
+    paths:
+      - "crates/**"
+      - "Cargo.*"
+      - "justfile"
+      - ".github/workflows/rust-unit.yml"
   pull_request:
     branches: [main, "release/*"]
+    paths:
+      - "crates/**"
+      - "Cargo.*"
+      - "justfile"
+      - ".github/workflows/rust-unit.yml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -25,12 +35,14 @@ jobs:
         with:
           components: rustfmt, clippy, llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
-      - name: Check formatting
-        run: make check
-      - name: Run clippy and format
-        run: make fmt
+      - name: Install just
+        uses: extractions/setup-just@v3
+      - name: Run fmt and clippy
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy -- -D warnings
       - name: Build
-        run: make build
+        run: just build
 
       - name: Setup Solana CLI
         uses: ./.github/actions/setup-solana

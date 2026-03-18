@@ -2,6 +2,31 @@
 rate_limit = 100
 
 [kora.auth]
+# Optional: API key for simple authentication
+# api_key = "your-api-key"
+
+# Optional: HMAC secret for signed requests
+# hmac_secret = "your-hmac-secret"
+
+# Optional: Maximum age in seconds for HMAC timestamp validation (default: 300)
+# max_timestamp_age = 300
+
+# Optional: reCAPTCHA v3 secret key for bot protection
+# recaptcha_secret = "your-recaptcha-secret"
+
+# Optional: Minimum reCAPTCHA score threshold (0.0 to 1.0, default: 0.5)
+# recaptcha_score_threshold = 0.5
+
+# Optional: RPC methods that require reCAPTCHA verification
+# protected_methods = ["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"]
+
+# Lighthouse fee payer protection - adds balance assertions to prevent fee payer drainage
+# IMPORTANT: Only works with signTransaction/signBundle flows, NOT signAndSendTransaction/signAndSendBundle
+# When lighthouse modifies a transaction (adding assertion instruction), existing client signatures
+# become invalid. Use signTransaction → client re-signs → client sends pattern instead.
+[kora.lighthouse]
+enabled = false
+fail_if_transaction_size_overflow = true  # Reject transaction if adding assertion exceeds size limit
 
 # Cache configuration for Redis-based caching
 [kora.cache]
@@ -21,6 +46,7 @@ transfer_transaction = true
 get_blockhash = true
 get_config = true
 get_payer_signer = true
+get_version = true
 
 [validation]
 max_allowed_lamports = 1000000
@@ -33,7 +59,8 @@ allowed_programs = [
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",   # Token Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",  # Associated Token Program
     "AddressLookupTab1e1111111111111111111111111",   # Address Lookup Table Program
-    "ComputeBudget111111111111111111111111111111", # Compute Budget Program
+    "ComputeBudget111111111111111111111111111111",   # Compute Budget Program
+    # "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95", # Lighthouse Program (uncomment when lighthouse enabled)
 ]
 allowed_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
@@ -131,3 +158,9 @@ enabled = false
 cache_url = "redis://redis:6379"
 max_transactions = 2
 fallback_if_unavailable = false
+
+[kora.bundle]
+enabled = false
+
+[kora.bundle.jito]
+block_engine_url = "https://mainnet.block-engine.jito.wtf"

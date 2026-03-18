@@ -1,0 +1,11 @@
+{
+  "name": "kora-keychain-sync",
+  "version": "0.1.0",
+  "description": "Sync solana-keychain dependency and generate signer adapters",
+  "mcpServers": {
+    "repomix": {
+      "command": "npx",
+      "args": ["-y", "repomix-mcp"]
+    }
+  }
+}

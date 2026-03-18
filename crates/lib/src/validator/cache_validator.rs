@@ -1,7 +1,7 @@
 use deadpool_redis::Runtime;
 use redis::AsyncCommands;
 
-use crate::config::UsageLimitConfig;
+use crate::config::{CacheConfig, UsageLimitConfig};
 
 pub struct CacheValidator {}
 
@@ -38,24 +38,19 @@ impl CacheValidator {
         // Check if cache_url is provided when enabled
         match &usage_config.cache_url {
             None => {
-                if !usage_config.fallback_if_unavailable {
-                    errors.push(
-                        "Usage limiting enabled without cache_url and fallback disabled - service will fail"
-                            .to_string(),
-                    );
-                } else {
-                    warnings.push(
-                        "Usage limiting enabled without cache_url - fallback mode will disable limits"
-                            .to_string(),
-                    );
-                }
+                // In-memory store will be used - warn about non-persistence
+                warnings.push(
+                    "Usage limiting enabled without cache_url - using in-memory store (not persistent across restarts)"
+                        .to_string(),
+                );
             }
             Some(cache_url) => {
                 // Validate cache_url format
                 if !cache_url.starts_with("redis://") && !cache_url.starts_with("rediss://") {
-                    errors.push(format!(
-                        "Invalid cache_url format: '{cache_url}' - must start with redis:// or rediss://"
-                    ));
+                    errors.push(
+                        "Invalid cache_url format: must start with redis:// or rediss://"
+                            .to_string(),
+                    );
                 }
             }
         }
@@ -71,20 +66,48 @@ impl CacheValidator {
         // Test Redis connection
         if let Some(cache_url) = &usage_config.cache_url {
             if cache_url.starts_with("redis://") || cache_url.starts_with("rediss://") {
-                match Self::test_redis_connection(cache_url).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        if usage_config.fallback_if_unavailable {
-                            warnings.push(format!(
-                                "Usage limit Redis connection failed (fallback enabled): {e}"
-                            ));
-                        } else {
-                            errors.push(format!(
-                                "Usage limit Redis connection failed (fallback disabled): {e}"
-                            ));
-                        }
+                if let Err(e) = Self::test_redis_connection(cache_url).await {
+                    if usage_config.fallback_if_unavailable {
+                        warnings.push(format!(
+                            "Usage limit Redis connection failed (fallback enabled): {e}"
+                        ));
+                    } else {
+                        errors.push(format!(
+                            "Usage limit Redis connection failed (fallback disabled): {e}"
+                        ));
                     }
-                };
+                }
+            }
+        }
+
+        (errors, warnings)
+    }
+
+    /// Validates the RPC cache configuration at startup.
+    /// Checks if Redis URL is present and reachable when cache is enabled.
+    /// Returns (errors, warnings) — errors block startup, warnings are informational.
+    pub async fn validate_rpc_cache(cache_config: &CacheConfig) -> (Vec<String>, Vec<String>) {
+        let mut errors = Vec::new();
+        // warnings reserved for future soft-fail scenarios (e.g. fallback mode)
+        let warnings: Vec<String> = Vec::new();
+
+        if !cache_config.enabled {
+            return (errors, warnings);
+        }
+
+        match &cache_config.url {
+            None => {
+                errors.push("RPC cache is enabled but no Redis URL is configured".to_string());
+            }
+            Some(cache_url) => {
+                if !cache_url.starts_with("redis://") && !cache_url.starts_with("rediss://") {
+                    errors.push(
+                        "Invalid cache_url format: must start with redis:// or rediss://"
+                            .to_string(),
+                    );
+                } else if let Err(_e) = Self::test_redis_connection(cache_url).await {
+                    errors.push("RPC cache Redis connection failed".to_string());
+                }
             }
         }
 
@@ -121,9 +144,9 @@ mod tests {
         let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
         assert!(errors.is_empty());
-        assert!(warnings.iter().any(|w| w.contains(
-            "Usage limiting enabled without cache_url - fallback mode will disable limits"
-        )));
+        assert!(warnings.iter().any(
+            |w| w.contains("Usage limiting enabled without cache_url - using in-memory store")
+        ));
     }
 
     #[tokio::test]
@@ -137,10 +160,12 @@ mod tests {
 
         let (errors, warnings) = CacheValidator::validate(&config.kora.usage_limit).await;
 
-        // Should error when no cache_url and fallback disabled
-        assert!(errors.iter().any(|e| e.contains(
-            "Usage limiting enabled without cache_url and fallback disabled - service will fail"
-        )));
+        // In-memory store works - just warn about non-persistence
+        assert!(errors.is_empty());
+        assert!(warnings.iter().any(
+            |w| w.contains("Usage limiting enabled without cache_url - using in-memory store")
+        ));
+        // Fallback warning still applies
         assert!(warnings.iter().any(|w| w.contains(
             "Usage limit fallback disabled - service will fail if cache becomes unavailable"
         )));
@@ -171,7 +196,9 @@ mod tests {
     async fn test_validate_usage_limit_fallback_disabled_warning() {
         let config = ConfigMockBuilder::new()
             .with_usage_limit_enabled(true)
-            .with_usage_limit_cache_url(Some("redis://localhost:6379".to_string()))
+            // We use port 54321 to ensure connection failure, as tests assert that the validator
+            // catches connection errors. Using default 6379 might succeed if a local Redis is running.
+            .with_usage_limit_cache_url(Some("redis://localhost:54321".to_string()))
             .with_usage_limit_fallback(false)
             .build();
 
@@ -191,7 +218,8 @@ mod tests {
     async fn test_validate_usage_limit_valid_redis_url() {
         let config = ConfigMockBuilder::new()
             .with_usage_limit_enabled(true)
-            .with_usage_limit_cache_url(Some("redis://localhost:6379".to_string()))
+            // Ensure connection failure by using a non-standard/unused port
+            .with_usage_limit_cache_url(Some("redis://localhost:54321".to_string()))
             .with_usage_limit_fallback(true)
             .build();
 
@@ -202,5 +230,69 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.contains("Usage limit Redis connection failed (fallback enabled)")));
+    }
+
+    // Cache disabled — should skip all validation and return no errors
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_rpc_cache_disabled() {
+        let config = ConfigMockBuilder::new().build();
+        let cache_config = CacheConfig {
+            enabled: false,
+            url: Some("redis://localhost:6379".to_string()),
+            ..config.kora.cache
+        };
+
+        let (errors, warnings) = CacheValidator::validate_rpc_cache(&cache_config).await;
+
+        assert!(errors.is_empty());
+        assert!(warnings.is_empty());
+    }
+
+    // Cache enabled but Redis URL missing — should return a config error
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_rpc_cache_enabled_no_url() {
+        let config = ConfigMockBuilder::new().build();
+        let cache_config = CacheConfig { enabled: true, url: None, ..config.kora.cache };
+
+        let (errors, _) = CacheValidator::validate_rpc_cache(&cache_config).await;
+
+        assert!(!errors.is_empty());
+        assert!(errors[0].contains("no Redis URL"));
+    }
+
+    // Cache enabled but URL is not redis:// or rediss:// — should return format error
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_rpc_cache_invalid_url_format() {
+        let config = ConfigMockBuilder::new().build();
+        let cache_config = CacheConfig {
+            enabled: true,
+            url: Some("http://localhost:6379".to_string()),
+            ..config.kora.cache
+        };
+
+        let (errors, _) = CacheValidator::validate_rpc_cache(&cache_config).await;
+
+        assert!(!errors.is_empty());
+        assert!(errors[0].contains("must start with redis://"));
+    }
+
+    // Cache enabled, valid URL format but Redis unreachable — should return connection error
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_rpc_cache_connection_failed() {
+        let config = ConfigMockBuilder::new().build();
+        let cache_config = CacheConfig {
+            enabled: true,
+            url: Some("redis://localhost:54321".to_string()),
+            ..config.kora.cache
+        };
+
+        let (errors, _) = CacheValidator::validate_rpc_cache(&cache_config).await;
+
+        assert!(!errors.is_empty());
+        assert!(errors[0].contains("RPC cache Redis connection failed"));
     }
 }

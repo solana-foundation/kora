@@ -12,11 +12,11 @@ import {
 } from '@solana-program/compute-budget';
 
 import { KoraClient } from '../client.js';
+import { koraPlugin } from '../plugin.js';
 import type { KoraKitClientConfig } from '../types/index.js';
 import { createKoraTransactionPlanExecutor } from './executor.js';
 import { buildPlaceholderPaymentInstruction, koraPaymentAddress } from './payment.js';
 import { buildComputeBudgetInstructions, createKoraTransactionPlanner } from './planner.js';
-import { koraPlugin } from './plugin.js';
 
 /** The type returned by {@link createKitKoraClient}. */
 export type KoraKitClient = Awaited<ReturnType<typeof createKitKoraClient>>;
@@ -44,9 +44,14 @@ export type KoraKitClient = Awaited<ReturnType<typeof createKitKoraClient>>;
  * const result = await client.sendTransaction([myInstruction]);
  * ```
  */
+// TODO: Bundle support — the plan/execute pipeline currently handles single transactions only.
+// For Jito bundles, users must manually encode transactions and call `client.kora.signAndSendBundle()`.
+// A future `createKitKoraBundleClient` (or a bundle-aware executor plugin) could extend this to
+// plan multiple transaction messages and submit them as a single bundle.
 export async function createKitKoraClient(config: KoraKitClientConfig) {
     const koraClient = new KoraClient({
         apiKey: config.apiKey,
+        getRecaptchaToken: config.getRecaptchaToken,
         hmacSecret: config.hmacSecret,
         rpcUrl: config.endpoint,
     });
@@ -94,7 +99,12 @@ export async function createKitKoraClient(config: KoraKitClientConfig) {
 
     return createEmptyClient()
         .use(rpc(config.rpcUrl))
-        .use(koraPlugin({ apiKey: config.apiKey, endpoint: config.endpoint, hmacSecret: config.hmacSecret }))
+        .use(
+            koraPlugin({
+                endpoint: config.endpoint,
+                koraClient,
+            }),
+        )
         .use(payer(payerSigner))
         .use(koraPaymentAddress(paymentAddr))
         .use(transactionPlannerPlugin(koraTransactionPlanner))

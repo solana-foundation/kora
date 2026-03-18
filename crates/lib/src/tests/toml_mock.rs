@@ -6,6 +6,11 @@ use crate::{
     error::KoraError,
 };
 
+/// Rule config for TOML generation
+/// For transaction rules: (None, None, max, window_seconds)
+/// For instruction rules: (Some(program), Some(instruction), max, window_seconds)
+type UsageLimitRuleTuple<'a> = (Option<&'a str>, Option<&'a str>, u64, Option<u64>);
+
 /// TOML-specific configuration builder for testing TOML parsing and serialization
 ///
 /// This builder is specifically designed for testing TOML file generation and parsing.
@@ -168,7 +173,6 @@ impl ConfigBuilder {
         mut self,
         enabled: bool,
         cache_url: Option<&str>,
-        max_transactions: u64,
         fallback_if_unavailable: bool,
     ) -> Self {
         let cache_url_line = match cache_url {
@@ -177,8 +181,50 @@ impl ConfigBuilder {
         };
 
         self.kora.usage_limit_config = Some(format!(
-            "[kora.usage_limit]\nenabled = {enabled}\n{cache_url_line}max_transactions = {max_transactions}\nfallback_if_unavailable = {fallback_if_unavailable}\n"
+            "[kora.usage_limit]\nenabled = {enabled}\n{cache_url_line}fallback_if_unavailable = {fallback_if_unavailable}\n"
         ));
+        self
+    }
+
+    /// Add usage limit rules
+    /// Rules format: Vec<(program, instruction, max, window_seconds)>
+    /// - program/instruction: None for transaction-level, Some for instruction-level
+    /// - window_seconds: None = lifetime, Some(n) = time-windowed
+    pub fn with_usage_limit_rules(mut self, rules: Vec<UsageLimitRuleTuple<'static>>) -> Self {
+        let rules_toml = rules
+            .iter()
+            .map(|(program, instruction, max, window_seconds)| {
+                match (program, instruction) {
+                    (None, None) => {
+                        // Transaction rule
+                        let window_part = window_seconds
+                            .map(|w| format!(", window_seconds = {w}"))
+                            .unwrap_or_default();
+                        format!("{{ type = \"transaction\", max = {max}{window_part} }}")
+                    }
+                    (Some(p), Some(i)) => {
+                        // Instruction rule
+                        let window_part = window_seconds
+                            .map(|w| format!(", window_seconds = {w}"))
+                            .unwrap_or_default();
+                        format!(
+                            "{{ type = \"instruction\", program = \"{p}\", instruction = \"{i}\", max = {max}{window_part} }}"
+                        )
+                    }
+                    _ => panic!("Invalid rule: program and instruction must both be Some or both be None"),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        // Append rules to existing config or create new one
+        if let Some(ref mut config) = self.kora.usage_limit_config {
+            config.push_str(&format!("rules = [{rules_toml}]\n"));
+        } else {
+            self.kora.usage_limit_config = Some(format!(
+                "[kora.usage_limit]\nenabled = true\nfallback_if_unavailable = true\nrules = [{rules_toml}]\n"
+            ));
+        }
         self
     }
 

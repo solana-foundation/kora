@@ -1165,21 +1165,20 @@
       "SignAndSendTransactionResponse": {
         "type": "object",
         "required": [
-          "signature",
           "signed_transaction",
-          "signer_pubkey"
+          "signer_pubkey",
+          "signature"
         ],
         "properties": {
-          "signature": {
-            "type": "string",
-            "description": "Transaction signature"
-          },
           "signed_transaction": {
             "type": "string"
           },
           "signer_pubkey": {
             "type": "string",
             "description": "Public key of the signer used (for client consistency)"
+          },
+          "signature": {
+            "type": "string"
           }
         }
       },

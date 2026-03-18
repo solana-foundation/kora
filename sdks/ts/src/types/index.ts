@@ -1,24 +1,8 @@
-import { Instruction, TransactionSigner } from '@solana/kit';
+import { Instruction, type MicroLamports, type TransactionSigner } from '@solana/kit';
 
 /**
  * Request Types
  */
-
-/**
- * Parameters for creating a token transfer transaction.
- */
-export interface TransferTransactionRequest {
-    /** Amount to transfer in the token's smallest unit (e.g., lamports for SOL) */
-    amount: number;
-    /** Public key of the destination wallet (not token account) */
-    destination: string;
-    /** Optional signer address for the transaction */
-    signer_key?: string;
-    /** Public key of the source wallet (not token account) */
-    source: string;
-    /** Mint address of the token to transfer */
-    token: string;
-}
 
 /**
  * Parameters for signing a transaction.
@@ -30,6 +14,8 @@ export interface SignTransactionRequest {
     signer_key?: string;
     /** Base64-encoded transaction to sign */
     transaction: string;
+    /** Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled) */
+    user_id?: string;
 }
 
 /**
@@ -42,6 +28,40 @@ export interface SignAndSendTransactionRequest {
     signer_key?: string;
     /** Base64-encoded transaction to sign and send */
     transaction: string;
+    /** Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled) */
+    user_id?: string;
+}
+
+/**
+ * Parameters for signing a bundle of transactions.
+ */
+export interface SignBundleRequest {
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+    /** Optional indices of transactions to sign (defaults to all if not specified) */
+    sign_only_indices?: number[];
+    /** Optional signer address for the transactions */
+    signer_key?: string;
+    /** Array of base64-encoded transactions to sign */
+    transactions: string[];
+    /** Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled) */
+    user_id?: string;
+}
+
+/**
+ * Parameters for signing and sending a bundle of transactions via Jito.
+ */
+export interface SignAndSendBundleRequest {
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+    /** Optional indices of transactions to sign (defaults to all if not specified) */
+    sign_only_indices?: number[];
+    /** Optional signer address for the transactions */
+    signer_key?: string;
+    /** Array of base64-encoded transactions to sign and send */
+    transactions: string[];
+    /** Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled) */
+    user_id?: string;
 }
 
 /**
@@ -49,13 +69,29 @@ export interface SignAndSendTransactionRequest {
  */
 export interface EstimateTransactionFeeRequest {
     /** Mint address of the token to calculate fees in */
-    fee_token: string;
+    fee_token?: string;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
     /** Optional signer address for the transaction */
     signer_key?: string;
     /** Base64-encoded transaction to estimate fees for */
     transaction: string;
+}
+
+/**
+ * Parameters for estimating bundle fees.
+ */
+export interface EstimateBundleFeeRequest {
+    /** Mint address of the token to calculate fees in */
+    fee_token?: string;
+    /** Optional signer verification during transaction simulation (defaults to false) */
+    sig_verify?: boolean;
+    /** Optional indices of transactions to estimate fees for (defaults to all if not specified) */
+    sign_only_indices?: number[];
+    /** Optional signer address for the transactions */
+    signer_key?: string;
+    /** Array of base64-encoded transactions to estimate fees for */
+    transactions: string[];
 }
 
 /**
@@ -81,22 +117,6 @@ export interface GetPaymentInstructionRequest {
  */
 
 /**
- * Response from creating a transfer transaction.
- */
-export interface TransferTransactionResponse {
-    /** Recent blockhash used in the transaction */
-    blockhash: string;
-    /** Parsed instructions from the transaction message */
-    instructions: Instruction[];
-    /** Base64-encoded message */
-    message: string;
-    /** Public key of the signer used to send the transaction */
-    signer_pubkey: string;
-    /** Base64-encoded signed transaction */
-    transaction: string;
-}
-
-/**
  * Response from signing a transaction.
  */
 export interface SignTransactionResponse {
@@ -119,11 +139,41 @@ export interface SignAndSendTransactionResponse {
 }
 
 /**
+ * Response from signing a bundle of transactions.
+ */
+export interface SignBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: string[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: string;
+}
+
+/**
+ * Response from signing and sending a bundle of transactions via Jito.
+ */
+export interface SignAndSendBundleResponse {
+    /** UUID of the submitted Jito bundle */
+    bundle_uuid: string;
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: string[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: string;
+}
+
+/**
  * Response containing the latest blockhash.
  */
 export interface GetBlockhashResponse {
     /** Base58-encoded blockhash */
     blockhash: string;
+}
+
+/**
+ * Response containing the server version.
+ */
+export interface GetVersionResponse {
+    /** Server version string */
+    version: string;
 }
 
 /**
@@ -143,7 +193,23 @@ export interface EstimateTransactionFeeResponse {
     /**
      * Transaction fee in the requested token (in decimals value of the token, e.g. 10^6 for USDC)
      */
-    fee_in_token: number;
+    fee_in_token?: number;
+    /** Public key of the payment destination */
+    payment_address: string;
+    /** Public key of the signer used to estimate the fee */
+    signer_pubkey: string;
+}
+
+/**
+ * Response containing estimated bundle fees.
+ */
+export interface EstimateBundleFeeResponse {
+    /** Total bundle fee in lamports across all transactions */
+    fee_in_lamports: number;
+    /**
+     * Total bundle fee in the requested token (in decimals value of the token, e.g. 10^6 for USDC)
+     */
+    fee_in_token?: number;
     /** Public key of the payment destination */
     payment_address: string;
     /** Public key of the signer used to estimate the fee */
@@ -174,8 +240,6 @@ export interface GetPaymentInstructionResponse {
     payment_instruction: Instruction;
     /** Mint address of the token used for payment */
     payment_token: string;
-    /** NoopSigner for the source wallet authority — reuse this in your transaction to avoid duplicate signer conflicts */
-    signer: TransactionSigner;
     /** Public key of the payer signer */
     signer_address: string;
 }
@@ -240,18 +304,28 @@ export type PriceConfig = PriceModel;
  * Enabled status for methods for the Kora server.
  */
 export interface EnabledMethods {
+    /** Whether the estimate_bundle_fee method is enabled (requires bundle.enabled = true) */
+    estimate_bundle_fee: boolean;
     /** Whether the estimate_transaction_fee method is enabled */
     estimate_transaction_fee: boolean;
     /** Whether the get_blockhash method is enabled */
     get_blockhash: boolean;
     /** Whether the get_config method is enabled */
     get_config: boolean;
+    /** Whether the get_payer_signer method is enabled */
+    get_payer_signer: boolean;
     /** Whether the get_supported_tokens method is enabled */
     get_supported_tokens: boolean;
+    /** Whether the get_version method is enabled */
+    get_version: boolean;
     /** Whether the liveness method is enabled */
     liveness: boolean;
+    /** Whether the sign_and_send_bundle method is enabled (requires bundle.enabled = true) */
+    sign_and_send_bundle: boolean;
     /** Whether the sign_and_send_transaction method is enabled */
     sign_and_send_transaction: boolean;
+    /** Whether the sign_bundle method is enabled (requires bundle.enabled = true) */
+    sign_bundle: boolean;
     /** Whether the sign_transaction method is enabled */
     sign_transaction: boolean;
     /** Whether the transfer_transaction method is enabled */
@@ -312,6 +386,12 @@ export interface SplTokenInstructionPolicy {
     allow_close_account: boolean;
     /** Allow fee payer to freeze SPL token accounts */
     allow_freeze_account: boolean;
+    /** Allow fee payer to initialize SPL token accounts */
+    allow_initialize_account: boolean;
+    /** Allow fee payer to initialize SPL token mints */
+    allow_initialize_mint: boolean;
+    /** Allow fee payer to initialize SPL multisig accounts */
+    allow_initialize_multisig: boolean;
     /** Allow fee payer to mint SPL tokens */
     allow_mint_to: boolean;
     /** Allow fee payer to revoke SPL token delegates */
@@ -336,6 +416,12 @@ export interface Token2022InstructionPolicy {
     allow_close_account: boolean;
     /** Allow fee payer to freeze Token2022 accounts */
     allow_freeze_account: boolean;
+    /** Allow fee payer to initialize Token2022 accounts */
+    allow_initialize_account: boolean;
+    /** Allow fee payer to initialize Token2022 mints */
+    allow_initialize_mint: boolean;
+    /** Allow fee payer to initialize Token2022 multisig accounts */
+    allow_initialize_multisig: boolean;
     /** Allow fee payer to mint Token2022 tokens */
     allow_mint_to: boolean;
     /** Allow fee payer to revoke Token2022 delegates */
@@ -396,6 +482,8 @@ export interface AuthenticationHeaders {
     'x-api-key'?: string;
     /** HMAC SHA256 signature of timestamp + body */
     'x-hmac-signature'?: string;
+    /** reCAPTCHA v3 token for bot protection */
+    'x-recaptcha-token'?: string;
     /** Unix timestamp for HMAC authentication */
     'x-timestamp'?: string;
 }
@@ -406,6 +494,13 @@ export interface AuthenticationHeaders {
 export interface KoraClientOptions {
     /** Optional API key for authentication */
     apiKey?: string;
+    /**
+     * Optional callback to get a reCAPTCHA v3 token for bot protection.
+     * Called for every request when provided; server determines which methods require it.
+     * @example Browser: `() => grecaptcha.execute('site-key', { action: 'sign' })`
+     * @example Testing: `() => 'test-token'`
+     */
+    getRecaptchaToken?: () => Promise<string> | string;
     /** Optional HMAC secret for signature-based authentication */
     hmacSecret?: string;
     /** URL of the Kora RPC server */
@@ -421,9 +516,9 @@ import type {
     Base64EncodedWireTransaction,
     Blockhash,
     Instruction as KitInstruction,
-    MicroLamports,
     Signature,
 } from '@solana/kit';
+import { KoraClient } from '../client.js';
 
 /** Configuration options for the Kora Kit plugin */
 export interface KoraPluginConfig {
@@ -431,8 +526,17 @@ export interface KoraPluginConfig {
     apiKey?: string;
     /** Kora RPC endpoint URL */
     endpoint: string;
+    /**
+     * Optional callback to get a reCAPTCHA v3 token for bot protection.
+     * Called for every request when provided; server determines which methods require it.
+     * @example Browser: `() => grecaptcha.execute('site-key', { action: 'sign' })`
+     * @example Testing: `() => 'test-token'`
+     */
+    getRecaptchaToken?: () => Promise<string> | string;
     /** Optional HMAC secret for signature-based authentication */
     hmacSecret?: string;
+    /** Existing Kora Client for reusing existing instance */
+    koraClient?: KoraClient;
 }
 
 /** Plugin response for getPayerSigner with Kit Address types */
@@ -460,7 +564,7 @@ export interface KitEstimateFeeResponse {
     /** Transaction fee in lamports */
     fee_in_lamports: number;
     /** Transaction fee in the requested token */
-    fee_in_token: number;
+    fee_in_token?: number;
     /** Public key of the payment destination */
     payment_address: Address;
     /** Public key of the signer used to estimate the fee */
@@ -483,20 +587,6 @@ export interface KitSignAndSendTransactionResponse {
     signed_transaction: Base64EncodedWireTransaction;
     /** Public key of the signer used to send the transaction */
     signer_pubkey: Address;
-}
-
-/** Plugin response for transferTransaction with Kit types */
-export interface KitTransferTransactionResponse {
-    /** Recent blockhash used in the transaction */
-    blockhash: Blockhash;
-    /** Parsed instructions from the transaction message */
-    instructions: KitInstruction[];
-    /** Base64-encoded message */
-    message: string;
-    /** Public key of the signer used to send the transaction */
-    signer_pubkey: Address;
-    /** Base64-encoded signed transaction */
-    transaction: Base64EncodedWireTransaction;
 }
 
 /** Plugin response for getPaymentInstruction with Kit types */
@@ -525,6 +615,36 @@ export interface KitConfigResponse {
     validation_config: KitValidationConfig;
 }
 
+/** Plugin response for estimateBundleFee with Kit types */
+export interface KitEstimateBundleFeeResponse {
+    /** Total bundle fee in lamports across all transactions */
+    fee_in_lamports: number;
+    /** Total bundle fee in the requested token */
+    fee_in_token?: number;
+    /** Public key of the payment destination */
+    payment_address: Address;
+    /** Public key of the signer used to estimate the fee */
+    signer_pubkey: Address;
+}
+
+/** Plugin response for signBundle with Kit types */
+export interface KitSignBundleResponse {
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: Base64EncodedWireTransaction[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: Address;
+}
+
+/** Plugin response for signAndSendBundle with Kit types */
+export interface KitSignAndSendBundleResponse {
+    /** UUID of the submitted Jito bundle */
+    bundle_uuid: string;
+    /** Array of base64-encoded signed transactions */
+    signed_transactions: Base64EncodedWireTransaction[];
+    /** Public key of the signer used to sign the transactions */
+    signer_pubkey: Address;
+}
+
 /** Plugin validation config with Kit Address types */
 export interface KitValidationConfig {
     /** List of allowed Solana program IDs */
@@ -550,41 +670,20 @@ export interface KitValidationConfig {
 }
 
 /**
- * Configuration for creating a Kora Kit client.
- *
- * @example
- * ```ts
- * const client = await createKitKoraClient({
- *   endpoint: 'https://kora.example.com',
- *   rpcUrl: 'https://api.mainnet-beta.solana.com',
- *   feeToken: address('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
- *   feePayerWallet: myWalletSigner, // TransactionSigner that authorizes SPL fee payment
- * });
- * ```
+ * Kit Client Types
  */
+
+/** Configuration for {@link createKitKoraClient}. */
 export interface KoraKitClientConfig {
-    /** Optional API key for authentication */
     readonly apiKey?: string;
-    /** Optional compute unit limit (uses provisory/simulation if not set) */
     readonly computeUnitLimit?: number;
-    /** Optional priority fee in micro-lamports */
     readonly computeUnitPrice?: MicroLamports;
-    /** Kora RPC endpoint URL */
     readonly endpoint: string;
-    /** Wallet signer paying SPL fees (must be a real signer so the payment transfer is authorized) */
     readonly feePayerWallet: TransactionSigner;
-    /** SPL mint address for fee payment */
     readonly feeToken: Address;
-    /** Optional HMAC secret for signature-based authentication */
+    readonly getRecaptchaToken?: () => Promise<string> | string;
     readonly hmacSecret?: string;
-    /**
-     * Solana RPC URL used for compute unit estimation and program plugin compatibility.
-     * The client simulates transactions against this RPC node to determine optimal
-     * compute unit limits (resulting in lower fees), and exposes it as `ClientWithRpc`
-     * so Kit program plugins like `tokenProgram()` work out of the box.
-     * This must be a direct Solana RPC URL (not the Kora endpoint).
-     */
     readonly rpcUrl: string;
-    /** Token program ID for fee payment (defaults to TOKEN_PROGRAM_ADDRESS; use TOKEN_2022_PROGRAM_ADDRESS for Token-2022) */
     readonly tokenProgramId?: Address;
+    readonly userId?: string;
 }

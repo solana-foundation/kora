@@ -6,7 +6,6 @@ const config: Config = {
   testEnvironment: 'node',
   testMatch: ['**/*.test.ts'],
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
-  setupFiles: ['<rootDir>/test/setup.ts'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },

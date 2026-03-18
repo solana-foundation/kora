@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## TL;DR - Development Workflow
 
 ### Branches & Commits
-- **Main branch**: `main` (protected, requires PRs)
-- **Release branch**: `release/{id}` (requires PRs)
+- **Main branch**: `main` (protected, audited code only)
+- **Release branch**: `release/X.Y.Z` (pre-audit features for version X.Y.Z)
+- **Hotfix branch**: `hotfix/*` (hotfixes from main)
 - **Commit format**: Use conventional commits for automatic releases
   - `feat:` → minor version bump (1.0.3 → 1.1.0)
   - `fix:` → patch version bump (1.0.3 → 1.0.4)
@@ -37,9 +38,11 @@ Kora supports two authentication methods that can be used individually or togeth
 1. **API Key Authentication**: Simple header-based auth using `x-api-key` header
 2. **HMAC Authentication**: Request signature auth using `x-timestamp` and `x-hmac-signature` headers
 
+Optional bot protection via **reCAPTCHA v3** can be integrated into either auth method.
+
 **Testing:**
 ```bash
-make integration-test           # Run all integration tests
+just integration-test           # Run all integration tests
 ```
 
 ## Common Development Commands
@@ -48,33 +51,30 @@ make integration-test           # Run all integration tests
 
 ```bash
 # Build all workspace packages
-make build
+just build
 
 # Build specific packages
-make build-lib    # Build the lib crate
-make build-cli    # Build the CLI tool
+just build-lib    # Build the lib crate
+just build-cli    # Build the CLI tool
 
 # Install all binaries
-make install
+just install
 
-# Check formatting
-make check
-
-# Format code and run linter with auto-fix
-make fmt
+# Run formatter (formats and checks)
+just fmt
 ```
 
 ### Testing
 
 ```bash
 # Run unit tests
-make unit-test
+just unit-test
 
 # Run integration tests (automatically handles environment setup)
-make integration-test
+just integration-test
 
 # Run all tests
-cargo test --workspace
+just test
 ```
 
 #### Integration Test Environment Setup
@@ -83,7 +83,7 @@ Integration tests are fully automated using a Rust test runner binary that handl
 
 **Quick Start:**
 ```bash
-make integration-test
+just integration-test
 ```
 
 **What happens automatically:**
@@ -146,21 +146,21 @@ tests/
 **Test Runner Commands:**
 ```bash
 # Run all integration tests (default)
-make integration-test
+just integration-test
 
 # Run with verbose output
-make integration-test-verbose
+just integration-test --verbose
 
 # Force refresh test accounts (ignore cached)
-make integration-test-fresh
+just integration-test --force-refresh
 
-# Run specific test
-cargo run -p tests --bin test_runner -- --filter regular
-cargo run -p tests --bin test_runner -- --filter auth
-cargo run -p tests --bin test_runner -- --filter payment_address
-cargo run -p tests --bin test_runner -- --filter multi_signer
-cargo run -p tests --bin test_runner -- --filter typescript_basic
-cargo run -p tests --bin test_runner -- --filter typescript_auth
+# Run specific test phase
+just integration-test --filter regular
+just integration-test --filter auth
+just integration-test --filter payment_address
+just integration-test --filter multi_signer
+just integration-test --filter typescript_basic
+just integration-test --filter typescript_auth
 ```
 
 #### Customize Test Environment
@@ -173,7 +173,7 @@ Make sure to update the appropriate config file (kora.toml for production, tests
 
 ```bash
 # Basic server run (production config)
-make run
+just run
 
 # Run with test configuration (for integration testing)
 cargo run -p kora --bin kora -- --config tests/common/fixtures/kora-test.toml --rpc-url http://127.0.0.1:8899 rpc --signers-config tests/common/fixtures/signers.toml
@@ -229,7 +229,7 @@ cargo install git-cliff     # For CHANGELOG generation
 
 1. **Prepare Release (on feature branch)**
    ```bash
-   make release
+   just release
    ```
    This interactive command will:
    - Check working directory is clean
@@ -686,6 +686,44 @@ Kora supports two optional authentication methods:
 
 Both skip `/liveness` endpoint and can be used simultaneously. Implementation uses async tower middleware for non-blocking concurrent requests.
 
+## Bot Protection
+
+**reCAPTCHA v3** (`recaptcha_secret` in kora.toml): Protects sensitive endpoints from automated abuse using the `x-recaptcha-token` header.
+
+reCAPTCHA is integrated into the auth layer flow - it runs *after* authentication succeeds for protected methods.
+
+**Configuration:**
+- `recaptcha_secret`: Your reCAPTCHA v3 secret key
+- `recaptcha_score_threshold`: Minimum score (0.0-1.0, default: 0.5)
+- `protected_methods`: Methods requiring verification (default: `["signTransaction", "signAndSendTransaction", "signBundle", "signAndSendBundle"]`)
+
+## Lighthouse Fee Payer Protection
+
+**Lighthouse** adds balance assertion instructions to transactions, protecting the fee payer from drainage attacks by verifying the fee payer's balance doesn't drop below expected levels.
+
+**Configuration** (`[kora.lighthouse]` in kora.toml):
+- `enabled`: Enable/disable lighthouse protection (default: false)
+- `fail_if_transaction_size_overflow`: Reject transaction if adding assertion exceeds size limit (default: true)
+
+**IMPORTANT - Signature Compatibility:**
+Lighthouse **only works with `signTransaction` and `signBundle`** methods. It does NOT work with `signAndSendTransaction` or `signAndSendBundle`.
+
+**Why?** When lighthouse adds an assertion instruction to a transaction, it modifies the transaction message. This invalidates any pre-existing client signatures. The `signAndSend*` flows fail because:
+1. Client signs transaction
+2. Kora adds lighthouse assertion (modifies message)
+3. Client's signature is now invalid
+4. Network rejects with "signature verification failure"
+
+**Recommended pattern for lighthouse:**
+```
+signTransaction → client receives modified tx → client re-signs → client sends to network
+```
+
+**When enabling lighthouse, also add to `allowed_programs`:**
+```toml
+"L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95",  # Lighthouse Program
+```
+
 ### Testing Guidelines
 
 - **Test Organization**: Mirror source code structure in test file organization
@@ -729,7 +767,7 @@ The project uses a Rust-based test runner for integration testing:
 ### Behavioral Instructions
 
 - Always run linting and formatting commands before committing
-- Use the Makefile targets for consistent builds across the workspace
+- Use `just` recipes for consistent builds across the workspace
 - Test both unit and integration levels when making changes
 - Verify TypeScript SDK compatibility when changing RPC interfaces
 
@@ -743,7 +781,7 @@ The project uses a Rust-based test runner for integration testing:
 ## Key Integration Test Achievements
 
 **✅ Complete Sequential Test Runner**
-- Makefile-based orchestration with 3 automated phases
+- `just`-based orchestration with automated phases
 - Proper server lifecycle management (start/stop/restart)
 - Config isolation between test suites
 - Zero manual intervention required

@@ -3,8 +3,24 @@ name: Rust Integration Tests
 on:
   push:
     branches: [main, "release/*"]
+    paths:
+      - "crates/**"
+      - "tests/**"
+      - "Cargo.*"
+      - "justfile"
+      - ".github/workflows/rust.yml"
+      - ".github/workflows/build-rust.yml"
+      - ".github/actions/run-test-runner/**"
   pull_request:
     branches: [main, "release/*"]
+    paths:
+      - "crates/**"
+      - "tests/**"
+      - "Cargo.*"
+      - "justfile"
+      - ".github/workflows/rust.yml"
+      - ".github/workflows/build-rust.yml"
+      - ".github/actions/run-test-runner/**"
 
 env:
   CARGO_TERM_COLOR: always
