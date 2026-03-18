@@ -5,9 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## TL;DR - Development Workflow
 
 ### Branches & Commits
-- **Main branch**: `main` (protected, audited code only)
-- **Release branch**: `release/X.Y.Z` (pre-audit features for version X.Y.Z)
-- **Hotfix branch**: `hotfix/*` (hotfixes from main)
+- **Main branch**: `main` (protected integration branch; may include audited and unaudited commits)
+- **Release branch**: `release/X.Y.Z` (deprecated for long-lived development; use only for short-lived stabilization if needed)
+- **Hotfix branch**: `hotfix/*` (urgent fixes, branch from the currently deployed stable tag)
 - **Commit format**: Use conventional commits for automatic releases
   - `feat:` → minor version bump (1.0.3 → 1.1.0)
   - `fix:` → patch version bump (1.0.3 → 1.0.4)
@@ -285,18 +285,18 @@ Kora uses synchronized versioning where all workspace crates share the same vers
 A Claude skill is available at `.claude/skills/release.md` that automates the complete release process for both Rust and TypeScript SDK.
 
 **What it does:**
-1. Detects release type (beta on `release/*` branch, stable on `main`)
+1. Uses `main` as the release base branch for both stable and prerelease versions
 2. Detects build system (justfile or Makefile)
 3. Runs Rust release (updates versions, generates CHANGELOG, stages changes)
 4. Stashes Rust changes
 5. Runs TypeScript SDK release (updates package.json, stages changes)
 6. Unstashes Rust changes to combine both
 7. Commits everything together
-8. Creates PR against the appropriate base branch
+8. Creates PR against `main`
 
 **PR targeting:**
-- On `release/*` branch → PR targets that release branch (beta)
-- On `main` → PR targets `main` (stable)
+- All release PRs target `main`
+- Use semver prerelease suffixes (for example `2.3.0-beta.1`) for prerelease builds
 
 **Usage:** Ask Claude to "run the full release" or "prepare a release for version X.Y.Z"
 
