@@ -114,6 +114,9 @@ cache_url = "redis://redis:6379"
 fallback_if_unavailable = false
 rules = []
 
+[kora.plugins]
+enabled = []
+
 [kora.bundle]
 enabled = true
 

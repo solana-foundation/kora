@@ -159,6 +159,11 @@ cache_url = "redis://redis:6379"
 max_transactions = 2
 fallback_if_unavailable = false
 
+[kora.plugins]
+# Enabled transaction plugins for sign/signAndSend flows.
+# Available values: "gas_swap"
+enabled = []
+
 [kora.bundle]
 enabled = false
 

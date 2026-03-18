@@ -477,6 +477,19 @@ impl Default for CacheConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum TransactionPluginType {
+    GasSwap,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default)]
+pub struct PluginsConfig {
+    /// List of enabled transaction plugins, executed for sign/signAndSend flows
+    pub enabled: Vec<TransactionPluginType>,
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct KoraConfig {
@@ -488,6 +501,8 @@ pub struct KoraConfig {
     pub payment_address: Option<String>,
     pub cache: CacheConfig,
     pub usage_limit: UsageLimitConfig,
+    /// Transaction plugins executed during sign/signAndSend flows
+    pub plugins: PluginsConfig,
     /// Bundle support configuration
     pub bundle: BundleConfig,
     /// Lighthouse configuration for fee payer balance protection
@@ -507,6 +522,7 @@ impl Default for KoraConfig {
             payment_address: None,
             cache: CacheConfig::default(),
             usage_limit: UsageLimitConfig::default(),
+            plugins: PluginsConfig::default(),
             bundle: BundleConfig::default(),
             lighthouse: LighthouseConfig::default(),
             force_sig_verify: false,

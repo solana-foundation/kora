@@ -298,6 +298,13 @@ impl ConfigValidator {
             );
         }
 
+        let mut unique_plugins = std::collections::HashSet::new();
+        for plugin in &config.kora.plugins.enabled {
+            if !unique_plugins.insert(plugin.clone()) {
+                warnings.push(format!("Duplicate transaction plugin configured: {:?}", plugin));
+            }
+        }
+
         // Validate max allowed lamports (warn if 0)
         if config.validation.max_allowed_lamports == 0 {
             warnings
@@ -319,8 +326,8 @@ impl ConfigValidator {
             && std::env::var("JUPITER_API_KEY").is_err()
         {
             errors.push(
-                    "JUPITER_API_KEY environment variable not set. Required when price_source = Jupiter".to_string()
-                );
+                "JUPITER_API_KEY environment variable not set. Required when price_source = Jupiter".to_string()
+            );
         }
 
         if config.validation.allow_durable_transactions {
@@ -699,9 +706,9 @@ mod tests {
     use crate::{
         config::{
             AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy,
-            KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
-            SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022InstructionPolicy,
-            UsageLimitConfig, ValidationConfig,
+            KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, PluginsConfig,
+            SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
+            Token2022InstructionPolicy, TransactionPluginType, UsageLimitConfig, ValidationConfig,
         },
         constant::{DEFAULT_MAX_REQUEST_BODY_SIZE, LIGHTHOUSE_PROGRAM_ID},
         fee::price::PriceConfig,
@@ -844,6 +851,7 @@ mod tests {
                 payment_address: None,
                 cache: CacheConfig::default(),
                 usage_limit: UsageLimitConfig::default(),
+                plugins: PluginsConfig::default(),
                 bundle: BundleConfig::default(),
                 lighthouse: LighthouseConfig::default(),
                 force_sig_verify: false,
@@ -869,6 +877,24 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("Max signatures is 0")));
         assert!(warnings.iter().any(|w| w.contains("Using Mock price source")));
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_duplicate_plugins_warn() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled =
+            vec![TransactionPluginType::GasSwap, TransactionPluginType::GasSwap];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        assert!(warnings.iter().any(|w| w.contains("Duplicate transaction plugin configured")));
     }
 
     #[tokio::test]

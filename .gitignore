@@ -11,6 +11,7 @@ generated/
 # SDK
 node_modules/
 dist/
+.pnpm-store/
 
 # Coverage reports
 coverage/

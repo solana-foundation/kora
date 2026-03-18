@@ -77,6 +77,7 @@ pub async fn estimate_bundle_fee(
         config,
         rpc_client,
         sig_verify,
+        None,
         BundleProcessingMode::SkipUsage,
     )
     .await?;
@@ -103,10 +104,13 @@ pub async fn estimate_bundle_fee(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{
-        common::{setup_or_get_test_signer, setup_or_get_test_usage_limiter, RpcMockBuilder},
-        config_mock::ConfigMockBuilder,
-        transaction_mock::create_mock_encoded_transaction,
+    use crate::{
+        config::TransactionPluginType,
+        tests::{
+            common::{setup_or_get_test_signer, setup_or_get_test_usage_limiter, RpcMockBuilder},
+            config_mock::{mock_state::setup_config_mock, ConfigMockBuilder},
+            transaction_mock::create_mock_encoded_transaction,
+        },
     };
 
     #[tokio::test]
@@ -292,5 +296,33 @@ mod tests {
         );
         assert_eq!(request.signer_key, Some("11111111111111111111111111111111".to_string()));
         assert!(!request.sig_verify);
+    }
+
+    #[tokio::test]
+    async fn test_estimate_bundle_fee_skips_plugins() {
+        let mut config = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_usage_limit_enabled(false)
+            .build();
+        config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
+        let _m = setup_config_mock(config);
+
+        let _ = setup_or_get_test_signer();
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client =
+            Arc::new(RpcMockBuilder::new().with_fee_estimate(5000).with_simulation().build());
+
+        // Not gas_swap-compatible shape; would fail if plugins ran during estimate.
+        let request = EstimateBundleFeeRequest {
+            transactions: vec![create_mock_encoded_transaction()],
+            fee_token: None,
+            signer_key: None,
+            sig_verify: false,
+            sign_only_indices: None,
+        };
+
+        let result = estimate_bundle_fee(&rpc_client, request).await;
+        assert!(result.is_ok(), "estimateBundleFee should skip transaction plugins");
     }
 }
