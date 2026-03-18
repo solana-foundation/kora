@@ -468,9 +468,74 @@ impl FeeConfigUtil {
             })?;
         }
         // If dynamic_ata_deduction is enabled, subtract rent for ATA creation instructions
-        // that create ATAs for the operator's payment address
+        // that create ATAs for the operator's payment address for the fee payment token (mint)
         if config.validation.dynamic_ata_deduction {
             let payment_destination = config.kora.get_payment_address(fee_payer_pubkey)?;
+
+            // 1. Find all mints being transferred to the operator's payment destination from the fee payer
+            let mut payment_mints = std::collections::HashSet::new();
+            let spl_instructions = transaction.get_or_parse_spl_instructions()?;
+            if let Some(transfers) =
+                spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer)
+            {
+                for transfer in transfers {
+                    if let ParsedSPLInstructionData::SplTokenTransfer {
+                        owner,
+                        mint,
+                        destination_address,
+                        is_2022,
+                        ..
+                    } = transfer
+                    {
+                        if *owner == *fee_payer_pubkey {
+                            // If mint is already parsed (TransferChecked), use it directly
+                            if let Some(mint_pubkey) = mint {
+                                let program_id = if *is_2022 {
+                                    spl_token_2022_interface::id()
+                                } else {
+                                    spl_token_interface::id()
+                                };
+                                let operator_ata =
+                                    spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+                                        &payment_destination,
+                                        mint_pubkey,
+                                        &program_id,
+                                    );
+                                if *destination_address == operator_ata {
+                                    payment_mints.insert(*mint_pubkey);
+                                }
+                            } else {
+                                // For regular transfers, check the destination account owner
+                                if let Ok(dest_account) = CacheUtil::get_account(
+                                    config,
+                                    rpc_client,
+                                    destination_address,
+                                    false,
+                                )
+                                .await
+                                {
+                                    if let Ok(token_program) =
+                                        TokenType::get_token_program_from_owner(&dest_account.owner)
+                                    {
+                                        if let Ok(token_account) =
+                                            token_program.unpack_token_account(&dest_account.data)
+                                        {
+                                            if token_account.owner() == payment_destination {
+                                                payment_mints.insert(token_account.mint());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If no payment mint matches the operator's destination, skip deduction entirely
+            if payment_mints.is_empty() {
+                return Ok(total);
+            }
 
             // Parse both first to ensure they are cached
             transaction.get_or_parse_ata_instructions()?;
@@ -510,18 +575,23 @@ impl FeeConfigUtil {
                         }
                     });
 
-                    // Only deduct rent if the ATA being created is for the operator's payment address
-                    // and the fee payer is the one paying for it, and rent was actually paid (SystemCreateAccount exists)
+                    // Only deduct rent if:
+                    // 1. The ATA being created is for the operator's payment address
+                    // 2. The fee payer is the one paying for it
+                    // 3. Rent was actually paid (SystemCreateAccount exists)
+                    // 4. The ATA matches the specific mint used for fee payment
                     if *payer == *fee_payer_pubkey
                         && *wallet_owner == payment_destination
                         && has_create_account
+                        && payment_mints.contains(mint)
                         && seen_atas.insert((*wallet_owner, *mint))
                     {
                         total =
                             total.saturating_sub(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION);
                         log::info!(
-                            "Dynamic ATA deduction: subtracted {} lamports rent for operator ATA creation",
-                            crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION
+                            "Dynamic ATA deduction: subtracted {} lamports rent for operator ATA creation for mint {}",
+                            crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
+                            mint
                         );
                     }
                 }
@@ -573,7 +643,7 @@ mod tests {
         tests::{
             common::{
                 create_mock_rpc_client_with_account, create_mock_token_account,
-                setup_or_get_test_config, setup_or_get_test_signer,
+                setup_or_get_test_config, setup_or_get_test_signer, MintAccountMockBuilder,
             },
             config_mock::{mock_state::get_config, ConfigMockBuilder},
             rpc_mock::RpcMockBuilder,
@@ -1330,11 +1400,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_with_ata_deduction() {
-        use spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent;
-
         let _m = ConfigMockBuilder::new().build_and_setup();
         let mut config = get_config().unwrap();
-        let rpc_client = RpcMockBuilder::new().build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(9).build();
+        let rpc_client = RpcMockBuilder::new().with_slot(1).build_with_sequential_accounts(vec![
+            &mint_account,
+            &mint_account,
+            &mint_account,
+            &mint_account,
+        ]);
 
         let fee_payer = Keypair::new();
         let mint = Pubkey::new_unique();
@@ -1363,8 +1437,27 @@ mod tests {
             &Pubkey::default(),
         );
 
+        // Instruction 4: SPL Token Transfer to pay the fee (required for deduction match)
+        let payment_destination_ata = get_associated_token_address(&payment_destination, &mint);
+        let fee_payment_instruction = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::ID,
+            &Pubkey::new_unique(), // source (doesn't matter for this test)
+            &mint,
+            &payment_destination_ata,
+            &fee_payer.pubkey(), // authority
+            &[],
+            1_000_000,
+            9,
+        )
+        .unwrap();
+
         let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_instruction, ata_instruction, system_create_instruction],
+            &[
+                transfer_instruction,
+                ata_instruction,
+                system_create_instruction,
+                fee_payment_instruction,
+            ],
             Some(&fee_payer.pubkey()),
         ));
 
@@ -1382,12 +1475,12 @@ mod tests {
         .await
         .unwrap();
 
-        // The expected value should be (transfer_amount + rent) - rent = transfer_amount
-        // Because calculate_fee_payer_outflow adds the rent from SystemCreateAccount,
-        // then dynamic_ata_deduction subtracts it back.
+        // The expected value should be (transfer_amount + rent + spl_value) - rent = transfer_amount + spl_value
+        // where spl_value is 1000 lamports (1,000,000 tokens * 0.001 price)
         assert_eq!(
-            outflow_true, transfer_amount,
-            "Outflow should remain transfer_amount as operator subsidizes the rent"
+            outflow_true,
+            transfer_amount + 1000,
+            "Outflow should be transfer_amount + 1000 as operator subsidizes the rent"
         );
 
         // Scenario 2: dynamic_ata_deduction = false
@@ -1406,7 +1499,7 @@ mod tests {
 
         assert_eq!(
             outflow_false,
-            transfer_amount + crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
+            transfer_amount + crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION + 1000,
             "Outflow should NOT be reduced when deduction is disabled (rent is paid by client)"
         );
     }
@@ -1415,7 +1508,7 @@ mod tests {
     async fn test_calculate_fee_payer_outflow_ata_deduction_wrong_owner() {
         let _m = ConfigMockBuilder::new().build_and_setup();
         let mut config = get_config().unwrap();
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_slot(1).with_mint_account(9).build();
 
         let fee_payer = Keypair::new();
         let mint = Pubkey::new_unique();
@@ -1443,8 +1536,28 @@ mod tests {
             &Pubkey::default(),
         );
 
+        // Instruction 4: SPL Token Transfer to pay the fee
+        let payment_destination = config.kora.get_payment_address(&fee_payer.pubkey()).unwrap();
+        let payment_destination_ata = get_associated_token_address(&payment_destination, &mint);
+        let fee_payment_instruction = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::ID,
+            &Pubkey::new_unique(),
+            &mint,
+            &payment_destination_ata,
+            &fee_payer.pubkey(),
+            &[],
+            1_000_000,
+            9,
+        )
+        .unwrap();
+
         let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_instruction, ata_instruction, system_create_instruction],
+            &[
+                transfer_instruction,
+                ata_instruction,
+                system_create_instruction,
+                fee_payment_instruction,
+            ],
             Some(&fee_payer.pubkey()),
         ));
 
@@ -1464,7 +1577,7 @@ mod tests {
 
         assert_eq!(
             outflow,
-            transfer_amount + crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
+            transfer_amount + crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION + 1000,
             "Outflow should include rent when owner is NOT operator's payment address"
         );
     }
@@ -1473,7 +1586,7 @@ mod tests {
     async fn test_calculate_fee_payer_outflow_ata_deduction_no_duplicate() {
         let _m = ConfigMockBuilder::new().build_and_setup();
         let mut config = get_config().unwrap();
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_slot(1).with_mint_account(9).build();
 
         let fee_payer = Keypair::new();
         let mint = Pubkey::new_unique();
@@ -1516,6 +1629,20 @@ mod tests {
             &Pubkey::default(),
         );
 
+        // Instruction 4: SPL Token Transfer to pay the fee
+        let payment_destination_ata = get_associated_token_address(&payment_destination, &mint);
+        let fee_payment_instruction = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::ID,
+            &Pubkey::new_unique(),
+            &mint,
+            &payment_destination_ata,
+            &fee_payer.pubkey(),
+            &[],
+            1_000_000,
+            9,
+        )
+        .unwrap();
+
         let message = VersionedMessage::Legacy(Message::new(
             &[
                 transfer_instruction,
@@ -1523,6 +1650,7 @@ mod tests {
                 ata_instruction_2,
                 ata_instruction_3,
                 system_create_instruction,
+                fee_payment_instruction,
             ],
             Some(&fee_payer.pubkey()),
         ));
@@ -1541,10 +1669,10 @@ mod tests {
         .await
         .unwrap();
 
-        // Deduction should be applied ONLY ONCE
+        // Deduction should be applied ONLY ONCE, plus SPL transfer value
         assert_eq!(
-            outflow, transfer_amount,
-            "Outflow should remain transfer_amount as operator subsidizes the rent only once"
+            outflow, transfer_amount + 1000,
+            "Outflow should remain transfer_amount + 1000 as operator subsidizes the rent only once"
         );
     }
 
@@ -1552,7 +1680,7 @@ mod tests {
     async fn test_calculate_fee_payer_outflow_ata_already_exists() {
         let _m = ConfigMockBuilder::new().build_and_setup();
         let config = get_config().unwrap();
-        let rpc_client = RpcMockBuilder::new().build();
+        let rpc_client = RpcMockBuilder::new().with_slot(1).with_mint_account(9).build();
 
         let fee_payer = Keypair::new();
         let mint = Pubkey::new_unique();
@@ -1570,8 +1698,22 @@ mod tests {
             &spl_token_interface::ID,
         );
 
+        // SPL Token Transfer to pay the fee
+        let payment_destination_ata = get_associated_token_address(&payment_destination, &mint);
+        let fee_payment_instruction = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::ID,
+            &Pubkey::new_unique(),
+            &mint,
+            &payment_destination_ata,
+            &fee_payer.pubkey(),
+            &[],
+            1_000_000,
+            9,
+        )
+        .unwrap();
+
         let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_instruction, ata_instruction],
+            &[transfer_instruction, ata_instruction, fee_payment_instruction],
             Some(&fee_payer.pubkey()),
         ));
 
@@ -1588,8 +1730,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            outflow, transfer_amount,
-            "Outflow should NOT be reduced when ATA already exists (no SystemCreateAccount instruction)"
+            outflow, transfer_amount + 1000,
+            "Outflow should NOT be reduced when ATA already exists, but includes SPL transfer value"
         );
     }
 
@@ -1615,8 +1757,21 @@ mod tests {
             &spl_token_interface::ID,
         );
 
+        // Instruction 4: SPL Token Transfer to pay the fee
+        let fee_payment_instruction = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::ID,
+            &Pubkey::new_unique(),
+            &mint,
+            &ata_address, // same as payment_destination_ata
+            &fee_payer.pubkey(),
+            &[],
+            1_000_000,
+            9,
+        )
+        .unwrap();
+
         let message = VersionedMessage::Legacy(Message::new(
-            &[transfer_instruction, ata_instruction],
+            &[transfer_instruction, ata_instruction, fee_payment_instruction],
             Some(&fee_payer.pubkey()),
         ));
 
@@ -1659,7 +1814,11 @@ mod tests {
                 }
             }),
         );
-        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+        let rpc_client = RpcMockBuilder::new()
+            .with_slot(1)
+            .with_mint_account(9)
+            .with_custom_mocks(mocks)
+            .build();
 
         let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
             &transaction,
@@ -1679,9 +1838,10 @@ mod tests {
         .await
         .unwrap();
 
-        // Should be transfer_amount because rent is added then subtracted
+        // Should be transfer_amount + 1000 because rent is added then subtracted
         assert_eq!(
-            outflow, transfer_amount,
+            outflow,
+            transfer_amount + 1000,
             "Outflow should handle inner instructions from simulation and apply deduction"
         );
     }

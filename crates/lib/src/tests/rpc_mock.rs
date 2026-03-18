@@ -53,6 +53,11 @@ impl RpcMockBuilder {
         self
     }
 
+    pub fn with_slot(mut self, slot: u64) -> Self {
+        self.mocks.insert(RpcRequest::GetSlot, json!(slot));
+        self
+    }
+
     pub fn with_fee_estimate(mut self, fee: u64) -> Self {
         self.mocks.insert(
             RpcRequest::GetFeeForMessage,
