@@ -221,16 +221,16 @@ generate-key:
 [group('release')]
 branch-info:
     @echo "Branch Workflow:"
-    @echo "  main           → Audited code only, stable releases"
-    @echo "  release/X.Y.Z  → Pre-audit features for version X.Y.Z"
-    @echo "  hotfix/*       → Hotfixes from main"
+    @echo "  main                → Integration branch (audited + unaudited commits)"
+    @echo "  feat/*,fix/*,chore/* → Topic branches from main"
+    @echo "  hotfix/*            → Urgent fixes from deployed stable tag"
     @echo ""
     @echo "Releasing:"
-    @echo "  Stable: checkout main, run 'just release'"
-    @echo "  Beta:   checkout release/X.Y.Z, run 'just release'"
-    @echo "  Hotfix: run 'just hotfix' (branches from main)"
+    @echo "  Stable/Beta/RC: checkout main, run 'just release'"
+    @echo "  Pre-release versions use semver suffixes (e.g. 2.3.0-beta.1)"
+    @echo "  Hotfix: run 'just hotfix' from deployed stable tag"
 
-# Prepare a new release (run from main for stable, release/X.Y.Z for beta)
+# Prepare a new release (run from main; use semver pre-release suffixes for beta/rc)
 [group('release')]
 [confirm('Start release process?')]
 release:

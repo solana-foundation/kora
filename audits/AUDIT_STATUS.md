@@ -15,7 +15,7 @@ Audit scope is commit-based. Commits after the audited-through SHA are considere
 
 - `main` is the integration branch and may contain audited and unaudited commits.
 - Stable production releases are immutable tags/releases (for example `v2.3.0`).
-- `release/*` branches are deprecated as long-lived branches. If used, they should be short-lived stabilization branches only.
+- Audited baselines are tracked by commit SHA plus immutable tags/releases, not by long-lived release branches.
 
 ## Verification Commands
 

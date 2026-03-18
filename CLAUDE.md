@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Branches & Commits
 - **Main branch**: `main` (protected integration branch; may include audited and unaudited commits)
-- **Release branch**: `release/X.Y.Z` (deprecated for long-lived development; use only for short-lived stabilization if needed)
+- **Topic branches**: `feat/*`, `fix/*`, `chore/*` (branch from `main`, PR back to `main`)
 - **Hotfix branch**: `hotfix/*` (urgent fixes, branch from the currently deployed stable tag)
 - **Commit format**: Use conventional commits for automatic releases
   - `feat:` → minor version bump (1.0.3 → 1.1.0)
