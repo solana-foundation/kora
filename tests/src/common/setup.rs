@@ -20,8 +20,9 @@ use spl_token_interface::instruction as token_instruction;
 use std::sync::Arc;
 
 use crate::common::{
-    FeePayerPolicyMintTestHelper, FeePayerTestHelper, LookupTableHelper, RecipientTestHelper,
-    SenderTestHelper, USDCMint2022TestHelper, USDCMintTestHelper, DEFAULT_RPC_URL,
+    FeePayerPolicyMintTestHelper, FeePayerTestHelper, LookupTableHelper, PaymentAddressTestHelper,
+    RecipientTestHelper, SenderTestHelper, USDCMint2022TestHelper, USDCMintTestHelper,
+    DEFAULT_RPC_URL, PAYMENT_ADDRESS_KEYPAIR_ENV,
 };
 
 /// Test account information for outputting to the user
@@ -208,12 +209,24 @@ impl TestAccountSetup {
 
         let sender_pubkey = self.sender_keypair.pubkey();
         let fee_payer_pubkey = self.fee_payer_keypair.pubkey();
+        let payment_pubkey = std::env::var(PAYMENT_ADDRESS_KEYPAIR_ENV)
+            .ok()
+            .map(|_| PaymentAddressTestHelper::get_payment_address_pubkey());
 
-        tokio::try_join!(
-            self.airdrop_if_required_sol(&sender_pubkey, sol_to_fund),
-            self.airdrop_if_required_sol(&self.recipient_pubkey, sol_to_fund),
-            self.airdrop_if_required_sol(&fee_payer_pubkey, sol_to_fund)
-        )?;
+        if let Some(payment_pubkey) = payment_pubkey {
+            tokio::try_join!(
+                self.airdrop_if_required_sol(&sender_pubkey, sol_to_fund),
+                self.airdrop_if_required_sol(&self.recipient_pubkey, sol_to_fund),
+                self.airdrop_if_required_sol(&fee_payer_pubkey, sol_to_fund),
+                self.airdrop_if_required_sol(&payment_pubkey, sol_to_fund),
+            )?;
+        } else {
+            tokio::try_join!(
+                self.airdrop_if_required_sol(&sender_pubkey, sol_to_fund),
+                self.airdrop_if_required_sol(&self.recipient_pubkey, sol_to_fund),
+                self.airdrop_if_required_sol(&fee_payer_pubkey, sol_to_fund)
+            )?;
+        }
 
         Ok((self.sender_keypair.pubkey(), self.recipient_pubkey, self.fee_payer_keypair.pubkey()))
     }

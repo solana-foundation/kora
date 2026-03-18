@@ -13,7 +13,7 @@ pub const TEST_SERVER_URL: &str = "http://127.0.0.1:8080";
 // ============================================================================
 
 /// Default recipient public key for tests
-pub const RECIPIENT_PUBKEY: &str = "AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM";
+pub const RECIPIENT_PUBKEY: &str = "2oyKLCZwn4rqVCmgb1Gbk94ch3xkxxsJpNb32qsK4in7";
 
 /// Test disallowed address for lookup table tests
 pub const TEST_DISALLOWED_ADDRESS: &str = "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek";

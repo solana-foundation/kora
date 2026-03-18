@@ -171,25 +171,38 @@ impl VersionedTransactionResolved {
             // during inner instruction reconstruction.
             let mut extended_account_keys = self.all_account_keys.clone();
 
-            inner_instructions.iter().for_each(|ix| {
-                ix.instructions.iter().for_each(|inner_ix| match inner_ix {
-                    UiInstruction::Compiled(ix) => {
-                        compiled_inner_instructions.push(CompiledInstruction {
-                            program_id_index: ix.program_id_index,
-                            accounts: ix.accounts.clone(),
-                            data: bs58::decode(&ix.data).into_vec().unwrap_or_default(),
-                        });
-                    }
-                    UiInstruction::Parsed(ui_parsed) => {
-                        if let Some(compiled) = IxUtils::reconstruct_instruction_from_ui(
-                            &UiInstruction::Parsed(ui_parsed.clone()),
-                            &mut extended_account_keys,
-                        ) {
+            for ui_inner in &inner_instructions {
+                for (inner_position, inner_ix) in ui_inner.instructions.iter().enumerate() {
+                    match inner_ix {
+                        UiInstruction::Compiled(ix) => {
+                            let data = bs58::decode(&ix.data).into_vec().map_err(|e| {
+                                KoraError::InvalidTransaction(format!(
+                                    "Failed to decode compiled inner instruction data from base58 (outer index {}, inner position {}): {}",
+                                    ui_inner.index, inner_position, e
+                                ))
+                            })?;
+                            compiled_inner_instructions.push(CompiledInstruction {
+                                program_id_index: ix.program_id_index,
+                                accounts: ix.accounts.clone(),
+                                data,
+                            });
+                        }
+                        UiInstruction::Parsed(ui_parsed) => {
+                            let compiled = IxUtils::reconstruct_instruction_from_ui(
+                                &UiInstruction::Parsed(ui_parsed.clone()),
+                                &mut extended_account_keys,
+                            )
+                            .ok_or_else(|| {
+                                KoraError::InvalidTransaction(format!(
+                                    "Failed to reconstruct parsed inner instruction (outer index {}, inner position {})",
+                                    ui_inner.index, inner_position
+                                ))
+                            })?;
                             compiled_inner_instructions.push(compiled);
                         }
                     }
-                });
-            });
+                }
+            }
 
             return IxUtils::uncompile_instructions(
                 &compiled_inner_instructions,
@@ -1001,6 +1014,119 @@ mod tests {
 
         assert_eq!(inner_instructions.len(), 1);
         assert_eq!(inner_instructions[0].data, vec![10, 20, 30]);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_inner_instructions_fails_on_invalid_base58_compiled_instruction() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": [],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": [
+                        {
+                            "index": 0,
+                            "instructions": [
+                                {
+                                    "programIdIndex": 1,
+                                    "accounts": [0],
+                                    "data": "not-valid-base58!"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }),
+        );
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let mut resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
+        let result = resolved.fetch_inner_instructions(&rpc_client, true).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(KoraError::InvalidTransaction(msg)) => {
+                assert!(
+                    msg.contains("Failed to decode compiled inner instruction data from base58")
+                );
+            }
+            other => panic!("Expected InvalidTransaction error, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_inner_instructions_fails_on_unreconstructable_parsed_instruction() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config);
+
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        let mut mocks = HashMap::new();
+        mocks.insert(
+            RpcRequest::SimulateTransaction,
+            json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": null,
+                    "logs": [],
+                    "accounts": null,
+                    "unitsConsumed": 1000,
+                    "innerInstructions": [
+                        {
+                            "index": 0,
+                            "instructions": [
+                                {
+                                    "program": "unknown",
+                                    "programId": "not-a-valid-pubkey",
+                                    "parsed": { "type": "noop", "info": {} },
+                                    "stackHeight": 1
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }),
+        );
+        let rpc_client = RpcMockBuilder::new().with_custom_mocks(mocks).build();
+
+        let mut resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
+        let result = resolved.fetch_inner_instructions(&rpc_client, true).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(KoraError::InvalidTransaction(msg)) => {
+                assert!(msg.contains("Failed to reconstruct parsed inner instruction"));
+            }
+            other => panic!("Expected InvalidTransaction error, got: {other:?}"),
+        }
     }
 
     #[tokio::test]

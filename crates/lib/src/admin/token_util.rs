@@ -12,7 +12,7 @@ use solana_message::{Message, VersionedMessage};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 
 use spl_associated_token_account_interface::{
-    address::get_associated_token_address, instruction::create_associated_token_account,
+    address::get_associated_token_address, instruction::create_associated_token_account_idempotent,
 };
 use std::{fmt::Display, str::FromStr, sync::Arc};
 
@@ -135,7 +135,7 @@ async fn create_atas_for_signer(
     let instructions = atas_to_create
         .iter()
         .map(|ata| {
-            create_associated_token_account(
+            create_associated_token_account_idempotent(
                 &fee_payer.pubkey(),
                 address,
                 &ata.mint,

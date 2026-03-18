@@ -289,8 +289,8 @@ async fn test_estimate_fee_comprehensive_with_token_accounts_creation() {
     let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let usdc_mint_2022 = USDCMint2022TestHelper::get_test_usdc_mint_2022_pubkey();
 
-    let recipient1_needs_ata = Pubkey::new_unique();
-    let recipient1_2022_needs_ata = Pubkey::new_unique();
+    let recipient1_needs_ata = Keypair::new().pubkey();
+    let recipient1_2022_needs_ata = Keypair::new().pubkey();
 
     // Manual token accounts (non-ATA)
     let manual_spl_account1 = Keypair::new();
@@ -356,7 +356,7 @@ async fn test_estimate_fee_with_spl_token_transfer_from_fee_payer() {
 
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
-    let recipient = Pubkey::new_unique();
+    let recipient = Keypair::new().pubkey();
 
     let fee_payer_ata = get_associated_token_address(&fee_payer, &usdc_mint);
     let mint_amount = 10_000_000;

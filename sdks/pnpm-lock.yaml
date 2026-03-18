@@ -25,15 +25,6 @@ importers:
       '@solana/kit':
         specifier: ^6.3.0
         version: 6.3.1(typescript@5.9.3)
-      '@solana/kit-plugin-instruction-plan':
-        specifier: ^0.7.0
-        version: 0.7.0(@solana/kit@6.3.1(typescript@5.9.3))
-      '@solana/kit-plugin-payer':
-        specifier: ^0.6.0
-        version: 0.6.0(@solana/kit@6.3.1(typescript@5.9.3))
-      '@solana/kit-plugin-rpc':
-        specifier: ^0.7.0
-        version: 0.7.0(@solana/kit@6.3.1(typescript@5.9.3))
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.3
@@ -47,6 +38,15 @@ importers:
       '@solana/kit-client-litesvm':
         specifier: ^0.7.0
         version: 0.7.0(@solana/kit@6.3.1(typescript@5.9.3))(typescript@5.9.3)
+      '@solana/kit-plugin-instruction-plan':
+        specifier: ^0.7.0
+        version: 0.7.0(@solana/kit@6.3.1(typescript@5.9.3))
+      '@solana/kit-plugin-payer':
+        specifier: ^0.6.0
+        version: 0.6.0(@solana/kit@6.3.1(typescript@5.9.3))
+      '@solana/kit-plugin-rpc':
+        specifier: ^0.7.0
+        version: 0.7.0(@solana/kit@6.3.1(typescript@5.9.3))
       '@solana/prettier-config-solana':
         specifier: ^0.0.6
         version: 0.0.6(prettier@3.6.2)
@@ -455,24 +455,28 @@ packages:
     engines: {node: '>= 20'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@loris-sandbox/litesvm-kit-linux-arm64-musl@0.5.0':
     resolution: {integrity: sha512-mCGPqtl5PcJ3PTb20NnaCnFZ00E54c4r00e1IPB7O4DW+fLYoICfgNUy5S6mVNv0Yt45fT8QaUQbWcoGnmL6IQ==}
     engines: {node: '>= 20'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@loris-sandbox/litesvm-kit-linux-x64-gnu@0.5.0':
     resolution: {integrity: sha512-zbXvI71o9k715m1H/CtH2vEIwlf54O5oUmIZthVmnMRa33ct9vZj/sz0mcPW7NIIsYQEm1+rKysqXXNoThiFwg==}
     engines: {node: '>= 20'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@loris-sandbox/litesvm-kit-linux-x64-musl@0.5.0':
     resolution: {integrity: sha512-bI30I12C7HczA9Q6c9d6DMKGHEqQBn0zRHDHAYX1T8YfGFFEKxTm0XtTFPH1BZrFfBzEHEUHfPB/pYaVjzb1cA==}
     engines: {node: '>= 20'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@loris-sandbox/litesvm-kit@0.5.0':
     resolution: {integrity: sha512-zJcAFmEX82td18uzxhLX9yM6lqQ3as3FzLpJpARdJtTrIMNe0txVdAB+vZw1FqMQ9dL3h6IkUBahIWdCT4uHzw==}

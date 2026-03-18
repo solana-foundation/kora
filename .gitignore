@@ -33,3 +33,4 @@ docs/api-reference-generated/
 # AI (ignore all except skills/)
 .claude/*
 !.claude/skills/
+.pnpm-store/

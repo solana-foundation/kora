@@ -444,7 +444,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
                     amount: 1000,
                 });
 
-                const result = await freeClient.sendTransaction([ix]);
+                const result = await (freeClient as any).sendTransaction([ix]);
                 expect(result.status).toBe('successful');
                 expect(result.context.signature).toBeDefined();
             }, 30000);
@@ -456,7 +456,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
                     amount: 1000,
                 });
 
-                const result = await freeClient.sendTransaction([ix]);
+                const result = await (freeClient as any).sendTransaction([ix]);
                 expect(result.status).toBe('successful');
             }, 30000);
         });

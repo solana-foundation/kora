@@ -20,7 +20,7 @@ use tests::{
         validator::start_test_validator,
     },
 };
-use tokio::{process::Child, task::JoinSet};
+use tokio::process::Child;
 
 pub struct TestRunner {
     pub rpc_client: Arc<RpcClient>,
@@ -204,62 +204,35 @@ pub async fn run_all_test_phases(
         panic!("Test configuration file not found: {config_path}");
     };
 
-    let mut join_set = JoinSet::new();
+    // Run phases sequentially to avoid cross-phase contention against the same
+    // local validator (can make usage-limit windowed tests flaky).
+    let mut all_success = true;
+    let mut completed_phases = 0;
 
-    // Spawn test phases from config (filtered if specified)
     for (phase_name, phase_config) in config.get_all_phases() {
-        // Apply filter if specified
         if !filters.is_empty() && !filters.contains(&phase_name) {
             continue;
         }
 
-        join_set.spawn({
-            let rpc_url = rpc_url.clone();
-            let phase_config = phase_config.clone();
-            let cached_keys = test_runner.cached_keys.clone();
-            let http_client = test_runner.reqwest_client.clone();
-            async move {
-                run_test_phase_from_config(
-                    rpc_url,
-                    &phase_config,
-                    verbose,
-                    cached_keys,
-                    http_client,
-                )
-                .await
-            }
-        });
-    }
+        let phase_output = run_test_phase_from_config(
+            rpc_url.clone(),
+            &phase_config,
+            verbose,
+            test_runner.cached_keys.clone(),
+            test_runner.reqwest_client.clone(),
+        )
+        .await;
 
-    // Stream output as each test completes instead of waiting for all
-    let mut all_success = true;
-    let mut errors = Vec::new();
-    let mut completed_phases = 0;
+        completed_phases += 1;
+        print!("{}", phase_output.output);
 
-    while let Some(result) = join_set.join_next().await {
-        match result {
-            Ok(phase_output) => {
-                completed_phases += 1;
-                print!("{}", phase_output.output);
-
-                if phase_output.truncated {
-                    println!("⚠️  Output truncated for phase '{}'", phase_output.phase_name);
-                }
-
-                if !phase_output.success {
-                    all_success = false;
-                }
-            }
-            Err(e) => {
-                println!("❌ Task failed: {e}");
-                errors.push(e);
-                all_success = false;
-            }
+        if phase_output.truncated {
+            println!("⚠️  Output truncated for phase '{}'", phase_output.phase_name);
         }
-    }
 
-    if !errors.is_empty() {
-        return Err(format!("Multiple test phases failed: {errors:?}").into());
+        if !phase_output.success {
+            all_success = false;
+        }
     }
 
     if !all_success {

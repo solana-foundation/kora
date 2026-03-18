@@ -19,7 +19,7 @@ const DEFAULTS = {
     DECIMALS: 6,
 
     // Make sure this matches the USDC mint in kora.toml (9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ)
-    DESTINATION_ADDRESS: 'AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM',
+    DESTINATION_ADDRESS: '2oyKLCZwn4rqVCmgb1Gbk94ch3xkxxsJpNb32qsK4in7',
 
     // DO NOT USE THESE KEYPAIRS IN PRODUCTION, TESTING KEYPAIRS ONLY
     KORA_ADDRESS: '7AqpcUvgJ7Kh1VmJZ44rWp2XDow33vswo9VK9VqpPU2d',
@@ -131,6 +131,7 @@ async function setupTestSuite(): Promise<TestSuite> {
     // Airdrop SOL via LiteSVM
     await client.airdrop(koraAddress, lamports(solDropAmount));
     await client.airdrop(testWallet.address, lamports(solDropAmount));
+    await client.airdrop(destinationAddress, lamports(solDropAmount));
 
     // Create mint
     await client.token.instructions
