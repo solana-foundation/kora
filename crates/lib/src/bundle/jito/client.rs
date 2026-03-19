@@ -4,10 +4,7 @@ use crate::{
         BundleError,
     },
     sanitize_error,
-    transaction::VersionedTransactionResolved,
 };
-use base64::{prelude::BASE64_STANDARD, Engine};
-use bincode::serialize;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -28,11 +25,11 @@ impl JitoBundleClient {
 
     pub async fn send_bundle(
         &self,
-        transactions: &[VersionedTransactionResolved],
+        encoded_transactions: &[String],
     ) -> Result<String, BundleError> {
         match self {
-            Self::Live(client) => client.send_bundle(transactions).await,
-            Self::Mock(client) => client.send_bundle(transactions).await,
+            Self::Live(client) => client.send_bundle(encoded_transactions).await,
+            Self::Mock(client) => client.send_bundle(encoded_transactions).await,
         }
     }
 
@@ -117,16 +114,9 @@ impl JitoClient {
 
     pub async fn send_bundle(
         &self,
-        transactions: &[VersionedTransactionResolved],
+        encoded_transactions: &[String],
     ) -> Result<String, BundleError> {
-        let mut encoded_txs = Vec::with_capacity(transactions.len());
-        for resolved in transactions {
-            let serialized = serialize(&resolved.transaction)
-                .map_err(|e| BundleError::SerializationError(e.to_string()))?;
-            encoded_txs.push(BASE64_STANDARD.encode(&serialized));
-        }
-
-        let params = json!([encoded_txs, {"encoding": "base64"}]);
+        let params = json!([encoded_transactions, {"encoding": "base64"}]);
         let result = self.send_request("sendBundle", params).await?;
 
         result.as_str().map(|s| s.to_string()).ok_or_else(|| {
@@ -152,7 +142,7 @@ impl JitoMockClient {
 
     pub async fn send_bundle(
         &self,
-        _transactions: &[VersionedTransactionResolved],
+        _encoded_transactions: &[String],
     ) -> Result<String, BundleError> {
         let random_id: u64 = rand::random();
         Ok(format!("mock-bundle-{random_id}"))
@@ -185,7 +175,7 @@ impl Default for JitoMockClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::transaction_mock::create_mock_resolved_transaction;
+    use crate::tests::transaction_mock::create_mock_encoded_transaction;
     use mockito::{Matcher, Server};
 
     #[tokio::test]
@@ -204,7 +194,7 @@ mod tests {
         let config = JitoConfig { block_engine_url: server.url() };
         let client = JitoClient::new(&config);
 
-        let tx = create_mock_resolved_transaction();
+        let tx = create_mock_encoded_transaction();
 
         let result = client.send_bundle(&[tx]).await;
         mock.assert();
@@ -225,7 +215,7 @@ mod tests {
         let config = JitoConfig { block_engine_url: server.url() };
         let client = JitoClient::new(&config);
 
-        let tx = create_mock_resolved_transaction();
+        let tx = create_mock_encoded_transaction();
 
         let result = client.send_bundle(&[tx]).await;
         mock.assert();
@@ -246,7 +236,7 @@ mod tests {
         let config = JitoConfig { block_engine_url: server.url() };
         let client = JitoClient::new(&config);
 
-        let tx = create_mock_resolved_transaction();
+        let tx = create_mock_encoded_transaction();
 
         let result = client.send_bundle(&[tx]).await;
         mock.assert();
@@ -287,7 +277,7 @@ mod tests {
         let config = JitoConfig { block_engine_url: server.url() };
         let client = JitoClient::new(&config);
 
-        let tx = create_mock_resolved_transaction();
+        let tx = create_mock_encoded_transaction();
 
         let result = client.send_bundle(&[tx]).await;
         mock.assert();
@@ -308,7 +298,7 @@ mod tests {
         let config = JitoConfig { block_engine_url: server.url() };
         let client = JitoClient::new(&config);
 
-        let tx = create_mock_resolved_transaction();
+        let tx = create_mock_encoded_transaction();
 
         let result = client.send_bundle(&[tx]).await;
         mock.assert();
@@ -330,9 +320,9 @@ mod tests {
         let client = JitoClient::new(&config);
 
         let txs = vec![
-            create_mock_resolved_transaction(),
-            create_mock_resolved_transaction(),
-            create_mock_resolved_transaction(),
+            create_mock_encoded_transaction(),
+            create_mock_encoded_transaction(),
+            create_mock_encoded_transaction(),
         ];
 
         let result = client.send_bundle(&txs).await;
@@ -355,7 +345,7 @@ mod tests {
         let config = JitoConfig { block_engine_url: server.url() };
         let client = JitoClient::new(&config);
 
-        let tx = create_mock_resolved_transaction();
+        let tx = create_mock_encoded_transaction();
 
         let result = client.send_bundle(&[tx]).await;
         mock.assert();
@@ -420,7 +410,7 @@ mod tests {
 
         assert!(matches!(client, JitoBundleClient::Mock(_)));
 
-        let tx = create_mock_resolved_transaction();
+        let tx = create_mock_encoded_transaction();
         let result = client.send_bundle(&[tx]).await;
 
         assert!(result.is_ok());

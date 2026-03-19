@@ -85,10 +85,6 @@ pub async fn sign_and_send_bundle(
 
     let signed_resolved = processor.sign_all(&signer, &fee_payer, rpc_client, config, true).await?;
 
-    // Send to Jito
-    let jito_client = JitoBundleClient::new(&config.kora.bundle.jito);
-    let bundle_uuid = jito_client.send_bundle(&signed_resolved).await?;
-
     // Encode signed transactions
     let encoded_signed: Vec<String> = signed_resolved
         .iter()
@@ -102,6 +98,10 @@ pub async fn sign_and_send_bundle(
         &index_to_position,
     );
 
+    // Send the full merged bundle to Jito for atomic execution.
+    let jito_client = JitoBundleClient::new(&config.kora.bundle.jito);
+    let bundle_uuid = jito_client.send_bundle(&signed_transactions).await?;
+
     Ok(SignAndSendBundleResponse {
         signed_transactions,
         signer_pubkey: fee_payer.to_string(),
@@ -112,10 +112,19 @@ pub async fn sign_and_send_bundle(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{
-        common::{setup_or_get_test_signer, RpcMockBuilder},
-        config_mock::ConfigMockBuilder,
+    use crate::{
+        fee::price::{PriceConfig, PriceModel},
+        tests::{
+            common::{setup_or_get_test_signer, setup_or_get_test_usage_limiter, RpcMockBuilder},
+            config_mock::{mock_state::setup_config_mock, ConfigMockBuilder},
+        },
+        transaction::TransactionUtil,
     };
+    use mockito::{Matcher, Server};
+    use serde_json::json;
+    use solana_message::{Message, VersionedMessage};
+    use solana_sdk::pubkey::Pubkey;
+    use solana_system_interface::instruction::transfer;
 
     #[tokio::test]
     async fn test_sign_and_send_bundle_empty_bundle() {
@@ -209,6 +218,72 @@ mod tests {
         assert!(result.is_err(), "Should fail with invalid signer key");
         let err = result.unwrap_err();
         assert!(matches!(err, KoraError::ValidationError(_)));
+    }
+
+    #[tokio::test]
+    async fn test_sign_and_send_bundle_sends_full_bundle_when_sign_only_indices_set() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/v1/bundles")
+            .match_header("content-type", "application/json")
+            .match_body(Matcher::AllOf(vec![
+                Matcher::PartialJson(json!({"method": "sendBundle"})),
+                Matcher::Regex(
+                    r#""params":\[\[(?:"[^"]+",){2}"[^"]+"\],\{"encoding":"base64"\}\]"#
+                        .to_string(),
+                ),
+            ]))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","id":1,"result":"bundle-uuid-full-3"}"#)
+            .create();
+
+        let mut config = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_usage_limit_enabled(false)
+            .build();
+        config.validation.price = PriceConfig { model: PriceModel::Free };
+        config.kora.bundle.jito.block_engine_url = server.url();
+        let _m = setup_config_mock(config);
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let signer_pubkey = setup_or_get_test_signer();
+        let rpc_client = Arc::new(
+            RpcMockBuilder::new()
+                .with_fee_estimate(5000)
+                .with_blockhash()
+                .with_simulation()
+                .build(),
+        );
+
+        let transactions: Vec<String> = (0..3)
+            .map(|_| {
+                let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1000000000);
+                let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&signer_pubkey)));
+                let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+                TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
+            })
+            .collect();
+
+        let request = SignAndSendBundleRequest {
+            transactions,
+            signer_key: Some(signer_pubkey.to_string()),
+            sig_verify: true,
+            user_id: None,
+            sign_only_indices: Some(vec![1]),
+        };
+
+        let result = sign_and_send_bundle(&rpc_client, request).await;
+
+        assert!(
+            result.is_ok(),
+            "Expected full bundle to be sent to Jito, got error: {:?}",
+            result.as_ref().err()
+        );
+        mock.assert();
+        let response = result.unwrap();
+        assert_eq!(response.bundle_uuid, "bundle-uuid-full-3");
+        assert_eq!(response.signed_transactions.len(), 3);
     }
 
     #[tokio::test]

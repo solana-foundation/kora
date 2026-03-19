@@ -1,5 +1,5 @@
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_message::{compiled_instruction::CompiledInstruction, VersionedMessage};
+use solana_message::{compiled_instruction::CompiledInstruction, MessageHeader, VersionedMessage};
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
@@ -105,9 +105,9 @@ impl LighthouseUtil {
     fn find_or_add_account(
         account_keys: &mut Vec<Pubkey>,
         pubkey: &Pubkey,
-    ) -> Result<u8, KoraError> {
+    ) -> Result<(u8, bool), KoraError> {
         if let Some(index) = account_keys.iter().position(|k| k == pubkey) {
-            Ok(index as u8)
+            Ok((index as u8, false))
         } else {
             if account_keys.len() >= 256 {
                 return Err(KoraError::ValidationError(
@@ -116,8 +116,19 @@ impl LighthouseUtil {
             }
             let index = account_keys.len() as u8;
             account_keys.push(*pubkey);
-            Ok(index)
+            Ok((index, true))
         }
+    }
+
+    fn increment_readonly_unsigned_accounts(header: &mut MessageHeader) -> Result<(), KoraError> {
+        header.num_readonly_unsigned_accounts =
+            header.num_readonly_unsigned_accounts.checked_add(1).ok_or_else(|| {
+                KoraError::ValidationError(
+                    "num_readonly_unsigned_accounts overflow when appending instruction"
+                        .to_string(),
+                )
+            })?;
+        Ok(())
     }
 
     /// Append an instruction to a versioned transaction
@@ -127,14 +138,27 @@ impl LighthouseUtil {
     ) -> Result<(), KoraError> {
         match &mut transaction.message {
             VersionedMessage::Legacy(message) => {
-                let program_id_index =
+                let (program_id_index, program_added) =
                     Self::find_or_add_account(&mut message.account_keys, &instruction.program_id)?;
+                if program_added {
+                    Self::increment_readonly_unsigned_accounts(&mut message.header)?;
+                }
 
-                let account_indices: Vec<u8> = instruction
-                    .accounts
-                    .iter()
-                    .map(|meta| Self::find_or_add_account(&mut message.account_keys, &meta.pubkey))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let mut account_indices: Vec<u8> = Vec::with_capacity(instruction.accounts.len());
+                for meta in &instruction.accounts {
+                    let (index, added) =
+                        Self::find_or_add_account(&mut message.account_keys, &meta.pubkey)?;
+                    if added {
+                        if meta.is_signer || meta.is_writable {
+                            return Err(KoraError::ValidationError(
+                                "Appending new signer/writable accounts is not supported"
+                                    .to_string(),
+                            ));
+                        }
+                        Self::increment_readonly_unsigned_accounts(&mut message.header)?;
+                    }
+                    account_indices.push(index);
+                }
 
                 message.instructions.push(CompiledInstruction {
                     program_id_index,
@@ -145,14 +169,27 @@ impl LighthouseUtil {
                 Ok(())
             }
             VersionedMessage::V0(message) => {
-                let program_id_index =
+                let (program_id_index, program_added) =
                     Self::find_or_add_account(&mut message.account_keys, &instruction.program_id)?;
+                if program_added {
+                    Self::increment_readonly_unsigned_accounts(&mut message.header)?;
+                }
 
-                let account_indices: Vec<u8> = instruction
-                    .accounts
-                    .iter()
-                    .map(|meta| Self::find_or_add_account(&mut message.account_keys, &meta.pubkey))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let mut account_indices: Vec<u8> = Vec::with_capacity(instruction.accounts.len());
+                for meta in &instruction.accounts {
+                    let (index, added) =
+                        Self::find_or_add_account(&mut message.account_keys, &meta.pubkey)?;
+                    if added {
+                        if meta.is_signer || meta.is_writable {
+                            return Err(KoraError::ValidationError(
+                                "Appending new signer/writable accounts is not supported"
+                                    .to_string(),
+                            ));
+                        }
+                        Self::increment_readonly_unsigned_accounts(&mut message.header)?;
+                    }
+                    account_indices.push(index);
+                }
 
                 message.instructions.push(CompiledInstruction {
                     program_id_index,
@@ -256,6 +293,8 @@ mod tests {
         let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
         let original_ix_count = transaction.message.instructions().len();
+        let original_readonly_unsigned =
+            transaction.message.header().num_readonly_unsigned_accounts;
 
         let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
         let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
@@ -265,6 +304,11 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(transaction.message.instructions().len(), original_ix_count + 1);
+        assert_eq!(
+            transaction.message.header().num_readonly_unsigned_accounts,
+            original_readonly_unsigned + 1
+        );
+        assert!(transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
     }
 
     #[test]
@@ -292,6 +336,8 @@ mod tests {
         let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
 
         let original_ix_count = transaction.message.instructions().len();
+        let original_readonly_unsigned =
+            transaction.message.header().num_readonly_unsigned_accounts;
 
         let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
         let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
@@ -301,6 +347,39 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(transaction.message.instructions().len(), original_ix_count + 1);
+        assert_eq!(
+            transaction.message.header().num_readonly_unsigned_accounts,
+            original_readonly_unsigned + 1
+        );
+        assert!(transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
+    }
+
+    #[test]
+    fn test_append_lighthouse_assertion_header_unchanged_when_lighthouse_program_exists() {
+        let keypair = Keypair::new();
+
+        let instruction = Instruction::new_with_bytes(
+            LIGHTHOUSE_PROGRAM_ID,
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&keypair.pubkey())));
+        let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+        let original_readonly_unsigned =
+            transaction.message.header().num_readonly_unsigned_accounts;
+
+        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
+        let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
+
+        let result =
+            LighthouseUtil::append_lighthouse_assertion(&mut transaction, assertion_ix, &config);
+        assert!(result.is_ok());
+        assert_eq!(
+            transaction.message.header().num_readonly_unsigned_accounts,
+            original_readonly_unsigned
+        );
     }
 
     #[test]
