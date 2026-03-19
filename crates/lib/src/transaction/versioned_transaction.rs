@@ -9,7 +9,7 @@ use solana_message::{
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
 use std::{collections::HashMap, ops::Deref};
 
-use solana_transaction_status_client_types::{UiInstruction, UiTransactionEncoding};
+use solana_transaction_status_client_types::UiTransactionEncoding;
 
 use crate::{
     config::Config,
@@ -176,31 +176,17 @@ impl VersionedTransactionResolved {
             // Clone so we can extend with CPI-only PDA accounts discovered
             // during inner instruction reconstruction.
             let mut extended_account_keys = self.all_account_keys.clone();
+            let mut account_keys_hashmap =
+                IxUtils::build_account_keys_hashmap(&extended_account_keys);
 
             for ix in &inner_instructions {
                 for inner_ix in &ix.instructions {
-                    match inner_ix {
-                        UiInstruction::Compiled(ix) => {
-                            let data = bs58::decode(&ix.data).into_vec().map_err(|e| {
-                                KoraError::SerializationError(format!(
-                                    "Failed to decode inner compiled instruction data from base58: {}",
-                                    sanitize_error!(e)
-                                ))
-                            })?;
-                            compiled_inner_instructions.push(CompiledInstruction {
-                                program_id_index: ix.program_id_index,
-                                accounts: ix.accounts.clone(),
-                                data,
-                            });
-                        }
-                        UiInstruction::Parsed(ui_parsed) => {
-                            let compiled = IxUtils::reconstruct_instruction_from_ui(
-                                &UiInstruction::Parsed(ui_parsed.clone()),
-                                &mut extended_account_keys,
-                            )?;
-                            compiled_inner_instructions.push(compiled);
-                        }
-                    }
+                    let compiled = IxUtils::reconstruct_instruction_from_ui_with_account_key_cache(
+                        inner_ix,
+                        &mut extended_account_keys,
+                        &mut account_keys_hashmap,
+                    )?;
+                    compiled_inner_instructions.push(compiled);
                 }
             }
 

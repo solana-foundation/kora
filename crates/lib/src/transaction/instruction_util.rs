@@ -6,7 +6,9 @@ use solana_sdk::{
     pubkey::Pubkey,
 };
 use solana_system_interface::{instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID};
-use solana_transaction_status_client_types::{UiInstruction, UiParsedInstruction};
+use solana_transaction_status_client_types::{
+    UiInstruction, UiParsedInstruction, UiPartiallyDecodedInstruction,
+};
 
 use crate::{
     constant::instruction_indexes, error::KoraError, sanitize_error,
@@ -317,6 +319,55 @@ impl IxUtils {
         account_keys.iter().enumerate().map(|(idx, key)| (*key, idx as u8)).collect()
     }
 
+    fn decode_base58_instruction_data(
+        encoded_data: &str,
+        error_context: &str,
+    ) -> Result<Vec<u8>, KoraError> {
+        bs58::decode(encoded_data).into_vec().map_err(|e| {
+            KoraError::SerializationError(format!(
+                "Failed to decode {error_context} from base58: {}",
+                sanitize_error!(e)
+            ))
+        })
+    }
+
+    fn get_or_insert_account_index(
+        account_keys_hashmap: &mut HashMap<Pubkey, u8>,
+        all_account_keys: &mut Vec<Pubkey>,
+        pubkey: Pubkey,
+        overflow_context: &str,
+        inserted_keys: &mut Vec<Pubkey>,
+    ) -> Result<u8, KoraError> {
+        if let Some(&idx) = account_keys_hashmap.get(&pubkey) {
+            return Ok(idx);
+        }
+
+        let idx = u8::try_from(all_account_keys.len()).map_err(|_| {
+            KoraError::SerializationError(format!(
+                "{overflow_context} exceeds u8 index limit (len={})",
+                all_account_keys.len()
+            ))
+        })?;
+
+        all_account_keys.push(pubkey);
+        account_keys_hashmap.insert(pubkey, idx);
+        inserted_keys.push(pubkey);
+
+        Ok(idx)
+    }
+
+    fn rollback_account_key_extensions(
+        account_keys_hashmap: &mut HashMap<Pubkey, u8>,
+        all_account_keys: &mut Vec<Pubkey>,
+        snapshot_len: usize,
+        inserted_keys: &[Pubkey],
+    ) {
+        all_account_keys.truncate(snapshot_len);
+        for key in inserted_keys {
+            account_keys_hashmap.remove(key);
+        }
+    }
+
     pub fn get_account_key_if_present(ix: &Instruction, index: usize) -> Option<Pubkey> {
         if ix.accounts.is_empty() {
             return None;
@@ -336,6 +387,43 @@ impl IxUtils {
         account_keys.get(index).copied().ok_or_else(|| {
             KoraError::SerializationError(format!("Account key at index {} not found", index))
         })
+    }
+
+    fn parse_burn_owner_with_mint_fallback(instruction: &Instruction) -> Result<Pubkey, KoraError> {
+        // Standard Burn has 3 accounts: [source, mint, authority]
+        // Reconstructed from parsed RPC data may have only 2: [source, authority]
+        // (Solana RPC doesn't include mint in parsed "burn" non-checked JSON)
+        if instruction.accounts.len()
+            >= instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
+        {
+            return Ok(
+                instruction.accounts[instruction_indexes::spl_token_burn::OWNER_INDEX].pubkey
+            );
+        }
+
+        if instruction.accounts.len() == 2 {
+            log::debug!(
+                "Burn instruction has 2 accounts (reconstructed without mint), using index 1 as authority"
+            );
+            return Ok(instruction.accounts[1].pubkey);
+        }
+
+        log::error!("Burn instruction has less than 2 accounts: {:?}", instruction);
+        Err(KoraError::InvalidTransaction(
+            "Burn instruction doesn't have the required number of accounts".to_string(),
+        ))
+    }
+
+    fn extract_multisig_signers(instruction: &Instruction, skip: usize) -> Vec<Pubkey> {
+        instruction.accounts.iter().skip(skip).map(|a| a.pubkey).collect()
+    }
+
+    fn push_parsed_spl_instruction(
+        parsed_instructions: &mut HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>,
+        instruction_type: ParsedSPLInstructionType,
+        instruction_data: ParsedSPLInstructionData,
+    ) {
+        parsed_instructions.entry(instruction_type).or_default().push(instruction_data);
     }
 
     pub fn build_default_compiled_instruction(program_id_index: u8) -> CompiledInstruction {
@@ -384,14 +472,25 @@ impl IxUtils {
         ui_instruction: &UiInstruction,
         all_account_keys: &mut Vec<Pubkey>,
     ) -> Result<CompiledInstruction, KoraError> {
+        let mut account_keys_hashmap = Self::build_account_keys_hashmap(all_account_keys);
+        Self::reconstruct_instruction_from_ui_with_account_key_cache(
+            ui_instruction,
+            all_account_keys,
+            &mut account_keys_hashmap,
+        )
+    }
+
+    pub fn reconstruct_instruction_from_ui_with_account_key_cache(
+        ui_instruction: &UiInstruction,
+        all_account_keys: &mut Vec<Pubkey>,
+        account_keys_hashmap: &mut HashMap<Pubkey, u8>,
+    ) -> Result<CompiledInstruction, KoraError> {
         match ui_instruction {
             UiInstruction::Compiled(compiled) => {
-                let data = bs58::decode(&compiled.data).into_vec().map_err(|e| {
-                    KoraError::SerializationError(format!(
-                        "Failed to decode compiled instruction data from base58: {}",
-                        sanitize_error!(e)
-                    ))
-                })?;
+                let data = Self::decode_base58_instruction_data(
+                    &compiled.data,
+                    "compiled instruction data",
+                )?;
 
                 Ok(CompiledInstruction {
                     program_id_index: compiled.program_id_index,
@@ -399,121 +498,130 @@ impl IxUtils {
                     data,
                 })
             }
-            UiInstruction::Parsed(ui_parsed) => match ui_parsed {
-                UiParsedInstruction::Parsed(parsed) => {
-                    let account_keys_hashmap = Self::build_account_keys_hashmap(all_account_keys);
-                    // Reconstruct based on program type
-                    if parsed.program_id == SYSTEM_PROGRAM_ID.to_string() {
-                        Self::reconstruct_system_instruction(parsed, &account_keys_hashmap)
-                    } else if parsed.program_id == spl_token_interface::ID.to_string()
-                        || parsed.program_id == spl_token_2022_interface::ID.to_string()
-                    {
-                        Self::reconstruct_spl_token_instruction(parsed, &account_keys_hashmap)
-                    } else {
-                        // For unsupported programs, create a stub instruction with just the program ID
-                        // This ensures the program ID is preserved for security validation
-                        let program_id = parsed.program_id.parse::<Pubkey>().map_err(|e| {
-                            KoraError::SerializationError(format!(
-                                "Invalid parsed instruction program_id '{}': {}",
-                                parsed.program_id,
-                                sanitize_error!(e)
-                            ))
-                        })?;
-                        let program_id_index = *account_keys_hashmap.get(&program_id).ok_or_else(|| {
-                            KoraError::SerializationError(format!(
-                                "Unsupported parsed instruction program_id {} not found in account keys",
-                                program_id
-                            ))
-                        })?;
-
-                        Ok(Self::build_default_compiled_instruction(program_id_index))
-                    }
-                }
-                UiParsedInstruction::PartiallyDecoded(partial) => {
-                    let snapshot_len = all_account_keys.len();
-                    let result = (|| -> Result<CompiledInstruction, KoraError> {
-                        let mut account_keys_hashmap =
-                            Self::build_account_keys_hashmap(all_account_keys);
-                        let program_id = partial.program_id.parse::<Pubkey>().map_err(|e| {
-                            KoraError::SerializationError(format!(
-                                "Invalid partially decoded instruction program_id '{}': {}",
-                                partial.program_id,
-                                sanitize_error!(e)
-                            ))
-                        })?;
-
-                        // Program ID itself may be a CPI-only account not in the
-                        // outer transaction's keys (e.g. an invoked program via CPI).
-                        let program_idx = if let Some(&idx) = account_keys_hashmap.get(&program_id)
-                        {
-                            idx
-                        } else {
-                            let idx = u8::try_from(all_account_keys.len()).map_err(|_| {
-                                KoraError::SerializationError(format!(
-                                    "CPI program key exceeds u8 index limit (len={})",
-                                    all_account_keys.len()
-                                ))
-                            })?;
-                            all_account_keys.push(program_id);
-                            account_keys_hashmap.insert(program_id, idx);
-                            idx
-                        };
-
-                        // Convert account addresses to indices, extending the keys
-                        // vec for any CPI PDA accounts not in the original keys.
-                        let mut account_indices: Vec<u8> =
-                            Vec::with_capacity(partial.accounts.len());
-                        for addr_str in &partial.accounts {
-                            let pubkey = addr_str.parse::<Pubkey>().map_err(|e| {
-                                KoraError::SerializationError(format!(
-                                    "Invalid partially decoded instruction account '{}': {}",
-                                    addr_str,
-                                    sanitize_error!(e)
-                                ))
-                            })?;
-
-                            if let Some(&idx) = account_keys_hashmap.get(&pubkey) {
-                                account_indices.push(idx);
-                                continue;
-                            }
-
-                            // CPI PDA signers (e.g. Kamino lending authority)
-                            // are not in the outer transaction's account keys.
-                            // Extend the keys vec so uncompile_instructions
-                            // can resolve the index back to the pubkey.
-                            let idx = u8::try_from(all_account_keys.len()).map_err(|_| {
-                                KoraError::SerializationError(format!(
-                                    "CPI account key exceeds u8 index limit (len={})",
-                                    all_account_keys.len()
-                                ))
-                            })?;
-                            all_account_keys.push(pubkey);
-                            account_keys_hashmap.insert(pubkey, idx);
-                            account_indices.push(idx);
-                        }
-
-                        let data = bs58::decode(&partial.data).into_vec().map_err(|e| {
-                            KoraError::SerializationError(format!(
-                                "Failed to decode partially decoded instruction data from base58: {}",
-                                sanitize_error!(e)
-                            ))
-                        })?;
-
-                        Ok(CompiledInstruction {
-                            program_id_index: program_idx,
-                            accounts: account_indices,
-                            data,
-                        })
-                    })();
-
-                    if result.is_err() {
-                        all_account_keys.truncate(snapshot_len);
-                    }
-
-                    result
-                }
-            },
+            UiInstruction::Parsed(ui_parsed) => Self::reconstruct_parsed_instruction(
+                ui_parsed,
+                all_account_keys,
+                account_keys_hashmap,
+            ),
         }
+    }
+
+    fn reconstruct_parsed_instruction(
+        ui_parsed: &UiParsedInstruction,
+        all_account_keys: &mut Vec<Pubkey>,
+        account_keys_hashmap: &mut HashMap<Pubkey, u8>,
+    ) -> Result<CompiledInstruction, KoraError> {
+        match ui_parsed {
+            UiParsedInstruction::Parsed(parsed) => {
+                // Reconstruct based on program type
+                if parsed.program_id == SYSTEM_PROGRAM_ID.to_string() {
+                    Self::reconstruct_system_instruction(parsed, account_keys_hashmap)
+                } else if parsed.program_id == spl_token_interface::ID.to_string()
+                    || parsed.program_id == spl_token_2022_interface::ID.to_string()
+                {
+                    Self::reconstruct_spl_token_instruction(parsed, account_keys_hashmap)
+                } else {
+                    // For unsupported programs, create a stub instruction with just the program ID
+                    // This ensures the program ID is preserved for security validation
+                    let program_id = parsed.program_id.parse::<Pubkey>().map_err(|e| {
+                        KoraError::SerializationError(format!(
+                            "Invalid parsed instruction program_id '{}': {}",
+                            parsed.program_id,
+                            sanitize_error!(e)
+                        ))
+                    })?;
+                    let program_id_index = *account_keys_hashmap.get(&program_id).ok_or_else(|| {
+                        KoraError::SerializationError(format!(
+                            "Unsupported parsed instruction program_id {} not found in account keys",
+                            program_id
+                        ))
+                    })?;
+
+                    Ok(Self::build_default_compiled_instruction(program_id_index))
+                }
+            }
+            UiParsedInstruction::PartiallyDecoded(partial) => {
+                Self::reconstruct_partially_decoded_instruction(
+                    partial,
+                    all_account_keys,
+                    account_keys_hashmap,
+                )
+            }
+        }
+    }
+
+    fn reconstruct_partially_decoded_instruction(
+        partial: &UiPartiallyDecodedInstruction,
+        all_account_keys: &mut Vec<Pubkey>,
+        account_keys_hashmap: &mut HashMap<Pubkey, u8>,
+    ) -> Result<CompiledInstruction, KoraError> {
+        let snapshot_len = all_account_keys.len();
+        let mut inserted_keys = Vec::new();
+        let result = (|| -> Result<CompiledInstruction, KoraError> {
+            let program_id = partial.program_id.parse::<Pubkey>().map_err(|e| {
+                KoraError::SerializationError(format!(
+                    "Invalid partially decoded instruction program_id '{}': {}",
+                    partial.program_id,
+                    sanitize_error!(e)
+                ))
+            })?;
+
+            // Program ID itself may be a CPI-only account not in the
+            // outer transaction's keys (e.g. an invoked program via CPI).
+            let program_idx = Self::get_or_insert_account_index(
+                account_keys_hashmap,
+                all_account_keys,
+                program_id,
+                "CPI program key",
+                &mut inserted_keys,
+            )?;
+
+            // Convert account addresses to indices, extending the keys vec
+            // for any CPI PDA accounts not in the original keys.
+            let mut account_indices: Vec<u8> = Vec::with_capacity(partial.accounts.len());
+            for addr_str in &partial.accounts {
+                let pubkey = addr_str.parse::<Pubkey>().map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Invalid partially decoded instruction account '{}': {}",
+                        addr_str,
+                        sanitize_error!(e)
+                    ))
+                })?;
+
+                // CPI PDA signers (e.g. Kamino lending authority) are not in
+                // the outer transaction's account keys.
+                let idx = Self::get_or_insert_account_index(
+                    account_keys_hashmap,
+                    all_account_keys,
+                    pubkey,
+                    "CPI account key",
+                    &mut inserted_keys,
+                )?;
+                account_indices.push(idx);
+            }
+
+            let data = Self::decode_base58_instruction_data(
+                &partial.data,
+                "partially decoded instruction data",
+            )?;
+
+            Ok(CompiledInstruction {
+                program_id_index: program_idx,
+                accounts: account_indices,
+                data,
+            })
+        })();
+
+        if result.is_err() {
+            Self::rollback_account_key_extensions(
+                account_keys_hashmap,
+                all_account_keys,
+                snapshot_len,
+                &inserted_keys,
+            );
+        }
+
+        result
     }
 
     /// Reconstruct system program instructions from parsed format
@@ -836,11 +944,11 @@ impl IxUtils {
         parsed: &solana_transaction_status_client_types::ParsedInstruction,
         account_keys_hashmap: &HashMap<Pubkey, u8>,
     ) -> Result<CompiledInstruction, KoraError> {
-        let program_id = parsed
-            .program_id
-            .parse::<Pubkey>()
-            .map_err(|e| KoraError::SerializationError(format!("Invalid program ID: {}", e)))?;
+        let program_id = parsed.program_id.parse::<Pubkey>().map_err(|e| {
+            KoraError::SerializationError(format!("Invalid program ID: {}", sanitize_error!(e)))
+        })?;
         let program_id_index = Self::get_account_index(account_keys_hashmap, &program_id)?;
+        let is_spl_token_program = program_id == spl_token_interface::ID;
 
         let parsed_data = &parsed.parsed;
         let instruction_type = Self::get_field_as_str(parsed_data, PARSED_DATA_FIELD_TYPE)?;
@@ -859,7 +967,7 @@ impl IxUtils {
                 let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
                 let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::Transfer { amount }.pack()
                 } else {
                     #[allow(deprecated)]
@@ -891,7 +999,7 @@ impl IxUtils {
                 let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
                 let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::TransferChecked {
                         amount,
                         decimals,
@@ -954,7 +1062,7 @@ impl IxUtils {
 
                 let data = if instruction_type == PARSED_DATA_FIELD_BURN_CHECKED {
                     let decimals = decimals.unwrap(); // Safe because we set it above for burnChecked
-                    if parsed.program_id == spl_token_interface::ID.to_string() {
+                    if is_spl_token_program {
                         spl_token_interface::instruction::TokenInstruction::BurnChecked {
                             amount,
                             decimals,
@@ -967,7 +1075,7 @@ impl IxUtils {
                         }
                         .pack()
                     }
-                } else if parsed.program_id == spl_token_interface::ID.to_string() {
+                } else if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::Burn { amount }.pack()
                 } else {
                     spl_token_2022_interface::instruction::TokenInstruction::Burn { amount }.pack()
@@ -984,7 +1092,7 @@ impl IxUtils {
                 let destination_idx = Self::get_account_index(account_keys_hashmap, &destination)?;
                 let authority_idx = Self::get_account_index(account_keys_hashmap, &authority)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::CloseAccount.pack()
                 } else {
                     spl_token_2022_interface::instruction::TokenInstruction::CloseAccount.pack()
@@ -1006,7 +1114,7 @@ impl IxUtils {
                 let delegate_idx = Self::get_account_index(account_keys_hashmap, &delegate)?;
                 let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::Approve { amount }.pack()
                 } else {
                     spl_token_2022_interface::instruction::TokenInstruction::Approve { amount }
@@ -1037,7 +1145,7 @@ impl IxUtils {
                 let delegate_idx = Self::get_account_index(account_keys_hashmap, &delegate)?;
                 let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::ApproveChecked {
                         amount,
                         decimals,
@@ -1064,7 +1172,7 @@ impl IxUtils {
                 let source_idx = Self::get_account_index(account_keys_hashmap, &source)?;
                 let owner_idx = Self::get_account_index(account_keys_hashmap, &owner)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::Revoke.pack()
                 } else {
                     spl_token_2022_interface::instruction::TokenInstruction::Revoke.pack()
@@ -1107,7 +1215,7 @@ impl IxUtils {
                 let mint_authority_idx =
                     Self::get_account_index(account_keys_hashmap, &mint_authority)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::MintTo { amount }.pack()
                 } else {
                     spl_token_2022_interface::instruction::TokenInstruction::MintTo { amount }
@@ -1138,7 +1246,7 @@ impl IxUtils {
                 let mint_authority_idx =
                     Self::get_account_index(account_keys_hashmap, &mint_authority)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::MintToChecked {
                         amount,
                         decimals,
@@ -1235,7 +1343,7 @@ impl IxUtils {
                 let freeze_authority_idx =
                     Self::get_account_index(account_keys_hashmap, &freeze_authority)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::FreezeAccount.pack()
                 } else {
                     spl_token_2022_interface::instruction::TokenInstruction::FreezeAccount.pack()
@@ -1258,7 +1366,7 @@ impl IxUtils {
                 let freeze_authority_idx =
                     Self::get_account_index(account_keys_hashmap, &freeze_authority)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::ThawAccount.pack()
                 } else {
                     spl_token_2022_interface::instruction::TokenInstruction::ThawAccount.pack()
@@ -1274,7 +1382,7 @@ impl IxUtils {
                 let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
                 let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::GetAccountDataSize.pack()
                 } else {
                     spl_token_2022_interface::instruction::TokenInstruction::GetAccountDataSize {
@@ -1293,7 +1401,7 @@ impl IxUtils {
                 let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
                 let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
 
-                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::InitializeImmutableOwner
                         .pack()
                 } else {
@@ -1490,28 +1598,15 @@ impl IxUtils {
                                 });
                         }
                         spl_token_interface::instruction::TokenInstruction::Burn { .. } => {
-                            // Standard Burn has 3 accounts: [source, mint, authority]
-                            // Reconstructed from parsed RPC data may have only 2: [source, authority]
-                            // (Solana RPC doesn't include mint in parsed "burn" non-checked JSON)
-                            let owner = if instruction.accounts.len() >= instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS {
-                                instruction.accounts[instruction_indexes::spl_token_burn::OWNER_INDEX].pubkey
-                            } else if instruction.accounts.len() == 2 {
-                                log::debug!("Burn instruction has 2 accounts (reconstructed without mint), using index 1 as authority");
-                                instruction.accounts[1].pubkey
-                            } else {
-                                log::error!("Burn instruction has less than 2 accounts: {:?}", instruction);
-                                return Err(KoraError::InvalidTransaction(
-                                    "Burn instruction doesn't have the required number of accounts".to_string(),
-                                ));
-                            };
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenBurn)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenBurn {
+                            let owner = Self::parse_burn_owner_with_mint_fallback(instruction)?;
+                            Self::push_parsed_spl_instruction(
+                                &mut parsed_instructions,
+                                ParsedSPLInstructionType::SplTokenBurn,
+                                ParsedSPLInstructionData::SplTokenBurn {
                                     owner,
                                     is_2022: false,
-                                });
+                                },
+                            );
                         }
                         spl_token_interface::instruction::TokenInstruction::BurnChecked { .. } => {
                             validate_number_accounts!(
@@ -1686,8 +1781,7 @@ impl IxUtils {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             // Extract signers from accounts (skip first 2: multisig + rent sysvar)
-                            let signers: Vec<Pubkey> =
-                                instruction.accounts.iter().skip(2).map(|a| a.pubkey).collect();
+                            let signers = Self::extract_multisig_signers(instruction, 2);
 
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
@@ -1703,8 +1797,7 @@ impl IxUtils {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig2::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             // Extract signers from accounts (skip first: multisig only)
-                            let signers: Vec<Pubkey> =
-                                instruction.accounts.iter().skip(1).map(|a| a.pubkey).collect();
+                            let signers = Self::extract_multisig_signers(instruction, 1);
 
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
@@ -1779,28 +1872,15 @@ impl IxUtils {
                                 });
                         }
                         spl_token_2022_interface::instruction::TokenInstruction::Burn { .. } => {
-                            // Standard Burn has 3 accounts: [source, mint, authority]
-                            // Reconstructed from parsed RPC data may have only 2: [source, authority]
-                            // (Solana RPC doesn't include mint in parsed "burn" non-checked JSON)
-                            let owner = if instruction.accounts.len() >= instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS {
-                                instruction.accounts[instruction_indexes::spl_token_burn::OWNER_INDEX].pubkey
-                            } else if instruction.accounts.len() == 2 {
-                                log::debug!("Burn instruction has 2 accounts (reconstructed without mint), using index 1 as authority");
-                                instruction.accounts[1].pubkey
-                            } else {
-                                log::error!("Burn instruction has less than 2 accounts: {:?}", instruction);
-                                return Err(KoraError::InvalidTransaction(
-                                    "Burn instruction doesn't have the required number of accounts".to_string(),
-                                ));
-                            };
-
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenBurn)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenBurn {
+                            let owner = Self::parse_burn_owner_with_mint_fallback(instruction)?;
+                            Self::push_parsed_spl_instruction(
+                                &mut parsed_instructions,
+                                ParsedSPLInstructionType::SplTokenBurn,
+                                ParsedSPLInstructionData::SplTokenBurn {
                                     owner,
                                     is_2022: true,
-                                });
+                                },
+                            );
                         }
                         spl_token_2022_interface::instruction::TokenInstruction::BurnChecked { .. } => {
                             validate_number_accounts!(
@@ -1983,8 +2063,7 @@ impl IxUtils {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             // Extract signers from accounts (skip first 2: multisig + rent sysvar)
-                            let signers: Vec<Pubkey> =
-                                instruction.accounts.iter().skip(2).map(|a| a.pubkey).collect();
+                            let signers = Self::extract_multisig_signers(instruction, 2);
 
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
@@ -2000,8 +2079,7 @@ impl IxUtils {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_multisig2::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             // Extract signers from accounts (skip first: multisig only)
-                            let signers: Vec<Pubkey> =
-                                instruction.accounts.iter().skip(1).map(|a| a.pubkey).collect();
+                            let signers = Self::extract_multisig_signers(instruction, 1);
 
                             parsed_instructions
                                 .entry(ParsedSPLInstructionType::SplTokenInitializeMultisig)
