@@ -29,6 +29,7 @@
 //! // String-to-ExtensionType parsing:
 //! parse_mint_extension_string("transfer_fee_config") -> Some(ExtensionType::TransferFeeConfig)
 //! parse_account_extension_string("memo_transfer") -> Some(ExtensionType::MemoTransfer)
+//! parse_extension_string_any("memoTransfer") -> Some(ExtensionType::MemoTransfer)
 //!
 //! // Get all valid extension names:
 //! get_all_mint_extension_names() -> &["confidential_transfer_mint", "transfer_fee_config", ...]
@@ -110,6 +111,67 @@ define_extensions!(AccountExtension, [
     ImmutableOwner(ImmutableOwner) => ExtensionType::ImmutableOwner, "immutable_owner",
     DefaultAccountState(DefaultAccountState) => ExtensionType::DefaultAccountState, "default_account_state",
 ]);
+
+const ALL_EXTENSION_NAME_MAP: &[(ExtensionType, &str)] = &[
+    (ExtensionType::Uninitialized, "uninitialized"),
+    (ExtensionType::TransferFeeConfig, "transfer_fee_config"),
+    (ExtensionType::TransferFeeAmount, "transfer_fee_amount"),
+    (ExtensionType::MintCloseAuthority, "mint_close_authority"),
+    (ExtensionType::ConfidentialTransferMint, "confidential_transfer_mint"),
+    (ExtensionType::ConfidentialTransferAccount, "confidential_transfer_account"),
+    (ExtensionType::DefaultAccountState, "default_account_state"),
+    (ExtensionType::ImmutableOwner, "immutable_owner"),
+    (ExtensionType::MemoTransfer, "memo_transfer"),
+    (ExtensionType::NonTransferable, "non_transferable"),
+    (ExtensionType::InterestBearingConfig, "interest_bearing_config"),
+    (ExtensionType::CpiGuard, "cpi_guard"),
+    (ExtensionType::PermanentDelegate, "permanent_delegate"),
+    (ExtensionType::NonTransferableAccount, "non_transferable_account"),
+    (ExtensionType::TransferHook, "transfer_hook"),
+    (ExtensionType::TransferHookAccount, "transfer_hook_account"),
+    (ExtensionType::ConfidentialTransferFeeConfig, "confidential_transfer_fee_config"),
+    (ExtensionType::ConfidentialTransferFeeAmount, "confidential_transfer_fee_amount"),
+    (ExtensionType::MetadataPointer, "metadata_pointer"),
+    (ExtensionType::TokenMetadata, "token_metadata"),
+    (ExtensionType::GroupPointer, "group_pointer"),
+    (ExtensionType::GroupMemberPointer, "group_member_pointer"),
+    (ExtensionType::TokenGroup, "token_group"),
+    (ExtensionType::TokenGroupMember, "token_group_member"),
+    (ExtensionType::ConfidentialMintBurn, "confidential_mint_burn"),
+    (ExtensionType::ScaledUiAmount, "scaled_ui_amount"),
+    (ExtensionType::Pausable, "pausable"),
+    (ExtensionType::PausableAccount, "pausable_account"),
+];
+
+fn normalize_extension_name(input: &str) -> String {
+    let mut normalized = String::with_capacity(input.len() + 4);
+    let chars: Vec<char> = input.chars().collect();
+
+    for (index, &current) in chars.iter().enumerate() {
+        if current == '-' {
+            normalized.push('_');
+            continue;
+        }
+
+        if current.is_ascii_uppercase() {
+            let prev = index.checked_sub(1).and_then(|i| chars.get(i)).copied();
+            let next = chars.get(index + 1).copied();
+            let should_insert_underscore = prev.is_some_and(|p| {
+                p != '_'
+                    && (!p.is_ascii_uppercase() || next.is_some_and(|n| n.is_ascii_lowercase()))
+            });
+            if should_insert_underscore {
+                normalized.push('_');
+            }
+            normalized.push(current.to_ascii_lowercase());
+            continue;
+        }
+
+        normalized.push(current);
+    }
+
+    normalized
+}
 
 #[derive(Debug, Clone)]
 pub enum ParsedExtension {
@@ -208,12 +270,24 @@ pub fn try_parse_mint_extension(
 
 /// Parse a mint extension string name to ExtensionType
 pub fn parse_mint_extension_string(s: &str) -> Option<ExtensionType> {
-    MintExtension::from_string(s)
+    let normalized = normalize_extension_name(s);
+    MintExtension::from_string(&normalized)
 }
 
 /// Parse an account extension string name to ExtensionType  
 pub fn parse_account_extension_string(s: &str) -> Option<ExtensionType> {
-    AccountExtension::from_string(s)
+    let normalized = normalize_extension_name(s);
+    AccountExtension::from_string(&normalized)
+}
+
+/// Parse any token-2022 extension name to ExtensionType.
+///
+/// Accepts both `snake_case` and `camelCase` names.
+pub fn parse_extension_string_any(s: &str) -> Option<ExtensionType> {
+    let normalized = normalize_extension_name(s);
+    ALL_EXTENSION_NAME_MAP
+        .iter()
+        .find_map(|(extension_type, name)| (*name == normalized).then_some(*extension_type))
 }
 
 /// Get all valid mint extension string names
@@ -226,10 +300,16 @@ pub fn get_all_account_extension_names() -> &'static [&'static str] {
     AccountExtension::all_string_names()
 }
 
+/// Get all valid extension names accepted by [`parse_extension_string_any`].
+pub fn get_all_extension_names() -> Vec<&'static str> {
+    ALL_EXTENSION_NAME_MAP.iter().map(|(_, name)| *name).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use spl_token_2022_interface::extension::ExtensionType;
+    use std::collections::HashSet;
 
     #[test]
     fn test_mint_extension_from_string() {
@@ -524,6 +604,10 @@ mod tests {
             Some(ExtensionType::TransferFeeConfig)
         );
         assert_eq!(
+            parse_mint_extension_string("transferFeeConfig"),
+            Some(ExtensionType::TransferFeeConfig)
+        );
+        assert_eq!(
             parse_mint_extension_string("mint_close_authority"),
             Some(ExtensionType::MintCloseAuthority)
         );
@@ -543,6 +627,10 @@ mod tests {
         // Test valid account extension strings
         assert_eq!(
             parse_account_extension_string("memo_transfer"),
+            Some(ExtensionType::MemoTransfer)
+        );
+        assert_eq!(
+            parse_account_extension_string("memoTransfer"),
             Some(ExtensionType::MemoTransfer)
         );
         assert_eq!(parse_account_extension_string("cpi_guard"), Some(ExtensionType::CpiGuard));
@@ -633,5 +721,37 @@ mod tests {
         for ext in supported_account_extensions {
             assert!(AccountExtension::EXTENSIONS.contains(&ext));
         }
+    }
+
+    #[test]
+    fn test_parse_extension_string_any_supports_snake_and_camel() {
+        assert_eq!(
+            parse_extension_string_any("transfer_fee_config"),
+            Some(ExtensionType::TransferFeeConfig)
+        );
+        assert_eq!(
+            parse_extension_string_any("transferFeeConfig"),
+            Some(ExtensionType::TransferFeeConfig)
+        );
+        assert_eq!(parse_extension_string_any("memo_transfer"), Some(ExtensionType::MemoTransfer));
+        assert_eq!(parse_extension_string_any("memoTransfer"), Some(ExtensionType::MemoTransfer));
+        assert_eq!(
+            parse_extension_string_any("groupMemberPointer"),
+            Some(ExtensionType::GroupMemberPointer)
+        );
+        assert_eq!(parse_extension_string_any("does_not_exist"), None);
+    }
+
+    #[test]
+    fn test_get_all_extension_names_complete_and_unique() {
+        let names = get_all_extension_names();
+        assert_eq!(names.len(), 28, "Expected full token-2022 extension name set");
+
+        let unique_names: HashSet<&str> = names.iter().copied().collect();
+        assert_eq!(unique_names.len(), names.len(), "Extension names should be unique");
+
+        assert!(names.contains(&"transfer_fee_amount"));
+        assert!(names.contains(&"metadata_pointer"));
+        assert!(names.contains(&"group_member_pointer"));
     }
 }

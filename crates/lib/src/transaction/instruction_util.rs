@@ -305,47 +305,6 @@ impl IxUtils {
         )))
     }
 
-    fn parse_token_2022_extension_type(value: &str) -> Result<ExtensionType, KoraError> {
-        let extension_type = match value {
-            "uninitialized" => ExtensionType::Uninitialized,
-            "transferFeeConfig" => ExtensionType::TransferFeeConfig,
-            "transferFeeAmount" => ExtensionType::TransferFeeAmount,
-            "mintCloseAuthority" => ExtensionType::MintCloseAuthority,
-            "confidentialTransferMint" => ExtensionType::ConfidentialTransferMint,
-            "confidentialTransferAccount" => ExtensionType::ConfidentialTransferAccount,
-            "defaultAccountState" => ExtensionType::DefaultAccountState,
-            "immutableOwner" => ExtensionType::ImmutableOwner,
-            "memoTransfer" => ExtensionType::MemoTransfer,
-            "nonTransferable" => ExtensionType::NonTransferable,
-            "interestBearingConfig" => ExtensionType::InterestBearingConfig,
-            "cpiGuard" => ExtensionType::CpiGuard,
-            "permanentDelegate" => ExtensionType::PermanentDelegate,
-            "nonTransferableAccount" => ExtensionType::NonTransferableAccount,
-            "transferHook" => ExtensionType::TransferHook,
-            "transferHookAccount" => ExtensionType::TransferHookAccount,
-            "confidentialTransferFeeConfig" => ExtensionType::ConfidentialTransferFeeConfig,
-            "confidentialTransferFeeAmount" => ExtensionType::ConfidentialTransferFeeAmount,
-            "metadataPointer" => ExtensionType::MetadataPointer,
-            "tokenMetadata" => ExtensionType::TokenMetadata,
-            "groupPointer" => ExtensionType::GroupPointer,
-            "groupMemberPointer" => ExtensionType::GroupMemberPointer,
-            "tokenGroup" => ExtensionType::TokenGroup,
-            "tokenGroupMember" => ExtensionType::TokenGroupMember,
-            "confidentialMintBurn" => ExtensionType::ConfidentialMintBurn,
-            "scaledUiAmount" => ExtensionType::ScaledUiAmount,
-            "pausable" => ExtensionType::Pausable,
-            "pausableAccount" => ExtensionType::PausableAccount,
-            _ => {
-                return Err(KoraError::SerializationError(format!(
-                    "Unsupported token-2022 extension type '{}'",
-                    value
-                )));
-            }
-        };
-
-        Ok(extension_type)
-    }
-
     fn parse_token_2022_extension_types(
         info: &serde_json::Value,
     ) -> Result<Vec<ExtensionType>, KoraError> {
@@ -369,7 +328,13 @@ impl IxUtils {
                         PARSED_DATA_FIELD_EXTENSION_TYPES
                     ))
                 })?;
-                Self::parse_token_2022_extension_type(extension_type)
+                crate::token::spl_token_2022_util::parse_extension_string_any(extension_type)
+                    .ok_or_else(|| {
+                        KoraError::SerializationError(format!(
+                            "Unsupported token-2022 extension type '{}'",
+                            extension_type
+                        ))
+                    })
             })
             .collect()
     }
@@ -4121,6 +4086,45 @@ mod tests {
 
         let result = IxUtils::reconstruct_spl_token_instruction(
             &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
+
+        assert!(result.is_ok());
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1]); // mint index
+        assert_eq!(compiled.data, instruction.data);
+    }
+
+    #[test]
+    fn test_reconstruct_token2022_get_account_data_size_instruction_with_mixed_case_extensions() {
+        let mint = Pubkey::new_unique();
+        let token_program_id = spl_token_2022_interface::ID;
+        let account_keys = vec![token_program_id, mint];
+        let extension_types = vec![ExtensionType::ImmutableOwner, ExtensionType::MemoTransfer];
+
+        let instruction = spl_token_2022_interface::instruction::get_account_data_size(
+            &spl_token_2022_interface::ID,
+            &mint,
+            &extension_types,
+        )
+        .expect("Failed to create get_account_data_size instruction");
+
+        let parsed = solana_transaction_status_client_types::ParsedInstruction {
+            program: "spl-token-2022".to_string(),
+            program_id: spl_token_2022_interface::ID.to_string(),
+            parsed: serde_json::json!({
+                "type": PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE,
+                "info": {
+                    "mint": mint.to_string(),
+                    "extensionTypes": ["immutable_owner", "memoTransfer"]
+                }
+            }),
+            stack_height: None,
+        };
+
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &parsed,
             &IxUtils::build_account_keys_hashmap(&account_keys),
         );
 
