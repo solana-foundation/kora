@@ -16,6 +16,7 @@ use crate::{
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
     lighthouse::LighthouseUtil,
+    sanitize_error,
     transaction::{
         instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
         ParsedSystemInstructionData, ParsedSystemInstructionType,
@@ -157,7 +158,12 @@ impl VersionedTransactionResolved {
                 },
             )
             .await
-            .map_err(|e| KoraError::RpcError(format!("Failed to simulate transaction: {e}")))?;
+            .map_err(|e| {
+                KoraError::RpcError(format!(
+                    "Failed to simulate transaction: {}",
+                    sanitize_error!(e)
+                ))
+            })?;
 
         if let Some(err) = simulation_result.value.err {
             return Err(KoraError::InvalidTransaction(format!(
@@ -177,9 +183,9 @@ impl VersionedTransactionResolved {
                         UiInstruction::Compiled(ix) => {
                             let data = bs58::decode(&ix.data).into_vec().map_err(|e| {
                                 KoraError::SerializationError(format!(
-                                "Failed to decode inner compiled instruction data from base58: {}",
-                                e
-                            ))
+                                    "Failed to decode inner compiled instruction data from base58: {}",
+                                    sanitize_error!(e)
+                                ))
                             })?;
                             compiled_inner_instructions.push(CompiledInstruction {
                                 program_id_index: ix.program_id_index,
@@ -238,7 +244,10 @@ impl VersionedTransactionResolved {
 impl VersionedTransactionOps for VersionedTransactionResolved {
     fn encode_b64_transaction(&self) -> Result<String, KoraError> {
         let serialized = bincode::serialize(&self.transaction).map_err(|e| {
-            KoraError::SerializationError(format!("Base64 serialization failed: {e}"))
+            KoraError::SerializationError(format!(
+                "Base64 serialization failed: {}",
+                sanitize_error!(e)
+            ))
         })?;
         Ok(STANDARD.encode(serialized))
     }
@@ -330,7 +339,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let signature = signer
             .sign_message(&message_bytes)
             .await
-            .map_err(|e| KoraError::SigningError(e.to_string()))?;
+            .map_err(|e| KoraError::SigningError(sanitize_error!(e)))?;
 
         // Find the fee payer position - don't assume it's at position 0
         let fee_payer_position = self.find_signer_position(&fee_payer)?;
@@ -357,7 +366,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let signature = rpc_client
             .send_and_confirm_transaction(&transaction)
             .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))?;
+            .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
 
         Ok((signature.to_string(), encoded))
     }
@@ -380,14 +389,18 @@ impl LookupTableUtil {
                 CacheUtil::get_account(config, rpc_client, &lookup.account_key, false)
                     .await
                     .map_err(|e| {
-                        KoraError::RpcError(format!("Failed to fetch lookup table: {e}"))
+                        KoraError::RpcError(format!(
+                            "Failed to fetch lookup table: {}",
+                            sanitize_error!(e)
+                        ))
                     })?;
 
             // Parse the lookup table account data to get the actual addresses
             let address_lookup_table = AddressLookupTable::deserialize(&lookup_table_account.data)
                 .map_err(|e| {
                     KoraError::InvalidTransaction(format!(
-                        "Failed to deserialize lookup table: {e}"
+                        "Failed to deserialize lookup table: {}",
+                        sanitize_error!(e)
                     ))
                 })?;
 

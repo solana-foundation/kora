@@ -9,7 +9,8 @@ use solana_system_interface::{instruction::SystemInstruction, program::ID as SYS
 use solana_transaction_status_client_types::{UiInstruction, UiParsedInstruction};
 
 use crate::{
-    constant::instruction_indexes, error::KoraError, transaction::VersionedTransactionResolved,
+    constant::instruction_indexes, error::KoraError, sanitize_error,
+    transaction::VersionedTransactionResolved,
 };
 
 // Instruction type that we support to parse from the transaction
@@ -386,7 +387,7 @@ impl IxUtils {
                 let data = bs58::decode(&compiled.data).into_vec().map_err(|e| {
                     KoraError::SerializationError(format!(
                         "Failed to decode compiled instruction data from base58: {}",
-                        e
+                        sanitize_error!(e)
                     ))
                 })?;
 
@@ -412,7 +413,8 @@ impl IxUtils {
                         let program_id = parsed.program_id.parse::<Pubkey>().map_err(|e| {
                             KoraError::SerializationError(format!(
                                 "Invalid parsed instruction program_id '{}': {}",
-                                parsed.program_id, e
+                                parsed.program_id,
+                                sanitize_error!(e)
                             ))
                         })?;
                         let program_id_index = *account_keys_hashmap.get(&program_id).ok_or_else(|| {
@@ -433,7 +435,8 @@ impl IxUtils {
                         let program_id = partial.program_id.parse::<Pubkey>().map_err(|e| {
                             KoraError::SerializationError(format!(
                                 "Invalid partially decoded instruction program_id '{}': {}",
-                                partial.program_id, e
+                                partial.program_id,
+                                sanitize_error!(e)
                             ))
                         })?;
 
@@ -462,7 +465,8 @@ impl IxUtils {
                             let pubkey = addr_str.parse::<Pubkey>().map_err(|e| {
                                 KoraError::SerializationError(format!(
                                     "Invalid partially decoded instruction account '{}': {}",
-                                    addr_str, e
+                                    addr_str,
+                                    sanitize_error!(e)
                                 ))
                             })?;
 
@@ -489,7 +493,7 @@ impl IxUtils {
                         let data = bs58::decode(&partial.data).into_vec().map_err(|e| {
                             KoraError::SerializationError(format!(
                                 "Failed to decode partially decoded instruction data from base58: {}",
-                                e
+                                sanitize_error!(e)
                             ))
                         })?;
 
