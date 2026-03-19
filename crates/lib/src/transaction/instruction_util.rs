@@ -1909,7 +1909,10 @@ impl IxUtils {
                 //   [0] payer, [1] ata_address, [2] wallet_owner, [3] mint, ...
                 // Discriminator byte: 0 = Create, 1 = CreateIdempotent
                 // We parse both variants the same way.
-                let discriminator = instruction.data.first().copied().unwrap_or(0);
+                let discriminator = match instruction.data.first().copied() {
+                    Some(d) => d,
+                    None => continue,
+                };
                 if discriminator <= 1 {
                     // ATA instruction layout: [0]=payer, [1]=ata, [2]=wallet_owner, [3]=mint,
                     //                         [4]=system_program, [5]=token_program

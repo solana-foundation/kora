@@ -480,59 +480,56 @@ impl FeeConfigUtil {
             {
                 for transfer in transfers {
                     if let ParsedSPLInstructionData::SplTokenTransfer {
-                        owner,
                         mint,
                         destination_address,
                         is_2022,
                         ..
                     } = transfer
                     {
-                        if *owner == *fee_payer_pubkey {
-                            // If mint is already parsed (TransferChecked), use it directly
-                            if let Some(mint_pubkey) = mint {
-                                // Only deduct for explicitly allowed payment tokens to prevent
-                                // non-allowed tokens from reducing the drain protection check.
-                                if !config.validation.supports_token(&mint_pubkey.to_string()) {
-                                    continue;
-                                }
-                                let program_id = if *is_2022 {
-                                    spl_token_2022_interface::id()
-                                } else {
-                                    spl_token_interface::id()
-                                };
-                                let operator_ata =
-                                    spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
-                                        &payment_destination,
-                                        mint_pubkey,
-                                        &program_id,
-                                    );
-                                if *destination_address == operator_ata {
-                                    payment_mints.insert(*mint_pubkey);
-                                }
+                        // If mint is already parsed (TransferChecked), use it directly
+                        if let Some(mint_pubkey) = mint {
+                            // Only deduct for explicitly allowed payment tokens to prevent
+                            // non-allowed tokens from reducing the drain protection check.
+                            if !config.validation.supports_token(&mint_pubkey.to_string()) {
+                                continue;
+                            }
+                            let program_id = if *is_2022 {
+                                spl_token_2022_interface::id()
                             } else {
-                                // For regular transfers, check the destination account owner
-                                if let Ok(dest_account) = CacheUtil::get_account(
-                                    config,
-                                    rpc_client,
-                                    destination_address,
-                                    false,
-                                )
-                                .await
+                                spl_token_interface::id()
+                            };
+                            let operator_ata =
+                                spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+                                    &payment_destination,
+                                    mint_pubkey,
+                                    &program_id,
+                                );
+                            if *destination_address == operator_ata {
+                                payment_mints.insert(*mint_pubkey);
+                            }
+                        } else {
+                            // For regular transfers, check the destination account owner
+                            if let Ok(dest_account) = CacheUtil::get_account(
+                                config,
+                                rpc_client,
+                                destination_address,
+                                false,
+                            )
+                            .await
+                            {
+                                if let Ok(token_program) =
+                                    TokenType::get_token_program_from_owner(&dest_account.owner)
                                 {
-                                    if let Ok(token_program) =
-                                        TokenType::get_token_program_from_owner(&dest_account.owner)
+                                    if let Ok(token_account) =
+                                        token_program.unpack_token_account(&dest_account.data)
                                     {
-                                        if let Ok(token_account) =
-                                            token_program.unpack_token_account(&dest_account.data)
+                                        let token_mint = token_account.mint();
+                                        if token_account.owner() == payment_destination
+                                            && config
+                                                .validation
+                                                .supports_token(&token_mint.to_string())
                                         {
-                                            let token_mint = token_account.mint();
-                                            if token_account.owner() == payment_destination
-                                                && config
-                                                    .validation
-                                                    .supports_token(&token_mint.to_string())
-                                            {
-                                                payment_mints.insert(token_mint);
-                                            }
+                                            payment_mints.insert(token_mint);
                                         }
                                     }
                                 }
@@ -547,8 +544,6 @@ impl FeeConfigUtil {
                 return Ok(total);
             }
 
-            // Parse both first to ensure they are cached
-            transaction.get_or_parse_ata_instructions()?;
             let system_creates = transaction
                 .get_or_parse_system_instructions()?
                 .get(&ParsedSystemInstructionType::SystemCreateAccount)
