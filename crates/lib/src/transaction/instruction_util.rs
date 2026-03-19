@@ -419,7 +419,16 @@ impl IxUtils {
                         {
                             idx
                         } else {
-                            let idx = all_account_keys.len() as u8;
+                            let idx = match u8::try_from(all_account_keys.len()) {
+                                Ok(i) => i,
+                                Err(_) => {
+                                    log::error!(
+                                        "Account keys exceeds u8 index limit ({})",
+                                        all_account_keys.len()
+                                    );
+                                    return None;
+                                }
+                            };
                             all_account_keys.push(program_id);
                             account_keys_hashmap.insert(program_id, idx);
                             idx
@@ -427,26 +436,36 @@ impl IxUtils {
 
                         // Convert account addresses to indices, extending the keys
                         // vec for any CPI PDA accounts not in the original keys.
-                        let account_indices: Vec<u8> = partial
-                            .accounts
-                            .iter()
-                            .filter_map(|addr_str| {
-                                addr_str.parse::<Pubkey>().ok().map(|pubkey| {
-                                    if let Some(&idx) = account_keys_hashmap.get(&pubkey) {
-                                        idx
-                                    } else {
-                                        // CPI PDA signers (e.g. Kamino lending authority)
-                                        // are not in the outer transaction's account keys.
-                                        // Extend the keys vec so uncompile_instructions
-                                        // can resolve the index back to the pubkey.
-                                        let idx = all_account_keys.len() as u8;
-                                        all_account_keys.push(pubkey);
-                                        account_keys_hashmap.insert(pubkey, idx);
-                                        idx
-                                    }
-                                })
-                            })
-                            .collect();
+                        let mut account_indices: Vec<u8> =
+                            Vec::with_capacity(partial.accounts.len());
+                        for addr_str in &partial.accounts {
+                            let Some(pubkey) = addr_str.parse::<Pubkey>().ok() else {
+                                continue;
+                            };
+
+                            if let Some(&idx) = account_keys_hashmap.get(&pubkey) {
+                                account_indices.push(idx);
+                                continue;
+                            }
+
+                            // CPI PDA signers (e.g. Kamino lending authority)
+                            // are not in the outer transaction's account keys.
+                            // Extend the keys vec so uncompile_instructions
+                            // can resolve the index back to the pubkey.
+                            let idx = match u8::try_from(all_account_keys.len()) {
+                                Ok(i) => i,
+                                Err(_) => {
+                                    log::error!(
+                                        "Account keys exceeds u8 index limit ({})",
+                                        all_account_keys.len()
+                                    );
+                                    return None;
+                                }
+                            };
+                            all_account_keys.push(pubkey);
+                            account_keys_hashmap.insert(pubkey, idx);
+                            account_indices.push(idx);
+                        }
 
                         return Some(CompiledInstruction {
                             program_id_index: program_idx,
@@ -886,12 +905,15 @@ impl IxUtils {
                     let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
                     vec![account_idx, mint_idx, authority_idx]
                 } else if let Ok(mint) = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT) {
-                    // Some RPC providers may include mint for non-checked burn
-                    let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
-                    vec![account_idx, mint_idx, authority_idx]
+                    // Solana's parser often includes mint for non-checked burn. If the
+                    // mint index is unavailable, fall back to [source, authority].
+                    if let Ok(mint_idx) = Self::get_account_index(account_keys_hashmap, &mint) {
+                        vec![account_idx, mint_idx, authority_idx]
+                    } else {
+                        vec![account_idx, authority_idx]
+                    }
                 } else {
-                    // Standard Solana RPC doesn't include mint in parsed "burn"
-                    // (non-checked) JSON, so we reconstruct with 2 accounts
+                    // Defensive fallback for providers omitting mint in parsed burn JSON.
                     vec![account_idx, authority_idx]
                 };
 
@@ -2935,6 +2957,54 @@ mod tests {
     }
 
     #[test]
+    fn test_reconstruct_partially_decoded_rejects_program_index_overflow() {
+        let mut account_keys: Vec<Pubkey> = (0..256).map(|_| Pubkey::new_unique()).collect();
+        let cpi_program = Pubkey::new_unique(); // not in account_keys
+
+        let partial = solana_transaction_status_client_types::UiPartiallyDecodedInstruction {
+            program_id: cpi_program.to_string(),
+            accounts: vec![account_keys[0].to_string()],
+            data: bs58::encode(&[1]).into_string(),
+            stack_height: None,
+        };
+
+        let ui_parsed = UiParsedInstruction::PartiallyDecoded(partial);
+
+        let result = IxUtils::reconstruct_instruction_from_ui(
+            &UiInstruction::Parsed(ui_parsed),
+            &mut account_keys,
+        );
+
+        assert!(result.is_none(), "should fail when program index would overflow u8");
+        assert_eq!(account_keys.len(), 256, "account keys should remain unchanged on failure");
+    }
+
+    #[test]
+    fn test_reconstruct_partially_decoded_rejects_account_index_overflow() {
+        let mut account_keys: Vec<Pubkey> = (0..256).map(|_| Pubkey::new_unique()).collect();
+        let program_id = account_keys[0];
+        let known_account = account_keys[1];
+        let cpi_account = Pubkey::new_unique(); // not in account_keys
+
+        let partial = solana_transaction_status_client_types::UiPartiallyDecodedInstruction {
+            program_id: program_id.to_string(),
+            accounts: vec![known_account.to_string(), cpi_account.to_string()],
+            data: bs58::encode(&[2]).into_string(),
+            stack_height: None,
+        };
+
+        let ui_parsed = UiParsedInstruction::PartiallyDecoded(partial);
+
+        let result = IxUtils::reconstruct_instruction_from_ui(
+            &UiInstruction::Parsed(ui_parsed),
+            &mut account_keys,
+        );
+
+        assert!(result.is_none(), "should fail when account index would overflow u8");
+        assert_eq!(account_keys.len(), 256, "account keys should remain unchanged on failure");
+    }
+
+    #[test]
     fn test_reconstruct_system_transfer_instruction() {
         let source = Pubkey::new_unique();
         let destination = Pubkey::new_unique();
@@ -3281,6 +3351,41 @@ mod tests {
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // account, mint, authority indices (mint included when present in parsed data)
+        assert_eq!(compiled.data, instruction.data);
+    }
+
+    #[test]
+    fn test_reconstruct_spl_token_burn_instruction_falls_back_without_mint_index() {
+        let account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let token_program_id = spl_token_interface::ID;
+        // Deliberately omit mint from account keys to validate fallback behavior.
+        let account_keys = vec![token_program_id, account, authority];
+        let amount = 500000u64;
+
+        let instruction = spl_token_interface::instruction::burn(
+            &spl_token_interface::ID,
+            &account,
+            &mint,
+            &authority,
+            &[],
+            amount,
+        )
+        .expect("Failed to create burn instruction");
+
+        let solana_parsed = create_parsed_spl_token_burn(&account, &mint, &authority, amount)
+            .expect("Failed to create parsed instruction");
+
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
+
+        assert!(result.is_ok());
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1, 2]); // account, authority fallback
         assert_eq!(compiled.data, instruction.data);
     }
 
