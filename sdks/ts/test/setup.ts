@@ -19,7 +19,7 @@ const DEFAULTS = {
     DECIMALS: 6,
 
     // Make sure this matches the USDC mint in kora.toml (9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ)
-    DESTINATION_ADDRESS: '2oyKLCZwn4rqVCmgb1Gbk94ch3xkxxsJpNb32qsK4in7',
+    DESTINATION_ADDRESS: 'AVmDft8deQEo78bRKcGN5ZMf3hyjeLBK4Rd4xGB46yQM',
 
     // DO NOT USE THESE KEYPAIRS IN PRODUCTION, TESTING KEYPAIRS ONLY
     KORA_ADDRESS: '7AqpcUvgJ7Kh1VmJZ44rWp2XDow33vswo9VK9VqpPU2d',
