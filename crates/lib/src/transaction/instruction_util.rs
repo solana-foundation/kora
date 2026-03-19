@@ -380,14 +380,20 @@ impl IxUtils {
     pub fn reconstruct_instruction_from_ui(
         ui_instruction: &UiInstruction,
         all_account_keys: &mut Vec<Pubkey>,
-    ) -> Option<CompiledInstruction> {
+    ) -> Result<CompiledInstruction, KoraError> {
         match ui_instruction {
             UiInstruction::Compiled(compiled) => {
-                // Already compiled, decode data and return
-                Some(CompiledInstruction {
+                let data = bs58::decode(&compiled.data).into_vec().map_err(|e| {
+                    KoraError::SerializationError(format!(
+                        "Failed to decode compiled instruction data from base58: {}",
+                        e
+                    ))
+                })?;
+
+                Ok(CompiledInstruction {
                     program_id_index: compiled.program_id_index,
                     accounts: compiled.accounts.clone(),
-                    data: bs58::decode(&compiled.data).into_vec().unwrap_or_default(),
+                    data,
                 })
             }
             UiInstruction::Parsed(ui_parsed) => match ui_parsed {
@@ -395,40 +401,54 @@ impl IxUtils {
                     let account_keys_hashmap = Self::build_account_keys_hashmap(all_account_keys);
                     // Reconstruct based on program type
                     if parsed.program_id == SYSTEM_PROGRAM_ID.to_string() {
-                        Self::reconstruct_system_instruction(parsed, &account_keys_hashmap).ok()
+                        Self::reconstruct_system_instruction(parsed, &account_keys_hashmap)
                     } else if parsed.program_id == spl_token_interface::ID.to_string()
                         || parsed.program_id == spl_token_2022_interface::ID.to_string()
                     {
-                        Self::reconstruct_spl_token_instruction(parsed, &account_keys_hashmap).ok()
+                        Self::reconstruct_spl_token_instruction(parsed, &account_keys_hashmap)
                     } else {
                         // For unsupported programs, create a stub instruction with just the program ID
                         // This ensures the program ID is preserved for security validation
-                        let program_id = parsed.program_id.parse::<Pubkey>().ok()?;
-                        let program_id_index = *account_keys_hashmap.get(&program_id)?;
+                        let program_id = parsed.program_id.parse::<Pubkey>().map_err(|e| {
+                            KoraError::SerializationError(format!(
+                                "Invalid parsed instruction program_id '{}': {}",
+                                parsed.program_id, e
+                            ))
+                        })?;
+                        let program_id_index = *account_keys_hashmap.get(&program_id).ok_or_else(|| {
+                            KoraError::SerializationError(format!(
+                                "Unsupported parsed instruction program_id {} not found in account keys",
+                                program_id
+                            ))
+                        })?;
 
-                        Some(Self::build_default_compiled_instruction(program_id_index))
+                        Ok(Self::build_default_compiled_instruction(program_id_index))
                     }
                 }
                 UiParsedInstruction::PartiallyDecoded(partial) => {
-                    let mut account_keys_hashmap =
-                        Self::build_account_keys_hashmap(all_account_keys);
-                    if let Ok(program_id) = partial.program_id.parse::<Pubkey>() {
+                    let snapshot_len = all_account_keys.len();
+                    let result = (|| -> Result<CompiledInstruction, KoraError> {
+                        let mut account_keys_hashmap =
+                            Self::build_account_keys_hashmap(all_account_keys);
+                        let program_id = partial.program_id.parse::<Pubkey>().map_err(|e| {
+                            KoraError::SerializationError(format!(
+                                "Invalid partially decoded instruction program_id '{}': {}",
+                                partial.program_id, e
+                            ))
+                        })?;
+
                         // Program ID itself may be a CPI-only account not in the
                         // outer transaction's keys (e.g. an invoked program via CPI).
                         let program_idx = if let Some(&idx) = account_keys_hashmap.get(&program_id)
                         {
                             idx
                         } else {
-                            let idx = match u8::try_from(all_account_keys.len()) {
-                                Ok(i) => i,
-                                Err(_) => {
-                                    log::error!(
-                                        "Account keys exceeds u8 index limit ({})",
-                                        all_account_keys.len()
-                                    );
-                                    return None;
-                                }
-                            };
+                            let idx = u8::try_from(all_account_keys.len()).map_err(|_| {
+                                KoraError::SerializationError(format!(
+                                    "CPI program key exceeds u8 index limit (len={})",
+                                    all_account_keys.len()
+                                ))
+                            })?;
                             all_account_keys.push(program_id);
                             account_keys_hashmap.insert(program_id, idx);
                             idx
@@ -439,9 +459,12 @@ impl IxUtils {
                         let mut account_indices: Vec<u8> =
                             Vec::with_capacity(partial.accounts.len());
                         for addr_str in &partial.accounts {
-                            let Some(pubkey) = addr_str.parse::<Pubkey>().ok() else {
-                                continue;
-                            };
+                            let pubkey = addr_str.parse::<Pubkey>().map_err(|e| {
+                                KoraError::SerializationError(format!(
+                                    "Invalid partially decoded instruction account '{}': {}",
+                                    addr_str, e
+                                ))
+                            })?;
 
                             if let Some(&idx) = account_keys_hashmap.get(&pubkey) {
                                 account_indices.push(idx);
@@ -452,30 +475,36 @@ impl IxUtils {
                             // are not in the outer transaction's account keys.
                             // Extend the keys vec so uncompile_instructions
                             // can resolve the index back to the pubkey.
-                            let idx = match u8::try_from(all_account_keys.len()) {
-                                Ok(i) => i,
-                                Err(_) => {
-                                    log::error!(
-                                        "Account keys exceeds u8 index limit ({})",
-                                        all_account_keys.len()
-                                    );
-                                    return None;
-                                }
-                            };
+                            let idx = u8::try_from(all_account_keys.len()).map_err(|_| {
+                                KoraError::SerializationError(format!(
+                                    "CPI account key exceeds u8 index limit (len={})",
+                                    all_account_keys.len()
+                                ))
+                            })?;
                             all_account_keys.push(pubkey);
                             account_keys_hashmap.insert(pubkey, idx);
                             account_indices.push(idx);
                         }
 
-                        return Some(CompiledInstruction {
+                        let data = bs58::decode(&partial.data).into_vec().map_err(|e| {
+                            KoraError::SerializationError(format!(
+                                "Failed to decode partially decoded instruction data from base58: {}",
+                                e
+                            ))
+                        })?;
+
+                        Ok(CompiledInstruction {
                             program_id_index: program_idx,
                             accounts: account_indices,
-                            data: bs58::decode(&partial.data).into_vec().unwrap_or_default(),
-                        });
+                            data,
+                        })
+                    })();
+
+                    if result.is_err() {
+                        all_account_keys.truncate(snapshot_len);
                     }
 
-                    log::error!("Failed to reconstruct partially decoded instruction");
-                    None
+                    result
                 }
             },
         }
@@ -1417,8 +1446,7 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token_interface::instruction::TokenInstruction::Burn { .. }
-                        | spl_token_interface::instruction::TokenInstruction::BurnChecked { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::Burn { .. } => {
                             // Standard Burn has 3 accounts: [source, mint, authority]
                             // Reconstructed from parsed RPC data may have only 2: [source, authority]
                             // (Solana RPC doesn't include mint in parsed "burn" non-checked JSON)
@@ -1439,6 +1467,22 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenBurn {
                                     owner,
+                                    is_2022: false,
+                                });
+                        }
+                        spl_token_interface::instruction::TokenInstruction::BurnChecked { .. } => {
+                            validate_number_accounts!(
+                                instruction,
+                                instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
+                            );
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenBurn)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenBurn {
+                                    owner: instruction.accounts
+                                        [instruction_indexes::spl_token_burn::OWNER_INDEX]
+                                        .pubkey,
                                     is_2022: false,
                                 });
                         }
@@ -1691,8 +1735,7 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022_interface::instruction::TokenInstruction::Burn { .. }
-                        | spl_token_2022_interface::instruction::TokenInstruction::BurnChecked { .. } => {
+                        spl_token_2022_interface::instruction::TokenInstruction::Burn { .. } => {
                             // Standard Burn has 3 accounts: [source, mint, authority]
                             // Reconstructed from parsed RPC data may have only 2: [source, authority]
                             // (Solana RPC doesn't include mint in parsed "burn" non-checked JSON)
@@ -1713,6 +1756,22 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenBurn {
                                     owner,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022_interface::instruction::TokenInstruction::BurnChecked { .. } => {
+                            validate_number_accounts!(
+                                instruction,
+                                instruction_indexes::spl_token_burn::REQUIRED_NUMBER_OF_ACCOUNTS
+                            );
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenBurn)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenBurn {
+                                    owner: instruction.accounts
+                                        [instruction_indexes::spl_token_burn::OWNER_INDEX]
+                                        .pubkey,
                                     is_2022: true,
                                 });
                         }
@@ -2811,6 +2870,87 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_token_instructions_burn_checked_requires_three_accounts() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            instruction::{AccountMeta, Instruction},
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let payer = Keypair::new();
+        let source = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let burn_checked_data = spl_token_interface::instruction::TokenInstruction::BurnChecked {
+            amount: 10,
+            decimals: 6,
+        }
+        .pack();
+
+        let malformed_burn_checked = Instruction {
+            program_id: spl_token_interface::ID,
+            accounts: vec![
+                AccountMeta::new(source, false),
+                AccountMeta::new_readonly(authority, false),
+            ],
+            data: burn_checked_data,
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[malformed_burn_checked],
+            Some(&payer.pubkey()),
+        ));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let result = IxUtils::parse_token_instructions(&resolved_tx);
+        assert!(result.is_err(), "BurnChecked with 2 accounts must be rejected");
+    }
+
+    #[test]
+    fn test_parse_token_2022_instructions_burn_checked_requires_three_accounts() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            instruction::{AccountMeta, Instruction},
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let payer = Keypair::new();
+        let source = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let burn_checked_data =
+            spl_token_2022_interface::instruction::TokenInstruction::BurnChecked {
+                amount: 10,
+                decimals: 6,
+            }
+            .pack();
+
+        let malformed_burn_checked = Instruction {
+            program_id: spl_token_2022_interface::ID,
+            accounts: vec![
+                AccountMeta::new(source, false),
+                AccountMeta::new_readonly(authority, false),
+            ],
+            data: burn_checked_data,
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[malformed_burn_checked],
+            Some(&payer.pubkey()),
+        ));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let result = IxUtils::parse_token_instructions(&resolved_tx);
+        assert!(result.is_err(), "Token-2022 BurnChecked with 2 accounts must be rejected");
+    }
+
+    #[test]
     fn test_uncompile_instructions() {
         let program_id = Pubkey::new_unique();
         let account1 = Pubkey::new_unique();
@@ -2852,7 +2992,7 @@ mod tests {
             &mut account_keys,
         );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1]);
@@ -2880,7 +3020,7 @@ mod tests {
             &mut account_keys,
         );
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2]); // account1, account2 indices
@@ -2910,7 +3050,7 @@ mod tests {
             &mut account_keys,
         );
 
-        assert!(result.is_some(), "Should succeed even with unknown CPI PDA account");
+        assert!(result.is_ok(), "Should succeed even with unknown CPI PDA account");
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         // Both accounts should be present — the PDA gets a synthetic index
@@ -2947,7 +3087,7 @@ mod tests {
             &mut account_keys,
         );
 
-        assert!(result.is_some(), "Should succeed even with unknown program ID");
+        assert!(result.is_ok(), "Should succeed even with unknown program ID");
         let compiled = result.unwrap();
         // Program ID gets index 1, cpi_account gets index 2
         assert_eq!(compiled.program_id_index, 1);
@@ -2975,7 +3115,7 @@ mod tests {
             &mut account_keys,
         );
 
-        assert!(result.is_none(), "should fail when program index would overflow u8");
+        assert!(result.is_err(), "should fail when program index would overflow u8");
         assert_eq!(account_keys.len(), 256, "account keys should remain unchanged on failure");
     }
 
@@ -3000,8 +3140,40 @@ mod tests {
             &mut account_keys,
         );
 
-        assert!(result.is_none(), "should fail when account index would overflow u8");
+        assert!(result.is_err(), "should fail when account index would overflow u8");
         assert_eq!(account_keys.len(), 256, "account keys should remain unchanged on failure");
+    }
+
+    #[test]
+    fn test_reconstruct_partially_decoded_rolls_back_on_mid_loop_overflow() {
+        let mut account_keys: Vec<Pubkey> = (0..254).map(|_| Pubkey::new_unique()).collect();
+        let program_id = account_keys[0];
+        let known_account = account_keys[1];
+        let cpi_account_1 = Pubkey::new_unique();
+        let cpi_account_2 = Pubkey::new_unique();
+        let cpi_account_3 = Pubkey::new_unique(); // triggers overflow after two pushes
+
+        let partial = solana_transaction_status_client_types::UiPartiallyDecodedInstruction {
+            program_id: program_id.to_string(),
+            accounts: vec![
+                known_account.to_string(),
+                cpi_account_1.to_string(),
+                cpi_account_2.to_string(),
+                cpi_account_3.to_string(),
+            ],
+            data: bs58::encode(&[3]).into_string(),
+            stack_height: None,
+        };
+
+        let ui_parsed = UiParsedInstruction::PartiallyDecoded(partial);
+
+        let result = IxUtils::reconstruct_instruction_from_ui(
+            &UiInstruction::Parsed(ui_parsed),
+            &mut account_keys,
+        );
+
+        assert!(result.is_err(), "should fail when account index overflows mid-loop");
+        assert_eq!(account_keys.len(), 254, "account keys should roll back to snapshot length");
     }
 
     #[test]
@@ -3808,7 +3980,7 @@ mod tests {
 
         let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &mut account_keys);
 
-        assert!(result.is_some(), "SPL token transfer should be dispatched via program_id");
+        assert!(result.is_ok(), "SPL token transfer should be dispatched via program_id");
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]);
@@ -3830,7 +4002,7 @@ mod tests {
 
         let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &mut account_keys);
 
-        assert!(result.is_some(), "Token2022 transfer should be dispatched via program_id");
+        assert!(result.is_ok(), "Token2022 transfer should be dispatched via program_id");
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]);
@@ -3851,7 +4023,7 @@ mod tests {
 
         let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &mut account_keys);
 
-        assert!(result.is_some(), "System transfer should be dispatched via program_id");
+        assert!(result.is_ok(), "System transfer should be dispatched via program_id");
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
     }
@@ -3877,7 +4049,7 @@ mod tests {
 
         let result = IxUtils::reconstruct_instruction_from_ui(&ui_instruction, &mut account_keys);
 
-        assert!(result.is_some());
+        assert!(result.is_ok());
         let compiled = result.unwrap();
 
         assert_eq!(compiled.program_id_index, 0);

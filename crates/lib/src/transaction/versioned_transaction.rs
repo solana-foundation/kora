@@ -171,25 +171,32 @@ impl VersionedTransactionResolved {
             // during inner instruction reconstruction.
             let mut extended_account_keys = self.all_account_keys.clone();
 
-            inner_instructions.iter().for_each(|ix| {
-                ix.instructions.iter().for_each(|inner_ix| match inner_ix {
-                    UiInstruction::Compiled(ix) => {
-                        compiled_inner_instructions.push(CompiledInstruction {
-                            program_id_index: ix.program_id_index,
-                            accounts: ix.accounts.clone(),
-                            data: bs58::decode(&ix.data).into_vec().unwrap_or_default(),
-                        });
-                    }
-                    UiInstruction::Parsed(ui_parsed) => {
-                        if let Some(compiled) = IxUtils::reconstruct_instruction_from_ui(
-                            &UiInstruction::Parsed(ui_parsed.clone()),
-                            &mut extended_account_keys,
-                        ) {
+            for ix in &inner_instructions {
+                for inner_ix in &ix.instructions {
+                    match inner_ix {
+                        UiInstruction::Compiled(ix) => {
+                            let data = bs58::decode(&ix.data).into_vec().map_err(|e| {
+                                KoraError::SerializationError(format!(
+                                "Failed to decode inner compiled instruction data from base58: {}",
+                                e
+                            ))
+                            })?;
+                            compiled_inner_instructions.push(CompiledInstruction {
+                                program_id_index: ix.program_id_index,
+                                accounts: ix.accounts.clone(),
+                                data,
+                            });
+                        }
+                        UiInstruction::Parsed(ui_parsed) => {
+                            let compiled = IxUtils::reconstruct_instruction_from_ui(
+                                &UiInstruction::Parsed(ui_parsed.clone()),
+                                &mut extended_account_keys,
+                            )?;
                             compiled_inner_instructions.push(compiled);
                         }
                     }
-                });
-            });
+                }
+            }
 
             return IxUtils::uncompile_instructions(
                 &compiled_inner_instructions,
