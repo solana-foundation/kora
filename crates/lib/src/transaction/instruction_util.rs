@@ -236,6 +236,8 @@ pub const PARSED_DATA_FIELD_INITIALIZE_MULTISIG: &str = "initializeMultisig";
 pub const PARSED_DATA_FIELD_INITIALIZE_MULTISIG2: &str = "initializeMultisig2";
 pub const PARSED_DATA_FIELD_FREEZE_ACCOUNT: &str = "freezeAccount";
 pub const PARSED_DATA_FIELD_THAW_ACCOUNT: &str = "thawAccount";
+pub const PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE: &str = "getAccountDataSize";
+pub const PARSED_DATA_FIELD_INITIALIZE_IMMUTABLE_OWNER: &str = "initializeImmutableOwner";
 
 // Additional field names for new instructions
 pub const PARSED_DATA_FIELD_MINT_AUTHORITY: &str = "mintAuthority";
@@ -1265,6 +1267,43 @@ impl IxUtils {
                 Ok(CompiledInstruction {
                     program_id_index,
                     accounts: vec![account_idx, mint_idx, freeze_authority_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE => {
+                let mint = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_MINT)?;
+                let mint_idx = Self::get_account_index(account_keys_hashmap, &mint)?;
+
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::GetAccountDataSize.pack()
+                } else {
+                    spl_token_2022_interface::instruction::TokenInstruction::GetAccountDataSize {
+                        extension_types: vec![],
+                    }
+                    .pack()
+                };
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![mint_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_INITIALIZE_IMMUTABLE_OWNER => {
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+
+                let data = if parsed.program_id == spl_token_interface::ID.to_string() {
+                    spl_token_interface::instruction::TokenInstruction::InitializeImmutableOwner
+                        .pack()
+                } else {
+                    spl_token_2022_interface::instruction::TokenInstruction::InitializeImmutableOwner
+                        .pack()
+                };
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![account_idx],
                     data,
                 })
             }
@@ -2660,6 +2699,31 @@ mod tests {
         Ok(parsed)
     }
 
+    fn create_parsed_token2022_get_account_data_size(
+        mint: &Pubkey,
+    ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
+    {
+        let solana_instruction = spl_token_2022_interface::instruction::get_account_data_size(
+            &spl_token_2022_interface::ID,
+            mint,
+            &[],
+        )?;
+
+        let message = Message::new(&[solana_instruction], None);
+        let compiled_instruction = &message.instructions[0];
+
+        let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
+
+        let parsed = parse_instruction::parse(
+            &spl_token_2022_interface::ID,
+            compiled_instruction,
+            &account_keys_for_parsing,
+            None,
+        )?;
+
+        Ok(parsed)
+    }
+
     #[test]
     fn test_get_field_as_u64() {
         // Valid JSON number
@@ -3787,6 +3851,34 @@ mod tests {
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3, 4]); // source, mint, destination, authority indices
+        assert_eq!(compiled.data, instruction.data);
+    }
+
+    #[test]
+    fn test_reconstruct_token2022_get_account_data_size_instruction() {
+        let mint = Pubkey::new_unique();
+        let token_program_id = spl_token_2022_interface::ID;
+        let account_keys = vec![token_program_id, mint];
+
+        let instruction = spl_token_2022_interface::instruction::get_account_data_size(
+            &spl_token_2022_interface::ID,
+            &mint,
+            &[],
+        )
+        .expect("Failed to create get_account_data_size instruction");
+
+        let solana_parsed = create_parsed_token2022_get_account_data_size(&mint)
+            .expect("Failed to create parsed instruction");
+
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
+
+        assert!(result.is_ok());
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1]); // mint index
         assert_eq!(compiled.data, instruction.data);
     }
 
