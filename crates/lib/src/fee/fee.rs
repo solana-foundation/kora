@@ -470,148 +470,161 @@ impl FeeConfigUtil {
         // If dynamic_ata_deduction is enabled, subtract rent for ATA creation instructions
         // that create ATAs for the operator's payment address for the fee payment token (mint)
         if config.validation.dynamic_ata_deduction {
-            let payment_destination = config.kora.get_payment_address(fee_payer_pubkey)?;
+            total = Self::deduct_operator_ata_rent(
+                total,
+                fee_payer_pubkey,
+                transaction,
+                rpc_client,
+                config,
+            )
+            .await?;
+        }
 
-            // 1. Find all mints being transferred to the operator's payment destination from the fee payer
-            let mut payment_mints = std::collections::HashSet::new();
-            let spl_instructions = transaction.get_or_parse_spl_instructions()?;
-            if let Some(transfers) =
-                spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer)
-            {
-                for transfer in transfers {
-                    if let ParsedSPLInstructionData::SplTokenTransfer {
-                        mint,
-                        destination_address,
-                        is_2022,
-                        ..
-                    } = transfer
-                    {
-                        // If mint is already parsed (TransferChecked), use it directly
-                        if let Some(mint_pubkey) = mint {
-                            // Only deduct for explicitly allowed payment tokens to prevent
-                            // non-allowed tokens from reducing the drain protection check.
-                            if !config.validation.supports_token(&mint_pubkey.to_string()) {
-                                continue;
-                            }
-                            let program_id = if *is_2022 {
-                                spl_token_2022_interface::id()
-                            } else {
-                                spl_token_interface::id()
-                            };
-                            let operator_ata =
-                                spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
-                                    &payment_destination,
-                                    mint_pubkey,
-                                    &program_id,
-                                );
-                            if *destination_address == operator_ata {
-                                payment_mints.insert(*mint_pubkey);
-                            }
-                        } else {
-                            // For regular transfers, check the destination account owner
-                            if let Ok(dest_account) = CacheUtil::get_account(
-                                config,
-                                rpc_client,
-                                destination_address,
-                                false,
-                            )
-                            .await
+        Ok(total)
+    }
+
+    async fn deduct_operator_ata_rent(
+        mut total: u64,
+        fee_payer_pubkey: &Pubkey,
+        transaction: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        config: &Config,
+    ) -> Result<u64, KoraError> {
+        let payment_destination = config.kora.get_payment_address(fee_payer_pubkey)?;
+        let payment_mints =
+            collect_payment_mints(&payment_destination, transaction, rpc_client, config).await?;
+
+        if payment_mints.is_empty() {
+            return Ok(total);
+        }
+
+        // Build O(1) lookup: ata_address → lamports, pre-filtered by payer == fee_payer_pubkey.
+        let sys_create_map: std::collections::HashMap<Pubkey, u64> = {
+            let sys_insts = transaction.get_or_parse_system_instructions()?;
+            sys_insts
+                .get(&ParsedSystemInstructionType::SystemCreateAccount)
+                .map(|creates| {
+                    creates
+                        .iter()
+                        .filter_map(|ix| {
+                            if let ParsedSystemInstructionData::SystemCreateAccount {
+                                new_account,
+                                lamports,
+                                payer,
+                            } = ix
                             {
-                                if let Ok(token_program) =
-                                    TokenType::get_token_program_from_owner(&dest_account.owner)
-                                {
-                                    if let Ok(token_account) =
-                                        token_program.unpack_token_account(&dest_account.data)
-                                    {
-                                        let token_mint = token_account.mint();
-                                        if token_account.owner() == payment_destination
-                                            && config
-                                                .validation
-                                                .supports_token(&token_mint.to_string())
-                                        {
-                                            payment_mints.insert(token_mint);
-                                        }
-                                    }
+                                if *payer == *fee_payer_pubkey {
+                                    return Some((*new_account, *lamports));
                                 }
                             }
-                        }
-                    }
-                }
-            }
-
-            // If no payment mint matches the operator's destination, skip deduction entirely
-            if payment_mints.is_empty() {
-                return Ok(total);
-            }
-
-            let system_creates = transaction
-                .get_or_parse_system_instructions()?
-                .get(&ParsedSystemInstructionType::SystemCreateAccount)
-                .cloned()
-                .unwrap_or_default();
-
-            let parsed_ata_instructions = transaction.get_or_parse_ata_instructions()?;
-
-            if let Some(ata_creates) =
-                parsed_ata_instructions.get(&ParsedATAInstructionType::CreateAssociatedTokenAccount)
-            {
-                let mut seen_atas = std::collections::HashSet::new();
-                for ata_instruction in ata_creates {
-                    let ParsedATAInstructionData::CreateAssociatedTokenAccount {
-                        payer,
-                        wallet_owner,
-                        mint,
-                        ata_address,
-                        ..
-                    } = ata_instruction;
-
-                    // Find the matching SystemCreateAccount to get the actual rent paid.
-                    // - Only verify new_account == ata_address, no hardcoded lamport check, so
-                    //   Token-2022 ATAs (higher rent due to ImmutableOwner extension) work too.
-                    // - Verify payer == fee_payer_pubkey so we only deduct rent that was actually
-                    //   added to `total` in the outflow loop above (which gates on payer == fee_payer).
-                    let actual_rent: Option<u64> = system_creates.iter().find_map(|system_ix| {
-                        if let ParsedSystemInstructionData::SystemCreateAccount {
-                            new_account,
-                            lamports,
-                            payer: sys_payer,
-                        } = system_ix
-                        {
-                            if *new_account == *ata_address && *sys_payer == *fee_payer_pubkey {
-                                Some(*lamports)
-                            } else {
-                                None
-                            }
-                        } else {
                             None
-                        }
-                    });
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
 
-                    // Only deduct rent if:
-                    // 1. The ATA being created is for the operator's payment address
-                    // 2. The fee payer is the one paying for it
-                    // 3. Rent was actually paid (SystemCreateAccount exists) — use actual lamports
-                    // 4. The ATA matches the specific mint used for fee payment
-                    if let Some(rent_lamports) = actual_rent {
-                        if *payer == *fee_payer_pubkey
-                            && *wallet_owner == payment_destination
-                            && payment_mints.contains(mint)
-                            && seen_atas.insert((*wallet_owner, *mint))
-                        {
-                            total = total.saturating_sub(rent_lamports);
-                            log::info!(
-                                "Dynamic ATA deduction: subtracted {} lamports rent for operator ATA creation for mint {}",
-                                rent_lamports,
-                                mint
-                            );
-                        }
-                    }
+        let parsed_ata_instructions = transaction.get_or_parse_ata_instructions()?;
+
+        if let Some(ata_creates) =
+            parsed_ata_instructions.get(&ParsedATAInstructionType::CreateAssociatedTokenAccount)
+        {
+            let mut seen_atas = std::collections::HashSet::new();
+            for ata_ix in ata_creates {
+                let ParsedATAInstructionData::CreateAssociatedTokenAccount {
+                    payer,
+                    wallet_owner,
+                    mint,
+                    ata_address,
+                    ..
+                } = ata_ix;
+
+                if *payer != *fee_payer_pubkey
+                    || *wallet_owner != payment_destination
+                    || !payment_mints.contains(mint)
+                    || !seen_atas.insert((*wallet_owner, *mint))
+                {
+                    continue;
+                }
+
+                if let Some(&rent) = sys_create_map.get(ata_address) {
+                    total = total.saturating_sub(rent);
+                    log::info!(
+                        "Dynamic ATA deduction: subtracted {} lamports rent for operator ATA creation for mint {}",
+                        rent,
+                        mint
+                    );
                 }
             }
         }
 
         Ok(total)
     }
+}
+
+async fn collect_payment_mints(
+    payment_destination: &Pubkey,
+    transaction: &mut VersionedTransactionResolved,
+    rpc_client: &RpcClient,
+    config: &Config,
+) -> Result<std::collections::HashSet<Pubkey>, KoraError> {
+    let mut payment_mints = std::collections::HashSet::new();
+    let spl_instructions = transaction.get_or_parse_spl_instructions()?;
+
+    if let Some(transfers) = spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer) {
+        for transfer in transfers {
+            if let ParsedSPLInstructionData::SplTokenTransfer {
+                mint,
+                destination_address,
+                is_2022,
+                ..
+            } = transfer
+            {
+                if let Some(mint_pubkey) = mint {
+                    // Only deduct for explicitly allowed payment tokens to prevent
+                    // non-allowed tokens from reducing the drain protection check.
+                    if !config.validation.supports_token(&mint_pubkey.to_string()) {
+                        continue;
+                    }
+                    let program_id = if *is_2022 {
+                        spl_token_2022_interface::id()
+                    } else {
+                        spl_token_interface::id()
+                    };
+                    let operator_ata = spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+                        payment_destination,
+                        mint_pubkey,
+                        &program_id,
+                    );
+                    if *destination_address == operator_ata {
+                        payment_mints.insert(*mint_pubkey);
+                    }
+                } else {
+                    // For regular transfers, check the destination account owner
+                    if let Ok(dest_account) =
+                        CacheUtil::get_account(config, rpc_client, destination_address, false).await
+                    {
+                        if let Ok(token_program) =
+                            TokenType::get_token_program_from_owner(&dest_account.owner)
+                        {
+                            if let Ok(token_account) =
+                                token_program.unpack_token_account(&dest_account.data)
+                            {
+                                let token_mint = token_account.mint();
+                                if token_account.owner() == *payment_destination
+                                    && config.validation.supports_token(&token_mint.to_string())
+                                {
+                                    payment_mints.insert(token_mint);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(payment_mints)
 }
 
 pub struct TransactionFeeUtil {}
