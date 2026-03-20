@@ -2,7 +2,7 @@ use std::{path::Path, str::FromStr};
 
 use crate::{
     admin::token_util::find_missing_atas,
-    config::{FeePayerPolicy, SplTokenConfig, Token2022Config},
+    config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransactionPluginType},
     constant::{LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     fee::price::PriceModel,
     oracle::PriceSource,
@@ -302,6 +302,46 @@ impl ConfigValidator {
         for plugin in &config.kora.plugins.enabled {
             if !unique_plugins.insert(plugin.clone()) {
                 warnings.push(format!("Duplicate transaction plugin configured: {:?}", plugin));
+            }
+        }
+
+        for plugin in unique_plugins {
+            match plugin {
+                TransactionPluginType::GasSwap => {
+                    if !config.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string())
+                    {
+                        errors.push(
+                            "GasSwap plugin requires System Program in allowed_programs"
+                                .to_string(),
+                        );
+                    }
+                    if !config
+                        .validation
+                        .allowed_programs
+                        .contains(&SPL_TOKEN_PROGRAM_ID.to_string())
+                        && !config
+                            .validation
+                            .allowed_programs
+                            .contains(&TOKEN_2022_PROGRAM_ID.to_string())
+                    {
+                        errors.push(
+                            "GasSwap plugin requires at least one token program (SPL Token or Token-2022) in allowed_programs"
+                                .to_string(),
+                        );
+                    }
+                    if config.validation.allowed_tokens.is_empty() {
+                        errors.push(
+                            "GasSwap plugin requires at least one token in allowed_tokens"
+                                .to_string(),
+                        );
+                    }
+                    if matches!(config.validation.price.model, PriceModel::Free) {
+                        errors.push(
+                            "GasSwap plugin cannot be used with Free pricing; set a margin or fixed price"
+                                .to_string(),
+                        );
+                    }
+                }
             }
         }
 
@@ -895,6 +935,79 @@ mod tests {
         let warnings = result.unwrap();
 
         assert!(warnings.iter().any(|w| w.contains("Duplicate transaction plugin configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_gas_swap_plugin_requires_system_program() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
+        config.validation.allowed_programs = vec![SPL_TOKEN_PROGRAM_ID.to_string()]; // no system program
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("GasSwap plugin requires System Program"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_gas_swap_plugin_requires_token_program() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
+        config.validation.allowed_programs = vec![SYSTEM_PROGRAM_ID.to_string()]; // no token program
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("GasSwap plugin requires at least one token program"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_gas_swap_plugin_requires_allowed_tokens() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
+        config.validation.allowed_tokens = vec![];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("GasSwap plugin requires at least one token in allowed_tokens"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_gas_swap_plugin_rejects_free_pricing() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
+        config.validation.price = PriceConfig { model: PriceModel::Free };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("GasSwap plugin cannot be used with Free pricing"));
     }
 
     #[tokio::test]

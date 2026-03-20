@@ -53,6 +53,16 @@ impl TransactionPluginRunner {
         let mut enabled = HashSet::new();
         let mut plugins: Vec<Box<dyn TransactionPlugin>> = Vec::new();
 
+        // TODO: WasmPlugin — operators should be able to register custom plugins via a config
+        // path (e.g. `plugins = [{type = "wasm", path = "my_plugin.wasm"}]`) without requiring a
+        // Kora source change or new release. A WasmPlugin implementing TransactionPlugin would
+        // load a .wasm module at startup and call it for each transaction. The migration is clean:
+        // WasmPlugin sits alongside typed built-ins until we're ready to drop hardcoded dispatch.
+        //
+        //   pub struct WasmPlugin { engine: wasmtime::Engine, module: wasmtime::Module }
+        //   impl TransactionPlugin for WasmPlugin { ... }
+        //
+        // TransactionPluginType would gain a `Wasm { path: PathBuf }` variant alongside GasSwap.
         for plugin in &config.kora.plugins.enabled {
             if !enabled.insert(plugin.clone()) {
                 continue;
