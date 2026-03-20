@@ -495,6 +495,8 @@ pub struct KoraConfig {
     /// When true, forces signature verification on all requests regardless of client's sig_verify parameter.
     /// Prevents TOCTOU attacks where simulation passes but on-chain execution differs.
     pub force_sig_verify: bool,
+    /// Transaction plugins to run on sign requests
+    pub plugins: PluginsConfig,
 }
 
 impl Default for KoraConfig {
@@ -510,6 +512,7 @@ impl Default for KoraConfig {
             bundle: BundleConfig::default(),
             lighthouse: LighthouseConfig::default(),
             force_sig_verify: false,
+            plugins: PluginsConfig::default(),
         }
     }
 }
@@ -522,6 +525,14 @@ pub struct BundleConfig {
     pub enabled: bool,
     /// Jito-specific configuration
     pub jito: JitoConfig,
+}
+
+/// Configuration for transaction plugins
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct PluginsConfig {
+    /// List of plugin names to enable (e.g. ["GasSwap"])
+    pub enabled: Vec<String>,
 }
 
 /// Configuration for Lighthouse assertions to protect fee payer balance

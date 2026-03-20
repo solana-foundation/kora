@@ -52,6 +52,10 @@ path = "usage_limit/main.rs"
 name = "lighthouse"
 path = "lighthouse/main.rs"
 
+[[test]]
+name = "gas_swap_plugin"
+path = "gas_swap_plugin/main.rs"
+
 [dependencies]
 kora-lib = { path = "../crates/lib" }
 solana-sdk = { workspace = true }

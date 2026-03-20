@@ -2,8 +2,8 @@ use crate::{
     config::{
         AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods,
         FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, LighthouseConfig, MetricsConfig,
-        NonceInstructionPolicy, SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
-        Token2022Config, Token2022InstructionPolicy, ValidationConfig,
+        NonceInstructionPolicy, PluginsConfig, SplTokenConfig, SplTokenInstructionPolicy,
+        SystemInstructionPolicy, Token2022Config, Token2022InstructionPolicy, ValidationConfig,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::PriceConfig,
@@ -111,6 +111,7 @@ impl ConfigMockBuilder {
                     bundle: BundleConfig::default(),
                     lighthouse: LighthouseConfig::default(),
                     force_sig_verify: false,
+                    plugins: PluginsConfig::default(),
                 },
                 metrics: MetricsConfig::default(),
             },
@@ -354,6 +355,7 @@ impl KoraConfigBuilder {
                 bundle: BundleConfig::default(),
                 lighthouse: LighthouseConfig::default(),
                 force_sig_verify: false,
+                plugins: PluginsConfig::default(),
             },
         }
     }

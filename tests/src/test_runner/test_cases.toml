@@ -82,3 +82,10 @@ config = "tests/src/common/fixtures/lighthouse-test.toml"
 signers = "tests/src/common/fixtures/signers.toml"
 port = "8090"
 tests = ["lighthouse"]
+
+[test.gas_swap_plugin]
+name = "Gas Swap Plugin Tests"
+config = "tests/src/common/fixtures/gas-swap-plugin-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8092"
+tests = ["gas_swap_plugin"]

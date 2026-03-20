@@ -1,4 +1,5 @@
 use crate::{
+    plugin::PluginRegistry,
     rpc_server::middleware_utils::default_sig_verify,
     state::{get_config, get_request_signer_with_signer_key},
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
@@ -63,6 +64,8 @@ pub async fn sign_and_send_transaction(
         rpc_client,
     )
     .await?;
+
+    PluginRegistry::from_config(&config.kora.plugins)?.run(&resolved_transaction)?;
 
     let (signature, signed_transaction) =
         resolved_transaction.sign_and_send_transaction(config, &signer, rpc_client).await?;

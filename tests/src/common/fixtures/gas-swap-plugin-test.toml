@@ -1,9 +1,9 @@
-# This file is used for integration testing
+# This file is used for GasSwap plugin integration testing
 [kora]
 rate_limit = 100
 
 [kora.plugins]
-enabled = []
+enabled = ["GasSwap"]
 
 [kora.auth]
 
@@ -60,14 +60,9 @@ disallowed_accounts = [
 type = "margin"
 margin = 0.0
 
-# Block specific extensions for testing (only affects extension test accounts)
 [validation.token_2022]
-blocked_mint_extensions = [
-    "interest_bearing_config", # Block mints with interest bearing config for extension testing
-]
-blocked_account_extensions = [
-    "memo_transfer", # Block token accounts with MemoTransfer extension for extension testing
-]
+blocked_mint_extensions = []
+blocked_account_extensions = []
 
 [validation.fee_payer_policy]
 
