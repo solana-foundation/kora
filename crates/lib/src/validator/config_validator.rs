@@ -915,7 +915,10 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().build();
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("GasSwap plugin requires System Program"));
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.contains("GasSwap plugin requires System Program")));
     }
 
     #[tokio::test]
@@ -933,8 +936,8 @@ mod tests {
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
-            .to_string()
-            .contains("GasSwap plugin requires at least one token program"));
+            .iter()
+            .any(|e| e.contains("GasSwap plugin requires at least one token program")));
     }
 
     #[tokio::test]
@@ -952,8 +955,8 @@ mod tests {
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
-            .to_string()
-            .contains("GasSwap plugin requires at least one token in allowed_tokens"));
+            .iter()
+            .any(|e| e.contains("GasSwap plugin requires at least one token in allowed_tokens")));
     }
 
     #[tokio::test]
@@ -971,8 +974,8 @@ mod tests {
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
-            .to_string()
-            .contains("GasSwap plugin cannot be used with Free pricing"));
+            .iter()
+            .any(|e| e.contains("GasSwap plugin cannot be used with Free pricing")));
     }
 
     #[tokio::test]
