@@ -4,6 +4,7 @@ use crate::{
     constant::ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
     lighthouse::LighthouseUtil,
+    plugin::{PluginExecutionContext, TransactionPluginRunner},
     signer::bundle_signer::BundleSigner,
     token::token::TokenUtil,
     transaction::{TransactionUtil, VersionedTransactionResolved},
@@ -86,9 +87,11 @@ impl BundleProcessor {
         config: &Config,
         rpc_client: &Arc<RpcClient>,
         sig_verify: bool,
+        plugin_context: Option<PluginExecutionContext>,
         processing_mode: BundleProcessingMode<'a>,
     ) -> Result<Self, KoraError> {
         let validator = TransactionValidator::new(config, fee_payer)?;
+        let plugin_runner = TransactionPluginRunner::from_config(config);
         let mut resolved_transactions = Vec::with_capacity(encoded_txs.len());
         let mut total_required_lamports = 0u64;
         let mut all_bundle_instructions: Vec<Instruction> = Vec::new();
@@ -119,6 +122,11 @@ impl BundleProcessor {
             }
 
             validator.validate_transaction(config, &mut resolved_tx, rpc_client).await?;
+            if let Some(context) = plugin_context {
+                plugin_runner
+                    .run(&mut resolved_tx, config, rpc_client, &fee_payer, context)
+                    .await?;
+            }
 
             let fee_calc = FeeConfigUtil::estimate_kora_fee(
                 &mut resolved_tx,

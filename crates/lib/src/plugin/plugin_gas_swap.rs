@@ -1,0 +1,485 @@
+use async_trait::async_trait;
+use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey;
+use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
+use spl_token_2022_interface::ID as TOKEN_2022_PROGRAM_ID;
+use spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID;
+
+use crate::{
+    config::Config,
+    error::KoraError,
+    fee::price::PriceModel,
+    transaction::{
+        ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
+        VersionedTransactionResolved,
+    },
+};
+
+use super::{PluginExecutionContext, TransactionPlugin};
+
+pub(super) struct GasSwapPlugin;
+
+impl GasSwapPlugin {
+    fn validate_total_instruction_count(
+        transaction: &VersionedTransactionResolved,
+        context: PluginExecutionContext,
+    ) -> Result<(), KoraError> {
+        let compute_budget_id = solana_compute_budget_interface::id();
+        let non_budget_count = transaction
+            .all_instructions
+            .iter()
+            .filter(|ix| ix.program_id != compute_budget_id)
+            .count();
+
+        if non_budget_count != 2 {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Plugin gas_swap requires exactly two non-compute instructions (SplTokenTransfer + SystemTransfer), \
+                 found {} non-compute-budget instructions in {}",
+                non_budget_count,
+                context.method_name()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn validate_parsed_system_transfer(
+        transaction: &mut VersionedTransactionResolved,
+        fee_payer: &Pubkey,
+        context: PluginExecutionContext,
+    ) -> Result<(), KoraError> {
+        let system_instructions = transaction.get_or_parse_system_instructions()?;
+        let transfers = system_instructions
+            .get(&ParsedSystemInstructionType::SystemTransfer)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+
+        if transfers.len() != 1 {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Plugin gas_swap requires exactly one SystemTransfer, found {} in {}",
+                transfers.len(),
+                context.method_name()
+            )));
+        }
+
+        match &transfers[0] {
+            ParsedSystemInstructionData::SystemTransfer { sender, .. } => {
+                if sender != fee_payer {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Plugin gas_swap requires the SystemTransfer sender to be the fee payer ({}), got {}",
+                        fee_payer, sender
+                    )));
+                }
+            }
+            other => {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Plugin gas_swap expected SystemTransfer data, got {:?}",
+                    other
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_parsed_token_transfer(
+        transaction: &mut VersionedTransactionResolved,
+        context: PluginExecutionContext,
+    ) -> Result<(), KoraError> {
+        let spl_instructions = transaction.get_or_parse_spl_instructions()?;
+        let transfer_count = spl_instructions
+            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+            .map(Vec::len)
+            .unwrap_or(0);
+
+        if transfer_count != 1 {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Plugin gas_swap requires exactly one SplTokenTransfer, found {} in {}",
+                transfer_count,
+                context.method_name()
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl TransactionPlugin for GasSwapPlugin {
+    async fn validate(
+        &self,
+        transaction: &mut VersionedTransactionResolved,
+        _config: &Config,
+        _rpc_client: &RpcClient,
+        fee_payer: &Pubkey,
+        context: PluginExecutionContext,
+    ) -> Result<(), KoraError> {
+        Self::validate_total_instruction_count(transaction, context)?;
+        Self::validate_parsed_system_transfer(transaction, fee_payer, context)?;
+        Self::validate_parsed_token_transfer(transaction, context)?;
+        Ok(())
+    }
+
+    fn validate_config(&self, config: &Config) -> (Vec<String>, Vec<String>) {
+        let mut errors = Vec::new();
+
+        if !config.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string()) {
+            errors.push("GasSwap plugin requires System Program in allowed_programs".to_string());
+        }
+        if !config.validation.allowed_programs.contains(&SPL_TOKEN_PROGRAM_ID.to_string())
+            && !config.validation.allowed_programs.contains(&TOKEN_2022_PROGRAM_ID.to_string())
+        {
+            errors.push(
+                "GasSwap plugin requires at least one token program (SPL Token or Token-2022) in allowed_programs"
+                    .to_string(),
+            );
+        }
+        if config.validation.allowed_tokens.is_empty() {
+            errors.push("GasSwap plugin requires at least one token in allowed_tokens".to_string());
+        }
+        if matches!(config.validation.price.model, PriceModel::Free) {
+            errors.push(
+                "GasSwap plugin cannot be used with Free pricing; set a margin or fixed price"
+                    .to_string(),
+            );
+        }
+
+        let mut warnings = Vec::new();
+        if matches!(config.validation.price.model, PriceModel::Fixed { .. }) {
+            warnings.push(
+                "GasSwap plugin with Fixed pricing: ensure the fixed token fee is worth at least \
+                 max_allowed_lamports in SOL to avoid a drain condition."
+                    .to_string(),
+            );
+        }
+
+        (errors, warnings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{super::TransactionPluginRunner, *};
+    use crate::{
+        config::TransactionPluginType,
+        tests::{common::RpcMockBuilder, config_mock::ConfigMockBuilder},
+        transaction::TransactionUtil,
+    };
+    use solana_compute_budget_interface::ComputeBudgetInstruction;
+    use solana_message::{Message, VersionedMessage};
+    use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+    use solana_system_interface::instruction::{assign, transfer};
+    use std::sync::Arc;
+
+    fn enable_gas_swap_plugin(config: &mut Config) {
+        config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
+    }
+
+    fn build_runner() -> (Config, Arc<RpcClient>) {
+        let mut config = ConfigMockBuilder::new().build();
+        enable_gas_swap_plugin(&mut config);
+        let rpc_client = RpcMockBuilder::new().build();
+        (config, rpc_client)
+    }
+
+    #[tokio::test]
+    async fn gas_swap_accepts_valid_top_level_swap_shape() {
+        let (config, rpc_client) = build_runner();
+
+        let fee_payer = Pubkey::new_unique();
+        let source_wallet = Pubkey::new_unique();
+        let source_token_account = Pubkey::new_unique();
+        let destination_token_account = Pubkey::new_unique();
+        let destination_wallet = Pubkey::new_unique();
+
+        let token_ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &source_token_account,
+            &destination_token_account,
+            &source_wallet,
+            &[],
+            1_500,
+        )
+        .unwrap();
+        let sol_ix = transfer(&fee_payer, &destination_wallet, 20_000);
+
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
+            Message::new(&[token_ix, sol_ix], Some(&fee_payer)),
+        ));
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        let runner = TransactionPluginRunner::from_config(&config);
+        let result = runner
+            .run(
+                &mut resolved,
+                &config,
+                rpc_client.as_ref(),
+                &fee_payer,
+                PluginExecutionContext::SignTransaction,
+            )
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn gas_swap_rejects_non_swap_programs() {
+        let (config, rpc_client) = build_runner();
+
+        let fee_payer = Pubkey::new_unique();
+        let source_wallet = Pubkey::new_unique();
+        let source_token_account = Pubkey::new_unique();
+        let destination_token_account = Pubkey::new_unique();
+        let destination_wallet = Pubkey::new_unique();
+
+        let token_ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &source_token_account,
+            &destination_token_account,
+            &source_wallet,
+            &[],
+            1_500,
+        )
+        .unwrap();
+        let custom_ix =
+            Instruction { program_id: Pubkey::new_unique(), accounts: vec![], data: vec![1, 2, 3] };
+        let sol_ix = transfer(&fee_payer, &destination_wallet, 20_000);
+
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
+            Message::new(&[token_ix, custom_ix, sol_ix], Some(&fee_payer)),
+        ));
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        let runner = TransactionPluginRunner::from_config(&config);
+        let result = runner
+            .run(
+                &mut resolved,
+                &config,
+                rpc_client.as_ref(),
+                &fee_payer,
+                PluginExecutionContext::SignAndSendTransaction,
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
+    }
+
+    #[tokio::test]
+    async fn gas_swap_rejects_non_transfer_system_instruction() {
+        let (config, rpc_client) = build_runner();
+
+        let fee_payer = Pubkey::new_unique();
+        let source_wallet = Pubkey::new_unique();
+        let source_token_account = Pubkey::new_unique();
+        let destination_token_account = Pubkey::new_unique();
+        let token_ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &source_token_account,
+            &destination_token_account,
+            &source_wallet,
+            &[],
+            1_500,
+        )
+        .unwrap();
+        let assign_ix = assign(&fee_payer, &Pubkey::new_unique());
+
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
+            Message::new(&[token_ix, assign_ix], Some(&fee_payer)),
+        ));
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        let runner = TransactionPluginRunner::from_config(&config);
+        let result = runner
+            .run(
+                &mut resolved,
+                &config,
+                rpc_client.as_ref(),
+                &fee_payer,
+                PluginExecutionContext::SignTransaction,
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
+    }
+
+    #[tokio::test]
+    async fn gas_swap_rejects_sol_transfer_not_from_fee_payer() {
+        let (config, rpc_client) = build_runner();
+
+        let fee_payer = Pubkey::new_unique();
+        let wrong_sender = Pubkey::new_unique();
+        let source_wallet = Pubkey::new_unique();
+        let source_token_account = Pubkey::new_unique();
+        let destination_token_account = Pubkey::new_unique();
+        let destination_wallet = Pubkey::new_unique();
+
+        let token_ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &source_token_account,
+            &destination_token_account,
+            &source_wallet,
+            &[],
+            1_500,
+        )
+        .unwrap();
+        let sol_ix = transfer(&wrong_sender, &destination_wallet, 20_000);
+
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
+            Message::new(&[token_ix, sol_ix], Some(&fee_payer)),
+        ));
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        let runner = TransactionPluginRunner::from_config(&config);
+        let result = runner
+            .run(
+                &mut resolved,
+                &config,
+                rpc_client.as_ref(),
+                &fee_payer,
+                PluginExecutionContext::SignTransaction,
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
+    }
+
+    #[tokio::test]
+    async fn gas_swap_rejects_when_no_token_transfer() {
+        let (config, rpc_client) = build_runner();
+
+        let fee_payer = Pubkey::new_unique();
+        let destination_wallet = Pubkey::new_unique();
+        let sol_ix = transfer(&fee_payer, &destination_wallet, 20_000);
+
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
+            Message::new(&[sol_ix], Some(&fee_payer)),
+        ));
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        let runner = TransactionPluginRunner::from_config(&config);
+        let result = runner
+            .run(
+                &mut resolved,
+                &config,
+                rpc_client.as_ref(),
+                &fee_payer,
+                PluginExecutionContext::SignAndSendTransaction,
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
+    }
+
+    #[tokio::test]
+    async fn gas_swap_accepts_compute_budget_instructions() {
+        let (config, rpc_client) = build_runner();
+
+        let fee_payer = Pubkey::new_unique();
+        let source_wallet = Pubkey::new_unique();
+        let source_token_account = Pubkey::new_unique();
+        let destination_token_account = Pubkey::new_unique();
+        let destination_wallet = Pubkey::new_unique();
+
+        let token_ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &source_token_account,
+            &destination_token_account,
+            &source_wallet,
+            &[],
+            1_500,
+        )
+        .unwrap();
+        let compute_limit_ix = ComputeBudgetInstruction::set_compute_unit_limit(200_000);
+        let compute_price_ix = ComputeBudgetInstruction::set_compute_unit_price(1_000);
+        let sol_ix = transfer(&fee_payer, &destination_wallet, 20_000);
+
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
+            Message::new(&[compute_limit_ix, compute_price_ix, token_ix, sol_ix], Some(&fee_payer)),
+        ));
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        let runner = TransactionPluginRunner::from_config(&config);
+        let result = runner
+            .run(
+                &mut resolved,
+                &config,
+                rpc_client.as_ref(),
+                &fee_payer,
+                PluginExecutionContext::SignTransaction,
+            )
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn gas_swap_rejects_extra_non_budget_instruction() {
+        let (config, rpc_client) = build_runner();
+
+        let fee_payer = Pubkey::new_unique();
+        let source_wallet = Pubkey::new_unique();
+        let source_token_account = Pubkey::new_unique();
+        let destination_token_account = Pubkey::new_unique();
+        let destination_wallet = Pubkey::new_unique();
+
+        let token_ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &source_token_account,
+            &destination_token_account,
+            &source_wallet,
+            &[],
+            1_500,
+        )
+        .unwrap();
+        let extra_ix =
+            Instruction { program_id: Pubkey::new_unique(), accounts: vec![], data: vec![1, 2, 3] };
+        let sol_ix = transfer(&fee_payer, &destination_wallet, 20_000);
+
+        let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
+            Message::new(&[token_ix, extra_ix, sol_ix], Some(&fee_payer)),
+        ));
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        let runner = TransactionPluginRunner::from_config(&config);
+        let result = runner
+            .run(
+                &mut resolved,
+                &config,
+                rpc_client.as_ref(),
+                &fee_payer,
+                PluginExecutionContext::SignTransaction,
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
+    }
+
+    #[test]
+    fn validate_config_fixed_pricing_warns_drain_condition() {
+        let plugin = GasSwapPlugin;
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = crate::fee::price::PriceModel::Fixed {
+            amount: 1_000_000,
+            token: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+            strict: false,
+        };
+        let (errors, warnings) = plugin.validate_config(&config);
+        assert!(errors.is_empty());
+        assert!(!warnings.is_empty(), "expected drain condition warning for Fixed pricing");
+        assert!(warnings[0].contains("drain condition"));
+    }
+
+    #[test]
+    fn validate_config_free_pricing_errors() {
+        let plugin = GasSwapPlugin;
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = crate::fee::price::PriceModel::Free;
+        let (errors, _warnings) = plugin.validate_config(&config);
+        assert!(errors.iter().any(|e| e.contains("Free pricing")));
+    }
+}

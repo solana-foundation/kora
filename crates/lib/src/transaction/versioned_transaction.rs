@@ -16,6 +16,7 @@ use crate::{
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
     lighthouse::LighthouseUtil,
+    plugin::{PluginExecutionContext, TransactionPluginRunner},
     sanitize_error,
     transaction::{
         instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
@@ -264,6 +265,15 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
         // Validate transaction and accounts (already resolved)
         validator.validate_transaction(config, self, rpc_client).await?;
+
+        let plugin_context = if will_send {
+            PluginExecutionContext::SignAndSendTransaction
+        } else {
+            PluginExecutionContext::SignTransaction
+        };
+        TransactionPluginRunner::from_config(config)
+            .run(self, config, rpc_client, &fee_payer, plugin_context)
+            .await?;
 
         // Calculate fee and validate payment if price model requires it
         let fee_calculation = FeeConfigUtil::estimate_kora_fee(

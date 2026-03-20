@@ -1,5 +1,6 @@
 use crate::{
     bundle::{BundleError, BundleProcessingMode, BundleProcessor, JitoBundleClient, JitoError},
+    plugin::PluginExecutionContext,
     rpc_server::middleware_utils::default_sig_verify,
     transaction::TransactionUtil,
     validator::bundle_validator::BundleValidator,
@@ -79,6 +80,7 @@ pub async fn sign_and_send_bundle(
         config,
         rpc_client,
         sig_verify,
+        Some(PluginExecutionContext::SignAndSendBundle),
         BundleProcessingMode::CheckUsage(request.user_id.as_deref()),
     )
     .await?;

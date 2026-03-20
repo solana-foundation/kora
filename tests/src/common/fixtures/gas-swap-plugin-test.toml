@@ -1,4 +1,4 @@
-# This file is used for integration testing
+# This file is used for integration testing with the gas_swap plugin enabled
 [kora]
 rate_limit = 100
 
@@ -11,7 +11,7 @@ default_ttl = 300
 account_ttl = 60
 
 [kora.enabled_methods]
-liveness = false                 # Just to be able to test the false flag
+liveness = false
 estimate_transaction_fee = true
 estimate_bundle_fee = true
 get_supported_tokens = true
@@ -25,6 +25,9 @@ get_version = true
 sign_bundle = true
 sign_and_send_bundle = true
 
+[kora.plugins]
+enabled = ["gas_swap"]
+
 [validation]
 max_allowed_lamports = 1000000
 max_signatures = 10
@@ -36,35 +39,23 @@ allowed_programs = [
     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  # Token-2022 Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
     "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
-    "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA", # Custom Transfer Hook Program Example
 ]
 allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
-    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
-    "AtCGtK6HPgdpk2c2LcpZimbH8dtHXYmJdoKsawWNCh2m", # Test Interest Bearing mint 2022 for local testing
 ]
 allowed_spl_paid_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
-    "95kSi2m5MDiKAs8bucgzengMTP5M5FiQnJps9duYcmfG", # Test USDC mint 2022 for local testing
-    "AtCGtK6HPgdpk2c2LcpZimbH8dtHXYmJdoKsawWNCh2m", # Test Interest Bearing mint 2022 for local testing
 ]
 
-disallowed_accounts = [
-    "hndXZGK45hCxfBYvxejAXzCfCujoqkNf7rk4sTB8pek", # Test disallowed account for lookup table
-]
+disallowed_accounts = []
 
 [validation.price]
 type = "margin"
 margin = 0.0
 
-# Block specific extensions for testing (only affects extension test accounts)
 [validation.token_2022]
-blocked_mint_extensions = [
-    "interest_bearing_config", # Block mints with interest bearing config for extension testing
-]
-blocked_account_extensions = [
-    "memo_transfer", # Block token accounts with MemoTransfer extension for extension testing
-]
+blocked_mint_extensions = []
+blocked_account_extensions = []
 
 [validation.fee_payer_policy]
 
@@ -113,9 +104,6 @@ enabled = false
 cache_url = "redis://redis:6379"
 fallback_if_unavailable = false
 rules = []
-
-[kora.plugins]
-enabled = []
 
 [kora.bundle]
 enabled = true

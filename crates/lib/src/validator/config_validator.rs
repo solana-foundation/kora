@@ -6,6 +6,7 @@ use crate::{
     constant::{LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     fee::price::PriceModel,
     oracle::PriceSource,
+    plugin::TransactionPluginRunner,
     signer::SignerPoolConfig,
     state::get_config,
     token::{spl_token_2022_util, token::TokenUtil},
@@ -298,6 +299,17 @@ impl ConfigValidator {
             );
         }
 
+        let mut unique_plugins = std::collections::HashSet::new();
+        for plugin in &config.kora.plugins.enabled {
+            if !unique_plugins.insert(plugin.clone()) {
+                warnings.push(format!("Duplicate transaction plugin configured: {:?}", plugin));
+            }
+        }
+
+        let (plugin_errors, plugin_warnings) = TransactionPluginRunner::validate_config(config);
+        errors.extend(plugin_errors);
+        warnings.extend(plugin_warnings);
+
         // Validate max allowed lamports (warn if 0)
         if config.validation.max_allowed_lamports == 0 {
             warnings
@@ -319,8 +331,8 @@ impl ConfigValidator {
             && std::env::var("JUPITER_API_KEY").is_err()
         {
             errors.push(
-                    "JUPITER_API_KEY environment variable not set. Required when price_source = Jupiter".to_string()
-                );
+                "JUPITER_API_KEY environment variable not set. Required when price_source = Jupiter".to_string()
+            );
         }
 
         if config.validation.allow_durable_transactions {
@@ -699,9 +711,9 @@ mod tests {
     use crate::{
         config::{
             AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy,
-            KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, SplTokenConfig,
-            SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022InstructionPolicy,
-            UsageLimitConfig, ValidationConfig,
+            KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, PluginsConfig,
+            SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
+            Token2022InstructionPolicy, TransactionPluginType, UsageLimitConfig, ValidationConfig,
         },
         constant::{DEFAULT_MAX_REQUEST_BODY_SIZE, LIGHTHOUSE_PROGRAM_ID},
         fee::price::PriceConfig,
@@ -844,6 +856,7 @@ mod tests {
                 payment_address: None,
                 cache: CacheConfig::default(),
                 usage_limit: UsageLimitConfig::default(),
+                plugins: PluginsConfig::default(),
                 bundle: BundleConfig::default(),
                 lighthouse: LighthouseConfig::default(),
                 force_sig_verify: false,
@@ -869,6 +882,100 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("Max signatures is 0")));
         assert!(warnings.iter().any(|w| w.contains("Using Mock price source")));
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_duplicate_plugins_warn() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled =
+            vec![TransactionPluginType::GasSwap, TransactionPluginType::GasSwap];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+
+        assert!(warnings.iter().any(|w| w.contains("Duplicate transaction plugin configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_gas_swap_plugin_requires_system_program() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
+        config.validation.allowed_programs = vec![SPL_TOKEN_PROGRAM_ID.to_string()]; // no system program
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.contains("GasSwap plugin requires System Program")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_gas_swap_plugin_requires_token_program() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
+        config.validation.allowed_programs = vec![SYSTEM_PROGRAM_ID.to_string()]; // no token program
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.contains("GasSwap plugin requires at least one token program")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_gas_swap_plugin_requires_allowed_tokens() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
+        config.validation.allowed_tokens = vec![];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.contains("GasSwap plugin requires at least one token in allowed_tokens")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_gas_swap_plugin_rejects_free_pricing() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
+        config.validation.price = PriceConfig { model: PriceModel::Free };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .iter()
+            .any(|e| e.contains("GasSwap plugin cannot be used with Free pricing")));
     }
 
     #[tokio::test]
