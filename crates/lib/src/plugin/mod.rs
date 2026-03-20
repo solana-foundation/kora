@@ -42,6 +42,12 @@ trait TransactionPlugin: Send + Sync {
         fee_payer: &Pubkey,
         context: PluginExecutionContext,
     ) -> Result<(), KoraError>;
+
+    /// Returns (errors, warnings) for this plugin's config requirements.
+    /// Called at startup by the config validator.
+    fn validate_config(&self, _config: &Config) -> (Vec<String>, Vec<String>) {
+        (vec![], vec![])
+    }
 }
 
 pub struct TransactionPluginRunner {
@@ -76,6 +82,26 @@ impl TransactionPluginRunner {
         }
 
         Self { plugins }
+    }
+
+    pub fn validate_config(config: &Config) -> (Vec<String>, Vec<String>) {
+        let mut errors = Vec::new();
+        let mut warnings = Vec::new();
+        let mut seen = HashSet::new();
+
+        for plugin_type in &config.kora.plugins.enabled {
+            if !seen.insert(plugin_type.clone()) {
+                continue;
+            }
+            let plugin: Box<dyn TransactionPlugin> = match plugin_type {
+                TransactionPluginType::GasSwap => Box::new(GasSwapPlugin),
+            };
+            let (e, w) = plugin.validate_config(config);
+            errors.extend(e);
+            warnings.extend(w);
+        }
+
+        (errors, warnings)
     }
 
     pub async fn run(

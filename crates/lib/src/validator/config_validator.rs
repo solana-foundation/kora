@@ -2,10 +2,11 @@ use std::{path::Path, str::FromStr};
 
 use crate::{
     admin::token_util::find_missing_atas,
-    config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransactionPluginType},
+    config::{FeePayerPolicy, SplTokenConfig, Token2022Config},
     constant::{LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     fee::price::PriceModel,
     oracle::PriceSource,
+    plugin::TransactionPluginRunner,
     signer::SignerPoolConfig,
     state::get_config,
     token::{spl_token_2022_util, token::TokenUtil},
@@ -305,45 +306,9 @@ impl ConfigValidator {
             }
         }
 
-        for plugin in unique_plugins {
-            match plugin {
-                TransactionPluginType::GasSwap => {
-                    if !config.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string())
-                    {
-                        errors.push(
-                            "GasSwap plugin requires System Program in allowed_programs"
-                                .to_string(),
-                        );
-                    }
-                    if !config
-                        .validation
-                        .allowed_programs
-                        .contains(&SPL_TOKEN_PROGRAM_ID.to_string())
-                        && !config
-                            .validation
-                            .allowed_programs
-                            .contains(&TOKEN_2022_PROGRAM_ID.to_string())
-                    {
-                        errors.push(
-                            "GasSwap plugin requires at least one token program (SPL Token or Token-2022) in allowed_programs"
-                                .to_string(),
-                        );
-                    }
-                    if config.validation.allowed_tokens.is_empty() {
-                        errors.push(
-                            "GasSwap plugin requires at least one token in allowed_tokens"
-                                .to_string(),
-                        );
-                    }
-                    if matches!(config.validation.price.model, PriceModel::Free) {
-                        errors.push(
-                            "GasSwap plugin cannot be used with Free pricing; set a margin or fixed price"
-                                .to_string(),
-                        );
-                    }
-                }
-            }
-        }
+        let (plugin_errors, plugin_warnings) = TransactionPluginRunner::validate_config(config);
+        errors.extend(plugin_errors);
+        warnings.extend(plugin_warnings);
 
         // Validate max allowed lamports (warn if 0)
         if config.validation.max_allowed_lamports == 0 {

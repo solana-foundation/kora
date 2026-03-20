@@ -1,10 +1,14 @@
 use async_trait::async_trait;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
+use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
+use spl_token_2022_interface::ID as TOKEN_2022_PROGRAM_ID;
+use spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID;
 
 use crate::{
     config::Config,
     error::KoraError,
+    fee::price::PriceModel,
     transaction::{
         ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
         VersionedTransactionResolved,
@@ -106,6 +110,33 @@ impl TransactionPlugin for GasSwapPlugin {
         Self::validate_parsed_system_transfer(transaction, fee_payer, context)?;
         Self::validate_parsed_token_transfer(transaction, context)?;
         Ok(())
+    }
+
+    fn validate_config(&self, config: &Config) -> (Vec<String>, Vec<String>) {
+        let mut errors = Vec::new();
+
+        if !config.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string()) {
+            errors.push("GasSwap plugin requires System Program in allowed_programs".to_string());
+        }
+        if !config.validation.allowed_programs.contains(&SPL_TOKEN_PROGRAM_ID.to_string())
+            && !config.validation.allowed_programs.contains(&TOKEN_2022_PROGRAM_ID.to_string())
+        {
+            errors.push(
+                "GasSwap plugin requires at least one token program (SPL Token or Token-2022) in allowed_programs"
+                    .to_string(),
+            );
+        }
+        if config.validation.allowed_tokens.is_empty() {
+            errors.push("GasSwap plugin requires at least one token in allowed_tokens".to_string());
+        }
+        if matches!(config.validation.price.model, PriceModel::Free) {
+            errors.push(
+                "GasSwap plugin cannot be used with Free pricing; set a margin or fixed price"
+                    .to_string(),
+            );
+        }
+
+        (errors, vec![])
     }
 }
 
