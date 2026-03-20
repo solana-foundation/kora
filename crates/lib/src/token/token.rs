@@ -1428,4 +1428,38 @@ mod tests_token {
         let result = TokenUtil::find_ata_creation_for_destination(&instructions, &target_address);
         assert!(result.is_none());
     }
+
+    #[test]
+    fn test_find_ata_creation_for_destination_pda_mismatch() {
+        use solana_sdk::instruction::AccountMeta;
+
+        let wallet_owner = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+
+        // Derive the real ATA but hand a different wallet_owner in the accounts — PDA won't match
+        let real_ata =
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &wallet_owner,
+                &mint,
+            );
+        let spoofed_owner = Pubkey::new_unique();
+
+        let malformed_ix = Instruction {
+            program_id: ata_program_id,
+            accounts: vec![
+                AccountMeta::new(Pubkey::new_unique(), true),
+                AccountMeta::new(real_ata, false),
+                AccountMeta::new_readonly(spoofed_owner, false), // wrong owner — PDA mismatch
+                AccountMeta::new_readonly(mint, false),
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+                AccountMeta::new_readonly(spl_token_interface::id(), false),
+            ],
+            data: vec![1], // CreateIdempotent
+        };
+
+        let instructions = vec![malformed_ix];
+        let result = TokenUtil::find_ata_creation_for_destination(&instructions, &real_ata);
+        assert!(result.is_none(), "PDA-mismatched instruction must not match");
+    }
 }

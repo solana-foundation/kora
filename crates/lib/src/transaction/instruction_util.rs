@@ -7,6 +7,7 @@ use solana_sdk::{
 };
 use solana_system_interface::{instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID};
 use solana_transaction_status_client_types::{UiInstruction, UiParsedInstruction};
+use spl_associated_token_account_interface::instruction::AssociatedTokenAccountInstruction;
 
 use crate::{
     constant::instruction_indexes, error::KoraError, transaction::VersionedTransactionResolved,
@@ -145,6 +146,7 @@ pub enum ParsedATAInstructionData {
         ata_address: Pubkey,
         wallet_owner: Pubkey,
         mint: Pubkey,
+        token_program: Pubkey,
     },
 }
 
@@ -1907,13 +1909,18 @@ impl IxUtils {
             {
                 // Both Create and CreateIdempotent have the same account layout:
                 //   [0] payer, [1] ata_address, [2] wallet_owner, [3] mint, ...
-                // Discriminator byte: 0 = Create, 1 = CreateIdempotent
-                // We parse both variants the same way.
-                let discriminator = match instruction.data.first().copied() {
-                    Some(d) => d,
-                    None => continue,
-                };
-                if discriminator <= 1 {
+                // We parse both variants the same way; anything else (RecoverNested, unknown,
+                // or empty data) is skipped via the wildcard arm.
+                let decoded =
+                    borsh::from_slice::<AssociatedTokenAccountInstruction>(&instruction.data);
+                match decoded {
+                    Ok(
+                        AssociatedTokenAccountInstruction::Create
+                        | AssociatedTokenAccountInstruction::CreateIdempotent,
+                    ) => {}
+                    _ => continue,
+                }
+                {
                     // ATA instruction layout: [0]=payer, [1]=ata, [2]=wallet_owner, [3]=mint,
                     //                         [4]=system_program, [5]=token_program
                     const TOKEN_PROGRAM_INDEX: usize = 5;
@@ -1946,6 +1953,7 @@ impl IxUtils {
                             ata_address,
                             wallet_owner,
                             mint,
+                            token_program,
                         });
                 }
             }
@@ -3732,11 +3740,13 @@ mod tests {
                 ata_address: parsed_ata_address,
                 wallet_owner: parsed_wallet,
                 mint: parsed_mint,
+                token_program: parsed_token_program,
             } => {
                 assert_eq!(*parsed_payer, payer.pubkey());
                 assert_eq!(*parsed_ata_address, ata_address);
                 assert_eq!(*parsed_wallet, wallet_owner);
                 assert_eq!(*parsed_mint, mint);
+                assert_eq!(*parsed_token_program, spl_token_interface::ID);
             } // enum has only one variant
         }
 
@@ -3753,5 +3763,112 @@ mod tests {
             empty_parsed.is_empty(),
             "HashMap should be empty when no ATA instructions are present"
         );
+    }
+
+    #[test]
+    fn test_parse_ata_instructions_pda_mismatch() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            instruction::{AccountMeta, Instruction},
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let payer = Keypair::new();
+        let wallet_owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+
+        // Derive the real ATA but swap in a different wallet_owner — PDA won't match
+        let real_ata =
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &wallet_owner,
+                &mint,
+            );
+        let different_owner = Pubkey::new_unique();
+
+        let malformed_ix = Instruction {
+            program_id: ata_program_id,
+            accounts: vec![
+                AccountMeta::new(payer.pubkey(), true),
+                AccountMeta::new(real_ata, false),
+                AccountMeta::new_readonly(different_owner, false), // wrong owner
+                AccountMeta::new_readonly(mint, false),
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+                AccountMeta::new_readonly(spl_token_interface::ID, false),
+            ],
+            data: vec![1], // CreateIdempotent
+        };
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[malformed_ix], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed = IxUtils::parse_ata_instructions(&resolved_tx)
+            .expect("Failed to parse ATA instructions");
+
+        assert!(parsed.is_empty(), "PDA-mismatched instruction must be skipped");
+    }
+
+    #[test]
+    fn test_parse_ata_instructions_token_2022() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent;
+
+        let payer = Keypair::new();
+        let wallet_owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let token_2022_program = spl_token_2022_interface::id();
+
+        let ata_address =
+            spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+                &wallet_owner,
+                &mint,
+                &token_2022_program,
+            );
+
+        let instruction = create_associated_token_account_idempotent(
+            &payer.pubkey(),
+            &wallet_owner,
+            &mint,
+            &token_2022_program,
+        );
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed = IxUtils::parse_ata_instructions(&resolved_tx)
+            .expect("Failed to parse ATA instructions");
+
+        let creates = parsed
+            .get(&ParsedATAInstructionType::CreateAssociatedTokenAccount)
+            .expect("Expected CreateAssociatedTokenAccount instructions");
+
+        assert_eq!(creates.len(), 1);
+        match &creates[0] {
+            ParsedATAInstructionData::CreateAssociatedTokenAccount {
+                payer: parsed_payer,
+                ata_address: parsed_ata,
+                wallet_owner: parsed_owner,
+                mint: parsed_mint,
+                token_program: parsed_tp,
+            } => {
+                assert_eq!(*parsed_payer, payer.pubkey());
+                assert_eq!(*parsed_ata, ata_address);
+                assert_eq!(*parsed_owner, wallet_owner);
+                assert_eq!(*parsed_mint, mint);
+                assert_eq!(*parsed_tp, token_2022_program);
+            }
+        }
     }
 }

@@ -88,6 +88,11 @@ impl RpcMockBuilder {
         self
     }
 
+    pub fn with_rent_exemption(mut self, lamports: u64) -> Self {
+        self.mocks.insert(RpcRequest::GetMinimumBalanceForRentExemption, json!(lamports));
+        self
+    }
+
     pub fn with_blockhash(mut self) -> Self {
         self.mocks.insert(
             RpcRequest::GetLatestBlockhash,

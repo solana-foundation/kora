@@ -17,6 +17,8 @@ use crate::{
     },
 };
 
+const TOKEN_2022_ATA_SIZE: usize = 170;
+
 #[cfg(not(test))]
 use crate::cache::CacheUtil;
 
@@ -491,68 +493,56 @@ impl FeeConfigUtil {
         config: &Config,
     ) -> Result<u64, KoraError> {
         let payment_destination = config.kora.get_payment_address(fee_payer_pubkey)?;
-        let payment_mints =
-            collect_payment_mints(&payment_destination, transaction, rpc_client, config).await?;
-
-        if payment_mints.is_empty() {
-            return Ok(total);
-        }
-
-        // Build O(1) lookup: ata_address → lamports, pre-filtered by payer == fee_payer_pubkey.
-        let sys_create_map: std::collections::HashMap<Pubkey, u64> = {
-            let sys_insts = transaction.get_or_parse_system_instructions()?;
-            sys_insts
-                .get(&ParsedSystemInstructionType::SystemCreateAccount)
-                .map(|creates| {
-                    creates
-                        .iter()
-                        .filter_map(|ix| {
-                            if let ParsedSystemInstructionData::SystemCreateAccount {
-                                new_account,
-                                lamports,
-                                payer,
-                            } = ix
-                            {
-                                if *payer == *fee_payer_pubkey {
-                                    return Some((*new_account, *lamports));
-                                }
-                            }
-                            None
-                        })
-                        .collect()
-                })
-                .unwrap_or_default()
+        let parsed = transaction.get_or_parse_ata_instructions()?;
+        let ata_creates = match parsed.get(&ParsedATAInstructionType::CreateAssociatedTokenAccount)
+        {
+            Some(v) => v.clone(),
+            None => return Ok(total),
         };
 
-        let parsed_ata_instructions = transaction.get_or_parse_ata_instructions()?;
+        let mut seen = std::collections::HashSet::new();
 
-        if let Some(ata_creates) =
-            parsed_ata_instructions.get(&ParsedATAInstructionType::CreateAssociatedTokenAccount)
-        {
-            let mut seen_atas = std::collections::HashSet::new();
-            for ata_ix in ata_creates {
-                let ParsedATAInstructionData::CreateAssociatedTokenAccount {
-                    payer,
-                    wallet_owner,
-                    mint,
-                    ata_address,
-                    ..
-                } = ata_ix;
+        for ata_ix in &ata_creates {
+            let ParsedATAInstructionData::CreateAssociatedTokenAccount {
+                payer,
+                wallet_owner,
+                mint,
+                ata_address,
+                token_program,
+            } = ata_ix;
 
-                if *payer != *fee_payer_pubkey
-                    || *wallet_owner != payment_destination
-                    || !payment_mints.contains(mint)
-                    || !seen_atas.insert((*wallet_owner, *mint))
-                {
+            if *payer != *fee_payer_pubkey
+                || *wallet_owner != payment_destination
+                || !config.validation.supports_token(&mint.to_string())
+                || !seen.insert((*wallet_owner, *mint))
+            {
+                continue;
+            }
+
+            match CacheUtil::get_account(config, rpc_client, ata_address, false).await {
+                Ok(_) => continue,
+                Err(KoraError::AccountNotFound(_)) => {}
+                Err(e) => {
+                    log::warn!(
+                        "dynamic_ata_deduction: failed to check ATA {ata_address}: {e}. Skipping."
+                    );
                     continue;
                 }
+            }
 
-                if let Some(&rent) = sys_create_map.get(ata_address) {
+            let is_2022 = *token_program == spl_token_2022_interface::id();
+            let account_size = if is_2022 { TOKEN_2022_ATA_SIZE } else { 165 };
+
+            match rpc_client.get_minimum_balance_for_rent_exemption(account_size).await {
+                Ok(rent) => {
                     total = total.saturating_sub(rent);
                     log::info!(
-                        "Dynamic ATA deduction: subtracted {} lamports rent for operator ATA creation for mint {}",
-                        rent,
-                        mint
+                        "dynamic_ata_deduction: subtracted {rent} lamports for ATA {ata_address} (mint {mint})"
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "dynamic_ata_deduction: failed to get rent for ATA {ata_address}: {e}. Skipping."
                     );
                 }
             }
@@ -560,71 +550,6 @@ impl FeeConfigUtil {
 
         Ok(total)
     }
-}
-
-async fn collect_payment_mints(
-    payment_destination: &Pubkey,
-    transaction: &mut VersionedTransactionResolved,
-    rpc_client: &RpcClient,
-    config: &Config,
-) -> Result<std::collections::HashSet<Pubkey>, KoraError> {
-    let mut payment_mints = std::collections::HashSet::new();
-    let spl_instructions = transaction.get_or_parse_spl_instructions()?;
-
-    if let Some(transfers) = spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransfer) {
-        for transfer in transfers {
-            if let ParsedSPLInstructionData::SplTokenTransfer {
-                mint,
-                destination_address,
-                is_2022,
-                ..
-            } = transfer
-            {
-                if let Some(mint_pubkey) = mint {
-                    // Only deduct for explicitly allowed payment tokens to prevent
-                    // non-allowed tokens from reducing the drain protection check.
-                    if !config.validation.supports_token(&mint_pubkey.to_string()) {
-                        continue;
-                    }
-                    let program_id = if *is_2022 {
-                        spl_token_2022_interface::id()
-                    } else {
-                        spl_token_interface::id()
-                    };
-                    let operator_ata = spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
-                        payment_destination,
-                        mint_pubkey,
-                        &program_id,
-                    );
-                    if *destination_address == operator_ata {
-                        payment_mints.insert(*mint_pubkey);
-                    }
-                } else {
-                    // For regular transfers, check the destination account owner
-                    if let Ok(dest_account) =
-                        CacheUtil::get_account(config, rpc_client, destination_address, false).await
-                    {
-                        if let Ok(token_program) =
-                            TokenType::get_token_program_from_owner(&dest_account.owner)
-                        {
-                            if let Ok(token_account) =
-                                token_program.unpack_token_account(&dest_account.data)
-                            {
-                                let token_mint = token_account.mint();
-                                if token_account.owner() == *payment_destination
-                                    && config.validation.supports_token(&token_mint.to_string())
-                                {
-                                    payment_mints.insert(token_mint);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(payment_mints)
 }
 
 pub struct TransactionFeeUtil {}
@@ -1426,27 +1351,30 @@ mod tests {
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_with_ata_deduction() {
         let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
         let mut config = get_config().unwrap();
         // Allow any token so the random test mint passes the allowlist check.
         config.validation.allowed_spl_paid_tokens = crate::config::SplTokenConfig::All;
         let mint_account = MintAccountMockBuilder::new().with_decimals(9).build();
-        let rpc_client = RpcMockBuilder::new().with_slot(1).build_with_sequential_accounts(vec![
-            &mint_account,
-            &mint_account,
-            &mint_account,
-            &mint_account,
-        ]);
+        let rpc_client = RpcMockBuilder::new()
+            .with_slot(1)
+            .with_rent_exemption(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION)
+            .build_with_sequential_accounts(vec![
+                &mint_account,
+                &mint_account,
+                &mint_account,
+                &mint_account,
+            ]);
 
         let fee_payer = Keypair::new();
         let mint = Pubkey::new_unique();
         let payment_destination = config.kora.get_payment_address(&fee_payer.pubkey()).unwrap();
 
-        // Instruction 1: System transfer to simulate some base outflow
         let transfer_amount = 5_000_000;
         let transfer_instruction =
             transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), transfer_amount);
 
-        // Instruction 2: Create ATA for the payment destination
         let ata_instruction = create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &payment_destination,
@@ -1454,24 +1382,22 @@ mod tests {
             &spl_token_interface::ID,
         );
 
-        // Instruction 3: System create account for the ATA (to simulate ATA actually being created)
         let ata_address = get_associated_token_address(&payment_destination, &mint);
         let system_create_instruction = create_account(
-            &fee_payer.pubkey(), // payer
-            &ata_address,        // new account
+            &fee_payer.pubkey(),
+            &ata_address,
             crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION,
             0,
             &Pubkey::default(),
         );
 
-        // Instruction 4: SPL Token Transfer to pay the fee (required for deduction match)
         let payment_destination_ata = get_associated_token_address(&payment_destination, &mint);
         let fee_payment_instruction = spl_token_interface::instruction::transfer_checked(
             &spl_token_interface::ID,
-            &Pubkey::new_unique(), // source (doesn't matter for this test)
+            &Pubkey::new_unique(),
             &mint,
             &payment_destination_ata,
-            &fee_payer.pubkey(), // authority
+            &fee_payer.pubkey(),
             &[],
             1_000_000,
             9,
@@ -1488,8 +1414,13 @@ mod tests {
             Some(&fee_payer.pubkey()),
         ));
 
-        // Scenario 1: dynamic_ata_deduction = true
+        // Scenario 1: dynamic_ata_deduction = true — ATA doesn't exist on-chain → deduct rent
         config.validation.dynamic_ata_deduction = true;
+        cache_ctx
+            .expect()
+            .times(1)
+            .returning(move |_, _, _, _| Err(KoraError::AccountNotFound(ata_address.to_string())));
+
         let mut resolved_transaction_true =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message.clone()).unwrap();
 
@@ -1502,15 +1433,14 @@ mod tests {
         .await
         .unwrap();
 
-        // The expected value should be (transfer_amount + rent + spl_value) - rent = transfer_amount + spl_value
-        // where spl_value is 1000 lamports (1,000,000 tokens * 0.001 price)
+        // (transfer_amount + rent + spl_value) - rent = transfer_amount + spl_value
         assert_eq!(
             outflow_true,
             transfer_amount + 1000,
             "Outflow should be transfer_amount + 1000 as operator subsidizes the rent"
         );
 
-        // Scenario 2: dynamic_ata_deduction = false
+        // Scenario 2: dynamic_ata_deduction = false — no CacheUtil call, no deduction
         config.validation.dynamic_ata_deduction = false;
         let mut resolved_transaction_false =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
@@ -1612,10 +1542,16 @@ mod tests {
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_ata_deduction_no_duplicate() {
         let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
         let mut config = get_config().unwrap();
         // Allow any token so the random test mint passes the allowlist check.
         config.validation.allowed_spl_paid_tokens = crate::config::SplTokenConfig::All;
-        let rpc_client = RpcMockBuilder::new().with_slot(1).with_mint_account(9).build();
+        let rpc_client = RpcMockBuilder::new()
+            .with_slot(1)
+            .with_mint_account(9)
+            .with_rent_exemption(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION)
+            .build();
 
         let fee_payer = Keypair::new();
         let mint = Pubkey::new_unique();
@@ -1686,6 +1622,12 @@ mod tests {
 
         // Enable deduction
         config.validation.dynamic_ata_deduction = true;
+        // Only one deduction: ata_instruction_2 (wrong payer) and ata_instruction_3 (duplicate) are skipped
+        cache_ctx
+            .expect()
+            .times(1)
+            .returning(move |_, _, _, _| Err(KoraError::AccountNotFound(ata_address.to_string())));
+
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
@@ -1708,7 +1650,12 @@ mod tests {
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_ata_already_exists() {
         let _m = ConfigMockBuilder::new().build_and_setup();
-        let config = get_config().unwrap();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+        let mut config = get_config().unwrap();
+        // Allow any token so the random test mint passes the allowlist check.
+        config.validation.allowed_spl_paid_tokens = crate::config::SplTokenConfig::All;
+        config.validation.dynamic_ata_deduction = true;
         let rpc_client = RpcMockBuilder::new().with_slot(1).with_mint_account(9).build();
 
         let fee_payer = Keypair::new();
@@ -1719,7 +1666,7 @@ mod tests {
         let transfer_instruction =
             transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), transfer_amount);
 
-        // ATA instruction present, but it's idempotent and account already exists (no CPI to System Program)
+        // ATA instruction is present but the ATA already exists on-chain — CreateIdempotent is a no-op
         let ata_instruction = create_associated_token_account_idempotent(
             &fee_payer.pubkey(),
             &payment_destination,
@@ -1745,6 +1692,12 @@ mod tests {
             &[transfer_instruction, ata_instruction, fee_payment_instruction],
             Some(&fee_payer.pubkey()),
         ));
+
+        // ATA exists on-chain → CacheUtil returns Ok → no rent deduction
+        cache_ctx
+            .expect()
+            .times(1)
+            .returning(|_, _, _, _| Ok(solana_sdk::account::Account::default()));
 
         let mut resolved_transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
@@ -1845,6 +1798,8 @@ mod tests {
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_ata_deduction_from_transaction() {
         let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
         let mut config = get_config().unwrap();
         config.validation.dynamic_ata_deduction = true;
         // Allow any token so the random test mint passes the allowlist check.
@@ -1926,8 +1881,15 @@ mod tests {
         let rpc_client = RpcMockBuilder::new()
             .with_slot(1)
             .with_mint_account(9)
+            .with_rent_exemption(crate::constant::MIN_BALANCE_FOR_RENT_EXEMPTION)
             .with_custom_mocks(mocks)
             .build();
+
+        // ATA doesn't exist on-chain → deduct rent
+        cache_ctx
+            .expect()
+            .times(1)
+            .returning(move |_, _, _, _| Err(KoraError::AccountNotFound(ata_address.to_string())));
 
         let mut resolved_transaction = VersionedTransactionResolved::from_transaction(
             &transaction,
