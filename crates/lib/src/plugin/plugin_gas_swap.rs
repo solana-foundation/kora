@@ -62,11 +62,19 @@ impl GasSwapPlugin {
             )));
         }
 
-        if let ParsedSystemInstructionData::SystemTransfer { sender, .. } = &transfers[0] {
-            if sender != fee_payer {
+        match &transfers[0] {
+            ParsedSystemInstructionData::SystemTransfer { sender, .. } => {
+                if sender != fee_payer {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Plugin gas_swap requires the SystemTransfer sender to be the fee payer ({}), got {}",
+                        fee_payer, sender
+                    )));
+                }
+            }
+            other => {
                 return Err(KoraError::InvalidTransaction(format!(
-                    "Plugin gas_swap requires the SystemTransfer sender to be the fee payer ({}), got {}",
-                    fee_payer, sender
+                    "Plugin gas_swap expected SystemTransfer data, got {:?}",
+                    other
                 )));
             }
         }
@@ -136,7 +144,16 @@ impl TransactionPlugin for GasSwapPlugin {
             );
         }
 
-        (errors, vec![])
+        let mut warnings = Vec::new();
+        if matches!(config.validation.price.model, PriceModel::Fixed { .. }) {
+            warnings.push(
+                "GasSwap plugin with Fixed pricing: ensure the fixed token fee is worth at least \
+                 max_allowed_lamports in SOL to avoid a drain condition."
+                    .to_string(),
+            );
+        }
+
+        (errors, warnings)
     }
 }
 
@@ -440,5 +457,29 @@ mod tests {
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
+    }
+
+    #[test]
+    fn validate_config_fixed_pricing_warns_drain_condition() {
+        let plugin = GasSwapPlugin;
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = crate::fee::price::PriceModel::Fixed {
+            amount: 1_000_000,
+            token: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+            strict: false,
+        };
+        let (errors, warnings) = plugin.validate_config(&config);
+        assert!(errors.is_empty());
+        assert!(!warnings.is_empty(), "expected drain condition warning for Fixed pricing");
+        assert!(warnings[0].contains("drain condition"));
+    }
+
+    #[test]
+    fn validate_config_free_pricing_errors() {
+        let plugin = GasSwapPlugin;
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = crate::fee::price::PriceModel::Free;
+        let (errors, _warnings) = plugin.validate_config(&config);
+        assert!(errors.iter().any(|e| e.contains("Free pricing")));
     }
 }

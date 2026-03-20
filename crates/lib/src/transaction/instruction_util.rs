@@ -2944,7 +2944,7 @@ mod tests {
                 assert_eq!(*parsed_owner, owner.pubkey());
                 assert_eq!(*parsed_source, source_address);
                 assert_eq!(*parsed_destination, destination_address);
-                assert_eq!(*is_2022, false);
+                assert!(!is_2022);
                 assert!(mint.is_none());
             }
             _ => panic!("Expected SplTokenTransfer variant"),
@@ -3008,7 +3008,7 @@ mod tests {
                 assert_eq!(*parsed_owner, owner.pubkey());
                 assert_eq!(*parsed_source, source_address);
                 assert_eq!(*parsed_destination, destination_address);
-                assert_eq!(*is_2022, true);
+                assert!(*is_2022);
                 assert_eq!(parsed_mint.unwrap(), mint);
             }
             _ => panic!("Expected SplTokenTransfer variant"),
