@@ -9,13 +9,14 @@ use solana_message::{
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
 use std::{collections::HashMap, ops::Deref};
 
-use solana_transaction_status_client_types::{UiInstruction, UiTransactionEncoding};
+use solana_transaction_status_client_types::UiTransactionEncoding;
 
 use crate::{
     config::Config,
     error::KoraError,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
     lighthouse::LighthouseUtil,
+    sanitize_error,
     transaction::{
         instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
         ParsedSystemInstructionData, ParsedSystemInstructionType,
@@ -157,7 +158,12 @@ impl VersionedTransactionResolved {
                 },
             )
             .await
-            .map_err(|e| KoraError::RpcError(format!("Failed to simulate transaction: {e}")))?;
+            .map_err(|e| {
+                KoraError::RpcError(format!(
+                    "Failed to simulate transaction: {}",
+                    sanitize_error!(e)
+                ))
+            })?;
 
         if let Some(err) = simulation_result.value.err {
             return Err(KoraError::InvalidTransaction(format!(
@@ -167,27 +173,24 @@ impl VersionedTransactionResolved {
 
         if let Some(inner_instructions) = simulation_result.value.inner_instructions {
             let mut compiled_inner_instructions: Vec<CompiledInstruction> = vec![];
+            // Clone so we can extend with CPI-only PDA accounts discovered
+            // during inner instruction reconstruction.
+            let mut extended_account_keys = self.all_account_keys.clone();
+            let mut account_keys_hashmap =
+                IxUtils::build_account_keys_hashmap(&extended_account_keys);
 
-            inner_instructions.iter().for_each(|ix| {
-                ix.instructions.iter().for_each(|inner_ix| match inner_ix {
-                    UiInstruction::Compiled(ix) => {
-                        compiled_inner_instructions.push(CompiledInstruction {
-                            program_id_index: ix.program_id_index,
-                            accounts: ix.accounts.clone(),
-                            data: bs58::decode(&ix.data).into_vec().unwrap_or_default(),
-                        });
-                    }
-                    UiInstruction::Parsed(ui_parsed) => {
-                        if let Some(compiled) = IxUtils::reconstruct_instruction_from_ui(
-                            &UiInstruction::Parsed(ui_parsed.clone()),
-                            &self.all_account_keys,
-                        ) {
-                            compiled_inner_instructions.push(compiled);
-                        }
-                    }
-                });
-            });
+            for ix in &inner_instructions {
+                for inner_ix in &ix.instructions {
+                    let compiled = IxUtils::reconstruct_instruction_from_ui_with_account_key_cache(
+                        inner_ix,
+                        &mut extended_account_keys,
+                        &mut account_keys_hashmap,
+                    )?;
+                    compiled_inner_instructions.push(compiled);
+                }
+            }
 
+            self.all_account_keys = extended_account_keys;
             return IxUtils::uncompile_instructions(
                 &compiled_inner_instructions,
                 &self.all_account_keys,
@@ -228,7 +231,10 @@ impl VersionedTransactionResolved {
 impl VersionedTransactionOps for VersionedTransactionResolved {
     fn encode_b64_transaction(&self) -> Result<String, KoraError> {
         let serialized = bincode::serialize(&self.transaction).map_err(|e| {
-            KoraError::SerializationError(format!("Base64 serialization failed: {e}"))
+            KoraError::SerializationError(format!(
+                "Base64 serialization failed: {}",
+                sanitize_error!(e)
+            ))
         })?;
         Ok(STANDARD.encode(serialized))
     }
@@ -320,7 +326,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let signature = signer
             .sign_message(&message_bytes)
             .await
-            .map_err(|e| KoraError::SigningError(e.to_string()))?;
+            .map_err(|e| KoraError::SigningError(sanitize_error!(e)))?;
 
         // Find the fee payer position - don't assume it's at position 0
         let fee_payer_position = self.find_signer_position(&fee_payer)?;
@@ -347,7 +353,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let signature = rpc_client
             .send_and_confirm_transaction(&transaction)
             .await
-            .map_err(|e| KoraError::RpcError(e.to_string()))?;
+            .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
 
         Ok((signature.to_string(), encoded))
     }
@@ -370,14 +376,18 @@ impl LookupTableUtil {
                 CacheUtil::get_account(config, rpc_client, &lookup.account_key, false)
                     .await
                     .map_err(|e| {
-                        KoraError::RpcError(format!("Failed to fetch lookup table: {e}"))
+                        KoraError::RpcError(format!(
+                            "Failed to fetch lookup table: {}",
+                            sanitize_error!(e)
+                        ))
                     })?;
 
             // Parse the lookup table account data to get the actual addresses
             let address_lookup_table = AddressLookupTable::deserialize(&lookup_table_account.data)
                 .map_err(|e| {
                     KoraError::InvalidTransaction(format!(
-                        "Failed to deserialize lookup table: {e}"
+                        "Failed to deserialize lookup table: {}",
+                        sanitize_error!(e)
                     ))
                 })?;
 
