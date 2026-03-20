@@ -12,6 +12,8 @@ on:
     workflows: ["Publish Rust Crates"]
     types:
       - completed
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -32,13 +34,17 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Guard allowed source branch
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CURRENT_REF: ${{ github.ref }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "::error::Publish Docker Image must be dispatched from main. Current ref: ${{ github.ref }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$CURRENT_REF" != "refs/heads/main" ]; then
+            echo "::error::Publish Docker Image must be dispatched from main. Current ref: $CURRENT_REF"
             exit 1
           fi
-          if [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ github.event.workflow_run.head_branch }}" != "main" ]; then
-            echo "::error::Publish Docker Image via workflow_run is only allowed from main. Source branch: ${{ github.event.workflow_run.head_branch }}"
+          if [ "$EVENT_NAME" = "workflow_run" ] && [ "$HEAD_BRANCH" != "main" ]; then
+            echo "::error::Publish Docker Image via workflow_run is only allowed from main. Source branch: $HEAD_BRANCH"
             exit 1
           fi
 
