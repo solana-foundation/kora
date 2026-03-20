@@ -1,3 +1,176 @@
+## 2.2.0-beta.6 - 2026-03-20
+
+
+### Bug Fixes
+
+- harden docker publish workflow run guard (#396)
+
+- harden CPI inner-instruction reconstruction edge cases (#394)
+
+- stabilize bundle, lighthouse header, and transfer-hook tests (#392)
+
+- improve cherry-pick-sync to handle squash-merged sync PRs (#387)
+
+
+### Features
+
+- add swap_gas plugin + plugin infrastructure (#383)
+
+- add cherry-pick-sync skill (#385)
+
+## 2.0.5 - 2026-03-11
+
+
+### Bug Fixes
+
+- add repository url for npm trusted publisher provenance (#376)
+
+## ts-sdk-v0.2.0 - 2026-03-09
+
+
+### Bug Fixes
+
+- add ESLint v9 flat config with @solana/eslint-config-solana (#371)
+
+- update Rust version to 1.88 for time crate compatibility (#364)
+
+- add missing signature field to SignAndSendTransactionResponse (#353)
+
+- grant pull-request write for fork live marker comment (#360)
+
+- guard against null head.repo when fork is deleted (#358)
+
+- handle missing mint in transfer fee calculation and fix program_id checks (#349)
+
+- patch remaining dependabot security vulnerabilities (#348)
+
+- patch 6 dependabot security vulnerabilities (#346)
+
+
+### Documentation
+
+- add CONTRIBUTING.md and SECURITY.md (#340)
+
+
+### Features
+
+- implement paymaster client with kit plugin interfaces (#354)
+
+- add kora-client and kora-operator skills (#342)
+
+## 2.0.4 - 2026-02-03
+
+
+### Bug Fixes
+
+- clear JUPITER_API_KEY env var in jupiter oracle test (#329)
+
+- sign if create ata ix found (cherry-pick from #267) (#327)
+
+
+### Features
+
+- add Claude skill for automated full release workflow (#330)
+
+
+### Refactoring
+
+- migrate from jupiter lite API to v3 pro API (#321)
+
+## ts-sdk-v0.1.2 - 2026-01-28
+
+
+### Documentation
+
+- update sdk readme for release (#314)
+
+- update examples to @solana/kit v5.x and add typechecks (#309)
+
+- update readme with latest release and absolute logo path (#307)
+
+
+### Features
+
+- add kit plugin with typed responses (#311)
+
+## 2.0.3 - 2026-01-21
+
+
+### Hotfix
+
+- (PRO-747) Improved Durable Nonce handling & security (#303)
+
+## 2.0.2 - 2026-01-12
+
+
+### Bug Fixes
+
+- harden sig_verify, oracle staleness, transfer fees, and CPI stubs (#378)
+
+- validate rpc cache redis connection at startup (#375)
+
+- verify required env vars exist during config validation (#374)
+
+- preserve RPC errors in transfer_transaction source ATA lookup (#373)
+
+- add context message to ConfigError variant (#368)
+
+- validate pubkey format in config arrays (#352)
+
+- grant pull-request write for fork live marker comment (#359)
+
+
+### Cherry-pick
+
+- Hotfix example packages and Jupiter v3 API migration (#326)
+
+
+### Documentation
+
+- add comprehensive rustdoc for public RPC types (#356)
+
+
+### Features
+
+- add createKitKoraClient for plugin-based gasless transactions (#388)
+
+- cache blockhash in redis (5s TTL) (#361)
+
+- add Claude skill for automated full release workflow (#328)
+
+
+### Refactoring
+
+- reduce error boilerplate with a from-impl macro (#362)
+
+
+### Testing
+
+- migrate TS integration tests to LiteSVM (#389)
+
+- complete FeePayerPolicy unit test matrix (#365)
+
+- add missing retry and price bounds test coverage (#370)
+
+- add comprehensive unit tests for instruction parsing (System, SPL, Token-2022) (#355)
+
+
+### Hotfix
+
+- (PRO-639) Fix big transaction causing error when using v0 transaction (#297)
+
+## ts-sdk-v0.2.0-beta.4 - 2026-01-29
+
+
+### Documentation
+
+- update sdk readme for release (#314)
+
+
+### Features
+
+- add reCAPTCHA support to TypeScript client (#317)
+
 ## 2.2.0-beta.5 - 2026-02-03
 
 
