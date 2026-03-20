@@ -190,9 +190,10 @@ impl VersionedTransactionResolved {
                 }
             }
 
+            self.all_account_keys = extended_account_keys;
             return IxUtils::uncompile_instructions(
                 &compiled_inner_instructions,
-                &extended_account_keys,
+                &self.all_account_keys,
             );
         }
 
