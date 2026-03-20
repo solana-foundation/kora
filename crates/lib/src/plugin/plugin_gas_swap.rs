@@ -33,7 +33,7 @@ impl GasSwapPlugin {
 
         if non_budget_count != 2 {
             return Err(KoraError::InvalidTransaction(format!(
-                "Plugin gas_swap requires exactly two instructions (SplTokenTransfer + SystemTransfer), \
+                "Plugin gas_swap requires exactly two non-compute instructions (SplTokenTransfer + SystemTransfer), \
                  found {} non-compute-budget instructions in {}",
                 non_budget_count,
                 context.method_name()
