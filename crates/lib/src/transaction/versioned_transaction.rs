@@ -331,12 +331,23 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         )
         .await?;
 
-        // Sign transaction
+        // Sign transaction and report success/failure back to the global signer pool
+        // This telemetry ensures unhealthy remote signers are bypassed automatically.
         let message_bytes = transaction.message.serialize();
-        let signature = signer
-            .sign_message(&message_bytes)
-            .await
-            .map_err(|e| KoraError::SigningError(sanitize_error!(e)))?;
+        let signature = match signer.sign_message(&message_bytes).await {
+            Ok(sig) => {
+                if let Ok(pool) = crate::state::get_signer_pool() {
+                    pool.record_signing_success(signer);
+                }
+                sig
+            }
+            Err(e) => {
+                if let Ok(pool) = crate::state::get_signer_pool() {
+                    pool.record_signing_failure(signer);
+                }
+                return Err(KoraError::SigningError(sanitize_error!(e)));
+            }
+        };
 
         // Find the fee payer position - don't assume it's at position 0
         let fee_payer_position = self.find_signer_position(&fee_payer)?;

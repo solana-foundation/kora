@@ -18,6 +18,9 @@ pub enum KoraError {
     #[error("Signing error: {0}")]
     SigningError(String),
 
+    #[error("No healthy signers available: {0}")]
+    NoHealthySigners(String),
+
     #[error("Invalid transaction: {0}")]
     InvalidTransaction(String),
 
