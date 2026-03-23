@@ -8,8 +8,8 @@ use solana_sdk::pubkey::Pubkey;
 use std::{
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
-        Arc,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+        Arc, Mutex,
     },
 };
 
@@ -25,21 +25,24 @@ pub(crate) struct SignerWithMetadata {
     weight: u32,
     /// Timestamp of last use (Unix timestamp in seconds)
     last_used: AtomicU64,
-    /// Tracks consecutive remote RPC or internal signing failures
-    consecutive_failures: AtomicU32,
-    /// Whether the signer is currently eligible for pool selection
-    is_healthy: AtomicBool,
+    /// Tracks (consecutive_failures, is_healthy) thread-safely
+    health: Mutex<(u32, bool)>,
+    /// Timestamp of when the signer last failed to probe for recovery
+    last_failed_at: Mutex<Option<std::time::Instant>>,
 }
 
 impl Clone for SignerWithMetadata {
     fn clone(&self) -> Self {
+        let health = *self.health.lock().unwrap();
+        let last_failed_at = *self.last_failed_at.lock().unwrap();
+
         Self {
             name: self.name.clone(),
             signer: self.signer.clone(),
             weight: self.weight,
             last_used: AtomicU64::new(self.last_used.load(Ordering::Relaxed)),
-            consecutive_failures: AtomicU32::new(self.consecutive_failures.load(Ordering::Relaxed)),
-            is_healthy: AtomicBool::new(self.is_healthy.load(Ordering::Relaxed)),
+            health: Mutex::new(health),
+            last_failed_at: Mutex::new(last_failed_at),
         }
     }
 }
@@ -47,6 +50,8 @@ impl Clone for SignerWithMetadata {
 impl SignerWithMetadata {
     /// Number of consecutive failures before marking the signer as unhealthy
     const MAX_CONSECUTIVE_FAILURES: u32 = 3;
+    /// Seconds to wait before allowing an unhealthy signer to be probed for recovery
+    const RECOVERY_PROBE_SECS: u64 = 30;
 
     /// Create a new signer with metadata
     pub(crate) fn new(name: String, signer: Arc<Signer>, weight: u32) -> Self {
@@ -55,8 +60,8 @@ impl SignerWithMetadata {
             signer,
             weight,
             last_used: AtomicU64::new(0),
-            consecutive_failures: AtomicU32::new(0),
-            is_healthy: AtomicBool::new(true),
+            health: Mutex::new((0, true)),
+            last_failed_at: Mutex::new(None),
         }
     }
 
@@ -69,25 +74,36 @@ impl SignerWithMetadata {
         self.last_used.store(now, Ordering::Relaxed);
     }
 
+    /// Records a successful signature creation, resetting consecutive failures to 0
     pub(crate) fn record_success(&self) {
-        self.consecutive_failures.store(0, Ordering::Relaxed);
-        self.is_healthy.store(true, Ordering::Relaxed);
+        let mut health = self.health.lock().unwrap();
+        *health = (0, true);
+        *self.last_failed_at.lock().unwrap() = None;
     }
 
+    /// Records a failed signature attempt, potentially degrading the signer's health
     pub(crate) fn record_failure(&self) {
-        let failures = self.consecutive_failures.fetch_add(1, Ordering::Relaxed) + 1;
-        if failures >= Self::MAX_CONSECUTIVE_FAILURES {
-            log::warn!(
-                "Signer '{}' marked unhealthy after {} consecutive failures",
-                self.name,
-                failures
-            );
-            self.is_healthy.store(false, Ordering::Relaxed);
+        let mut health = self.health.lock().unwrap();
+        health.0 += 1;
+        if health.0 >= Self::MAX_CONSECUTIVE_FAILURES {
+            if health.1 {
+                log::warn!(
+                    "Signer '{}' marked unhealthy after {} consecutive failures",
+                    self.name,
+                    health.0
+                );
+            } else {
+                log::debug!("Recovery probe failed for signer '{}', resetting cooldown", self.name);
+            }
+            health.1 = false;
+            *self.last_failed_at.lock().unwrap() = Some(std::time::Instant::now());
         }
     }
 
+    /// Whether the signer is currently eligible for pool selection
+    #[allow(dead_code)]
     pub(crate) fn is_healthy(&self) -> bool {
-        self.is_healthy.load(Ordering::Relaxed)
+        self.health.lock().unwrap().1
     }
 
     #[allow(dead_code)]
@@ -190,7 +206,30 @@ impl SignerPool {
     /// Filters the active signers down to only those that haven't hit the failure limit.
     /// Falls back to the entire pool if every signer is marked unhealthy.
     fn healthy_signers(&self) -> Vec<&SignerWithMetadata> {
-        let healthy: Vec<_> = self.signers.iter().filter(|s| s.is_healthy()).collect();
+        let healthy: Vec<_> = self
+            .signers
+            .iter()
+            .filter(|s| {
+                let h = s.health.lock().unwrap();
+                let is_healthy = h.1;
+                if is_healthy {
+                    return true;
+                }
+
+                // Check if enough time passed for recovery probe. If 30 seconds have elapsed,
+                // temporarily treat the signer as healthy to attempt a background recovery check.
+                if let Some(last_failed) = *s.last_failed_at.lock().unwrap() {
+                    if last_failed.elapsed().as_secs() >= SignerWithMetadata::RECOVERY_PROBE_SECS {
+                        log::debug!("Probing recovery for signer '{}'", s.name());
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            })
+            .collect();
 
         if healthy.is_empty() {
             log::error!(
@@ -294,6 +333,13 @@ impl SignerPool {
             self.signers.iter().find(|s| s.signer.pubkey() == target_pubkey).ok_or_else(|| {
                 KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
             })?;
+
+        if !signer_meta.is_healthy() {
+            return Err(KoraError::ValidationError(format!(
+                "Pinned signer {} is unhealthy",
+                pubkey
+            )));
+        }
 
         signer_meta.update_last_used();
         Ok(Arc::clone(&signer_meta.signer))
@@ -465,5 +511,35 @@ mod tests {
             let selected = pool.get_next_signer().unwrap();
             assert_eq!(selected.pubkey().to_string(), signer2_pubkey);
         }
+    }
+
+    #[test]
+    fn test_recovery_probe_after_30_seconds() {
+        let pool = create_test_pool();
+        let meta = &pool.signers[0];
+
+        // Mark signer_1 unhealthy by forcing 3 failures
+        meta.record_failure();
+        meta.record_failure();
+        meta.record_failure();
+        assert!(!meta.is_healthy());
+
+        // Immediately checking healthy signers should exclude signer_1
+        let healthy_before_time = pool.healthy_signers();
+        assert_eq!(healthy_before_time.len(), 1);
+        assert_eq!(healthy_before_time[0].name(), "signer_2");
+
+        // Simulate 31 seconds passing by tricking the last_failed_at timestamp
+        *meta.last_failed_at.lock().unwrap() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(31));
+
+        // Now healthy_signers() should tentatively ALLOW signer_1 back into the rotation
+        // to probe for recovery, even though is_healthy() is strictly still false.
+        let healthy_after_time = pool.healthy_signers();
+        assert_eq!(healthy_after_time.len(), 2); // Both signers included!
+
+        // Simulate selection and successful record_success
+        meta.record_success();
+        assert!(meta.is_healthy()); // Permanently healthy again
     }
 }
