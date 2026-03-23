@@ -214,14 +214,17 @@ jobs:
             const releaseName = `TypeScript SDK v${version}`;
             const isPrerelease = '${{ steps.prerelease.outputs.is_prerelease }}' === 'true';
 
-            const body = `## @solana/kora v${version}
-
-            ### Installation
-
-            \`\`\`bash
-            pnpm add @solana/kora
-            \`\`\`
-            `;
+            const body = [
+              `## @solana/kora v${version}`,
+              '',
+              '### Installation',
+              '',
+              '```bash',
+              'pnpm add @solana/kora',
+              '```',
+              '',
+              `https://www.npmjs.com/package/@solana/kora/v/${version}`,
+            ].join('\n');
 
             // Check if release already exists
             try {

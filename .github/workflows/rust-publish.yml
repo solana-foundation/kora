@@ -129,12 +129,21 @@ jobs:
               if (e.status !== 404) throw e;
             }
 
+            const version = '${{ steps.version.outputs.version }}';
+            const body = [
+              `Release of Kora v${version}`,
+              '',
+              '**Crates:**',
+              `- [kora-lib v${version}](https://crates.io/crates/kora-lib/${version})`,
+              `- [kora-cli v${version}](https://crates.io/crates/kora-cli/${version})`,
+            ].join('\n');
+
             await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: tagName,
               name: releaseName,
-              body: `Release of Kora v${{ steps.version.outputs.version }}\n\n**Crates:**\n- kora-lib v${{ steps.version.outputs.version }}\n- kora-cli v${{ steps.version.outputs.version }}`,
+              body,
               draft: false,
               prerelease: isPrerelease,
             });
