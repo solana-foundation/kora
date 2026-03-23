@@ -334,9 +334,19 @@ impl SignerPool {
                 KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
             })?;
 
-        if !signer_meta.is_healthy() {
+        // Allow pinned signers to participate in the 30-second recovery probe,
+        // maintaining consistency with normal pool auto-selection behavior.
+        let is_eligible = if signer_meta.is_healthy() {
+            true
+        } else if let Some(last_failed) = *signer_meta.last_failed_at.lock().unwrap() {
+            last_failed.elapsed().as_secs() >= SignerWithMetadata::RECOVERY_PROBE_SECS
+        } else {
+            false
+        };
+
+        if !is_eligible {
             return Err(KoraError::ValidationError(format!(
-                "Pinned signer {} is unhealthy",
+                "Pinned signer {} is unhealthy (recovery probe not yet eligible after cooldown)",
                 pubkey
             )));
         }
@@ -537,6 +547,10 @@ mod tests {
         // to probe for recovery, even though is_healthy() is strictly still false.
         let healthy_after_time = pool.healthy_signers();
         assert_eq!(healthy_after_time.len(), 2); // Both signers included!
+
+        // Verify pinned path also allows after 30s mock
+        let pinned_signer = pool.get_signer_by_pubkey(&meta.signer.pubkey().to_string());
+        assert!(pinned_signer.is_ok());
 
         // Simulate selection and successful record_success
         meta.record_success();
