@@ -2,7 +2,6 @@ import { getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/t
 import {
     appendTransactionMessageInstructions,
     Blockhash,
-    createKeyPairSignerFromBytes,
     createNoopSigner,
     createTransactionMessage,
     generateKeyPairSigner,
