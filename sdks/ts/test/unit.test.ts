@@ -481,11 +481,8 @@ describe('KoraClient Unit Tests', () => {
                             role: 1, // writable
                         }), // Destination token account
                         expect.objectContaining({
-                            role: 2, // readonly-signer
+                            role: 0, // readonly (plain address, no signer attached)
                             address: validRequest.source_wallet,
-                            signer: expect.objectContaining({
-                                address: validRequest.source_wallet,
-                            }),
                         }), // Authority
                     ],
                     data: expect.any(Uint8Array),
@@ -494,13 +491,7 @@ describe('KoraClient Unit Tests', () => {
                 payment_token: validRequest.fee_token,
                 payment_address: mockFeeEstimate.payment_address,
                 signer_address: mockFeeEstimate.signer_pubkey,
-                signer: expect.objectContaining({
-                    address: validRequest.source_wallet,
-                }),
             });
-
-            expect(result.signer).toBeDefined();
-            expect(result.signer.address).toBe(validRequest.source_wallet);
 
             // Verify only estimateTransactionFee was called
             expect(mockFetch).toHaveBeenCalledTimes(1);
