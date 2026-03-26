@@ -104,8 +104,11 @@ export interface GetPaymentInstructionRequest {
     sig_verify?: boolean;
     /** Optional signer address for the transaction */
     signer_key?: string;
-    /** The wallet owner (not token account) that will be making the token payment */
-    source_wallet: string;
+    /** The wallet owner that will be making the token payment.
+     *  Accepts a plain address string or a TransactionSigner. When a TransactionSigner is provided,
+     *  it is used as the transfer authority on the payment instruction, preserving signer identity
+     *  and avoiding conflicts with other instructions that reference the same address. */
+    source_wallet: TransactionSigner | string;
     /** The token program id to use for the payment (defaults to TOKEN_PROGRAM_ID) */
     token_program_id?: string;
     /** Base64-encoded transaction to estimate fees for */

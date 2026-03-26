@@ -1,4 +1,16 @@
-import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
+import { getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
+import {
+    appendTransactionMessageInstructions,
+    Blockhash,
+    createKeyPairSignerFromBytes,
+    createNoopSigner,
+    createTransactionMessage,
+    generateKeyPairSigner,
+    Instruction,
+    partiallySignTransactionMessageWithSigners,
+    setTransactionMessageFeePayerSigner,
+    setTransactionMessageLifetimeUsingBlockhash,
+} from '@solana/kit';
 
 import { KoraClient } from '../src/client.js';
 import {
@@ -491,12 +503,9 @@ describe('KoraClient Unit Tests', () => {
                             role: 1, // writable
                         }), // Destination token account
                         expect.objectContaining({
-                            // readonly-signer
+                            // readonly (plain address, no signer attached)
                             address: validRequest.source_wallet,
-                            role: 2,
-                            signer: expect.objectContaining({
-                                address: validRequest.source_wallet,
-                            }),
+                            role: 0,
                         }), // Authority
                     ],
                     data: expect.any(Uint8Array),
@@ -573,6 +582,97 @@ describe('KoraClient Unit Tests', () => {
             mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
             await expect(client.getPaymentInstruction(validRequest)).rejects.toThrow('Network error');
+        });
+
+        it('should produce a payment instruction compatible with a real signer for the same address', async () => {
+            // Generate a real KeyPairSigner (simulates a user's wallet)
+            const userSigner = await generateKeyPairSigner();
+
+            // Mock estimateTransactionFee to return the user's address as source_wallet context
+            const feeEstimate: EstimateTransactionFeeResponse = {
+                fee_in_lamports: 5000,
+                fee_in_token: 50000,
+                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+            };
+            mockSuccessfulResponse(feeEstimate);
+
+            // Get payment instruction — authority is a plain address (no signer attached)
+            const result = await client.getPaymentInstruction({
+                ...validRequest,
+                source_wallet: userSigner.address,
+            });
+
+            // Build another instruction that references the same address with the REAL signer
+            // (simulates a program instruction like makePurchase where the user is a signer)
+            const userOwnedIx: Instruction = getTransferInstruction({
+                amount: 1000n,
+                authority: userSigner, // <-- real KeyPairSigner
+                destination: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7' as any,
+                source: '11111111111111111111111111111111' as any,
+            });
+
+            // Combine both instructions in a transaction — previously this would throw
+            // "Multiple distinct signers" because the payment instruction had a NoopSigner.
+            // Now the payment instruction uses a plain address, so no conflict.
+            const feePayer = createNoopSigner('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7' as any);
+            const txMessage = appendTransactionMessageInstructions(
+                [userOwnedIx, result.payment_instruction],
+                setTransactionMessageLifetimeUsingBlockhash(
+                    { blockhash: '11111111111111111111111111111111' as Blockhash, lastValidBlockHeight: 0n },
+                    setTransactionMessageFeePayerSigner(feePayer, createTransactionMessage({ version: 0 })),
+                ),
+            );
+
+            // This should NOT throw "Multiple distinct signers"
+            await expect(partiallySignTransactionMessageWithSigners(txMessage)).resolves.toBeDefined();
+        });
+
+        it('should accept a TransactionSigner as source_wallet and preserve signer identity', async () => {
+            const userSigner = await generateKeyPairSigner();
+
+            const feeEstimate: EstimateTransactionFeeResponse = {
+                fee_in_lamports: 5000,
+                fee_in_token: 50000,
+                payment_address: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+                signer_pubkey: 'DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7',
+            };
+            mockSuccessfulResponse(feeEstimate);
+
+            // Pass the signer directly as source_wallet
+            const result = await client.getPaymentInstruction({
+                ...validRequest,
+                source_wallet: userSigner,
+            });
+
+            // The authority account meta should carry the signer
+            const authorityMeta = result.payment_instruction.accounts?.[2];
+            expect(authorityMeta).toEqual(
+                expect.objectContaining({
+                    address: userSigner.address,
+                    role: 2, // readonly-signer
+                    signer: userSigner,
+                }),
+            );
+
+            // Combining with another instruction using the same signer should work
+            const userOwnedIx: Instruction = getTransferInstruction({
+                amount: 1000n,
+                authority: userSigner,
+                destination: 'PayKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7' as any,
+                source: '11111111111111111111111111111111' as any,
+            });
+
+            const feePayer = createNoopSigner('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7' as any);
+            const txMessage = appendTransactionMessageInstructions(
+                [userOwnedIx, result.payment_instruction],
+                setTransactionMessageLifetimeUsingBlockhash(
+                    { blockhash: '11111111111111111111111111111111' as Blockhash, lastValidBlockHeight: 0n },
+                    setTransactionMessageFeePayerSigner(feePayer, createTransactionMessage({ version: 0 })),
+                ),
+            );
+
+            await expect(partiallySignTransactionMessageWithSigners(txMessage)).resolves.toBeDefined();
         });
 
         it('should return correct payment details in response', async () => {
