@@ -1,4 +1,4 @@
-import { assertIsAddress, createNoopSigner, Instruction } from '@solana/kit';
+import { Address, assertIsAddress, Instruction, isTransactionSigner } from '@solana/kit';
 import { findAssociatedTokenPda, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import crypto from 'crypto';
 
@@ -156,7 +156,10 @@ export class KoraClient {
         signer_key,
         sig_verify,
     }: GetPaymentInstructionRequest): Promise<GetPaymentInstructionResponse> {
-        assertIsAddress(source_wallet);
+        const sourceIsSigner = typeof source_wallet !== 'string' && isTransactionSigner(source_wallet);
+        const walletAddress: Address = sourceIsSigner ? source_wallet.address : (source_wallet as Address);
+
+        assertIsAddress(walletAddress);
         assertIsAddress(fee_token);
         assertIsAddress(token_program_id);
 
@@ -170,7 +173,7 @@ export class KoraClient {
 
         const [sourceTokenAccount] = await findAssociatedTokenPda({
             mint: fee_token,
-            owner: source_wallet,
+            owner: walletAddress,
             tokenProgram: token_program_id,
         });
 
@@ -180,11 +183,9 @@ export class KoraClient {
             tokenProgram: token_program_id,
         });
 
-        const signer = createNoopSigner(source_wallet);
-
         const paymentInstruction: Instruction = getTransferInstruction({
             amount: fee_in_token,
-            authority: signer,
+            authority: sourceIsSigner ? source_wallet : walletAddress,
             destination: destinationTokenAccount,
             source: sourceTokenAccount,
         });
@@ -195,7 +196,6 @@ export class KoraClient {
             payment_amount: fee_in_token,
             payment_instruction: paymentInstruction,
             payment_token: fee_token,
-            signer,
             signer_address: signer_pubkey,
         };
     }
