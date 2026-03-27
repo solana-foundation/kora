@@ -30,6 +30,9 @@ jobs:
   publish:
     name: Publish Kora crates to crates.io
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - name: Guard main branch for release publish
         run: |
@@ -89,8 +92,6 @@ jobs:
         run: |
           echo "📦 Publishing kora-lib@${{ steps.version.outputs.version }} to crates.io..."
           cargo publish -p kora-lib --locked
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_CLI_REGISTRY_TOKEN }}
 
       - name: Wait for kora-lib to be available on crates.io
         if: ${{ github.event.inputs.publish-kora-lib == 'true' }}
@@ -103,8 +104,6 @@ jobs:
         run: |
           echo "📦 Publishing kora-cli@${{ steps.version.outputs.version }} to crates.io..."
           cargo publish -p kora-cli --locked
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.KORA_CLI_REGISTRY_TOKEN }}
 
       - name: Create GitHub Release
         if: ${{ github.event.inputs.create-github-release == 'true' }}
