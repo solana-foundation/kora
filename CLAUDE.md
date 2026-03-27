@@ -278,7 +278,7 @@ Kora uses synchronized versioning where all workspace crates share the same vers
 - Both crates published together in dependency order
 
 **GitHub Secrets Required:**
-- `KORA_CLI_REGISTRY_TOKEN` - crates.io API token for publishing
+- None — publishing uses crates.io trusted publishing via GitHub Actions OIDC (no API token needed)
 
 ### Claude Skill: Full Release Automation
 

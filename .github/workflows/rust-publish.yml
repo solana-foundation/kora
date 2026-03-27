@@ -22,14 +22,6 @@ on:
 permissions:
   contents: write
 
-jobs:
-  publish:
-    name: Publish Kora crates to crates.io
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
-
 concurrency:
   group: release-rust
   cancel-in-progress: false
@@ -38,6 +30,9 @@ jobs:
   publish:
     name: Publish Kora crates to crates.io
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - name: Guard main branch for release publish
         run: |
