@@ -227,7 +227,7 @@ cargo install git-cliff     # For CHANGELOG generation
 
 **Release Steps:**
 
-1. **Prepare Release (on feature branch)**
+1. **Prepare Release**
    ```bash
    just release
    ```
@@ -238,26 +238,24 @@ cargo install git-cliff     # For CHANGELOG generation
    - Generate `CHANGELOG.md` from conventional commits since last release
    - Commit changes with message: `chore: release v{VERSION}`
 
-2. **Create PR and Merge**
+2. **Mainline releases (stable/prerelease from `main`)**
    ```bash
    git push origin HEAD
    ```
    - Create pull request to `main`
    - Get review and merge PR
+   - After merge, trigger publish workflows from `main`
 
-3. **Publish to crates.io (after PR merge)**
-   - Go to GitHub Actions
-   - Manually trigger the "Publish Rust Crates" workflow
-   - This will:
-     - Build and verify the workspace
-     - Read version from `Cargo.toml`
-     - Create git tags on main:
-       - `v{VERSION}` (generic version tag)
-       - `kora-lib-v{VERSION}` (crate-specific tag)
-       - `kora-cli-v{VERSION}` (crate-specific tag)
-     - Publish `kora-lib` to crates.io
-     - Wait for indexing
-     - Publish `kora-cli` to crates.io
+3. **Hotfix releases (from `hotfix/*`)**
+   - Create the branch from the deployed stable tag via `just hotfix`
+   - Run `just release` on the `hotfix/*` branch
+   - Push the hotfix branch and trigger publish workflows from that same `hotfix/*` branch
+   - Merge hotfix back to `main` after publish completes
+
+4. **Publish workflows**
+   - "Publish Rust Crates" (creates `v{VERSION}`, `kora-lib-v{VERSION}`, `kora-cli-v{VERSION}` tags on the source ref)
+   - "Publish TypeScript SDK" when applicable
+   - Docker publish follows Rust publish via `workflow_run`
 
 **Conventional Commits:**
 
@@ -282,7 +280,7 @@ Kora uses synchronized versioning where all workspace crates share the same vers
 
 ### Claude Skill: Full Release Automation
 
-A Claude skill is available at `.claude/skills/release.md` that automates the complete release process for both Rust and TypeScript SDK.
+A Claude skill is available at `.claude/skills/release/SKILL.md` that automates the complete release process for both Rust and TypeScript SDK.
 
 **What it does:**
 1. Uses `main` as the release base branch for both stable and prerelease versions
