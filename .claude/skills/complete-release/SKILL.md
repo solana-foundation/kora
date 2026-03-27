@@ -1,11 +1,11 @@
 ---
 name: complete-release
-description: "Reviewer workflow for completing a Kora release after the release PR is merged. Squash-merges the PR, detects whether Rust and/or TypeScript changed, then triggers the correct publish workflows on main. Use when the user says 'complete the release', 'merge and publish', or 'trigger publish workflows'."
+description: "Reviewer workflow for completing a Kora mainline release after the release PR is merged. Squash-merges the PR, detects whether Rust and/or TypeScript changed, then triggers the correct publish workflows on main. For hotfix releases, publish from hotfix/* before merging back. Use when the user says 'complete the release', 'merge and publish', or 'trigger publish workflows'."
 ---
 
 # Kora Complete Release
 
-Run this after a release PR has been approved. It squash-merges the PR and triggers the appropriate CI publish workflows on `main`.
+Run this after a mainline release PR has been approved. It squash-merges the PR and triggers the appropriate CI publish workflows on `main`.
 
 ---
 
@@ -105,7 +105,8 @@ npm view @solana/kora version
 
 ## Notes
 
-- Both workflows guard against running on non-`main` refs — always trigger from `main`.
+- This skill is for mainline releases. For hotfix releases, trigger publish workflows from `hotfix/*` before merging back to `main`.
+- Publish workflows allow `main` and `hotfix/*` refs.
 - Rust publish order: `kora-lib` first, then `kora-cli` (kora-cli depends on kora-lib).
 - A 30-second crates.io indexing delay is built into the CI workflow between the two publishes.
 - TS prerelease versions are published with the `beta` npm tag; stable versions use `latest`.

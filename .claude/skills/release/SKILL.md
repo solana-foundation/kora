@@ -5,7 +5,7 @@ description: "Prepare a Kora release PR. Bumps Rust crate versions (kora-lib + k
 
 # Kora Release Preparation
 
-Prepare a release PR for Kora. This updates version numbers, generates the CHANGELOG, and opens a PR against `main`. No publishing happens here — CI workflows handle that after merge.
+Prepare a release PR for Kora. This updates version numbers, generates the CHANGELOG, and opens a PR against `main`. For mainline releases, publishing happens after merge via CI.
 
 ---
 
@@ -148,8 +148,8 @@ gh pr create \
 ### TypeScript SDK
 - **@solana/kora** \`${TS_VERSION}\` *(omit section if not releasing)*
 
-## Post-merge
-Trigger CI workflows from \`main\` using the \`complete-release\` skill (or manually):
+## Publish
+For mainline releases from \`main\`, trigger CI workflows from \`main\` using the \`complete-release\` skill (or manually):
 - **Rust**: Actions → "Publish Rust Crates"
 - **TypeScript**: Actions → "Publish TypeScript SDK"
 EOF
@@ -161,6 +161,7 @@ EOF
 ## Notes
 
 - All release PRs target `main` regardless of current branch.
+- Hotfix patch releases are published from `hotfix/*` before merge-back to `main`.
 - Do NOT call `just release` or `just release-ts-sdk` — both are interactive.
 - Tags (`v{VERSION}`, `kora-lib-v{VERSION}`, `kora-cli-v{VERSION}`) are created by CI after merge.
 - Prerelease versions use semver suffixes, e.g. `2.3.0-beta.1`.
