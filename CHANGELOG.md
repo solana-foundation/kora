@@ -1,3 +1,15 @@
+## 2.2.0-beta.7 - 2026-03-27
+
+
+### Bug Fixes
+
+- accept TransactionSigner in getPaymentInstruction source_wallet (#402)
+
+
+### Documentation
+
+- align guidance with hotfix publish flow (#407)
+
 ## 2.2.0-beta.6 - 2026-03-20
 
 
