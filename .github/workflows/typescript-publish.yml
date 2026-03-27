@@ -26,15 +26,18 @@ concurrency:
 
 jobs:
   guard-main:
-    name: Guard main branch for publish
+    name: Guard allowed source branch for publish
     runs-on: ubuntu-latest
     steps:
-      - name: Fail if workflow_dispatch is not on main
+      - name: Fail if workflow_dispatch is not on an allowed branch
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "::error::Publish TypeScript SDK must be run from main. Current ref: ${{ github.ref }}"
-            exit 1
-          fi
+          case "${{ github.ref }}" in
+            refs/heads/main|refs/heads/hotfix/*) ;;
+            *)
+              echo "::error::Publish TypeScript SDK must be run from main or hotfix/*. Current ref: ${{ github.ref }}"
+              exit 1
+              ;;
+          esac
 
   # Run tests before publishing
   typescript-integration:

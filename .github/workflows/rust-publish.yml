@@ -34,12 +34,15 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - name: Guard main branch for release publish
+      - name: Guard allowed source branch for release publish
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "::error::Publish Rust Crates must be run from main. Current ref: ${{ github.ref }}"
-            exit 1
-          fi
+          case "${{ github.ref }}" in
+            refs/heads/main|refs/heads/hotfix/*) ;;
+            *)
+              echo "::error::Publish Rust Crates must be run from main or hotfix/*. Current ref: ${{ github.ref }}"
+              exit 1
+              ;;
+          esac
 
       - uses: actions/checkout@v4
         with:
