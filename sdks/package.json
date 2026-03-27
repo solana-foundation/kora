@@ -13,7 +13,10 @@
       "markdown-it": ">=14.1.1",
       "diff": ">=4.0.4",
       "js-yaml": ">=4.1.1",
-      "brace-expansion": ">=2.0.2"
+      "brace-expansion@^2": "2.0.3",
+      "picomatch@^2": "2.3.2",
+      "picomatch@^4": "4.0.4",
+      "yaml@^2": "2.8.3"
     }
   }
 }
