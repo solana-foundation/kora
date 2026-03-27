@@ -16,7 +16,11 @@
       "brace-expansion@^2": "2.0.3",
       "picomatch@^2": "2.3.2",
       "picomatch@^4": "4.0.4",
-      "yaml@^2": "2.8.3"
+      "yaml@^2": "2.8.3",
+      "flatted@^3": "3.4.2",
+      "minimatch@^3": "3.1.5",
+      "minimatch@^5": "5.1.8",
+      "minimatch@^9": "9.0.7"
     }
   }
 }
