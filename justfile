@@ -286,7 +286,13 @@ release:
     echo "Ready! Next steps:"
     echo "  git commit -m 'chore: release v$version'"
     echo "  git push origin HEAD"
-    echo "  Create PR → merge → trigger 'Publish Rust Crates' workflow"
+    if [[ "$current_branch" == hotfix/* ]]; then
+        echo "  Trigger 'Publish Rust Crates' workflow from this hotfix branch"
+        echo "  Trigger 'Publish TypeScript SDK' workflow from this hotfix branch (if needed)"
+        echo "  Then merge hotfix back to main"
+    else
+        echo "  Create PR → merge → trigger 'Publish Rust Crates' workflow"
+    fi
 
 # Start a hotfix branch from a deployed stable tag
 [group('release')]

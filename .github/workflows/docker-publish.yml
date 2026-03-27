@@ -14,7 +14,7 @@ on:
       - completed
     branches:
       - main
-      - hotfix/**
+      - hotfix/*
 
 permissions:
   contents: write
