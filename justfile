@@ -227,10 +227,11 @@ branch-info:
     @echo ""
     @echo "Releasing:"
     @echo "  Stable/Beta/RC: checkout main, run 'just release'"
+    @echo "  Hotfix patch: run 'just release' from hotfix/*"
     @echo "  Pre-release versions use semver suffixes (e.g. 2.3.0-beta.1)"
     @echo "  Hotfix: run 'just hotfix' from deployed stable tag"
 
-# Prepare a new release (run from main; use semver pre-release suffixes for beta/rc)
+# Prepare a new release (run from main or hotfix/*; use semver pre-release suffixes for beta/rc)
 [group('release')]
 [confirm('Start release process?')]
 release:
@@ -243,10 +244,13 @@ release:
     fi
 
     current_branch=$(git rev-parse --abbrev-ref HEAD)
-    if [ "$current_branch" != "main" ]; then
-        echo "Error: Releases must be prepared from main (current branch: $current_branch)"
-        exit 1
-    fi
+    case "$current_branch" in
+        main|hotfix/*) ;;
+        *)
+            echo "Error: Releases must be prepared from main or hotfix/* (current branch: $current_branch)"
+            exit 1
+            ;;
+    esac
 
     command -v cargo-set-version &>/dev/null || { echo "Install cargo-edit: cargo install cargo-edit"; exit 1; }
     command -v git-cliff &>/dev/null || { echo "Install git-cliff: cargo install git-cliff"; exit 1; }
@@ -282,7 +286,13 @@ release:
     echo "Ready! Next steps:"
     echo "  git commit -m 'chore: release v$version'"
     echo "  git push origin HEAD"
-    echo "  Create PR → merge → trigger 'Publish Rust Crates' workflow"
+    if [[ "$current_branch" == hotfix/* ]]; then
+        echo "  Trigger 'Publish Rust Crates' workflow from this hotfix branch"
+        echo "  Trigger 'Publish TypeScript SDK' workflow from this hotfix branch (if needed)"
+        echo "  Then merge hotfix back to main"
+    else
+        echo "  Create PR → merge → trigger 'Publish Rust Crates' workflow"
+    fi
 
 # Start a hotfix branch from a deployed stable tag
 [group('release')]
@@ -352,8 +362,9 @@ hotfix name='' base_tag='':
     echo ""
     echo "Next steps:"
     echo "  1. Apply your hotfix commits"
-    echo "  2. Push and create PR to main"
-    echo "  3. After merge, run 'just release' on main to publish"
+    echo "  2. Run 'just release' on this hotfix branch"
+    echo "  3. Trigger publish workflows from this hotfix branch"
+    echo "  4. Push and merge hotfix back to main"
 
 # Prepare a new TypeScript SDK release
 [group('release')]
