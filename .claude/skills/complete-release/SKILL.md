@@ -1,6 +1,6 @@
 ---
 name: complete-release
-description: "Reviewer workflow for completing a Kora mainline release after the release PR is merged. Squash-merges the PR, detects whether Rust and/or TypeScript changed, then triggers the correct publish workflows on main. For hotfix releases, publish from hotfix/* before merging back. Use when the user says 'complete the release', 'merge and publish', or 'trigger publish workflows'."
+description: "Reviewer workflow for completing a Kora mainline release after the release PR is merged. Squash-merges the PR, detects whether Rust and/or TypeScript changed, then triggers the correct publish workflows on main. For hotfix releases, publish from hotfix/* before merging back. Use when the user says 'complete the release' or 'merge and publish' (mainline only)."
 ---
 
 # Kora Complete Release
