@@ -90,8 +90,15 @@ jobs:
           done
           git push origin --tags 2>/dev/null || echo "⏭️ Tags already pushed"
 
+      - name: Authenticate crates.io trusted publisher
+        if: ${{ github.event.inputs.publish-kora-lib == 'true' || github.event.inputs.publish-kora-cli == 'true' }}
+        id: crates_io_auth
+        uses: rust-lang/crates-io-auth-action@2d789f72ce8ec8eee70e84c7f0a1b68cd52b6e8e # v1.0.3
+
       - name: Publish kora-lib to crates.io
         if: ${{ github.event.inputs.publish-kora-lib == 'true' }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
         run: |
           echo "📦 Publishing kora-lib@${{ steps.version.outputs.version }} to crates.io..."
           cargo publish -p kora-lib --locked
@@ -104,6 +111,8 @@ jobs:
 
       - name: Publish kora-cli to crates.io
         if: ${{ github.event.inputs.publish-kora-cli == 'true' }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
         run: |
           echo "📦 Publishing kora-cli@${{ steps.version.outputs.version }} to crates.io..."
           cargo publish -p kora-cli --locked
