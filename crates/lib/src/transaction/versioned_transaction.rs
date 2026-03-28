@@ -7,7 +7,8 @@ use solana_message::{
     compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup, VersionedMessage,
 };
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
-use std::{collections::HashMap, ops::Deref};
+use std::{collections::HashMap, ops::Deref, time::Duration};
+use tokio::time::timeout;
 
 use solana_transaction_status_client_types::UiTransactionEncoding;
 
@@ -334,6 +335,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         // Sign transaction and report success/failure back to the global signer pool
         // This telemetry ensures unhealthy remote signers are bypassed automatically.
         let message_bytes = transaction.message.serialize();
+<<<<<<< HEAD
         let signature = match signer.sign_message(&message_bytes).await {
             Ok(sig) => {
                 match crate::state::get_signer_pool() {
@@ -355,6 +357,71 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                     ),
                 }
                 return Err(KoraError::SigningError(sanitize_error!(e)));
+=======
+        let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
+        let max_retries = config.kora.sign_max_retries;
+        let mut last_error = None;
+        let pool = crate::state::get_signer_pool().ok();
+
+        let mut signature = None;
+        for attempt in 0..=max_retries {
+            if attempt > 0 {
+                // Exponential backoff: 100ms * 2^(attempt-1), capped at ~12.8s (attempt 8+)
+                let exp = (attempt - 1).min(7);
+                let backoff_ms = 100 * 2u64.pow(exp);
+                log::warn!(
+                    "Retrying signing (attempt {}/{}). Backoff: {}ms",
+                    attempt,
+                    max_retries,
+                    backoff_ms
+                );
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+            }
+
+            match timeout(sign_timeout, signer.sign_message(&message_bytes)).await {
+                Ok(Ok(sig)) => {
+                    if let Some(p) = &pool {
+                        p.record_signing_success(signer);
+                    }
+                    signature = Some(sig);
+                    break;
+                }
+                Ok(Err(e)) => {
+                    let err_msg = sanitize_error!(e);
+                    log::error!("Signing failed (attempt {}): {}", attempt + 1, err_msg);
+                    last_error = Some(KoraError::SigningError(err_msg));
+
+                    // Report failure to the pool to track signer health
+                    if let Some(p) = &pool {
+                        p.record_signing_failure(signer);
+                    }
+                }
+                Err(_) => {
+                    log::error!(
+                        "Signing timed out after {}s (attempt {})",
+                        sign_timeout.as_secs(),
+                        attempt + 1
+                    );
+                    last_error = Some(KoraError::SigningError(format!(
+                        "Signing timed out after {}s",
+                        sign_timeout.as_secs()
+                    )));
+
+                    // Report failure to the pool to track signer health
+                    if let Some(p) = &pool {
+                        p.record_signing_failure(signer);
+                    }
+                }
+            }
+        }
+
+        let signature = match signature {
+            Some(sig) => sig,
+            None => {
+                return Err(last_error.unwrap_or_else(|| {
+                    KoraError::SigningError("Signing failed after retries".to_string())
+                }));
+>>>>>>> d3d5bcf (feat(signer): add graceful retry and timeout logic)
             }
         };
 

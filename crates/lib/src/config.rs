@@ -510,6 +510,20 @@ pub struct KoraConfig {
     /// When true, forces signature verification on all requests regardless of client's sig_verify parameter.
     /// Prevents TOCTOU attacks where simulation passes but on-chain execution differs.
     pub force_sig_verify: bool,
+    /// Timeout for signing a transaction in seconds. Default: 10.
+    #[serde(default = "default_sign_timeout")]
+    pub sign_timeout_seconds: u64,
+    /// Maximum number of retries for signing a transaction. Default: 2.
+    #[serde(default = "default_sign_retries")]
+    pub sign_max_retries: u32,
+}
+
+fn default_sign_timeout() -> u64 {
+    10
+}
+
+fn default_sign_retries() -> u32 {
+    2
 }
 
 impl Default for KoraConfig {
@@ -526,6 +540,8 @@ impl Default for KoraConfig {
             bundle: BundleConfig::default(),
             lighthouse: LighthouseConfig::default(),
             force_sig_verify: false,
+            sign_timeout_seconds: default_sign_timeout(),
+            sign_max_retries: default_sign_retries(),
         }
     }
 }
@@ -898,5 +914,21 @@ mod tests {
             ConfigBuilder::new().with_max_request_body_size(custom_size).build_config().unwrap();
 
         assert_eq!(config.kora.max_request_body_size, custom_size);
+    }
+
+    #[test]
+    fn test_signing_config_parsing() {
+        let config = ConfigBuilder::new().with_signing_config(15, 5).build_config().unwrap();
+
+        assert_eq!(config.kora.sign_timeout_seconds, 15);
+        assert_eq!(config.kora.sign_max_retries, 5);
+    }
+
+    #[test]
+    fn test_signing_config_defaults() {
+        let config = ConfigBuilder::new().build_config().unwrap();
+
+        assert_eq!(config.kora.sign_timeout_seconds, 10);
+        assert_eq!(config.kora.sign_max_retries, 2);
     }
 }

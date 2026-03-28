@@ -45,6 +45,8 @@ struct KoraSection {
     enabled_methods: Option<String>,
     cache_config: Option<String>,
     usage_limit_config: Option<String>,
+    sign_timeout_seconds: Option<u64>,
+    sign_max_retries: Option<u32>,
 }
 
 impl Default for ValidationSection {
@@ -71,6 +73,8 @@ impl Default for KoraSection {
             enabled_methods: None,
             cache_config: None,
             usage_limit_config: None,
+            sign_timeout_seconds: None,
+            sign_max_retries: None,
         }
     }
 }
@@ -233,6 +237,12 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn with_signing_config(mut self, timeout: u64, retries: u32) -> Self {
+        self.kora.sign_timeout_seconds = Some(timeout);
+        self.kora.sign_max_retries = Some(retries);
+        self
+    }
+
     pub fn build_toml(&self) -> String {
         let programs_list = self
             .validation
@@ -314,6 +324,14 @@ impl ConfigBuilder {
 
         if let Some(ref usage_limit_config) = self.kora.usage_limit_config {
             toml.push_str(&format!("{usage_limit_config}\n"));
+        }
+
+        if let Some(timeout) = self.kora.sign_timeout_seconds {
+            toml.push_str(&format!("sign_timeout_seconds = {timeout}\n"));
+        }
+
+        if let Some(retries) = self.kora.sign_max_retries {
+            toml.push_str(&format!("sign_max_retries = {retries}\n"));
         }
 
         for custom in &self.custom_sections {
