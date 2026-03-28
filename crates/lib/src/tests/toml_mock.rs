@@ -314,6 +314,14 @@ impl ConfigBuilder {
             toml.push_str(&format!("max_request_body_size = {size}\n"));
         }
 
+        if let Some(timeout) = self.kora.sign_timeout_seconds {
+            toml.push_str(&format!("sign_timeout_seconds = {timeout}\n"));
+        }
+
+        if let Some(retries) = self.kora.sign_max_retries {
+            toml.push_str(&format!("sign_max_retries = {retries}\n"));
+        }
+
         if let Some(ref methods_config) = self.kora.enabled_methods {
             toml.push_str(&format!("{methods_config}\n"));
         }
@@ -324,14 +332,6 @@ impl ConfigBuilder {
 
         if let Some(ref usage_limit_config) = self.kora.usage_limit_config {
             toml.push_str(&format!("{usage_limit_config}\n"));
-        }
-
-        if let Some(timeout) = self.kora.sign_timeout_seconds {
-            toml.push_str(&format!("sign_timeout_seconds = {timeout}\n"));
-        }
-
-        if let Some(retries) = self.kora.sign_max_retries {
-            toml.push_str(&format!("sign_max_retries = {retries}\n"));
         }
 
         for custom in &self.custom_sections {
