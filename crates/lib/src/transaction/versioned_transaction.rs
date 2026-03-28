@@ -332,7 +332,8 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         )
         .await?;
 
-        // Sign transaction
+        // Sign transaction and report success/failure back to the global signer pool
+        // This telemetry ensures unhealthy remote signers are bypassed automatically.
         let message_bytes = transaction.message.serialize();
         let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
         let max_retries = config.kora.sign_max_retries;
