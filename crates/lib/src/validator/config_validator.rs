@@ -299,6 +299,17 @@ impl ConfigValidator {
             );
         }
 
+        // Validate signing configuration
+        if config.kora.sign_timeout_seconds == 0 {
+            errors.push("sign_timeout_seconds must be at least 1 second".to_string());
+        }
+        if config.kora.sign_max_retries > 10 {
+            warnings.push(format!(
+                "sign_max_retries ({}) is very high - consider reducing to prevent long request hangs",
+                config.kora.sign_max_retries
+            ));
+        }
+
         let mut unique_plugins = std::collections::HashSet::new();
         for plugin in &config.kora.plugins.enabled {
             if !unique_plugins.insert(plugin.clone()) {
@@ -860,6 +871,8 @@ mod tests {
                 bundle: BundleConfig::default(),
                 lighthouse: LighthouseConfig::default(),
                 force_sig_verify: false,
+                sign_timeout_seconds: 10,
+                sign_max_retries: 2,
             },
             metrics: MetricsConfig::default(),
         };
@@ -2216,5 +2229,24 @@ mod tests {
 
         // Should not have lighthouse errors since it's disabled
         assert!(!warnings.iter().any(|w| w.contains("Lighthouse")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_sign_timeout_zero() {
+        let config = crate::tests::config_mock::ConfigMockBuilder::new().build();
+        let _ = crate::state::update_config(config);
+        let mut config = crate::state::get_config().unwrap().clone();
+        config.kora.sign_timeout_seconds = 0;
+        crate::state::update_config(config.clone()).unwrap();
+
+        let rpc_client = crate::tests::rpc_mock::RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+
+        assert!(result.is_err());
+        let errors = result.err().unwrap();
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("sign_timeout_seconds must be at least 1 second")));
     }
 }

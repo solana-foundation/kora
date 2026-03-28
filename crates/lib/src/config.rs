@@ -510,6 +510,20 @@ pub struct KoraConfig {
     /// When true, forces signature verification on all requests regardless of client's sig_verify parameter.
     /// Prevents TOCTOU attacks where simulation passes but on-chain execution differs.
     pub force_sig_verify: bool,
+    /// Timeout for signing a transaction in seconds. Default: 10.
+    #[serde(default = "default_sign_timeout")]
+    pub sign_timeout_seconds: u64,
+    /// Maximum number of retries for signing a transaction. Default: 2.
+    #[serde(default = "default_sign_retries")]
+    pub sign_max_retries: u32,
+}
+
+fn default_sign_timeout() -> u64 {
+    10
+}
+
+fn default_sign_retries() -> u32 {
+    2
 }
 
 impl Default for KoraConfig {
@@ -526,6 +540,8 @@ impl Default for KoraConfig {
             bundle: BundleConfig::default(),
             lighthouse: LighthouseConfig::default(),
             force_sig_verify: false,
+            sign_timeout_seconds: default_sign_timeout(),
+            sign_max_retries: default_sign_retries(),
         }
     }
 }
@@ -898,5 +914,44 @@ mod tests {
             ConfigBuilder::new().with_max_request_body_size(custom_size).build_config().unwrap();
 
         assert_eq!(config.kora.max_request_body_size, custom_size);
+    }
+
+    #[test]
+    fn test_signing_config_parsing() {
+        let config = ConfigBuilder::new().with_signing_config(15, 5).build_config().unwrap();
+
+        assert_eq!(config.kora.sign_timeout_seconds, 15);
+        assert_eq!(config.kora.sign_max_retries, 5);
+    }
+
+    #[test]
+    fn test_signing_config_defaults() {
+        let config = ConfigBuilder::new().build_config().unwrap();
+
+        assert_eq!(config.kora.sign_timeout_seconds, 10);
+        assert_eq!(config.kora.sign_max_retries, 2);
+    }
+
+    #[test]
+    fn test_signing_config_with_cache_and_methods() {
+        // This test ensures that signing configuration fields are correctly parsed
+        // even when other sub-sections (cache, enabled_methods) are present.
+        // This acts as a regression test for TOML serialization ordering.
+        let config = ConfigBuilder::new()
+            .with_signing_config(15, 5)
+            .with_cache_config(Some("http://localhost:6379"), true, 60, 3600)
+            .with_enabled_methods(&[("transfer_transaction", true), ("sign_transaction", false)])
+            .build_config()
+            .unwrap();
+
+        assert_eq!(config.kora.sign_timeout_seconds, 15);
+        assert_eq!(config.kora.sign_max_retries, 5);
+
+        // Verify other sections to ensure they were also parsed correctly
+        assert_eq!(config.kora.cache.url, Some("http://localhost:6379".to_string()));
+        assert!(config.kora.cache.enabled);
+
+        assert_eq!(config.kora.enabled_methods.transfer_transaction, true);
+        assert_eq!(config.kora.enabled_methods.sign_transaction, false);
     }
 }

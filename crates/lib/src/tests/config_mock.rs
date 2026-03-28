@@ -112,6 +112,8 @@ impl ConfigMockBuilder {
                     bundle: BundleConfig::default(),
                     lighthouse: LighthouseConfig::default(),
                     force_sig_verify: false,
+                    sign_timeout_seconds: 10,
+                    sign_max_retries: 2,
                 },
                 metrics: MetricsConfig::default(),
             },
@@ -356,6 +358,8 @@ impl KoraConfigBuilder {
                 bundle: BundleConfig::default(),
                 lighthouse: LighthouseConfig::default(),
                 force_sig_verify: false,
+                sign_timeout_seconds: 10,
+                sign_max_retries: 2,
             },
         }
     }
