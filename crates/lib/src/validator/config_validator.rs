@@ -2232,6 +2232,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_validate_sign_timeout_zero() {
         let config = crate::tests::config_mock::ConfigMockBuilder::new().build();
         let _ = crate::state::update_config(config);
