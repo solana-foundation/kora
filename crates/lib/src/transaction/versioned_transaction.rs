@@ -390,11 +390,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                     let err_msg = sanitize_error!(e);
                     log::error!("Signing failed (attempt {}): {}", attempt + 1, err_msg);
                     last_error = Some(KoraError::SigningError(err_msg));
-
-                    // Report failure to the pool to track signer health
-                    if let Some(p) = &pool {
-                        p.record_signing_failure(signer);
-                    }
                 }
                 Err(_) => {
                     log::error!(
@@ -406,11 +401,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                         "Signing timed out after {}s",
                         sign_timeout.as_secs()
                     )));
-
-                    // Report failure to the pool to track signer health
-                    if let Some(p) = &pool {
-                        p.record_signing_failure(signer);
-                    }
                 }
             }
         }
@@ -418,6 +408,11 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let signature = match signature {
             Some(sig) => sig,
             None => {
+                // Report failure to the pool to track signer health only after all retries are exhausted.
+                // This prevents a single failing request from immediately blacklisting a signer.
+                if let Some(p) = &pool {
+                    p.record_signing_failure(signer);
+                }
                 return Err(last_error.unwrap_or_else(|| {
                     KoraError::SigningError("Signing failed after retries".to_string())
                 }));
