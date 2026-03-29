@@ -16,6 +16,19 @@ use std::{
 const DEFAULT_WEIGHT: u32 = 1;
 
 /// Metadata associated with a signer in the pool
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct HealthState {
+    pub(crate) consecutive_failures: u32,
+    pub(crate) is_healthy: bool,
+    pub(crate) last_failed_at: Option<std::time::Instant>,
+}
+
+impl Default for HealthState {
+    fn default() -> Self {
+        Self { consecutive_failures: 0, is_healthy: true, last_failed_at: None }
+    }
+}
+
 pub(crate) struct SignerWithMetadata {
     /// Human-readable name for this signer
     name: String,
@@ -25,16 +38,13 @@ pub(crate) struct SignerWithMetadata {
     weight: u32,
     /// Timestamp of last use (Unix timestamp in seconds)
     last_used: AtomicU64,
-    /// Tracks (consecutive_failures, is_healthy) thread-safely
-    health: Mutex<(u32, bool)>,
-    /// Timestamp of when the signer last failed to probe for recovery
-    last_failed_at: Mutex<Option<std::time::Instant>>,
+    /// Tracks health and failure state thread-safely in a single lock
+    health: Mutex<HealthState>,
 }
 
 impl Clone for SignerWithMetadata {
     fn clone(&self) -> Self {
         let health = *self.health.lock().unwrap();
-        let last_failed_at = *self.last_failed_at.lock().unwrap();
 
         Self {
             name: self.name.clone(),
@@ -42,7 +52,6 @@ impl Clone for SignerWithMetadata {
             weight: self.weight,
             last_used: AtomicU64::new(self.last_used.load(Ordering::Relaxed)),
             health: Mutex::new(health),
-            last_failed_at: Mutex::new(last_failed_at),
         }
     }
 }
@@ -60,8 +69,7 @@ impl SignerWithMetadata {
             signer,
             weight,
             last_used: AtomicU64::new(0),
-            health: Mutex::new((0, true)),
-            last_failed_at: Mutex::new(None),
+            health: Mutex::new(HealthState::default()),
         }
     }
 
@@ -77,33 +85,32 @@ impl SignerWithMetadata {
     /// Records a successful signature creation, resetting consecutive failures to 0
     pub(crate) fn record_success(&self) {
         let mut health = self.health.lock().unwrap();
-        *health = (0, true);
-        *self.last_failed_at.lock().unwrap() = None;
+        *health = HealthState::default();
     }
 
     /// Records a failed signature attempt, potentially degrading the signer's health
     pub(crate) fn record_failure(&self) {
         let mut health = self.health.lock().unwrap();
-        health.0 += 1;
-        if health.0 >= Self::MAX_CONSECUTIVE_FAILURES {
-            if health.1 {
+        health.consecutive_failures += 1;
+        if health.consecutive_failures >= Self::MAX_CONSECUTIVE_FAILURES {
+            if health.is_healthy {
                 log::warn!(
                     "Signer '{}' marked unhealthy after {} consecutive failures",
                     self.name,
-                    health.0
+                    health.consecutive_failures
                 );
             } else {
                 log::debug!("Recovery probe failed for signer '{}', resetting cooldown", self.name);
             }
-            health.1 = false;
-            *self.last_failed_at.lock().unwrap() = Some(std::time::Instant::now());
+            health.is_healthy = false;
+            health.last_failed_at = Some(std::time::Instant::now());
         }
     }
 
     /// Whether the signer is currently eligible for pool selection
     #[allow(dead_code)]
     pub(crate) fn is_healthy(&self) -> bool {
-        self.health.lock().unwrap().1
+        self.health.lock().unwrap().is_healthy
     }
 
     #[allow(dead_code)]
@@ -211,14 +218,12 @@ impl SignerPool {
             .iter()
             .filter(|s| {
                 let h = s.health.lock().unwrap();
-                let is_healthy = h.1;
-                if is_healthy {
+                if h.is_healthy {
                     return true;
                 }
 
-                // Check if enough time passed for recovery probe. If 30 seconds have elapsed,
-                // temporarily treat the signer as healthy to attempt a background recovery check.
-                if let Some(last_failed) = *s.last_failed_at.lock().unwrap() {
+                // Check if enough time passed for recovery probe
+                if let Some(last_failed) = h.last_failed_at {
                     if last_failed.elapsed().as_secs() >= SignerWithMetadata::RECOVERY_PROBE_SECS {
                         log::debug!("Probing recovery for signer '{}'", s.name());
                         true
@@ -336,9 +341,10 @@ impl SignerPool {
 
         // Allow pinned signers to participate in the 30-second recovery probe,
         // maintaining consistency with normal pool auto-selection behavior.
-        let is_eligible = if signer_meta.is_healthy() {
+        let health = signer_meta.health.lock().unwrap();
+        let is_eligible = if health.is_healthy {
             true
-        } else if let Some(last_failed) = *signer_meta.last_failed_at.lock().unwrap() {
+        } else if let Some(last_failed) = health.last_failed_at {
             last_failed.elapsed().as_secs() >= SignerWithMetadata::RECOVERY_PROBE_SECS
         } else {
             false
@@ -540,7 +546,7 @@ mod tests {
         assert_eq!(healthy_before_time[0].name(), "signer_2");
 
         // Simulate 31 seconds passing by tricking the last_failed_at timestamp
-        *meta.last_failed_at.lock().unwrap() =
+        meta.health.lock().unwrap().last_failed_at =
             Some(std::time::Instant::now() - std::time::Duration::from_secs(31));
 
         // Now healthy_signers() should tentatively ALLOW signer_1 back into the rotation
