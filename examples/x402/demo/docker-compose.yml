@@ -1,0 +1,33 @@
+services:
+  kora:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    ports:
+      - "${KORA_PORT:-8080}:8080"
+    volumes:
+      - ./kora/kora.toml:/app/kora.toml:ro
+      - ./kora/signers.toml:/app/signers.toml:ro
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=info
+    command:
+      - sh
+      - -c
+      - "kora --config /app/kora.toml --rpc-url ${SOLANA_RPC_URL:-https://api.devnet.solana.com} rpc start --signers-config /app/signers.toml"
+    restart: unless-stopped
+
+  facilitator:
+    build:
+      context: ./facilitator
+      dockerfile: Dockerfile
+    ports:
+      - "${FACILITATOR_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - KORA_RPC_URL=http://kora:8080/
+    depends_on:
+      - kora
+    restart: unless-stopped
