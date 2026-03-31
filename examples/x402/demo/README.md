@@ -58,6 +58,37 @@ Response Data:
 
 Full Guide available [here](https://launch.solana.com/docs/kora/guides/x402).
 
+## Docker Quick Start
+
+Deploy Kora + the x402 facilitator with a single command.
+
+**Prerequisites:** Docker and Docker Compose
+
+1. Copy and configure the environment file:
+   ```sh
+   cp .env.example .env
+   ```
+   Fill in `KORA_PRIVATE_KEY` (the Kora fee-payer signing key) and optionally `SOLANA_RPC_URL`.
+
+2. Start both services:
+   ```sh
+   docker compose up --build
+   ```
+
+3. Verify the facilitator is running:
+   ```sh
+   curl http://localhost:3000/supported
+   ```
+
+**Ports:**
+
+| Service     | Default | Override via      |
+|-------------|---------|-------------------|
+| Kora RPC    | 8080    | `KORA_PORT`       |
+| Facilitator | 3000    | `FACILITATOR_PORT`|
+
+> Inside Docker, the facilitator always connects to Kora over the internal network (`http://kora:8080/`), regardless of what `KORA_RPC_URL` is set to in your `.env`.
+
 ## What is x402?
 
 [x402](https://www.x402.org/) is an open payment standard that enables seamless micropayments for API access. Instead of traditional subscription models or API keys, x402 allows servers to charge for individual API calls, creating true pay-per-use infrastructure.
