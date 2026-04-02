@@ -1,4 +1,5 @@
 use crate::{
+    sanitize_error, state,
     transaction::{VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
@@ -22,10 +23,29 @@ impl BundleSigner {
         }
 
         let message_bytes = resolved.transaction.message.serialize();
-        let signature = signer
-            .sign_message(&message_bytes)
-            .await
-            .map_err(|e| KoraError::SigningError(e.to_string()))?;
+        let signature = match signer.sign_message(&message_bytes).await {
+            Ok(sig) => {
+                match state::get_signer_pool() {
+                    Ok(pool) => pool.record_signing_success(signer),
+                    Err(e) => log::warn!(
+                        "Could not record signing success to pool: {}",
+                        sanitize_error!(e)
+                    ),
+                }
+                sig
+            }
+            Err(e) => {
+                match state::get_signer_pool() {
+                    Ok(pool) => pool.record_signing_failure(signer),
+                    Err(pool_err) => log::error!(
+                        "Signing failed AND pool health tracking unavailable: {}; \
+                         signer failure will not be recorded, automatic failover is disabled",
+                        sanitize_error!(pool_err)
+                    ),
+                }
+                return Err(KoraError::SigningError(sanitize_error!(e)));
+            }
+        };
 
         let fee_payer_position = resolved.find_signer_position(fee_payer)?;
         resolved.transaction.signatures[fee_payer_position] = signature;
