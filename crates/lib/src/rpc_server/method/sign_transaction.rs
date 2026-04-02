@@ -1,6 +1,5 @@
 use crate::{
     rpc_server::middleware_utils::default_sig_verify,
-    state::{get_config, get_request_signer_with_signer_key},
     transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
     usage_limit::UsageTracker,
     KoraError,
@@ -10,6 +9,14 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_keychain::SolanaSigner;
 use std::sync::Arc;
 use utoipa::ToSchema;
+
+#[cfg(not(test))]
+use crate::state::{get_config, get_request_signer_with_signer_key};
+
+#[cfg(test)]
+use crate::state::get_request_signer_with_signer_key;
+#[cfg(test)]
+use crate::tests::config_mock::mock_state::get_config;
 
 /// Request payload for signing a transaction.
 ///
@@ -47,7 +54,7 @@ pub async fn sign_transaction(
 ) -> Result<SignTransactionResponse, KoraError> {
     let transaction = TransactionUtil::decode_b64_transaction(&request.transaction)?;
 
-    let config = get_config()?;
+    let config = &get_config()?;
 
     let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.pubkey();

@@ -336,14 +336,19 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let message_bytes = transaction.message.serialize();
         let signature = match signer.sign_message(&message_bytes).await {
             Ok(sig) => {
-                if let Ok(pool) = crate::state::get_signer_pool() {
-                    pool.record_signing_success(signer);
+                match crate::state::get_signer_pool() {
+                    Ok(pool) => pool.record_signing_success(signer),
+                    Err(e) => log::warn!("Could not record signing success to pool: {e}"),
                 }
                 sig
             }
             Err(e) => {
-                if let Ok(pool) = crate::state::get_signer_pool() {
-                    pool.record_signing_failure(signer);
+                match crate::state::get_signer_pool() {
+                    Ok(pool) => pool.record_signing_failure(signer),
+                    Err(pool_err) => log::error!(
+                        "Signing failed AND pool health tracking unavailable: {pool_err}; \
+                         signer failure will not be recorded, automatic failover is disabled"
+                    ),
                 }
                 return Err(KoraError::SigningError(sanitize_error!(e)));
             }
