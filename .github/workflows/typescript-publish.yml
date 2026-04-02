@@ -3,13 +3,8 @@ name: Publish TypeScript SDK
 on:
   workflow_dispatch:
     inputs:
-      publish-to-npm:
-        description: 'Publish to npm registry'
-        required: true
-        default: true
-        type: boolean
-      create-github-release:
-        description: 'Create GitHub release'
+      dry-run:
+        description: 'Dry run (unchecked will publish to npm, push git tag, and create GitHub release)'
         required: true
         default: true
         type: boolean
@@ -176,7 +171,33 @@ jobs:
 
           echo "All tarballs contain required dist/ artifacts"
 
+      - name: Publish to npm
+        working-directory: sdks
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          NPM_TAG="${{ steps.prerelease.outputs.npm_tag }}"
+          TARBALL=".npm-pack/solana-kora-${VERSION}.tgz"
+          DRY_RUN="${{ github.event.inputs.dry-run }}"
+
+          if [ -f "$TARBALL" ]; then
+            if [ "$DRY_RUN" == "true" ]; then
+              echo "DRY RUN: Publishing ${TARBALL} with tag '${NPM_TAG}'..."
+              npm publish "$TARBALL" --access public --tag "$NPM_TAG" --dry-run
+              echo "Dry run completed successfully (OIDC auth validated, no package uploaded)"
+            else
+              echo "Publishing ${TARBALL} with tag '${NPM_TAG}'..."
+              npm publish "$TARBALL" --access public --tag "$NPM_TAG"
+              echo "Published successfully"
+            fi
+          else
+            echo "Tarball not found: ${TARBALL}"
+            echo "Available tarballs:"
+            ls -la .npm-pack/ || true
+            exit 1
+          fi
+
       - name: Create and push tag
+        if: ${{ github.event.inputs.dry-run != 'true' }}
         run: |
           TAG="ts-sdk-v${{ steps.version.outputs.version }}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -187,27 +208,8 @@ jobs:
           fi
           git push origin "$TAG" 2>/dev/null || echo "Tag already pushed"
 
-      - name: Publish to npm
-        if: ${{ github.event.inputs.publish-to-npm == 'true' }}
-        working-directory: sdks
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          NPM_TAG="${{ steps.prerelease.outputs.npm_tag }}"
-          TARBALL=".npm-pack/solana-kora-${VERSION}.tgz"
-
-          if [ -f "$TARBALL" ]; then
-            echo "Publishing ${TARBALL} with tag '${NPM_TAG}'..."
-            npm publish "$TARBALL" --access public --tag "$NPM_TAG"
-            echo "Published successfully"
-          else
-            echo "Tarball not found: ${TARBALL}"
-            echo "Available tarballs:"
-            ls -la .npm-pack/ || true
-            exit 1
-          fi
-
       - name: Create GitHub Release
-        if: ${{ github.event.inputs.create-github-release == 'true' }}
+        if: ${{ github.event.inputs.dry-run != 'true' }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -258,8 +260,20 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           NPM_TAG="${{ steps.prerelease.outputs.npm_tag }}"
+          DRY_RUN="${{ github.event.inputs.dry-run }}"
 
-          cat >> $GITHUB_STEP_SUMMARY << EOF
+          if [ "$DRY_RUN" == "true" ]; then
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## TypeScript SDK Publish — DRY RUN
+
+          **Version**: \`${VERSION}\`
+          **Package**: \`@solana/kora\`
+          **npm tag**: \`${NPM_TAG}\`
+          **Mode**: Dry run (OIDC auth validated, no package uploaded, no tag, no release)
+
+          EOF
+          else
+            cat >> $GITHUB_STEP_SUMMARY << EOF
           ## TypeScript SDK Published
 
           **Version**: \`${VERSION}\`
@@ -267,18 +281,8 @@ jobs:
           **Tag**: \`ts-sdk-v${VERSION}\`
           **npm tag**: \`${NPM_TAG}\`
 
+          Published to npm: https://www.npmjs.com/package/@solana/kora/v/${VERSION}
+          GitHub release: https://github.com/${{ github.repository }}/releases/tag/ts-sdk-v${VERSION}
+
           EOF
-
-          if [ "${{ github.event.inputs.publish-to-npm }}" == "true" ]; then
-            echo "Published to npm: https://www.npmjs.com/package/@solana/kora/v/${VERSION}" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "Skipped npm publish (dry run)" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "${{ github.event.inputs.create-github-release }}" == "true" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "GitHub release created: https://github.com/${{ github.repository }}/releases/tag/ts-sdk-v${VERSION}" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Skipped GitHub release creation" >> $GITHUB_STEP_SUMMARY
           fi
