@@ -1,5 +1,5 @@
 use crate::{
-    state,
+    sanitize_error, state,
     transaction::{VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
@@ -27,7 +27,10 @@ impl BundleSigner {
             Ok(sig) => {
                 match state::get_signer_pool() {
                     Ok(pool) => pool.record_signing_success(signer),
-                    Err(e) => log::warn!("Could not record signing success to pool: {e}"),
+                    Err(e) => log::warn!(
+                        "Could not record signing success to pool: {}",
+                        sanitize_error!(e)
+                    ),
                 }
                 sig
             }
@@ -35,11 +38,12 @@ impl BundleSigner {
                 match state::get_signer_pool() {
                     Ok(pool) => pool.record_signing_failure(signer),
                     Err(pool_err) => log::error!(
-                        "Signing failed AND pool health tracking unavailable: {pool_err}; \
-                         signer failure will not be recorded, automatic failover is disabled"
+                        "Signing failed AND pool health tracking unavailable: {}; \
+                         signer failure will not be recorded, automatic failover is disabled",
+                        sanitize_error!(pool_err)
                     ),
                 }
-                return Err(KoraError::SigningError(e.to_string()));
+                return Err(KoraError::SigningError(sanitize_error!(e)));
             }
         };
 
