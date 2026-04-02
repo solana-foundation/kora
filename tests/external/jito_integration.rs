@@ -1,8 +1,5 @@
 use crate::common::{FeePayerTestHelper, TestContext};
-use kora_lib::{
-    bundle::{JitoClient, JitoConfig},
-    transaction::{TransactionUtil, VersionedTransactionResolved},
-};
+use kora_lib::bundle::{JitoClient, JitoConfig};
 
 const JITO_TESTNET_BLOCK_ENGINE_URL: &str = "https://dallas.testnet.block-engine.jito.wtf";
 
@@ -55,12 +52,7 @@ async fn test_jito_send_bundle() {
         .await
         .expect("Failed to create transaction");
 
-    let decoded_tx = TransactionUtil::decode_b64_transaction(&encoded_tx).unwrap();
-
-    let resolved_tx =
-        VersionedTransactionResolved::from_kora_built_transaction(&decoded_tx).unwrap();
-
-    let response = client.send_bundle(&[resolved_tx]).await;
+    let response = client.send_bundle(&[encoded_tx]).await;
 
     if let Err(e) = response {
         let error_str = e.to_string();
