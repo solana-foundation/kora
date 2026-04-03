@@ -4,7 +4,7 @@ mod transaction;
 mod versioned_message;
 mod versioned_transaction;
 pub use instruction_util::*;
-pub(crate) use retry_util::signing_retry_backoff_ms;
+pub(crate) use retry_util::sign_with_retry;
 pub use transaction::*;
 pub use versioned_message::*;
 pub use versioned_transaction::*;

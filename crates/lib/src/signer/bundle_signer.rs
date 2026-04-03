@@ -1,15 +1,12 @@
 use crate::{
     config::Config,
     sanitize_error, state,
-    transaction::{
-        signing_retry_backoff_ms, VersionedTransactionOps, VersionedTransactionResolved,
-    },
+    transaction::{sign_with_retry, VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
 use solana_keychain::SolanaSigner;
 use solana_sdk::pubkey::Pubkey;
 use std::{sync::Arc, time::Duration};
-use tokio::time::timeout;
 
 pub struct BundleSigner {}
 
@@ -30,61 +27,31 @@ impl BundleSigner {
         let message_bytes = resolved.transaction.message.serialize();
         let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
         let max_retries = config.kora.sign_max_retries;
-        let mut last_error = None;
-
-        let mut signature = None;
-        for attempt in 0..=max_retries {
-            if attempt > 0 {
-                let backoff_ms = signing_retry_backoff_ms(attempt);
-                log::warn!(
-                    "Retrying bundle signing (attempt {}/{}). Backoff: {}ms",
-                    attempt,
-                    max_retries,
-                    backoff_ms
-                );
-                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+        let signature = match sign_with_retry(
+            sign_timeout,
+            max_retries,
+            "bundle signing",
+            "Bundle signing",
+            || async {
+                signer
+                    .sign_message(&message_bytes)
+                    .await
+                    .map_err(|e| KoraError::SigningError(sanitize_error!(e)))
+            },
+        )
+        .await
+        {
+            Ok(sig) => {
+                match state::get_signer_pool() {
+                    Ok(pool) => pool.record_signing_success(signer),
+                    Err(e) => log::warn!(
+                        "Could not record bundle signing success to pool: {}",
+                        sanitize_error!(e)
+                    ),
+                }
+                sig
             }
-
-            match timeout(sign_timeout, signer.sign_message(&message_bytes)).await {
-                Ok(Ok(sig)) => {
-                    match state::get_signer_pool() {
-                        Ok(pool) => pool.record_signing_success(signer),
-                        Err(e) => log::warn!(
-                            "Could not record bundle signing success to pool: {}",
-                            sanitize_error!(e)
-                        ),
-                    }
-                    signature = Some(sig);
-                    break;
-                }
-                Ok(Err(e)) => {
-                    let err_msg = sanitize_error!(e);
-                    log::error!(
-                        "Bundle signing failed (attempt {}/{}): {}",
-                        attempt + 1,
-                        max_retries + 1,
-                        err_msg
-                    );
-                    last_error = Some(KoraError::SigningError(err_msg));
-                }
-                Err(_) => {
-                    log::error!(
-                        "Bundle signing timed out after {}s (attempt {}/{})",
-                        sign_timeout.as_secs(),
-                        attempt + 1,
-                        max_retries + 1
-                    );
-                    last_error = Some(KoraError::SigningError(format!(
-                        "Bundle signing timed out after {}s",
-                        sign_timeout.as_secs()
-                    )));
-                }
-            }
-        }
-
-        let signature = match signature {
-            Some(sig) => sig,
-            None => {
+            Err(err) => {
                 match state::get_signer_pool() {
                     Ok(pool) => pool.record_signing_failure(signer),
                     Err(pool_err) => log::error!(
@@ -93,9 +60,7 @@ impl BundleSigner {
                         sanitize_error!(pool_err)
                     ),
                 }
-                return Err(last_error.unwrap_or_else(|| {
-                    KoraError::SigningError("Bundle signing failed after retries".to_string())
-                }));
+                return Err(err);
             }
         };
 
