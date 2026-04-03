@@ -791,6 +791,14 @@ impl SignerConfig {
             }
             get_env_var_for_signer(env_var, signer_name)?;
         }
+        if let Some(env) = &config.signer_secret_env {
+            if env.is_empty() {
+                return Err(KoraError::ValidationError(format!(
+                    "Crossmint signer '{signer_name}' must specify non-empty signer_secret_env when set"
+                )));
+            }
+            get_env_var_for_signer(env, signer_name)?;
+        }
         Ok(())
     }
 }
