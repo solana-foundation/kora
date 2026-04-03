@@ -1,11 +1,12 @@
 use crate::{
+    config::Config,
     sanitize_error, state,
-    transaction::{VersionedTransactionOps, VersionedTransactionResolved},
+    transaction::{sign_with_retry, VersionedTransactionOps, VersionedTransactionResolved},
     KoraError,
 };
 use solana_keychain::SolanaSigner;
 use solana_sdk::pubkey::Pubkey;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 pub struct BundleSigner {}
 
@@ -15,6 +16,7 @@ impl BundleSigner {
         signer: &Arc<solana_keychain::Signer>,
         fee_payer: &Pubkey,
         blockhash: &Option<solana_sdk::hash::Hash>,
+        config: &Config,
     ) -> Result<(), KoraError> {
         if resolved.transaction.signatures.is_empty() {
             if let Some(blockhash) = blockhash {
@@ -23,27 +25,42 @@ impl BundleSigner {
         }
 
         let message_bytes = resolved.transaction.message.serialize();
-        let signature = match signer.sign_message(&message_bytes).await {
+        let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
+        let max_retries = config.kora.sign_max_retries;
+        let signature = match sign_with_retry(
+            sign_timeout,
+            max_retries,
+            "bundle signing",
+            "Bundle signing",
+            || async {
+                signer
+                    .sign_message(&message_bytes)
+                    .await
+                    .map_err(|e| KoraError::SigningError(sanitize_error!(e)))
+            },
+        )
+        .await
+        {
             Ok(sig) => {
                 match state::get_signer_pool() {
                     Ok(pool) => pool.record_signing_success(signer),
                     Err(e) => log::warn!(
-                        "Could not record signing success to pool: {}",
+                        "Could not record bundle signing success to pool: {}",
                         sanitize_error!(e)
                     ),
                 }
                 sig
             }
-            Err(e) => {
+            Err(err) => {
                 match state::get_signer_pool() {
                     Ok(pool) => pool.record_signing_failure(signer),
                     Err(pool_err) => log::error!(
-                        "Signing failed AND pool health tracking unavailable: {}; \
+                        "Bundle signing failed AND pool health tracking unavailable: {}; \
                          signer failure will not be recorded, automatic failover is disabled",
                         sanitize_error!(pool_err)
                     ),
                 }
-                return Err(KoraError::SigningError(sanitize_error!(e)));
+                return Err(err);
             }
         };
 
@@ -57,6 +74,7 @@ impl BundleSigner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::config_mock::ConfigMockBuilder;
     use solana_keychain::Signer;
     use solana_message::Message;
     use solana_sdk::{
@@ -82,6 +100,7 @@ mod tests {
         let signer = Arc::new(external_signer);
 
         let blockhash = Some(Hash::new_unique());
+        let config = ConfigMockBuilder::new().build();
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
@@ -90,6 +109,7 @@ mod tests {
             &signer,
             &fee_payer,
             &blockhash,
+            &config,
         )
         .await;
 
@@ -106,6 +126,7 @@ mod tests {
         let signer = Arc::new(external_signer);
 
         let blockhash = Some(Hash::new_unique());
+        let config = ConfigMockBuilder::new().build();
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
@@ -114,6 +135,7 @@ mod tests {
             &signer,
             &wrong_fee_payer,
             &blockhash,
+            &config,
         )
         .await;
 
@@ -130,6 +152,7 @@ mod tests {
         let signer = Arc::new(external_signer);
 
         let blockhash = Some(Hash::new_unique());
+        let config = ConfigMockBuilder::new().build();
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
@@ -141,6 +164,7 @@ mod tests {
             &signer,
             &fee_payer,
             &blockhash,
+            &config,
         )
         .await;
 
@@ -158,6 +182,7 @@ mod tests {
         let signer = Arc::new(external_signer);
 
         let blockhash = Some(Hash::new_unique());
+        let config = ConfigMockBuilder::new().build();
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
@@ -166,6 +191,7 @@ mod tests {
             &signer,
             &fee_payer,
             &blockhash,
+            &config,
         )
         .await;
 

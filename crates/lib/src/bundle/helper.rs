@@ -248,8 +248,10 @@ impl BundleProcessor {
                 .await?;
             }
 
-            BundleSigner::sign_transaction_for_bundle(resolved, signer, fee_payer, &blockhash)
-                .await?;
+            BundleSigner::sign_transaction_for_bundle(
+                resolved, signer, fee_payer, &blockhash, config,
+            )
+            .await?;
         }
 
         Ok(self.resolved_transactions)

@@ -7,7 +7,7 @@ use solana_message::{
     compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup, VersionedMessage,
 };
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
-use std::{collections::HashMap, ops::Deref};
+use std::{collections::HashMap, ops::Deref, time::Duration};
 
 use solana_transaction_status_client_types::UiTransactionEncoding;
 
@@ -26,6 +26,8 @@ use crate::{
     CacheUtil,
 };
 use solana_address_lookup_table_interface::state::AddressLookupTable;
+
+use super::retry_util::sign_with_retry;
 
 /// A fully resolved transaction with lookup tables and inner instructions resolved
 pub struct VersionedTransactionResolved {
@@ -334,29 +336,42 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         // Sign transaction and report success/failure back to the global signer pool
         // This telemetry ensures unhealthy remote signers are bypassed automatically.
         let message_bytes = transaction.message.serialize();
-        let signature = match signer.sign_message(&message_bytes).await {
-            Ok(sig) => {
-                match crate::state::get_signer_pool() {
-                    Ok(pool) => pool.record_signing_success(signer),
-                    Err(e) => log::warn!(
-                        "Could not record signing success to pool: {}",
-                        sanitize_error!(e)
-                    ),
+        let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
+        let max_retries = config.kora.sign_max_retries;
+        let signature =
+            match sign_with_retry(sign_timeout, max_retries, "signing", "Signing", || async {
+                signer
+                    .sign_message(&message_bytes)
+                    .await
+                    .map_err(|e| KoraError::SigningError(sanitize_error!(e)))
+            })
+            .await
+            {
+                Ok(sig) => {
+                    // Report success to the pool for health tracking
+                    match crate::state::get_signer_pool() {
+                        Ok(pool) => pool.record_signing_success(signer),
+                        Err(e) => log::warn!(
+                            "Could not record signing success to pool: {}",
+                            sanitize_error!(e)
+                        ),
+                    }
+                    sig
                 }
-                sig
-            }
-            Err(e) => {
-                match crate::state::get_signer_pool() {
-                    Ok(pool) => pool.record_signing_failure(signer),
-                    Err(pool_err) => log::error!(
-                        "Signing failed AND pool health tracking unavailable: {}; \
+                Err(err) => {
+                    // Report failure to the pool to track signer health only after all retries are exhausted.
+                    // This prevents a single failing request from immediately blacklisting a signer.
+                    match crate::state::get_signer_pool() {
+                        Ok(pool) => pool.record_signing_failure(signer),
+                        Err(pool_err) => log::error!(
+                            "Signing failed AND pool health tracking unavailable: {}; \
                          signer failure will not be recorded, automatic failover is disabled",
-                        sanitize_error!(pool_err)
-                    ),
+                            sanitize_error!(pool_err)
+                        ),
+                    }
+                    return Err(err);
                 }
-                return Err(KoraError::SigningError(sanitize_error!(e)));
-            }
-        };
+            };
 
         // Find the fee payer position - don't assume it's at position 0
         let fee_payer_position = self.find_signer_position(&fee_payer)?;

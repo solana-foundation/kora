@@ -27,6 +27,9 @@ use spl_token_2022_interface::{
 };
 use spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID;
 
+const MIN_SIGN_TIMEOUT_SECONDS: u64 = 1;
+const HIGH_SIGN_MAX_RETRIES_WARNING_THRESHOLD: u32 = 10;
+
 pub struct ConfigValidator {}
 
 impl ConfigValidator {
@@ -297,6 +300,17 @@ impl ConfigValidator {
             warnings.push(
                 "All rpc methods are disabled - this will block all functionality".to_string(),
             );
+        }
+
+        // Validate signing configuration
+        if config.kora.sign_timeout_seconds < MIN_SIGN_TIMEOUT_SECONDS {
+            errors.push("sign_timeout_seconds must be at least 1 second".to_string());
+        }
+        if config.kora.sign_max_retries > HIGH_SIGN_MAX_RETRIES_WARNING_THRESHOLD {
+            warnings.push(format!(
+                "sign_max_retries ({}) is very high - consider reducing to prevent long request hangs",
+                config.kora.sign_max_retries
+            ));
         }
 
         let mut unique_plugins = std::collections::HashSet::new();
@@ -860,6 +874,8 @@ mod tests {
                 bundle: BundleConfig::default(),
                 lighthouse: LighthouseConfig::default(),
                 force_sig_verify: false,
+                sign_timeout_seconds: 10,
+                sign_max_retries: 2,
             },
             metrics: MetricsConfig::default(),
         };
@@ -2216,5 +2232,24 @@ mod tests {
 
         // Should not have lighthouse errors since it's disabled
         assert!(!warnings.iter().any(|w| w.contains("Lighthouse")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_sign_timeout_zero() {
+        let config = crate::tests::config_mock::ConfigMockBuilder::new().build();
+        let _ = crate::state::update_config(config);
+        let mut config = crate::state::get_config().unwrap().clone();
+        config.kora.sign_timeout_seconds = 0;
+        crate::state::update_config(config.clone()).unwrap();
+
+        let rpc_client = crate::tests::rpc_mock::RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+
+        assert!(result.is_err());
+        let errors = result.err().unwrap();
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("sign_timeout_seconds must be at least 1 second")));
     }
 }
