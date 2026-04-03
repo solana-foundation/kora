@@ -14,7 +14,7 @@ use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use spl_associated_token_account_interface::{
     address::get_associated_token_address, instruction::create_associated_token_account,
 };
-use std::{fmt::Display, str::FromStr, sync::Arc};
+use std::{fmt::Display, str::FromStr, sync::Arc, time::Duration};
 
 #[cfg(not(test))]
 use {crate::cache::CacheUtil, crate::state::get_config};
@@ -189,10 +189,24 @@ async fn create_atas_for_signer(
 
         let mut tx = TransactionUtil::new_unsigned_versioned_transaction(message);
         let message_bytes = tx.message.serialize();
-        let signature = fee_payer
-            .sign_message(&message_bytes)
-            .await
-            .map_err(|e| KoraError::SigningError(e.to_string()))?;
+        let (sign_timeout, max_retries) = crate::state::get_config()
+            .map(|c| (Duration::from_secs(c.kora.sign_timeout_seconds), c.kora.sign_max_retries))
+            .unwrap_or((Duration::from_secs(10), 2));
+        let pool = match crate::state::get_signer_pool() {
+            Ok(p) => Some(p),
+            Err(e) => {
+                log::warn!("Signer pool unavailable, health tracking disabled: {}", e);
+                None
+            }
+        };
+        let signature = crate::signer::pool::sign_with_retry(
+            Arc::clone(fee_payer),
+            &message_bytes,
+            sign_timeout,
+            max_retries,
+            pool,
+        )
+        .await?;
 
         tx.signatures = vec![signature];
 

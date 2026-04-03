@@ -11,5 +11,5 @@ pub use config::{
     SignerTypeConfig, TurnkeySignerConfig, VaultSignerConfig,
 };
 pub use keypair_util::KeypairUtil;
-pub use pool::{SignerInfo, SignerPool};
+pub use pool::{sign_with_retry, SignerInfo, SignerPool};
 pub use signer::SolanaSigner;
