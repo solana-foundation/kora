@@ -335,33 +335,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         // Sign transaction and report success/failure back to the global signer pool
         // This telemetry ensures unhealthy remote signers are bypassed automatically.
         let message_bytes = transaction.message.serialize();
-<<<<<<< HEAD
-        let signature = match signer.sign_message(&message_bytes).await {
-            Ok(sig) => {
-                match crate::state::get_signer_pool() {
-                    Ok(pool) => pool.record_signing_success(signer),
-                    Err(e) => log::warn!(
-                        "Could not record signing success to pool: {}",
-                        sanitize_error!(e)
-                    ),
-                }
-                sig
-            }
-            Err(e) => {
-                match crate::state::get_signer_pool() {
-                    Ok(pool) => pool.record_signing_failure(signer),
-                    Err(pool_err) => log::error!(
-                        "Signing failed AND pool health tracking unavailable: {}; \
-                         signer failure will not be recorded, automatic failover is disabled",
-                        sanitize_error!(pool_err)
-                    ),
-                }
-                return Err(KoraError::SigningError(sanitize_error!(e)));
-=======
         let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
         let max_retries = config.kora.sign_max_retries;
         let mut last_error = None;
-        let pool = crate::state::get_signer_pool().ok();
 
         let mut signature = None;
         for attempt in 0..=max_retries {
@@ -380,22 +356,33 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
             match timeout(sign_timeout, signer.sign_message(&message_bytes)).await {
                 Ok(Ok(sig)) => {
-                    if let Some(p) = &pool {
-                        p.record_signing_success(signer);
+                    // Report success to the pool for health tracking
+                    match crate::state::get_signer_pool() {
+                        Ok(pool) => pool.record_signing_success(signer),
+                        Err(e) => log::warn!(
+                            "Could not record signing success to pool: {}",
+                            sanitize_error!(e)
+                        ),
                     }
                     signature = Some(sig);
                     break;
                 }
                 Ok(Err(e)) => {
                     let err_msg = sanitize_error!(e);
-                    log::error!("Signing failed (attempt {}): {}", attempt + 1, err_msg);
+                    log::error!(
+                        "Signing failed (attempt {}/{}): {}",
+                        attempt + 1,
+                        max_retries + 1,
+                        err_msg
+                    );
                     last_error = Some(KoraError::SigningError(err_msg));
                 }
                 Err(_) => {
                     log::error!(
-                        "Signing timed out after {}s (attempt {})",
+                        "Signing timed out after {}s (attempt {}/{})",
                         sign_timeout.as_secs(),
-                        attempt + 1
+                        attempt + 1,
+                        max_retries + 1
                     );
                     last_error = Some(KoraError::SigningError(format!(
                         "Signing timed out after {}s",
@@ -410,13 +397,17 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             None => {
                 // Report failure to the pool to track signer health only after all retries are exhausted.
                 // This prevents a single failing request from immediately blacklisting a signer.
-                if let Some(p) = &pool {
-                    p.record_signing_failure(signer);
+                match crate::state::get_signer_pool() {
+                    Ok(pool) => pool.record_signing_failure(signer),
+                    Err(pool_err) => log::error!(
+                        "Signing failed AND pool health tracking unavailable: {}; \
+                         signer failure will not be recorded, automatic failover is disabled",
+                        sanitize_error!(pool_err)
+                    ),
                 }
                 return Err(last_error.unwrap_or_else(|| {
                     KoraError::SigningError("Signing failed after retries".to_string())
                 }));
->>>>>>> d3d5bcf (feat(signer): add graceful retry and timeout logic)
             }
         };
 
