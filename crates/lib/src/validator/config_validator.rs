@@ -27,6 +27,9 @@ use spl_token_2022_interface::{
 };
 use spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID;
 
+const MIN_SIGN_TIMEOUT_SECONDS: u64 = 1;
+const HIGH_SIGN_MAX_RETRIES_WARNING_THRESHOLD: u32 = 10;
+
 pub struct ConfigValidator {}
 
 impl ConfigValidator {
@@ -300,10 +303,10 @@ impl ConfigValidator {
         }
 
         // Validate signing configuration
-        if config.kora.sign_timeout_seconds == 0 {
+        if config.kora.sign_timeout_seconds < MIN_SIGN_TIMEOUT_SECONDS {
             errors.push("sign_timeout_seconds must be at least 1 second".to_string());
         }
-        if config.kora.sign_max_retries > 10 {
+        if config.kora.sign_max_retries > HIGH_SIGN_MAX_RETRIES_WARNING_THRESHOLD {
             warnings.push(format!(
                 "sign_max_retries ({}) is very high - consider reducing to prevent long request hangs",
                 config.kora.sign_max_retries

@@ -511,19 +511,9 @@ pub struct KoraConfig {
     /// Prevents TOCTOU attacks where simulation passes but on-chain execution differs.
     pub force_sig_verify: bool,
     /// Timeout for signing a transaction in seconds. Default: 10.
-    #[serde(default = "default_sign_timeout")]
     pub sign_timeout_seconds: u64,
     /// Maximum number of retries for signing a transaction. Default: 2.
-    #[serde(default = "default_sign_retries")]
     pub sign_max_retries: u32,
-}
-
-fn default_sign_timeout() -> u64 {
-    10
-}
-
-fn default_sign_retries() -> u32 {
-    2
 }
 
 impl Default for KoraConfig {
@@ -540,8 +530,8 @@ impl Default for KoraConfig {
             bundle: BundleConfig::default(),
             lighthouse: LighthouseConfig::default(),
             force_sig_verify: false,
-            sign_timeout_seconds: default_sign_timeout(),
-            sign_max_retries: default_sign_retries(),
+            sign_timeout_seconds: 10,
+            sign_max_retries: 2,
         }
     }
 }

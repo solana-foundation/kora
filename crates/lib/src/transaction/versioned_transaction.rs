@@ -28,6 +28,8 @@ use crate::{
 };
 use solana_address_lookup_table_interface::state::AddressLookupTable;
 
+use super::retry_util::signing_retry_backoff_ms;
+
 /// A fully resolved transaction with lookup tables and inner instructions resolved
 pub struct VersionedTransactionResolved {
     pub transaction: VersionedTransaction,
@@ -342,9 +344,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let mut signature = None;
         for attempt in 0..=max_retries {
             if attempt > 0 {
-                // Exponential backoff: 100ms * 2^(attempt-1), capped at ~12.8s (attempt 8+)
-                let exp = (attempt - 1).min(7);
-                let backoff_ms = 100 * 2u64.pow(exp);
+                let backoff_ms = signing_retry_backoff_ms(attempt);
                 log::warn!(
                     "Retrying signing (attempt {}/{}). Backoff: {}ms",
                     attempt,

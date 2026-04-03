@@ -1,11 +1,15 @@
 use crate::{
+    config::Config,
     sanitize_error, state,
-    transaction::{VersionedTransactionOps, VersionedTransactionResolved},
+    transaction::{
+        signing_retry_backoff_ms, VersionedTransactionOps, VersionedTransactionResolved,
+    },
     KoraError,
 };
 use solana_keychain::SolanaSigner;
 use solana_sdk::pubkey::Pubkey;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
+use tokio::time::timeout;
 
 pub struct BundleSigner {}
 
@@ -15,6 +19,7 @@ impl BundleSigner {
         signer: &Arc<solana_keychain::Signer>,
         fee_payer: &Pubkey,
         blockhash: &Option<solana_sdk::hash::Hash>,
+        config: &Config,
     ) -> Result<(), KoraError> {
         if resolved.transaction.signatures.is_empty() {
             if let Some(blockhash) = blockhash {
@@ -23,27 +28,74 @@ impl BundleSigner {
         }
 
         let message_bytes = resolved.transaction.message.serialize();
-        let signature = match signer.sign_message(&message_bytes).await {
-            Ok(sig) => {
-                match state::get_signer_pool() {
-                    Ok(pool) => pool.record_signing_success(signer),
-                    Err(e) => log::warn!(
-                        "Could not record signing success to pool: {}",
-                        sanitize_error!(e)
-                    ),
-                }
-                sig
+        let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
+        let max_retries = config.kora.sign_max_retries;
+        let mut last_error = None;
+
+        let mut signature = None;
+        for attempt in 0..=max_retries {
+            if attempt > 0 {
+                let backoff_ms = signing_retry_backoff_ms(attempt);
+                log::warn!(
+                    "Retrying bundle signing (attempt {}/{}). Backoff: {}ms",
+                    attempt,
+                    max_retries,
+                    backoff_ms
+                );
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
             }
-            Err(e) => {
+
+            match timeout(sign_timeout, signer.sign_message(&message_bytes)).await {
+                Ok(Ok(sig)) => {
+                    match state::get_signer_pool() {
+                        Ok(pool) => pool.record_signing_success(signer),
+                        Err(e) => log::warn!(
+                            "Could not record bundle signing success to pool: {}",
+                            sanitize_error!(e)
+                        ),
+                    }
+                    signature = Some(sig);
+                    break;
+                }
+                Ok(Err(e)) => {
+                    let err_msg = sanitize_error!(e);
+                    log::error!(
+                        "Bundle signing failed (attempt {}/{}): {}",
+                        attempt + 1,
+                        max_retries + 1,
+                        err_msg
+                    );
+                    last_error = Some(KoraError::SigningError(err_msg));
+                }
+                Err(_) => {
+                    log::error!(
+                        "Bundle signing timed out after {}s (attempt {}/{})",
+                        sign_timeout.as_secs(),
+                        attempt + 1,
+                        max_retries + 1
+                    );
+                    last_error = Some(KoraError::SigningError(format!(
+                        "Bundle signing timed out after {}s",
+                        sign_timeout.as_secs()
+                    )));
+                }
+            }
+        }
+
+        let signature = match signature {
+            Some(sig) => sig,
+            None => {
                 match state::get_signer_pool() {
                     Ok(pool) => pool.record_signing_failure(signer),
                     Err(pool_err) => log::error!(
-                        "Signing failed AND pool health tracking unavailable: {}; \
+                        "Bundle signing failed AND pool health tracking unavailable: {}; \
                          signer failure will not be recorded, automatic failover is disabled",
                         sanitize_error!(pool_err)
                     ),
                 }
-                return Err(KoraError::SigningError(sanitize_error!(e)));
+                return Err(last_error.unwrap_or_else(|| {
+                    KoraError::SigningError("Bundle signing failed after retries".to_string())
+                }));
             }
         };
 
@@ -57,6 +109,7 @@ impl BundleSigner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::config_mock::ConfigMockBuilder;
     use solana_keychain::Signer;
     use solana_message::Message;
     use solana_sdk::{
@@ -82,6 +135,7 @@ mod tests {
         let signer = Arc::new(external_signer);
 
         let blockhash = Some(Hash::new_unique());
+        let config = ConfigMockBuilder::new().build();
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
@@ -90,6 +144,7 @@ mod tests {
             &signer,
             &fee_payer,
             &blockhash,
+            &config,
         )
         .await;
 
@@ -106,6 +161,7 @@ mod tests {
         let signer = Arc::new(external_signer);
 
         let blockhash = Some(Hash::new_unique());
+        let config = ConfigMockBuilder::new().build();
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
@@ -114,6 +170,7 @@ mod tests {
             &signer,
             &wrong_fee_payer,
             &blockhash,
+            &config,
         )
         .await;
 
@@ -130,6 +187,7 @@ mod tests {
         let signer = Arc::new(external_signer);
 
         let blockhash = Some(Hash::new_unique());
+        let config = ConfigMockBuilder::new().build();
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
@@ -141,6 +199,7 @@ mod tests {
             &signer,
             &fee_payer,
             &blockhash,
+            &config,
         )
         .await;
 
@@ -158,6 +217,7 @@ mod tests {
         let signer = Arc::new(external_signer);
 
         let blockhash = Some(Hash::new_unique());
+        let config = ConfigMockBuilder::new().build();
 
         let mut resolved = create_test_resolved_with_fee_payer(&fee_payer_keypair);
 
@@ -166,6 +226,7 @@ mod tests {
             &signer,
             &fee_payer,
             &blockhash,
+            &config,
         )
         .await;
 
