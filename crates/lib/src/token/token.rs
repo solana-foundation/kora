@@ -638,7 +638,7 @@ impl TokenUtil {
                 // Get destination owner and mint - the ATA may not exist yet if being created
                 // in this transaction (or another transaction in the bundle)
                 let (destination_owner, token_mint) =
-                    match CacheUtil::get_account(config, rpc_client, destination_address, false)
+                    match CacheUtil::get_account(config, rpc_client, destination_address, true)
                         .await
                     {
                         Ok(destination_account) => {
@@ -709,7 +709,7 @@ impl TokenUtil {
 
                 let effective_amount = if *is_2022 {
                     let mint_account =
-                        CacheUtil::get_account(config, rpc_client, &token_mint, false).await?;
+                        CacheUtil::get_account(config, rpc_client, &token_mint, true).await?;
                     let token_program = Token2022Program::new();
                     let mint_state = token_program.unpack_mint(&token_mint, &mint_account.data)?;
                     let mint_2022 =
