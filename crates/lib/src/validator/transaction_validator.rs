@@ -290,6 +290,21 @@ impl TransactionValidator {
             self.fee_payer_policy.token_2022.allow_thaw_account,
             "SPL Token ThawAccount", "Token2022 Token ThawAccount");
 
+        for instruction in
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenReallocate).unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenReallocate { payer, owner, is_2022, .. } =
+                instruction
+            {
+                if *is_2022 && (*payer == self.fee_payer_pubkey || *owner == self.fee_payer_pubkey)
+                {
+                    return Err(KoraError::InvalidTransaction(
+                        "Token2022 Reallocate is not allowed when involving fee payer".to_string(),
+                    ));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -3262,6 +3277,69 @@ mod tests {
             assert!(msg.contains("Fee payer cannot be used for"));
         } else {
             panic!("Expected InvalidTransaction error for token2022_thaw_account policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_reallocate_rejected_for_fee_payer() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let reallocate_ix = spl_token_2022_interface::instruction::reallocate(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            &fee_payer,
+            &fee_payer,
+            &[],
+            &[spl_token_2022_interface::extension::ExtensionType::MemoTransfer],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[reallocate_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Token2022 Reallocate is not allowed"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022 reallocate");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_confidential_extension_instructions_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let confidential_ix = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![],
+            data: spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferExtension
+                .pack(),
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Confidential Token-2022 instructions are not supported"));
+        } else {
+            panic!("Expected InvalidTransaction error for confidential token2022 instruction");
         }
     }
 

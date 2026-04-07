@@ -90,6 +90,7 @@ pub enum ParsedSPLInstructionType {
     SplTokenInitializeMultisig,
     SplTokenFreezeAccount,
     SplTokenThawAccount,
+    SplTokenReallocate,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -158,6 +159,13 @@ pub enum ParsedSPLInstructionData {
     // ThawAccount
     SplTokenThawAccount {
         freeze_authority: Pubkey,
+        is_2022: bool,
+    },
+    // Token2022 Reallocate
+    SplTokenReallocate {
+        account: Pubkey,
+        payer: Pubkey,
+        owner: Pubkey,
         is_2022: bool,
     },
 }
@@ -2154,6 +2162,29 @@ impl IxUtils {
                                     freeze_authority: instruction.accounts[instruction_indexes::spl_token_thaw_account::FREEZE_AUTHORITY_INDEX].pubkey,
                                     is_2022: true,
                                 });
+                        }
+                        spl_token_2022_interface::instruction::TokenInstruction::Reallocate {
+                            ..
+                        } => {
+                            validate_number_accounts!(instruction, instruction_indexes::spl_token_reallocate::REQUIRED_NUMBER_OF_ACCOUNTS);
+
+                            parsed_instructions
+                                .entry(ParsedSPLInstructionType::SplTokenReallocate)
+                                .or_default()
+                                .push(ParsedSPLInstructionData::SplTokenReallocate {
+                                    account: instruction.accounts[instruction_indexes::spl_token_reallocate::ACCOUNT_INDEX].pubkey,
+                                    payer: instruction.accounts[instruction_indexes::spl_token_reallocate::PAYER_INDEX].pubkey,
+                                    owner: instruction.accounts[instruction_indexes::spl_token_reallocate::OWNER_INDEX].pubkey,
+                                    is_2022: true,
+                                });
+                        }
+                        spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferExtension
+                        | spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferFeeExtension
+                        | spl_token_2022_interface::instruction::TokenInstruction::ConfidentialMintBurnExtension => {
+                            return Err(KoraError::InvalidTransaction(
+                                "Confidential Token-2022 instructions are not supported"
+                                    .to_string(),
+                            ));
                         }
                         _ => {}
                     };
