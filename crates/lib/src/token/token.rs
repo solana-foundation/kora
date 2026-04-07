@@ -110,6 +110,56 @@ impl TokenUtil {
         Ok(())
     }
 
+    async fn calculate_token2022_net_amount(
+        amount: u64,
+        mint: &Pubkey,
+        rpc_client: &RpcClient,
+        config: &Config,
+        cached_epoch: &mut Option<u64>,
+        token2022_mints: &mut HashMap<Pubkey, Box<dyn TokenMint>>,
+    ) -> Result<u64, KoraError> {
+        let current_epoch = match *cached_epoch {
+            Some(epoch) => epoch,
+            None => {
+                let epoch = rpc_client
+                    .get_epoch_info()
+                    .await
+                    .map_err(|e| KoraError::RpcError(e.to_string()))?
+                    .epoch;
+                *cached_epoch = Some(epoch);
+                epoch
+            }
+        };
+
+        if !token2022_mints.contains_key(mint) {
+            let mint_account = CacheUtil::get_account(config, rpc_client, mint, true).await?;
+            let token_program = Token2022Program::new();
+            let mint_state = token_program.unpack_mint(mint, &mint_account.data)?;
+            token2022_mints.insert(*mint, mint_state);
+        }
+
+        let mint_2022 = token2022_mints
+            .get(mint)
+            .ok_or_else(|| {
+                KoraError::InternalServerError(format!(
+                    "Missing cached Token2022 mint state for mint {mint}",
+                ))
+            })?
+            .as_any()
+            .downcast_ref::<Token2022Mint>()
+            .ok_or_else(|| {
+                KoraError::SerializationError(
+                    "Failed to downcast mint state for transfer fee check".to_string(),
+                )
+            })?;
+
+        if let Some(fee) = mint_2022.calculate_transfer_fee(amount, current_epoch)? {
+            Ok(amount.saturating_sub(fee))
+        } else {
+            Ok(amount)
+        }
+    }
+
     pub fn check_valid_tokens(tokens: &[String]) -> Result<Vec<Pubkey>, KoraError> {
         tokens
             .iter()
@@ -454,48 +504,15 @@ impl TokenUtil {
                 // Token2022 transfer fees are withheld from destination credits.
                 // Net inflows to fee-payer-owned accounts must be credited post-fee.
                 if *is_2022 && !*is_outflow {
-                    if cached_epoch.is_none() {
-                        cached_epoch = Some(
-                            rpc_client
-                                .get_epoch_info()
-                                .await
-                                .map_err(|e| KoraError::RpcError(e.to_string()))?
-                                .epoch,
-                        );
-                    }
-                    let current_epoch = cached_epoch.ok_or_else(|| {
-                        KoraError::InternalServerError(
-                            "Missing cached epoch for Token2022 transfer fee calculation"
-                                .to_string(),
-                        )
-                    })?;
-
-                    if !token2022_mints.contains_key(mint) {
-                        let mint_account =
-                            CacheUtil::get_account(config, rpc_client, mint, true).await?;
-                        let token_program = Token2022Program::new();
-                        let mint_state = token_program.unpack_mint(mint, &mint_account.data)?;
-                        token2022_mints.insert(*mint, mint_state);
-                    }
-
-                    let mint_2022 = token2022_mints
-                        .get(mint)
-                        .ok_or_else(|| {
-                            KoraError::InternalServerError(format!(
-                                "Missing cached Token2022 mint state for mint {mint}",
-                            ))
-                        })?
-                        .as_any()
-                        .downcast_ref::<Token2022Mint>()
-                        .ok_or_else(|| {
-                            KoraError::SerializationError(
-                                "Failed to downcast mint state for transfer fee check".to_string(),
-                            )
-                        })?;
-
-                    if let Some(fee) = mint_2022.calculate_transfer_fee(*amount, current_epoch)? {
-                        effective_amount = amount.saturating_sub(fee);
-                    }
+                    effective_amount = Self::calculate_token2022_net_amount(
+                        *amount,
+                        mint,
+                        rpc_client,
+                        config,
+                        &mut cached_epoch,
+                        &mut token2022_mints,
+                    )
+                    .await?;
                 }
 
                 // Convert token amount to lamports value using Decimal
@@ -687,6 +704,7 @@ impl TokenUtil {
     ) -> Result<Option<u64>, KoraError> {
         let mut total_lamport_value = 0u64;
         let mut cached_epoch: Option<u64> = None;
+        let mut token2022_mints: HashMap<Pubkey, Box<dyn TokenMint>> = HashMap::new();
 
         let all_instructions = bundle_instructions
             .map(|bi| bi.to_vec())
@@ -786,33 +804,15 @@ impl TokenUtil {
                 }
 
                 let effective_amount = if *is_2022 {
-                    let mint_account =
-                        CacheUtil::get_account(config, rpc_client, &token_mint, true).await?;
-                    let token_program = Token2022Program::new();
-                    let mint_state = token_program.unpack_mint(&token_mint, &mint_account.data)?;
-                    let mint_2022 =
-                        mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
-                            KoraError::SerializationError(
-                                "Failed to downcast mint state for transfer fee check".to_string(),
-                            )
-                        })?;
-                    let current_epoch = match cached_epoch {
-                        Some(epoch) => epoch,
-                        None => {
-                            let epoch = rpc_client
-                                .get_epoch_info()
-                                .await
-                                .map_err(|e| KoraError::RpcError(e.to_string()))?
-                                .epoch;
-                            cached_epoch = Some(epoch);
-                            epoch
-                        }
-                    };
-                    if let Some(fee) = mint_2022.calculate_transfer_fee(*amount, current_epoch)? {
-                        amount.saturating_sub(fee)
-                    } else {
-                        *amount
-                    }
+                    Self::calculate_token2022_net_amount(
+                        *amount,
+                        &token_mint,
+                        rpc_client,
+                        config,
+                        &mut cached_epoch,
+                        &mut token2022_mints,
+                    )
+                    .await?
                 } else {
                     *amount
                 };
