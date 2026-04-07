@@ -7,6 +7,7 @@ use crate::{
         interface::TokenMint,
         spl_token::TokenProgram,
         spl_token_2022::{Token2022Account, Token2022Extensions, Token2022Mint, Token2022Program},
+        spl_token_2022_util::{MintExtension, ParsedExtension},
         TokenInterface,
     },
     transaction::{
@@ -56,6 +57,23 @@ impl TokenType {
 pub struct TokenUtil;
 
 impl TokenUtil {
+    fn validate_immutable_transfer_hook_for_payment(
+        mint: &Token2022Mint,
+        mint_pubkey: &Pubkey,
+    ) -> Result<(), KoraError> {
+        if let Some(ParsedExtension::Mint(MintExtension::TransferHook(transfer_hook))) =
+            mint.get_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+        {
+            if transfer_hook.authority != spl_pod::optional_keys::OptionalNonZeroPubkey::default() {
+                return Err(KoraError::ValidationError(format!(
+                    "Mutable transfer-hook authority found on mint account {mint_pubkey}",
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     async fn check_price_staleness(
         rpc_client: &RpcClient,
         config: &Config,
@@ -504,6 +522,8 @@ impl TokenUtil {
             }
         }
 
+        Self::validate_immutable_transfer_hook_for_payment(mint_with_extensions, mint)?;
+
         // Check source account extensions (force refresh in case extensions are added)
         let source_account =
             CacheUtil::get_account(config, rpc_client, source_address, true).await?;
@@ -574,6 +594,8 @@ impl TokenUtil {
                 )));
             }
         }
+
+        Self::validate_immutable_transfer_hook_for_payment(mint_with_extensions, mint)?;
 
         // Check source account extensions
         let source_account =
@@ -796,7 +818,7 @@ mod tests_token {
     use crate::{
         oracle::utils::{USDC_DEVNET_MINT, WSOL_DEVNET_MINT},
         tests::{
-            common::{RpcMockBuilder, TokenAccountMockBuilder},
+            common::{MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder},
             config_mock::ConfigMockBuilder,
         },
     };
@@ -1193,6 +1215,120 @@ mod tests_token {
         .await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validate_token2022_extensions_for_payment_rejects_mutable_transfer_hook_authority(
+    ) {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let mint_address = Pubkey::new_unique();
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+            .with_transfer_hook_authority(Some(Pubkey::new_unique()))
+            .with_transfer_hook_program_id(Some(Pubkey::new_unique()))
+            .build_token2022();
+        let source_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+        let destination_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &mint_account,
+            &source_account,
+            &destination_account,
+        ]);
+
+        let config = get_config().unwrap();
+        let result = TokenUtil::validate_token2022_extensions_for_payment(
+            &config,
+            &rpc_client,
+            &source_address,
+            &destination_address,
+            &mint_address,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("Mutable transfer-hook authority found on mint account"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_token2022_extensions_for_payment_allows_immutable_transfer_hook_authority(
+    ) {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let mint_address = Pubkey::new_unique();
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+            .with_transfer_hook_authority(None)
+            .with_transfer_hook_program_id(Some(Pubkey::new_unique()))
+            .build_token2022();
+        let source_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+        let destination_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &mint_account,
+            &source_account,
+            &destination_account,
+        ]);
+
+        let config = get_config().unwrap();
+        let result = TokenUtil::validate_token2022_extensions_for_payment(
+            &config,
+            &rpc_client,
+            &source_address,
+            &destination_address,
+            &mint_address,
+        )
+        .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validate_token2022_partial_for_ata_creation_rejects_mutable_transfer_hook_authority(
+    ) {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let source_address = Pubkey::new_unique();
+        let mint_address = Pubkey::new_unique();
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+            .with_transfer_hook_authority(Some(Pubkey::new_unique()))
+            .with_transfer_hook_program_id(Some(Pubkey::new_unique()))
+            .build_token2022();
+        let source_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&mint_account, &source_account]);
+
+        let config = get_config().unwrap();
+        let result = TokenUtil::validate_token2022_partial_for_ata_creation(
+            &config,
+            &rpc_client,
+            &source_address,
+            &mint_address,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("Mutable transfer-hook authority found on mint account"));
     }
 
     #[tokio::test]
