@@ -285,15 +285,11 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<u64, KoraError> {
-        #[derive(Debug, Clone, Copy)]
-        struct TransferValue {
-            amount: u64,
-            is_outflow: bool,
-            is_2022: bool,
-        }
-
         // Collect all unique mints that need price lookups
-        let mut mint_to_transfers: HashMap<Pubkey, Vec<TransferValue>> = HashMap::new();
+        let mut mint_to_transfers: HashMap<
+            Pubkey,
+            Vec<(u64, bool, bool)>, // (amount, is_outflow, is_2022)
+        > = HashMap::new();
 
         for transfer in spl_transfers {
             if let ParsedSPLInstructionData::SplTokenTransfer {
@@ -326,11 +322,10 @@ impl TokenUtil {
                             })?;
                         token_account.mint()
                     };
-                    mint_to_transfers.entry(mint_pubkey).or_default().push(TransferValue {
-                        amount: *amount,
-                        is_outflow: true,
-                        is_2022: *is_2022,
-                    });
+                    mint_to_transfers
+                        .entry(mint_pubkey)
+                        .or_default()
+                        .push((*amount, true, *is_2022));
                 } else {
                     // Check if fee payer owns the destination (inflow)
                     // We need to check the destination token account owner
@@ -351,13 +346,10 @@ impl TokenUtil {
                                         ))
                                     })?;
                                 if token_account.owner() == *fee_payer {
-                                    mint_to_transfers.entry(*mint_pubkey).or_default().push(
-                                        TransferValue {
-                                            amount: *amount,
-                                            is_outflow: false,
-                                            is_2022: *is_2022,
-                                        },
-                                    ); // inflow
+                                    mint_to_transfers
+                                        .entry(*mint_pubkey)
+                                        .or_default()
+                                        .push((*amount, false, *is_2022)); // inflow
                                 }
                             }
                             Err(e) => {
@@ -380,13 +372,10 @@ impl TokenUtil {
                                     if *destination_address == spl_ata
                                         || *destination_address == token2022_ata
                                     {
-                                        mint_to_transfers.entry(*mint_pubkey).or_default().push(
-                                            TransferValue {
-                                                amount: *amount,
-                                                is_outflow: false,
-                                                is_2022: *is_2022,
-                                            },
-                                        ); // inflow
+                                        mint_to_transfers
+                                            .entry(*mint_pubkey)
+                                            .or_default()
+                                            .push((*amount, false, *is_2022)); // inflow
                                     }
                                     // Otherwise, it's not fee payer's account, continue to next transfer
                                 } else {
@@ -459,12 +448,12 @@ impl TokenUtil {
                 .get(mint)
                 .ok_or_else(|| KoraError::RpcError(format!("No decimals data for mint {mint}")))?;
 
-            for transfer in transfers {
-                let mut effective_amount = transfer.amount;
+            for (amount, is_outflow, is_2022) in transfers {
+                let mut effective_amount = *amount;
 
                 // Token2022 transfer fees are withheld from destination credits.
                 // Net inflows to fee-payer-owned accounts must be credited post-fee.
-                if transfer.is_2022 && !transfer.is_outflow {
+                if *is_2022 && !*is_outflow {
                     if cached_epoch.is_none() {
                         cached_epoch = Some(
                             rpc_client
@@ -504,10 +493,8 @@ impl TokenUtil {
                             )
                         })?;
 
-                    if let Some(fee) =
-                        mint_2022.calculate_transfer_fee(transfer.amount, current_epoch)?
-                    {
-                        effective_amount = transfer.amount.saturating_sub(fee);
+                    if let Some(fee) = mint_2022.calculate_transfer_fee(*amount, current_epoch)? {
+                        effective_amount = amount.saturating_sub(fee);
                     }
                 }
 
@@ -540,7 +527,7 @@ impl TokenUtil {
                     KoraError::ValidationError("Lamports value overflow".to_string())
                 })?;
 
-                if transfer.is_outflow {
+                if *is_outflow {
                     // Add outflow to total
                     total_lamports = total_lamports.checked_add(lamports).ok_or_else(|| {
                         log::error!("SPL outflow calculation overflow");
