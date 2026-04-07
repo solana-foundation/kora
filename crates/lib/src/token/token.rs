@@ -659,7 +659,7 @@ impl TokenUtil {
 
                 // Get destination owner and mint - the ATA may not exist yet if being created
                 // in this transaction (or another transaction in the bundle)
-                let (destination_owner, token_mint) =
+                let (destination_owner, token_mint, destination_exists) =
                     match CacheUtil::get_account(config, rpc_client, destination_address, true)
                         .await
                     {
@@ -672,19 +672,7 @@ impl TokenUtil {
                                     ))
                                 })?;
 
-                            // For Token2022, validate that blocked extensions are not used
-                            if *is_2022 {
-                                TokenUtil::validate_token2022_extensions_for_payment(
-                                    config,
-                                    rpc_client,
-                                    source_address,
-                                    destination_address,
-                                    &mint.unwrap_or(token_state.mint()),
-                                )
-                                .await?;
-                            }
-
-                            (token_state.owner(), token_state.mint())
+                            (token_state.owner(), token_state.mint(), true)
                         }
                         Err(e) => {
                             // If account not found, check if there's an ATA creation instruction
@@ -696,18 +684,7 @@ impl TokenUtil {
                                         destination_address,
                                     )
                                 {
-                                    // For Token2022, validate mint and source extensions
-                                    if *is_2022 {
-                                        TokenUtil::validate_token2022_partial_for_ata_creation(
-                                            config,
-                                            rpc_client,
-                                            source_address,
-                                            &ata_mint,
-                                        )
-                                        .await?;
-                                    }
-
-                                    (wallet_owner, ata_mint)
+                                    (wallet_owner, ata_mint, false)
                                 } else {
                                     // No ATA creation found - skip this transfer
                                     continue;
@@ -721,6 +698,30 @@ impl TokenUtil {
                 // Skip if destination isn't our expected payment address
                 if destination_owner != *expected_destination_owner {
                     continue;
+                }
+
+                // For Token2022 payments, validate blocked extensions and immutable transfer-hook authority.
+                // This must run only after destination-owner matching, otherwise unrelated transfers can fail
+                // payment validation.
+                if *is_2022 {
+                    if destination_exists {
+                        TokenUtil::validate_token2022_extensions_for_payment(
+                            config,
+                            rpc_client,
+                            source_address,
+                            destination_address,
+                            &mint.unwrap_or(token_mint),
+                        )
+                        .await?;
+                    } else {
+                        TokenUtil::validate_token2022_partial_for_ata_creation(
+                            config,
+                            rpc_client,
+                            source_address,
+                            &token_mint,
+                        )
+                        .await?;
+                    }
                 }
 
                 // Skip unsupported tokens
