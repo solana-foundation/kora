@@ -94,6 +94,13 @@ allow_initialize_multisig = true
 allow_freeze_account = true
 allow_thaw_account = true
 
+[validation.fee_payer_policy.alt]
+allow_create = false
+allow_extend = false
+allow_freeze = false
+allow_deactivate = false
+allow_close = false
+
 [kora.enabled_methods]
 liveness = false
 estimate_transaction_fee = true

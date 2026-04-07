@@ -116,6 +116,13 @@ allow_initialize_multisig = true # Allow fee payer to be signer in Token2022 mul
 allow_freeze_account = true     # Allow fee payer to freeze Token2022 accounts
 allow_thaw_account = true       # Allow fee payer to thaw Token2022 accounts
 
+[validation.fee_payer_policy.alt]
+allow_create = false            # Allow fee payer to be authority/payer in ALT CreateLookupTable
+allow_extend = false            # Allow fee payer to be authority/payer in ALT ExtendLookupTable
+allow_freeze = false            # Allow fee payer to be authority in ALT FreezeLookupTable
+allow_deactivate = false        # Allow fee payer to be authority in ALT DeactivateLookupTable
+allow_close = false             # Allow fee payer to be authority in ALT CloseLookupTable
+
 [validation.price]
 type = "margin" # free / margin / fixed
 margin = 0.1  # 10% margin (0.1 = 10%, 1.0 = 100%)

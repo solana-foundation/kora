@@ -105,6 +105,13 @@ allow_initialize_multisig = true
 allow_freeze_account = true
 allow_thaw_account = true
 
+[validation.fee_payer_policy.alt]
+allow_create = false
+allow_extend = false
+allow_freeze = false
+allow_deactivate = false
+allow_close = false
+
 [validation.price]
 type = "margin" # free / margin / fixed
 margin = 0.1    # Default margin (10%) for paid transaction validation

@@ -126,6 +126,13 @@ mod tests {
         assert!(!response.validation_config.fee_payer_policy.token_2022.allow_initialize_multisig);
         assert!(!response.validation_config.fee_payer_policy.token_2022.allow_freeze_account);
         assert!(!response.validation_config.fee_payer_policy.token_2022.allow_thaw_account);
+
+        // Assert FeePayerPolicy defaults - ALT (secure by default - all false)
+        assert!(!response.validation_config.fee_payer_policy.alt.allow_create);
+        assert!(!response.validation_config.fee_payer_policy.alt.allow_extend);
+        assert!(!response.validation_config.fee_payer_policy.alt.allow_freeze);
+        assert!(!response.validation_config.fee_payer_policy.alt.allow_deactivate);
+        assert!(!response.validation_config.fee_payer_policy.alt.allow_close);
         // Assert PriceConfig default (check margin value)
         match response.validation_config.price.model {
             crate::fee::price::PriceModel::Margin { margin } => assert_eq!(margin, 0.0),

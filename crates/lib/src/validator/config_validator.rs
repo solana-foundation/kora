@@ -193,6 +193,21 @@ impl ConfigValidator {
 
             token_2022, allow_thaw_account, "Token2022 ThawAccount instructions",
                 "Users can make the fee payer unfreeze token accounts. This can undermine freeze policies";
+
+            alt, allow_create, "ALT CreateLookupTable instructions",
+                "Users can make the fee payer create lookup tables and fund rent. This can drain SOL and create unmanaged tables";
+
+            alt, allow_extend, "ALT ExtendLookupTable instructions",
+                "Users can make the fee payer extend lookup tables and pay reallocation costs. This can drain SOL";
+
+            alt, allow_freeze, "ALT FreezeLookupTable instructions",
+                "Users can permanently freeze lookup tables controlled by the fee payer. This can break versioned transaction flows";
+
+            alt, allow_deactivate, "ALT DeactivateLookupTable instructions",
+                "Users can deactivate lookup tables controlled by the fee payer. This can disrupt systems that depend on those tables";
+
+            alt, allow_close, "ALT CloseLookupTable instructions",
+                "Users can close lookup tables controlled by the fee payer and redirect lamports to arbitrary recipients";
         }
 
         // Check nonce policy separately (nested structure)
@@ -1737,6 +1752,13 @@ mod tests {
                         allow_freeze_account: true,
                         allow_thaw_account: true,
                     },
+                    alt: crate::config::AltInstructionPolicy {
+                        allow_create: true,
+                        allow_extend: true,
+                        allow_freeze: true,
+                        allow_deactivate: true,
+                        allow_close: true,
+                    },
                 },
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
@@ -1866,6 +1888,23 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.contains("Token2022 ThawAccount") && w.contains("allow_thaw_account")));
+
+        // ALT policies
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("ALT CreateLookupTable") && w.contains("allow_create")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("ALT ExtendLookupTable") && w.contains("allow_extend")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("ALT FreezeLookupTable") && w.contains("allow_freeze")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("ALT DeactivateLookupTable") && w.contains("allow_deactivate")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("ALT CloseLookupTable") && w.contains("allow_close")));
 
         // Each warning should contain risk explanation
         let fee_payer_warnings: Vec<_> =

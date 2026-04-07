@@ -19,8 +19,9 @@ use crate::{
     plugin::{PluginExecutionContext, TransactionPluginRunner},
     sanitize_error,
     transaction::{
-        instruction_util::IxUtils, ParsedSPLInstructionData, ParsedSPLInstructionType,
-        ParsedSystemInstructionData, ParsedSystemInstructionType,
+        instruction_util::IxUtils, ParsedALTInstructionData, ParsedALTInstructionType,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
+        ParsedSystemInstructionType,
     },
     validator::transaction_validator::TransactionValidator,
     CacheUtil,
@@ -46,6 +47,10 @@ pub struct VersionedTransactionResolved {
     // Parsed SPL instructions by type (None if not parsed yet)
     parsed_spl_instructions:
         Option<HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>>,
+
+    // Parsed ALT instructions by type (None if not parsed yet)
+    parsed_alt_instructions:
+        Option<HashMap<ParsedALTInstructionType, Vec<ParsedALTInstructionData>>>,
 }
 
 impl Deref for VersionedTransactionResolved {
@@ -89,6 +94,7 @@ impl VersionedTransactionResolved {
             all_instructions: vec![],
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
+            parsed_alt_instructions: None,
         };
 
         // 1. Resolve lookup table addresses based on transaction type
@@ -138,6 +144,7 @@ impl VersionedTransactionResolved {
             )?,
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
+            parsed_alt_instructions: None,
         })
     }
 
@@ -225,6 +232,18 @@ impl VersionedTransactionResolved {
 
         self.parsed_spl_instructions.as_ref().ok_or_else(|| {
             KoraError::SerializationError("Parsed SPL instructions not found".to_string())
+        })
+    }
+
+    pub fn get_or_parse_alt_instructions(
+        &mut self,
+    ) -> Result<&HashMap<ParsedALTInstructionType, Vec<ParsedALTInstructionData>>, KoraError> {
+        if self.parsed_alt_instructions.is_none() {
+            self.parsed_alt_instructions = Some(IxUtils::parse_alt_instructions(self)?);
+        }
+
+        self.parsed_alt_instructions.as_ref().ok_or_else(|| {
+            KoraError::SerializationError("Parsed ALT instructions not found".to_string())
         })
     }
 }
@@ -712,6 +731,7 @@ mod tests {
 
         assert!(resolved.parsed_system_instructions.is_none());
         assert!(resolved.parsed_spl_instructions.is_none());
+        assert!(resolved.parsed_alt_instructions.is_none());
     }
 
     #[test]

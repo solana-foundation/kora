@@ -1,5 +1,9 @@
 use std::collections::HashMap;
 
+use solana_address_lookup_table_interface::{
+    instruction::ProgramInstruction as AddressLookupTableInstruction,
+    program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
+};
 use solana_message::compiled_instruction::CompiledInstruction;
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
@@ -94,6 +98,15 @@ pub enum ParsedSPLInstructionType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParsedALTInstructionType {
+    AltCreateLookupTable,
+    AltExtendLookupTable,
+    AltFreezeLookupTable,
+    AltDeactivateLookupTable,
+    AltCloseLookupTable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ParsedSPLInstructionData {
     // Includes transfer and transfer with seed (both spl and spl 2022)
     SplTokenTransfer {
@@ -167,6 +180,33 @@ pub enum ParsedSPLInstructionData {
         payer: Pubkey,
         owner: Pubkey,
         is_2022: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParsedALTInstructionData {
+    AltCreateLookupTable {
+        lookup_table_account: Pubkey,
+        lookup_table_authority: Pubkey,
+        payer_account: Pubkey,
+    },
+    AltExtendLookupTable {
+        lookup_table_account: Pubkey,
+        lookup_table_authority: Pubkey,
+        payer_account: Option<Pubkey>,
+    },
+    AltFreezeLookupTable {
+        lookup_table_account: Pubkey,
+        lookup_table_authority: Pubkey,
+    },
+    AltDeactivateLookupTable {
+        lookup_table_account: Pubkey,
+        lookup_table_authority: Pubkey,
+    },
+    AltCloseLookupTable {
+        lookup_table_account: Pubkey,
+        lookup_table_authority: Pubkey,
+        recipient: Pubkey,
     },
 }
 
@@ -1584,6 +1624,146 @@ impl IxUtils {
         Ok(parsed_instructions)
     }
 
+    pub fn parse_alt_instructions(
+        transaction: &VersionedTransactionResolved,
+    ) -> Result<HashMap<ParsedALTInstructionType, Vec<ParsedALTInstructionData>>, KoraError> {
+        let mut parsed_instructions: HashMap<
+            ParsedALTInstructionType,
+            Vec<ParsedALTInstructionData>,
+        > = HashMap::new();
+
+        for instruction in &transaction.all_instructions {
+            if instruction.program_id != ADDRESS_LOOKUP_TABLE_PROGRAM_ID {
+                continue;
+            }
+
+            let alt_ix = bincode::deserialize::<AddressLookupTableInstruction>(&instruction.data)
+                .map_err(|e| {
+                KoraError::InvalidTransaction(format!(
+                    "Failed to parse ALT instruction: {}",
+                    sanitize_error!(e)
+                ))
+            })?;
+
+            match alt_ix {
+                AddressLookupTableInstruction::CreateLookupTable { .. } => {
+                    validate_number_accounts!(
+                        instruction,
+                        instruction_indexes::alt_create_lookup_table::REQUIRED_NUMBER_OF_ACCOUNTS
+                    );
+
+                    parsed_instructions
+                        .entry(ParsedALTInstructionType::AltCreateLookupTable)
+                        .or_default()
+                        .push(ParsedALTInstructionData::AltCreateLookupTable {
+                            lookup_table_account: instruction.accounts
+                                [instruction_indexes::alt_create_lookup_table::LOOKUP_TABLE_ACCOUNT_INDEX]
+                                .pubkey,
+                            lookup_table_authority: instruction.accounts
+                                [instruction_indexes::alt_create_lookup_table::LOOKUP_TABLE_AUTHORITY_INDEX]
+                                .pubkey,
+                            payer_account: instruction.accounts
+                                [instruction_indexes::alt_create_lookup_table::PAYER_ACCOUNT_INDEX]
+                                .pubkey,
+                        });
+                }
+                AddressLookupTableInstruction::ExtendLookupTable { .. } => {
+                    let account_count = instruction.accounts.len();
+                    if account_count
+                        < instruction_indexes::alt_extend_lookup_table::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                        || account_count == 3
+                    {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "Instruction account mismatch: expected 2 or >=4 accounts, found {account_count}"
+                        )));
+                    }
+
+                    parsed_instructions
+                        .entry(ParsedALTInstructionType::AltExtendLookupTable)
+                        .or_default()
+                        .push(ParsedALTInstructionData::AltExtendLookupTable {
+                            lookup_table_account: instruction.accounts
+                                [instruction_indexes::alt_extend_lookup_table::LOOKUP_TABLE_ACCOUNT_INDEX]
+                                .pubkey,
+                            lookup_table_authority: instruction.accounts
+                                [instruction_indexes::alt_extend_lookup_table::LOOKUP_TABLE_AUTHORITY_INDEX]
+                                .pubkey,
+                            payer_account: if account_count
+                                >= instruction_indexes::alt_extend_lookup_table::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER
+                            {
+                                Some(
+                                    instruction.accounts
+                                        [instruction_indexes::alt_extend_lookup_table::OPTIONAL_PAYER_ACCOUNT_INDEX]
+                                        .pubkey,
+                                )
+                            } else {
+                                None
+                            },
+                        });
+                }
+                AddressLookupTableInstruction::FreezeLookupTable => {
+                    validate_number_accounts!(
+                        instruction,
+                        instruction_indexes::alt_freeze_lookup_table::REQUIRED_NUMBER_OF_ACCOUNTS
+                    );
+
+                    parsed_instructions
+                        .entry(ParsedALTInstructionType::AltFreezeLookupTable)
+                        .or_default()
+                        .push(ParsedALTInstructionData::AltFreezeLookupTable {
+                            lookup_table_account: instruction.accounts
+                                [instruction_indexes::alt_freeze_lookup_table::LOOKUP_TABLE_ACCOUNT_INDEX]
+                                .pubkey,
+                            lookup_table_authority: instruction.accounts
+                                [instruction_indexes::alt_freeze_lookup_table::LOOKUP_TABLE_AUTHORITY_INDEX]
+                                .pubkey,
+                        });
+                }
+                AddressLookupTableInstruction::DeactivateLookupTable => {
+                    validate_number_accounts!(
+                        instruction,
+                        instruction_indexes::alt_deactivate_lookup_table::REQUIRED_NUMBER_OF_ACCOUNTS
+                    );
+
+                    parsed_instructions
+                        .entry(ParsedALTInstructionType::AltDeactivateLookupTable)
+                        .or_default()
+                        .push(ParsedALTInstructionData::AltDeactivateLookupTable {
+                            lookup_table_account: instruction.accounts
+                                [instruction_indexes::alt_deactivate_lookup_table::LOOKUP_TABLE_ACCOUNT_INDEX]
+                                .pubkey,
+                            lookup_table_authority: instruction.accounts
+                                [instruction_indexes::alt_deactivate_lookup_table::LOOKUP_TABLE_AUTHORITY_INDEX]
+                                .pubkey,
+                        });
+                }
+                AddressLookupTableInstruction::CloseLookupTable => {
+                    validate_number_accounts!(
+                        instruction,
+                        instruction_indexes::alt_close_lookup_table::REQUIRED_NUMBER_OF_ACCOUNTS
+                    );
+
+                    parsed_instructions
+                        .entry(ParsedALTInstructionType::AltCloseLookupTable)
+                        .or_default()
+                        .push(ParsedALTInstructionData::AltCloseLookupTable {
+                            lookup_table_account: instruction.accounts
+                                [instruction_indexes::alt_close_lookup_table::LOOKUP_TABLE_ACCOUNT_INDEX]
+                                .pubkey,
+                            lookup_table_authority: instruction.accounts
+                                [instruction_indexes::alt_close_lookup_table::LOOKUP_TABLE_AUTHORITY_INDEX]
+                                .pubkey,
+                            recipient: instruction.accounts
+                                [instruction_indexes::alt_close_lookup_table::RECIPIENT_INDEX]
+                                .pubkey,
+                        });
+                }
+            }
+        }
+
+        Ok(parsed_instructions)
+    }
+
     pub fn parse_token_instructions(
         transaction: &VersionedTransactionResolved,
     ) -> Result<HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>, KoraError> {
@@ -2963,6 +3143,97 @@ mod tests {
                 assert_eq!(*parsed_receiver, receiver);
             }
             _ => panic!("Expected SystemTransfer variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_alt_instructions_freeze_lookup_table() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_address_lookup_table_interface::instruction::freeze_lookup_table;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let payer = Keypair::new();
+        let lookup_table_account = Pubkey::new_unique();
+        let authority = payer.pubkey();
+
+        let instruction = freeze_lookup_table(lookup_table_account, authority);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_alt_instructions(&resolved_tx)
+            .expect("Failed to parse ALT instructions");
+
+        let freezes = parsed_instructions
+            .get(&ParsedALTInstructionType::AltFreezeLookupTable)
+            .expect("Expected AltFreezeLookupTable instructions");
+
+        assert_eq!(freezes.len(), 1);
+        match &freezes[0] {
+            ParsedALTInstructionData::AltFreezeLookupTable {
+                lookup_table_account: parsed_lookup_table_account,
+                lookup_table_authority: parsed_lookup_table_authority,
+            } => {
+                assert_eq!(*parsed_lookup_table_account, lookup_table_account);
+                assert_eq!(*parsed_lookup_table_authority, authority);
+            }
+            _ => panic!("Expected AltFreezeLookupTable variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_alt_instructions_extend_lookup_table_optional_payer() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_address_lookup_table_interface::instruction::extend_lookup_table;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let signer = Keypair::new();
+        let lookup_table_account = Pubkey::new_unique();
+        let authority = signer.pubkey();
+        let payer = signer.pubkey();
+
+        let instruction = extend_lookup_table(
+            lookup_table_account,
+            authority,
+            Some(payer),
+            vec![Pubkey::new_unique()],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&signer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&signer]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_alt_instructions(&resolved_tx)
+            .expect("Failed to parse ALT instructions");
+
+        let extends = parsed_instructions
+            .get(&ParsedALTInstructionType::AltExtendLookupTable)
+            .expect("Expected AltExtendLookupTable instructions");
+
+        assert_eq!(extends.len(), 1);
+        match &extends[0] {
+            ParsedALTInstructionData::AltExtendLookupTable {
+                lookup_table_account: parsed_lookup_table_account,
+                lookup_table_authority: parsed_lookup_table_authority,
+                payer_account: parsed_payer_account,
+            } => {
+                assert_eq!(*parsed_lookup_table_account, lookup_table_account);
+                assert_eq!(*parsed_lookup_table_authority, authority);
+                assert_eq!(*parsed_payer_account, Some(payer));
+            }
+            _ => panic!("Expected AltExtendLookupTable variant"),
         }
     }
 

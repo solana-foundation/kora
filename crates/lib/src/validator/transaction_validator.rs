@@ -5,8 +5,9 @@ use crate::{
     oracle::PriceSource,
     token::{interface::TokenMint, token::TokenUtil},
     transaction::{
-        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
-        ParsedSystemInstructionType, VersionedTransactionResolved,
+        ParsedALTInstructionData, ParsedALTInstructionType, ParsedSPLInstructionData,
+        ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
+        VersionedTransactionResolved,
     },
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -215,79 +216,177 @@ impl TransactionValidator {
             self.fee_payer_policy.system.nonce.allow_withdraw, "System Withdraw Nonce Account");
 
         // Validate SPL instructions
-        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
+        {
+            let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
 
-        validate_spl!(self, spl_instructions, SplTokenTransfer,
-            ParsedSPLInstructionData::SplTokenTransfer { owner, is_2022, .. } => { owner, is_2022 },
-            self.fee_payer_policy.spl_token.allow_transfer,
-            self.fee_payer_policy.token_2022.allow_transfer,
-            "SPL Token Transfer", "Token2022 Token Transfer");
+            validate_spl!(self, spl_instructions, SplTokenTransfer,
+                ParsedSPLInstructionData::SplTokenTransfer { owner, is_2022, .. } => { owner, is_2022 },
+                self.fee_payer_policy.spl_token.allow_transfer,
+                self.fee_payer_policy.token_2022.allow_transfer,
+                "SPL Token Transfer", "Token2022 Token Transfer");
 
-        validate_spl!(self, spl_instructions, SplTokenApprove,
-            ParsedSPLInstructionData::SplTokenApprove { owner, is_2022, .. } => { owner, is_2022 },
-            self.fee_payer_policy.spl_token.allow_approve,
-            self.fee_payer_policy.token_2022.allow_approve,
-            "SPL Token Approve", "Token2022 Token Approve");
+            validate_spl!(self, spl_instructions, SplTokenApprove,
+                ParsedSPLInstructionData::SplTokenApprove { owner, is_2022, .. } => { owner, is_2022 },
+                self.fee_payer_policy.spl_token.allow_approve,
+                self.fee_payer_policy.token_2022.allow_approve,
+                "SPL Token Approve", "Token2022 Token Approve");
 
-        validate_spl!(self, spl_instructions, SplTokenBurn,
-            ParsedSPLInstructionData::SplTokenBurn { owner, is_2022 } => { owner, is_2022 },
-            self.fee_payer_policy.spl_token.allow_burn,
-            self.fee_payer_policy.token_2022.allow_burn,
-            "SPL Token Burn", "Token2022 Token Burn");
+            validate_spl!(self, spl_instructions, SplTokenBurn,
+                ParsedSPLInstructionData::SplTokenBurn { owner, is_2022 } => { owner, is_2022 },
+                self.fee_payer_policy.spl_token.allow_burn,
+                self.fee_payer_policy.token_2022.allow_burn,
+                "SPL Token Burn", "Token2022 Token Burn");
 
-        validate_spl!(self, spl_instructions, SplTokenCloseAccount,
-            ParsedSPLInstructionData::SplTokenCloseAccount { owner, is_2022 } => { owner, is_2022 },
-            self.fee_payer_policy.spl_token.allow_close_account,
-            self.fee_payer_policy.token_2022.allow_close_account,
-            "SPL Token Close Account", "Token2022 Token Close Account");
+            validate_spl!(self, spl_instructions, SplTokenCloseAccount,
+                ParsedSPLInstructionData::SplTokenCloseAccount { owner, is_2022 } => { owner, is_2022 },
+                self.fee_payer_policy.spl_token.allow_close_account,
+                self.fee_payer_policy.token_2022.allow_close_account,
+                "SPL Token Close Account", "Token2022 Token Close Account");
 
-        validate_spl!(self, spl_instructions, SplTokenRevoke,
-            ParsedSPLInstructionData::SplTokenRevoke { owner, is_2022 } => { owner, is_2022 },
-            self.fee_payer_policy.spl_token.allow_revoke,
-            self.fee_payer_policy.token_2022.allow_revoke,
-            "SPL Token Revoke", "Token2022 Token Revoke");
+            validate_spl!(self, spl_instructions, SplTokenRevoke,
+                ParsedSPLInstructionData::SplTokenRevoke { owner, is_2022 } => { owner, is_2022 },
+                self.fee_payer_policy.spl_token.allow_revoke,
+                self.fee_payer_policy.token_2022.allow_revoke,
+                "SPL Token Revoke", "Token2022 Token Revoke");
 
-        validate_spl!(self, spl_instructions, SplTokenSetAuthority,
-            ParsedSPLInstructionData::SplTokenSetAuthority { authority, is_2022, .. } => { authority, is_2022 },
-            self.fee_payer_policy.spl_token.allow_set_authority,
-            self.fee_payer_policy.token_2022.allow_set_authority,
-            "SPL Token SetAuthority", "Token2022 Token SetAuthority");
+            validate_spl!(self, spl_instructions, SplTokenSetAuthority,
+                ParsedSPLInstructionData::SplTokenSetAuthority { authority, is_2022, .. } => { authority, is_2022 },
+                self.fee_payer_policy.spl_token.allow_set_authority,
+                self.fee_payer_policy.token_2022.allow_set_authority,
+                "SPL Token SetAuthority", "Token2022 Token SetAuthority");
 
-        validate_spl!(self, spl_instructions, SplTokenMintTo,
-            ParsedSPLInstructionData::SplTokenMintTo { mint_authority, is_2022 } => { mint_authority, is_2022 },
-            self.fee_payer_policy.spl_token.allow_mint_to,
-            self.fee_payer_policy.token_2022.allow_mint_to,
-            "SPL Token MintTo", "Token2022 Token MintTo");
+            validate_spl!(self, spl_instructions, SplTokenMintTo,
+                ParsedSPLInstructionData::SplTokenMintTo { mint_authority, is_2022 } => { mint_authority, is_2022 },
+                self.fee_payer_policy.spl_token.allow_mint_to,
+                self.fee_payer_policy.token_2022.allow_mint_to,
+                "SPL Token MintTo", "Token2022 Token MintTo");
 
-        validate_spl!(self, spl_instructions, SplTokenInitializeMint,
-            ParsedSPLInstructionData::SplTokenInitializeMint { mint_authority, is_2022, .. } => { mint_authority, is_2022 },
-            self.fee_payer_policy.spl_token.allow_initialize_mint,
-            self.fee_payer_policy.token_2022.allow_initialize_mint,
-            "SPL Token InitializeMint", "Token2022 Token InitializeMint");
+            validate_spl!(self, spl_instructions, SplTokenInitializeMint,
+                ParsedSPLInstructionData::SplTokenInitializeMint { mint_authority, is_2022, .. } => { mint_authority, is_2022 },
+                self.fee_payer_policy.spl_token.allow_initialize_mint,
+                self.fee_payer_policy.token_2022.allow_initialize_mint,
+                "SPL Token InitializeMint", "Token2022 Token InitializeMint");
 
-        validate_spl!(self, spl_instructions, SplTokenInitializeAccount,
-            ParsedSPLInstructionData::SplTokenInitializeAccount { owner, is_2022 } => { owner, is_2022 },
-            self.fee_payer_policy.spl_token.allow_initialize_account,
-            self.fee_payer_policy.token_2022.allow_initialize_account,
-            "SPL Token InitializeAccount", "Token2022 Token InitializeAccount");
+            validate_spl!(self, spl_instructions, SplTokenInitializeAccount,
+                ParsedSPLInstructionData::SplTokenInitializeAccount { owner, is_2022 } => { owner, is_2022 },
+                self.fee_payer_policy.spl_token.allow_initialize_account,
+                self.fee_payer_policy.token_2022.allow_initialize_account,
+                "SPL Token InitializeAccount", "Token2022 Token InitializeAccount");
 
-        validate_spl_multisig!(self, spl_instructions, SplTokenInitializeMultisig,
-            ParsedSPLInstructionData::SplTokenInitializeMultisig { signers, is_2022 } => { signers, is_2022 },
-            self.fee_payer_policy.spl_token.allow_initialize_multisig,
-            self.fee_payer_policy.token_2022.allow_initialize_multisig,
-            "SPL Token InitializeMultisig", "Token2022 Token InitializeMultisig");
+            validate_spl_multisig!(self, spl_instructions, SplTokenInitializeMultisig,
+                ParsedSPLInstructionData::SplTokenInitializeMultisig { signers, is_2022 } => { signers, is_2022 },
+                self.fee_payer_policy.spl_token.allow_initialize_multisig,
+                self.fee_payer_policy.token_2022.allow_initialize_multisig,
+                "SPL Token InitializeMultisig", "Token2022 Token InitializeMultisig");
 
-        validate_spl!(self, spl_instructions, SplTokenFreezeAccount,
-            ParsedSPLInstructionData::SplTokenFreezeAccount { freeze_authority, is_2022 } => { freeze_authority, is_2022 },
-            self.fee_payer_policy.spl_token.allow_freeze_account,
-            self.fee_payer_policy.token_2022.allow_freeze_account,
-            "SPL Token FreezeAccount", "Token2022 Token FreezeAccount");
+            validate_spl!(self, spl_instructions, SplTokenFreezeAccount,
+                ParsedSPLInstructionData::SplTokenFreezeAccount { freeze_authority, is_2022 } => { freeze_authority, is_2022 },
+                self.fee_payer_policy.spl_token.allow_freeze_account,
+                self.fee_payer_policy.token_2022.allow_freeze_account,
+                "SPL Token FreezeAccount", "Token2022 Token FreezeAccount");
 
-        validate_spl!(self, spl_instructions, SplTokenThawAccount,
-            ParsedSPLInstructionData::SplTokenThawAccount { freeze_authority, is_2022 } => { freeze_authority, is_2022 },
-            self.fee_payer_policy.spl_token.allow_thaw_account,
-            self.fee_payer_policy.token_2022.allow_thaw_account,
-            "SPL Token ThawAccount", "Token2022 Token ThawAccount");
+            validate_spl!(self, spl_instructions, SplTokenThawAccount,
+                ParsedSPLInstructionData::SplTokenThawAccount { freeze_authority, is_2022 } => { freeze_authority, is_2022 },
+                self.fee_payer_policy.spl_token.allow_thaw_account,
+                self.fee_payer_policy.token_2022.allow_thaw_account,
+                "SPL Token ThawAccount", "Token2022 Token ThawAccount");
+        }
+
+        // Validate ALT instructions
+        let alt_instructions = transaction_resolved.get_or_parse_alt_instructions()?;
+
+        for instruction in
+            alt_instructions.get(&ParsedALTInstructionType::AltCreateLookupTable).unwrap_or(&vec![])
+        {
+            if let ParsedALTInstructionData::AltCreateLookupTable {
+                lookup_table_authority,
+                payer_account,
+                ..
+            } = instruction
+            {
+                if (*lookup_table_authority == self.fee_payer_pubkey
+                    || *payer_account == self.fee_payer_pubkey)
+                    && !self.fee_payer_policy.alt.allow_create
+                {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be used for 'ALT CreateLookupTable'".to_string(),
+                    ));
+                }
+            }
+        }
+
+        for instruction in
+            alt_instructions.get(&ParsedALTInstructionType::AltExtendLookupTable).unwrap_or(&vec![])
+        {
+            if let ParsedALTInstructionData::AltExtendLookupTable {
+                lookup_table_authority,
+                payer_account,
+                ..
+            } = instruction
+            {
+                if (*lookup_table_authority == self.fee_payer_pubkey
+                    || payer_account.is_some_and(|payer| payer == self.fee_payer_pubkey))
+                    && !self.fee_payer_policy.alt.allow_extend
+                {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be used for 'ALT ExtendLookupTable'".to_string(),
+                    ));
+                }
+            }
+        }
+
+        for instruction in
+            alt_instructions.get(&ParsedALTInstructionType::AltFreezeLookupTable).unwrap_or(&vec![])
+        {
+            if let ParsedALTInstructionData::AltFreezeLookupTable {
+                lookup_table_authority, ..
+            } = instruction
+            {
+                if *lookup_table_authority == self.fee_payer_pubkey
+                    && !self.fee_payer_policy.alt.allow_freeze
+                {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be used for 'ALT FreezeLookupTable'".to_string(),
+                    ));
+                }
+            }
+        }
+
+        for instruction in alt_instructions
+            .get(&ParsedALTInstructionType::AltDeactivateLookupTable)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedALTInstructionData::AltDeactivateLookupTable {
+                lookup_table_authority,
+                ..
+            } = instruction
+            {
+                if *lookup_table_authority == self.fee_payer_pubkey
+                    && !self.fee_payer_policy.alt.allow_deactivate
+                {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be used for 'ALT DeactivateLookupTable'".to_string(),
+                    ));
+                }
+            }
+        }
+
+        for instruction in
+            alt_instructions.get(&ParsedALTInstructionType::AltCloseLookupTable).unwrap_or(&vec![])
+        {
+            if let ParsedALTInstructionData::AltCloseLookupTable {
+                lookup_table_authority, ..
+            } = instruction
+            {
+                if *lookup_table_authority == self.fee_payer_pubkey
+                    && !self.fee_payer_policy.alt.allow_close
+                {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be used for 'ALT CloseLookupTable'".to_string(),
+                    ));
+                }
+            }
+        }
 
         for instruction in
             spl_instructions.get(&ParsedSPLInstructionType::SplTokenReallocate).unwrap_or(&vec![])
@@ -514,6 +613,9 @@ mod tests {
     use serial_test::serial;
 
     use super::*;
+    use solana_address_lookup_table_interface::{
+        instruction as alt_instruction, program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
+    };
     use solana_message::{Message, VersionedMessage};
     use solana_sdk::instruction::Instruction;
     use solana_system_interface::{
@@ -578,6 +680,16 @@ mod tests {
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(allowed_programs)
             .with_disallowed_accounts(disallowed_accounts)
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+    }
+
+    fn setup_alt_config_with_policy(policy: FeePayerPolicy) {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![ADDRESS_LOOKUP_TABLE_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(policy)
             .build();
@@ -1283,6 +1395,106 @@ mod tests {
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
         // Should pass because fee payer is not the source
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_alt_freeze_lookup_table() {
+        let fee_payer = Pubkey::new_unique();
+        let lookup_table = Pubkey::new_unique();
+
+        // Test with allow_freeze = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_freeze = true;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let freeze_ix = alt_instruction::freeze_lookup_table(lookup_table, fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_freeze = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_freeze = false;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let freeze_ix = alt_instruction::freeze_lookup_table(lookup_table, fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Test with another authority - should pass even when fee payer freeze is disabled
+        let rpc_client = RpcMockBuilder::new().build();
+        let other_authority = Pubkey::new_unique();
+        let freeze_ix = alt_instruction::freeze_lookup_table(lookup_table, other_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[freeze_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_alt_create_lookup_table() {
+        let fee_payer = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+
+        // Test with allow_create = false and fee payer as payer -> should fail
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_create = false;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let (create_ix, _table_address) =
+            alt_instruction::create_lookup_table(authority, fee_payer, 42);
+        let message = VersionedMessage::Legacy(Message::new(&[create_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Test with allow_create = true and fee payer as payer -> should pass
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_create = true;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let (create_ix, _table_address) =
+            alt_instruction::create_lookup_table(authority, fee_payer, 42);
+        let message = VersionedMessage::Legacy(Message::new(&[create_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await

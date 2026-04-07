@@ -669,6 +669,13 @@ impl FeePayerPolicyBuilder {
                     allow_initialize_account: false,
                     allow_initialize_multisig: false,
                 },
+                alt: crate::config::AltInstructionPolicy {
+                    allow_create: false,
+                    allow_extend: false,
+                    allow_freeze: false,
+                    allow_deactivate: false,
+                    allow_close: false,
+                },
             },
         }
     }
