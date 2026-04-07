@@ -117,7 +117,6 @@ impl TransactionValidator {
         self.validate_programs(transaction_resolved)?;
         self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
         self.validate_disallowed_accounts(transaction_resolved)?;
-        self.validate_disallowed_instruction_data(transaction_resolved)?;
         self.validate_fee_payer_usage(transaction_resolved)?;
 
         Ok(())
@@ -329,7 +328,7 @@ impl TransactionValidator {
 
     fn validate_disallowed_accounts(
         &self,
-        transaction_resolved: &VersionedTransactionResolved,
+        transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
         for instruction in &transaction_resolved.all_instructions {
             if self.disallowed_accounts.contains(&instruction.program_id) {
@@ -348,90 +347,83 @@ impl TransactionValidator {
                 }
             }
         }
-        Ok(())
-    }
-
-    fn validate_disallowed_instruction_data(
-        &self,
-        transaction_resolved: &mut VersionedTransactionResolved,
-    ) -> Result<(), KoraError> {
+        // Validate instruction-data pubkeys that are not present in account metas.
         let system_instructions = transaction_resolved.get_or_parse_system_instructions()?;
-        for instruction in system_instructions
-            .get(&ParsedSystemInstructionType::SystemAuthorizeNonceAccount)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSystemInstructionData::SystemAuthorizeNonceAccount {
-                new_authority, ..
-            } = instruction
-            {
-                if self.is_disallowed_account(new_authority) {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Disallowed account {} found in instruction data for System AuthorizeNonceAccount new_authority",
-                        new_authority
-                    )));
+        for instruction in system_instructions.values().flatten() {
+            match instruction {
+                ParsedSystemInstructionData::SystemAuthorizeNonceAccount {
+                    new_authority, ..
+                } => {
+                    self.validate_disallowed_instruction_data_account(
+                        new_authority,
+                        "System AuthorizeNonceAccount new_authority",
+                    )?;
                 }
+                ParsedSystemInstructionData::SystemInitializeNonceAccount {
+                    nonce_authority,
+                    ..
+                } => {
+                    self.validate_disallowed_instruction_data_account(
+                        nonce_authority,
+                        "System InitializeNonceAccount nonce_authority",
+                    )?;
+                }
+                _ => {}
             }
         }
 
         let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
-        for instruction in
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenSetAuthority).unwrap_or(&vec![])
-        {
-            if let ParsedSPLInstructionData::SplTokenSetAuthority {
-                new_authority: Some(new_authority),
-                ..
-            } = instruction
-            {
-                if self.is_disallowed_account(new_authority) {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Disallowed account {} found in instruction data for SPL/Token2022 SetAuthority new_authority",
-                        new_authority
-                    )));
+        for instruction in spl_instructions.values().flatten() {
+            match instruction {
+                ParsedSPLInstructionData::SplTokenSetAuthority {
+                    new_authority: Some(new_authority),
+                    ..
+                } => {
+                    self.validate_disallowed_instruction_data_account(
+                        new_authority,
+                        "SPL/Token2022 SetAuthority new_authority",
+                    )?;
                 }
-            }
-        }
-
-        for instruction in spl_instructions
-            .get(&ParsedSPLInstructionType::SplTokenInitializeAccount)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSPLInstructionData::SplTokenInitializeAccount { owner, .. } = instruction {
-                if self.is_disallowed_account(owner) {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Disallowed account {} found in instruction data for SPL/Token2022 InitializeAccount owner",
-                        owner
-                    )));
+                ParsedSPLInstructionData::SplTokenInitializeAccount { owner, .. } => {
+                    self.validate_disallowed_instruction_data_account(
+                        owner,
+                        "SPL/Token2022 InitializeAccount owner",
+                    )?;
                 }
-            }
-        }
-
-        for instruction in spl_instructions
-            .get(&ParsedSPLInstructionType::SplTokenInitializeMint)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSPLInstructionData::SplTokenInitializeMint {
-                mint_authority,
-                freeze_authority,
-                ..
-            } = instruction
-            {
-                if self.is_disallowed_account(mint_authority) {
-                    return Err(KoraError::InvalidTransaction(format!(
-                        "Disallowed account {} found in instruction data for SPL/Token2022 InitializeMint mint_authority",
-                        mint_authority
-                    )));
-                }
-                if let Some(freeze_authority) = freeze_authority {
-                    if self.is_disallowed_account(freeze_authority) {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "Disallowed account {} found in instruction data for SPL/Token2022 InitializeMint freeze_authority",
-                            freeze_authority
-                        )));
+                ParsedSPLInstructionData::SplTokenInitializeMint {
+                    mint_authority,
+                    freeze_authority,
+                    ..
+                } => {
+                    self.validate_disallowed_instruction_data_account(
+                        mint_authority,
+                        "SPL/Token2022 InitializeMint mint_authority",
+                    )?;
+                    if let Some(freeze_authority) = freeze_authority {
+                        self.validate_disallowed_instruction_data_account(
+                            freeze_authority,
+                            "SPL/Token2022 InitializeMint freeze_authority",
+                        )?;
                     }
                 }
+                _ => {}
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_disallowed_instruction_data_account(
+        &self,
+        account: &Pubkey,
+        context: &str,
+    ) -> Result<(), KoraError> {
+        if self.is_disallowed_account(account) {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Disallowed account {} found in instruction data for {}",
+                account, context
+            )));
+        }
         Ok(())
     }
 
@@ -904,6 +896,39 @@ mod tests {
 
         let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &disallowed_account);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_disallowed_instruction_data_nonce_initialize_nonce_authority() {
+        use solana_system_interface::instruction::create_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let disallowed_account = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_initialize = true;
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![SYSTEM_PROGRAM_ID.to_string()],
+            vec![disallowed_account.to_string()],
+        );
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instructions =
+            create_nonce_account(&fee_payer, &nonce_account, &disallowed_account, 1_000_000);
+        // InitializeNonceAccount is the second instruction.
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instructions[1].clone()], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
