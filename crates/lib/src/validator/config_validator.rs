@@ -68,7 +68,7 @@ impl ConfigValidator {
                     "⚠️  SECURITY: Token {} has PermanentDelegate extension. \
                     Risk: The permanent delegate can transfer or burn tokens at any time without owner approval. \
                     This creates significant risks for payment tokens as funds can be seized after payment. \
-                    Consider removing this token from allowed_tokens or blocking the extension in [validation.token2022].",
+                    Consider removing this token from allowed_tokens or blocking the extension in [validation.token_2022].",
                     token_str
                 ));
             }
@@ -81,7 +81,7 @@ impl ConfigValidator {
                     "⚠️  SECURITY: Token {} has TransferHook extension. \
                     Risk: A custom program executes on every transfer which can reject transfers  \
                     or introduce external dependencies and attack surface. \
-                    Consider removing this token from allowed_tokens or blocking the extension in [validation.token2022].",
+                    Consider removing this token from allowed_tokens or blocking the extension in [validation.token_2022].",
                     token_str
                 ));
             }
@@ -462,7 +462,7 @@ impl ConfigValidator {
                 allow the delegate to transfer/burn tokens at any time without owner approval. \
                 This creates significant risks:\n\
                   - Payment tokens: Funds can be seized after payment\n\
-                Consider adding \"permanent_delegate\" to blocked_mint_extensions in [validation.token2022] \
+                Consider adding \"permanent_delegate\" to blocked_mint_extensions in [validation.token_2022] \
                 unless explicitly needed for your use case.".to_string()
             );
         }

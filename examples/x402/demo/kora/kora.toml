@@ -105,7 +105,7 @@ allow_thaw_account = false
 [validation.price]
 type = "free" # free / margin / fixed
 
-[validation.token2022]
+[validation.token_2022]
 blocked_mint_extensions = [
     "confidential_transfer_mint", # Confidential transfer configuration for the mint
     "confidential_mint_burn",     # Confidential mint and burn configuration

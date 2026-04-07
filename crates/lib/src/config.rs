@@ -126,7 +126,7 @@ pub struct ValidationConfig {
     pub fee_payer_policy: FeePayerPolicy,
     #[serde(default)]
     pub price: PriceConfig,
-    #[serde(default)]
+    #[serde(default, alias = "token2022")]
     pub token_2022: Token2022Config,
     /// Allow durable transactions (nonce-based). Default: false.
     /// When false, rejects any transaction containing AdvanceNonceAccount instruction.
@@ -832,6 +832,42 @@ mod tests {
 
         assert!(config.validation.token_2022.get_blocked_mint_extensions().is_empty());
         assert!(config.validation.token_2022.get_blocked_account_extensions().is_empty());
+    }
+
+    #[test]
+    fn test_token2022_config_parsing_alias_token2022_table() {
+        let wrong_key_alias_toml = r#"
+[validation]
+max_allowed_lamports = 1
+max_signatures = 1
+allowed_programs = []
+allowed_tokens = []
+allowed_spl_paid_tokens = []
+disallowed_accounts = []
+price_source = "Mock"
+
+[validation.token2022]
+blocked_mint_extensions = ["interest_bearing_config"]
+blocked_account_extensions = ["memo_transfer"]
+
+[kora]
+rate_limit = 1
+"#;
+
+        let config = crate::tests::toml_mock::create_invalid_config(wrong_key_alias_toml)
+            .expect("Config with [validation.token2022] alias should parse");
+
+        assert!(
+            config
+                .validation
+                .token_2022
+                .is_mint_extension_blocked(ExtensionType::InterestBearingConfig),
+            "InterestBearingConfig should be blocked via [validation.token2022] alias"
+        );
+        assert!(
+            config.validation.token_2022.is_account_extension_blocked(ExtensionType::MemoTransfer),
+            "MemoTransfer should be blocked via [validation.token2022] alias"
+        );
     }
 
     #[test]
