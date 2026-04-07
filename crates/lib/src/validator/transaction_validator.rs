@@ -248,7 +248,7 @@ impl TransactionValidator {
             "SPL Token Revoke", "Token2022 Token Revoke");
 
         validate_spl!(self, spl_instructions, SplTokenSetAuthority,
-            ParsedSPLInstructionData::SplTokenSetAuthority { authority, is_2022 } => { authority, is_2022 },
+            ParsedSPLInstructionData::SplTokenSetAuthority { authority, is_2022, .. } => { authority, is_2022 },
             self.fee_payer_policy.spl_token.allow_set_authority,
             self.fee_payer_policy.token_2022.allow_set_authority,
             "SPL Token SetAuthority", "Token2022 Token SetAuthority");
@@ -260,7 +260,7 @@ impl TransactionValidator {
             "SPL Token MintTo", "Token2022 Token MintTo");
 
         validate_spl!(self, spl_instructions, SplTokenInitializeMint,
-            ParsedSPLInstructionData::SplTokenInitializeMint { mint_authority, is_2022 } => { mint_authority, is_2022 },
+            ParsedSPLInstructionData::SplTokenInitializeMint { mint_authority, is_2022, .. } => { mint_authority, is_2022 },
             self.fee_payer_policy.spl_token.allow_initialize_mint,
             self.fee_payer_policy.token_2022.allow_initialize_mint,
             "SPL Token InitializeMint", "Token2022 Token InitializeMint");
@@ -289,6 +289,21 @@ impl TransactionValidator {
             self.fee_payer_policy.token_2022.allow_thaw_account,
             "SPL Token ThawAccount", "Token2022 Token ThawAccount");
 
+        for instruction in
+            spl_instructions.get(&ParsedSPLInstructionType::SplTokenReallocate).unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenReallocate { payer, owner, is_2022, .. } =
+                instruction
+            {
+                if *is_2022 && (*payer == self.fee_payer_pubkey || *owner == self.fee_payer_pubkey)
+                {
+                    return Err(KoraError::InvalidTransaction(
+                        "Token2022 Reallocate is not allowed when involving fee payer".to_string(),
+                    ));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -313,7 +328,7 @@ impl TransactionValidator {
 
     fn validate_disallowed_accounts(
         &self,
-        transaction_resolved: &VersionedTransactionResolved,
+        transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
         for instruction in &transaction_resolved.all_instructions {
             if self.disallowed_accounts.contains(&instruction.program_id) {
@@ -331,6 +346,83 @@ impl TransactionValidator {
                     )));
                 }
             }
+        }
+        // Validate instruction-data pubkeys that are not present in account metas.
+        let system_instructions = transaction_resolved.get_or_parse_system_instructions()?;
+        for instruction in system_instructions.values().flatten() {
+            match instruction {
+                ParsedSystemInstructionData::SystemAuthorizeNonceAccount {
+                    new_authority, ..
+                } => {
+                    self.validate_disallowed_instruction_data_account(
+                        new_authority,
+                        "System AuthorizeNonceAccount new_authority",
+                    )?;
+                }
+                ParsedSystemInstructionData::SystemInitializeNonceAccount {
+                    nonce_authority,
+                    ..
+                } => {
+                    self.validate_disallowed_instruction_data_account(
+                        nonce_authority,
+                        "System InitializeNonceAccount nonce_authority",
+                    )?;
+                }
+                _ => {}
+            }
+        }
+
+        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
+        for instruction in spl_instructions.values().flatten() {
+            match instruction {
+                ParsedSPLInstructionData::SplTokenSetAuthority {
+                    new_authority: Some(new_authority),
+                    ..
+                } => {
+                    self.validate_disallowed_instruction_data_account(
+                        new_authority,
+                        "SPL/Token2022 SetAuthority new_authority",
+                    )?;
+                }
+                ParsedSPLInstructionData::SplTokenInitializeAccount { owner, .. } => {
+                    self.validate_disallowed_instruction_data_account(
+                        owner,
+                        "SPL/Token2022 InitializeAccount owner",
+                    )?;
+                }
+                ParsedSPLInstructionData::SplTokenInitializeMint {
+                    mint_authority,
+                    freeze_authority,
+                    ..
+                } => {
+                    self.validate_disallowed_instruction_data_account(
+                        mint_authority,
+                        "SPL/Token2022 InitializeMint mint_authority",
+                    )?;
+                    if let Some(freeze_authority) = freeze_authority {
+                        self.validate_disallowed_instruction_data_account(
+                            freeze_authority,
+                            "SPL/Token2022 InitializeMint freeze_authority",
+                        )?;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_disallowed_instruction_data_account(
+        &self,
+        account: &Pubkey,
+        context: &str,
+    ) -> Result<(), KoraError> {
+        if self.is_disallowed_account(account) {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Disallowed account {} found in instruction data for {}",
+                account, context
+            )));
         }
         Ok(())
     }
@@ -471,6 +563,21 @@ mod tests {
         let config = ConfigMockBuilder::new()
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+    }
+
+    fn setup_config_with_policy_and_disallowed(
+        policy: FeePayerPolicy,
+        allowed_programs: Vec<String>,
+        disallowed_accounts: Vec<String>,
+    ) {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(allowed_programs)
+            .with_disallowed_accounts(disallowed_accounts)
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(policy)
             .build();
@@ -692,6 +799,211 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_disallowed_instruction_data_spl_set_authority_new_authority() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let disallowed_account = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_set_authority = true;
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![spl_token_interface::id().to_string()],
+            vec![disallowed_account.to_string()],
+        );
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_interface::instruction::set_authority(
+            &spl_token_interface::id(),
+            &token_account,
+            Some(&disallowed_account),
+            spl_token_interface::instruction::AuthorityType::AccountOwner,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_disallowed_instruction_data_token2022_set_authority_new_authority() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let disallowed_account = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_set_authority = true;
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![spl_token_2022_interface::id().to_string()],
+            vec![disallowed_account.to_string()],
+        );
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_2022_interface::instruction::set_authority(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            Some(&disallowed_account),
+            spl_token_2022_interface::instruction::AuthorityType::AccountOwner,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_disallowed_instruction_data_nonce_authorize_new_authority() {
+        use solana_system_interface::instruction::authorize_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let disallowed_account = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_authorize = true;
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![SYSTEM_PROGRAM_ID.to_string()],
+            vec![disallowed_account.to_string()],
+        );
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = authorize_nonce_account(&nonce_account, &fee_payer, &disallowed_account);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_disallowed_instruction_data_nonce_initialize_nonce_authority() {
+        use solana_system_interface::instruction::create_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let disallowed_account = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_initialize = true;
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![SYSTEM_PROGRAM_ID.to_string()],
+            vec![disallowed_account.to_string()],
+        );
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instructions =
+            create_nonce_account(&fee_payer, &nonce_account, &disallowed_account, 1_000_000);
+        // InitializeNonceAccount is the second instruction.
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instructions[1].clone()], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_disallowed_instruction_data_spl_initialize_account2_owner() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let disallowed_account = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_initialize_account = true;
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![spl_token_interface::id().to_string()],
+            vec![disallowed_account.to_string()],
+        );
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_interface::instruction::initialize_account2(
+            &spl_token_interface::id(),
+            &token_account,
+            &mint,
+            &disallowed_account,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_disallowed_instruction_data_spl_initialize_mint2_freeze_authority() {
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let disallowed_account = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_initialize_mint = true;
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![spl_token_interface::id().to_string()],
+            vec![disallowed_account.to_string()],
+        );
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_interface::instruction::initialize_mint2(
+            &spl_token_interface::id(),
+            &mint,
+            &fee_payer,
+            Some(&disallowed_account),
+            6,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -2990,6 +3302,69 @@ mod tests {
             assert!(msg.contains("Fee payer cannot be used for"));
         } else {
             panic!("Expected InvalidTransaction error for token2022_thaw_account policy");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_token2022_reallocate_rejected_for_fee_payer() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let reallocate_ix = spl_token_2022_interface::instruction::reallocate(
+            &spl_token_2022_interface::id(),
+            &token_account,
+            &fee_payer,
+            &fee_payer,
+            &[],
+            &[spl_token_2022_interface::extension::ExtensionType::MemoTransfer],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[reallocate_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Token2022 Reallocate is not allowed"));
+        } else {
+            panic!("Expected InvalidTransaction error for token2022 reallocate");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_confidential_extension_instructions_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let confidential_ix = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![],
+            data: spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferExtension
+                .pack(),
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Confidential Token-2022 instructions are not supported"));
+        } else {
+            panic!("Expected InvalidTransaction error for confidential token2022 instruction");
         }
     }
 

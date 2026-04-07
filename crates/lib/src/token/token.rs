@@ -7,6 +7,7 @@ use crate::{
         interface::TokenMint,
         spl_token::TokenProgram,
         spl_token_2022::{Token2022Account, Token2022Extensions, Token2022Mint, Token2022Program},
+        spl_token_2022_util::{MintExtension, ParsedExtension},
         TokenInterface,
     },
     transaction::{
@@ -56,6 +57,23 @@ impl TokenType {
 pub struct TokenUtil;
 
 impl TokenUtil {
+    fn validate_immutable_transfer_hook_for_payment(
+        mint: &Token2022Mint,
+        mint_pubkey: &Pubkey,
+    ) -> Result<(), KoraError> {
+        if let Some(ParsedExtension::Mint(MintExtension::TransferHook(transfer_hook))) =
+            mint.get_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+        {
+            if transfer_hook.authority != spl_pod::optional_keys::OptionalNonZeroPubkey::default() {
+                return Err(KoraError::ValidationError(format!(
+                    "Mutable transfer-hook authority found on mint account {mint_pubkey}",
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     async fn check_price_staleness(
         rpc_client: &RpcClient,
         config: &Config,
@@ -90,6 +108,56 @@ impl TokenUtil {
             }
         }
         Ok(())
+    }
+
+    async fn calculate_token2022_net_amount(
+        amount: u64,
+        mint: &Pubkey,
+        rpc_client: &RpcClient,
+        config: &Config,
+        cached_epoch: &mut Option<u64>,
+        token2022_mints: &mut HashMap<Pubkey, Box<dyn TokenMint>>,
+    ) -> Result<u64, KoraError> {
+        let current_epoch = match *cached_epoch {
+            Some(epoch) => epoch,
+            None => {
+                let epoch = rpc_client
+                    .get_epoch_info()
+                    .await
+                    .map_err(|e| KoraError::RpcError(e.to_string()))?
+                    .epoch;
+                *cached_epoch = Some(epoch);
+                epoch
+            }
+        };
+
+        if !token2022_mints.contains_key(mint) {
+            let mint_account = CacheUtil::get_account(config, rpc_client, mint, true).await?;
+            let token_program = Token2022Program::new();
+            let mint_state = token_program.unpack_mint(mint, &mint_account.data)?;
+            token2022_mints.insert(*mint, mint_state);
+        }
+
+        let mint_2022 = token2022_mints
+            .get(mint)
+            .ok_or_else(|| {
+                KoraError::InternalServerError(format!(
+                    "Missing cached Token2022 mint state for mint {mint}",
+                ))
+            })?
+            .as_any()
+            .downcast_ref::<Token2022Mint>()
+            .ok_or_else(|| {
+                KoraError::SerializationError(
+                    "Failed to downcast mint state for transfer fee check".to_string(),
+                )
+            })?;
+
+        if let Some(fee) = mint_2022.calculate_transfer_fee(amount, current_epoch)? {
+            Ok(amount.saturating_sub(fee))
+        } else {
+            Ok(amount)
+        }
     }
 
     pub fn check_valid_tokens(tokens: &[String]) -> Result<Vec<Pubkey>, KoraError> {
@@ -270,7 +338,7 @@ impl TokenUtil {
         // Collect all unique mints that need price lookups
         let mut mint_to_transfers: HashMap<
             Pubkey,
-            Vec<(u64, bool)>, // (amount, is_outflow)
+            Vec<(u64, bool, bool)>, // (amount, is_outflow, is_2022)
         > = HashMap::new();
 
         for transfer in spl_transfers {
@@ -280,6 +348,7 @@ impl TokenUtil {
                 mint,
                 source_address,
                 destination_address,
+                is_2022,
                 ..
             } = transfer
             {
@@ -303,7 +372,10 @@ impl TokenUtil {
                             })?;
                         token_account.mint()
                     };
-                    mint_to_transfers.entry(mint_pubkey).or_default().push((*amount, true));
+                    mint_to_transfers
+                        .entry(mint_pubkey)
+                        .or_default()
+                        .push((*amount, true, *is_2022));
                 } else {
                     // Check if fee payer owns the destination (inflow)
                     // We need to check the destination token account owner
@@ -327,7 +399,7 @@ impl TokenUtil {
                                     mint_to_transfers
                                         .entry(*mint_pubkey)
                                         .or_default()
-                                        .push((*amount, false)); // inflow
+                                        .push((*amount, false, *is_2022)); // inflow
                                 }
                             }
                             Err(e) => {
@@ -353,7 +425,7 @@ impl TokenUtil {
                                         mint_to_transfers
                                             .entry(*mint_pubkey)
                                             .or_default()
-                                            .push((*amount, false)); // inflow
+                                            .push((*amount, false, *is_2022)); // inflow
                                     }
                                     // Otherwise, it's not fee payer's account, continue to next transfer
                                 } else {
@@ -415,6 +487,8 @@ impl TokenUtil {
 
         // Calculate total value
         let mut total_lamports = 0u64;
+        let mut token2022_mints: HashMap<Pubkey, Box<dyn TokenMint>> = HashMap::new();
+        let mut cached_epoch: Option<u64> = None;
 
         for (mint, transfers) in mint_to_transfers.iter() {
             let price = prices
@@ -424,9 +498,25 @@ impl TokenUtil {
                 .get(mint)
                 .ok_or_else(|| KoraError::RpcError(format!("No decimals data for mint {mint}")))?;
 
-            for (amount, is_outflow) in transfers {
+            for (amount, is_outflow, is_2022) in transfers {
+                let mut effective_amount = *amount;
+
+                // Token2022 transfer fees are withheld from destination credits.
+                // Net inflows to fee-payer-owned accounts must be credited post-fee.
+                if *is_2022 && !*is_outflow {
+                    effective_amount = Self::calculate_token2022_net_amount(
+                        *amount,
+                        mint,
+                        rpc_client,
+                        config,
+                        &mut cached_epoch,
+                        &mut token2022_mints,
+                    )
+                    .await?;
+                }
+
                 // Convert token amount to lamports value using Decimal
-                let amount_decimal = Decimal::from_u64(*amount).ok_or_else(|| {
+                let amount_decimal = Decimal::from_u64(effective_amount).ok_or_else(|| {
                     KoraError::ValidationError("Invalid transfer amount".to_string())
                 })?;
                 let decimals_scale = Decimal::from_u64(10u64.pow(*decimals as u32))
@@ -442,7 +532,7 @@ impl TokenUtil {
                     .and_then(|result| result.checked_div(decimals_scale))
                     .ok_or_else(|| {
                         log::error!("Token value calculation overflow: amount={}, price={}, decimals={}, lamports_per_sol={}",
-                            amount,
+                            effective_amount,
                             price.price,
                             decimals,
                             lamports_per_sol
@@ -503,6 +593,8 @@ impl TokenUtil {
                 )));
             }
         }
+
+        Self::validate_immutable_transfer_hook_for_payment(mint_with_extensions, mint)?;
 
         // Check source account extensions (force refresh in case extensions are added)
         let source_account =
@@ -575,6 +667,8 @@ impl TokenUtil {
             }
         }
 
+        Self::validate_immutable_transfer_hook_for_payment(mint_with_extensions, mint)?;
+
         // Check source account extensions
         let source_account =
             CacheUtil::get_account(config, rpc_client, source_address, true).await?;
@@ -610,6 +704,7 @@ impl TokenUtil {
     ) -> Result<Option<u64>, KoraError> {
         let mut total_lamport_value = 0u64;
         let mut cached_epoch: Option<u64> = None;
+        let mut token2022_mints: HashMap<Pubkey, Box<dyn TokenMint>> = HashMap::new();
 
         let all_instructions = bundle_instructions
             .map(|bi| bi.to_vec())
@@ -637,8 +732,8 @@ impl TokenUtil {
 
                 // Get destination owner and mint - the ATA may not exist yet if being created
                 // in this transaction (or another transaction in the bundle)
-                let (destination_owner, token_mint) =
-                    match CacheUtil::get_account(config, rpc_client, destination_address, false)
+                let (destination_owner, token_mint, destination_exists) =
+                    match CacheUtil::get_account(config, rpc_client, destination_address, true)
                         .await
                     {
                         Ok(destination_account) => {
@@ -650,19 +745,7 @@ impl TokenUtil {
                                     ))
                                 })?;
 
-                            // For Token2022, validate that blocked extensions are not used
-                            if *is_2022 {
-                                TokenUtil::validate_token2022_extensions_for_payment(
-                                    config,
-                                    rpc_client,
-                                    source_address,
-                                    destination_address,
-                                    &mint.unwrap_or(token_state.mint()),
-                                )
-                                .await?;
-                            }
-
-                            (token_state.owner(), token_state.mint())
+                            (token_state.owner(), token_state.mint(), true)
                         }
                         Err(e) => {
                             // If account not found, check if there's an ATA creation instruction
@@ -674,18 +757,7 @@ impl TokenUtil {
                                         destination_address,
                                     )
                                 {
-                                    // For Token2022, validate mint and source extensions
-                                    if *is_2022 {
-                                        TokenUtil::validate_token2022_partial_for_ata_creation(
-                                            config,
-                                            rpc_client,
-                                            source_address,
-                                            &ata_mint,
-                                        )
-                                        .await?;
-                                    }
-
-                                    (wallet_owner, ata_mint)
+                                    (wallet_owner, ata_mint, false)
                                 } else {
                                     // No ATA creation found - skip this transfer
                                     continue;
@@ -701,6 +773,30 @@ impl TokenUtil {
                     continue;
                 }
 
+                // For Token2022 payments, validate blocked extensions and immutable transfer-hook authority.
+                // This must run only after destination-owner matching, otherwise unrelated transfers can fail
+                // payment validation.
+                if *is_2022 {
+                    if destination_exists {
+                        TokenUtil::validate_token2022_extensions_for_payment(
+                            config,
+                            rpc_client,
+                            source_address,
+                            destination_address,
+                            &mint.unwrap_or(token_mint),
+                        )
+                        .await?;
+                    } else {
+                        TokenUtil::validate_token2022_partial_for_ata_creation(
+                            config,
+                            rpc_client,
+                            source_address,
+                            &token_mint,
+                        )
+                        .await?;
+                    }
+                }
+
                 // Skip unsupported tokens
                 if !config.validation.supports_token(&token_mint.to_string()) {
                     log::warn!("Ignoring payment with unsupported token mint: {}", token_mint,);
@@ -708,33 +804,15 @@ impl TokenUtil {
                 }
 
                 let effective_amount = if *is_2022 {
-                    let mint_account =
-                        CacheUtil::get_account(config, rpc_client, &token_mint, false).await?;
-                    let token_program = Token2022Program::new();
-                    let mint_state = token_program.unpack_mint(&token_mint, &mint_account.data)?;
-                    let mint_2022 =
-                        mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
-                            KoraError::SerializationError(
-                                "Failed to downcast mint state for transfer fee check".to_string(),
-                            )
-                        })?;
-                    let current_epoch = match cached_epoch {
-                        Some(epoch) => epoch,
-                        None => {
-                            let epoch = rpc_client
-                                .get_epoch_info()
-                                .await
-                                .map_err(|e| KoraError::RpcError(e.to_string()))?
-                                .epoch;
-                            cached_epoch = Some(epoch);
-                            epoch
-                        }
-                    };
-                    if let Some(fee) = mint_2022.calculate_transfer_fee(*amount, current_epoch)? {
-                        amount.saturating_sub(fee)
-                    } else {
-                        *amount
-                    }
+                    Self::calculate_token2022_net_amount(
+                        *amount,
+                        &token_mint,
+                        rpc_client,
+                        config,
+                        &mut cached_epoch,
+                        &mut token2022_mints,
+                    )
+                    .await?
                 } else {
                     *amount
                 };
@@ -796,12 +874,40 @@ mod tests_token {
     use crate::{
         oracle::utils::{USDC_DEVNET_MINT, WSOL_DEVNET_MINT},
         tests::{
-            common::{RpcMockBuilder, TokenAccountMockBuilder},
+            account_mock::create_transfer_fee_config,
+            common::{MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder},
             config_mock::ConfigMockBuilder,
         },
     };
+    use spl_token_2022_interface::{
+        extension::{
+            transfer_fee::TransferFeeConfig, BaseStateWithExtensionsMut, ExtensionType,
+            PodStateWithExtensionsMut,
+        },
+        pod::PodMint,
+    };
 
     use super::*;
+
+    fn create_token2022_mint_account_with_transfer_fee(
+        decimals: u8,
+        basis_points: u16,
+        max_fee: u64,
+    ) -> solana_sdk::account::Account {
+        let mut mint_account = MintAccountMockBuilder::new()
+            .with_decimals(decimals)
+            .with_extension(ExtensionType::TransferFeeConfig)
+            .build_token2022();
+
+        let mut mint_state = PodStateWithExtensionsMut::<PodMint>::unpack(&mut mint_account.data)
+            .expect("Failed to unpack Token2022 mint state");
+        let transfer_fee_config = mint_state
+            .get_extension_mut::<TransferFeeConfig>()
+            .expect("Failed to get mutable TransferFeeConfig extension");
+        *transfer_fee_config = create_transfer_fee_config(basis_points, max_fee);
+
+        mint_account
+    }
 
     #[test]
     fn test_token_type_get_token_program_from_owner_spl() {
@@ -1101,6 +1207,94 @@ mod tests_token {
     }
 
     #[tokio::test]
+    async fn test_calculate_spl_transfers_value_in_lamports_token2022_inflow_uses_net_amount() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let config = get_config().unwrap();
+
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let amount = 100_000_000u64; // 100 USDC
+
+        let fee_payer_token2022_ata = get_associated_token_address_with_program_id(
+            &fee_payer,
+            &mint,
+            &spl_token_2022_interface::id(),
+        );
+
+        let spl_transfers = vec![
+            ParsedSPLInstructionData::SplTokenTransfer {
+                amount,
+                owner: fee_payer,
+                mint: Some(mint),
+                source_address: Pubkey::new_unique(),
+                destination_address: attacker,
+                is_2022: true,
+            },
+            ParsedSPLInstructionData::SplTokenTransfer {
+                amount,
+                owner: attacker,
+                mint: Some(mint),
+                source_address: Pubkey::new_unique(),
+                destination_address: fee_payer_token2022_ata,
+                is_2022: true,
+            },
+        ];
+
+        let mint_account = create_token2022_mint_account_with_transfer_fee(6, 100, 1_000_000);
+        let rpc_client = RpcMockBuilder::new()
+            .with_account_not_found()
+            .build_with_sequential_accounts(vec![&mint_account, &mint_account]);
+
+        let spl_outflow_value = TokenUtil::calculate_spl_transfers_value_in_lamports(
+            &spl_transfers,
+            &fee_payer,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        // Fee payer sends 100 USDC out and receives 99 USDC back (1 USDC transfer fee withheld).
+        // Expected net outflow = 1 USDC => 7_500_000 lamports at mock pricing.
+        assert_eq!(spl_outflow_value, 7_500_000);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_spl_transfers_value_in_lamports_token2022_outflow_remains_gross() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let config = get_config().unwrap();
+
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+        let amount = 100_000_000u64; // 100 USDC
+
+        let spl_transfers = vec![ParsedSPLInstructionData::SplTokenTransfer {
+            amount,
+            owner: fee_payer,
+            mint: Some(mint),
+            source_address: Pubkey::new_unique(),
+            destination_address: Pubkey::new_unique(),
+            is_2022: true,
+        }];
+
+        let mint_account = create_token2022_mint_account_with_transfer_fee(6, 100, 1_000_000);
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![&mint_account]);
+
+        let spl_outflow_value = TokenUtil::calculate_spl_transfers_value_in_lamports(
+            &spl_transfers,
+            &fee_payer,
+            &rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        // Outflow should still be charged at transfer gross amount (100 USDC).
+        assert_eq!(spl_outflow_value, 750_000_000);
+    }
+
+    #[tokio::test]
     async fn test_price_calculation_with_account_error() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
         let config = get_config().unwrap();
@@ -1193,6 +1387,120 @@ mod tests_token {
         .await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validate_token2022_extensions_for_payment_rejects_mutable_transfer_hook_authority(
+    ) {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let mint_address = Pubkey::new_unique();
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+            .with_transfer_hook_authority(Some(Pubkey::new_unique()))
+            .with_transfer_hook_program_id(Some(Pubkey::new_unique()))
+            .build_token2022();
+        let source_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+        let destination_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &mint_account,
+            &source_account,
+            &destination_account,
+        ]);
+
+        let config = get_config().unwrap();
+        let result = TokenUtil::validate_token2022_extensions_for_payment(
+            &config,
+            &rpc_client,
+            &source_address,
+            &destination_address,
+            &mint_address,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("Mutable transfer-hook authority found on mint account"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_token2022_extensions_for_payment_allows_immutable_transfer_hook_authority(
+    ) {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let mint_address = Pubkey::new_unique();
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+            .with_transfer_hook_authority(None)
+            .with_transfer_hook_program_id(Some(Pubkey::new_unique()))
+            .build_token2022();
+        let source_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+        let destination_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &mint_account,
+            &source_account,
+            &destination_account,
+        ]);
+
+        let config = get_config().unwrap();
+        let result = TokenUtil::validate_token2022_extensions_for_payment(
+            &config,
+            &rpc_client,
+            &source_address,
+            &destination_address,
+            &mint_address,
+        )
+        .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validate_token2022_partial_for_ata_creation_rejects_mutable_transfer_hook_authority(
+    ) {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let source_address = Pubkey::new_unique();
+        let mint_address = Pubkey::new_unique();
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+            .with_transfer_hook_authority(Some(Pubkey::new_unique()))
+            .with_transfer_hook_program_id(Some(Pubkey::new_unique()))
+            .build_token2022();
+        let source_account =
+            TokenAccountMockBuilder::new().with_mint(&mint_address).build_token2022();
+
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&mint_account, &source_account]);
+
+        let config = get_config().unwrap();
+        let result = TokenUtil::validate_token2022_partial_for_ata_creation(
+            &config,
+            &rpc_client,
+            &source_address,
+            &mint_address,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("Mutable transfer-hook authority found on mint account"));
     }
 
     #[tokio::test]

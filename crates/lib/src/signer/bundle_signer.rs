@@ -65,7 +65,16 @@ impl BundleSigner {
         };
 
         let fee_payer_position = resolved.find_signer_position(fee_payer)?;
-        resolved.transaction.signatures[fee_payer_position] = signature;
+        let signatures_len = resolved.transaction.signatures.len();
+        let signature_slot = match resolved.transaction.signatures.get_mut(fee_payer_position) {
+            Some(slot) => slot,
+            None => {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Signer position {fee_payer_position} is out of bounds for signatures (len={signatures_len})"
+                )));
+            }
+        };
+        *signature_slot = signature;
 
         Ok(())
     }
@@ -85,6 +94,18 @@ mod tests {
     fn create_test_resolved_with_fee_payer(fee_payer: &Keypair) -> VersionedTransactionResolved {
         let instruction = transfer(&fee_payer.pubkey(), &Pubkey::new_unique(), 1000);
         let message = Message::new(&[instruction], Some(&fee_payer.pubkey()));
+        let transaction = Transaction::new_unsigned(message);
+        let versioned = solana_sdk::transaction::VersionedTransaction::from(transaction);
+
+        VersionedTransactionResolved::from_kora_built_transaction(&versioned).unwrap()
+    }
+
+    fn create_test_resolved_with_unsigned_fee_payer_occurrence(
+        signer_like_fee_payer: &Pubkey,
+    ) -> VersionedTransactionResolved {
+        let attacker_fee_payer = Keypair::new();
+        let instruction = transfer(&attacker_fee_payer.pubkey(), signer_like_fee_payer, 1000);
+        let message = Message::new(&[instruction], Some(&attacker_fee_payer.pubkey()));
         let transaction = Transaction::new_unsigned(message);
         let versioned = solana_sdk::transaction::VersionedTransaction::from(transaction);
 
@@ -134,6 +155,31 @@ mod tests {
             &mut resolved,
             &signer,
             &wrong_fee_payer,
+            &blockhash,
+            &config,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
+    }
+
+    #[tokio::test]
+    async fn test_sign_transaction_for_bundle_rejects_unsigned_fee_payer_occurrence() {
+        let fee_payer_keypair = Keypair::new();
+        let fee_payer = fee_payer_keypair.pubkey();
+
+        let external_signer = Signer::from_memory(&fee_payer_keypair.to_base58_string()).unwrap();
+        let signer = Arc::new(external_signer);
+
+        let blockhash = Some(Hash::new_unique());
+        let config = ConfigMockBuilder::new().build();
+
+        let mut resolved = create_test_resolved_with_unsigned_fee_payer_occurrence(&fee_payer);
+        let result = BundleSigner::sign_transaction_for_bundle(
+            &mut resolved,
+            &signer,
+            &fee_payer,
             &blockhash,
             &config,
         )

@@ -212,6 +212,13 @@ pub mod instruction_indexes {
         pub const FREEZE_AUTHORITY_INDEX: usize = 2;
     }
 
+    pub mod spl_token_reallocate {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 4;
+        pub const ACCOUNT_INDEX: usize = 0;
+        pub const PAYER_INDEX: usize = 1;
+        pub const OWNER_INDEX: usize = 3;
+    }
+
     // ATA instruction indexes
     pub mod ata_instruction_indexes {
         pub const ATA_ADDRESS_INDEX: usize = 1;

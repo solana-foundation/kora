@@ -307,6 +307,8 @@ pub struct MintAccountMockBuilder {
     rent_epoch: u64,
     // Token2022-specific fields
     extensions: Vec<ExtensionType>,
+    transfer_hook_authority: Option<Pubkey>,
+    transfer_hook_program_id: Option<Pubkey>,
 }
 
 impl Default for MintAccountMockBuilder {
@@ -326,6 +328,8 @@ impl MintAccountMockBuilder {
             lamports: 0,
             rent_epoch: DEFAULT_RENT_EPOCH,
             extensions: Vec::new(),
+            transfer_hook_authority: None,
+            transfer_hook_program_id: None,
         }
     }
 
@@ -362,6 +366,16 @@ impl MintAccountMockBuilder {
 
     pub fn with_lamports(mut self, lamports: u64) -> Self {
         self.lamports = lamports;
+        self
+    }
+
+    pub fn with_transfer_hook_authority(mut self, authority: Option<Pubkey>) -> Self {
+        self.transfer_hook_authority = authority;
+        self
+    }
+
+    pub fn with_transfer_hook_program_id(mut self, program_id: Option<Pubkey>) -> Self {
+        self.transfer_hook_program_id = program_id;
         self
     }
 
@@ -472,7 +486,12 @@ impl MintAccountMockBuilder {
                         )?;
                     }
                     ExtensionType::TransferHook => {
-                        state.init_extension::<extension::transfer_hook::TransferHook>(true)?;
+                        let transfer_hook =
+                            state.init_extension::<extension::transfer_hook::TransferHook>(true)?;
+                        transfer_hook.authority =
+                            OptionalNonZeroPubkey::try_from(self.transfer_hook_authority)?;
+                        transfer_hook.program_id =
+                            OptionalNonZeroPubkey::try_from(self.transfer_hook_program_id)?;
                     }
                     // Add other extension types as needed
                     _ => {}

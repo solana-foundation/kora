@@ -243,14 +243,17 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
     }
 
     fn find_signer_position(&self, signer_pubkey: &Pubkey) -> Result<usize, KoraError> {
+        let num_required_signatures =
+            self.transaction.message.header().num_required_signatures as usize;
         self.transaction
             .message
             .static_account_keys()
             .iter()
+            .take(num_required_signatures)
             .position(|key| key == signer_pubkey)
             .ok_or_else(|| {
                 KoraError::InvalidTransaction(format!(
-                    "Signer {signer_pubkey} not found in transaction account keys"
+                    "Signer {signer_pubkey} not found in transaction signer keys"
                 ))
             })
     }
@@ -375,7 +378,16 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
         // Find the fee payer position - don't assume it's at position 0
         let fee_payer_position = self.find_signer_position(&fee_payer)?;
-        transaction.signatures[fee_payer_position] = signature;
+        let signatures_len = transaction.signatures.len();
+        let signature_slot = match transaction.signatures.get_mut(fee_payer_position) {
+            Some(slot) => slot,
+            None => {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Signer position {fee_payer_position} is out of bounds for signatures (len={signatures_len})"
+                )));
+            }
+        };
+        *signature_slot = signature;
 
         // Serialize signed transaction
         let serialized = bincode::serialize(&transaction)?;
@@ -585,8 +597,8 @@ mod tests {
         let position = transaction.find_signer_position(&keypair.pubkey()).unwrap();
         assert_eq!(position, 0);
 
-        let other_position = transaction.find_signer_position(&other_account).unwrap();
-        assert_eq!(other_position, 1);
+        let other_position = transaction.find_signer_position(&other_account);
+        assert!(matches!(other_position, Err(KoraError::InvalidTransaction(_))));
     }
 
     #[test]
@@ -639,7 +651,7 @@ mod tests {
 
         if let Err(KoraError::InvalidTransaction(msg)) = result {
             assert!(msg.contains(&missing_keypair.pubkey().to_string()));
-            assert!(msg.contains("not found in transaction account keys"));
+            assert!(msg.contains("not found in transaction signer keys"));
         }
     }
 
