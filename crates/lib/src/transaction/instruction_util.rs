@@ -33,21 +33,46 @@ pub enum ParsedSystemInstructionType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ParsedSystemInstructionData {
     // Includes transfer and transfer with seed
-    SystemTransfer { lamports: u64, sender: Pubkey, receiver: Pubkey },
+    SystemTransfer {
+        lamports: u64,
+        sender: Pubkey,
+        receiver: Pubkey,
+    },
     // Includes create account and create account with seed
-    SystemCreateAccount { lamports: u64, payer: Pubkey },
+    SystemCreateAccount {
+        lamports: u64,
+        payer: Pubkey,
+    },
     // Includes withdraw nonce account
-    SystemWithdrawNonceAccount { lamports: u64, nonce_authority: Pubkey, recipient: Pubkey },
+    SystemWithdrawNonceAccount {
+        lamports: u64,
+        nonce_authority: Pubkey,
+        recipient: Pubkey,
+    },
     // Includes assign and assign with seed
-    SystemAssign { authority: Pubkey },
+    SystemAssign {
+        authority: Pubkey,
+    },
     // Includes allocate and allocate with seed
-    SystemAllocate { account: Pubkey },
+    SystemAllocate {
+        account: Pubkey,
+    },
     // Initialize nonce account
-    SystemInitializeNonceAccount { nonce_account: Pubkey, nonce_authority: Pubkey },
+    SystemInitializeNonceAccount {
+        nonce_account: Pubkey,
+        nonce_authority: Pubkey,
+    },
     // Advance nonce account
-    SystemAdvanceNonceAccount { nonce_account: Pubkey, nonce_authority: Pubkey },
+    SystemAdvanceNonceAccount {
+        nonce_account: Pubkey,
+        nonce_authority: Pubkey,
+    },
     // Authorize nonce account
-    SystemAuthorizeNonceAccount { nonce_account: Pubkey, nonce_authority: Pubkey },
+    SystemAuthorizeNonceAccount {
+        nonce_account: Pubkey,
+        nonce_authority: Pubkey,
+        new_authority: Pubkey,
+    },
     // Note: SystemUpgradeNonceAccount not included - no authority parameter
 }
 
@@ -101,6 +126,7 @@ pub enum ParsedSPLInstructionData {
     // SetAuthority
     SplTokenSetAuthority {
         authority: Pubkey,
+        new_authority: Option<Pubkey>,
         is_2022: bool,
     },
     // MintTo and MintToChecked
@@ -111,6 +137,7 @@ pub enum ParsedSPLInstructionData {
     // InitializeMint and InitializeMint2
     SplTokenInitializeMint {
         mint_authority: Pubkey,
+        freeze_authority: Option<Pubkey>,
         is_2022: bool,
     },
     // InitializeAccount, InitializeAccount2, InitializeAccount3
@@ -1530,8 +1557,9 @@ impl IxUtils {
                             nonce_authority: instruction_indexes::system_advance_nonce_account::NONCE_AUTHORITY_INDEX
                         });
                     }
-                    Ok(SystemInstruction::AuthorizeNonceAccount(_new_authority)) => {
+                    Ok(SystemInstruction::AuthorizeNonceAccount(new_authority)) => {
                         parse_system_instruction!(parsed_instructions, instruction, system_authorize_nonce_account, SystemAuthorizeNonceAccount, SystemAuthorizeNonceAccount {
+                            new_authority: new_authority;
                             nonce_account: instruction_indexes::system_authorize_nonce_account::NONCE_ACCOUNT_INDEX,
                             nonce_authority: instruction_indexes::system_authorize_nonce_account::NONCE_AUTHORITY_INDEX
                         });
@@ -1680,7 +1708,10 @@ impl IxUtils {
                                     is_2022: false,
                                 });
                         }
-                        spl_token_interface::instruction::TokenInstruction::SetAuthority { .. } => {
+                        spl_token_interface::instruction::TokenInstruction::SetAuthority {
+                            new_authority,
+                            ..
+                        } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_set_authority::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1688,6 +1719,7 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenSetAuthority {
                                     authority: instruction.accounts[instruction_indexes::spl_token_set_authority::CURRENT_AUTHORITY_INDEX].pubkey,
+                                    new_authority: new_authority.into(),
                                     is_2022: false,
                                 });
                         }
@@ -1718,6 +1750,7 @@ impl IxUtils {
                         }
                         spl_token_interface::instruction::TokenInstruction::InitializeMint {
                             mint_authority,
+                            freeze_authority,
                             ..
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -1727,11 +1760,13 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenInitializeMint {
                                     mint_authority,
+                                    freeze_authority: freeze_authority.into(),
                                     is_2022: false,
                                 });
                         }
                         spl_token_interface::instruction::TokenInstruction::InitializeMint2 {
                             mint_authority,
+                            freeze_authority,
                             ..
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint2::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -1741,6 +1776,7 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenInitializeMint {
                                     mint_authority,
+                                    freeze_authority: freeze_authority.into(),
                                     is_2022: false,
                                 });
                         }
@@ -1956,7 +1992,10 @@ impl IxUtils {
                                     is_2022: true,
                                 });
                         }
-                        spl_token_2022_interface::instruction::TokenInstruction::SetAuthority { .. } => {
+                        spl_token_2022_interface::instruction::TokenInstruction::SetAuthority {
+                            new_authority,
+                            ..
+                        } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_set_authority::REQUIRED_NUMBER_OF_ACCOUNTS);
 
                             parsed_instructions
@@ -1964,6 +2003,7 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenSetAuthority {
                                     authority: instruction.accounts[instruction_indexes::spl_token_set_authority::CURRENT_AUTHORITY_INDEX].pubkey,
+                                    new_authority: new_authority.into(),
                                     is_2022: true,
                                 });
                         }
@@ -1994,6 +2034,7 @@ impl IxUtils {
                         }
                         spl_token_2022_interface::instruction::TokenInstruction::InitializeMint {
                             mint_authority,
+                            freeze_authority,
                             ..
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -2003,11 +2044,13 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenInitializeMint {
                                     mint_authority,
+                                    freeze_authority: freeze_authority.into(),
                                     is_2022: true,
                                 });
                         }
                         spl_token_2022_interface::instruction::TokenInstruction::InitializeMint2 {
                             mint_authority,
+                            freeze_authority,
                             ..
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_initialize_mint2::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -2017,6 +2060,7 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenInitializeMint {
                                     mint_authority,
+                                    freeze_authority: freeze_authority.into(),
                                     is_2022: true,
                                 });
                         }
