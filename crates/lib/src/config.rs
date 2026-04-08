@@ -18,6 +18,10 @@ use crate::{
     fee::price::{PriceConfig, PriceModel},
     oracle::PriceSource,
     sanitize_error,
+    token::spl_token_2022_util::{
+        get_all_account_extension_names, get_all_mint_extension_names,
+        parse_account_extension_string, parse_mint_extension_string,
+    },
 };
 
 // Re-export usage limit configs
@@ -289,7 +293,7 @@ impl Token2022Config {
     pub fn initialize(&mut self) -> Result<(), String> {
         let mut mint_extensions = Vec::new();
         for name in &self.blocked_mint_extensions {
-            match crate::token::spl_token_2022_util::parse_mint_extension_string(name) {
+            match parse_mint_extension_string(name) {
                 Some(ext) => {
                     mint_extensions.push(ext);
                 }
@@ -297,7 +301,7 @@ impl Token2022Config {
                     return Err(format!(
                         "Invalid mint extension name: '{}'. Valid names are: {:?}",
                         name,
-                        crate::token::spl_token_2022_util::get_all_mint_extension_names()
+                        get_all_mint_extension_names()
                     ));
                 }
             }
@@ -306,7 +310,7 @@ impl Token2022Config {
 
         let mut account_extensions = Vec::new();
         for name in &self.blocked_account_extensions {
-            match crate::token::spl_token_2022_util::parse_account_extension_string(name) {
+            match parse_account_extension_string(name) {
                 Some(ext) => {
                     account_extensions.push(ext);
                 }
@@ -314,7 +318,7 @@ impl Token2022Config {
                     return Err(format!(
                         "Invalid account extension name: '{}'. Valid names are: {:?}",
                         name,
-                        crate::token::spl_token_2022_util::get_all_account_extension_names()
+                        get_all_account_extension_names()
                     ));
                 }
             }
@@ -337,11 +341,19 @@ impl Token2022Config {
     /// Check if a mint extension is blocked
     pub fn is_mint_extension_blocked(&self, ext: ExtensionType) -> bool {
         self.get_blocked_mint_extensions().contains(&ext)
+            || self
+                .blocked_mint_extensions
+                .iter()
+                .any(|name| parse_mint_extension_string(name) == Some(ext))
     }
 
     /// Check if an account extension is blocked
     pub fn is_account_extension_blocked(&self, ext: ExtensionType) -> bool {
         self.get_blocked_account_extensions().contains(&ext)
+            || self
+                .blocked_account_extensions
+                .iter()
+                .any(|name| parse_account_extension_string(name) == Some(ext))
     }
 }
 
