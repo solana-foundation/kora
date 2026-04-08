@@ -333,6 +333,7 @@ impl TransactionValidator {
             self.fee_payer_policy.alt.allow_close,
             "ALT CloseLookupTable");
 
+        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
         for instruction in
             spl_instructions.get(&ParsedSPLInstructionType::SplTokenReallocate).unwrap_or(&vec![])
         {
