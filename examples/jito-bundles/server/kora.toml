@@ -101,6 +101,13 @@ allow_initialize_multisig = false
 allow_freeze_account = false
 allow_thaw_account = false
 
+[validation.fee_payer_policy.alt]
+allow_create = false
+allow_extend = false
+allow_freeze = false
+allow_deactivate = false
+allow_close = false
+
 [validation.price]
 type = "free" # free / margin / fixed
 

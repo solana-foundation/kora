@@ -57,3 +57,19 @@ macro_rules! validate_spl_multisig {
         }
     };
 }
+
+/// Macro to validate ALT instructions with custom fee-payer matching logic
+macro_rules! validate_alt {
+    ($self:expr, $instructions:expr, $type:ident, $pattern:pat => $fee_payer_used:expr, $policy:expr, $name:expr) => {
+        for instruction in $instructions.get(&ParsedALTInstructionType::$type).unwrap_or(&vec![]) {
+            if let $pattern = instruction {
+                if $fee_payer_used && !$policy {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Fee payer cannot be used for '{}'",
+                        $name
+                    )));
+                }
+            }
+        }
+    };
+}

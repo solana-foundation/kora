@@ -231,4 +231,39 @@ pub mod instruction_indexes {
         pub const DESTINATION_INDEX: usize = 1;
         pub const MIN_ACCOUNTS: usize = 3;
     }
+
+    // Address Lookup Table (ALT) instruction indexes
+    pub mod alt_create_lookup_table {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 4;
+        pub const LOOKUP_TABLE_ACCOUNT_INDEX: usize = 0;
+        pub const LOOKUP_TABLE_AUTHORITY_INDEX: usize = 1;
+        pub const PAYER_ACCOUNT_INDEX: usize = 2;
+    }
+
+    pub mod alt_freeze_lookup_table {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const LOOKUP_TABLE_ACCOUNT_INDEX: usize = 0;
+        pub const LOOKUP_TABLE_AUTHORITY_INDEX: usize = 1;
+    }
+
+    pub mod alt_extend_lookup_table {
+        pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER: usize = 4;
+        pub const LOOKUP_TABLE_ACCOUNT_INDEX: usize = 0;
+        pub const LOOKUP_TABLE_AUTHORITY_INDEX: usize = 1;
+        pub const OPTIONAL_PAYER_ACCOUNT_INDEX: usize = 2;
+    }
+
+    pub mod alt_deactivate_lookup_table {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const LOOKUP_TABLE_ACCOUNT_INDEX: usize = 0;
+        pub const LOOKUP_TABLE_AUTHORITY_INDEX: usize = 1;
+    }
+
+    pub mod alt_close_lookup_table {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const LOOKUP_TABLE_ACCOUNT_INDEX: usize = 0;
+        pub const LOOKUP_TABLE_AUTHORITY_INDEX: usize = 1;
+        pub const RECIPIENT_INDEX: usize = 2;
+    }
 }

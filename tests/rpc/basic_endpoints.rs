@@ -123,6 +123,7 @@ async fn test_fee_payer_policy_is_present() {
     assert!(fee_payer_policy.contains_key("system"));
     assert!(fee_payer_policy.contains_key("spl_token"));
     assert!(fee_payer_policy.contains_key("token_2022"));
+    assert!(fee_payer_policy.contains_key("alt"));
 
     // Validate system policy structure
     let system = fee_payer_policy["system"].as_object().expect("Expected system policy object");
@@ -191,6 +192,19 @@ async fn test_fee_payer_policy_is_present() {
     assert_eq!(token_2022["allow_mint_to"], true);
     assert_eq!(token_2022["allow_freeze_account"], true);
     assert_eq!(token_2022["allow_thaw_account"], true);
+
+    // Validate ALT policy structure
+    let alt = fee_payer_policy["alt"].as_object().expect("Expected alt policy object");
+    assert!(alt.contains_key("allow_create"));
+    assert!(alt.contains_key("allow_extend"));
+    assert!(alt.contains_key("allow_freeze"));
+    assert!(alt.contains_key("allow_deactivate"));
+    assert!(alt.contains_key("allow_close"));
+    assert_eq!(alt["allow_create"], false);
+    assert_eq!(alt["allow_extend"], false);
+    assert_eq!(alt["allow_freeze"], false);
+    assert_eq!(alt["allow_deactivate"], false);
+    assert_eq!(alt["allow_close"], false);
 }
 
 /// Test that liveness endpoint is disabled (returns error)
