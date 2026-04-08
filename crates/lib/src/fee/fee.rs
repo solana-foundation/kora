@@ -7,7 +7,7 @@ use crate::{
     fee::price::PriceModel,
     token::{
         spl_token_2022::Token2022Mint,
-        token::{TokenType, TokenUtil},
+        token::{TokenType, TokenUtil, TransferHookValidationFlow},
         TokenState,
     },
     transaction::{
@@ -281,6 +281,7 @@ impl FeeConfigUtil {
         is_payment_required: bool,
         rpc_client: &RpcClient,
         config: &Config,
+        transfer_hook_validation_flow: TransferHookValidationFlow,
     ) -> Result<TotalFeeCalculation, KoraError> {
         // Always validate Token2022 transfer-hook mutability before pricing logic so
         // both free and paid modes enforce the same transfer-hook security guard.
@@ -288,6 +289,7 @@ impl FeeConfigUtil {
             config,
             transaction,
             rpc_client,
+            transfer_hook_validation_flow,
         )
         .await?;
 
@@ -516,6 +518,7 @@ impl TransactionFeeUtil {
 mod tests {
     use super::*;
     use crate::{
+        config::TransferHookPolicy,
         constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
         fee::{
             fee::{FeeConfigUtil, TransactionFeeUtil},
@@ -550,10 +553,36 @@ mod tests {
     };
     use spl_associated_token_account_interface::address::get_associated_token_address;
 
-    #[tokio::test]
-    async fn test_estimate_kora_fee_free_rejects_mutable_transfer_hook_authority() {
+    fn create_token2022_transfer_checked_resolved_transaction(
+        owner: &Pubkey,
+        source: &Pubkey,
+        destination: &Pubkey,
+        mint: &Pubkey,
+    ) -> crate::transaction::VersionedTransactionResolved {
+        let transfer_ix = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
+            source,
+            mint,
+            destination,
+            owner,
+            &[],
+            1,
+            6,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(owner)));
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
+            .expect("failed to build resolved transaction")
+    }
+
+    async fn estimate_free_fee_with_mutable_transfer_hook(
+        transfer_hook_policy: TransferHookPolicy,
+        transfer_hook_validation_flow: TransferHookValidationFlow,
+    ) -> Result<TotalFeeCalculation, KoraError> {
         let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
         config.validation.price = PriceConfig { model: PriceModel::Free };
+        config.validation.token_2022.transfer_hook_policy = transfer_hook_policy;
         let _lock =
             ConfigMockBuilder::new().with_validation(config.validation.clone()).build_and_setup();
 
@@ -562,20 +591,12 @@ mod tests {
         let destination = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        let transfer_ix = spl_token_2022_interface::instruction::transfer_checked(
-            &spl_token_2022_interface::id(),
-            &source,
-            &mint,
-            &destination,
+        let mut resolved_tx = create_token2022_transfer_checked_resolved_transaction(
             &owner,
-            &[],
-            1,
-            6,
-        )
-        .unwrap();
-        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&owner)));
-        let mut resolved_tx = TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
-            .expect("failed to build resolved transaction");
+            &source,
+            &destination,
+            &mint,
+        );
 
         let mint_account = MintAccountMockBuilder::new()
             .with_decimals(6)
@@ -586,18 +607,70 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![&mint_account]);
 
         let config = get_config().unwrap();
-        let result = FeeConfigUtil::estimate_kora_fee(
+        FeeConfigUtil::estimate_kora_fee(
             &mut resolved_tx,
             &owner,
             config.validation.is_payment_required(),
             &rpc_client,
             &config,
+            transfer_hook_validation_flow,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_rejects_mutable_transfer_hook_authority() {
+        let result = estimate_free_fee_with_mutable_transfer_hook(
+            TransferHookPolicy::DenyMutableForDelayedSigning,
+            TransferHookValidationFlow::DelayedSigning,
         )
         .await;
 
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("Mutable transfer-hook authority found on mint account"));
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_allows_mutable_transfer_hook_authority_for_immediate_sign_and_send(
+    ) {
+        let result = estimate_free_fee_with_mutable_transfer_hook(
+            TransferHookPolicy::DenyMutableForDelayedSigning,
+            TransferHookValidationFlow::ImmediateSignAndSend,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let calculation = result.unwrap();
+        assert_eq!(calculation.total_fee_lamports, 0);
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_rejects_mutable_transfer_hook_authority_when_policy_is_deny_all(
+    ) {
+        let result = estimate_free_fee_with_mutable_transfer_hook(
+            TransferHookPolicy::DenyAll,
+            TransferHookValidationFlow::ImmediateSignAndSend,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("Mutable transfer-hook authority found on mint account"));
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_allows_mutable_transfer_hook_authority_when_policy_is_allow_all(
+    ) {
+        let result = estimate_free_fee_with_mutable_transfer_hook(
+            TransferHookPolicy::AllowAll,
+            TransferHookValidationFlow::DelayedSigning,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let calculation = result.unwrap();
+        assert_eq!(calculation.total_fee_lamports, 0);
     }
 
     #[tokio::test]
@@ -642,6 +715,7 @@ mod tests {
             config.validation.is_payment_required(),
             &rpc_client,
             &config,
+            TransferHookValidationFlow::DelayedSigning,
         )
         .await;
 

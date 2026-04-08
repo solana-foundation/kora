@@ -6,7 +6,7 @@ use crate::{
     lighthouse::LighthouseUtil,
     plugin::{PluginExecutionContext, TransactionPluginRunner},
     signer::bundle_signer::BundleSigner,
-    token::token::TokenUtil,
+    token::token::{TokenUtil, TransferHookValidationFlow},
     transaction::{TransactionUtil, VersionedTransactionResolved},
     usage_limit::UsageTracker,
     validator::transaction_validator::TransactionValidator,
@@ -92,6 +92,12 @@ impl BundleProcessor {
     ) -> Result<Self, KoraError> {
         let validator = TransactionValidator::new(config, fee_payer)?;
         let plugin_runner = TransactionPluginRunner::from_config(config);
+        let transfer_hook_validation_flow =
+            if matches!(plugin_context, Some(PluginExecutionContext::SignAndSendBundle)) {
+                TransferHookValidationFlow::ImmediateSignAndSend
+            } else {
+                TransferHookValidationFlow::DelayedSigning
+            };
         let mut resolved_transactions = Vec::with_capacity(encoded_txs.len());
         let mut total_required_lamports = 0u64;
         let mut all_bundle_instructions: Vec<Instruction> = Vec::new();
@@ -134,6 +140,7 @@ impl BundleProcessor {
                 config.validation.is_payment_required(),
                 rpc_client,
                 config,
+                transfer_hook_validation_flow,
             )
             .await?;
 

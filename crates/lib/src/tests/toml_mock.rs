@@ -250,6 +250,11 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn with_custom_section(mut self, section: &str) -> Self {
+        self.custom_sections.push(section.to_string());
+        self
+    }
+
     pub fn build_toml(&self) -> String {
         let programs_list = self
             .validation

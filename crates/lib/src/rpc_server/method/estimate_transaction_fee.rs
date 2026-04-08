@@ -7,6 +7,7 @@ use crate::{
     fee::fee::FeeConfigUtil,
     rpc_server::middleware_utils::default_sig_verify,
     state::get_request_signer_with_signer_key,
+    token::token::TransferHookValidationFlow,
     transaction::{TransactionUtil, VersionedTransactionResolved},
 };
 
@@ -80,6 +81,7 @@ pub async fn estimate_transaction_fee(
         validation_config.is_payment_required(),
         rpc_client,
         config,
+        TransferHookValidationFlow::DelayedSigning,
     )
     .await?;
 

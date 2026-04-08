@@ -18,6 +18,7 @@ use crate::{
     lighthouse::LighthouseUtil,
     plugin::{PluginExecutionContext, TransactionPluginRunner},
     sanitize_error,
+    token::token::TransferHookValidationFlow,
     transaction::{
         instruction_util::IxUtils, ParsedALTInstructionData, ParsedALTInstructionType,
         ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
@@ -300,12 +301,18 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             .await?;
 
         // Calculate fee and validate payment if price model requires it
+        let transfer_hook_validation_flow = if will_send {
+            TransferHookValidationFlow::ImmediateSignAndSend
+        } else {
+            TransferHookValidationFlow::DelayedSigning
+        };
         let fee_calculation = FeeConfigUtil::estimate_kora_fee(
             self,
             &fee_payer,
             config.validation.is_payment_required(),
             rpc_client,
             config,
+            transfer_hook_validation_flow,
         )
         .await?;
 

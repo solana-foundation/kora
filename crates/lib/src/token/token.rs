@@ -1,5 +1,5 @@
 use crate::{
-    config::Config,
+    config::{Config, TransferHookPolicy},
     constant,
     error::KoraError,
     oracle::{get_price_oracle, RetryingPriceOracle, TokenPrice},
@@ -60,7 +60,26 @@ impl TokenType {
 
 pub struct TokenUtil;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransferHookValidationFlow {
+    DelayedSigning,
+    ImmediateSignAndSend,
+}
+
 impl TokenUtil {
+    fn should_reject_mutable_transfer_hook(
+        config: &Config,
+        validation_flow: TransferHookValidationFlow,
+    ) -> bool {
+        match config.validation.token_2022.transfer_hook_policy {
+            TransferHookPolicy::DenyAll => true,
+            TransferHookPolicy::DenyMutableForDelayedSigning => {
+                matches!(validation_flow, TransferHookValidationFlow::DelayedSigning)
+            }
+            TransferHookPolicy::AllowAll => false,
+        }
+    }
+
     fn validate_immutable_transfer_hook_for_mint(
         mint: &Token2022Mint,
         mint_pubkey: &Pubkey,
@@ -84,7 +103,12 @@ impl TokenUtil {
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
+        validation_flow: TransferHookValidationFlow,
     ) -> Result<(), KoraError> {
+        if !Self::should_reject_mutable_transfer_hook(config, validation_flow) {
+            return Ok(());
+        }
+
         let token_program = Token2022Program::new();
         let mut validated_mints = HashSet::new();
 
@@ -654,8 +678,6 @@ impl TokenUtil {
             }
         }
 
-        Self::validate_immutable_transfer_hook_for_mint(mint_with_extensions, mint)?;
-
         // Check source account extensions (force refresh in case extensions are added)
         let source_account =
             CacheUtil::get_account(config, rpc_client, source_address, true).await?;
@@ -726,8 +748,6 @@ impl TokenUtil {
                 )));
             }
         }
-
-        Self::validate_immutable_transfer_hook_for_mint(mint_with_extensions, mint)?;
 
         // Check source account extensions
         let source_account =
@@ -833,7 +853,7 @@ impl TokenUtil {
                     continue;
                 }
 
-                // For Token2022 payments, validate blocked extensions and immutable transfer-hook authority.
+                // For Token2022 payments, validate blocked mint/account extensions.
                 // This must run only after destination-owner matching, otherwise unrelated transfers can fail
                 // payment validation.
                 if *is_2022 {
@@ -1450,8 +1470,8 @@ mod tests_token {
     }
 
     #[tokio::test]
-    async fn test_validate_token2022_extensions_for_payment_rejects_mutable_transfer_hook_authority(
-    ) {
+    async fn test_validate_token2022_extensions_for_payment_allows_mutable_transfer_hook_authority()
+    {
         let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
         let source_address = Pubkey::new_unique();
@@ -1485,9 +1505,7 @@ mod tests_token {
         )
         .await;
 
-        assert!(result.is_err());
-        let error_message = result.unwrap_err().to_string();
-        assert!(error_message.contains("Mutable transfer-hook authority found on mint account"));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1530,7 +1548,7 @@ mod tests_token {
     }
 
     #[tokio::test]
-    async fn test_validate_token2022_partial_for_ata_creation_rejects_mutable_transfer_hook_authority(
+    async fn test_validate_token2022_partial_for_ata_creation_allows_mutable_transfer_hook_authority(
     ) {
         let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
@@ -1558,9 +1576,7 @@ mod tests_token {
         )
         .await;
 
-        assert!(result.is_err());
-        let error_message = result.unwrap_err().to_string();
-        assert!(error_message.contains("Mutable transfer-hook authority found on mint account"));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
