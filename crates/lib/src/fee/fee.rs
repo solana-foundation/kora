@@ -282,6 +282,15 @@ impl FeeConfigUtil {
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<TotalFeeCalculation, KoraError> {
+        // Always validate Token2022 transfer-hook mutability before pricing logic so
+        // both free and paid modes enforce the same transfer-hook security guard.
+        TokenUtil::validate_token2022_transfer_hooks_in_transaction(
+            config,
+            transaction,
+            rpc_client,
+        )
+        .await?;
+
         match &config.validation.price.model {
             PriceModel::Free => Ok(TotalFeeCalculation::new_fixed(0)),
             PriceModel::Fixed { strict, .. } => {
@@ -508,8 +517,12 @@ mod tests {
     use super::*;
     use crate::{
         constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
-        fee::fee::{FeeConfigUtil, TransactionFeeUtil},
+        fee::{
+            fee::{FeeConfigUtil, TransactionFeeUtil},
+            price::{PriceConfig, PriceModel},
+        },
         tests::{
+            account_mock::MintAccountMockBuilder,
             common::{
                 create_mock_rpc_client_with_account, create_mock_token_account,
                 setup_or_get_test_config, setup_or_get_test_signer,
@@ -536,6 +549,106 @@ mod tests {
         program::ID as SYSTEM_PROGRAM_ID,
     };
     use spl_associated_token_account_interface::address::get_associated_token_address;
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_rejects_mutable_transfer_hook_authority() {
+        let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
+        config.validation.price = PriceConfig { model: PriceModel::Free };
+        let _lock =
+            ConfigMockBuilder::new().with_validation(config.validation.clone()).build_and_setup();
+
+        let owner = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let transfer_ix = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
+            &source,
+            &mint,
+            &destination,
+            &owner,
+            &[],
+            1,
+            6,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&owner)));
+        let mut resolved_tx = TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
+            .expect("failed to build resolved transaction");
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+            .with_transfer_hook_authority(Some(Pubkey::new_unique()))
+            .with_transfer_hook_program_id(Some(Pubkey::new_unique()))
+            .build_token2022();
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![&mint_account]);
+
+        let config = get_config().unwrap();
+        let result = FeeConfigUtil::estimate_kora_fee(
+            &mut resolved_tx,
+            &owner,
+            config.validation.is_payment_required(),
+            &rpc_client,
+            &config,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("Mutable transfer-hook authority found on mint account"));
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_allows_immutable_transfer_hook_authority() {
+        let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
+        config.validation.price = PriceConfig { model: PriceModel::Free };
+        let _lock =
+            ConfigMockBuilder::new().with_validation(config.validation.clone()).build_and_setup();
+
+        let owner = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let transfer_ix = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
+            &source,
+            &mint,
+            &destination,
+            &owner,
+            &[],
+            1,
+            6,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&owner)));
+        let mut resolved_tx = TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
+            .expect("failed to build resolved transaction");
+
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(spl_token_2022_interface::extension::ExtensionType::TransferHook)
+            .with_transfer_hook_authority(None)
+            .with_transfer_hook_program_id(Some(Pubkey::new_unique()))
+            .build_token2022();
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![&mint_account]);
+
+        let config = get_config().unwrap();
+        let result = FeeConfigUtil::estimate_kora_fee(
+            &mut resolved_tx,
+            &owner,
+            config.validation.is_payment_required(),
+            &rpc_client,
+            &config,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let calculation = result.unwrap();
+        assert_eq!(calculation.total_fee_lamports, 0);
+    }
 
     #[test]
     fn test_is_fee_payer_in_signers_legacy_fee_payer_is_signer() {
