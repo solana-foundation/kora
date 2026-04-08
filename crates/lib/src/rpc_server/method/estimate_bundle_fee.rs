@@ -49,6 +49,13 @@ pub async fn estimate_bundle_fee(
     rpc_client: &Arc<RpcClient>,
     request: EstimateBundleFeeRequest,
 ) -> Result<EstimateBundleFeeResponse, KoraError> {
+    let EstimateBundleFeeRequest {
+        transactions,
+        fee_token,
+        signer_key,
+        sig_verify,
+        sign_only_indices,
+    } = request;
     let config = &get_config()?;
 
     if !config.kora.bundle.enabled {
@@ -56,20 +63,17 @@ pub async fn estimate_bundle_fee(
     }
 
     // Validate bundle size on ALL transactions first
-    BundleValidator::validate_jito_bundle_size(&request.transactions)?;
+    BundleValidator::validate_jito_bundle_size(&transactions)?;
 
     // Extract only the transactions we need to process
     let (transactions_to_process, _index_to_position) =
-        BundleProcessor::extract_transactions_to_process(
-            &request.transactions,
-            request.sign_only_indices,
-        )?;
+        BundleProcessor::extract_transactions_to_process(&transactions, sign_only_indices.clone())?;
 
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let signer = get_request_signer_with_signer_key(signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
-    let sig_verify = request.sig_verify || config.kora.force_sig_verify;
+    let sig_verify = sig_verify || config.kora.force_sig_verify;
     let processor = BundleProcessor::process_bundle(
         &transactions_to_process,
         fee_payer,
@@ -84,10 +88,24 @@ pub async fn estimate_bundle_fee(
 
     let fee_in_lamports = processor.total_required_lamports;
 
+    let signed_indices = BundleValidator::signed_indices_for_bundle(
+        transactions.len(),
+        sign_only_indices.as_deref(),
+    );
+    BundleValidator::simulate_and_validate_sequential_bundle(
+        rpc_client,
+        config,
+        &transactions,
+        &signed_indices,
+        &fee_payer,
+        !sig_verify,
+    )
+    .await?;
+
     // Calculate fee in token if requested
     let fee_in_token = FeeConfigUtil::calculate_fee_in_token(
         fee_in_lamports,
-        request.fee_token.as_deref(),
+        fee_token.as_deref(),
         rpc_client,
         config,
     )

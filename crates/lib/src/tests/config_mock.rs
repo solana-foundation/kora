@@ -1,4 +1,5 @@
 use crate::{
+    bundle::{constant::JITO_MOCK_BLOCK_ENGINE_URL, JitoConfig},
     config::{
         AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods,
         FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, LighthouseConfig, MetricsConfig,
@@ -110,7 +111,12 @@ impl ConfigMockBuilder {
                     },
                     usage_limit: UsageLimitConfig::default(),
                     plugins: PluginsConfig::default(),
-                    bundle: BundleConfig::default(),
+                    bundle: BundleConfig {
+                        enabled: false,
+                        jito: JitoConfig {
+                            block_engine_url: JITO_MOCK_BLOCK_ENGINE_URL.to_string(),
+                        },
+                    },
                     lighthouse: LighthouseConfig::default(),
                     force_sig_verify: false,
                     sign_timeout_seconds: 10,
@@ -237,6 +243,16 @@ impl ConfigMockBuilder {
 
     pub fn with_bundle_enabled(mut self, enabled: bool) -> Self {
         self.config.kora.bundle.enabled = enabled;
+        self
+    }
+
+    pub fn with_jito_block_engine_url(mut self, url: impl Into<String>) -> Self {
+        self.config.kora.bundle.jito.block_engine_url = url.into();
+        self
+    }
+
+    pub fn with_mock_jito_block_engine(mut self) -> Self {
+        self.config.kora.bundle.jito.block_engine_url = JITO_MOCK_BLOCK_ENGINE_URL.to_string();
         self
     }
 

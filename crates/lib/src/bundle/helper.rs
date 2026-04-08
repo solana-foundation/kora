@@ -1,5 +1,8 @@
 use crate::{
-    bundle::{BundleError, JitoError},
+    bundle::{
+        BundleError, JitoBundleClient, JitoBundleSimulationConfig, JitoBundleSimulationResult,
+        JitoError,
+    },
     config::Config,
     constant::ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
@@ -86,6 +89,23 @@ impl BundleProcessor {
                 }
             })
             .collect()
+    }
+
+    pub async fn simulate_bundle(
+        encoded_txs: &[String],
+        config: &Config,
+    ) -> Result<JitoBundleSimulationResult, KoraError> {
+        let jito_client = JitoBundleClient::new(&config.kora.bundle.jito);
+        Ok(jito_client.simulate_bundle(encoded_txs).await?)
+    }
+
+    pub async fn simulate_bundle_with_config(
+        encoded_txs: &[String],
+        simulation_config: JitoBundleSimulationConfig,
+        config: &Config,
+    ) -> Result<JitoBundleSimulationResult, KoraError> {
+        let jito_client = JitoBundleClient::new(&config.kora.bundle.jito);
+        Ok(jito_client.simulate_bundle_with_config(encoded_txs, simulation_config).await?)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -224,14 +244,38 @@ impl BundleProcessor {
     }
 
     pub async fn sign_all(
-        mut self,
+        self,
         signer: &Arc<solana_keychain::Signer>,
         fee_payer: &Pubkey,
         rpc_client: &RpcClient,
         config: &Config,
         will_send: bool,
     ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
-        self.validate_payment()?;
+        self.sign_all_internal(signer, fee_payer, rpc_client, config, will_send, true).await
+    }
+
+    pub async fn sign_all_for_simulation(
+        self,
+        signer: &Arc<solana_keychain::Signer>,
+        fee_payer: &Pubkey,
+        rpc_client: &RpcClient,
+        config: &Config,
+    ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
+        self.sign_all_internal(signer, fee_payer, rpc_client, config, false, false).await
+    }
+
+    async fn sign_all_internal(
+        mut self,
+        signer: &Arc<solana_keychain::Signer>,
+        fee_payer: &Pubkey,
+        rpc_client: &RpcClient,
+        config: &Config,
+        will_send: bool,
+        validate_payment: bool,
+    ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
+        if validate_payment {
+            self.validate_payment()?;
+        }
 
         let mut blockhash = None;
         let tx_count = self.resolved_transactions.len();

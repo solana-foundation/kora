@@ -50,6 +50,8 @@ pub async fn sign_bundle(
     rpc_client: &Arc<RpcClient>,
     request: SignBundleRequest,
 ) -> Result<SignBundleResponse, KoraError> {
+    let SignBundleRequest { transactions, signer_key, sig_verify, user_id, sign_only_indices } =
+        request;
     let config = &get_config()?;
 
     if !config.kora.bundle.enabled {
@@ -57,20 +59,17 @@ pub async fn sign_bundle(
     }
 
     // Validate bundle size on ALL transactions first
-    BundleValidator::validate_jito_bundle_size(&request.transactions)?;
+    BundleValidator::validate_jito_bundle_size(&transactions)?;
 
     // Extract only the transactions we need to process
     let (transactions_to_process, index_to_position) =
-        BundleProcessor::extract_transactions_to_process(
-            &request.transactions,
-            request.sign_only_indices,
-        )?;
+        BundleProcessor::extract_transactions_to_process(&transactions, sign_only_indices.clone())?;
 
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let signer = get_request_signer_with_signer_key(signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
-    let sig_verify = request.sig_verify || config.kora.force_sig_verify;
+    let sig_verify = sig_verify || config.kora.force_sig_verify;
     let processor = BundleProcessor::process_bundle(
         &transactions_to_process,
         fee_payer,
@@ -79,7 +78,7 @@ pub async fn sign_bundle(
         rpc_client,
         sig_verify,
         Some(PluginExecutionContext::SignBundle),
-        BundleProcessingMode::CheckUsage(request.user_id.as_deref()),
+        BundleProcessingMode::CheckUsage(user_id.as_deref()),
     )
     .await?;
 
@@ -94,10 +93,24 @@ pub async fn sign_bundle(
 
     // Merge signed transactions back into original positions
     let signed_transactions = BundleProcessor::merge_signed_transactions(
-        &request.transactions,
+        &transactions,
         encoded_signed,
         &index_to_position,
     );
+
+    let signed_indices = BundleValidator::signed_indices_for_bundle(
+        transactions.len(),
+        sign_only_indices.as_deref(),
+    );
+    BundleValidator::simulate_and_validate_sequential_bundle(
+        rpc_client,
+        config,
+        &signed_transactions,
+        &signed_indices,
+        &fee_payer,
+        !sig_verify,
+    )
+    .await?;
 
     Ok(SignBundleResponse { signed_transactions, signer_pubkey: fee_payer.to_string() })
 }
