@@ -68,7 +68,7 @@ allowed_tokens = [
 allowed_spl_paid_tokens = []
 #allowed_spl_paid_tokens = "All"  # Allow any token to be used for payment,
 disallowed_accounts = []
-# must_call_programs = []  # At least one of these programs must be called. Transactions with only ComputeBudget instructions are rejected when non-empty.
+# must_call_programs = []  # At least one of these programs must be called. Each must also appear in allowed_programs. Transactions with only ComputeBudget instructions are rejected when non-empty.
 
 # Fee payer policy controls what actions the fee payer can perform
 #

@@ -436,6 +436,40 @@ impl ConfigValidator {
             }
         }
 
+        // Validate base58 pubkey format for must_call_programs
+        for pubkey_str in &config.validation.must_call_programs {
+            if Pubkey::from_str(pubkey_str).is_err() {
+                errors.push(format!(
+                    "Invalid base58 pubkey format in must_call_programs: '{}'",
+                    pubkey_str
+                ));
+            }
+        }
+
+        // Validate must_call_programs constraints
+        if !config.validation.must_call_programs.is_empty() {
+            let compute_budget_program = solana_compute_budget_interface::id().to_string();
+
+            if config
+                .validation
+                .must_call_programs
+                .iter()
+                .all(|program| program == &compute_budget_program)
+            {
+                errors.push(
+                    "must_call_programs cannot contain only the Compute Budget program".to_string(),
+                );
+            }
+
+            for program in &config.validation.must_call_programs {
+                if !config.validation.allowed_programs.contains(program) {
+                    errors.push(format!(
+                        "Program {program} in must_call_programs must also be in allowed_programs"
+                    ));
+                }
+            }
+        }
+
         // Validate allowed tokens
         if config.validation.allowed_tokens.is_empty() {
             errors.push("No allowed tokens configured".to_string());
@@ -1049,6 +1083,82 @@ mod tests {
 
         assert!(warnings.iter().any(|w| w.contains("Missing System Program in allowed programs")));
         assert!(warnings.iter().any(|w| w.contains("Missing Token Program in allowed programs")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_invalid_must_call_program_pubkey() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.validation.must_call_programs = vec!["not-a-pubkey".to_string()];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Invalid base58 pubkey format in must_call_programs")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_must_call_program_not_in_allowed_programs() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        let required_program = solana_sdk::pubkey::Pubkey::new_unique().to_string();
+        config.validation.must_call_programs = vec![required_program.clone()];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors.iter().any(|e| {
+            e.contains("must_call_programs must also be in allowed_programs")
+                && e.contains(&required_program)
+        }));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_must_call_programs_compute_budget_only_error() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        let compute_budget_program = solana_compute_budget_interface::id().to_string();
+        config.validation.allowed_programs = vec![compute_budget_program.clone()];
+        config.validation.must_call_programs = vec![compute_budget_program];
+        config.validation.price.model = PriceModel::Free;
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors.iter().any(|e| {
+            e.contains("must_call_programs cannot contain only the Compute Budget program")
+        }));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_valid_must_call_programs() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.validation.must_call_programs = vec![SYSTEM_PROGRAM_ID.to_string()];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

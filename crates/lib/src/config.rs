@@ -139,6 +139,7 @@ pub struct ValidationConfig {
     pub max_price_staleness_slots: u64,
     /// Programs that must be called by the transaction (at least one must appear).
     /// Transactions containing only ComputeBudget instructions are also rejected when non-empty.
+    /// Each required program must also be listed in `allowed_programs`.
     /// Default: empty (no restriction).
     #[serde(default)]
     pub must_call_programs: Vec<String>,
