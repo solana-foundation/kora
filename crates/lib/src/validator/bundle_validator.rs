@@ -380,6 +380,25 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_jito_bundle_size_boundary() {
+        assert!(BundleValidator::validate_jito_bundle_size(&vec!["tx".to_string(); 1]).is_ok());
+        assert!(BundleValidator::validate_jito_bundle_size(&vec!["tx".to_string(); 4]).is_ok());
+        assert!(BundleValidator::validate_jito_bundle_size(&vec!["tx".to_string(); 5]).is_ok());
+        assert!(BundleValidator::validate_jito_bundle_size(&vec!["tx".to_string(); 6]).is_err());
+        assert!(BundleValidator::validate_jito_bundle_size(&vec!["tx".to_string(); 7]).is_err());
+    }
+
+    #[test]
+    fn test_validate_jito_bundle_size_error_types() {
+        let empty_err = BundleValidator::validate_jito_bundle_size(&[]).unwrap_err();
+        assert!(matches!(empty_err, KoraError::InvalidTransaction(_)));
+
+        let large_err =
+            BundleValidator::validate_jito_bundle_size(&vec!["tx".to_string(); 6]).unwrap_err();
+        assert!(matches!(large_err, KoraError::JitoError(_)));
+    }
+
+    #[test]
     fn test_signed_indices_for_bundle_defaults_to_all() {
         let indices = BundleValidator::signed_indices_for_bundle(4, None);
         assert_eq!(indices, vec![0, 1, 2, 3]);
