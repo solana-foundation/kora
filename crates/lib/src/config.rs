@@ -243,6 +243,7 @@ pub struct Token2022InstructionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default)]
 pub struct AltInstructionPolicy {
     /// Allow fee payer to be authority/payer in ALT CreateLookupTable instructions
     pub allow_create: bool,
@@ -915,6 +916,26 @@ rate_limit = 1
             .validation
             .token_2022
             .is_account_extension_blocked(ExtensionType::CpiGuard));
+    }
+
+    #[test]
+    fn test_fee_payer_policy_alt_partial_table_uses_defaults() {
+        let mut toml_content = ConfigBuilder::new().build_toml();
+        toml_content.push_str(
+            r#"
+[validation.fee_payer_policy.alt]
+allow_create = true
+"#,
+        );
+
+        let config: Config = toml::from_str(&toml_content)
+            .expect("Config with partial [validation.fee_payer_policy.alt] should parse");
+
+        assert!(config.validation.fee_payer_policy.alt.allow_create);
+        assert!(!config.validation.fee_payer_policy.alt.allow_extend);
+        assert!(!config.validation.fee_payer_policy.alt.allow_freeze);
+        assert!(!config.validation.fee_payer_policy.alt.allow_deactivate);
+        assert!(!config.validation.fee_payer_policy.alt.allow_close);
     }
 
     #[test]

@@ -295,98 +295,43 @@ impl TransactionValidator {
         // Validate ALT instructions
         let alt_instructions = transaction_resolved.get_or_parse_alt_instructions()?;
 
-        for instruction in
-            alt_instructions.get(&ParsedALTInstructionType::AltCreateLookupTable).unwrap_or(&vec![])
-        {
-            if let ParsedALTInstructionData::AltCreateLookupTable {
+        validate_alt!(self, alt_instructions, AltCreateLookupTable,
+            ParsedALTInstructionData::AltCreateLookupTable {
                 lookup_table_authority,
                 payer_account,
                 ..
-            } = instruction
-            {
-                if (*lookup_table_authority == self.fee_payer_pubkey
-                    || *payer_account == self.fee_payer_pubkey)
-                    && !self.fee_payer_policy.alt.allow_create
-                {
-                    return Err(KoraError::InvalidTransaction(
-                        "Fee payer cannot be used for 'ALT CreateLookupTable'".to_string(),
-                    ));
-                }
-            }
-        }
+            } => (*lookup_table_authority == self.fee_payer_pubkey
+                || *payer_account == self.fee_payer_pubkey),
+            self.fee_payer_policy.alt.allow_create,
+            "ALT CreateLookupTable");
 
-        for instruction in
-            alt_instructions.get(&ParsedALTInstructionType::AltExtendLookupTable).unwrap_or(&vec![])
-        {
-            if let ParsedALTInstructionData::AltExtendLookupTable {
+        validate_alt!(self, alt_instructions, AltExtendLookupTable,
+            ParsedALTInstructionData::AltExtendLookupTable {
                 lookup_table_authority,
                 payer_account,
                 ..
-            } = instruction
-            {
-                if (*lookup_table_authority == self.fee_payer_pubkey
-                    || payer_account.is_some_and(|payer| payer == self.fee_payer_pubkey))
-                    && !self.fee_payer_policy.alt.allow_extend
-                {
-                    return Err(KoraError::InvalidTransaction(
-                        "Fee payer cannot be used for 'ALT ExtendLookupTable'".to_string(),
-                    ));
-                }
-            }
-        }
+            } => (*lookup_table_authority == self.fee_payer_pubkey
+                || payer_account.is_some_and(|payer| payer == self.fee_payer_pubkey)),
+            self.fee_payer_policy.alt.allow_extend,
+            "ALT ExtendLookupTable");
 
-        for instruction in
-            alt_instructions.get(&ParsedALTInstructionType::AltFreezeLookupTable).unwrap_or(&vec![])
-        {
-            if let ParsedALTInstructionData::AltFreezeLookupTable {
-                lookup_table_authority, ..
-            } = instruction
-            {
-                if *lookup_table_authority == self.fee_payer_pubkey
-                    && !self.fee_payer_policy.alt.allow_freeze
-                {
-                    return Err(KoraError::InvalidTransaction(
-                        "Fee payer cannot be used for 'ALT FreezeLookupTable'".to_string(),
-                    ));
-                }
-            }
-        }
+        validate_alt!(self, alt_instructions, AltFreezeLookupTable,
+            ParsedALTInstructionData::AltFreezeLookupTable { lookup_table_authority, .. } =>
+            *lookup_table_authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.alt.allow_freeze,
+            "ALT FreezeLookupTable");
 
-        for instruction in alt_instructions
-            .get(&ParsedALTInstructionType::AltDeactivateLookupTable)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedALTInstructionData::AltDeactivateLookupTable {
-                lookup_table_authority,
-                ..
-            } = instruction
-            {
-                if *lookup_table_authority == self.fee_payer_pubkey
-                    && !self.fee_payer_policy.alt.allow_deactivate
-                {
-                    return Err(KoraError::InvalidTransaction(
-                        "Fee payer cannot be used for 'ALT DeactivateLookupTable'".to_string(),
-                    ));
-                }
-            }
-        }
+        validate_alt!(self, alt_instructions, AltDeactivateLookupTable,
+            ParsedALTInstructionData::AltDeactivateLookupTable { lookup_table_authority, .. } =>
+            *lookup_table_authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.alt.allow_deactivate,
+            "ALT DeactivateLookupTable");
 
-        for instruction in
-            alt_instructions.get(&ParsedALTInstructionType::AltCloseLookupTable).unwrap_or(&vec![])
-        {
-            if let ParsedALTInstructionData::AltCloseLookupTable {
-                lookup_table_authority, ..
-            } = instruction
-            {
-                if *lookup_table_authority == self.fee_payer_pubkey
-                    && !self.fee_payer_policy.alt.allow_close
-                {
-                    return Err(KoraError::InvalidTransaction(
-                        "Fee payer cannot be used for 'ALT CloseLookupTable'".to_string(),
-                    ));
-                }
-            }
-        }
+        validate_alt!(self, alt_instructions, AltCloseLookupTable,
+            ParsedALTInstructionData::AltCloseLookupTable { lookup_table_authority, .. } =>
+            *lookup_table_authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.alt.allow_close,
+            "ALT CloseLookupTable");
 
         for instruction in
             spl_instructions.get(&ParsedSPLInstructionType::SplTokenReallocate).unwrap_or(&vec![])
@@ -1493,6 +1438,211 @@ mod tests {
         let (create_ix, _table_address) =
             alt_instruction::create_lookup_table(authority, fee_payer, 42);
         let message = VersionedMessage::Legacy(Message::new(&[create_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_alt_extend_lookup_table() {
+        let fee_payer = Pubkey::new_unique();
+        let lookup_table = Pubkey::new_unique();
+
+        // Test with allow_extend = false and fee payer as authority -> should fail
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_extend = false;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let extend_ix = alt_instruction::extend_lookup_table(
+            lookup_table,
+            fee_payer,
+            None,
+            vec![Pubkey::new_unique()],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[extend_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Test optional payer branch: allow_extend = false and fee payer as optional payer -> should fail
+        let rpc_client = RpcMockBuilder::new().build();
+        let other_authority = Pubkey::new_unique();
+        let extend_ix = alt_instruction::extend_lookup_table(
+            lookup_table,
+            other_authority,
+            Some(fee_payer),
+            vec![Pubkey::new_unique()],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[extend_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Test with allow_extend = true and fee payer as optional payer -> should pass
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_extend = true;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let extend_ix = alt_instruction::extend_lookup_table(
+            lookup_table,
+            other_authority,
+            Some(fee_payer),
+            vec![Pubkey::new_unique()],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[extend_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with no fee payer involvement - should pass even when allow_extend is disabled
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_extend = false;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let extend_ix = alt_instruction::extend_lookup_table(
+            lookup_table,
+            other_authority,
+            Some(Pubkey::new_unique()),
+            vec![Pubkey::new_unique()],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[extend_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_alt_deactivate_lookup_table() {
+        let fee_payer = Pubkey::new_unique();
+        let lookup_table = Pubkey::new_unique();
+
+        // Test with allow_deactivate = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_deactivate = true;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let deactivate_ix = alt_instruction::deactivate_lookup_table(lookup_table, fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[deactivate_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_deactivate = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_deactivate = false;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let deactivate_ix = alt_instruction::deactivate_lookup_table(lookup_table, fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[deactivate_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Test with another authority - should pass when fee payer is not authority
+        let rpc_client = RpcMockBuilder::new().build();
+        let other_authority = Pubkey::new_unique();
+        let deactivate_ix = alt_instruction::deactivate_lookup_table(lookup_table, other_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[deactivate_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_alt_close_lookup_table() {
+        let fee_payer = Pubkey::new_unique();
+        let lookup_table = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        // Test with allow_close = true
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_close = true;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let close_ix = alt_instruction::close_lookup_table(lookup_table, fee_payer, recipient);
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // Test with allow_close = false
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.alt.allow_close = false;
+        setup_alt_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let close_ix = alt_instruction::close_lookup_table(lookup_table, fee_payer, recipient);
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Test with another authority - should pass when fee payer is not authority
+        let rpc_client = RpcMockBuilder::new().build();
+        let other_authority = Pubkey::new_unique();
+        let close_ix =
+            alt_instruction::close_lookup_table(lookup_table, other_authority, recipient);
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
