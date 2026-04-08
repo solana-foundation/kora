@@ -736,7 +736,8 @@ impl TokenUtil {
         expected_destination_owner: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
     ) -> Result<Option<u64>, KoraError> {
-        let mut total_lamport_value = 0u64;
+        let mut total_inflow_lamport_value = 0u64;
+        let mut total_outflow_lamport_value = 0u64;
         let mut cached_epoch: Option<u64> = None;
         let mut token2022_mints: HashMap<Pubkey, Box<dyn TokenMint>> = HashMap::new();
 
@@ -750,6 +751,7 @@ impl TokenUtil {
             .unwrap_or(&vec![])
         {
             if let ParsedSPLInstructionData::SplTokenTransfer {
+                owner,
                 source_address,
                 destination_address,
                 mint,
@@ -758,6 +760,73 @@ impl TokenUtil {
                 ..
             } = instruction
             {
+                // Track net movement for the expected destination owner.
+                // This prevents counting a same-transaction refund loop as valid payment.
+                let source_owner_and_mint =
+                    match CacheUtil::get_account(config, rpc_client, source_address, true).await {
+                        Ok(source_account) => {
+                            let source_token_program =
+                                TokenType::get_token_program_from_owner(&source_account.owner)?;
+                            let source_token_state = source_token_program
+                                .unpack_token_account(&source_account.data)
+                                .map_err(|e| {
+                                    KoraError::InvalidTransaction(format!(
+                                        "Invalid source token account: {e}"
+                                    ))
+                                })?;
+
+                            Some((source_token_state.owner(), source_token_state.mint()))
+                        }
+                        Err(KoraError::AccountNotFound(_)) => None,
+                        Err(e) => {
+                            return Err(KoraError::RpcError(e.to_string()));
+                        }
+                    };
+
+                let source_owner_matches = source_owner_and_mint
+                    .as_ref()
+                    .map(|(source_owner, _)| *source_owner == *expected_destination_owner)
+                    // Fallback for account-creation-in-transaction edge cases.
+                    .unwrap_or(*owner == *expected_destination_owner);
+
+                if source_owner_matches {
+                    let outflow_mint = source_owner_and_mint
+                        .as_ref()
+                        .map(|(_, source_mint)| *source_mint)
+                        .or(*mint);
+
+                    if let Some(outflow_mint) = outflow_mint {
+                        if config.validation.supports_token(&outflow_mint.to_string()) {
+                            let outflow_lamport_value =
+                                TokenUtil::calculate_token_value_in_lamports(
+                                    *amount,
+                                    &outflow_mint,
+                                    rpc_client,
+                                    config,
+                                )
+                                .await?;
+
+                            total_outflow_lamport_value = total_outflow_lamport_value
+                                .checked_add(outflow_lamport_value)
+                                .ok_or_else(|| {
+                                    log::error!(
+                                        "Payment outflow accumulation overflow: total={}, new_outflow={}",
+                                        total_outflow_lamport_value,
+                                        outflow_lamport_value
+                                    );
+                                    KoraError::ValidationError(
+                                        "Payment outflow accumulation overflow".to_string(),
+                                    )
+                                })?;
+                        }
+                    } else {
+                        log::warn!(
+                            "Unable to resolve mint for potential payment outflow from source account {}",
+                            source_address
+                        );
+                    }
+                }
+
                 let token_program: Box<dyn TokenInterface> = if *is_2022 {
                     Box::new(Token2022Program::new())
                 } else {
@@ -859,20 +928,25 @@ impl TokenUtil {
                 )
                 .await?;
 
-                total_lamport_value =
-                    total_lamport_value.checked_add(lamport_value).ok_or_else(|| {
+                total_inflow_lamport_value =
+                    total_inflow_lamport_value.checked_add(lamport_value).ok_or_else(|| {
                         log::error!(
-                            "Payment accumulation overflow: total={}, new_payment={}",
-                            total_lamport_value,
+                            "Payment inflow accumulation overflow: total={}, new_payment={}",
+                            total_inflow_lamport_value,
                             lamport_value
                         );
-                        KoraError::ValidationError("Payment accumulation overflow".to_string())
+                        KoraError::ValidationError(
+                            "Payment inflow accumulation overflow".to_string(),
+                        )
                     })?;
             }
         }
 
-        if total_lamport_value > 0 {
-            Ok(Some(total_lamport_value))
+        let net_payment_lamports =
+            total_inflow_lamport_value.saturating_sub(total_outflow_lamport_value);
+
+        if net_payment_lamports > 0 {
+            Ok(Some(net_payment_lamports))
         } else {
             Ok(None)
         }
