@@ -187,21 +187,10 @@ impl TransactionValidator {
             return Ok(());
         }
 
-        let compute_budget_id = solana_compute_budget_interface::id();
-        let non_cu_instructions: Vec<_> = transaction_resolved
+        let called = transaction_resolved
             .all_instructions
             .iter()
-            .filter(|ix| ix.program_id != compute_budget_id)
-            .collect();
-
-        if non_cu_instructions.is_empty() {
-            return Err(KoraError::InvalidTransaction(
-                "Transaction contains only ComputeBudget instructions".to_string(),
-            ));
-        }
-
-        let called =
-            non_cu_instructions.iter().any(|ix| self.must_call_programs.contains(&ix.program_id));
+            .any(|ix| self.must_call_programs.contains(&ix.program_id));
         if !called {
             return Err(KoraError::InvalidTransaction(format!(
                 "Transaction must call at least one of the required programs: {:?}",

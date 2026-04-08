@@ -448,19 +448,6 @@ impl ConfigValidator {
 
         // Validate must_call_programs constraints
         if !config.validation.must_call_programs.is_empty() {
-            let compute_budget_program = solana_compute_budget_interface::id().to_string();
-
-            if config
-                .validation
-                .must_call_programs
-                .iter()
-                .all(|program| program == &compute_budget_program)
-            {
-                errors.push(
-                    "must_call_programs cannot contain only the Compute Budget program".to_string(),
-                );
-            }
-
             for program in &config.validation.must_call_programs {
                 if !config.validation.allowed_programs.contains(program) {
                     errors.push(format!(
@@ -1127,24 +1114,22 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_validate_with_result_must_call_programs_compute_budget_only_error() {
+    async fn test_validate_with_result_must_call_programs_allows_compute_budget_program() {
         let mut config = ConfigMockBuilder::new().build();
         config.kora.cache.enabled = false;
         let compute_budget_program = solana_compute_budget_interface::id().to_string();
-        config.validation.allowed_programs = vec![compute_budget_program.clone()];
+        config.validation.allowed_programs = vec![
+            SYSTEM_PROGRAM_ID.to_string(),
+            SPL_TOKEN_PROGRAM_ID.to_string(),
+            compute_budget_program.clone(),
+        ];
         config.validation.must_call_programs = vec![compute_budget_program];
-        config.validation.price.model = PriceModel::Free;
 
         let _ = update_config(config);
 
         let rpc_client = RpcMockBuilder::new().build();
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
-        assert!(result.is_err());
-        let errors = result.unwrap_err();
-
-        assert!(errors.iter().any(|e| {
-            e.contains("must_call_programs cannot contain only the Compute Budget program")
-        }));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
