@@ -5,7 +5,13 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
 use kora_lib::transaction::TransactionUtil;
-use solana_sdk::signature::{Signature, Signer};
+use solana_sdk::{
+    signature::{Signature, Signer},
+    transaction::Transaction,
+};
+use spl_associated_token_account_interface::{
+    address::get_associated_token_address, instruction::create_associated_token_account_idempotent,
+};
 use std::str::FromStr;
 
 // **************************************************************************************
@@ -663,6 +669,87 @@ async fn test_sign_bundle_insufficient_payment_error() {
     assert!(
         err.contains("insufficient") || err.contains("payment"),
         "Error should mention insufficient payment: {err}"
+    );
+}
+
+#[tokio::test]
+async fn test_sign_bundle_rejects_net_zero_token_loop_across_transactions() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let setup = TestAccountSetup::new().await;
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let attacker = create_funded_wallet(&ctx).await;
+    let mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let fee_payer_token_account = get_associated_token_address(&fee_payer, &mint);
+    let attacker_token_account = get_associated_token_address(&attacker.pubkey(), &mint);
+
+    let create_attacker_ata_ix = create_associated_token_account_idempotent(
+        &setup.sender_keypair.pubkey(),
+        &attacker.pubkey(),
+        &mint,
+        &spl_token_interface::id(),
+    );
+    let recent_blockhash =
+        setup.rpc_client.get_latest_blockhash().await.expect("Failed to fetch recent blockhash");
+    let create_ata_tx = Transaction::new_signed_with_payer(
+        &[create_attacker_ata_ix],
+        Some(&setup.sender_keypair.pubkey()),
+        &[&setup.sender_keypair],
+        recent_blockhash,
+    );
+    setup
+        .rpc_client
+        .send_and_confirm_transaction(&create_ata_tx)
+        .await
+        .expect("Failed to create attacker ATA");
+
+    setup
+        .mint_tokens_to_account(&fee_payer_token_account, 100_000)
+        .await
+        .expect("Failed to seed fee payer token account");
+    setup
+        .mint_tokens_to_account(&attacker_token_account, 100_000)
+        .await
+        .expect("Failed to seed attacker token account");
+
+    let payment_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&attacker)
+        .with_spl_payment_with_accounts(
+            &attacker_token_account,
+            &fee_payer_token_account,
+            &attacker.pubkey(),
+            100_000,
+        )
+        .build()
+        .await
+        .expect("Failed to build bundle payment transaction");
+
+    let drain_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&attacker)
+        .with_spl_payment_with_accounts(
+            &fee_payer_token_account,
+            &attacker_token_account,
+            &fee_payer,
+            100_000,
+        )
+        .with_transfer(&fee_payer, &attacker.pubkey(), 500_000)
+        .build()
+        .await
+        .expect("Failed to build bundle drain transaction");
+
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("signBundle", rpc_params![vec![payment_tx, drain_tx]]).await;
+
+    assert!(result.is_err(), "Expected bundle with zero net payment to be rejected");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("Bundle payment insufficient") || err.contains("payment"),
+        "Error should mention bundle payment insufficiency: {err}"
     );
 }
 
