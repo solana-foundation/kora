@@ -20,6 +20,7 @@ pub struct TransactionValidator {
     fee_payer_pubkey: Pubkey,
     max_allowed_lamports: u64,
     allowed_programs: Vec<Pubkey>,
+    must_call_programs: Vec<Pubkey>,
     max_signatures: u64,
     allowed_tokens: Vec<Pubkey>,
     disallowed_accounts: Vec<Pubkey>,
@@ -45,10 +46,23 @@ impl TransactionValidator {
             })
             .collect::<Result<Vec<Pubkey>, KoraError>>()?;
 
+        let must_call_programs = config
+            .must_call_programs
+            .iter()
+            .map(|addr| {
+                Pubkey::from_str(addr).map_err(|e| {
+                    KoraError::InternalServerError(format!(
+                        "Invalid program address in must_call_programs config: {e}"
+                    ))
+                })
+            })
+            .collect::<Result<Vec<Pubkey>, KoraError>>()?;
+
         Ok(Self {
             fee_payer_pubkey,
             max_allowed_lamports: config.max_allowed_lamports,
             allowed_programs,
+            must_call_programs,
             max_signatures: config.max_signatures,
             _price_source: config.price_source.clone(),
             allowed_tokens: config
@@ -116,6 +130,7 @@ impl TransactionValidator {
         self.validate_signatures(&transaction_resolved.transaction)?;
 
         self.validate_programs(transaction_resolved)?;
+        self.validate_must_call_programs(transaction_resolved)?;
         self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
         self.validate_disallowed_accounts(transaction_resolved)?;
         self.validate_fee_payer_usage(transaction_resolved)?;
@@ -161,6 +176,39 @@ impl TransactionValidator {
                 )));
             }
         }
+        Ok(())
+    }
+
+    fn validate_must_call_programs(
+        &self,
+        transaction_resolved: &VersionedTransactionResolved,
+    ) -> Result<(), KoraError> {
+        if self.must_call_programs.is_empty() {
+            return Ok(());
+        }
+
+        let compute_budget_id = solana_compute_budget_interface::id();
+        let non_cu_instructions: Vec<_> = transaction_resolved
+            .all_instructions
+            .iter()
+            .filter(|ix| ix.program_id != compute_budget_id)
+            .collect();
+
+        if non_cu_instructions.is_empty() {
+            return Err(KoraError::InvalidTransaction(
+                "Transaction contains only ComputeBudget instructions".to_string(),
+            ));
+        }
+
+        let called =
+            non_cu_instructions.iter().any(|ix| self.must_call_programs.contains(&ix.program_id));
+        if !called {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Transaction must call at least one of the required programs: {:?}",
+                self.must_call_programs
+            )));
+        }
+
         Ok(())
     }
 
@@ -737,6 +785,152 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_must_call_programs_empty_no_restriction() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_must_call_programs(vec![])
+            .build();
+        setup_both_configs(config);
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        let instruction = transfer(&sender, &recipient, 1000);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(&get_config().unwrap(), &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_must_call_programs_only_cu_blocked() {
+        let fee_payer = Pubkey::new_unique();
+        let compute_budget_id = solana_compute_budget_interface::id().to_string();
+        let system_id = SYSTEM_PROGRAM_ID.to_string();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![compute_budget_id.clone(), system_id.clone()])
+            .with_must_call_programs(vec![system_id])
+            .build();
+        setup_both_configs(config);
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let cu_ix =
+            Instruction::new_with_bincode(solana_compute_budget_interface::id(), &[0u8], vec![]);
+        let message = VersionedMessage::Legacy(Message::new(&[cu_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(&get_config().unwrap(), &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_must_call_programs_required_program_called() {
+        let fee_payer = Pubkey::new_unique();
+        let compute_budget_id = solana_compute_budget_interface::id().to_string();
+        let system_id = SYSTEM_PROGRAM_ID.to_string();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![compute_budget_id.clone(), system_id.clone()])
+            .with_must_call_programs(vec![system_id])
+            .build();
+        setup_both_configs(config);
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        let cu_ix =
+            Instruction::new_with_bincode(solana_compute_budget_interface::id(), &[0u8], vec![]);
+        let transfer_ix = transfer(&sender, &recipient, 1000);
+        let message =
+            VersionedMessage::Legacy(Message::new(&[cu_ix, transfer_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(&get_config().unwrap(), &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_must_call_programs_no_required_program_fails() {
+        let fee_payer = Pubkey::new_unique();
+        let system_id = SYSTEM_PROGRAM_ID.to_string();
+        let other_program = Pubkey::new_unique();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![system_id.clone()])
+            .with_must_call_programs(vec![other_program.to_string()])
+            .build();
+        setup_both_configs(config);
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        let instruction = transfer(&sender, &recipient, 1000);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(&get_config().unwrap(), &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_must_call_programs_or_semantics() {
+        let fee_payer = Pubkey::new_unique();
+        let system_id = SYSTEM_PROGRAM_ID.to_string();
+        let other_program = Pubkey::new_unique();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![system_id.clone()])
+            .with_must_call_programs(vec![system_id, other_program.to_string()])
+            .build();
+        setup_both_configs(config);
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        // Only calls system program (one of two required) — should pass
+        let instruction = transfer(&sender, &recipient, 1000);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(&get_config().unwrap(), &mut transaction, &rpc_client)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]

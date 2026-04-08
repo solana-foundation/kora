@@ -94,6 +94,7 @@ impl ConfigMockBuilder {
                     token_2022: Token2022Config::default(),
                     allow_durable_transactions: false,
                     max_price_staleness_slots: 0,
+                    must_call_programs: vec![],
                 },
                 kora: KoraConfig {
                     rate_limit: 100,
@@ -161,6 +162,11 @@ impl ConfigMockBuilder {
 
     pub fn with_allowed_programs(mut self, programs: Vec<String>) -> Self {
         self.config.validation.allowed_programs = programs;
+        self
+    }
+
+    pub fn with_must_call_programs(mut self, programs: Vec<String>) -> Self {
+        self.config.validation.must_call_programs = programs;
         self
     }
 
@@ -284,6 +290,7 @@ impl ValidationConfigBuilder {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                must_call_programs: vec![],
             },
         }
     }

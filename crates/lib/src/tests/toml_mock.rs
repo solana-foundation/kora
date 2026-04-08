@@ -31,6 +31,7 @@ struct ValidationSection {
     max_allowed_lamports: u64,
     max_signatures: u64,
     allowed_programs: Vec<String>,
+    must_call_programs: Vec<String>,
     allowed_tokens: Vec<String>,
     allowed_spl_paid_tokens: SplTokenConfig,
     disallowed_accounts: Vec<String>,
@@ -55,6 +56,7 @@ impl Default for ValidationSection {
             max_allowed_lamports: 1000000000,
             max_signatures: 10,
             allowed_programs: vec!["program1".to_string()],
+            must_call_programs: vec![],
             allowed_tokens: vec!["token1".to_string()],
             allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec!["token2".to_string()]),
             disallowed_accounts: vec![],
@@ -86,6 +88,11 @@ impl ConfigBuilder {
 
     pub fn with_programs(mut self, programs: Vec<&str>) -> Self {
         self.validation.allowed_programs = programs.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    pub fn with_must_call_programs(mut self, programs: Vec<&str>) -> Self {
+        self.validation.must_call_programs = programs.iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -282,11 +289,26 @@ impl ConfigBuilder {
             )
         };
 
+        let must_call_list = if self.validation.must_call_programs.is_empty() {
+            "[]".to_string()
+        } else {
+            format!(
+                "[{}]",
+                self.validation
+                    .must_call_programs
+                    .iter()
+                    .map(|p| format!("\"{p}\""))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+
         let mut toml = format!(
             "[validation]\n\
             max_allowed_lamports = {}\n\
             max_signatures = {}\n\
             allowed_programs = [{}]\n\
+            must_call_programs = {}\n\
             allowed_tokens = [{}]\n\
             allowed_spl_paid_tokens = {}\n\
             disallowed_accounts = {}\n\
@@ -294,6 +316,7 @@ impl ConfigBuilder {
             self.validation.max_allowed_lamports,
             self.validation.max_signatures,
             programs_list,
+            must_call_list,
             tokens_list,
             spl_tokens_config,
             disallowed_list,
