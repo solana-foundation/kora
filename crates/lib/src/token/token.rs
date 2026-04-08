@@ -65,6 +65,16 @@ pub enum TransferHookValidationFlow {
     ImmediateSignAndSend,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AtaCreationInstructionInfo {
+    pub payer: Pubkey,
+    pub ata_address: Pubkey,
+    pub wallet_owner: Pubkey,
+    pub mint: Pubkey,
+    pub token_program: Pubkey,
+    pub is_idempotent: bool,
+}
+
 impl TokenUtil {
     fn should_reject_mutable_transfer_hook(
         config: &Config,
@@ -261,27 +271,66 @@ impl TokenUtil {
         instructions: &[Instruction],
         destination_address: &Pubkey,
     ) -> Option<(Pubkey, Pubkey)> {
-        let ata_program_id = spl_associated_token_account_interface::program::id();
-
         for ix in instructions {
-            if ix.program_id == ata_program_id
-                && ix.accounts.len()
-                    >= constant::instruction_indexes::ata_instruction_indexes::MIN_ACCOUNTS
-            {
-                let ata_address = ix.accounts
-                    [constant::instruction_indexes::ata_instruction_indexes::ATA_ADDRESS_INDEX]
-                    .pubkey;
-                if ata_address == *destination_address {
-                    let wallet_owner =
-                        ix.accounts[constant::instruction_indexes::ata_instruction_indexes::WALLET_OWNER_INDEX].pubkey;
-                    let mint = ix.accounts
-                        [constant::instruction_indexes::ata_instruction_indexes::MINT_INDEX]
-                        .pubkey;
-                    return Some((wallet_owner, mint));
+            if let Some(info) = Self::parse_ata_creation_instruction(ix) {
+                if info.ata_address == *destination_address {
+                    return Some((info.wallet_owner, info.mint));
                 }
             }
         }
         None
+    }
+
+    /// Parse ATA Create/CreateIdempotent instructions.
+    /// Returns None for non-ATA instructions or unsupported ATA variants.
+    pub fn parse_ata_creation_instruction(
+        instruction: &Instruction,
+    ) -> Option<AtaCreationInstructionInfo> {
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+        if instruction.program_id != ata_program_id
+            || instruction.accounts.len()
+                < constant::instruction_indexes::ata_instruction_indexes::MIN_ACCOUNTS
+        {
+            return None;
+        }
+
+        let discriminator = instruction.data.first().copied().unwrap_or(0);
+        let is_idempotent = match discriminator {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+
+        Some(AtaCreationInstructionInfo {
+            payer: instruction.accounts
+                [constant::instruction_indexes::ata_instruction_indexes::PAYER_INDEX]
+                .pubkey,
+            ata_address: instruction.accounts
+                [constant::instruction_indexes::ata_instruction_indexes::ATA_ADDRESS_INDEX]
+                .pubkey,
+            wallet_owner: instruction.accounts
+                [constant::instruction_indexes::ata_instruction_indexes::WALLET_OWNER_INDEX]
+                .pubkey,
+            mint: instruction.accounts
+                [constant::instruction_indexes::ata_instruction_indexes::MINT_INDEX]
+                .pubkey,
+            token_program: instruction.accounts
+                [constant::instruction_indexes::ata_instruction_indexes::TOKEN_PROGRAM_INDEX]
+                .pubkey,
+            is_idempotent,
+        })
+    }
+
+    /// Extract ATA Create/CreateIdempotent instructions where the fee payer funds account creation.
+    pub fn find_fee_payer_ata_creations(
+        instructions: &[Instruction],
+        fee_payer: &Pubkey,
+    ) -> Vec<AtaCreationInstructionInfo> {
+        instructions
+            .iter()
+            .filter_map(Self::parse_ata_creation_instruction)
+            .filter(|info| info.payer == *fee_payer)
+            .collect()
     }
 
     pub async fn get_mint(
@@ -1701,5 +1750,85 @@ mod tests_token {
 
         let result = TokenUtil::find_ata_creation_for_destination(&instructions, &target_address);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ata_creation_instruction_idempotent() {
+        let payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let ix =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &payer,
+                &owner,
+                &mint,
+                &spl_token_interface::id(),
+            );
+
+        let parsed = TokenUtil::parse_ata_creation_instruction(&ix).expect("ATA should parse");
+        assert_eq!(parsed.payer, payer);
+        assert_eq!(parsed.wallet_owner, owner);
+        assert_eq!(parsed.mint, mint);
+        assert_eq!(parsed.token_program, spl_token_interface::id());
+        assert!(parsed.is_idempotent);
+    }
+
+    #[test]
+    fn test_parse_ata_creation_instruction_rejects_unknown_discriminator() {
+        use solana_sdk::instruction::AccountMeta;
+
+        let payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let ata_address =
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &owner, &mint,
+            );
+
+        let ix = Instruction {
+            program_id: spl_associated_token_account_interface::program::id(),
+            accounts: vec![
+                AccountMeta::new(payer, true),
+                AccountMeta::new(ata_address, false),
+                AccountMeta::new_readonly(owner, false),
+                AccountMeta::new_readonly(mint, false),
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+                AccountMeta::new_readonly(spl_token_interface::id(), false),
+            ],
+            data: vec![2], // Unsupported ATA instruction variant
+        };
+
+        assert!(TokenUtil::parse_ata_creation_instruction(&ix).is_none());
+    }
+
+    #[test]
+    fn test_find_fee_payer_ata_creations_filters_by_payer() {
+        let fee_payer = Pubkey::new_unique();
+        let other_payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint_a = Pubkey::new_unique();
+        let mint_b = Pubkey::new_unique();
+
+        let by_fee_payer =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &fee_payer,
+                &owner,
+                &mint_a,
+                &spl_token_interface::id(),
+            );
+        let by_other_payer =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &other_payer,
+                &owner,
+                &mint_b,
+                &spl_token_interface::id(),
+            );
+
+        let parsed =
+            TokenUtil::find_fee_payer_ata_creations(&[by_fee_payer, by_other_payer], &fee_payer);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].payer, fee_payer);
+        assert_eq!(parsed[0].mint, mint_a);
     }
 }

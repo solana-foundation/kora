@@ -1,4 +1,7 @@
-use std::str::FromStr;
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use crate::{
     config::Config,
@@ -7,7 +10,7 @@ use crate::{
     fee::price::PriceModel,
     token::{
         spl_token_2022::Token2022Mint,
-        token::{TokenType, TokenUtil, TransferHookValidationFlow},
+        token::{AtaCreationInstructionInfo, TokenType, TokenUtil, TransferHookValidationFlow},
         TokenState,
     },
     transaction::{
@@ -23,7 +26,9 @@ use crate::cache::CacheUtil;
 use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
+use solana_program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
+use solana_system_interface::{instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID};
 
 #[derive(Debug, Clone)]
 pub struct TotalFeeCalculation {
@@ -389,6 +394,146 @@ impl FeeConfigUtil {
         }
     }
 
+    fn collect_system_created_accounts_by_fee_payer(
+        transaction: &VersionedTransactionResolved,
+        fee_payer_pubkey: &Pubkey,
+    ) -> HashSet<Pubkey> {
+        transaction
+            .all_instructions
+            .iter()
+            .filter(|instruction| instruction.program_id == SYSTEM_PROGRAM_ID)
+            .filter_map(|instruction| {
+                if instruction.accounts.len() < 2 {
+                    return None;
+                }
+
+                match bincode::deserialize::<SystemInstruction>(&instruction.data) {
+                    Ok(SystemInstruction::CreateAccount { .. })
+                    | Ok(SystemInstruction::CreateAccountWithSeed { .. }) => {
+                        let payer = instruction.accounts[0].pubkey;
+                        let new_account = instruction.accounts[1].pubkey;
+                        if payer == *fee_payer_pubkey {
+                            Some(new_account)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            })
+            .collect()
+    }
+
+    async fn estimate_ata_account_len(
+        ata_creation: &AtaCreationInstructionInfo,
+        rpc_client: &RpcClient,
+        config: &Config,
+        token2022_account_len_cache: &mut HashMap<Pubkey, usize>,
+    ) -> Result<usize, KoraError> {
+        if ata_creation.token_program == spl_token_interface::id() {
+            return Ok(spl_token_interface::state::Account::LEN);
+        }
+
+        if ata_creation.token_program == spl_token_2022_interface::id() {
+            if let Some(account_len) = token2022_account_len_cache.get(&ata_creation.mint) {
+                return Ok(*account_len);
+            }
+
+            let mint_state = TokenUtil::get_mint(config, rpc_client, &ata_creation.mint).await?;
+            let account_len = if let Some(token2022_mint) =
+                mint_state.as_any().downcast_ref::<Token2022Mint>()
+            {
+                let required_account_extensions =
+                    spl_token_2022_interface::extension::ExtensionType::get_required_init_account_extensions(
+                        &token2022_mint.extensions_types,
+                    );
+
+                spl_token_2022_interface::extension::ExtensionType::try_calculate_account_len::<
+                    spl_token_2022_interface::state::Account,
+                >(&required_account_extensions)
+                .map_err(|e| {
+                    KoraError::ValidationError(format!(
+                        "Failed to estimate Token2022 ATA account size for mint {}: {}",
+                        ata_creation.mint, e
+                    ))
+                })?
+            } else {
+                spl_token_interface::state::Account::LEN
+            };
+
+            token2022_account_len_cache.insert(ata_creation.mint, account_len);
+            return Ok(account_len);
+        }
+
+        // Unsupported token programs should fail on-chain, but use conservative SPL account length
+        // for safety if they are present in a transaction we are estimating.
+        Ok(spl_token_interface::state::Account::LEN)
+    }
+
+    async fn calculate_ata_creation_outflow(
+        fee_payer_pubkey: &Pubkey,
+        transaction: &VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        config: &Config,
+    ) -> Result<u64, KoraError> {
+        let ata_creations = TokenUtil::find_fee_payer_ata_creations(
+            &transaction.all_instructions,
+            fee_payer_pubkey,
+        );
+        if ata_creations.is_empty() {
+            return Ok(0);
+        }
+
+        let system_created_accounts =
+            Self::collect_system_created_accounts_by_fee_payer(transaction, fee_payer_pubkey);
+        let mut rent_cache_by_account_len: HashMap<usize, u64> = HashMap::new();
+        let mut token2022_account_len_cache: HashMap<Pubkey, usize> = HashMap::new();
+        let mut total = 0u64;
+
+        for ata_creation in ata_creations {
+            // If simulation already surfaced the underlying SystemCreateAccount CPI for this ATA,
+            // it has already been counted from parsed system instructions.
+            if system_created_accounts.contains(&ata_creation.ata_address) {
+                continue;
+            }
+
+            let account_len = Self::estimate_ata_account_len(
+                &ata_creation,
+                rpc_client,
+                config,
+                &mut token2022_account_len_cache,
+            )
+            .await?;
+
+            let rent_lamports = if let Some(rent) = rent_cache_by_account_len.get(&account_len) {
+                *rent
+            } else {
+                let rent = rpc_client
+                    .get_minimum_balance_for_rent_exemption(account_len)
+                    .await
+                    .map_err(|e| {
+                        KoraError::RpcError(format!(
+                            "Failed to fetch rent exemption for account length {}: {}",
+                            account_len, e
+                        ))
+                    })?;
+                rent_cache_by_account_len.insert(account_len, rent);
+                rent
+            };
+
+            total = total.checked_add(rent_lamports).ok_or_else(|| {
+                log::error!(
+                    "Outflow calculation overflow in ATA creation accounting: total={}, rent={}",
+                    total,
+                    rent_lamports
+                );
+                KoraError::ValidationError("Outflow calculation overflow".to_string())
+            })?;
+        }
+
+        Ok(total)
+    }
+
     /// Calculate the total outflow (SOL + SPL token value) that could occur for a fee payer account in a transaction.
     /// This includes SOL transfers, account creation, SPL token transfers, and other operations that could drain the fee payer's balance.
     pub async fn calculate_fee_payer_outflow(
@@ -462,6 +607,21 @@ impl FeeConfigUtil {
                 }
             }
         }
+
+        // ATA Create/CreateIdempotent can be no-ops during simulation depending on prestate.
+        // Charge conservative rent for fee-payer-funded ATA creations whenever inner SystemCreateAccount
+        // did not surface, preventing stale-state rent drain windows.
+        let ata_outflow =
+            Self::calculate_ata_creation_outflow(fee_payer_pubkey, transaction, rpc_client, config)
+                .await?;
+        total = total.checked_add(ata_outflow).ok_or_else(|| {
+            log::error!(
+                "Outflow calculation overflow in ATA accounting: sol_total={}, ata_outflow={}",
+                total,
+                ata_outflow
+            );
+            KoraError::ValidationError("Outflow calculation overflow".to_string())
+        })?;
 
         // Calculate SPL token transfer outflow (converted to lamports value)
         let spl_instructions = transaction.get_or_parse_spl_instructions()?;
@@ -1122,6 +1282,96 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(outflow, 0, "Non-system program should not affect outflow");
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_ata_idempotent_without_inner_create() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(2_039_280),
+            )
+            .build();
+
+        let ata_ix =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &fee_payer,
+                &owner,
+                &mint,
+                &spl_token_interface::id(),
+            );
+        let message = VersionedMessage::Legacy(Message::new(&[ata_ix], Some(&fee_payer)));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let config = get_config().unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outflow, 2_039_280,
+            "ATA idempotent without surfaced inner create should conservatively charge ATA rent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_ata_not_double_counted_with_system_create() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let ata_address =
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &owner, &mint,
+            );
+
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(2_039_280),
+            )
+            .build();
+
+        let ata_ix =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &fee_payer,
+                &owner,
+                &mint,
+                &spl_token_interface::id(),
+            );
+        let system_create_ix =
+            create_account(&fee_payer, &ata_address, 123_456, 165, &spl_token_interface::id());
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[ata_ix, system_create_ix], Some(&fee_payer)));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let config = get_config().unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outflow, 123_456,
+            "When SystemCreateAccount for the ATA is present, ATA rent fallback must not double count"
+        );
     }
 
     #[tokio::test]

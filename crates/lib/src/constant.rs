@@ -221,9 +221,11 @@ pub mod instruction_indexes {
 
     // ATA instruction indexes
     pub mod ata_instruction_indexes {
+        pub const PAYER_INDEX: usize = 0;
         pub const ATA_ADDRESS_INDEX: usize = 1;
         pub const WALLET_OWNER_INDEX: usize = 2;
         pub const MINT_INDEX: usize = 3;
+        pub const TOKEN_PROGRAM_INDEX: usize = 5;
         pub const MIN_ACCOUNTS: usize = 6;
     }
 
