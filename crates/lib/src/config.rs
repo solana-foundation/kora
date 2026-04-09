@@ -266,7 +266,7 @@ pub struct AltInstructionPolicy {
     pub allow_close: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
 #[serde(default)]
 pub struct Token2022Config {
     pub blocked_mint_extensions: Vec<String>,
@@ -293,17 +293,6 @@ pub enum TransferHookPolicy {
     AllowAll,
 }
 
-impl Default for Token2022Config {
-    fn default() -> Self {
-        Self {
-            blocked_mint_extensions: Vec::new(),
-            blocked_account_extensions: Vec::new(),
-            transfer_hook_policy: TransferHookPolicy::default(),
-            parsed_blocked_mint_extensions: Some(Vec::new()),
-            parsed_blocked_account_extensions: Some(Vec::new()),
-        }
-    }
-}
 impl Token2022Config {
     /// Initialize and parse extension strings into ExtensionTypes
     /// This should be called after deserialization to populate the cached fields
