@@ -266,7 +266,7 @@ pub struct AltInstructionPolicy {
     pub allow_close: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
 pub struct Token2022Config {
     pub blocked_mint_extensions: Vec<String>,
     pub blocked_account_extensions: Vec<String>,
@@ -274,17 +274,6 @@ pub struct Token2022Config {
     parsed_blocked_mint_extensions: Option<Vec<ExtensionType>>,
     #[serde(skip)]
     parsed_blocked_account_extensions: Option<Vec<ExtensionType>>,
-}
-
-impl Default for Token2022Config {
-    fn default() -> Self {
-        Self {
-            blocked_mint_extensions: Vec::new(),
-            blocked_account_extensions: Vec::new(),
-            parsed_blocked_mint_extensions: Some(Vec::new()),
-            parsed_blocked_account_extensions: Some(Vec::new()),
-        }
-    }
 }
 
 impl Token2022Config {
@@ -340,20 +329,24 @@ impl Token2022Config {
 
     /// Check if a mint extension is blocked
     pub fn is_mint_extension_blocked(&self, ext: ExtensionType) -> bool {
-        self.get_blocked_mint_extensions().contains(&ext)
-            || self
+        match &self.parsed_blocked_mint_extensions {
+            Some(exts) => exts.contains(&ext),
+            None => self
                 .blocked_mint_extensions
                 .iter()
-                .any(|name| parse_mint_extension_string(name) == Some(ext))
+                .any(|name| parse_mint_extension_string(name) == Some(ext)),
+        }
     }
 
     /// Check if an account extension is blocked
     pub fn is_account_extension_blocked(&self, ext: ExtensionType) -> bool {
-        self.get_blocked_account_extensions().contains(&ext)
-            || self
+        match &self.parsed_blocked_account_extensions {
+            Some(exts) => exts.contains(&ext),
+            None => self
                 .blocked_account_extensions
                 .iter()
-                .any(|name| parse_account_extension_string(name) == Some(ext))
+                .any(|name| parse_account_extension_string(name) == Some(ext)),
+        }
     }
 }
 
@@ -933,6 +926,18 @@ rate_limit = 1
             .validation
             .token_2022
             .is_account_extension_blocked(ExtensionType::CpiGuard));
+    }
+
+    #[test]
+    fn test_token2022_extension_blocking_without_initialize_uses_raw_extension_names() {
+        let mut token_2022 = Token2022Config::default();
+        token_2022.blocked_mint_extensions = vec!["transfer_fee_config".to_string()];
+        token_2022.blocked_account_extensions = vec!["memo_transfer".to_string()];
+
+        assert!(token_2022.is_mint_extension_blocked(ExtensionType::TransferFeeConfig));
+        assert!(token_2022.is_account_extension_blocked(ExtensionType::MemoTransfer));
+        assert!(!token_2022.is_mint_extension_blocked(ExtensionType::Pausable));
+        assert!(!token_2022.is_account_extension_blocked(ExtensionType::CpiGuard));
     }
 
     #[test]
