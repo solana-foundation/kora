@@ -137,6 +137,11 @@ pub struct ValidationConfig {
     /// When >0, prices with a block_id older than `current_slot - max_price_staleness_slots` are rejected.
     #[serde(default)]
     pub max_price_staleness_slots: u64,
+    /// Programs where at least one must be called by the transaction (OR semantics).
+    /// Each required program must also be listed in `allowed_programs`.
+    /// Default: empty (no restriction).
+    #[serde(default)]
+    pub require_one_of_programs: Vec<String>,
 }
 
 impl ValidationConfig {

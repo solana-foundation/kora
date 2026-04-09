@@ -68,6 +68,7 @@ allowed_tokens = [
 allowed_spl_paid_tokens = []
 #allowed_spl_paid_tokens = "All"  # Allow any token to be used for payment,
 disallowed_accounts = []
+# require_one_of_programs = []  # At least one of these programs must be called. Each must also appear in allowed_programs.
 
 # Fee payer policy controls what actions the fee payer can perform
 #

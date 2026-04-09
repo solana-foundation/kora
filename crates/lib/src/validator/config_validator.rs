@@ -436,6 +436,27 @@ impl ConfigValidator {
             }
         }
 
+        // Validate base58 pubkey format for require_one_of_programs
+        for pubkey_str in &config.validation.require_one_of_programs {
+            if Pubkey::from_str(pubkey_str).is_err() {
+                errors.push(format!(
+                    "Invalid base58 pubkey format in require_one_of_programs: '{}'",
+                    pubkey_str
+                ));
+            }
+        }
+
+        // Validate require_one_of_programs constraints
+        if !config.validation.require_one_of_programs.is_empty() {
+            for program in &config.validation.require_one_of_programs {
+                if !config.validation.allowed_programs.contains(program) {
+                    errors.push(format!(
+                        "Program {program} in require_one_of_programs must also be in allowed_programs"
+                    ));
+                }
+            }
+        }
+
         // Validate allowed tokens
         if config.validation.allowed_tokens.is_empty() {
             errors.push("No allowed tokens configured".to_string());
@@ -780,6 +801,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -824,6 +846,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -862,6 +885,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             kora: KoraConfig {
                 rate_limit: 0, // Should warn
@@ -1027,6 +1051,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1045,6 +1070,80 @@ mod tests {
 
         assert!(warnings.iter().any(|w| w.contains("Missing System Program in allowed programs")));
         assert!(warnings.iter().any(|w| w.contains("Missing Token Program in allowed programs")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_invalid_must_call_program_pubkey() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.validation.require_one_of_programs = vec!["not-a-pubkey".to_string()];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Invalid base58 pubkey format in require_one_of_programs")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_must_call_program_not_in_allowed_programs() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        let required_program = solana_sdk::pubkey::Pubkey::new_unique().to_string();
+        config.validation.require_one_of_programs = vec![required_program.clone()];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors.iter().any(|e| {
+            e.contains("require_one_of_programs must also be in allowed_programs")
+                && e.contains(&required_program)
+        }));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_require_one_of_programs_allows_compute_budget_program() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        let compute_budget_program = solana_compute_budget_interface::id().to_string();
+        config.validation.allowed_programs = vec![
+            SYSTEM_PROGRAM_ID.to_string(),
+            SPL_TOKEN_PROGRAM_ID.to_string(),
+            compute_budget_program.clone(),
+        ];
+        config.validation.require_one_of_programs = vec![compute_budget_program];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_valid_require_one_of_programs() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.cache.enabled = false;
+        config.validation.require_one_of_programs = vec![SYSTEM_PROGRAM_ID.to_string()];
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1068,6 +1167,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1114,6 +1214,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1157,6 +1258,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1209,6 +1311,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1246,6 +1349,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1288,6 +1392,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1328,6 +1433,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1361,6 +1467,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1383,6 +1490,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1448,6 +1556,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1482,6 +1591,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1516,6 +1626,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1556,6 +1667,7 @@ mod tests {
                 },
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1592,6 +1704,7 @@ mod tests {
                 },
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1632,6 +1745,7 @@ mod tests {
                 },
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1764,6 +1878,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -2039,6 +2154,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: true, // Enabled - should warn
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -2078,6 +2194,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false, // Disabled - should not warn
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -2118,6 +2235,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -2157,6 +2275,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             kora: KoraConfig {
                 lighthouse: LighthouseConfig {
@@ -2204,6 +2323,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             kora: KoraConfig {
                 lighthouse: LighthouseConfig {
@@ -2251,6 +2371,7 @@ mod tests {
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
             },
             kora: KoraConfig {
                 lighthouse: LighthouseConfig {
