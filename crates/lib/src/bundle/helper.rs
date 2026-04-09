@@ -29,6 +29,15 @@ pub enum BundleProcessingMode<'a> {
     SkipUsage,
 }
 
+fn transfer_hook_validation_flow_for_bundle(
+    plugin_context: Option<PluginExecutionContext>,
+) -> TransferHookValidationFlow {
+    match plugin_context {
+        Some(PluginExecutionContext::SignBundle) => TransferHookValidationFlow::DelayedSigning,
+        _ => TransferHookValidationFlow::ImmediateSignAndSend,
+    }
+}
+
 impl BundleProcessor {
     /// Extract transactions at specified indices for processing.
     /// Returns (filtered_transactions, index_to_position_map).
@@ -93,11 +102,7 @@ impl BundleProcessor {
         let validator = TransactionValidator::new(config, fee_payer)?;
         let plugin_runner = TransactionPluginRunner::from_config(config);
         let transfer_hook_validation_flow =
-            if matches!(plugin_context, Some(PluginExecutionContext::SignAndSendBundle)) {
-                TransferHookValidationFlow::ImmediateSignAndSend
-            } else {
-                TransferHookValidationFlow::DelayedSigning
-            };
+            transfer_hook_validation_flow_for_bundle(plugin_context);
         let mut resolved_transactions = Vec::with_capacity(encoded_txs.len());
         let mut total_required_lamports = 0u64;
         let mut all_bundle_instructions: Vec<Instruction> = Vec::new();
@@ -268,6 +273,27 @@ impl BundleProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_transfer_hook_validation_flow_for_bundle_sign_bundle() {
+        let flow =
+            transfer_hook_validation_flow_for_bundle(Some(PluginExecutionContext::SignBundle));
+        assert_eq!(flow, TransferHookValidationFlow::DelayedSigning);
+    }
+
+    #[test]
+    fn test_transfer_hook_validation_flow_for_bundle_sign_and_send_bundle() {
+        let flow = transfer_hook_validation_flow_for_bundle(Some(
+            PluginExecutionContext::SignAndSendBundle,
+        ));
+        assert_eq!(flow, TransferHookValidationFlow::ImmediateSignAndSend);
+    }
+
+    #[test]
+    fn test_transfer_hook_validation_flow_for_bundle_estimation_context() {
+        let flow = transfer_hook_validation_flow_for_bundle(None);
+        assert_eq!(flow, TransferHookValidationFlow::ImmediateSignAndSend);
+    }
 
     #[test]
     fn test_validate_payment_sufficient() {
