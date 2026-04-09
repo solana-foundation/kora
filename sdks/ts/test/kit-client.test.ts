@@ -95,7 +95,7 @@ describe('createKitKoraClient', () => {
                     feeToken: MOCK_FEE_TOKEN,
                     feePayerWallet: MOCK_WALLET,
                 }),
-            ).rejects.toThrow('RPC Error -32000: Server error');
+            ).rejects.toThrow('Kora Error -32000: Server error');
         });
 
         it('should expose kora namespace for raw RPC access', async () => {

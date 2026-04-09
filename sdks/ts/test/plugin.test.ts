@@ -463,7 +463,7 @@ describe('Kora Kit Plugin', () => {
         it('should propagate RPC errors', async () => {
             mockErrorResponse({ code: -32601, message: 'Method not found' });
 
-            await expect(kora.getConfig()).rejects.toThrow('RPC Error -32601: Method not found');
+            await expect(kora.getConfig()).rejects.toThrow('Kora Error -32601: Method not found');
         });
 
         it('should propagate network errors', async () => {

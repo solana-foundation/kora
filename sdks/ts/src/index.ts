@@ -1,3 +1,4 @@
+export * from './error.js';
 export * from './types/index.js';
 export { KoraClient } from './client.js';
 export { createKitKoraClient, type KoraKitClient } from './kit/index.js';
