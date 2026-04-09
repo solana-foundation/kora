@@ -125,8 +125,7 @@ impl_kora_error_from!(Box<dyn StdError + Send + Sync> => InternalServerError);
 impl_kora_error_from!(ProgramError => InvalidTransaction);
 
 /// Stable numeric error codes for RPC responses following JSON-RPC 2.0 spec (-32000 to -32099 for server errors).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(into = "i32")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KoraErrorCode {
     // Validation errors (-32000 to -32019)
     InvalidTransaction = -32000,
@@ -163,12 +162,6 @@ pub enum KoraErrorCode {
     RpcError = -32093,
 }
 
-impl From<KoraErrorCode> for i32 {
-    fn from(code: KoraErrorCode) -> Self {
-        code as i32
-    }
-}
-
 impl KoraError {
     pub fn error_code(&self) -> KoraErrorCode {
         match self {
@@ -195,34 +188,11 @@ impl KoraError {
         }
     }
 
-    /// Returns a structured data object for the RPC error response.
     pub fn to_json_error_data(&self) -> serde_json::Value {
-        let error_type = match self {
-            KoraError::AccountNotFound(_) => "AccountNotFound",
-            KoraError::RpcError(_) => "RpcError",
-            KoraError::SigningError(_) => "SigningError",
-            KoraError::InvalidTransaction(_) => "InvalidTransaction",
-            KoraError::TransactionExecutionFailed(_) => "TransactionExecutionFailed",
-            KoraError::FeeEstimationFailed(_) => "FeeEstimationFailed",
-            KoraError::UnsupportedFeeToken(_) => "UnsupportedFeeToken",
-            KoraError::InsufficientFunds(_) => "InsufficientFunds",
-            KoraError::InternalServerError(_) => "InternalServerError",
-            KoraError::ValidationError(_) => "ValidationError",
-            KoraError::SerializationError(_) => "SerializationError",
-            KoraError::SwapError(_) => "SwapError",
-            KoraError::TokenOperationError(_) => "TokenOperationError",
-            KoraError::InvalidRequest(_) => "InvalidRequest",
-            KoraError::Unauthorized(_) => "Unauthorized",
-            KoraError::RateLimitExceeded => "RateLimitExceeded",
-            KoraError::UsageLimitExceeded(_) => "UsageLimitExceeded",
-            KoraError::ConfigError(_) => "ConfigError",
-            KoraError::JitoError(_) => "JitoError",
-            KoraError::RecaptchaError(_) => "RecaptchaError",
-        };
+        let error_type = format!("{:?}", self.error_code());
 
         serde_json::json!({
             "error_type": error_type,
-            "message": self.to_string(),
         })
     }
 }
@@ -294,7 +264,7 @@ impl From<BundleError> for KoraError {
 mod tests {
     use super::*;
     use solana_program::program_error::ProgramError;
-    use std::error::Error as StdError;
+    use std::{collections::HashSet, error::Error as StdError};
 
     #[test]
     fn test_kora_response_ok() {
@@ -476,7 +446,6 @@ mod tests {
             let json_data: serde_json::Value = serde_json::from_str(data.get()).unwrap();
 
             assert_eq!(json_data["error_type"], "AccountNotFound");
-            assert_eq!(json_data["message"], "Account test_acc not found");
         } else {
             panic!("Expected RpcError::Call(CallError::Custom)");
         }
@@ -484,7 +453,6 @@ mod tests {
 
     #[test]
     fn test_all_variants_have_unique_codes() {
-        use std::collections::HashSet;
         let variants = vec![
             KoraError::AccountNotFound("".into()),
             KoraError::RpcError("".into()),

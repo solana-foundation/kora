@@ -731,7 +731,6 @@ describe('KoraClient Unit Tests', () => {
                 code: -32050,
                 data: {
                     error_type: 'AccountNotFound',
-                    message: 'Account not found message',
                 },
                 message: 'Account not found message',
             };
@@ -745,7 +744,6 @@ describe('KoraClient Unit Tests', () => {
                 expect(e.code).toBe(-32050);
                 expect(e.data).toEqual({
                     error_type: 'AccountNotFound',
-                    message: 'Account not found message',
                 });
                 expect(e.message).toBe('Kora Error -32050: Account not found message');
             }

@@ -42,7 +42,6 @@ export enum KoraErrorCode {
  */
 export interface KoraErrorData {
     error_type: string;
-    message: string;
 }
 
 /**
@@ -50,7 +49,7 @@ export interface KoraErrorData {
  */
 export class KoraError extends Error {
     /** The stable numeric error code */
-    public readonly code: number;
+    public readonly code: KoraErrorCode;
     /** Optional structured data about the error */
     public readonly data?: KoraErrorData;
 
@@ -59,7 +58,7 @@ export class KoraError extends Error {
         const finalMessage = message ?? 'Unknown error';
         super(`Kora Error ${finalCode}: ${finalMessage}`);
         this.name = 'KoraError';
-        this.code = finalCode;
+        this.code = finalCode as KoraErrorCode;
         this.data = data;
 
         // Ensure proper stack trace in environments that support Error.captureStackTrace

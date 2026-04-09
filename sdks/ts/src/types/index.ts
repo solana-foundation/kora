@@ -462,7 +462,6 @@ export interface RpcError {
     /** Optional structured data about the error */
     data?: {
         error_type: string;
-        message: string;
     };
     /** Human-readable error message */
     message: string;
