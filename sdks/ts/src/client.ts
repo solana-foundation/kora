@@ -1,6 +1,7 @@
 import { Address, assertIsAddress, Instruction, isTransactionSigner } from '@solana/kit';
 import { findAssociatedTokenPda, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import crypto from 'crypto';
+import { KoraError } from './error.js';
 
 import {
     AuthenticationHeaders,
@@ -111,8 +112,8 @@ export class KoraClient {
         const json = (await response.json()) as { error?: RpcError; result: T };
 
         if (json.error) {
-            const error = json.error;
-            throw new Error(`RPC Error ${error.code}: ${error.message}`);
+            const { code, message, data } = json.error;
+            throw new KoraError(code, message, data);
         }
 
         return json.result;
