@@ -137,11 +137,11 @@ pub struct ValidationConfig {
     /// When >0, prices with a block_id older than `current_slot - max_price_staleness_slots` are rejected.
     #[serde(default)]
     pub max_price_staleness_slots: u64,
-    /// Programs that must be called by the transaction (at least one must appear).
+    /// Programs where at least one must be called by the transaction (OR semantics).
     /// Each required program must also be listed in `allowed_programs`.
     /// Default: empty (no restriction).
-    #[serde(default)]
-    pub must_call_programs: Vec<String>,
+    #[serde(default, alias = "must_call_programs")]
+    pub require_one_of_programs: Vec<String>,
 }
 
 impl ValidationConfig {
@@ -888,6 +888,32 @@ rate_limit = 1
         assert!(
             config.validation.token_2022.is_account_extension_blocked(ExtensionType::MemoTransfer),
             "MemoTransfer should be blocked via [validation.token2022] alias"
+        );
+    }
+
+    #[test]
+    fn test_require_one_of_programs_parsing_alias_must_call_programs() {
+        let legacy_key_alias_toml = r#"
+[validation]
+max_allowed_lamports = 1
+max_signatures = 1
+allowed_programs = ["11111111111111111111111111111111"]
+must_call_programs = ["11111111111111111111111111111111"]
+allowed_tokens = []
+allowed_spl_paid_tokens = []
+disallowed_accounts = []
+price_source = "Mock"
+
+[kora]
+rate_limit = 1
+"#;
+
+        let config = crate::tests::toml_mock::create_invalid_config(legacy_key_alias_toml)
+            .expect("Config with legacy must_call_programs key should parse");
+
+        assert_eq!(
+            config.validation.require_one_of_programs,
+            vec!["11111111111111111111111111111111".to_string()]
         );
     }
 
