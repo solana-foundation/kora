@@ -125,7 +125,7 @@ impl_kora_error_from!(Box<dyn StdError + Send + Sync> => InternalServerError);
 impl_kora_error_from!(ProgramError => InvalidTransaction);
 
 /// Stable numeric error codes for RPC responses following JSON-RPC 2.0 spec (-32000 to -32099 for server errors).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(into = "i32")]
 pub enum KoraErrorCode {
     // Validation errors (-32000 to -32019)
