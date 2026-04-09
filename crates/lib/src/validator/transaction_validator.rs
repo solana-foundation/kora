@@ -107,6 +107,8 @@ impl TransactionValidator {
             ));
         }
 
+        self.validate_has_non_compute_instruction(transaction_resolved)?;
+
         if transaction_resolved.all_account_keys.is_empty() {
             return Err(KoraError::InvalidTransaction(
                 "Transaction contains no account keys".to_string(),
@@ -119,6 +121,25 @@ impl TransactionValidator {
         self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
         self.validate_disallowed_accounts(transaction_resolved)?;
         self.validate_fee_payer_usage(transaction_resolved)?;
+
+        Ok(())
+    }
+
+    fn validate_has_non_compute_instruction(
+        &self,
+        transaction_resolved: &VersionedTransactionResolved,
+    ) -> Result<(), KoraError> {
+        let compute_budget_program_id = solana_compute_budget_interface::id();
+        let has_non_compute_instruction = transaction_resolved
+            .all_instructions
+            .iter()
+            .any(|ix| ix.program_id != compute_budget_program_id);
+
+        if !has_non_compute_instruction {
+            return Err(KoraError::InvalidTransaction(
+                "Transaction contains only ComputeBudget instructions".to_string(),
+            ));
+        }
 
         Ok(())
     }
@@ -562,6 +583,7 @@ mod tests {
     use solana_address_lookup_table_interface::{
         instruction as alt_instruction, program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
     };
+    use solana_compute_budget_interface::ComputeBudgetInstruction;
     use solana_message::{Message, VersionedMessage};
     use solana_sdk::instruction::Instruction;
     use solana_system_interface::{
@@ -825,6 +847,70 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_reject_compute_budget_only_transaction() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![solana_compute_budget_interface::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
+        update_config(config).unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(200_000);
+        let message =
+            VersionedMessage::Legacy(Message::new(&[compute_budget_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("only ComputeBudget instructions"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_allow_transaction_with_compute_budget_and_non_compute_instruction() {
+        let fee_payer = Pubkey::new_unique();
+        let sender = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![
+                SYSTEM_PROGRAM_ID.to_string(),
+                solana_compute_budget_interface::id().to_string(),
+            ])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(FeePayerPolicy::default())
+            .build();
+        update_config(config).unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(200_000);
+        let transfer_ix = transfer(&sender, &recipient, 1000);
+        let message = VersionedMessage::Legacy(Message::new(
+            &[compute_budget_ix, transfer_ix],
+            Some(&fee_payer),
+        ));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
