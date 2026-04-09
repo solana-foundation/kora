@@ -81,7 +81,7 @@ pub async fn estimate_transaction_fee(
         validation_config.is_payment_required(),
         rpc_client,
         config,
-        TransferHookValidationFlow::DelayedSigning,
+        TransferHookValidationFlow::ImmediateSignAndSend,
     )
     .await?;
 
