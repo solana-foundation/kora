@@ -284,10 +284,10 @@ pub struct Token2022Config {
 #[derive(Default)]
 pub enum TransferHookPolicy {
     /// Reject mutable TransferHook authority on all signing flows.
+    #[default]
     DenyAll,
     /// Reject mutable TransferHook authority only on delayed-signing flows
     /// (signTransaction/signBundle). Allow on immediate sign-and-send flows.
-    #[default]
     DenyMutableForDelayedSigning,
     /// Allow mutable TransferHook authority on all flows.
     AllowAll,
@@ -872,10 +872,7 @@ mod tests {
 
         assert!(config.validation.token_2022.blocked_mint_extensions.is_empty());
         assert!(config.validation.token_2022.blocked_account_extensions.is_empty());
-        assert_eq!(
-            config.validation.token_2022.transfer_hook_policy,
-            TransferHookPolicy::DenyMutableForDelayedSigning
-        );
+        assert_eq!(config.validation.token_2022.transfer_hook_policy, TransferHookPolicy::DenyAll);
 
         assert!(config.validation.token_2022.get_blocked_mint_extensions().is_empty());
         assert!(config.validation.token_2022.get_blocked_account_extensions().is_empty());
