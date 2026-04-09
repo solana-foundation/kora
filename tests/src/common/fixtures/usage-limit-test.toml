@@ -58,6 +58,7 @@ disallowed_accounts = []
 type = "free"
 
 [validation.token_2022]
+transfer_hook_policy = "deny_mutable_for_delayed_signing"
 blocked_mint_extensions = []
 blocked_account_extensions = []
 

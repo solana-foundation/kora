@@ -1,5 +1,5 @@
 use crate::{
-    config::Config,
+    config::{Config, TransferHookPolicy},
     constant,
     error::KoraError,
     oracle::{get_price_oracle, RetryingPriceOracle, TokenPrice},
@@ -22,7 +22,11 @@ use rust_decimal::{
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{instruction::Instruction, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
 use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+    time::Duration,
+};
 
 #[cfg(test)]
 use {crate::tests::config_mock::mock_state::get_config, rust_decimal_macros::dec};
@@ -56,8 +60,27 @@ impl TokenType {
 
 pub struct TokenUtil;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransferHookValidationFlow {
+    DelayedSigning,
+    ImmediateSignAndSend,
+}
+
 impl TokenUtil {
-    fn validate_immutable_transfer_hook_for_payment(
+    fn should_reject_mutable_transfer_hook(
+        config: &Config,
+        validation_flow: TransferHookValidationFlow,
+    ) -> bool {
+        match config.validation.token_2022.transfer_hook_policy {
+            TransferHookPolicy::DenyAll => true,
+            TransferHookPolicy::DenyMutableForDelayedSigning => {
+                matches!(validation_flow, TransferHookValidationFlow::DelayedSigning)
+            }
+            TransferHookPolicy::AllowAll => false,
+        }
+    }
+
+    fn validate_immutable_transfer_hook_for_mint(
         mint: &Token2022Mint,
         mint_pubkey: &Pubkey,
     ) -> Result<(), KoraError> {
@@ -69,6 +92,67 @@ impl TokenUtil {
                     "Mutable transfer-hook authority found on mint account {mint_pubkey}",
                 )));
             }
+        }
+
+        Ok(())
+    }
+
+    /// Validate that every Token2022 transfer in the transaction uses a mint with immutable
+    /// transfer-hook authority (or no transfer-hook extension).
+    pub async fn validate_token2022_transfer_hooks_in_transaction(
+        config: &Config,
+        transaction_resolved: &mut VersionedTransactionResolved,
+        rpc_client: &RpcClient,
+        validation_flow: TransferHookValidationFlow,
+    ) -> Result<(), KoraError> {
+        if !Self::should_reject_mutable_transfer_hook(config, validation_flow) {
+            return Ok(());
+        }
+
+        let token_program = Token2022Program::new();
+        let mut validated_mints = HashSet::new();
+
+        let token_transfers = transaction_resolved
+            .get_or_parse_spl_instructions()?
+            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+            .cloned()
+            .unwrap_or_default();
+
+        for transfer in token_transfers {
+            let ParsedSPLInstructionData::SplTokenTransfer {
+                source_address, mint, is_2022, ..
+            } = transfer
+            else {
+                continue;
+            };
+
+            if !is_2022 {
+                continue;
+            }
+
+            let transfer_mint = if let Some(mint) = mint {
+                mint
+            } else {
+                // Legacy Transfer (without explicit mint) still needs mint-level transfer-hook checks.
+                let source_account =
+                    CacheUtil::get_account(config, rpc_client, &source_address, true).await?;
+                let source_state = token_program.unpack_token_account(&source_account.data)?;
+                source_state.mint()
+            };
+
+            if !validated_mints.insert(transfer_mint) {
+                continue;
+            }
+
+            let mint_account =
+                CacheUtil::get_account(config, rpc_client, &transfer_mint, true).await?;
+            let mint_state = token_program.unpack_mint(&transfer_mint, &mint_account.data)?;
+            let mint_with_extensions =
+                mint_state.as_any().downcast_ref::<Token2022Mint>().ok_or_else(|| {
+                    KoraError::SerializationError("Failed to downcast mint state.".to_string())
+                })?;
+
+            Self::validate_immutable_transfer_hook_for_mint(mint_with_extensions, &transfer_mint)?;
         }
 
         Ok(())
@@ -594,8 +678,6 @@ impl TokenUtil {
             }
         }
 
-        Self::validate_immutable_transfer_hook_for_payment(mint_with_extensions, mint)?;
-
         // Check source account extensions (force refresh in case extensions are added)
         let source_account =
             CacheUtil::get_account(config, rpc_client, source_address, true).await?;
@@ -666,8 +748,6 @@ impl TokenUtil {
                 )));
             }
         }
-
-        Self::validate_immutable_transfer_hook_for_payment(mint_with_extensions, mint)?;
 
         // Check source account extensions
         let source_account =
@@ -773,7 +853,7 @@ impl TokenUtil {
                     continue;
                 }
 
-                // For Token2022 payments, validate blocked extensions and immutable transfer-hook authority.
+                // For Token2022 payments, validate blocked mint/account extensions.
                 // This must run only after destination-owner matching, otherwise unrelated transfers can fail
                 // payment validation.
                 if *is_2022 {
@@ -1390,8 +1470,8 @@ mod tests_token {
     }
 
     #[tokio::test]
-    async fn test_validate_token2022_extensions_for_payment_rejects_mutable_transfer_hook_authority(
-    ) {
+    async fn test_validate_token2022_extensions_for_payment_allows_mutable_transfer_hook_authority()
+    {
         let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
         let source_address = Pubkey::new_unique();
@@ -1425,9 +1505,7 @@ mod tests_token {
         )
         .await;
 
-        assert!(result.is_err());
-        let error_message = result.unwrap_err().to_string();
-        assert!(error_message.contains("Mutable transfer-hook authority found on mint account"));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1470,7 +1548,7 @@ mod tests_token {
     }
 
     #[tokio::test]
-    async fn test_validate_token2022_partial_for_ata_creation_rejects_mutable_transfer_hook_authority(
+    async fn test_validate_token2022_partial_for_ata_creation_allows_mutable_transfer_hook_authority(
     ) {
         let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
 
@@ -1498,9 +1576,7 @@ mod tests_token {
         )
         .await;
 
-        assert!(result.is_err());
-        let error_message = result.unwrap_err().to_string();
-        assert!(error_message.contains("Mutable transfer-hook authority found on mint account"));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

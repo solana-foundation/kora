@@ -56,6 +56,7 @@ type = "free"
 
 # Block specific extensions for testing (only affects extension test accounts)
 [validation.token_2022]
+transfer_hook_policy = "deny_mutable_for_delayed_signing"
 blocked_mint_extensions = [
     "interest_bearing_config", # Block mints with interest bearing config for extension testing
 ]

@@ -2,7 +2,7 @@ use std::{path::Path, str::FromStr};
 
 use crate::{
     admin::token_util::find_missing_atas,
-    config::{FeePayerPolicy, SplTokenConfig, Token2022Config},
+    config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy},
     constant::{LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
     fee::price::PriceModel,
     oracle::PriceSource,
@@ -486,7 +486,8 @@ impl ConfigValidator {
         }
 
         // Validate Token2022 extensions
-        if let Err(e) = validate_token2022_extensions(&config.validation.token_2022) {
+        if let Err(e) = validate_token2022_extensions(&config.validation.token_2022, &mut warnings)
+        {
             errors.push(format!("Token2022 extension validation failed: {e}"));
         }
 
@@ -736,7 +737,10 @@ impl ConfigValidator {
 }
 
 /// Validate Token2022 extension configuration
-fn validate_token2022_extensions(config: &Token2022Config) -> Result<(), String> {
+fn validate_token2022_extensions(
+    config: &Token2022Config,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
     // Validate blocked mint extensions
     for ext_name in &config.blocked_mint_extensions {
         if spl_token_2022_util::parse_mint_extension_string(ext_name).is_none() {
@@ -757,6 +761,28 @@ fn validate_token2022_extensions(config: &Token2022Config) -> Result<(), String>
         }
     }
 
+    match config.transfer_hook_policy {
+        TransferHookPolicy::AllowAll => {
+            warnings.push(
+                "⚠️  SECURITY: transfer_hook_policy is 'allow_all'. \
+                Mutable transfer-hook authorities are permitted on ALL signing flows. \
+                Risk: A malicious hook authority can swap the hook program to drain your fee payer. \
+                Consider setting transfer_hook_policy = \"deny_all\"."
+                    .to_string(),
+            );
+        }
+        TransferHookPolicy::DenyMutableForDelayedSigning => {
+            warnings.push(
+                "⚠️  SECURITY: transfer_hook_policy is 'deny_mutable_for_delayed_signing'. \
+                Mutable transfer-hook authorities are permitted on signAndSendTransaction / signAndSendBundle. \
+                Risk: A hook authority can swap the hook program between signing and execution. \
+                Consider setting transfer_hook_policy = \"deny_all\" for maximum protection."
+                    .to_string(),
+            );
+        }
+        TransferHookPolicy::DenyAll => {}
+    }
+
     Ok(())
 }
 
@@ -767,7 +793,8 @@ mod tests {
             AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy,
             KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, PluginsConfig,
             SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
-            Token2022InstructionPolicy, TransactionPluginType, UsageLimitConfig, ValidationConfig,
+            Token2022InstructionPolicy, TransactionPluginType, TransferHookPolicy,
+            UsageLimitConfig, ValidationConfig,
         },
         constant::{DEFAULT_MAX_REQUEST_BODY_SIZE, LIGHTHOUSE_PROGRAM_ID},
         fee::price::PriceConfig,
@@ -1866,17 +1893,20 @@ mod tests {
             vec!["transfer_fee_config".to_string(), "pausable".to_string()];
         config.blocked_account_extensions =
             vec!["memo_transfer".to_string(), "cpi_guard".to_string()];
+        let mut warnings = Vec::new();
 
-        let result = validate_token2022_extensions(&config);
+        let result = validate_token2022_extensions(&config, &mut warnings);
         assert!(result.is_ok());
+        assert!(warnings.is_empty());
     }
 
     #[test]
     fn test_validate_token2022_extensions_invalid_mint_extension() {
         let mut config = Token2022Config::default();
         config.blocked_mint_extensions = vec!["invalid_extension".to_string()];
+        let mut warnings = Vec::new();
 
-        let result = validate_token2022_extensions(&config);
+        let result = validate_token2022_extensions(&config, &mut warnings);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid mint extension name: 'invalid_extension'"));
     }
@@ -1885,8 +1915,9 @@ mod tests {
     fn test_validate_token2022_extensions_invalid_account_extension() {
         let mut config = Token2022Config::default();
         config.blocked_account_extensions = vec!["invalid_extension".to_string()];
+        let mut warnings = Vec::new();
 
-        let result = validate_token2022_extensions(&config);
+        let result = validate_token2022_extensions(&config, &mut warnings);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -1896,9 +1927,35 @@ mod tests {
     #[test]
     fn test_validate_token2022_extensions_empty() {
         let config = Token2022Config::default();
+        let mut warnings = Vec::new();
 
-        let result = validate_token2022_extensions(&config);
+        let result = validate_token2022_extensions(&config, &mut warnings);
         assert!(result.is_ok());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_token2022_extensions_warns_for_allow_all_policy() {
+        let mut config = Token2022Config::default();
+        config.transfer_hook_policy = TransferHookPolicy::AllowAll;
+        let mut warnings = Vec::new();
+
+        let result = validate_token2022_extensions(&config, &mut warnings);
+        assert!(result.is_ok());
+        assert!(warnings.iter().any(|w| w.contains("transfer_hook_policy is 'allow_all'")));
+    }
+
+    #[test]
+    fn test_validate_token2022_extensions_warns_for_deny_mutable_delayed_policy() {
+        let mut config = Token2022Config::default();
+        config.transfer_hook_policy = TransferHookPolicy::DenyMutableForDelayedSigning;
+        let mut warnings = Vec::new();
+
+        let result = validate_token2022_extensions(&config, &mut warnings);
+        assert!(result.is_ok());
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("transfer_hook_policy is 'deny_mutable_for_delayed_signing'")));
     }
 
     #[tokio::test]

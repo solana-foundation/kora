@@ -4,7 +4,6 @@ use crate::common::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use jsonrpsee::rpc_params;
-use kora_lib::transaction::TransactionUtil;
 use solana_sdk::{
     instruction::AccountMeta,
     pubkey::Pubkey,
@@ -574,9 +573,10 @@ async fn test_transfer_hook_allows_transfer() {
     let serialized = bincode::serialize(&test_transaction).unwrap();
     let test_tx = STANDARD.encode(serialized);
 
-    // Submit to Kora - should succeed because hook allows transfers
+    // Submit to Kora using immediate sign-and-send mode (default delayed-sign mode now
+    // rejects mutable transfer-hook authority).
     let response: serde_json::Value = ctx
-        .rpc_call("signTransaction", rpc_params![test_tx])
+        .rpc_call("signAndSendTransaction", rpc_params![test_tx])
         .await
         .expect("Failed to sign transaction with transfer hook");
 
@@ -584,22 +584,9 @@ async fn test_transfer_hook_allows_transfer() {
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
     );
-
-    // Verify transaction would simulate successfully
-    let transaction_string = response["signed_transaction"].as_str().unwrap();
-    let transaction = TransactionUtil::decode_b64_transaction(transaction_string)
-        .expect("Failed to decode transaction from base64");
-
-    let simulated_tx = rpc_client
-        .simulate_transaction(&transaction)
-        .await
-        .expect("Failed to simulate transfer hook transaction");
-
-    // Transaction should succeed with transfer hook allowing transfer
     assert!(
-        simulated_tx.value.err.is_none(),
-        "Transfer hook transaction simulation should succeed: {:?}",
-        simulated_tx.value.err
+        response["signature"].as_str().is_some(),
+        "Expected signature in response for signAndSendTransaction"
     );
 }
 
@@ -717,14 +704,15 @@ async fn test_transfer_hook_blocks_transfer() {
     let serialized = bincode::serialize(&test_transaction).unwrap();
     let test_tx = STANDARD.encode(serialized);
 
-    // Submit to Kora - transaction should be rejected by transfer hook
+    // Submit to Kora using immediate sign-and-send mode. This should still fail because the hook
+    // program blocks this transfer amount.
     let result: Result<serde_json::Value, anyhow::Error> =
-        ctx.rpc_call("signTransaction", rpc_params![test_tx]).await;
+        ctx.rpc_call("signAndSendTransaction", rpc_params![test_tx]).await;
 
     // The call should fail because the transfer hook blocks large transfers
     assert!(
         result.is_err(),
-        "Expected signTransaction to fail due to transfer hook blocking large transfer"
+        "Expected signAndSendTransaction to fail due to transfer hook blocking large transfer"
     );
 
     let error_message = format!("{:?}", result.unwrap_err());

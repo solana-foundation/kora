@@ -112,6 +112,7 @@ allow_close = false
 type = "free" # free / margin / fixed
 
 [validation.token_2022]
+transfer_hook_policy = "deny_mutable_for_delayed_signing"
 blocked_mint_extensions = [
     "confidential_transfer_mint", # Confidential transfer configuration for the mint
     "confidential_mint_burn",     # Confidential mint and burn configuration

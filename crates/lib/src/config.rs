@@ -267,13 +267,30 @@ pub struct AltInstructionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default)]
 pub struct Token2022Config {
     pub blocked_mint_extensions: Vec<String>,
     pub blocked_account_extensions: Vec<String>,
+    #[serde(default)]
+    pub transfer_hook_policy: TransferHookPolicy,
     #[serde(skip)]
     parsed_blocked_mint_extensions: Option<Vec<ExtensionType>>,
     #[serde(skip)]
     parsed_blocked_account_extensions: Option<Vec<ExtensionType>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum TransferHookPolicy {
+    /// Reject mutable TransferHook authority on all signing flows.
+    #[default]
+    DenyAll,
+    /// Reject mutable TransferHook authority only on delayed-signing flows
+    /// (signTransaction/signBundle). Allow on immediate sign-and-send flows.
+    DenyMutableForDelayedSigning,
+    /// Allow mutable TransferHook authority on all flows.
+    AllowAll,
 }
 
 impl Token2022Config {
@@ -855,9 +872,24 @@ mod tests {
 
         assert!(config.validation.token_2022.blocked_mint_extensions.is_empty());
         assert!(config.validation.token_2022.blocked_account_extensions.is_empty());
+        assert_eq!(config.validation.token_2022.transfer_hook_policy, TransferHookPolicy::DenyAll);
 
         assert!(config.validation.token_2022.get_blocked_mint_extensions().is_empty());
         assert!(config.validation.token_2022.get_blocked_account_extensions().is_empty());
+    }
+
+    #[test]
+    fn test_token2022_transfer_hook_policy_parsing() {
+        let config = ConfigBuilder::new()
+            .with_custom_section(
+                r#"[validation.token_2022]
+transfer_hook_policy = "allow_all"
+"#,
+            )
+            .build_config()
+            .unwrap();
+
+        assert_eq!(config.validation.token_2022.transfer_hook_policy, TransferHookPolicy::AllowAll);
     }
 
     #[test]
