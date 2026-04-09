@@ -124,30 +124,121 @@ impl_kora_error_from!(Box<dyn StdError> => InternalServerError);
 impl_kora_error_from!(Box<dyn StdError + Send + Sync> => InternalServerError);
 impl_kora_error_from!(ProgramError => InvalidTransaction);
 
-impl From<KoraError> for RpcError {
-    fn from(err: KoraError) -> Self {
-        match err {
-            KoraError::AccountNotFound(_)
-            | KoraError::InvalidTransaction(_)
-            | KoraError::ValidationError(_)
-            | KoraError::UnsupportedFeeToken(_)
-            | KoraError::InsufficientFunds(_) => invalid_request(err),
+/// Stable numeric error codes for RPC responses following JSON-RPC 2.0 spec (-32000 to -32099 for server errors).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(into = "i32")]
+pub enum KoraErrorCode {
+    // Validation errors (-32000 to -32019)
+    InvalidTransaction = -32000,
+    ValidationError = -32001,
+    UnsupportedFeeToken = -32002,
+    InsufficientFunds = -32003,
+    InvalidRequest = -32004,
+    FeeEstimationFailed = -32005,
+    TransactionExecutionFailed = -32006,
 
-            KoraError::InternalServerError(_) | KoraError::SerializationError(_) => {
-                internal_server_error(err)
-            }
+    // Signing errors (-32020 to -32029)
+    SigningError = -32020,
 
-            _ => invalid_request(err),
-        }
+    // Auth / Rate limiting (-32030 to -32039)
+    RateLimitExceeded = -32030,
+    UsageLimitExceeded = -32031,
+    Unauthorized = -32032,
+
+    // Token / Swap (-32040 to -32049)
+    SwapError = -32040,
+    TokenOperationError = -32041,
+
+    // Account errors (-32050 to -32059)
+    AccountNotFound = -32050,
+
+    // External services (-32060 to -32069)
+    JitoError = -32060,
+    RecaptchaError = -32061,
+
+    // Internal errors (-32090 to -32099)
+    InternalServerError = -32090,
+    ConfigError = -32091,
+    SerializationError = -32092,
+    RpcError = -32093,
+}
+
+impl From<KoraErrorCode> for i32 {
+    fn from(code: KoraErrorCode) -> Self {
+        code as i32
     }
 }
 
-pub fn invalid_request(e: KoraError) -> RpcError {
-    RpcError::Call(CallError::from_std_error(e))
+impl KoraError {
+    pub fn error_code(&self) -> KoraErrorCode {
+        match self {
+            KoraError::InvalidTransaction(_) => KoraErrorCode::InvalidTransaction,
+            KoraError::ValidationError(_) => KoraErrorCode::ValidationError,
+            KoraError::UnsupportedFeeToken(_) => KoraErrorCode::UnsupportedFeeToken,
+            KoraError::InsufficientFunds(_) => KoraErrorCode::InsufficientFunds,
+            KoraError::InvalidRequest(_) => KoraErrorCode::InvalidRequest,
+            KoraError::FeeEstimationFailed(_) => KoraErrorCode::FeeEstimationFailed,
+            KoraError::TransactionExecutionFailed(_) => KoraErrorCode::TransactionExecutionFailed,
+            KoraError::SigningError(_) => KoraErrorCode::SigningError,
+            KoraError::RateLimitExceeded => KoraErrorCode::RateLimitExceeded,
+            KoraError::UsageLimitExceeded(_) => KoraErrorCode::UsageLimitExceeded,
+            KoraError::Unauthorized(_) => KoraErrorCode::Unauthorized,
+            KoraError::SwapError(_) => KoraErrorCode::SwapError,
+            KoraError::TokenOperationError(_) => KoraErrorCode::TokenOperationError,
+            KoraError::AccountNotFound(_) => KoraErrorCode::AccountNotFound,
+            KoraError::JitoError(_) => KoraErrorCode::JitoError,
+            KoraError::RecaptchaError(_) => KoraErrorCode::RecaptchaError,
+            KoraError::InternalServerError(_) => KoraErrorCode::InternalServerError,
+            KoraError::ConfigError(_) => KoraErrorCode::ConfigError,
+            KoraError::SerializationError(_) => KoraErrorCode::SerializationError,
+            KoraError::RpcError(_) => KoraErrorCode::RpcError,
+        }
+    }
+
+    /// Returns a structured data object for the RPC error response.
+    pub fn to_json_error_data(&self) -> serde_json::Value {
+        let error_type = match self {
+            KoraError::AccountNotFound(_) => "AccountNotFound",
+            KoraError::RpcError(_) => "RpcError",
+            KoraError::SigningError(_) => "SigningError",
+            KoraError::InvalidTransaction(_) => "InvalidTransaction",
+            KoraError::TransactionExecutionFailed(_) => "TransactionExecutionFailed",
+            KoraError::FeeEstimationFailed(_) => "FeeEstimationFailed",
+            KoraError::UnsupportedFeeToken(_) => "UnsupportedFeeToken",
+            KoraError::InsufficientFunds(_) => "InsufficientFunds",
+            KoraError::InternalServerError(_) => "InternalServerError",
+            KoraError::ValidationError(_) => "ValidationError",
+            KoraError::SerializationError(_) => "SerializationError",
+            KoraError::SwapError(_) => "SwapError",
+            KoraError::TokenOperationError(_) => "TokenOperationError",
+            KoraError::InvalidRequest(_) => "InvalidRequest",
+            KoraError::Unauthorized(_) => "Unauthorized",
+            KoraError::RateLimitExceeded => "RateLimitExceeded",
+            KoraError::UsageLimitExceeded(_) => "UsageLimitExceeded",
+            KoraError::ConfigError(_) => "ConfigError",
+            KoraError::JitoError(_) => "JitoError",
+            KoraError::RecaptchaError(_) => "RecaptchaError",
+        };
+
+        serde_json::json!({
+            "error_type": error_type,
+            "message": self.to_string(),
+        })
+    }
 }
 
-pub fn internal_server_error(e: KoraError) -> RpcError {
-    RpcError::Call(CallError::from_std_error(e))
+impl From<KoraError> for RpcError {
+    fn from(err: KoraError) -> Self {
+        let code = err.error_code();
+        let message = err.to_string();
+        let data = err.to_json_error_data();
+
+        RpcError::Call(CallError::Custom(jsonrpsee::types::error::ErrorObject::owned(
+            code as i32,
+            message,
+            Some(data),
+        )))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -338,66 +429,96 @@ mod tests {
     }
 
     #[test]
-    fn test_kora_error_to_rpc_error_invalid_request() {
+    fn test_kora_error_to_rpc_error_codes() {
         let test_cases = vec![
-            KoraError::AccountNotFound("test".to_string()),
-            KoraError::InvalidTransaction("test".to_string()),
-            KoraError::ValidationError("test".to_string()),
-            KoraError::UnsupportedFeeToken("test".to_string()),
-            KoraError::InsufficientFunds("test".to_string()),
+            (KoraError::InvalidTransaction("test".to_string()), -32000),
+            (KoraError::ValidationError("test".to_string()), -32001),
+            (KoraError::UnsupportedFeeToken("test".to_string()), -32002),
+            (KoraError::InsufficientFunds("test".to_string()), -32003),
+            (KoraError::InvalidRequest("test".to_string()), -32004),
+            (KoraError::FeeEstimationFailed("test".to_string()), -32005),
+            (KoraError::TransactionExecutionFailed("test".to_string()), -32006),
+            (KoraError::SigningError("test".to_string()), -32020),
+            (KoraError::RateLimitExceeded, -32030),
+            (KoraError::UsageLimitExceeded("test".to_string()), -32031),
+            (KoraError::Unauthorized("test".to_string()), -32032),
+            (KoraError::SwapError("test".to_string()), -32040),
+            (KoraError::TokenOperationError("test".to_string()), -32041),
+            (KoraError::AccountNotFound("test".to_string()), -32050),
+            (KoraError::JitoError("test".to_string()), -32060),
+            (KoraError::RecaptchaError("test".to_string()), -32061),
+            (KoraError::InternalServerError("test".to_string()), -32090),
+            (KoraError::ConfigError("test".to_string()), -32091),
+            (KoraError::SerializationError("test".to_string()), -32092),
+            (KoraError::RpcError("test".to_string()), -32093),
         ];
 
-        for kora_error in test_cases {
+        for (kora_error, expected_code) in test_cases {
             let rpc_error: RpcError = kora_error.into();
-            assert!(matches!(rpc_error, RpcError::Call(_)));
+            if let RpcError::Call(CallError::Custom(err_obj)) = rpc_error {
+                assert_eq!(err_obj.code(), expected_code);
+            } else {
+                panic!("Expected RpcError::Call(CallError::Custom), got {:?}", rpc_error);
+            }
         }
     }
 
     #[test]
-    fn test_kora_error_to_rpc_error_internal_server() {
-        let test_cases = vec![
-            KoraError::InternalServerError("test".to_string()),
-            KoraError::SerializationError("test".to_string()),
-        ];
+    fn test_rpc_error_structure() {
+        let error = KoraError::AccountNotFound("test_acc".to_string());
+        let rpc_error: RpcError = error.into();
 
-        for kora_error in test_cases {
-            let rpc_error: RpcError = kora_error.into();
-            assert!(matches!(rpc_error, RpcError::Call(_)));
+        if let RpcError::Call(CallError::Custom(err_obj)) = rpc_error {
+            assert_eq!(err_obj.code(), -32050);
+            assert_eq!(err_obj.message(), "Account test_acc not found");
+
+            let data = err_obj.data().unwrap();
+            let json_data: serde_json::Value = serde_json::from_str(data.get()).unwrap();
+
+            assert_eq!(json_data["error_type"], "AccountNotFound");
+            assert_eq!(json_data["message"], "Account test_acc not found");
+        } else {
+            panic!("Expected RpcError::Call(CallError::Custom)");
         }
     }
 
     #[test]
-    fn test_kora_error_to_rpc_error_default_case() {
-        let other_errors = vec![
-            KoraError::RpcError("test".to_string()),
-            KoraError::SigningError("test".to_string()),
-            KoraError::TransactionExecutionFailed("test".to_string()),
-            KoraError::FeeEstimationFailed("test".to_string()),
-            KoraError::SwapError("test".to_string()),
-            KoraError::TokenOperationError("test".to_string()),
-            KoraError::InvalidRequest("test".to_string()),
-            KoraError::Unauthorized("test".to_string()),
+    fn test_all_variants_have_unique_codes() {
+        use std::collections::HashSet;
+        let variants = vec![
+            KoraError::AccountNotFound("".into()),
+            KoraError::RpcError("".into()),
+            KoraError::SigningError("".into()),
+            KoraError::InvalidTransaction("".into()),
+            KoraError::TransactionExecutionFailed("".into()),
+            KoraError::FeeEstimationFailed("".into()),
+            KoraError::UnsupportedFeeToken("".into()),
+            KoraError::InsufficientFunds("".into()),
+            KoraError::InternalServerError("".into()),
+            KoraError::ValidationError("".into()),
+            KoraError::SerializationError("".into()),
+            KoraError::SwapError("".into()),
+            KoraError::TokenOperationError("".into()),
+            KoraError::InvalidRequest("".into()),
+            KoraError::Unauthorized("".into()),
             KoraError::RateLimitExceeded,
+            KoraError::UsageLimitExceeded("".into()),
+            KoraError::ConfigError("".into()),
+            KoraError::JitoError("".into()),
+            KoraError::RecaptchaError("".into()),
         ];
 
-        for kora_error in other_errors {
-            let rpc_error: RpcError = kora_error.into();
-            assert!(matches!(rpc_error, RpcError::Call(_)));
+        let mut codes = HashSet::new();
+        for variant in variants {
+            let code = variant.error_code() as i32;
+            assert!(
+                codes.insert(code),
+                "Duplicate error code {} found for variant {:?}",
+                code,
+                variant
+            );
+            assert!((-32099..=-32000).contains(&code), "Code {} out of range", code);
         }
-    }
-
-    #[test]
-    fn test_invalid_request_function() {
-        let error = KoraError::ValidationError("invalid input".to_string());
-        let rpc_error = invalid_request(error);
-        assert!(matches!(rpc_error, RpcError::Call(_)));
-    }
-
-    #[test]
-    fn test_internal_server_error_function() {
-        let error = KoraError::InternalServerError("server panic".to_string());
-        let rpc_error = internal_server_error(error);
-        assert!(matches!(rpc_error, RpcError::Call(_)));
     }
 
     #[test]
