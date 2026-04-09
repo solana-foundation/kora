@@ -490,8 +490,17 @@ impl ConfigValidator {
             errors.push(format!("Token2022 extension validation failed: {e}"));
         }
 
-        // Warn if PermanentDelegate is not blocked
-        if !config.validation.token_2022.is_mint_extension_blocked(ExtensionType::PermanentDelegate)
+        let has_token_program =
+            config.validation.allowed_programs.contains(&SPL_TOKEN_PROGRAM_ID.to_string());
+        let has_token22_program =
+            config.validation.allowed_programs.contains(&TOKEN_2022_PROGRAM_ID.to_string());
+
+        // Warn only when Token2022 is enabled and PermanentDelegate is not blocked.
+        if has_token22_program
+            && !config
+                .validation
+                .token_2022
+                .is_mint_extension_blocked(ExtensionType::PermanentDelegate)
         {
             warnings.push(
                 "⚠️  SECURITY: PermanentDelegate extension is NOT blocked. Tokens with this extension \
@@ -508,11 +517,6 @@ impl ConfigValidator {
 
         if fees_enabled {
             // If fees enabled, token or token22 must be enabled in allowed_programs
-            let has_token_program =
-                config.validation.allowed_programs.contains(&SPL_TOKEN_PROGRAM_ID.to_string());
-            let has_token22_program =
-                config.validation.allowed_programs.contains(&TOKEN_2022_PROGRAM_ID.to_string());
-
             if !has_token_program && !has_token22_program {
                 errors.push("When fees are enabled, at least one token program (SPL Token or Token2022) must be in allowed_programs".to_string());
             }
@@ -862,9 +866,100 @@ mod tests {
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         assert!(result.is_ok());
         let warnings = result.unwrap();
-        // Expect warnings about PermanentDelegate and no authentication
-        assert_eq!(warnings.len(), 2);
+        // Token2022 is not enabled, so only auth warning should remain.
+        assert_eq!(warnings.len(), 1);
+        assert!(!warnings.iter().any(|w| w.contains("PermanentDelegate")));
+        assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_warns_for_unblocked_permanent_delegate_when_token2022_enabled(
+    ) {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                    TOKEN_2022_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
         assert!(warnings.iter().any(|w| w.contains("PermanentDelegate")));
+        assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_no_permanent_delegate_warning_when_blocked() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                    TOKEN_2022_PROGRAM_ID.to_string(),
+                ],
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: {
+                    let mut token_2022 = Token2022Config::default();
+                    token_2022.blocked_mint_extensions = vec!["permanent_delegate".to_string()];
+                    token_2022
+                },
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok());
+        let warnings = result.unwrap();
+        assert!(!warnings.iter().any(|w| w.contains("PermanentDelegate")));
         assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
     }
 
