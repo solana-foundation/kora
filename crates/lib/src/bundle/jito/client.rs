@@ -200,16 +200,6 @@ impl JitoBundleClient {
         }
     }
 
-    pub async fn simulate_bundle(
-        &self,
-        encoded_transactions: &[String],
-    ) -> Result<JitoBundleSimulationResult, BundleError> {
-        match self {
-            Self::Live(client) => client.simulate_bundle(encoded_transactions).await,
-            Self::Mock(client) => client.simulate_bundle(encoded_transactions).await,
-        }
-    }
-
     pub async fn simulate_bundle_with_config(
         &self,
         encoded_transactions: &[String],
@@ -335,36 +325,18 @@ impl JitoClient {
         Ok(self.send_request(&url, "getBundleStatuses", params).await?)
     }
 
-    pub async fn simulate_bundle(
-        &self,
-        encoded_transactions: &[String],
-    ) -> Result<JitoBundleSimulationResult, BundleError> {
-        self.simulate_bundle_with_optional_config(encoded_transactions, None).await
-    }
-
     pub async fn simulate_bundle_with_config(
         &self,
         encoded_transactions: &[String],
         simulation_config: JitoBundleSimulationConfig,
     ) -> Result<JitoBundleSimulationResult, BundleError> {
-        self.simulate_bundle_with_optional_config(encoded_transactions, Some(simulation_config))
-            .await
-    }
-
-    async fn simulate_bundle_with_optional_config(
-        &self,
-        encoded_transactions: &[String],
-        simulation_config: Option<JitoBundleSimulationConfig>,
-    ) -> Result<JitoBundleSimulationResult, BundleError> {
         let mut params = vec![json!({ "encodedTransactions": encoded_transactions })];
-        if let Some(config) = simulation_config {
-            params.push(serde_json::to_value(config).map_err(|e| {
-                JitoError::ApiError(format!(
-                    "Failed to serialize simulateBundle config: {}",
-                    sanitize_error!(e)
-                ))
-            })?);
-        }
+        params.push(serde_json::to_value(simulation_config).map_err(|e| {
+            JitoError::ApiError(format!(
+                "Failed to serialize simulateBundle config: {}",
+                sanitize_error!(e)
+            ))
+        })?);
 
         let simulate_url = self.simulate_bundle_url.trim_end_matches('/');
         let raw_result: Value =
@@ -425,17 +397,6 @@ impl JitoMockClient {
             })
             .collect();
         Ok(json!({ "value": mock_statuses }))
-    }
-
-    pub async fn simulate_bundle(
-        &self,
-        _encoded_transactions: &[String],
-    ) -> Result<JitoBundleSimulationResult, BundleError> {
-        self.simulate_bundle_with_config(
-            _encoded_transactions,
-            JitoBundleSimulationConfig::default(),
-        )
-        .await
     }
 
     pub async fn simulate_bundle_with_config(
@@ -632,7 +593,12 @@ mod tests {
             JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
-        let result = client.simulate_bundle(&["encoded-tx".to_string()]).await;
+        let result = client
+            .simulate_bundle_with_config(
+                &["encoded-tx".to_string()],
+                JitoBundleSimulationConfig::default(),
+            )
+            .await;
         mock.assert();
         assert!(result.is_ok());
         let simulation = result.unwrap();
@@ -663,7 +629,12 @@ mod tests {
             JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
-        let result = client.simulate_bundle(&["encoded-tx".to_string()]).await;
+        let result = client
+            .simulate_bundle_with_config(
+                &["encoded-tx".to_string()],
+                JitoBundleSimulationConfig::default(),
+            )
+            .await;
         mock.assert();
         assert!(result.is_ok());
         let simulation = result.unwrap();
@@ -691,7 +662,12 @@ mod tests {
             JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
-        let result = client.simulate_bundle(&[create_mock_encoded_transaction()]).await;
+        let result = client
+            .simulate_bundle_with_config(
+                &[create_mock_encoded_transaction()],
+                JitoBundleSimulationConfig::default(),
+            )
+            .await;
         mock.assert();
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -717,7 +693,12 @@ mod tests {
             JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
-        let result = client.simulate_bundle(&[create_mock_encoded_transaction()]).await;
+        let result = client
+            .simulate_bundle_with_config(
+                &[create_mock_encoded_transaction()],
+                JitoBundleSimulationConfig::default(),
+            )
+            .await;
         mock.assert();
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -973,7 +954,12 @@ mod tests {
         };
         let client = JitoBundleClient::new(&config);
 
-        let result = client.simulate_bundle(&[create_mock_encoded_transaction()]).await;
+        let result = client
+            .simulate_bundle_with_config(
+                &[create_mock_encoded_transaction()],
+                JitoBundleSimulationConfig::default(),
+            )
+            .await;
 
         assert!(result.is_ok());
         let simulation = result.unwrap();

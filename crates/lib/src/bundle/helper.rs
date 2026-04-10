@@ -1,8 +1,5 @@
 use crate::{
-    bundle::{
-        BundleError, JitoBundleClient, JitoBundleSimulationConfig, JitoBundleSimulationResult,
-        JitoError,
-    },
+    bundle::{BundleError, JitoError},
     config::Config,
     constant::ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION,
     fee::fee::{FeeConfigUtil, TransactionFeeUtil},
@@ -89,23 +86,6 @@ impl BundleProcessor {
                 }
             })
             .collect()
-    }
-
-    pub async fn simulate_bundle(
-        encoded_txs: &[String],
-        config: &Config,
-    ) -> Result<JitoBundleSimulationResult, KoraError> {
-        let jito_client = JitoBundleClient::new(&config.kora.bundle.jito);
-        Ok(jito_client.simulate_bundle(encoded_txs).await?)
-    }
-
-    pub async fn simulate_bundle_with_config(
-        encoded_txs: &[String],
-        simulation_config: JitoBundleSimulationConfig,
-        config: &Config,
-    ) -> Result<JitoBundleSimulationResult, KoraError> {
-        let jito_client = JitoBundleClient::new(&config.kora.bundle.jito);
-        Ok(jito_client.simulate_bundle_with_config(encoded_txs, simulation_config).await?)
     }
 
     #[allow(clippy::too_many_arguments)]
