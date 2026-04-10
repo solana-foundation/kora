@@ -5,7 +5,10 @@ const JITO_TESTNET_BLOCK_ENGINE_URL: &str = "https://dallas.testnet.block-engine
 
 #[tokio::test]
 async fn test_jito_mainnet_connection() {
-    let config = JitoConfig { block_engine_url: JITO_TESTNET_BLOCK_ENGINE_URL.to_string() };
+    let config = JitoConfig {
+        block_engine_url: JITO_TESTNET_BLOCK_ENGINE_URL.to_string(),
+        simulate_bundle_url: None,
+    };
     let client = JitoClient::new(&config);
 
     // Query status of non-existent bundle to test connectivity
@@ -23,7 +26,10 @@ async fn test_jito_mainnet_connection() {
 
 #[tokio::test]
 async fn test_jito_testnet_connection() {
-    let config = JitoConfig { block_engine_url: JITO_TESTNET_BLOCK_ENGINE_URL.to_string() };
+    let config = JitoConfig {
+        block_engine_url: JITO_TESTNET_BLOCK_ENGINE_URL.to_string(),
+        simulate_bundle_url: None,
+    };
     let client = JitoClient::new(&config);
 
     // Query status of non-existent bundle to test connectivity
@@ -42,7 +48,10 @@ async fn test_jito_testnet_connection() {
 #[tokio::test]
 async fn test_jito_send_bundle() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
-    let config = JitoConfig { block_engine_url: JITO_TESTNET_BLOCK_ENGINE_URL.to_string() };
+    let config = JitoConfig {
+        block_engine_url: JITO_TESTNET_BLOCK_ENGINE_URL.to_string(),
+        simulate_bundle_url: None,
+    };
     let client = JitoClient::new(&config);
 
     let encoded_tx = ctx

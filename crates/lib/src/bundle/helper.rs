@@ -224,14 +224,28 @@ impl BundleProcessor {
     }
 
     pub async fn sign_all(
-        mut self,
+        self,
         signer: &Arc<solana_keychain::Signer>,
         fee_payer: &Pubkey,
         rpc_client: &RpcClient,
         config: &Config,
         will_send: bool,
     ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
-        self.validate_payment()?;
+        self.sign_all_internal(signer, fee_payer, rpc_client, config, will_send, true).await
+    }
+
+    async fn sign_all_internal(
+        mut self,
+        signer: &Arc<solana_keychain::Signer>,
+        fee_payer: &Pubkey,
+        rpc_client: &RpcClient,
+        config: &Config,
+        will_send: bool,
+        validate_payment: bool,
+    ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
+        if validate_payment {
+            self.validate_payment()?;
+        }
 
         let mut blockhash = None;
         let tx_count = self.resolved_transactions.len();

@@ -6,9 +6,14 @@ use crate::bundle::jito::constant::JITO_DEFAULT_BLOCK_ENGINE_URL;
 /// Jito-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct JitoConfig {
-    /// Jito block engine URL
+    /// Jito block engine URL for sendBundle / getBundleStatuses
     #[serde(default = "default_jito_block_engine_url")]
     pub block_engine_url: String,
+    /// RPC URL that supports the simulateBundle method (e.g. a Jito-Solana RPC node
+    /// or a provider like Helius / QuickNode with Jito add-on).
+    /// Required when bundle support is enabled.
+    #[serde(default)]
+    pub simulate_bundle_url: Option<String>,
 }
 
 fn default_jito_block_engine_url() -> String {
@@ -17,7 +22,10 @@ fn default_jito_block_engine_url() -> String {
 
 impl Default for JitoConfig {
     fn default() -> Self {
-        Self { block_engine_url: JITO_DEFAULT_BLOCK_ENGINE_URL.to_string() }
+        Self {
+            block_engine_url: JITO_DEFAULT_BLOCK_ENGINE_URL.to_string(),
+            simulate_bundle_url: None,
+        }
     }
 }
 

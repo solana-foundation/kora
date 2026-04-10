@@ -545,6 +545,16 @@ impl ConfigValidator {
             }
         }
 
+        // Validate bundle configuration
+        if config.kora.bundle.enabled && config.kora.bundle.jito.simulate_bundle_url.is_none() {
+            errors.push(
+                "Bundle support is enabled but jito.simulate_bundle_url is not set. \
+                simulateBundle is a Jito-Solana RPC method and requires a compatible RPC URL \
+                (e.g. a Jito-Solana node, Helius, or QuickNode with Jito add-on)."
+                    .to_string(),
+            );
+        }
+
         // Validate fee payer policy - warn about enabled risky operations
         Self::validate_fee_payer_policy(&config.validation.fee_payer_policy, &mut warnings);
 

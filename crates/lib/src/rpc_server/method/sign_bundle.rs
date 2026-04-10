@@ -50,6 +50,8 @@ pub async fn sign_bundle(
     rpc_client: &Arc<RpcClient>,
     request: SignBundleRequest,
 ) -> Result<SignBundleResponse, KoraError> {
+    let SignBundleRequest { transactions, signer_key, sig_verify, user_id, sign_only_indices } =
+        request;
     let config = &get_config()?;
 
     if !config.kora.bundle.enabled {
@@ -57,20 +59,17 @@ pub async fn sign_bundle(
     }
 
     // Validate bundle size on ALL transactions first
-    BundleValidator::validate_jito_bundle_size(&request.transactions)?;
+    BundleValidator::validate_jito_bundle_size(&transactions)?;
 
     // Extract only the transactions we need to process
     let (transactions_to_process, index_to_position) =
-        BundleProcessor::extract_transactions_to_process(
-            &request.transactions,
-            request.sign_only_indices,
-        )?;
+        BundleProcessor::extract_transactions_to_process(&transactions, sign_only_indices.clone())?;
 
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let signer = get_request_signer_with_signer_key(signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
-    let sig_verify = request.sig_verify || config.kora.force_sig_verify;
+    let sig_verify = sig_verify || config.kora.force_sig_verify;
     let processor = BundleProcessor::process_bundle(
         &transactions_to_process,
         fee_payer,
@@ -79,7 +78,7 @@ pub async fn sign_bundle(
         rpc_client,
         sig_verify,
         Some(PluginExecutionContext::SignBundle),
-        BundleProcessingMode::CheckUsage(request.user_id.as_deref()),
+        BundleProcessingMode::CheckUsage(user_id.as_deref()),
     )
     .await?;
 
@@ -94,10 +93,24 @@ pub async fn sign_bundle(
 
     // Merge signed transactions back into original positions
     let signed_transactions = BundleProcessor::merge_signed_transactions(
-        &request.transactions,
+        &transactions,
         encoded_signed,
         &index_to_position,
     );
+
+    let signed_indices = BundleValidator::signed_indices_for_bundle(
+        transactions.len(),
+        sign_only_indices.as_deref(),
+    );
+    BundleValidator::simulate_and_validate_sequential_bundle(
+        rpc_client,
+        config,
+        &signed_transactions,
+        &signed_indices,
+        &fee_payer,
+        !sig_verify,
+    )
+    .await?;
 
     Ok(SignBundleResponse { signed_transactions, signer_pubkey: fee_payer.to_string() })
 }
@@ -109,10 +122,14 @@ mod tests {
         fee::price::{PriceConfig, PriceModel},
         tests::{
             common::{setup_or_get_test_signer, setup_or_get_test_usage_limiter, RpcMockBuilder},
-            config_mock::{ConfigMockBuilder, ValidationConfigBuilder},
+            config_mock::{
+                mock_state::setup_config_mock, ConfigMockBuilder, ValidationConfigBuilder,
+            },
         },
         transaction::TransactionUtil,
     };
+    use mockito::{Matcher, Server};
+    use serde_json::json;
     use solana_message::{Message, VersionedMessage};
     use solana_sdk::pubkey::Pubkey;
     use solana_system_interface::instruction::transfer;
@@ -347,5 +364,73 @@ mod tests {
         assert_eq!(request.signer_key, Some("11111111111111111111111111111111".to_string()));
         assert!(!request.sig_verify);
         assert_eq!(request.sign_only_indices, Some(vec![0, 2]));
+    }
+
+    #[tokio::test]
+    async fn test_sign_bundle_rejects_sequential_outflow_violation() {
+        let mut server = Server::new_async().await;
+        let simulate_mock = server
+            .mock("POST", "/")
+            .match_header("content-type", "application/json")
+            .match_body(Matcher::PartialJson(json!({"method": "simulateBundle"})))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":123},"value":{"summary":"succeeded","transactionResults":[{"err":null,"logs":["Program 11111111111111111111111111111111 invoke [1]"]},{"err":null,"logs":["Program 11111111111111111111111111111111 invoke [1]"],"preExecutionAccounts":[{"lamports":2500000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}],"postExecutionAccounts":[{"lamports":1000000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}]},{"err":null,"logs":["Program 11111111111111111111111111111111 invoke [1]"]}]}}}"#,
+            )
+            .create();
+
+        let mut config = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_usage_limit_enabled(false)
+            .with_max_allowed_lamports(1_000_000)
+            .build();
+        config.validation.price = PriceConfig { model: PriceModel::Free };
+        config.kora.bundle.jito.block_engine_url = server.url();
+        config.kora.bundle.jito.simulate_bundle_url = Some(server.url());
+        let _m = setup_config_mock(config);
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let signer_pubkey = setup_or_get_test_signer();
+        let rpc_client = Arc::new(
+            RpcMockBuilder::new()
+                .with_fee_estimate(5000)
+                .with_blockhash()
+                .with_simulation()
+                .build(),
+        );
+
+        let make_non_signed_tx = || {
+            let payer = Pubkey::new_unique();
+            let ix = transfer(&payer, &Pubkey::new_unique(), 1_000_000_000);
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer)));
+            let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+            TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
+        };
+
+        let signed_ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1_000_000_000);
+        let signed_message =
+            VersionedMessage::Legacy(Message::new(&[signed_ix], Some(&signer_pubkey)));
+        let signed_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction(signed_message);
+        let signed_encoded =
+            TransactionUtil::encode_versioned_transaction(&signed_transaction).unwrap();
+
+        let transactions = vec![make_non_signed_tx(), signed_encoded, make_non_signed_tx()];
+        let request = SignBundleRequest {
+            transactions,
+            signer_key: Some(signer_pubkey.to_string()),
+            sig_verify: true,
+            user_id: None,
+            sign_only_indices: Some(vec![1]),
+        };
+
+        let result = sign_bundle(&rpc_client, request).await;
+
+        simulate_mock.assert();
+        assert!(result.is_err(), "Expected sequential outflow validation error");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Total transfer amount"), "Unexpected error: {err}");
+        assert!(err.contains("exceeds maximum allowed"), "Unexpected error: {err}");
     }
 }
