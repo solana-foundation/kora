@@ -730,7 +730,6 @@ async fn test_sign_bundle_rejects_net_zero_token_loop_across_transactions() {
     let drain_tx = ctx
         .transaction_builder()
         .with_fee_payer(fee_payer)
-        .with_signer(&attacker)
         .with_spl_payment_with_accounts(
             &fee_payer_token_account,
             &attacker_token_account,
