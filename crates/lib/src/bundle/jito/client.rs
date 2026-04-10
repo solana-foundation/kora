@@ -140,7 +140,7 @@ impl JitoBundleSimulationResult {
 
             let mut parsed = Self::parse_transaction_result(value)?;
             parsed.context = context.clone();
-            return Ok(Self { context, summary: None, transaction_results: vec![parsed] });
+            return Ok(Self { context, summary, transaction_results: vec![parsed] });
         }
 
         if result.get("err").is_some()
@@ -162,7 +162,7 @@ impl JitoBundleSimulationResult {
         match summary {
             Value::String(status) => !status.eq_ignore_ascii_case("succeeded"),
             Value::Object(map) => map.contains_key("failed") || map.contains_key("error"),
-            _ => false,
+            _ => true,
         }
     }
 
@@ -491,7 +491,7 @@ impl JitoMockClient {
 
                 JitoBundleSimulationTransactionResult {
                     err: None,
-                    logs: vec![],
+                    logs: vec!["Program 11111111111111111111111111111111 invoke [1]".to_string()],
                     context: json!({ "slot": 12345678, "apiVersion": "mock" }),
                     pre_execution_accounts: pre_accounts,
                     post_execution_accounts: post_accounts,

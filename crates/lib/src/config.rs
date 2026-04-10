@@ -962,9 +962,11 @@ rate_limit = 1
 
     #[test]
     fn test_token2022_extension_blocking_without_initialize_uses_raw_extension_names() {
-        let mut token_2022 = Token2022Config::default();
-        token_2022.blocked_mint_extensions = vec!["transfer_fee_config".to_string()];
-        token_2022.blocked_account_extensions = vec!["memo_transfer".to_string()];
+        let token_2022 = Token2022Config {
+            blocked_mint_extensions: vec!["transfer_fee_config".to_string()],
+            blocked_account_extensions: vec!["memo_transfer".to_string()],
+            ..Token2022Config::default()
+        };
 
         assert!(token_2022.is_mint_extension_blocked(ExtensionType::TransferFeeConfig));
         assert!(token_2022.is_account_extension_blocked(ExtensionType::MemoTransfer));

@@ -164,6 +164,12 @@ impl BundleValidator {
     ) -> Result<(), KoraError> {
         let invoked_programs = Self::extract_invoked_programs(logs)?;
 
+        if invoked_programs.is_empty() {
+            return Err(KoraError::InvalidTransaction(
+                "No invoked programs detected in transaction logs; cannot validate program allowlist".into(),
+            ));
+        }
+
         for program_id in invoked_programs {
             if disallowed_programs.contains(&program_id) {
                 return Err(KoraError::InvalidTransaction(format!(

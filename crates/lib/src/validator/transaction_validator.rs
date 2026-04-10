@@ -820,7 +820,7 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
-            .validate_transaction(&get_config().unwrap(), &mut transaction, &rpc_client)
+            .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
             .await
             .is_ok());
     }
@@ -848,7 +848,7 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
-            .validate_transaction(&get_config().unwrap(), &mut transaction, &rpc_client)
+            .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
             .await
             .is_err());
     }
@@ -880,7 +880,7 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
-            .validate_transaction(&get_config().unwrap(), &mut transaction, &rpc_client)
+            .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
             .await
             .is_ok());
     }
@@ -909,7 +909,7 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
-            .validate_transaction(&get_config().unwrap(), &mut transaction, &rpc_client)
+            .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
             .await
             .is_err());
     }
@@ -939,7 +939,7 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
         assert!(validator
-            .validate_transaction(&get_config().unwrap(), &mut transaction, &rpc_client)
+            .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
             .await
             .is_ok());
     }
