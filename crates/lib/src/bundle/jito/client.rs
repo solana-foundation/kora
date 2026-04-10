@@ -228,6 +228,7 @@ impl JitoBundleClient {
 
 pub struct JitoClient {
     block_engine_url: String,
+    simulate_bundle_url: String,
     client: Client,
 }
 
@@ -252,7 +253,14 @@ struct JsonRpcError {
 
 impl JitoClient {
     pub fn new(config: &JitoConfig) -> Self {
-        Self { block_engine_url: config.block_engine_url.clone(), client: Client::new() }
+        Self {
+            block_engine_url: config.block_engine_url.clone(),
+            simulate_bundle_url: config
+                .simulate_bundle_url
+                .clone()
+                .unwrap_or_else(|| config.block_engine_url.clone()),
+            client: Client::new(),
+        }
     }
 
     fn block_engine_base_url(&self) -> &str {
@@ -358,9 +366,9 @@ impl JitoClient {
             })?);
         }
 
-        let raw_result: Value = self
-            .send_request(self.block_engine_base_url(), "simulateBundle", Value::Array(params))
-            .await?;
+        let simulate_url = self.simulate_bundle_url.trim_end_matches('/');
+        let raw_result: Value =
+            self.send_request(simulate_url, "simulateBundle", Value::Array(params)).await?;
         let parsed_result = JitoBundleSimulationResult::from_rpc_result(raw_result)?;
 
         if let Some((failed_idx, failed_result)) = parsed_result.first_failure() {
@@ -526,7 +534,8 @@ mod tests {
             .with_body(r#"{"jsonrpc":"2.0","id":1,"result":"bundle-uuid-12345"}"#)
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let tx = create_mock_encoded_transaction();
@@ -547,7 +556,8 @@ mod tests {
             .with_body("Internal Server Error")
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let tx = create_mock_encoded_transaction();
@@ -568,7 +578,8 @@ mod tests {
             .with_body(r#"{"jsonrpc":"2.0","id":1,"error":{"message":"Bundle rejected"}}"#)
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let tx = create_mock_encoded_transaction();
@@ -590,7 +601,8 @@ mod tests {
             .with_body(r#"{"jsonrpc":"2.0","id":1,"result":{"value":[{"bundle_id":"uuid1","status":"Landed"}]}}"#)
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let result = client.get_bundle_statuses(vec!["uuid1".to_string()]).await;
@@ -616,7 +628,8 @@ mod tests {
             )
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let result = client.simulate_bundle(&["encoded-tx".to_string()]).await;
@@ -646,7 +659,8 @@ mod tests {
             )
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let result = client.simulate_bundle(&["encoded-tx".to_string()]).await;
@@ -673,7 +687,8 @@ mod tests {
             )
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let result = client.simulate_bundle(&[create_mock_encoded_transaction()]).await;
@@ -698,7 +713,8 @@ mod tests {
             )
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let result = client.simulate_bundle(&[create_mock_encoded_transaction()]).await;
@@ -732,7 +748,8 @@ mod tests {
             )
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let simulation_config = JitoBundleSimulationConfig {
@@ -768,7 +785,8 @@ mod tests {
             .with_body(r#"{"jsonrpc":"2.0","id":1,"result":12345}"#)
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let tx = create_mock_encoded_transaction();
@@ -789,7 +807,8 @@ mod tests {
             .with_body(r#"{"jsonrpc":"2.0","id":1}"#)
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let tx = create_mock_encoded_transaction();
@@ -810,7 +829,8 @@ mod tests {
             .with_body(r#"{"jsonrpc":"2.0","id":1,"result":"multi-tx-bundle-uuid"}"#)
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let txs = vec![
@@ -836,7 +856,8 @@ mod tests {
             .with_body(r#"not valid json"#)
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let tx = create_mock_encoded_transaction();
@@ -860,7 +881,8 @@ mod tests {
             .with_body(r#"{"jsonrpc":"2.0","id":1,"result":{"value":[]}}"#)
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let result = client.get_bundle_statuses(vec![]).await;
@@ -883,7 +905,8 @@ mod tests {
             .with_body(r#"{"jsonrpc":"2.0","id":1,"result":{"value":[{"bundle_id":"uuid1","status":"Landed"},{"bundle_id":"uuid2","status":"Pending"}]}}"#)
             .create();
 
-        let config = JitoConfig { block_engine_url: server.url() };
+        let config =
+            JitoConfig { block_engine_url: server.url(), simulate_bundle_url: Some(server.url()) };
         let client = JitoClient::new(&config);
 
         let result = client
@@ -899,7 +922,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_jito_bundle_client_dispatches_to_mock() {
-        let config = JitoConfig { block_engine_url: JITO_MOCK_BLOCK_ENGINE_URL.to_string() };
+        let config = JitoConfig {
+            block_engine_url: JITO_MOCK_BLOCK_ENGINE_URL.to_string(),
+            simulate_bundle_url: Some(JITO_MOCK_BLOCK_ENGINE_URL.to_string()),
+        };
         let client = JitoBundleClient::new(&config);
 
         assert!(matches!(client, JitoBundleClient::Mock(_)));
@@ -914,7 +940,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_jito_bundle_client_dispatches_to_real() {
-        let config = JitoConfig { block_engine_url: "https://example.com".to_string() };
+        let config = JitoConfig {
+            block_engine_url: "https://example.com".to_string(),
+            simulate_bundle_url: None,
+        };
         let client = JitoBundleClient::new(&config);
 
         assert!(matches!(client, JitoBundleClient::Live(_)));
@@ -922,7 +951,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_client_get_bundle_statuses() {
-        let config = JitoConfig { block_engine_url: JITO_MOCK_BLOCK_ENGINE_URL.to_string() };
+        let config = JitoConfig {
+            block_engine_url: JITO_MOCK_BLOCK_ENGINE_URL.to_string(),
+            simulate_bundle_url: Some(JITO_MOCK_BLOCK_ENGINE_URL.to_string()),
+        };
         let client = JitoBundleClient::new(&config);
 
         let result = client.get_bundle_statuses(vec!["test-uuid".to_string()]).await;
@@ -935,7 +967,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_client_simulate_bundle() {
-        let config = JitoConfig { block_engine_url: JITO_MOCK_BLOCK_ENGINE_URL.to_string() };
+        let config = JitoConfig {
+            block_engine_url: JITO_MOCK_BLOCK_ENGINE_URL.to_string(),
+            simulate_bundle_url: Some(JITO_MOCK_BLOCK_ENGINE_URL.to_string()),
+        };
         let client = JitoBundleClient::new(&config);
 
         let result = client.simulate_bundle(&[create_mock_encoded_transaction()]).await;

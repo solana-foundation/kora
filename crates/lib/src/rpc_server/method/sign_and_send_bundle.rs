@@ -276,6 +276,7 @@ mod tests {
         assert_eq!(config.validation.max_allowed_lamports, 1_000_000);
         config.validation.price = PriceConfig { model: PriceModel::Free };
         config.kora.bundle.jito.block_engine_url = server.url();
+        config.kora.bundle.jito.simulate_bundle_url = Some(server.url());
         let _m = setup_config_mock(config);
         let _ = setup_or_get_test_usage_limiter().await;
 
@@ -352,6 +353,7 @@ mod tests {
             .build();
         config.validation.price = PriceConfig { model: PriceModel::Free };
         config.kora.bundle.jito.block_engine_url = server.url();
+        config.kora.bundle.jito.simulate_bundle_url = Some(server.url());
         let _m = setup_config_mock(config);
         let _ = setup_or_get_test_usage_limiter().await;
 

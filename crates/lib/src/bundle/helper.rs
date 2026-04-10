@@ -254,16 +254,6 @@ impl BundleProcessor {
         self.sign_all_internal(signer, fee_payer, rpc_client, config, will_send, true).await
     }
 
-    pub async fn sign_all_for_simulation(
-        self,
-        signer: &Arc<solana_keychain::Signer>,
-        fee_payer: &Pubkey,
-        rpc_client: &RpcClient,
-        config: &Config,
-    ) -> Result<Vec<VersionedTransactionResolved>, KoraError> {
-        self.sign_all_internal(signer, fee_payer, rpc_client, config, false, false).await
-    }
-
     async fn sign_all_internal(
         mut self,
         signer: &Arc<solana_keychain::Signer>,

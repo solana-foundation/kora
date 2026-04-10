@@ -115,6 +115,7 @@ impl ConfigMockBuilder {
                         enabled: false,
                         jito: JitoConfig {
                             block_engine_url: JITO_MOCK_BLOCK_ENGINE_URL.to_string(),
+                            simulate_bundle_url: Some(JITO_MOCK_BLOCK_ENGINE_URL.to_string()),
                         },
                     },
                     lighthouse: LighthouseConfig::default(),

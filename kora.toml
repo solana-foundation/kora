@@ -178,3 +178,4 @@ enabled = false
 
 [kora.bundle.jito]
 block_engine_url = "https://mainnet.block-engine.jito.wtf"
+# simulate_bundle_url = "https://mainnet.rpc.jito.wtf"  # Required when bundle.enabled = true

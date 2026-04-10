@@ -123,3 +123,4 @@ enabled = true
 
 [kora.bundle.jito]
 block_engine_url = "mock"
+simulate_bundle_url = "mock"
