@@ -1067,7 +1067,7 @@ allow_create = true
         assert_eq!(config.kora.cache.url, Some("http://localhost:6379".to_string()));
         assert!(config.kora.cache.enabled);
 
-        assert_eq!(config.kora.enabled_methods.transfer_transaction, true);
-        assert_eq!(config.kora.enabled_methods.sign_transaction, false);
+        assert!(config.kora.enabled_methods.transfer_transaction);
+        assert!(!config.kora.enabled_methods.sign_transaction);
     }
 }

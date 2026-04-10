@@ -122,12 +122,10 @@ impl BundleValidator {
         signed_indices: &[usize],
         simulation_result: &JitoBundleSimulationResult,
     ) -> Result<(), KoraError> {
-        if !signed_indices.is_empty()
-            && simulation_result.transaction_results.len() != encoded_transactions.len()
-        {
+        if simulation_result.transaction_results.len() != encoded_transactions.len() {
             return Err(KoraError::InvalidTransaction(format!(
                 "Bundle simulation returned {} transaction results for {} transactions; \
-                 cannot safely validate signed bundle members sequentially",
+                 cannot safely validate bundle sequentially",
                 simulation_result.transaction_results.len(),
                 encoded_transactions.len()
             )));
@@ -135,34 +133,25 @@ impl BundleValidator {
 
         let allowed_programs = Self::parse_pubkey_set(&config.validation.allowed_programs)?;
         let disallowed_programs = Self::parse_pubkey_set(&config.validation.disallowed_accounts)?;
+        let signed_set: HashSet<usize> = signed_indices.iter().copied().collect();
 
-        for &signed_idx in signed_indices {
-            if signed_idx >= encoded_transactions.len() {
-                continue;
-            }
-
-            let tx_result =
-                simulation_result.transaction_results.get(signed_idx).ok_or_else(|| {
-                    KoraError::InvalidTransaction(format!(
-                        "Bundle simulation missing result for signed transaction index {}",
-                        signed_idx
-                    ))
-                })?;
-
+        for (tx_idx, tx_result) in simulation_result.transaction_results.iter().enumerate() {
             Self::validate_invoked_programs(
                 &allowed_programs,
                 &disallowed_programs,
                 &tx_result.logs,
             )?;
 
-            Self::validate_fee_payer_lamport_outflow(
-                rpc_client,
-                &encoded_transactions[signed_idx],
-                signed_idx,
-                tx_result,
-                config.validation.max_allowed_lamports,
-            )
-            .await?;
+            if signed_set.contains(&tx_idx) {
+                Self::validate_fee_payer_lamport_outflow(
+                    rpc_client,
+                    &encoded_transactions[tx_idx],
+                    tx_idx,
+                    tx_result,
+                    config.validation.max_allowed_lamports,
+                )
+                .await?;
+            }
         }
 
         Ok(())
@@ -572,6 +561,6 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("cannot safely validate signed bundle members sequentially"));
+        assert!(err.contains("cannot safely validate bundle sequentially"));
     }
 }

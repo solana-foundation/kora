@@ -66,17 +66,28 @@ impl JitoBundleSimulationResult {
     fn parse_transaction_result(
         value: Value,
     ) -> Result<JitoBundleSimulationTransactionResult, JitoError> {
-        let logs = value
-            .get("logs")
-            .and_then(Value::as_array)
-            .map(|entries| {
-                entries
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(ToString::to_string)
-                    .collect::<Vec<String>>()
-            })
-            .unwrap_or_default();
+        let logs = match value.get("logs") {
+            Some(Value::Array(entries)) => entries
+                .iter()
+                .map(|entry| {
+                    entry.as_str().map(ToString::to_string).ok_or_else(|| {
+                        JitoError::ApiError(
+                            "Invalid log entry in simulateBundle response".to_string(),
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            None | Some(Value::Null) => {
+                return Err(JitoError::ApiError(
+                    "Missing logs in simulateBundle response".to_string(),
+                ))
+            }
+            _ => {
+                return Err(JitoError::ApiError(
+                    "Invalid logs in simulateBundle response".to_string(),
+                ))
+            }
+        };
 
         let pre_execution_accounts = match value.get("preExecutionAccounts") {
             None | Some(Value::Null) => None,
@@ -364,13 +375,11 @@ impl JitoClient {
             return Err(BundleError::ValidationError(message));
         }
 
-        if parsed_result.transaction_results.is_empty() {
-            if let Some(summary) = &parsed_result.summary {
-                if JitoBundleSimulationResult::summary_failed(summary) {
-                    return Err(BundleError::ValidationError(format!(
-                        "Bundle simulation failed: {summary}",
-                    )));
-                }
+        if let Some(summary) = &parsed_result.summary {
+            if JitoBundleSimulationResult::summary_failed(summary) {
+                return Err(BundleError::ValidationError(format!(
+                    "Bundle simulation failed: {summary}",
+                )));
             }
         }
 
