@@ -21,7 +21,6 @@ use rust_decimal::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{instruction::Instruction, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
-use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -419,11 +418,8 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<u64, KoraError> {
-        // Collect all unique mints that need price lookups
-        let mut mint_to_transfers: HashMap<
-            Pubkey,
-            Vec<(u64, bool, bool)>, // (amount, is_outflow, is_2022)
-        > = HashMap::new();
+        // Collect all outflow transfers (fee payer as source) grouped by mint
+        let mut mint_to_transfers: HashMap<Pubkey, Vec<u64>> = HashMap::new();
 
         for transfer in spl_transfers {
             if let ParsedSPLInstructionData::SplTokenTransfer {
@@ -431,12 +427,10 @@ impl TokenUtil {
                 owner,
                 mint,
                 source_address,
-                destination_address,
-                is_2022,
                 ..
             } = transfer
             {
-                // Check if fee payer is the source (outflow)
+                // Only count outflows (fee payer as source)
                 if *owner == *fee_payer {
                     let mint_pubkey = if let Some(m) = mint {
                         *m
@@ -456,71 +450,7 @@ impl TokenUtil {
                             })?;
                         token_account.mint()
                     };
-                    mint_to_transfers
-                        .entry(mint_pubkey)
-                        .or_default()
-                        .push((*amount, true, *is_2022));
-                } else {
-                    // Check if fee payer owns the destination (inflow)
-                    // We need to check the destination token account owner
-                    if let Some(mint_pubkey) = mint {
-                        // Get destination account to check owner
-                        match CacheUtil::get_account(config, rpc_client, destination_address, false)
-                            .await
-                        {
-                            Ok(dest_account) => {
-                                let token_program =
-                                    TokenType::get_token_program_from_owner(&dest_account.owner)?;
-                                let token_account = token_program
-                                    .unpack_token_account(&dest_account.data)
-                                    .map_err(|e| {
-                                        KoraError::TokenOperationError(format!(
-                                            "Failed to unpack destination token account {}: {}",
-                                            destination_address, e
-                                        ))
-                                    })?;
-                                if token_account.owner() == *fee_payer {
-                                    mint_to_transfers
-                                        .entry(*mint_pubkey)
-                                        .or_default()
-                                        .push((*amount, false, *is_2022)); // inflow
-                                }
-                            }
-                            Err(e) => {
-                                // If we get Account not found error, we try to match it to the ATA derivation for the fee payer
-                                // in case that ATA is being created in the current instruction
-                                if matches!(e, KoraError::AccountNotFound(_)) {
-                                    let spl_ata =
-                                        spl_associated_token_account_interface::address::get_associated_token_address(
-                                            fee_payer,
-                                            mint_pubkey,
-                                        );
-                                    let token2022_ata =
-                                        get_associated_token_address_with_program_id(
-                                            fee_payer,
-                                            mint_pubkey,
-                                            &spl_token_2022_interface::id(),
-                                        );
-
-                                    // If destination matches a valid ATA for fee payer, count as inflow
-                                    if *destination_address == spl_ata
-                                        || *destination_address == token2022_ata
-                                    {
-                                        mint_to_transfers
-                                            .entry(*mint_pubkey)
-                                            .or_default()
-                                            .push((*amount, false, *is_2022)); // inflow
-                                    }
-                                    // Otherwise, it's not fee payer's account, continue to next transfer
-                                } else {
-                                    // Skip if destination account doesn't exist or can't be fetched
-                                    // This could be problematic for non ATA token accounts created
-                                    // during the transaction
-                                    continue;
-                                }
-                            }
-                        }
-                    }
+                    mint_to_transfers.entry(mint_pubkey).or_default().push(*amount);
                 }
             }
         }
@@ -569,10 +499,7 @@ impl TokenUtil {
             mint_decimals.insert(*mint, decimals);
         }
 
-        // Calculate total value
-        let mut total_lamports = 0u64;
-        let mut token2022_mints: HashMap<Pubkey, Box<dyn TokenMint>> = HashMap::new();
-        let mut cached_epoch: Option<u64> = None;
+        let mut total_lamports: u64 = 0;
 
         for (mint, transfers) in mint_to_transfers.iter() {
             let price = prices
@@ -582,25 +509,9 @@ impl TokenUtil {
                 .get(mint)
                 .ok_or_else(|| KoraError::RpcError(format!("No decimals data for mint {mint}")))?;
 
-            for (amount, is_outflow, is_2022) in transfers {
-                let mut effective_amount = *amount;
-
-                // Token2022 transfer fees are withheld from destination credits.
-                // Net inflows to fee-payer-owned accounts must be credited post-fee.
-                if *is_2022 && !*is_outflow {
-                    effective_amount = Self::calculate_token2022_net_amount(
-                        *amount,
-                        mint,
-                        rpc_client,
-                        config,
-                        &mut cached_epoch,
-                        &mut token2022_mints,
-                    )
-                    .await?;
-                }
-
+            for amount in transfers {
                 // Convert token amount to lamports value using Decimal
-                let amount_decimal = Decimal::from_u64(effective_amount).ok_or_else(|| {
+                let amount_decimal = Decimal::from_u64(*amount).ok_or_else(|| {
                     KoraError::ValidationError("Invalid transfer amount".to_string())
                 })?;
                 let decimals_scale = Decimal::from_u64(10u64.pow(*decimals as u32))
@@ -616,7 +527,7 @@ impl TokenUtil {
                     .and_then(|result| result.checked_div(decimals_scale))
                     .ok_or_else(|| {
                         log::error!("Token value calculation overflow: amount={}, price={}, decimals={}, lamports_per_sol={}",
-                            effective_amount,
+                            amount,
                             price.price,
                             decimals,
                             lamports_per_sol
@@ -628,16 +539,10 @@ impl TokenUtil {
                     KoraError::ValidationError("Lamports value overflow".to_string())
                 })?;
 
-                if *is_outflow {
-                    // Add outflow to total
-                    total_lamports = total_lamports.checked_add(lamports).ok_or_else(|| {
-                        log::error!("SPL outflow calculation overflow");
-                        KoraError::ValidationError("SPL outflow calculation overflow".to_string())
-                    })?;
-                } else {
-                    // Subtract inflow from total (using saturating_sub to prevent underflow)
-                    total_lamports = total_lamports.saturating_sub(lamports);
-                }
+                total_lamports = total_lamports.checked_add(lamports).ok_or_else(|| {
+                    log::error!("SPL outflow calculation overflow");
+                    KoraError::ValidationError("SPL outflow calculation overflow".to_string())
+                })?;
             }
         }
 
@@ -967,6 +872,8 @@ mod tests_token {
         pod::PodMint,
     };
 
+    use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
+
     use super::*;
 
     fn create_token2022_mint_account_with_transfer_fee(
@@ -1287,12 +1194,12 @@ mod tests_token {
     }
 
     #[tokio::test]
-    async fn test_calculate_spl_transfers_value_in_lamports_token2022_inflow_uses_net_amount() {
+    async fn test_calculate_spl_transfers_value_in_lamports_ignores_inflows() {
         let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let config = get_config().unwrap();
 
         let fee_payer = Pubkey::new_unique();
-        let attacker = Pubkey::new_unique();
+        let other = Pubkey::new_unique();
         let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
         let amount = 100_000_000u64; // 100 USDC
 
@@ -1302,18 +1209,19 @@ mod tests_token {
             &spl_token_2022_interface::id(),
         );
 
+        // One outflow from fee payer, one inflow to fee payer — only outflow should be counted
         let spl_transfers = vec![
             ParsedSPLInstructionData::SplTokenTransfer {
                 amount,
                 owner: fee_payer,
                 mint: Some(mint),
                 source_address: Pubkey::new_unique(),
-                destination_address: attacker,
+                destination_address: other,
                 is_2022: true,
             },
             ParsedSPLInstructionData::SplTokenTransfer {
                 amount,
-                owner: attacker,
+                owner: other,
                 mint: Some(mint),
                 source_address: Pubkey::new_unique(),
                 destination_address: fee_payer_token2022_ata,
@@ -1321,10 +1229,7 @@ mod tests_token {
             },
         ];
 
-        let mint_account = create_token2022_mint_account_with_transfer_fee(6, 100, 1_000_000);
-        let rpc_client = RpcMockBuilder::new()
-            .with_account_not_found()
-            .build_with_sequential_accounts(vec![&mint_account, &mint_account]);
+        let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
         let spl_outflow_value = TokenUtil::calculate_spl_transfers_value_in_lamports(
             &spl_transfers,
@@ -1335,9 +1240,9 @@ mod tests_token {
         .await
         .unwrap();
 
-        // Fee payer sends 100 USDC out and receives 99 USDC back (1 USDC transfer fee withheld).
-        // Expected net outflow = 1 USDC => 7_500_000 lamports at mock pricing.
-        assert_eq!(spl_outflow_value, 7_500_000);
+        // Only fee payer's outflow of 100 USDC is counted; the inflow is ignored.
+        // 100 USDC at mock price = 750_000_000 lamports.
+        assert_eq!(spl_outflow_value, 750_000_000);
     }
 
     #[tokio::test]
