@@ -30,7 +30,7 @@ pub struct TotalFeeCalculation {
     pub total_fee_lamports: u64,
     pub base_fee: u64,
     pub kora_signature_fee: u64,
-    pub fee_payer_outflow: u64,
+    pub fee_payer_outflow: i128,
     pub payment_instruction_fee: u64,
     pub transfer_fee_amount: u64,
 }
@@ -40,7 +40,7 @@ impl TotalFeeCalculation {
         total_fee_lamports: u64,
         base_fee: u64,
         kora_signature_fee: u64,
-        fee_payer_outflow: u64,
+        fee_payer_outflow: i128,
         payment_instruction_fee: u64,
         transfer_fee_amount: u64,
     ) -> Self {
@@ -66,16 +66,17 @@ impl TotalFeeCalculation {
     }
 
     pub fn get_total_fee_lamports(&self) -> Result<u64, KoraError> {
-        self.base_fee
-            .checked_add(self.kora_signature_fee)
+        let sum = (self.base_fee as i128)
+            .checked_add(self.kora_signature_fee as i128)
             .and_then(|sum| sum.checked_add(self.fee_payer_outflow))
-            .and_then(|sum| sum.checked_add(self.payment_instruction_fee))
-            .and_then(|sum| sum.checked_add(self.transfer_fee_amount))
+            .and_then(|sum| sum.checked_add(self.payment_instruction_fee as i128))
+            .and_then(|sum| sum.checked_add(self.transfer_fee_amount as i128))
             .ok_or_else(|| {
                 log::error!("Fee calculation overflow: base_fee={}, kora_signature_fee={}, fee_payer_outflow={}, payment_instruction_fee={}, transfer_fee_amount={}",
                     self.base_fee, self.kora_signature_fee, self.fee_payer_outflow, self.payment_instruction_fee, self.transfer_fee_amount);
                 KoraError::ValidationError("Fee calculation overflow".to_string())
-            })
+            })?;
+        Ok(sum.max(0) as u64)
     }
 }
 
@@ -253,11 +254,12 @@ impl FeeConfigUtil {
             0
         };
 
-        let total_fee_lamports = base_fee
-            .checked_add(kora_signature_fee)
+        let total_fee_lamports = (base_fee as i128)
+            .checked_add(kora_signature_fee as i128)
             .and_then(|sum| sum.checked_add(fee_payer_outflow))
-            .and_then(|sum| sum.checked_add(fee_for_payment_instruction))
-            .and_then(|sum| sum.checked_add(transfer_fee_config_amount))
+            .and_then(|sum| sum.checked_add(fee_for_payment_instruction as i128))
+            .and_then(|sum| sum.checked_add(transfer_fee_config_amount as i128))
+            .map(|sum| sum.max(0) as u64)
             .ok_or_else(|| {
                 log::error!("Fee calculation overflow: base_fee={}, kora_signature_fee={}, fee_payer_outflow={}, payment_instruction_fee={}, transfer_fee_amount={}",
                     base_fee, kora_signature_fee, fee_payer_outflow, fee_for_payment_instruction, transfer_fee_config_amount);
@@ -394,8 +396,10 @@ impl FeeConfigUtil {
         transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         config: &Config,
-    ) -> Result<u64, KoraError> {
-        let mut total = 0u64;
+    ) -> Result<i128, KoraError> {
+        // Use i128 to correctly handle net outflow when inflows are processed
+        // before outflows. With u64, saturating_sub on 0 would silently discard inflows.
+        let mut total: i128 = 0;
 
         // Calculate SOL outflow from System Program instructions
         let parsed_system_instructions = transaction.get_or_parse_system_instructions()?;
@@ -408,13 +412,16 @@ impl FeeConfigUtil {
                 instruction
             {
                 if *sender == *fee_payer_pubkey {
-                    total = total.checked_add(*lamports).ok_or_else(|| {
+                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
                         log::error!("Outflow calculation overflow in SystemTransfer");
                         KoraError::ValidationError("Outflow calculation overflow".to_string())
                     })?;
                 }
                 if *receiver == *fee_payer_pubkey {
-                    total = total.saturating_sub(*lamports);
+                    total = total.checked_sub(*lamports as i128).ok_or_else(|| {
+                        log::error!("Inflow calculation overflow in SystemTransfer");
+                        KoraError::ValidationError("Inflow calculation overflow".to_string())
+                    })?;
                 }
             }
         }
@@ -427,7 +434,7 @@ impl FeeConfigUtil {
                 instruction
             {
                 if *payer == *fee_payer_pubkey {
-                    total = total.checked_add(*lamports).ok_or_else(|| {
+                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
                         log::error!("Outflow calculation overflow in SystemCreateAccount");
                         KoraError::ValidationError("Outflow calculation overflow".to_string())
                     })?;
@@ -446,13 +453,16 @@ impl FeeConfigUtil {
             } = instruction
             {
                 if *nonce_authority == *fee_payer_pubkey {
-                    total = total.checked_add(*lamports).ok_or_else(|| {
+                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
                         log::error!("Outflow calculation overflow in SystemWithdrawNonceAccount");
                         KoraError::ValidationError("Outflow calculation overflow".to_string())
                     })?;
                 }
                 if *recipient == *fee_payer_pubkey {
-                    total = total.saturating_sub(*lamports);
+                    total = total.checked_sub(*lamports as i128).ok_or_else(|| {
+                        log::error!("Inflow calculation overflow in SystemWithdrawNonceAccount");
+                        KoraError::ValidationError("Inflow calculation overflow".to_string())
+                    })?;
                 }
             }
         }
@@ -472,7 +482,7 @@ impl FeeConfigUtil {
             )
             .await?;
 
-            total = total.checked_add(spl_outflow).ok_or_else(|| {
+            total = total.checked_add(spl_outflow as i128).ok_or_else(|| {
                 log::error!("Fee payer outflow overflow: sol={}, spl={}", total, spl_outflow);
                 KoraError::ValidationError("Fee payer outflow calculation overflow".to_string())
             })?;
@@ -842,7 +852,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(outflow, 0, "Transfer to fee payer should subtract from outflow (saturating)");
+        assert_eq!(outflow, -50_000, "Transfer to fee payer should be negative (net inflow)");
 
         // Test 3: Other account as sender - should not affect outflow
         let other_sender = Pubkey::new_unique();
@@ -918,8 +928,8 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(
-            outflow, 0,
-            "TransferWithSeed to fee payer should subtract from outflow (saturating)"
+            outflow, -75_000,
+            "TransferWithSeed to fee payer should be negative (net inflow)"
         );
     }
 
@@ -1051,8 +1061,8 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(
-            outflow, 0,
-            "WithdrawNonceAccount to fee payer should subtract from outflow (saturating)"
+            outflow, -25_000,
+            "WithdrawNonceAccount to fee payer should be negative (net inflow)"
         );
     }
 

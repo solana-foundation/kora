@@ -540,13 +540,14 @@ impl TransactionValidator {
         transaction_resolved: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
     ) -> Result<u64, KoraError> {
-        FeeConfigUtil::calculate_fee_payer_outflow(
+        let net = FeeConfigUtil::calculate_fee_payer_outflow(
             &self.fee_payer_pubkey,
             transaction_resolved,
             rpc_client,
             config,
         )
-        .await
+        .await?;
+        Ok(net.max(0) as u64)
     }
 
     pub async fn validate_token_payment(
