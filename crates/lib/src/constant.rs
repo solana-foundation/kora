@@ -49,8 +49,9 @@ pub const DEFAULT_MAX_REQUEST_BODY_SIZE: usize = 2 * 1024 * 1024; // 2 MB
 // Instruction indexes for the instructions that we support to parse from the transaction
 pub mod instruction_indexes {
     pub mod system_create_account {
-        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 1;
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
         pub const PAYER_INDEX: usize = 0;
+        pub const NEW_ACCOUNT_INDEX: usize = 1;
     }
 
     pub mod system_transfer {

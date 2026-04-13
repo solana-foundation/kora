@@ -28,8 +28,6 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
 use solana_program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
-use solana_system_interface::{instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID};
-
 #[derive(Debug, Clone)]
 pub struct TotalFeeCalculation {
     pub total_fee_lamports: u64,
@@ -394,36 +392,6 @@ impl FeeConfigUtil {
         }
     }
 
-    fn collect_system_created_accounts_by_fee_payer(
-        transaction: &VersionedTransactionResolved,
-        fee_payer_pubkey: &Pubkey,
-    ) -> HashSet<Pubkey> {
-        transaction
-            .all_instructions
-            .iter()
-            .filter(|instruction| instruction.program_id == SYSTEM_PROGRAM_ID)
-            .filter_map(|instruction| {
-                if instruction.accounts.len() < 2 {
-                    return None;
-                }
-
-                match bincode::deserialize::<SystemInstruction>(&instruction.data) {
-                    Ok(SystemInstruction::CreateAccount { .. })
-                    | Ok(SystemInstruction::CreateAccountWithSeed { .. }) => {
-                        let payer = instruction.accounts[0].pubkey;
-                        let new_account = instruction.accounts[1].pubkey;
-                        if payer == *fee_payer_pubkey {
-                            Some(new_account)
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                }
-            })
-            .collect()
-    }
-
     async fn estimate_ata_account_len(
         ata_creation: &AtaCreationInstructionInfo,
         rpc_client: &RpcClient,
@@ -472,7 +440,7 @@ impl FeeConfigUtil {
 
     async fn calculate_ata_creation_outflow(
         fee_payer_pubkey: &Pubkey,
-        transaction: &VersionedTransactionResolved,
+        transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<u64, KoraError> {
@@ -484,8 +452,19 @@ impl FeeConfigUtil {
             return Ok(0);
         }
 
-        let system_created_accounts =
-            Self::collect_system_created_accounts_by_fee_payer(transaction, fee_payer_pubkey);
+        let system_created_accounts: HashSet<Pubkey> =
+            transaction
+                .get_or_parse_system_instructions()?
+                .get(&ParsedSystemInstructionType::SystemCreateAccount)
+                .unwrap_or(&vec![])
+                .iter()
+                .filter_map(|instruction| match instruction {
+                    ParsedSystemInstructionData::SystemCreateAccount {
+                        payer, new_account, ..
+                    } if *payer == *fee_payer_pubkey => Some(*new_account),
+                    _ => None,
+                })
+                .collect();
         let mut rent_cache_by_account_len: HashMap<usize, u64> = HashMap::new();
         let mut token2022_account_len_cache: HashMap<Pubkey, usize> = HashMap::new();
         let mut seen_ata_addresses = HashSet::new();
@@ -579,7 +558,7 @@ impl FeeConfigUtil {
             .get(&ParsedSystemInstructionType::SystemCreateAccount)
             .unwrap_or(&vec![])
         {
-            if let ParsedSystemInstructionData::SystemCreateAccount { lamports, payer } =
+            if let ParsedSystemInstructionData::SystemCreateAccount { lamports, payer, .. } =
                 instruction
             {
                 if *payer == *fee_payer_pubkey {
