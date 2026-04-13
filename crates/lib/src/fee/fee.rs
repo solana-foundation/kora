@@ -448,16 +448,12 @@ impl FeeConfigUtil {
         {
             if let ParsedSystemInstructionData::SystemWithdrawNonceAccount {
                 lamports,
-                nonce_authority,
                 recipient,
+                ..
             } = instruction
             {
-                if *nonce_authority == *fee_payer_pubkey {
-                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
-                        log::error!("Outflow calculation overflow in SystemWithdrawNonceAccount");
-                        KoraError::ValidationError("Outflow calculation overflow".to_string())
-                    })?;
-                }
+                // Funds are withdrawn from the nonce account, not from the authority.
+                // Only the recipient matters for fee payer flow: it's an inflow.
                 if *recipient == *fee_payer_pubkey {
                     total = total.checked_sub(*lamports as i128).ok_or_else(|| {
                         log::error!("Inflow calculation overflow in SystemWithdrawNonceAccount");
@@ -1022,7 +1018,8 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Test 1: Fee payer as nonce account (outflow)
+        // Test 1: Fee payer as nonce authority - should NOT add to outflow
+        // (funds come from the nonce account, not the authority)
         let withdraw_instruction =
             withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 50_000);
         let message =
@@ -1039,8 +1036,8 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(
-            outflow, 50_000,
-            "WithdrawNonceAccount from fee payer nonce should add to outflow"
+            outflow, 0,
+            "WithdrawNonceAccount with fee payer as authority should not affect outflow"
         );
 
         // Test 2: Fee payer as recipient (inflow)
