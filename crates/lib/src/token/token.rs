@@ -419,10 +419,7 @@ impl TokenUtil {
         config: &Config,
     ) -> Result<u64, KoraError> {
         // Collect all outflow transfers (fee payer as source) grouped by mint
-        let mut mint_to_transfers: HashMap<
-            Pubkey,
-            Vec<(u64, bool)>, // (amount, is_2022)
-        > = HashMap::new();
+        let mut mint_to_transfers: HashMap<Pubkey, Vec<u64>> = HashMap::new();
 
         for transfer in spl_transfers {
             if let ParsedSPLInstructionData::SplTokenTransfer {
@@ -430,7 +427,6 @@ impl TokenUtil {
                 owner,
                 mint,
                 source_address,
-                is_2022,
                 ..
             } = transfer
             {
@@ -454,10 +450,7 @@ impl TokenUtil {
                             })?;
                         token_account.mint()
                     };
-                    mint_to_transfers
-                        .entry(mint_pubkey)
-                        .or_default()
-                        .push((*amount, *is_2022));
+                    mint_to_transfers.entry(mint_pubkey).or_default().push(*amount);
                 }
             }
         }
@@ -516,7 +509,7 @@ impl TokenUtil {
                 .get(mint)
                 .ok_or_else(|| KoraError::RpcError(format!("No decimals data for mint {mint}")))?;
 
-            for (amount, _is_2022) in transfers {
+            for amount in transfers {
                 // Convert token amount to lamports value using Decimal
                 let amount_decimal = Decimal::from_u64(*amount).ok_or_else(|| {
                     KoraError::ValidationError("Invalid transfer amount".to_string())
