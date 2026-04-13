@@ -6,7 +6,7 @@ use crate::{
     lighthouse::LighthouseUtil,
     plugin::{PluginExecutionContext, TransactionPluginRunner},
     signer::bundle_signer::BundleSigner,
-    token::token::{TokenUtil, TransferHookValidationFlow},
+    token::token::{PaymentLamportTotals, TokenUtil, TransferHookValidationFlow},
     transaction::{TransactionUtil, VersionedTransactionResolved},
     usage_limit::UsageTracker,
     validator::transaction_validator::TransactionValidator,
@@ -177,7 +177,7 @@ impl BundleProcessor {
         }
 
         // Phase 2: Calculate payments with cross-tx ATA visibility
-        let mut bundle_payment_totals = crate::token::token::PaymentLamportTotals::default();
+        let mut bundle_payment_totals = PaymentLamportTotals::default();
         let mut total_solana_estimated_fee = 0u64;
         for resolved in resolved_transactions.iter_mut() {
             let payment_totals = TokenUtil::calculate_payment_lamport_totals(
@@ -308,18 +308,12 @@ mod tests {
 
     #[test]
     fn test_bundle_payment_netting_zeroes_cross_transaction_refund_loop() {
-        let mut bundle_payment_totals = crate::token::token::PaymentLamportTotals::default();
+        let mut bundle_payment_totals = PaymentLamportTotals::default();
         bundle_payment_totals
-            .checked_add_assign(crate::token::token::PaymentLamportTotals {
-                inflow: 7_500_000,
-                outflow: 0,
-            })
+            .checked_add_assign(PaymentLamportTotals { inflow: 7_500_000, outflow: 0 })
             .unwrap();
         bundle_payment_totals
-            .checked_add_assign(crate::token::token::PaymentLamportTotals {
-                inflow: 0,
-                outflow: 7_500_000,
-            })
+            .checked_add_assign(PaymentLamportTotals { inflow: 0, outflow: 7_500_000 })
             .unwrap();
 
         assert_eq!(bundle_payment_totals.net_payment(), None);
@@ -327,18 +321,12 @@ mod tests {
 
     #[test]
     fn test_bundle_payment_netting_preserves_positive_residual() {
-        let mut bundle_payment_totals = crate::token::token::PaymentLamportTotals::default();
+        let mut bundle_payment_totals = PaymentLamportTotals::default();
         bundle_payment_totals
-            .checked_add_assign(crate::token::token::PaymentLamportTotals {
-                inflow: 10_000_000,
-                outflow: 0,
-            })
+            .checked_add_assign(PaymentLamportTotals { inflow: 10_000_000, outflow: 0 })
             .unwrap();
         bundle_payment_totals
-            .checked_add_assign(crate::token::token::PaymentLamportTotals {
-                inflow: 0,
-                outflow: 2_500_000,
-            })
+            .checked_add_assign(PaymentLamportTotals { inflow: 0, outflow: 2_500_000 })
             .unwrap();
 
         assert_eq!(bundle_payment_totals.net_payment(), Some(7_500_000));
