@@ -428,7 +428,7 @@ impl TransactionValidator {
 
         if has_fee_payer_ata_create {
             return Err(KoraError::InvalidTransaction(
-                "Fee payer cannot be used for 'ATA Create Account'".to_string(),
+                "Fee payer cannot fund ATA creation (Create or CreateIdempotent)".to_string(),
             ));
         }
 
@@ -2579,7 +2579,7 @@ mod tests {
 
         match result {
             Err(KoraError::InvalidTransaction(msg)) => {
-                assert!(msg.contains("ATA Create Account"));
+                assert!(msg.contains("ATA creation"));
             }
             _ => panic!("Expected ATA create policy violation"),
         }

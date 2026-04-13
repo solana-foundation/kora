@@ -488,12 +488,16 @@ impl FeeConfigUtil {
             Self::collect_system_created_accounts_by_fee_payer(transaction, fee_payer_pubkey);
         let mut rent_cache_by_account_len: HashMap<usize, u64> = HashMap::new();
         let mut token2022_account_len_cache: HashMap<Pubkey, usize> = HashMap::new();
+        let mut seen_ata_addresses = HashSet::new();
         let mut total = 0u64;
 
         for ata_creation in ata_creations {
             // If simulation already surfaced the underlying SystemCreateAccount CPI for this ATA,
             // it has already been counted from parsed system instructions.
             if system_created_accounts.contains(&ata_creation.ata_address) {
+                continue;
+            }
+            if !seen_ata_addresses.insert(ata_creation.ata_address) {
                 continue;
             }
 
