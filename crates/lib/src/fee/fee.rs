@@ -614,7 +614,7 @@ impl FeeConfigUtil {
         let ata_outflow =
             Self::calculate_ata_creation_outflow(fee_payer_pubkey, transaction, rpc_client, config)
                 .await?;
-        total = total.checked_add(ata_outflow).ok_or_else(|| {
+        total = total.checked_add(ata_outflow as i128).ok_or_else(|| {
             log::error!(
                 "Outflow calculation overflow in ATA accounting: sol_total={}, ata_outflow={}",
                 total,
