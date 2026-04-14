@@ -46,6 +46,7 @@ pub enum ParsedSystemInstructionData {
     SystemCreateAccount {
         lamports: u64,
         payer: Pubkey,
+        new_account: Pubkey,
     },
     // Includes withdraw nonce account
     SystemWithdrawNonceAccount {
@@ -1518,7 +1519,8 @@ impl IxUtils {
                     | Ok(SystemInstruction::CreateAccountWithSeed { lamports, .. }) => {
                         parse_system_instruction!(parsed_instructions, instruction, system_create_account, SystemCreateAccount, SystemCreateAccount {
                             lamports: lamports;
-                            payer: instruction_indexes::system_create_account::PAYER_INDEX
+                            payer: instruction_indexes::system_create_account::PAYER_INDEX,
+                            new_account: instruction_indexes::system_create_account::NEW_ACCOUNT_INDEX
                         });
                     }
                     Ok(SystemInstruction::Transfer { lamports }) => {
@@ -3143,6 +3145,110 @@ mod tests {
                 assert_eq!(*parsed_receiver, receiver);
             }
             _ => panic!("Expected SystemTransfer variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_system_instructions_create_account() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use solana_system_interface::instruction::create_account;
+
+        let payer = Keypair::new();
+        let new_account = Keypair::new();
+        let owner = Pubkey::new_unique();
+        let lamports = 2_000_000u64;
+        let space = 165u64;
+
+        let instruction =
+            create_account(&payer.pubkey(), &new_account.pubkey(), lamports, space, &owner);
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer, &new_account]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_system_instructions(&resolved_tx)
+            .expect("Failed to parse system instructions");
+
+        let creates = parsed_instructions
+            .get(&ParsedSystemInstructionType::SystemCreateAccount)
+            .expect("Expected SystemCreateAccount instructions");
+
+        assert_eq!(creates.len(), 1);
+
+        match &creates[0] {
+            ParsedSystemInstructionData::SystemCreateAccount {
+                lamports: parsed_lamports,
+                payer: parsed_payer,
+                new_account: parsed_new_account,
+            } => {
+                assert_eq!(*parsed_lamports, lamports);
+                assert_eq!(*parsed_payer, payer.pubkey());
+                assert_eq!(*parsed_new_account, new_account.pubkey());
+            }
+            _ => panic!("Expected SystemCreateAccount variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_system_instructions_create_account_with_seed() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use solana_system_interface::instruction::create_account_with_seed;
+
+        let payer = Keypair::new();
+        let owner = Pubkey::new_unique();
+        let seed = "seeded-account";
+        let new_account = Pubkey::create_with_seed(&payer.pubkey(), seed, &owner).unwrap();
+        let lamports = 3_000_000u64;
+        let space = 200u64;
+
+        let instruction = create_account_with_seed(
+            &payer.pubkey(),
+            &new_account,
+            &payer.pubkey(),
+            seed,
+            lamports,
+            space,
+            &owner,
+        );
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_system_instructions(&resolved_tx)
+            .expect("Failed to parse system instructions");
+
+        let creates = parsed_instructions
+            .get(&ParsedSystemInstructionType::SystemCreateAccount)
+            .expect("Expected SystemCreateAccount instructions");
+
+        assert_eq!(creates.len(), 1);
+
+        match &creates[0] {
+            ParsedSystemInstructionData::SystemCreateAccount {
+                lamports: parsed_lamports,
+                payer: parsed_payer,
+                new_account: parsed_new_account,
+            } => {
+                assert_eq!(*parsed_lamports, lamports);
+                assert_eq!(*parsed_payer, payer.pubkey());
+                assert_eq!(*parsed_new_account, new_account);
+            }
+            _ => panic!("Expected SystemCreateAccount variant"),
         }
     }
 

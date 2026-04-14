@@ -226,6 +226,8 @@ impl TransactionValidator {
         &self,
         transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
+        self.validate_ata_create_instructions(transaction_resolved)?;
+
         let system_instructions = transaction_resolved.get_or_parse_system_instructions()?;
 
         // Check for durable transactions (nonce-based) - reject if not allowed
@@ -405,6 +407,29 @@ impl TransactionValidator {
                     ));
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    fn validate_ata_create_instructions(
+        &self,
+        transaction_resolved: &VersionedTransactionResolved,
+    ) -> Result<(), KoraError> {
+        if self.fee_payer_policy.system.allow_create_account {
+            return Ok(());
+        }
+
+        let has_fee_payer_ata_create = !TokenUtil::find_fee_payer_ata_creations(
+            &transaction_resolved.all_instructions,
+            &self.fee_payer_pubkey,
+        )
+        .is_empty();
+
+        if has_fee_payer_ata_create {
+            return Err(KoraError::InvalidTransaction(
+                "Fee payer cannot fund ATA creation (Create or CreateIdempotent)".to_string(),
+            ));
         }
 
         Ok(())
@@ -2511,6 +2536,101 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_ata_create_idempotent() {
+        let fee_payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+
+        let rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(2_039_280),
+            )
+            .build();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = false;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![ata_program_id.to_string()])
+            .with_max_allowed_lamports(10_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        update_config(config).unwrap();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let ata_ix =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &fee_payer,
+                &owner,
+                &mint,
+                &spl_token_interface::id(),
+            );
+        let message = VersionedMessage::Legacy(Message::new(&[ata_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+
+        match result {
+            Err(KoraError::InvalidTransaction(msg)) => {
+                assert!(msg.contains("ATA creation"));
+            }
+            _ => panic!("Expected ATA create policy violation"),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_ata_create_idempotent_charged_in_outflow_without_inner_create() {
+        let fee_payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let ata_program_id = spl_associated_token_account_interface::program::id();
+
+        let rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(2_039_280),
+            )
+            .build();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = true;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![ata_program_id.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        update_config(config).unwrap();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let ata_ix =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &fee_payer,
+                &owner,
+                &mint,
+                &spl_token_interface::id(),
+            );
+        let message = VersionedMessage::Legacy(Message::new(&[ata_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+
+        match result {
+            Err(KoraError::InvalidTransaction(msg)) => {
+                assert!(msg.contains("Total transfer amount"));
+                assert!(msg.contains("exceeds maximum allowed"));
+            }
+            _ => panic!("Expected outflow limit violation for ATA creation"),
+        }
     }
 
     #[tokio::test]

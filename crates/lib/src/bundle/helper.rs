@@ -6,7 +6,7 @@ use crate::{
     lighthouse::LighthouseUtil,
     plugin::{PluginExecutionContext, TransactionPluginRunner},
     signer::bundle_signer::BundleSigner,
-    token::token::{TokenUtil, TransferHookValidationFlow},
+    token::token::{PaymentLamportTotals, TokenUtil, TransferHookValidationFlow},
     transaction::{TransactionUtil, VersionedTransactionResolved},
     usage_limit::UsageTracker,
     validator::transaction_validator::TransactionValidator,
@@ -177,23 +177,18 @@ impl BundleProcessor {
         }
 
         // Phase 2: Calculate payments with cross-tx ATA visibility
-        let mut total_payment_lamports = 0u64;
+        let mut bundle_payment_totals = PaymentLamportTotals::default();
         let mut total_solana_estimated_fee = 0u64;
         for resolved in resolved_transactions.iter_mut() {
-            if let Some(payment) = TokenUtil::find_payment_in_transaction(
+            let payment_totals = TokenUtil::calculate_payment_lamport_totals(
                 config,
                 resolved,
                 rpc_client,
                 payment_destination,
                 Some(&all_bundle_instructions),
             )
-            .await?
-            {
-                total_payment_lamports =
-                    total_payment_lamports.checked_add(payment).ok_or_else(|| {
-                        KoraError::ValidationError("Payment calculation overflow".to_string())
-                    })?;
-            }
+            .await?;
+            bundle_payment_totals.checked_add_assign(payment_totals)?;
 
             let fee = TransactionFeeUtil::get_estimate_fee_resolved(rpc_client, resolved).await?;
             total_solana_estimated_fee =
@@ -203,6 +198,8 @@ impl BundleProcessor {
 
             validator.validate_lamport_fee(total_solana_estimated_fee)?;
         }
+
+        let total_payment_lamports = bundle_payment_totals.net_payment();
 
         Ok(Self {
             resolved_transactions,
@@ -307,6 +304,32 @@ mod tests {
     fn test_transfer_hook_validation_flow_for_bundle_estimation_context() {
         let flow = transfer_hook_validation_flow_for_bundle(None);
         assert_eq!(flow, TransferHookValidationFlow::ImmediateSignAndSend);
+    }
+
+    #[test]
+    fn test_bundle_payment_netting_zeroes_cross_transaction_refund_loop() {
+        let mut bundle_payment_totals = PaymentLamportTotals::default();
+        bundle_payment_totals
+            .checked_add_assign(PaymentLamportTotals { inflow: 7_500_000, outflow: 0 })
+            .unwrap();
+        bundle_payment_totals
+            .checked_add_assign(PaymentLamportTotals { inflow: 0, outflow: 7_500_000 })
+            .unwrap();
+
+        assert_eq!(bundle_payment_totals.net_payment(), 0);
+    }
+
+    #[test]
+    fn test_bundle_payment_netting_preserves_positive_residual() {
+        let mut bundle_payment_totals = PaymentLamportTotals::default();
+        bundle_payment_totals
+            .checked_add_assign(PaymentLamportTotals { inflow: 10_000_000, outflow: 0 })
+            .unwrap();
+        bundle_payment_totals
+            .checked_add_assign(PaymentLamportTotals { inflow: 0, outflow: 2_500_000 })
+            .unwrap();
+
+        assert_eq!(bundle_payment_totals.net_payment(), 7_500_000);
     }
 
     #[test]
