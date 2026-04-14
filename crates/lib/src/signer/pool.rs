@@ -3,7 +3,7 @@ use crate::{
     signer::config::{SelectionStrategy, SignerConfig, SignerPoolConfig},
 };
 use parking_lot::Mutex;
-use rand::Rng;
+use rand::RngExt;
 use solana_keychain::{Signer, SolanaSigner};
 use solana_sdk::pubkey::Pubkey;
 use std::{
