@@ -199,7 +199,7 @@ impl BundleProcessor {
             validator.validate_lamport_fee(total_solana_estimated_fee)?;
         }
 
-        let total_payment_lamports = bundle_payment_totals.net_payment().unwrap_or(0);
+        let total_payment_lamports = bundle_payment_totals.net_payment();
 
         Ok(Self {
             resolved_transactions,
@@ -316,7 +316,7 @@ mod tests {
             .checked_add_assign(PaymentLamportTotals { inflow: 0, outflow: 7_500_000 })
             .unwrap();
 
-        assert_eq!(bundle_payment_totals.net_payment(), None);
+        assert_eq!(bundle_payment_totals.net_payment(), 0);
     }
 
     #[test]
@@ -329,7 +329,7 @@ mod tests {
             .checked_add_assign(PaymentLamportTotals { inflow: 0, outflow: 2_500_000 })
             .unwrap();
 
-        assert_eq!(bundle_payment_totals.net_payment(), Some(7_500_000));
+        assert_eq!(bundle_payment_totals.net_payment(), 7_500_000);
     }
 
     #[test]

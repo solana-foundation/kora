@@ -28,6 +28,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_message::VersionedMessage;
 use solana_program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
+use spl_token_2022_interface::{extension::ExtensionType, state::Account as Token2022Account};
 #[derive(Debug, Clone)]
 pub struct TotalFeeCalculation {
     pub total_fee_lamports: u64,
@@ -408,34 +409,37 @@ impl FeeConfigUtil {
             }
 
             let mint_state = TokenUtil::get_mint(config, rpc_client, &ata_creation.mint).await?;
-            let account_len = if let Some(token2022_mint) =
-                mint_state.as_any().downcast_ref::<Token2022Mint>()
-            {
-                let required_account_extensions =
-                    spl_token_2022_interface::extension::ExtensionType::get_required_init_account_extensions(
-                        &token2022_mint.extensions_types,
-                    );
+            let account_len =
+                if let Some(token2022_mint) = mint_state.as_any().downcast_ref::<Token2022Mint>() {
+                    let mut required_account_extensions =
+                        ExtensionType::get_required_init_account_extensions(
+                            &token2022_mint.extensions_types,
+                        );
+                    if !required_account_extensions.contains(&ExtensionType::ImmutableOwner) {
+                        required_account_extensions.push(ExtensionType::ImmutableOwner);
+                    }
 
-                spl_token_2022_interface::extension::ExtensionType::try_calculate_account_len::<
-                    spl_token_2022_interface::state::Account,
-                >(&required_account_extensions)
-                .map_err(|e| {
-                    KoraError::ValidationError(format!(
-                        "Failed to estimate Token2022 ATA account size for mint {}: {}",
-                        ata_creation.mint, e
-                    ))
-                })?
-            } else {
-                spl_token_interface::state::Account::LEN
-            };
+                    ExtensionType::try_calculate_account_len::<Token2022Account>(
+                        &required_account_extensions,
+                    )
+                    .map_err(|e| {
+                        KoraError::ValidationError(format!(
+                            "Failed to estimate Token2022 ATA account size for mint {}: {}",
+                            ata_creation.mint, e
+                        ))
+                    })?
+                } else {
+                    spl_token_interface::state::Account::LEN
+                };
 
             token2022_account_len_cache.insert(ata_creation.mint, account_len);
             return Ok(account_len);
         }
 
-        // Unsupported token programs should fail on-chain, but use conservative SPL account length
-        // for safety if they are present in a transaction we are estimating.
-        Ok(spl_token_interface::state::Account::LEN)
+        Err(KoraError::ValidationError(format!(
+            "Unsupported token program {} for ATA {}; cannot safely estimate rent",
+            ata_creation.token_program, ata_creation.ata_address
+        )))
     }
 
     async fn calculate_ata_creation_outflow(
@@ -1354,6 +1358,107 @@ mod tests {
         assert_eq!(
             outflow, 123_456,
             "When SystemCreateAccount for the ATA is present, ATA rent fallback must not double count"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_duplicate_ata_idempotent_only_charged_once() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(2_039_280),
+            )
+            .build();
+
+        let ata_ix_1 =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &fee_payer,
+                &owner,
+                &mint,
+                &spl_token_interface::id(),
+            );
+        let ata_ix_2 =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &fee_payer,
+                &owner,
+                &mint,
+                &spl_token_interface::id(),
+            );
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[ata_ix_1, ata_ix_2], Some(&fee_payer)));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let config = get_config().unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outflow, 2_039_280,
+            "Duplicate ATA creates for the same account should only charge rent once"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_multiple_distinct_ata_idempotent_charged_per_ata() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint_a = Pubkey::new_unique();
+        let mint_b = Pubkey::new_unique();
+
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(2_039_280),
+            )
+            .build();
+
+        let ata_ix_a =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &fee_payer,
+                &owner,
+                &mint_a,
+                &spl_token_interface::id(),
+            );
+        let ata_ix_b =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &fee_payer,
+                &owner,
+                &mint_b,
+                &spl_token_interface::id(),
+            );
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[ata_ix_a, ata_ix_b], Some(&fee_payer)));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let config = get_config().unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outflow, 4_078_560,
+            "Distinct ATA creates should each contribute rent to outflow"
         );
     }
 

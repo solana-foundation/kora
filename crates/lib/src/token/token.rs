@@ -21,6 +21,7 @@ use rust_decimal::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{instruction::Instruction, native_token::LAMPORTS_PER_SOL, pubkey::Pubkey};
+use spl_associated_token_account_interface::program::id as ata_program_id;
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -64,13 +65,15 @@ pub(crate) struct PaymentLamportTotals {
 }
 
 impl PaymentLamportTotals {
-    pub(crate) fn net_payment(self) -> Option<u64> {
-        let net_payment_lamports = self.inflow.saturating_sub(self.outflow);
-        if net_payment_lamports > 0 {
-            Some(net_payment_lamports)
-        } else {
-            None
+    pub(crate) fn net_payment(self) -> u64 {
+        if self.outflow > self.inflow {
+            log::warn!(
+                "Net-negative payment detected: inflow={}, outflow={}",
+                self.inflow,
+                self.outflow
+            );
         }
+        self.inflow.saturating_sub(self.outflow)
     }
 
     pub(crate) fn checked_add_assign(&mut self, other: Self) -> Result<(), KoraError> {
@@ -325,15 +328,18 @@ impl TokenUtil {
     pub fn parse_ata_creation_instruction(
         instruction: &Instruction,
     ) -> Option<AtaCreationInstructionInfo> {
-        let ata_program_id = spl_associated_token_account_interface::program::id();
-        if instruction.program_id != ata_program_id
+        if instruction.program_id != ata_program_id()
             || instruction.accounts.len()
                 < constant::instruction_indexes::ata_instruction_indexes::MIN_ACCOUNTS
         {
             return None;
         }
 
-        let discriminator = instruction.data.first().copied().unwrap_or(0);
+        // The ATA program treats empty instruction data as the legacy Create variant.
+        let discriminator = match instruction.data.first() {
+            Some(discriminator) => *discriminator,
+            None => 0,
+        };
         let is_idempotent = match discriminator {
             0 => false,
             1 => true,
@@ -790,8 +796,7 @@ impl TokenUtil {
         }
     }
 
-    /// Find the total payment amount in a transaction to the expected destination.
-    /// Returns the total payment in lamports, or None if no valid payment found.
+    /// Calculate payment inflow/outflow totals for transfers involving the expected destination.
     ///
     /// For bundles, pass `bundle_instructions` to enable cross-tx ATA lookup
     /// (e.g., ATA created in Tx1, payment in Tx2).
@@ -874,7 +879,7 @@ impl TokenUtil {
                     continue;
                 }
 
-                if *is_2022 && is_inflow && !is_outflow {
+                if *is_2022 && is_inflow {
                     if let Some((_, _, destination_exists)) = destination_account_info.as_ref() {
                         if *destination_exists {
                             TokenUtil::validate_token2022_extensions_for_payment(
@@ -947,8 +952,8 @@ impl TokenUtil {
         Ok(totals)
     }
 
-    /// Find the total payment amount in a transaction to the expected destination.
-    /// Returns the total payment in lamports, or None if no valid payment found.
+    /// Find the net payment amount in a transaction to the expected destination.
+    /// Returns the total payment in lamports, saturating at 0 when outflow exceeds inflow.
     ///
     /// For bundles, pass `bundle_instructions` to enable cross-tx ATA lookup
     /// (e.g., ATA created in Tx1, payment in Tx2).
@@ -958,7 +963,7 @@ impl TokenUtil {
         rpc_client: &RpcClient,
         expected_destination_owner: &Pubkey,
         bundle_instructions: Option<&[Instruction]>,
-    ) -> Result<Option<u64>, KoraError> {
+    ) -> Result<u64, KoraError> {
         Self::calculate_payment_lamport_totals(
             config,
             transaction_resolved,
@@ -991,7 +996,7 @@ impl TokenUtil {
         )
         .await?;
 
-        Ok(payment.unwrap_or(0) >= required_lamports)
+        Ok(payment >= required_lamports)
     }
 }
 
@@ -1004,7 +1009,9 @@ mod tests_token {
             common::{MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder},
             config_mock::ConfigMockBuilder,
         },
+        transaction::TransactionUtil,
     };
+    use solana_message::{Message, VersionedMessage};
     use spl_token_2022_interface::{
         extension::{
             transfer_fee::TransferFeeConfig, BaseStateWithExtensionsMut, ExtensionType,
@@ -1185,9 +1192,9 @@ mod tests_token {
 
     #[test]
     fn test_payment_lamport_totals_net_payment() {
-        assert_eq!(PaymentLamportTotals { inflow: 10, outflow: 4 }.net_payment(), Some(6));
-        assert_eq!(PaymentLamportTotals { inflow: 4, outflow: 4 }.net_payment(), None);
-        assert_eq!(PaymentLamportTotals { inflow: 4, outflow: 10 }.net_payment(), None);
+        assert_eq!(PaymentLamportTotals { inflow: 10, outflow: 4 }.net_payment(), 6);
+        assert_eq!(PaymentLamportTotals { inflow: 4, outflow: 4 }.net_payment(), 0);
+        assert_eq!(PaymentLamportTotals { inflow: 4, outflow: 10 }.net_payment(), 0);
     }
 
     #[test]
@@ -1677,6 +1684,72 @@ mod tests_token {
         assert!(!error_msg.contains("Blocked account extension found on source account"));
     }
 
+    #[tokio::test]
+    async fn test_calculate_payment_lamport_totals_validates_token2022_when_both_sides_match_expected_owner(
+    ) {
+        let _lock = ConfigMockBuilder::new()
+            .with_cache_enabled(false)
+            .with_blocked_token2022_mint_extensions(vec!["transfer_fee_config".to_string()])
+            .build_and_setup();
+
+        let expected_destination_owner = Pubkey::new_unique();
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+
+        let source_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&expected_destination_owner)
+            .build_token2022();
+        let destination_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&expected_destination_owner)
+            .build_token2022();
+        let mint_account = MintAccountMockBuilder::new()
+            .with_decimals(6)
+            .with_extension(ExtensionType::TransferFeeConfig)
+            .build_token2022();
+
+        let instruction = spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
+            &source_address,
+            &mint,
+            &destination_address,
+            &expected_destination_owner,
+            &[],
+            1_000_000,
+            6,
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(
+            &[instruction],
+            Some(&expected_destination_owner),
+        ));
+        let mut transaction_resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &source_account,
+            &destination_account,
+            &mint_account,
+            &source_account,
+        ]);
+
+        let config = get_config().unwrap();
+        let result = TokenUtil::calculate_payment_lamport_totals(
+            &config,
+            &mut transaction_resolved,
+            &rpc_client,
+            &expected_destination_owner,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("Blocked mint extension found on mint account"));
+    }
+
     #[test]
     fn test_config_token2022_extension_blocking() {
         use spl_token_2022_interface::extension::ExtensionType;
@@ -1886,6 +1959,64 @@ mod tests_token {
         assert_eq!(parsed.mint, mint);
         assert_eq!(parsed.token_program, spl_token_interface::id());
         assert!(parsed.is_idempotent);
+    }
+
+    #[test]
+    fn test_parse_ata_creation_instruction_non_idempotent() {
+        let payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let ix =
+            spl_associated_token_account_interface::instruction::create_associated_token_account(
+                &payer,
+                &owner,
+                &mint,
+                &spl_token_interface::id(),
+            );
+
+        let parsed = TokenUtil::parse_ata_creation_instruction(&ix).expect("ATA should parse");
+        assert_eq!(parsed.payer, payer);
+        assert_eq!(parsed.wallet_owner, owner);
+        assert_eq!(parsed.mint, mint);
+        assert_eq!(parsed.token_program, spl_token_interface::id());
+        assert!(!parsed.is_idempotent);
+    }
+
+    #[test]
+    fn test_parse_ata_creation_instruction_empty_data_is_legacy_create() {
+        let payer = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let ata_address =
+            get_associated_token_address_with_program_id(&owner, &mint, &spl_token_interface::id());
+
+        let ix = Instruction {
+            program_id: ata_program_id(),
+            accounts: vec![
+                solana_sdk::instruction::AccountMeta::new(payer, true),
+                solana_sdk::instruction::AccountMeta::new(ata_address, false),
+                solana_sdk::instruction::AccountMeta::new_readonly(owner, false),
+                solana_sdk::instruction::AccountMeta::new_readonly(mint, false),
+                solana_sdk::instruction::AccountMeta::new_readonly(
+                    solana_system_interface::program::ID,
+                    false,
+                ),
+                solana_sdk::instruction::AccountMeta::new_readonly(
+                    spl_token_interface::id(),
+                    false,
+                ),
+            ],
+            data: vec![],
+        };
+
+        let parsed = TokenUtil::parse_ata_creation_instruction(&ix).expect("ATA should parse");
+        assert_eq!(parsed.payer, payer);
+        assert_eq!(parsed.ata_address, ata_address);
+        assert_eq!(parsed.wallet_owner, owner);
+        assert_eq!(parsed.mint, mint);
+        assert_eq!(parsed.token_program, spl_token_interface::id());
+        assert!(!parsed.is_idempotent);
     }
 
     #[test]

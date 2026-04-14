@@ -220,12 +220,14 @@ pub mod instruction_indexes {
         pub const OWNER_INDEX: usize = 3;
     }
 
-    // ATA instruction indexes
+    // ATA Create/CreateIdempotent account layout:
+    // https://github.com/solana-program/associated-token-account/blob/7af39d84438199e7e488adc379baa8ee0b8085c0/interface/src/instruction.rs#L19-L38
     pub mod ata_instruction_indexes {
         pub const PAYER_INDEX: usize = 0;
         pub const ATA_ADDRESS_INDEX: usize = 1;
         pub const WALLET_OWNER_INDEX: usize = 2;
         pub const MINT_INDEX: usize = 3;
+        pub const SYSTEM_PROGRAM_INDEX: usize = 4;
         pub const TOKEN_PROGRAM_INDEX: usize = 5;
         pub const MIN_ACCOUNTS: usize = 6;
     }
