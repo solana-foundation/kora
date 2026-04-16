@@ -47,6 +47,7 @@ pub enum ParsedSystemInstructionData {
         lamports: u64,
         payer: Pubkey,
         new_account: Pubkey,
+        owner: Pubkey,
     },
     // Includes withdraw nonce account
     SystemWithdrawNonceAccount {
@@ -1515,10 +1516,10 @@ impl IxUtils {
             // Handle System Program transfers and account creation
             if program_id == SYSTEM_PROGRAM_ID {
                 match bincode::deserialize::<SystemInstruction>(&instruction.data) {
-                    Ok(SystemInstruction::CreateAccount { lamports, .. })
-                    | Ok(SystemInstruction::CreateAccountWithSeed { lamports, .. }) => {
+                    Ok(SystemInstruction::CreateAccount { lamports, owner, .. })
+                    | Ok(SystemInstruction::CreateAccountWithSeed { lamports, owner, .. }) => {
                         parse_system_instruction!(parsed_instructions, instruction, system_create_account, SystemCreateAccount, SystemCreateAccount {
-                            lamports: lamports;
+                            lamports: lamports, owner: owner;
                             payer: instruction_indexes::system_create_account::PAYER_INDEX,
                             new_account: instruction_indexes::system_create_account::NEW_ACCOUNT_INDEX
                         });
@@ -3187,10 +3188,12 @@ mod tests {
                 lamports: parsed_lamports,
                 payer: parsed_payer,
                 new_account: parsed_new_account,
+                owner: parsed_owner,
             } => {
                 assert_eq!(*parsed_lamports, lamports);
                 assert_eq!(*parsed_payer, payer.pubkey());
                 assert_eq!(*parsed_new_account, new_account.pubkey());
+                assert_eq!(*parsed_owner, owner);
             }
             _ => panic!("Expected SystemCreateAccount variant"),
         }
@@ -3243,10 +3246,12 @@ mod tests {
                 lamports: parsed_lamports,
                 payer: parsed_payer,
                 new_account: parsed_new_account,
+                owner: parsed_owner,
             } => {
                 assert_eq!(*parsed_lamports, lamports);
                 assert_eq!(*parsed_payer, payer.pubkey());
                 assert_eq!(*parsed_new_account, new_account);
+                assert_eq!(*parsed_owner, owner);
             }
             _ => panic!("Expected SystemCreateAccount variant"),
         }
