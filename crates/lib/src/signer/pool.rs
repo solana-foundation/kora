@@ -71,7 +71,7 @@ impl SignerWithMetadata {
     /// Seconds to wait before allowing an unhealthy signer to be probed for recovery
     const RECOVERY_PROBE_SECS: u64 = 30;
     /// Seconds after which an in-flight probe lock is considered stale
-    const PROBE_LEASE_SECS: u64 = 10;
+    const PROBE_LEASE_SECS: u64 = 60;
 
     /// Create a new signer with metadata
     pub(crate) fn new(name: String, signer: Arc<Signer>, weight: u32) -> Self {
