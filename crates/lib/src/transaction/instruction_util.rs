@@ -2070,15 +2070,26 @@ impl IxUtils {
                     };
                 }
             } else if program_id == spl_token_2022_interface::ID {
-                let spl_ix = spl_token_2022_interface::instruction::TokenInstruction::unpack(
+                let spl_ix = match spl_token_2022_interface::instruction::TokenInstruction::unpack(
                     &instruction.data,
-                )
-                .map_err(|e| {
-                    KoraError::InvalidTransaction(format!(
-                        "Failed to parse Token-2022 instruction: {}",
-                        sanitize_error!(e)
-                    ))
-                })?;
+                ) {
+                    Ok(ix) => ix,
+                    Err(_) => {
+                        // Cannot decode as a base token instruction — this is either a
+                        // Token-2022 extension-specific encoding (e.g. ReallocateAccount,
+                        // extension initializers) or genuinely malformed data.  Either way,
+                        // capture all accounts so the validator can reject if the fee payer
+                        // appears among them.
+                        Self::push_parsed_spl_instruction(
+                            &mut parsed_instructions,
+                            ParsedSPLInstructionType::SplTokenUnknownExtension,
+                            ParsedSPLInstructionData::SplTokenUnknownExtension {
+                                accounts: instruction.accounts.iter().map(|a| a.pubkey).collect(),
+                            },
+                        );
+                        continue;
+                    }
+                };
                 match spl_ix {
                         #[allow(deprecated)]
                         spl_token_2022_interface::instruction::TokenInstruction::Transfer { amount } => {
@@ -3630,7 +3641,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_token_2022_malformed_instruction_returns_error() {
+    fn test_parse_token_2022_malformed_instruction_accounts_captured() {
         use crate::transaction::versioned_transaction::VersionedTransactionResolved;
         use solana_message::{Message, VersionedMessage};
         use solana_sdk::{
@@ -3644,7 +3655,7 @@ mod tests {
         let ix = Instruction {
             program_id: spl_token_2022_interface::ID,
             accounts: vec![AccountMeta::new(payer.pubkey(), true)],
-            data: vec![0xFF, 0xFF, 0xFF], // garbage data — won't unpack
+            data: vec![0xFF, 0xFF, 0xFF], // garbage data — won't unpack as base instruction
         };
 
         let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
@@ -3652,13 +3663,25 @@ mod tests {
         let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
             .expect("Failed to create resolved transaction");
 
+        // Malformed (or extension-encoded) instructions must NOT error at parse time.
+        // Their accounts are captured as SplTokenUnknownExtension so the validator can
+        // still reject if the fee payer appears among them.
         let result = IxUtils::parse_token_instructions(&resolved_tx);
-        assert!(result.is_err(), "Malformed Token-2022 instruction must return an error");
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("Failed to parse Token-2022 instruction"),
-            "Error message should describe the parse failure, got: {err}"
-        );
+        assert!(result.is_ok(), "Unparseable Token-2022 instruction must not error at parse time");
+        let parsed = result.unwrap();
+
+        let unknown = parsed.get(&ParsedSPLInstructionType::SplTokenUnknownExtension);
+        assert!(unknown.is_some(), "Accounts should be captured as SplTokenUnknownExtension");
+        let entries = unknown.unwrap();
+        assert_eq!(entries.len(), 1);
+        if let ParsedSPLInstructionData::SplTokenUnknownExtension { accounts } = &entries[0] {
+            assert!(
+                accounts.contains(&payer.pubkey()),
+                "Fee payer pubkey must be captured so validator can check it"
+            );
+        } else {
+            panic!("Expected SplTokenUnknownExtension variant");
+        }
     }
 
     #[test]
