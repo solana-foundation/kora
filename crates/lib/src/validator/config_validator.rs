@@ -1,9 +1,12 @@
-use std::{path::Path, str::FromStr};
+use std::{collections::HashSet, path::Path, str::FromStr};
 
 use crate::{
     admin::token_util::find_missing_atas,
     config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy},
-    constant::{LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE},
+    constant::{
+        BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE,
+        MIN_RECAPTCHA_SCORE, STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
+    },
     fee::price::PriceModel,
     oracle::PriceSource,
     plugin::TransactionPluginRunner,
@@ -244,6 +247,60 @@ impl ConfigValidator {
         }
     }
 
+    /// Warn about programs in `allowed_programs` that have no dedicated fee-payer
+    /// instruction parser.
+    ///
+    /// Two tiers:
+    /// 1. **High-risk native programs** (Vote, Stake, BpfUpgradeableLoader) — these can
+    ///    directly control funds without routing through inner System/SPL instructions, so a
+    ///    targeted warning is emitted.
+    /// 2. **Any other unrecognised program** — custom programs always use inner instructions
+    ///    (System, SPL Token, Token-2022, ALT) for actual fund movement, so only those inner
+    ///    instructions are validated.  This is a known, accepted limitation; an informational
+    ///    warning is emitted so operators are aware.
+    fn warn_unvalidated_programs(allowed_programs: &[String], warnings: &mut Vec<String>) {
+        let high_risk = [
+            (VOTE_PROGRAM_ID.to_string(), "Vote Program"),
+            (STAKE_PROGRAM_ID.to_string(), "Stake Program"),
+            (BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string(), "BPF Loader Upgradeable"),
+        ];
+
+        for (program_id, program_name) in &high_risk {
+            if allowed_programs.contains(program_id) {
+                warnings.push(format!(
+                    "{program_name} ({program_id}) is in allowed_programs but has no \
+                    fee-payer instruction parser. Instructions for this program involving \
+                    the fee payer will not be subject to any policy enforcement. Only add \
+                    this program if you understand and accept the risk."
+                ));
+            }
+        }
+
+        let known_programs: HashSet<String> = [
+            SYSTEM_PROGRAM_ID.to_string(),
+            SPL_TOKEN_PROGRAM_ID.to_string(),
+            TOKEN_2022_PROGRAM_ID.to_string(),
+            solana_address_lookup_table_interface::program::ID.to_string(),
+            spl_associated_token_account_interface::program::id().to_string(),
+            solana_compute_budget_interface::id().to_string(),
+            LIGHTHOUSE_PROGRAM_ID.to_string(),
+        ]
+        .into_iter()
+        .chain(high_risk.iter().map(|(id, _)| id.clone()))
+        .collect();
+
+        for program_id in allowed_programs {
+            if !known_programs.contains(program_id) {
+                warnings.push(format!(
+                    "Program {program_id} in allowed_programs has no dedicated fee-payer \
+                    instruction parser. Only inner instructions to standard programs \
+                    (System, SPL Token, Token-2022, ALT) will be validated for fee-payer \
+                    usage. This is a known limitation for custom programs."
+                ));
+            }
+        }
+    }
+
     pub async fn validate(_rpc_client: &RpcClient) -> Result<(), KoraError> {
         let config = &get_config()?;
 
@@ -390,6 +447,8 @@ impl ConfigValidator {
                 warnings.push("Missing Token Program in allowed programs - SPL token operations will be blocked".to_string());
             }
         }
+
+        Self::warn_unvalidated_programs(&config.validation.allowed_programs, &mut warnings);
 
         // Validate lighthouse configuration
         if config.kora.lighthouse.enabled {
@@ -2573,5 +2632,80 @@ mod tests {
         assert!(errors
             .iter()
             .any(|e| e.contains("sign_timeout_seconds must be at least 1 second")));
+    }
+
+    // --- warn_unvalidated_programs ---
+
+    #[test]
+    fn test_warn_unvalidated_programs_no_warnings_for_standard_programs() {
+        let allowed = vec![
+            SYSTEM_PROGRAM_ID.to_string(),
+            SPL_TOKEN_PROGRAM_ID.to_string(),
+            TOKEN_2022_PROGRAM_ID.to_string(),
+            solana_address_lookup_table_interface::program::ID.to_string(),
+            spl_associated_token_account_interface::program::id().to_string(),
+            solana_compute_budget_interface::id().to_string(),
+            LIGHTHOUSE_PROGRAM_ID.to_string(),
+        ];
+        let mut warnings = Vec::new();
+        ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
+        assert!(warnings.is_empty(), "Expected no warnings for known programs, got: {warnings:?}");
+    }
+
+    #[test]
+    fn test_warn_unvalidated_programs_warns_for_vote_program() {
+        use crate::constant::VOTE_PROGRAM_ID;
+        let allowed = vec![SYSTEM_PROGRAM_ID.to_string(), VOTE_PROGRAM_ID.to_string()];
+        let mut warnings = Vec::new();
+        ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("Vote Program"));
+        assert!(warnings[0].contains(&VOTE_PROGRAM_ID.to_string()));
+    }
+
+    #[test]
+    fn test_warn_unvalidated_programs_warns_for_stake_program() {
+        use crate::constant::STAKE_PROGRAM_ID;
+        let allowed = vec![SYSTEM_PROGRAM_ID.to_string(), STAKE_PROGRAM_ID.to_string()];
+        let mut warnings = Vec::new();
+        ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("Stake Program"));
+    }
+
+    #[test]
+    fn test_warn_unvalidated_programs_warns_for_bpf_loader_upgradeable() {
+        use crate::constant::BPF_LOADER_UPGRADEABLE_PROGRAM_ID;
+        let allowed =
+            vec![SYSTEM_PROGRAM_ID.to_string(), BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()];
+        let mut warnings = Vec::new();
+        ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("BPF Loader Upgradeable"));
+    }
+
+    #[test]
+    fn test_warn_unvalidated_programs_warns_for_custom_program() {
+        let custom = solana_sdk::pubkey::Pubkey::new_unique().to_string();
+        let allowed = vec![SYSTEM_PROGRAM_ID.to_string(), custom.clone()];
+        let mut warnings = Vec::new();
+        ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains(&custom));
+        assert!(warnings[0].contains("no dedicated fee-payer instruction parser"));
+    }
+
+    #[test]
+    fn test_warn_unvalidated_programs_no_double_warning_for_high_risk_programs() {
+        use crate::constant::VOTE_PROGRAM_ID;
+        let custom = solana_sdk::pubkey::Pubkey::new_unique().to_string();
+        let allowed =
+            vec![SYSTEM_PROGRAM_ID.to_string(), VOTE_PROGRAM_ID.to_string(), custom.clone()];
+        let mut warnings = Vec::new();
+        ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
+        // One targeted warning for Vote, one generic for the custom program
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings.iter().any(|w| w.contains("Vote Program")));
+        assert!(warnings.iter().any(|w| w.contains(&custom)));
     }
 }

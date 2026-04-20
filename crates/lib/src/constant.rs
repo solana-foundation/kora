@@ -29,6 +29,14 @@ pub const RECAPTCHA_TIMEOUT_SECS: u64 = 5;
 // Lighthouse Program ID
 pub const LIGHTHOUSE_PROGRAM_ID: Pubkey = pubkey!("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
 
+// High-risk native programs that have no fee-payer instruction parser in Kora.
+// These programs can directly control funds and should not be added to
+// `allowed_programs` without understanding the implications.
+pub const VOTE_PROGRAM_ID: Pubkey = pubkey!("Vote111111111111111111111111111111111111111");
+pub const STAKE_PROGRAM_ID: Pubkey = pubkey!("Stake11111111111111111111111111111111111111");
+pub const BPF_LOADER_UPGRADEABLE_PROGRAM_ID: Pubkey =
+    pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
+
 // Metrics
 pub const DEFAULT_METRICS_ENDPOINT: &str = "/metrics";
 pub const DEFAULT_METRICS_PORT: u16 = 8080;
