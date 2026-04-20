@@ -1384,6 +1384,7 @@ mod tests_token {
             ParsedSPLInstructionData::SplTokenTransfer {
                 amount,
                 owner: fee_payer,
+                multisig_signers: vec![],
                 mint: Some(mint),
                 source_address: Pubkey::new_unique(),
                 destination_address: other,
@@ -1392,6 +1393,7 @@ mod tests_token {
             ParsedSPLInstructionData::SplTokenTransfer {
                 amount,
                 owner: other,
+                multisig_signers: vec![],
                 mint: Some(mint),
                 source_address: Pubkey::new_unique(),
                 destination_address: fee_payer_token2022_ata,
@@ -1427,6 +1429,7 @@ mod tests_token {
         let spl_transfers = vec![ParsedSPLInstructionData::SplTokenTransfer {
             amount,
             owner: fee_payer,
+            multisig_signers: vec![],
             mint: Some(mint),
             source_address: Pubkey::new_unique(),
             destination_address: Pubkey::new_unique(),

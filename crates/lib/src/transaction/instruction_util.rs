@@ -113,6 +113,7 @@ pub enum ParsedSPLInstructionData {
     SplTokenTransfer {
         amount: u64,
         owner: Pubkey,
+        multisig_signers: Vec<Pubkey>,
         mint: Option<Pubkey>,
         source_address: Pubkey,
         destination_address: Pubkey,
@@ -1790,6 +1791,10 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenTransfer {
                                     owner: instruction.accounts[instruction_indexes::spl_token_transfer::OWNER_INDEX].pubkey,
+                                    multisig_signers: Self::extract_multisig_signers(
+                                        instruction,
+                                        instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS,
+                                    ),
                                     amount,
                                     mint: None,
                                     source_address: instruction.accounts[instruction_indexes::spl_token_transfer::SOURCE_ADDRESS_INDEX].pubkey,
@@ -1808,6 +1813,10 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenTransfer {
                                     owner: instruction.accounts[instruction_indexes::spl_token_transfer_checked::OWNER_INDEX].pubkey,
+                                    multisig_signers: Self::extract_multisig_signers(
+                                        instruction,
+                                        instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS,
+                                    ),
                                     amount,
                                     mint: Some(instruction.accounts[instruction_indexes::spl_token_transfer_checked::MINT_INDEX].pubkey),
                                     source_address: instruction.accounts[instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX].pubkey,
@@ -2072,6 +2081,10 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenTransfer {
                                     owner: instruction.accounts[instruction_indexes::spl_token_transfer::OWNER_INDEX].pubkey,
+                                    multisig_signers: Self::extract_multisig_signers(
+                                        instruction,
+                                        instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS,
+                                    ),
                                     amount,
                                     mint: None,
                                     source_address: instruction.accounts[instruction_indexes::spl_token_transfer::SOURCE_ADDRESS_INDEX].pubkey,
@@ -2090,6 +2103,10 @@ impl IxUtils {
                                 .or_default()
                                 .push(ParsedSPLInstructionData::SplTokenTransfer {
                                     owner: instruction.accounts[instruction_indexes::spl_token_transfer_checked::OWNER_INDEX].pubkey,
+                                    multisig_signers: Self::extract_multisig_signers(
+                                        instruction,
+                                        instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS,
+                                    ),
                                     amount,
                                     mint: Some(instruction.accounts[instruction_indexes::spl_token_transfer_checked::MINT_INDEX].pubkey),
                                     source_address: instruction.accounts[instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX].pubkey,
@@ -3387,6 +3404,7 @@ mod tests {
             ParsedSPLInstructionData::SplTokenTransfer {
                 amount: parsed_amount,
                 owner: parsed_owner,
+                multisig_signers,
                 mint,
                 source_address: parsed_source,
                 destination_address: parsed_destination,
@@ -3394,6 +3412,7 @@ mod tests {
             } => {
                 assert_eq!(*parsed_amount, amount);
                 assert_eq!(*parsed_owner, owner.pubkey());
+                assert!(multisig_signers.is_empty());
                 assert_eq!(*parsed_source, source_address);
                 assert_eq!(*parsed_destination, destination_address);
                 assert!(!is_2022);
@@ -3451,6 +3470,7 @@ mod tests {
             ParsedSPLInstructionData::SplTokenTransfer {
                 amount: parsed_amount,
                 owner: parsed_owner,
+                multisig_signers,
                 mint: parsed_mint,
                 source_address: parsed_source,
                 destination_address: parsed_destination,
@@ -3458,6 +3478,7 @@ mod tests {
             } => {
                 assert_eq!(*parsed_amount, amount);
                 assert_eq!(*parsed_owner, owner.pubkey());
+                assert!(multisig_signers.is_empty());
                 assert_eq!(*parsed_source, source_address);
                 assert_eq!(*parsed_destination, destination_address);
                 assert!(*is_2022);
