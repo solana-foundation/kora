@@ -580,16 +580,23 @@ impl FeeConfigUtil {
         {
             if let ParsedSystemInstructionData::SystemWithdrawNonceAccount {
                 lamports,
+                nonce_authority,
                 recipient,
-                ..
             } = instruction
             {
-                // Funds are withdrawn from the nonce account, not from the authority.
-                // Only the recipient matters for fee payer flow: it's an inflow.
                 if *recipient == *fee_payer_pubkey {
+                    // Lamports arriving at the fee payer are an inflow (reduces net outflow).
                     total = total.checked_sub(*lamports as i128).ok_or_else(|| {
                         log::error!("Inflow calculation overflow in SystemWithdrawNonceAccount");
                         KoraError::ValidationError("Inflow calculation overflow".to_string())
+                    })?;
+                } else if *nonce_authority == *fee_payer_pubkey {
+                    // Fee payer authorized a withdrawal to a third party. The lamports leave a
+                    // nonce account the fee payer controls, so count them as outflow so that
+                    // max_allowed_lamports enforcement is not bypassed.
+                    total = total.checked_add(*lamports as i128).ok_or_else(|| {
+                        log::error!("Outflow calculation overflow in SystemWithdrawNonceAccount");
+                        KoraError::ValidationError("Outflow calculation overflow".to_string())
                     })?;
                 }
             }
@@ -1165,8 +1172,9 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
 
-        // Test 1: Fee payer as nonce authority - should NOT add to outflow
-        // (funds come from the nonce account, not the authority)
+        // Test 1: Fee payer as nonce authority withdrawing to a third party — counts as outflow.
+        // The fee payer controls the nonce account via authority; lamports leaving it to a
+        // different destination bypass max_allowed_lamports if not tracked.
         let withdraw_instruction =
             withdraw_nonce_account(&nonce_account, &fee_payer, &recipient, 50_000);
         let message =
@@ -1183,8 +1191,8 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(
-            outflow, 0,
-            "WithdrawNonceAccount with fee payer as authority should not affect outflow"
+            outflow, 50_000,
+            "WithdrawNonceAccount with fee payer as authority to third party should count as outflow"
         );
 
         // Test 2: Fee payer as recipient (inflow)
@@ -1207,6 +1215,29 @@ mod tests {
         assert_eq!(
             outflow, -25_000,
             "WithdrawNonceAccount to fee payer should be negative (net inflow)"
+        );
+
+        // Test 3: Unrelated authority (not fee payer) withdrawing to third party — no effect.
+        let other_authority = Pubkey::new_unique();
+        let other_recipient = Pubkey::new_unique();
+        let withdraw_instruction =
+            withdraw_nonce_account(&nonce_account, &other_authority, &other_recipient, 75_000);
+        let message =
+            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let config = get_config().unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 0,
+            "WithdrawNonceAccount where fee payer is neither authority nor recipient should be zero"
         );
     }
 
