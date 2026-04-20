@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      id-token: write
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
@@ -47,12 +48,18 @@ jobs:
       - name: Setup Solana CLI
         uses: ./.github/actions/setup-solana
 
+      - uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: ${{ vars.DOPPLER_PROJECT || 'kora' }}
+          doppler-config: ${{ vars.DOPPLER_CONFIG_CI || 'stg_github' }}
+          inject-env-vars: true
+
       - name: Install cargo-llvm-cov for coverage
         run: cargo install cargo-llvm-cov
 
       - name: Run unit tests with coverage
-        env:
-          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
         run: |
           echo "🧪 Running unit tests with coverage instrumentation..."
           cargo llvm-cov clean --workspace
