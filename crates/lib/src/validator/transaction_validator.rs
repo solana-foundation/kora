@@ -409,6 +409,21 @@ impl TransactionValidator {
             }
         }
 
+        for instruction in spl_instructions
+            .get(&ParsedSPLInstructionType::SplTokenUnknownExtension)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedSPLInstructionData::SplTokenUnknownExtension { accounts } = instruction {
+                if accounts.contains(&self.fee_payer_pubkey) {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be an account in an unsupported Token-2022 extension \
+                        instruction"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -648,7 +663,10 @@ mod tests {
     };
     use solana_compute_budget_interface::ComputeBudgetInstruction;
     use solana_message::{Message, VersionedMessage};
-    use solana_sdk::instruction::Instruction;
+    use solana_sdk::{
+        instruction::{AccountMeta, Instruction},
+        signature::{Keypair, Signer},
+    };
     use solana_system_interface::{
         instruction::{
             assign, create_account, create_account_with_seed, transfer, transfer_with_seed,
@@ -4090,6 +4108,64 @@ mod tests {
         } else {
             panic!("Expected InvalidTransaction error for token2022 reallocate");
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_unknown_extension_with_fee_payer_rejected() {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+
+        // PausableExtension — fee payer is an account in the instruction
+        let ix = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![
+                AccountMeta::new(Pubkey::new_unique(), false),
+                AccountMeta::new_readonly(fee_payer.pubkey(), true),
+            ],
+            data: spl_token_2022_interface::instruction::TokenInstruction::PausableExtension.pack(),
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("unsupported Token-2022 extension")),
+            "Expected rejection when fee payer appears in unknown extension instruction, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_unknown_extension_without_fee_payer_allowed() {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+
+        let other_authority = Pubkey::new_unique();
+
+        // PausableExtension — fee payer is NOT among the instruction accounts
+        let ix = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![AccountMeta::new(other_authority, true)],
+            data: spl_token_2022_interface::instruction::TokenInstruction::PausableExtension.pack(),
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_ok(), "Should allow unknown extension instruction when fee payer is not an account: {result:?}");
     }
 
     #[tokio::test]

@@ -96,6 +96,11 @@ pub enum ParsedSPLInstructionType {
     SplTokenFreezeAccount,
     SplTokenThawAccount,
     SplTokenReallocate,
+    /// A Token-2022 extension instruction that was successfully deserialized but
+    /// has no dedicated fee-payer parser (e.g. PausableExtension, TransferHookExtension).
+    /// All account pubkeys are recorded so the validator can reject the transaction
+    /// if the fee payer appears among them.
+    SplTokenUnknownExtension,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -181,6 +186,12 @@ pub enum ParsedSPLInstructionData {
         payer: Pubkey,
         owner: Pubkey,
         is_2022: bool,
+    },
+    /// Token-2022 extension instruction with no dedicated fee-payer parser.
+    /// All accounts from the instruction are captured so the validator can check
+    /// whether the fee payer appears among them.
+    SplTokenUnknownExtension {
+        accounts: Vec<Pubkey>,
     },
 }
 
@@ -2059,10 +2070,16 @@ impl IxUtils {
                     };
                 }
             } else if program_id == spl_token_2022_interface::ID {
-                if let Ok(spl_ix) = spl_token_2022_interface::instruction::TokenInstruction::unpack(
+                let spl_ix = spl_token_2022_interface::instruction::TokenInstruction::unpack(
                     &instruction.data,
-                ) {
-                    match spl_ix {
+                )
+                .map_err(|e| {
+                    KoraError::InvalidTransaction(format!(
+                        "Failed to parse Token-2022 instruction: {}",
+                        sanitize_error!(e)
+                    ))
+                })?;
+                match spl_ix {
                         #[allow(deprecated)]
                         spl_token_2022_interface::instruction::TokenInstruction::Transfer { amount } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS);
@@ -2368,9 +2385,23 @@ impl IxUtils {
                                     .to_string(),
                             ));
                         }
-                        _ => {}
+                        _ => {
+                            // Extension instruction with no dedicated fee-payer parser.
+                            // Record all accounts so the validator can reject if the fee
+                            // payer appears among them.
+                            Self::push_parsed_spl_instruction(
+                                &mut parsed_instructions,
+                                ParsedSPLInstructionType::SplTokenUnknownExtension,
+                                ParsedSPLInstructionData::SplTokenUnknownExtension {
+                                    accounts: instruction
+                                        .accounts
+                                        .iter()
+                                        .map(|a| a.pubkey)
+                                        .collect(),
+                                },
+                            );
+                        }
                     };
-                }
             }
         }
         Ok(parsed_instructions)
@@ -3546,6 +3577,88 @@ mod tests {
 
         let result = IxUtils::parse_token_instructions(&resolved_tx);
         assert!(result.is_err(), "Token-2022 BurnChecked with 2 accounts must be rejected");
+    }
+
+    #[test]
+    fn test_parse_token_2022_unknown_extension_recorded_for_fee_payer_check() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            instruction::{AccountMeta, Instruction},
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let payer = Keypair::new();
+        let authority = Pubkey::new_unique();
+
+        // PausableExtension (discriminator 0x1D) — not explicitly handled by the parser
+        let pausable_data =
+            spl_token_2022_interface::instruction::TokenInstruction::PausableExtension.pack();
+
+        let ix = Instruction {
+            program_id: spl_token_2022_interface::ID,
+            accounts: vec![
+                AccountMeta::new(authority, false),
+                AccountMeta::new_readonly(payer.pubkey(), false),
+            ],
+            data: pausable_data,
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let result = IxUtils::parse_token_instructions(&resolved_tx);
+        assert!(result.is_ok(), "Unknown extension should be recorded, not rejected at parse time");
+        let parsed = result.unwrap();
+
+        let unknown = parsed.get(&ParsedSPLInstructionType::SplTokenUnknownExtension);
+        assert!(unknown.is_some(), "Should have an SplTokenUnknownExtension entry");
+        let entries = unknown.unwrap();
+        assert_eq!(entries.len(), 1);
+        if let ParsedSPLInstructionData::SplTokenUnknownExtension { accounts } = &entries[0] {
+            assert!(
+                accounts.contains(&payer.pubkey()),
+                "Fee payer pubkey should be captured in unknown extension accounts"
+            );
+            assert!(accounts.contains(&authority));
+        } else {
+            panic!("Expected SplTokenUnknownExtension variant");
+        }
+    }
+
+    #[test]
+    fn test_parse_token_2022_malformed_instruction_returns_error() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            instruction::{AccountMeta, Instruction},
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let payer = Keypair::new();
+
+        let ix = Instruction {
+            program_id: spl_token_2022_interface::ID,
+            accounts: vec![AccountMeta::new(payer.pubkey(), true)],
+            data: vec![0xFF, 0xFF, 0xFF], // garbage data — won't unpack
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let result = IxUtils::parse_token_instructions(&resolved_tx);
+        assert!(result.is_err(), "Malformed Token-2022 instruction must return an error");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Failed to parse Token-2022 instruction"),
+            "Error message should describe the parse failure, got: {err}"
+        );
     }
 
     #[test]
