@@ -98,6 +98,12 @@ impl UsageTracker {
         rpc_client: &RpcClient,
     ) -> Result<Option<Pubkey>, KoraError> {
         let payment_destination = config.kora.get_payment_address(fee_payer)?;
+
+        // Collect signers before the mutable borrow required by get_or_parse_spl_instructions.
+        let num_signers = transaction.message.header().num_required_signatures as usize;
+        let signers: Vec<Pubkey> =
+            transaction.message.static_account_keys().iter().take(num_signers).copied().collect();
+
         let parsed_spl_instructions = transaction.get_or_parse_spl_instructions()?;
 
         for instruction in parsed_spl_instructions
@@ -126,7 +132,12 @@ impl UsageTracker {
 
                 // Check if this is a payment to Kora
                 if token_account.owner() == payment_destination {
-                    return Ok(Some(*owner));
+                    // Verify the owner signed this transaction. Without this check, an attacker
+                    // could name an arbitrary victim as the payment owner in unsigned instruction
+                    // data, exhausting the victim's usage quota without their involvement.
+                    if signers.contains(owner) {
+                        return Ok(Some(*owner));
+                    }
                 }
             }
         }
@@ -719,5 +730,98 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Usage limiter unavailable and fallback disabled"));
+    }
+
+    // ── KORA-19: owner signer verification ────────────────────────────────────
+
+    fn make_spl_transfer_transaction(
+        owner: Pubkey,
+        owner_is_signer: bool,
+        destination_ata: Pubkey,
+        fee_payer: Pubkey,
+    ) -> VersionedTransactionResolved {
+        use solana_message::Message;
+        use solana_sdk::{
+            instruction::{AccountMeta, Instruction},
+            transaction::{Transaction, VersionedTransaction},
+        };
+
+        let ix = Instruction {
+            program_id: spl_token_interface::ID,
+            accounts: vec![
+                AccountMeta::new(Pubkey::new_unique(), false),
+                AccountMeta::new(destination_ata, false),
+                AccountMeta::new_readonly(owner, owner_is_signer),
+            ],
+            data: spl_token_interface::instruction::TokenInstruction::Transfer {
+                amount: 1_000_000,
+            }
+            .pack(),
+        };
+
+        let message = Message::new(&[ix], Some(&fee_payer));
+        let tx = VersionedTransaction::from(Transaction::new_unsigned(message));
+        VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_extract_user_unsigned_owner_returns_none() {
+        // Attack scenario: attacker names a victim as payment owner in instruction data
+        // but the victim did NOT sign the transaction. The fix must return None so that
+        // the victim's quota is not consumed.
+        let store = Arc::new(InMemoryUsageStore::new());
+        let tracker = UsageTracker::new(true, store, vec![], HashSet::new(), false);
+
+        let fee_payer = Pubkey::new_unique();
+        let victim_owner = Pubkey::new_unique();
+        let destination_ata = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        // Build token account where the ATA is owned by the fee payer (= payment destination
+        // when no explicit payment_address is configured).
+        let token_account =
+            crate::tests::account_mock::create_mock_token_account(&fee_payer, &mint);
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_account_info(&token_account).build());
+
+        let config = ConfigMockBuilder::new().build();
+
+        // victim_owner is NOT a signer — attack scenario
+        let mut tx = make_spl_transfer_transaction(victim_owner, false, destination_ata, fee_payer);
+
+        let result = tracker
+            .extract_user_from_payment_instruction(&mut tx, &config, &fee_payer, &rpc_client)
+            .await
+            .unwrap();
+
+        assert_eq!(result, None, "Unsigned owner must not be attributed quota");
+    }
+
+    #[tokio::test]
+    async fn test_extract_user_signed_owner_returns_owner() {
+        // Legitimate scenario: the payment owner actually signed the transaction.
+        // The function must return Some(owner) so quota can be tracked correctly.
+        let store = Arc::new(InMemoryUsageStore::new());
+        let tracker = UsageTracker::new(true, store, vec![], HashSet::new(), false);
+
+        let fee_payer = Pubkey::new_unique();
+        let real_owner = Pubkey::new_unique();
+        let destination_ata = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let token_account =
+            crate::tests::account_mock::create_mock_token_account(&fee_payer, &mint);
+        let rpc_client = Arc::new(RpcMockBuilder::new().with_account_info(&token_account).build());
+
+        let config = ConfigMockBuilder::new().build();
+
+        // real_owner IS a signer — legitimate payment
+        let mut tx = make_spl_transfer_transaction(real_owner, true, destination_ata, fee_payer);
+
+        let result = tracker
+            .extract_user_from_payment_instruction(&mut tx, &config, &fee_payer, &rpc_client)
+            .await
+            .unwrap();
+
+        assert_eq!(result, Some(real_owner), "Signed owner must be attributed quota");
     }
 }
