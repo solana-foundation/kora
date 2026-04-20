@@ -732,8 +732,6 @@ mod tests {
             .contains("Usage limiter unavailable and fallback disabled"));
     }
 
-    // ── KORA-19: owner signer verification ────────────────────────────────────
-
     fn make_spl_transfer_transaction(
         owner: Pubkey,
         owner_is_signer: bool,
