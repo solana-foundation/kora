@@ -11,6 +11,7 @@ on:
 permissions:
   actions: write
   contents: read
+  id-token: write
   issues: write
   pull-requests: write
 
@@ -75,9 +76,15 @@ jobs:
       - name: Setup Solana CLI
         uses: ./.github/actions/setup-solana
 
+      - uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: ${{ vars.DOPPLER_PROJECT || 'kora' }}
+          doppler-config: ${{ vars.DOPPLER_CONFIG_EXTERNAL_LIVE || vars.DOPPLER_CONFIG_CI || 'stg_github' }}
+          inject-env-vars: true
+
       - name: Ensure Jupiter API key is configured
-        env:
-          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
         run: |
           if [ -z "${JUPITER_API_KEY}" ]; then
             echo "JUPITER_API_KEY is required for fork external live tests." >&2
@@ -88,8 +95,6 @@ jobs:
         uses: ./.github/actions/run-test-runner
         with:
           filters: "--filter external_live"
-        env:
-          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
 
       - name: Cleanup test environment
         if: always()

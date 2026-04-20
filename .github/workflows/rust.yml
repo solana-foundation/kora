@@ -40,6 +40,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -65,12 +68,18 @@ jobs:
       - name: Setup Solana CLI
         uses: ./.github/actions/setup-solana
 
+      - uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: ${{ vars.DOPPLER_PROJECT || 'kora' }}
+          doppler-config: ${{ vars.DOPPLER_CONFIG_CI || 'stg_github' }}
+          inject-env-vars: true
+
       - name: Run integration tests
         uses: ./.github/actions/run-test-runner
         with:
           filters: "--filter ${{ matrix.test-group }}"
-        env:
-          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
 
       - name: Cleanup test environment
         if: always()
