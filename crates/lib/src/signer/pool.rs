@@ -163,7 +163,7 @@ impl SignerWithMetadata {
         }
     }
 
-    fn is_probe_eligible_without_lock(&self, health: &HealthState, probe_lease: Duration) -> bool {
+    fn is_recovery_probe_ready(health: &HealthState) -> bool {
         if health.is_healthy {
             return true;
         }
@@ -172,24 +172,26 @@ impl SignerWithMetadata {
             return false;
         };
 
-        if last_failed.elapsed().as_secs() < Self::RECOVERY_PROBE_SECS {
+        last_failed.elapsed().as_secs() >= Self::RECOVERY_PROBE_SECS
+    }
+
+    fn is_probe_eligible_without_lock(&self, health: &HealthState, probe_lease: Duration) -> bool {
+        if !Self::is_recovery_probe_ready(health) {
             return false;
         }
 
-        !health.probe_in_flight || self.is_probe_lock_stale(health, probe_lease)
+        health.is_healthy
+            || !health.probe_in_flight
+            || self.is_probe_lock_stale(health, probe_lease)
     }
 
     fn is_probe_eligible_with_lock(&self, health: &mut HealthState, probe_lease: Duration) -> bool {
-        if health.is_healthy {
-            return true;
+        if !Self::is_recovery_probe_ready(health) {
+            return false;
         }
 
-        let Some(last_failed) = health.last_failed_at else {
-            return false;
-        };
-
-        if last_failed.elapsed().as_secs() < Self::RECOVERY_PROBE_SECS {
-            return false;
+        if health.is_healthy {
+            return true;
         }
 
         self.release_stale_probe_lock_if_needed(health, probe_lease);
@@ -228,6 +230,12 @@ pub struct SignerPool {
     current_index: AtomicUsize,
     /// Stale probe lease derived from the signing timeout/retry budget.
     probe_lease_ms: AtomicU64,
+}
+
+#[derive(Clone, Copy)]
+enum ProbeReservationMode {
+    ReadOnly,
+    Reserve,
 }
 
 /// Information about a signer for monitoring/debugging
@@ -350,10 +358,10 @@ impl SignerPool {
     /// recovery probe cooldown has elapsed and whose probe lock is not actively in-flight.
     fn eligible_signers(&self) -> Result<Vec<&SignerWithMetadata>, KoraError> {
         let probe_lease = self.probe_lease();
-        let healthy: Vec<_> =
+        let eligible: Vec<_> =
             self.signers.iter().filter(|s| s.is_eligible_for_selection(probe_lease)).collect();
 
-        if healthy.is_empty() {
+        if eligible.is_empty() {
             log::error!(
                 "No signer is currently eligible (all unhealthy and recovery cooldown/probe lock active) across {} signers",
                 self.signers.len()
@@ -364,55 +372,101 @@ impl SignerPool {
             ));
         }
 
-        Ok(healthy)
+        Ok(eligible)
     }
 
-    /// Select the next eligible signer without mutating recovery probe state.
-    pub fn select_next_signer(&self) -> Result<Arc<Signer>, KoraError> {
+    fn select_from_eligible<'a>(
+        &self,
+        signers: &[&'a SignerWithMetadata],
+    ) -> Result<&'a SignerWithMetadata, KoraError> {
+        match self.strategy {
+            SelectionStrategy::RoundRobin => self.round_robin_select_from(signers),
+            SelectionStrategy::Random => self.random_select_from(signers),
+            SelectionStrategy::Weighted => self.weighted_select_from(signers),
+        }
+    }
+
+    fn select_next_signer_internal(
+        &self,
+        mode: ProbeReservationMode,
+    ) -> Result<Arc<Signer>, KoraError> {
         if self.signers.is_empty() {
             return Err(KoraError::InternalServerError("Signer pool is empty".to_string()));
         }
 
-        let eligible = self.eligible_signers()?;
-        let signer_meta = match self.strategy {
-            SelectionStrategy::RoundRobin => self.round_robin_select_from(&eligible),
-            SelectionStrategy::Random => self.random_select_from(&eligible),
-            SelectionStrategy::Weighted => self.weighted_select_from(&eligible),
-        }?;
+        match mode {
+            ProbeReservationMode::ReadOnly => {
+                let eligible = self.eligible_signers()?;
+                let signer_meta = self.select_from_eligible(&eligible)?;
+                signer_meta.update_last_used();
+                Ok(Arc::clone(&signer_meta.signer))
+            }
+            ProbeReservationMode::Reserve => {
+                for _ in 0..self.signers.len().max(1) {
+                    let eligible = self.eligible_signers()?;
+                    let probe_lease = self.probe_lease();
+                    let signer_meta = self.select_from_eligible(&eligible)?;
+
+                    if !signer_meta.try_acquire_probe_lock_if_needed(probe_lease) {
+                        continue;
+                    }
+
+                    signer_meta.update_last_used();
+                    return Ok(Arc::clone(&signer_meta.signer));
+                }
+
+                Err(KoraError::InternalServerError(
+                    "No healthy signers available after probe lock contention".to_string(),
+                ))
+            }
+        }
+    }
+
+    fn find_signer_by_pubkey(&self, pubkey: &str) -> Result<&SignerWithMetadata, KoraError> {
+        let target_pubkey = Pubkey::from_str(pubkey).map_err(|_| {
+            KoraError::ValidationError(format!("Invalid signer signer key pubkey: {pubkey}"))
+        })?;
+
+        self.signers.iter().find(|s| s.signer.pubkey() == target_pubkey).ok_or_else(|| {
+            KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
+        })
+    }
+
+    fn signer_by_pubkey_internal(
+        &self,
+        pubkey: &str,
+        mode: ProbeReservationMode,
+    ) -> Result<Arc<Signer>, KoraError> {
+        let signer_meta = self.find_signer_by_pubkey(pubkey)?;
+
+        let signer_available = match mode {
+            ProbeReservationMode::ReadOnly => {
+                signer_meta.is_eligible_for_selection(self.probe_lease())
+            }
+            ProbeReservationMode::Reserve => {
+                signer_meta.try_acquire_probe_lock_if_needed(self.probe_lease())
+            }
+        };
+
+        if !signer_available {
+            return Err(KoraError::ValidationError(format!(
+                "Pinned signer {} is unhealthy or currently unavailable for recovery probe",
+                pubkey
+            )));
+        }
 
         signer_meta.update_last_used();
         Ok(Arc::clone(&signer_meta.signer))
     }
 
+    /// Select the next eligible signer without mutating recovery probe state.
+    pub fn select_next_signer(&self) -> Result<Arc<Signer>, KoraError> {
+        self.select_next_signer_internal(ProbeReservationMode::ReadOnly)
+    }
+
     /// Get the next signer according to the configured strategy
     pub fn get_next_signer(&self) -> Result<Arc<Signer>, KoraError> {
-        if self.signers.is_empty() {
-            return Err(KoraError::InternalServerError("Signer pool is empty".to_string()));
-        }
-
-        // Retry selection a small bounded number of times to avoid transient
-        // races where a signer becomes ineligible between filtering and probe lock acquisition.
-        for _ in 0..self.signers.len().max(1) {
-            let eligible = self.eligible_signers()?;
-            let probe_lease = self.probe_lease();
-
-            let signer_meta = match self.strategy {
-                SelectionStrategy::RoundRobin => self.round_robin_select_from(&eligible),
-                SelectionStrategy::Random => self.random_select_from(&eligible),
-                SelectionStrategy::Weighted => self.weighted_select_from(&eligible),
-            }?;
-
-            if !signer_meta.try_acquire_probe_lock_if_needed(probe_lease) {
-                continue;
-            }
-
-            signer_meta.update_last_used();
-            return Ok(Arc::clone(&signer_meta.signer));
-        }
-
-        Err(KoraError::InternalServerError(
-            "No healthy signers available after probe lock contention".to_string(),
-        ))
+        self.select_next_signer_internal(ProbeReservationMode::Reserve)
     }
 
     fn round_robin_select_from<'a>(
@@ -510,48 +564,12 @@ impl SignerPool {
 
     /// Select a signer by public key without mutating recovery probe state.
     pub fn select_signer_by_pubkey(&self, pubkey: &str) -> Result<Arc<Signer>, KoraError> {
-        let target_pubkey = Pubkey::from_str(pubkey).map_err(|_| {
-            KoraError::ValidationError(format!("Invalid signer signer key pubkey: {pubkey}"))
-        })?;
-
-        let signer_meta =
-            self.signers.iter().find(|s| s.signer.pubkey() == target_pubkey).ok_or_else(|| {
-                KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
-            })?;
-
-        if !signer_meta.is_eligible_for_selection(self.probe_lease()) {
-            return Err(KoraError::ValidationError(format!(
-                "Pinned signer {} is unhealthy or currently unavailable for recovery probe",
-                pubkey
-            )));
-        }
-
-        signer_meta.update_last_used();
-        Ok(Arc::clone(&signer_meta.signer))
+        self.signer_by_pubkey_internal(pubkey, ProbeReservationMode::ReadOnly)
     }
 
     /// Get a signer by public key (for client consistency signer keys)
     pub fn get_signer_by_pubkey(&self, pubkey: &str) -> Result<Arc<Signer>, KoraError> {
-        // Try to parse as Pubkey to validate format
-        let target_pubkey = Pubkey::from_str(pubkey).map_err(|_| {
-            KoraError::ValidationError(format!("Invalid signer signer key pubkey: {pubkey}"))
-        })?;
-
-        // Find signer with matching public key
-        let signer_meta =
-            self.signers.iter().find(|s| s.signer.pubkey() == target_pubkey).ok_or_else(|| {
-                KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
-            })?;
-
-        if !signer_meta.try_acquire_probe_lock_if_needed(self.probe_lease()) {
-            return Err(KoraError::ValidationError(format!(
-                "Pinned signer {} is unhealthy or currently unavailable for recovery probe",
-                pubkey
-            )));
-        }
-
-        signer_meta.update_last_used();
-        Ok(Arc::clone(&signer_meta.signer))
+        self.signer_by_pubkey_internal(pubkey, ProbeReservationMode::Reserve)
     }
 }
 
