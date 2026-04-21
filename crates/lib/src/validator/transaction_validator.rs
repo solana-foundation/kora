@@ -254,8 +254,21 @@ impl TransactionValidator {
             self.fee_payer_policy.system.allow_allocate, "System Allocate");
 
         validate_system!(self, system_instructions, SystemCreateAccount,
-            ParsedSystemInstructionData::SystemCreateAccount { payer, .. } => payer,
-            self.fee_payer_policy.system.allow_create_account, "System Create Account");
+        ParsedSystemInstructionData::SystemCreateAccount { payer, owner, .. } => payer,
+        self.fee_payer_policy.system.allow_create_account, "System Create Account", {
+            if !self.allowed_programs.contains(owner) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "CreateAccount owner program {} is not in the allowed programs list",
+                    owner
+                )));
+            }
+            if self.disallowed_accounts.contains(owner) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "CreateAccount owner program {} is in the disallowed accounts list",
+                    owner
+                )));
+            }
+        });
 
         validate_system!(self, system_instructions, SystemInitializeNonceAccount,
             ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_authority, .. } => nonce_authority,
@@ -2501,7 +2514,8 @@ mod tests {
 
         let fee_payer = Pubkey::new_unique();
         let new_account = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
+        // Use System Program as owner since it's in allowed_programs
+        let owner = SYSTEM_PROGRAM_ID;
 
         // Test with allow_create_account = true
         let rpc_client = RpcMockBuilder::new().build();
@@ -2536,6 +2550,65 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_create_account_rejects_disallowed_owner() {
+        use solana_system_interface::instruction::create_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let new_account = Pubkey::new_unique();
+        let disallowed_owner = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = true;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let instruction = create_account(&fee_payer, &new_account, 1000, 100, &disallowed_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not in the allowed programs list"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_create_account_allows_valid_owner() {
+        use solana_system_interface::instruction::create_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let new_account = Pubkey::new_unique();
+        let allowed_owner = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = true;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string(), allowed_owner.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let instruction = create_account(&fee_payer, &new_account, 1000, 100, &allowed_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
