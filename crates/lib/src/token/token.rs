@@ -31,6 +31,19 @@ use std::{
 #[cfg(test)]
 use {crate::tests::config_mock::mock_state::get_config, rust_decimal_macros::dec};
 
+const MAX_SUPPORTED_DECIMALS: u32 = 19;
+
+fn decimal_scale(decimals: u8) -> Result<Decimal, KoraError> {
+    if (decimals as u32) > MAX_SUPPORTED_DECIMALS {
+        return Err(KoraError::ValidationError(format!(
+            "Token decimals {} exceeds maximum supported value of {}",
+            decimals, MAX_SUPPORTED_DECIMALS
+        )));
+    }
+    Decimal::from_u64(10u64.pow(decimals as u32))
+        .ok_or_else(|| KoraError::ValidationError("Invalid decimals scale".to_string()))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType {
     Spl,
@@ -437,8 +450,7 @@ impl TokenUtil {
         // Convert amount to Decimal with proper scaling
         let amount_decimal = Decimal::from_u64(amount)
             .ok_or_else(|| KoraError::ValidationError("Invalid token amount".to_string()))?;
-        let decimals_scale = Decimal::from_u64(10u64.pow(decimals as u32))
-            .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
+        let decimals_scale = decimal_scale(decimals)?;
         let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL)
             .ok_or_else(|| KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string()))?;
 
@@ -477,8 +489,7 @@ impl TokenUtil {
             .ok_or_else(|| KoraError::ValidationError("Invalid lamports value".to_string()))?;
         let lamports_per_sol_decimal = Decimal::from_u64(LAMPORTS_PER_SOL)
             .ok_or_else(|| KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string()))?;
-        let scale = Decimal::from_u64(10u64.pow(decimals as u32))
-            .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
+        let scale = decimal_scale(decimals)?;
 
         // Calculate: (lamports * 10^decimals) / (LAMPORTS_PER_SOL * price)
         // Multiply before divide to preserve precision
@@ -608,8 +619,7 @@ impl TokenUtil {
                 let amount_decimal = Decimal::from_u64(*amount).ok_or_else(|| {
                     KoraError::ValidationError("Invalid transfer amount".to_string())
                 })?;
-                let decimals_scale = Decimal::from_u64(10u64.pow(*decimals as u32))
-                    .ok_or_else(|| KoraError::ValidationError("Invalid decimals".to_string()))?;
+                let decimals_scale = decimal_scale(*decimals)?;
                 let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL).ok_or_else(|| {
                     KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string())
                 })?;
@@ -2075,5 +2085,25 @@ mod tests_token {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].payer, fee_payer);
         assert_eq!(parsed[0].mint, mint_a);
+    }
+
+    #[test]
+    fn test_decimal_scale_valid_values() {
+        use super::decimal_scale;
+        assert_eq!(decimal_scale(0).unwrap(), dec!(1));
+        assert_eq!(decimal_scale(6).unwrap(), dec!(1_000_000));
+        assert_eq!(decimal_scale(9).unwrap(), dec!(1_000_000_000));
+        assert_eq!(decimal_scale(18).unwrap(), dec!(1_000_000_000_000_000_000));
+        assert!(decimal_scale(19).is_ok());
+    }
+
+    #[test]
+    fn test_decimal_scale_rejects_overflow() {
+        use super::decimal_scale;
+        let err = decimal_scale(20).unwrap_err();
+        assert!(err.to_string().contains("exceeds maximum supported value"));
+
+        let err = decimal_scale(255).unwrap_err();
+        assert!(err.to_string().contains("exceeds maximum supported value"));
     }
 }
