@@ -12,7 +12,8 @@ use solana_message::{Message, VersionedMessage};
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 
 use spl_associated_token_account_interface::{
-    address::get_associated_token_address, instruction::create_associated_token_account,
+    address::get_associated_token_address_with_program_id,
+    instruction::create_associated_token_account,
 };
 use std::{fmt::Display, str::FromStr, sync::Arc};
 
@@ -272,29 +273,32 @@ pub async fn find_missing_atas(
 
     let mut atas_to_create = Vec::new();
 
-    // Check each token mint for existing ATA
+    // Check each token mint for existing ATA. The mint's owning program must be resolved
+    // before deriving the ATA: Token-2022 mints derive their ATA under the Token-2022
+    // program id, and deriving with the legacy program id would yield a different PDA that
+    // disagrees with execution.
     for mint in &token_mints {
-        let ata = get_associated_token_address(payment_address, mint);
+        let mint_account =
+            CacheUtil::get_account(config, rpc_client, mint, false).await.map_err(|e| {
+                KoraError::RpcError(format!("Failed to fetch mint account for {mint}: {e}"))
+            })?;
+
+        let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
+        let token_program_id = token_program.program_id();
+        let ata =
+            get_associated_token_address_with_program_id(payment_address, mint, &token_program_id);
 
         match CacheUtil::get_account(config, rpc_client, &ata, false).await {
             Ok(_) => {
                 println!("✓ ATA already exists for token {mint}: {ata}");
             }
             Err(_) => {
-                // Fetch mint account to determine if it's SPL or Token2022
-                let mint_account =
-                    CacheUtil::get_account(config, rpc_client, mint, false).await.map_err(|e| {
-                        KoraError::RpcError(format!("Failed to fetch mint account for {mint}: {e}"))
-                    })?;
-
-                let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
-
                 println!("Creating ATA for token {mint}: {ata}");
 
                 atas_to_create.push(ATAToCreate {
                     mint: *mint,
                     ata,
-                    token_program: token_program.program_id(),
+                    token_program: token_program_id,
                 });
             }
         }
@@ -309,9 +313,13 @@ mod tests {
     use crate::tests::{
         common::{
             create_mock_rpc_client_account_not_found, create_mock_spl_mint_account,
-            create_mock_token_account, setup_or_get_test_signer, RpcMockBuilder,
+            create_mock_token2022_mint_account, create_mock_token_account,
+            setup_or_get_test_signer, RpcMockBuilder,
         },
         config_mock::{ConfigMockBuilder, ValidationConfigBuilder},
+    };
+    use spl_associated_token_account_interface::address::{
+        get_associated_token_address, get_associated_token_address_with_program_id,
     };
     use std::{
         collections::VecDeque,
@@ -357,19 +365,20 @@ mod tests {
         let payment_address = Pubkey::new_unique();
         let rpc_client = create_mock_rpc_client_account_not_found();
 
-        // First call: Found in cache (Ok)
-        // Second call: ATA account not found (Err)
-        // Third call: mint account found (Ok)
+        // Mint is fetched first to determine the token program, then the ATA is looked up.
+        // Mint 1: mint fetched (Ok) → ATA exists (Ok)
+        // Mint 2: mint fetched (Ok) → ATA missing (Err)
         let responses = Arc::new(Mutex::new(VecDeque::from([
-            Ok(create_mock_token_account(&Pubkey::new_unique(), &Pubkey::new_unique())),
-            Err(KoraError::RpcError("ATA not found".to_string())),
             Ok(create_mock_spl_mint_account(6)),
+            Ok(create_mock_token_account(&Pubkey::new_unique(), &Pubkey::new_unique())),
+            Ok(create_mock_spl_mint_account(6)),
+            Err(KoraError::RpcError("ATA not found".to_string())),
         ])));
 
         let responses_clone = responses.clone();
         cache_ctx
             .expect()
-            .times(3)
+            .times(4)
             .returning(move |_, _, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
 
         let config = get_config().unwrap();
@@ -378,6 +387,66 @@ mod tests {
         assert!(result.is_ok(), "Should handle SPL tokens with proper mocking");
         let atas = result.unwrap();
         assert_eq!(atas.len(), 1, "Should return 1 missing ATAs");
+    }
+
+    #[tokio::test]
+    async fn test_find_missing_atas_detects_existing_token2022_ata() {
+        let token2022_mint = Pubkey::new_unique();
+
+        let _m = ConfigMockBuilder::new()
+            .with_validation(
+                ValidationConfigBuilder::new()
+                    .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![
+                        token2022_mint.to_string()
+                    ]))
+                    .build(),
+            )
+            .build_and_setup();
+
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+
+        let payment_address = Pubkey::new_unique();
+        let rpc_client = create_mock_rpc_client_account_not_found();
+
+        // The legacy-derived PDA must differ from the Token-2022 ATA; if discovery used the
+        // legacy derivation, the cache lookup would miss and this test would fail.
+        let legacy_pda = get_associated_token_address(&payment_address, &token2022_mint);
+        let real_token2022_ata = get_associated_token_address_with_program_id(
+            &payment_address,
+            &token2022_mint,
+            &spl_token_2022_interface::id(),
+        );
+        assert_ne!(legacy_pda, real_token2022_ata);
+
+        // First call: fetch the Token-2022 mint so the program id resolves to Token-2022.
+        // Second call: ATA lookup must hit the real Token-2022 ATA (Ok).
+        let responses = Arc::new(Mutex::new(VecDeque::from([
+            Ok(create_mock_token2022_mint_account(6)),
+            Ok(create_mock_token_account(&payment_address, &token2022_mint)),
+        ])));
+
+        let expected_ata = real_token2022_ata;
+        let responses_clone = responses.clone();
+        cache_ctx.expect().times(2).returning(move |_, _, pubkey, _| {
+            // The second call must look up the Token-2022 ATA, not the legacy PDA.
+            if *pubkey != token2022_mint {
+                assert_eq!(
+                    *pubkey, expected_ata,
+                    "ATA lookup must use Token-2022 derivation, got wrong PDA"
+                );
+            }
+            responses_clone.lock().unwrap().pop_front().unwrap()
+        });
+
+        let config = get_config().unwrap();
+        let result = find_missing_atas(&config, &rpc_client, &payment_address).await.unwrap();
+
+        assert!(
+            result.is_empty(),
+            "Existing Token-2022 ATA must be detected as present, got {} ATAs to create",
+            result.len()
+        );
     }
 
     #[tokio::test]
