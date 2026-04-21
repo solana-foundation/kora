@@ -14,8 +14,9 @@ use crate::{
         TokenState,
     },
     transaction::{
-        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
-        ParsedSystemInstructionType, VersionedTransactionOps, VersionedTransactionResolved,
+        ParsedALTInstructionData, ParsedALTInstructionType, ParsedSPLInstructionData,
+        ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
+        VersionedTransactionOps, VersionedTransactionResolved,
     },
 };
 
@@ -594,6 +595,44 @@ impl FeeConfigUtil {
             }
         }
 
+        let parsed_alt_instructions = transaction.get_or_parse_alt_instructions()?;
+        for instruction in parsed_alt_instructions
+            .get(&ParsedALTInstructionType::AltCloseLookupTable)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedALTInstructionData::AltCloseLookupTable {
+                lookup_table_account,
+                lookup_table_authority,
+                recipient,
+            } = instruction
+            {
+                let is_fee_payer_authority = *lookup_table_authority == *fee_payer_pubkey;
+                let is_fee_payer_recipient = *recipient == *fee_payer_pubkey;
+
+                if !is_fee_payer_authority && !is_fee_payer_recipient {
+                    continue;
+                }
+
+                if is_fee_payer_authority && is_fee_payer_recipient {
+                    continue;
+                }
+
+                let lamports = rpc_client.get_account(lookup_table_account).await?.lamports;
+
+                if is_fee_payer_recipient {
+                    total = total.checked_sub(lamports as i128).ok_or_else(|| {
+                        log::error!("Inflow calculation overflow in AltCloseLookupTable");
+                        KoraError::ValidationError("Inflow calculation overflow".to_string())
+                    })?;
+                } else {
+                    total = total.checked_add(lamports as i128).ok_or_else(|| {
+                        log::error!("Outflow calculation overflow in AltCloseLookupTable");
+                        KoraError::ValidationError("Outflow calculation overflow".to_string())
+                    })?;
+                }
+            }
+        }
+
         // ATA Create/CreateIdempotent can be no-ops during simulation depending on prestate.
         // Charge conservative rent for fee-payer-funded ATA creations whenever inner SystemCreateAccount
         // did not surface, preventing stale-state rent drain windows.
@@ -677,7 +716,7 @@ mod tests {
             price::{PriceConfig, PriceModel},
         },
         tests::{
-            account_mock::MintAccountMockBuilder,
+            account_mock::{AccountMockBuilder, MintAccountMockBuilder},
             common::{
                 create_mock_rpc_client_with_account, create_mock_token_account,
                 setup_or_get_test_config, setup_or_get_test_signer,
@@ -687,6 +726,9 @@ mod tests {
         },
         token::{interface::TokenInterface, spl_token::TokenProgram},
         transaction::TransactionUtil,
+    };
+    use solana_address_lookup_table_interface::{
+        instruction as alt_instruction, program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
     };
     use solana_message::{v0, Message, VersionedMessage};
     use solana_sdk::{
@@ -726,6 +768,22 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(owner)));
         TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
             .expect("failed to build resolved transaction")
+    }
+
+    fn create_alt_close_resolved_transaction(
+        fee_payer: &Pubkey,
+        lookup_table_authority: &Pubkey,
+        lookup_table_account: &Pubkey,
+        recipient: &Pubkey,
+    ) -> crate::transaction::VersionedTransactionResolved {
+        let close_ix = alt_instruction::close_lookup_table(
+            *lookup_table_account,
+            *lookup_table_authority,
+            *recipient,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(fee_payer)));
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
+            .expect("failed to build ALT close transaction")
     }
 
     async fn estimate_free_fee_with_mutable_transfer_hook(
@@ -1252,6 +1310,124 @@ mod tests {
         assert_eq!(
             outflow, 0,
             "WithdrawNonceAccount where fee payer is neither authority nor recipient should be zero"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_alt_close_lookup_table() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let lookup_table_account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let alt_account = AccountMockBuilder::new()
+            .with_owner(ADDRESS_LOOKUP_TABLE_PROGRAM_ID)
+            .with_lamports(2_000_000)
+            .build();
+        let mocked_rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &alt_account,
+            &alt_account,
+            &alt_account,
+        ]);
+
+        let mut resolved_transaction = create_alt_close_resolved_transaction(
+            &fee_payer,
+            &fee_payer,
+            &lookup_table_account,
+            &recipient,
+        );
+        let config = get_config().unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 2_000_000,
+            "ALT close to a third party should count the full table balance as fee payer outflow"
+        );
+
+        let mut resolved_transaction = create_alt_close_resolved_transaction(
+            &fee_payer,
+            &fee_payer,
+            &lookup_table_account,
+            &fee_payer,
+        );
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 0,
+            "ALT close back to the fee payer should be treated as internal movement"
+        );
+
+        let other_authority = Pubkey::new_unique();
+        let mut resolved_transaction = create_alt_close_resolved_transaction(
+            &fee_payer,
+            &other_authority,
+            &lookup_table_account,
+            &fee_payer,
+        );
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved_transaction,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, -2_000_000,
+            "ALT close into the fee payer from an unrelated authority should be treated as inflow"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_margin_includes_alt_close_outflow() {
+        let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
+        config.validation.price = PriceConfig { model: PriceModel::Margin { margin: 0.0 } };
+        let _m =
+            ConfigMockBuilder::new().with_validation(config.validation.clone()).build_and_setup();
+
+        let fee_payer = Pubkey::new_unique();
+        let lookup_table_account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let alt_account = AccountMockBuilder::new()
+            .with_owner(ADDRESS_LOOKUP_TABLE_PROGRAM_ID)
+            .with_lamports(2_000_000)
+            .build();
+        let mocked_rpc_client =
+            RpcMockBuilder::new().with_account_info(&alt_account).with_fee_estimate(10_000).build();
+
+        let mut resolved_transaction = create_alt_close_resolved_transaction(
+            &fee_payer,
+            &fee_payer,
+            &lookup_table_account,
+            &recipient,
+        );
+        let fee_calculation = FeeConfigUtil::estimate_kora_fee(
+            &mut resolved_transaction,
+            &fee_payer,
+            false,
+            &mocked_rpc_client,
+            &config,
+            TransferHookValidationFlow::DelayedSigning,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(fee_calculation.base_fee, 10_000);
+        assert_eq!(fee_calculation.fee_payer_outflow, 2_000_000);
+        assert_eq!(
+            fee_calculation.total_fee_lamports, 2_010_000,
+            "Margin pricing should include the full ALT close lamports in the quoted fee"
         );
     }
 
