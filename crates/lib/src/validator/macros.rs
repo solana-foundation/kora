@@ -1,5 +1,21 @@
 /// Macro to validate system instructions with consistent pattern
 macro_rules! validate_system {
+    ($self:expr, $instructions:expr, $type:ident, $pattern:pat => $account:expr, $policy:expr, $name:expr, $extra:block) => {
+        for instruction in $instructions.get(&ParsedSystemInstructionType::$type).unwrap_or(&vec![])
+        {
+            if let $pattern = instruction {
+                if *$account == $self.fee_payer_pubkey {
+                    if !$policy {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "Fee payer cannot be used for '{}'",
+                            $name
+                        )));
+                    }
+                    $extra
+                }
+            }
+        }
+    };
     ($self:expr, $instructions:expr, $type:ident, $pattern:pat => $account:expr, $policy:expr, $name:expr) => {
         for instruction in $instructions.get(&ParsedSystemInstructionType::$type).unwrap_or(&vec![])
         {

@@ -254,33 +254,21 @@ impl TransactionValidator {
             self.fee_payer_policy.system.allow_allocate, "System Allocate");
 
         validate_system!(self, system_instructions, SystemCreateAccount,
-            ParsedSystemInstructionData::SystemCreateAccount { payer, .. } => payer,
-            self.fee_payer_policy.system.allow_create_account, "System Create Account");
-
-        // Validate CreateAccount owner program is allowed
-        for instruction in system_instructions
-            .get(&ParsedSystemInstructionType::SystemCreateAccount)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSystemInstructionData::SystemCreateAccount { owner, payer, .. } =
-                instruction
-            {
-                if *payer == self.fee_payer_pubkey {
-                    if !self.allowed_programs.contains(owner) {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "CreateAccount owner program {} is not in the allowed programs list",
-                            owner
-                        )));
-                    }
-                    if self.disallowed_accounts.contains(owner) {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "CreateAccount owner program {} is in the disallowed accounts list",
-                            owner
-                        )));
-                    }
-                }
+        ParsedSystemInstructionData::SystemCreateAccount { payer, owner, .. } => payer,
+        self.fee_payer_policy.system.allow_create_account, "System Create Account", {
+            if !self.allowed_programs.contains(owner) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "CreateAccount owner program {} is not in the allowed programs list",
+                    owner
+                )));
             }
-        }
+            if self.disallowed_accounts.contains(owner) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "CreateAccount owner program {} is in the disallowed accounts list",
+                    owner
+                )));
+            }
+        });
 
         validate_system!(self, system_instructions, SystemInitializeNonceAccount,
             ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_authority, .. } => nonce_authority,
