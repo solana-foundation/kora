@@ -10,6 +10,7 @@ use std::str::FromStr;
 async fn build_transfer_hook_transaction_for_free_signing(
     ctx: &TestContext,
     amount: u64,
+    use_transfer_fee_extension: bool,
 ) -> anyhow::Result<String> {
     let rpc_client = ctx.rpc_client();
     let hook_program_id =
@@ -74,16 +75,30 @@ async fn build_transfer_hook_transaction_for_free_signing(
     )
     .await?;
 
-    let mut transfer_instruction = spl_token_2022_interface::instruction::transfer_checked(
-        &spl_token_2022_interface::id(),
-        &sender_ata,
-        &transfer_hook_mint_keypair.pubkey(),
-        &recipient_ata,
-        &sender.pubkey(),
-        &[],
-        amount,
-        6,
-    )?;
+    let mut transfer_instruction = if use_transfer_fee_extension {
+        spl_token_2022_interface::extension::transfer_fee::instruction::transfer_checked_with_fee(
+            &spl_token_2022_interface::id(),
+            &sender_ata,
+            &transfer_hook_mint_keypair.pubkey(),
+            &recipient_ata,
+            &sender.pubkey(),
+            &[],
+            amount,
+            6,
+            0,
+        )?
+    } else {
+        spl_token_2022_interface::instruction::transfer_checked(
+            &spl_token_2022_interface::id(),
+            &sender_ata,
+            &transfer_hook_mint_keypair.pubkey(),
+            &recipient_ata,
+            &sender.pubkey(),
+            &[],
+            amount,
+            6,
+        )?
+    };
 
     let extra_account_metas_address = spl_transfer_hook_interface::get_extra_account_metas_address(
         &transfer_hook_mint_keypair.pubkey(),
@@ -111,7 +126,7 @@ async fn build_transfer_hook_transaction_for_free_signing(
 async fn test_sign_transaction_rejects_mutable_transfer_hook_in_free_mode() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
-    let test_tx = build_transfer_hook_transaction_for_free_signing(&ctx, 10)
+    let test_tx = build_transfer_hook_transaction_for_free_signing(&ctx, 10, false)
         .await
         .expect("Failed to create transfer-hook transaction");
 
@@ -131,7 +146,7 @@ async fn test_sign_transaction_rejects_mutable_transfer_hook_in_free_mode() {
 async fn test_sign_and_send_transaction_allows_mutable_transfer_hook_in_free_mode() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
-    let test_tx = build_transfer_hook_transaction_for_free_signing(&ctx, 10)
+    let test_tx = build_transfer_hook_transaction_for_free_signing(&ctx, 10, false)
         .await
         .expect("Failed to create transfer-hook transaction");
 
@@ -143,6 +158,27 @@ async fn test_sign_and_send_transaction_allows_mutable_transfer_hook_in_free_mod
     assert!(
         response["signed_transaction"].as_str().is_some(),
         "Expected signed_transaction in response"
+    );
+}
+
+#[tokio::test]
+async fn test_sign_transaction_rejects_mutable_transfer_hook_transfer_checked_with_fee_in_free_mode(
+) {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let test_tx = build_transfer_hook_transaction_for_free_signing(&ctx, 10, true)
+        .await
+        .expect("Failed to create transfer-hook transaction");
+
+    let result: Result<serde_json::Value, anyhow::Error> =
+        ctx.rpc_call("signTransaction", rpc_params![test_tx]).await;
+
+    assert!(result.is_err(), "Expected delayed signing to reject mutable transfer-hook authority",);
+
+    let error = result.unwrap_err().to_string();
+    assert!(
+        error.contains("Mutable transfer-hook authority found on mint account"),
+        "Expected mutable transfer-hook authority error, got: {error}",
     );
 }
 

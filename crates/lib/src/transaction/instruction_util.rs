@@ -650,6 +650,43 @@ impl IxUtils {
         parsed_instructions.entry(instruction_type).or_default().push(instruction_data);
     }
 
+    fn push_parsed_token_transfer(
+        parsed_instructions: &mut HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>,
+        instruction: &Instruction,
+        transfer_indexes: (usize, usize, usize, usize),
+        amount: u64,
+        mint: Option<Pubkey>,
+        is_2022: bool,
+    ) {
+        let (owner_index, source_index, destination_index, multisig_start_index) = transfer_indexes;
+        Self::push_parsed_spl_instruction(
+            parsed_instructions,
+            ParsedSPLInstructionType::SplTokenTransfer,
+            ParsedSPLInstructionData::SplTokenTransfer {
+                amount,
+                owner: instruction.accounts[owner_index].pubkey,
+                multisig_signers: Self::extract_multisig_signers(instruction, multisig_start_index),
+                mint,
+                source_address: instruction.accounts[source_index].pubkey,
+                destination_address: instruction.accounts[destination_index].pubkey,
+                is_2022,
+            },
+        );
+    }
+
+    fn push_unknown_token2022_extension(
+        parsed_instructions: &mut HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>,
+        instruction: &Instruction,
+    ) {
+        Self::push_parsed_spl_instruction(
+            parsed_instructions,
+            ParsedSPLInstructionType::SplTokenUnknownExtension,
+            ParsedSPLInstructionData::SplTokenUnknownExtension {
+                accounts: instruction.accounts.iter().map(|a| a.pubkey).collect(),
+            },
+        );
+    }
+
     pub fn build_default_compiled_instruction(program_id_index: u8) -> CompiledInstruction {
         CompiledInstruction { program_id_index, accounts: vec![], data: vec![] }
     }
@@ -1945,21 +1982,19 @@ impl IxUtils {
                         spl_token_interface::instruction::TokenInstruction::Transfer { amount } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS);
 
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenTransfer)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenTransfer {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_transfer::OWNER_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(
-                                        instruction,
-                                        instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS,
-                                    ),
-                                    amount,
-                                    mint: None,
-                                    source_address: instruction.accounts[instruction_indexes::spl_token_transfer::SOURCE_ADDRESS_INDEX].pubkey,
-                                    destination_address: instruction.accounts[instruction_indexes::spl_token_transfer::DESTINATION_ADDRESS_INDEX].pubkey,
-                                    is_2022: false,
-                                });
+                            Self::push_parsed_token_transfer(
+                                &mut parsed_instructions,
+                                instruction,
+                                (
+                                    instruction_indexes::spl_token_transfer::OWNER_INDEX,
+                                    instruction_indexes::spl_token_transfer::SOURCE_ADDRESS_INDEX,
+                                    instruction_indexes::spl_token_transfer::DESTINATION_ADDRESS_INDEX,
+                                    instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS,
+                                ),
+                                amount,
+                                None,
+                                false,
+                            );
                         }
                         spl_token_interface::instruction::TokenInstruction::TransferChecked {
                             amount,
@@ -1967,21 +2002,23 @@ impl IxUtils {
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
 
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenTransfer)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenTransfer {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_transfer_checked::OWNER_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(
-                                        instruction,
-                                        instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS,
-                                    ),
-                                    amount,
-                                    mint: Some(instruction.accounts[instruction_indexes::spl_token_transfer_checked::MINT_INDEX].pubkey),
-                                    source_address: instruction.accounts[instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX].pubkey,
-                                    destination_address: instruction.accounts[instruction_indexes::spl_token_transfer_checked::DESTINATION_ADDRESS_INDEX].pubkey,
-                                    is_2022: false,
-                                });
+                            Self::push_parsed_token_transfer(
+                                &mut parsed_instructions,
+                                instruction,
+                                (
+                                    instruction_indexes::spl_token_transfer_checked::OWNER_INDEX,
+                                    instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX,
+                                    instruction_indexes::spl_token_transfer_checked::DESTINATION_ADDRESS_INDEX,
+                                    instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS,
+                                ),
+                                amount,
+                                Some(
+                                    instruction.accounts
+                                        [instruction_indexes::spl_token_transfer_checked::MINT_INDEX]
+                                        .pubkey,
+                                ),
+                                false,
+                            );
                         }
                         spl_token_interface::instruction::TokenInstruction::Burn { .. } => {
                             let owner = Self::parse_burn_owner_with_mint_fallback(instruction)?;
@@ -2241,21 +2278,19 @@ impl IxUtils {
                         spl_token_2022_interface::instruction::TokenInstruction::Transfer { amount } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS);
 
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenTransfer)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenTransfer {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_transfer::OWNER_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(
-                                        instruction,
-                                        instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS,
-                                    ),
-                                    amount,
-                                    mint: None,
-                                    source_address: instruction.accounts[instruction_indexes::spl_token_transfer::SOURCE_ADDRESS_INDEX].pubkey,
-                                    destination_address: instruction.accounts[instruction_indexes::spl_token_transfer::DESTINATION_ADDRESS_INDEX].pubkey,
-                                    is_2022: true,
-                                });
+                            Self::push_parsed_token_transfer(
+                                &mut parsed_instructions,
+                                instruction,
+                                (
+                                    instruction_indexes::spl_token_transfer::OWNER_INDEX,
+                                    instruction_indexes::spl_token_transfer::SOURCE_ADDRESS_INDEX,
+                                    instruction_indexes::spl_token_transfer::DESTINATION_ADDRESS_INDEX,
+                                    instruction_indexes::spl_token_transfer::REQUIRED_NUMBER_OF_ACCOUNTS,
+                                ),
+                                amount,
+                                None,
+                                true,
+                            );
                         }
                         spl_token_2022_interface::instruction::TokenInstruction::TransferChecked {
                             amount,
@@ -2263,21 +2298,77 @@ impl IxUtils {
                         } => {
                             validate_number_accounts!(instruction, instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS);
 
-                            parsed_instructions
-                                .entry(ParsedSPLInstructionType::SplTokenTransfer)
-                                .or_default()
-                                .push(ParsedSPLInstructionData::SplTokenTransfer {
-                                    owner: instruction.accounts[instruction_indexes::spl_token_transfer_checked::OWNER_INDEX].pubkey,
-                                    multisig_signers: Self::extract_multisig_signers(
-                                        instruction,
-                                        instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS,
-                                    ),
+                            Self::push_parsed_token_transfer(
+                                &mut parsed_instructions,
+                                instruction,
+                                (
+                                    instruction_indexes::spl_token_transfer_checked::OWNER_INDEX,
+                                    instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX,
+                                    instruction_indexes::spl_token_transfer_checked::DESTINATION_ADDRESS_INDEX,
+                                    instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS,
+                                ),
+                                amount,
+                                Some(
+                                    instruction.accounts
+                                        [instruction_indexes::spl_token_transfer_checked::MINT_INDEX]
+                                        .pubkey,
+                                ),
+                                true,
+                            );
+                        }
+                        spl_token_2022_interface::instruction::TokenInstruction::TransferFeeExtension => {
+                            if instruction.data.len() < 2 {
+                                return Err(KoraError::InvalidTransaction(
+                                    "Failed to parse Token-2022 TransferFee instruction".to_string(),
+                                ));
+                            }
+
+                            let transfer_fee_ix =
+                                spl_token_2022_interface::extension::transfer_fee::instruction::TransferFeeInstruction::unpack(
+                                    &instruction.data[1..],
+                                )
+                                .map_err(|e| {
+                                    KoraError::InvalidTransaction(format!(
+                                        "Failed to parse Token-2022 TransferFee instruction: {}",
+                                        sanitize_error!(e)
+                                    ))
+                                })?;
+
+                            match transfer_fee_ix {
+                                spl_token_2022_interface::extension::transfer_fee::instruction::TransferFeeInstruction::TransferCheckedWithFee {
                                     amount,
-                                    mint: Some(instruction.accounts[instruction_indexes::spl_token_transfer_checked::MINT_INDEX].pubkey),
-                                    source_address: instruction.accounts[instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX].pubkey,
-                                    destination_address: instruction.accounts[instruction_indexes::spl_token_transfer_checked::DESTINATION_ADDRESS_INDEX].pubkey,
-                                    is_2022: true,
-                                });
+                                    ..
+                                } => {
+                                    validate_number_accounts!(
+                                        instruction,
+                                        instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS
+                                    );
+
+                                    Self::push_parsed_token_transfer(
+                                        &mut parsed_instructions,
+                                        instruction,
+                                        (
+                                            instruction_indexes::spl_token_transfer_checked::OWNER_INDEX,
+                                            instruction_indexes::spl_token_transfer_checked::SOURCE_ADDRESS_INDEX,
+                                            instruction_indexes::spl_token_transfer_checked::DESTINATION_ADDRESS_INDEX,
+                                            instruction_indexes::spl_token_transfer_checked::REQUIRED_NUMBER_OF_ACCOUNTS,
+                                        ),
+                                        amount,
+                                        Some(
+                                            instruction.accounts
+                                                [instruction_indexes::spl_token_transfer_checked::MINT_INDEX]
+                                                .pubkey,
+                                        ),
+                                        true,
+                                    );
+                                }
+                                _ => {
+                                    Self::push_unknown_token2022_extension(
+                                        &mut parsed_instructions,
+                                        instruction,
+                                    );
+                                }
+                            }
                         }
                         spl_token_2022_interface::instruction::TokenInstruction::Burn { .. } => {
                             let owner = Self::parse_burn_owner_with_mint_fallback(instruction)?;
@@ -2694,19 +2785,9 @@ impl IxUtils {
                             ));
                         }
                         _ => {
-                            // Extension instruction with no dedicated fee-payer parser.
-                            // Record all accounts so the validator can reject if the fee
-                            // payer appears among them.
-                            Self::push_parsed_spl_instruction(
+                            Self::push_unknown_token2022_extension(
                                 &mut parsed_instructions,
-                                ParsedSPLInstructionType::SplTokenUnknownExtension,
-                                ParsedSPLInstructionData::SplTokenUnknownExtension {
-                                    accounts: instruction
-                                        .accounts
-                                        .iter()
-                                        .map(|a| a.pubkey)
-                                        .collect(),
-                                },
+                                instruction,
                             );
                         }
                     };
@@ -3777,6 +3858,73 @@ mod tests {
             decimals,
         )
         .expect("Failed to create transfer_checked instruction");
+
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&owner.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&owner]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_token_instructions(&resolved_tx)
+            .expect("Failed to parse token instructions");
+
+        let transfers = parsed_instructions
+            .get(&ParsedSPLInstructionType::SplTokenTransfer)
+            .expect("Expected SplTokenTransfer instructions");
+
+        assert_eq!(transfers.len(), 1);
+
+        match &transfers[0] {
+            ParsedSPLInstructionData::SplTokenTransfer {
+                amount: parsed_amount,
+                owner: parsed_owner,
+                multisig_signers,
+                mint: parsed_mint,
+                source_address: parsed_source,
+                destination_address: parsed_destination,
+                is_2022,
+            } => {
+                assert_eq!(*parsed_amount, amount);
+                assert_eq!(*parsed_owner, owner.pubkey());
+                assert!(multisig_signers.is_empty());
+                assert_eq!(*parsed_source, source_address);
+                assert_eq!(*parsed_destination, destination_address);
+                assert!(*is_2022);
+                assert_eq!(parsed_mint.unwrap(), mint);
+            }
+            _ => panic!("Expected SplTokenTransfer variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_token_2022_instructions_transfer_checked_with_fee() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+        use spl_token_2022_interface::extension::transfer_fee::instruction::transfer_checked_with_fee;
+
+        let owner = Keypair::new();
+        let source_address = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let amount = 7500u64;
+        let decimals = 6u8;
+
+        let instruction = transfer_checked_with_fee(
+            &spl_token_2022_interface::ID,
+            &source_address,
+            &mint,
+            &destination_address,
+            &owner.pubkey(),
+            &[],
+            amount,
+            decimals,
+            0,
+        )
+        .expect("Failed to create transfer_checked_with_fee instruction");
 
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&owner.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&owner]).unwrap();

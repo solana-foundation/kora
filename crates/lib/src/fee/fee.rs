@@ -770,6 +770,31 @@ mod tests {
             .expect("failed to build resolved transaction")
     }
 
+    fn create_token2022_transfer_checked_with_fee_resolved_transaction(
+        owner: &Pubkey,
+        source: &Pubkey,
+        destination: &Pubkey,
+        mint: &Pubkey,
+    ) -> crate::transaction::VersionedTransactionResolved {
+        let transfer_ix =
+            spl_token_2022_interface::extension::transfer_fee::instruction::transfer_checked_with_fee(
+                &spl_token_2022_interface::id(),
+                source,
+                mint,
+                destination,
+                owner,
+                &[],
+                1,
+                6,
+                0,
+            )
+            .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(owner)));
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(message)
+            .expect("failed to build resolved transaction")
+    }
+
     fn create_alt_close_resolved_transaction(
         fee_payer: &Pubkey,
         lookup_table_authority: &Pubkey,
@@ -789,6 +814,7 @@ mod tests {
     async fn estimate_free_fee_with_mutable_transfer_hook(
         transfer_hook_policy: TransferHookPolicy,
         transfer_hook_validation_flow: TransferHookValidationFlow,
+        use_transfer_fee_extension: bool,
     ) -> Result<TotalFeeCalculation, KoraError> {
         let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
         config.validation.price = PriceConfig { model: PriceModel::Free };
@@ -801,12 +827,21 @@ mod tests {
         let destination = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
 
-        let mut resolved_tx = create_token2022_transfer_checked_resolved_transaction(
-            &owner,
-            &source,
-            &destination,
-            &mint,
-        );
+        let mut resolved_tx = if use_transfer_fee_extension {
+            create_token2022_transfer_checked_with_fee_resolved_transaction(
+                &owner,
+                &source,
+                &destination,
+                &mint,
+            )
+        } else {
+            create_token2022_transfer_checked_resolved_transaction(
+                &owner,
+                &source,
+                &destination,
+                &mint,
+            )
+        };
 
         let mint_account = MintAccountMockBuilder::new()
             .with_decimals(6)
@@ -833,6 +868,7 @@ mod tests {
         let result = estimate_free_fee_with_mutable_transfer_hook(
             TransferHookPolicy::DenyMutableForDelayedSigning,
             TransferHookValidationFlow::DelayedSigning,
+            false,
         )
         .await;
 
@@ -847,6 +883,7 @@ mod tests {
         let result = estimate_free_fee_with_mutable_transfer_hook(
             TransferHookPolicy::DenyMutableForDelayedSigning,
             TransferHookValidationFlow::ImmediateSignAndSend,
+            false,
         )
         .await;
 
@@ -861,6 +898,7 @@ mod tests {
         let result = estimate_free_fee_with_mutable_transfer_hook(
             TransferHookPolicy::DenyAll,
             TransferHookValidationFlow::ImmediateSignAndSend,
+            false,
         )
         .await;
 
@@ -875,6 +913,7 @@ mod tests {
         let result = estimate_free_fee_with_mutable_transfer_hook(
             TransferHookPolicy::AllowAll,
             TransferHookValidationFlow::DelayedSigning,
+            false,
         )
         .await;
 
@@ -932,6 +971,21 @@ mod tests {
         assert!(result.is_ok());
         let calculation = result.unwrap();
         assert_eq!(calculation.total_fee_lamports, 0);
+    }
+
+    #[tokio::test]
+    async fn test_estimate_kora_fee_free_rejects_mutable_transfer_hook_authority_for_transfer_checked_with_fee(
+    ) {
+        let result = estimate_free_fee_with_mutable_transfer_hook(
+            TransferHookPolicy::DenyMutableForDelayedSigning,
+            TransferHookValidationFlow::DelayedSigning,
+            true,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("Mutable transfer-hook authority found on mint account"));
     }
 
     #[test]
