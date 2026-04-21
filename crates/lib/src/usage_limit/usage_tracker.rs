@@ -14,13 +14,14 @@ use crate::{
     state::get_signer_pool,
     token::token::TokenType,
     transaction::{
-        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionOps,
+        VersionedTransactionResolved,
     },
 };
 use deadpool_redis::Runtime;
 use redis::AsyncCommands;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{program_pack::Pack, pubkey::Pubkey};
 use tokio::sync::OnceCell;
 
 #[cfg(not(test))]
@@ -90,6 +91,84 @@ impl UsageTracker {
         !self.instruction_rule_indices.is_empty()
     }
 
+    async fn owner_signed_or_authorized_by_multisig(
+        owner: &Pubkey,
+        multisig_signers: &[Pubkey],
+        is_2022: bool,
+        verified_signers: &HashSet<Pubkey>,
+        config: &Config,
+        rpc_client: &RpcClient,
+    ) -> Result<bool, KoraError> {
+        if verified_signers.contains(owner) {
+            return Ok(true);
+        }
+
+        if multisig_signers.is_empty() {
+            return Ok(false);
+        }
+
+        let owner_account = match CacheUtil::get_account(config, rpc_client, owner, true).await {
+            Ok(account) => account,
+            Err(KoraError::AccountNotFound(_)) => return Ok(false),
+            Err(err) => return Err(err),
+        };
+
+        let verified_instruction_signers: HashSet<_> = multisig_signers
+            .iter()
+            .copied()
+            .filter(|signer| verified_signers.contains(signer))
+            .collect();
+
+        if verified_instruction_signers.is_empty() {
+            return Ok(false);
+        }
+
+        let (required_signers, multisig_members): (usize, HashSet<Pubkey>) = if is_2022 {
+            if owner_account.owner != spl_token_2022_interface::id() {
+                return Ok(false);
+            }
+
+            let Ok(multisig) =
+                spl_token_2022_interface::state::Multisig::unpack(&owner_account.data)
+            else {
+                return Ok(false);
+            };
+
+            (
+                multisig.m as usize,
+                multisig
+                    .signers
+                    .iter()
+                    .take(multisig.n as usize)
+                    .copied()
+                    .filter(|signer| *signer != Pubkey::default())
+                    .collect(),
+            )
+        } else {
+            if owner_account.owner != spl_token_interface::id() {
+                return Ok(false);
+            }
+
+            let Ok(multisig) = spl_token_interface::state::Multisig::unpack(&owner_account.data)
+            else {
+                return Ok(false);
+            };
+
+            (
+                multisig.m as usize,
+                multisig
+                    .signers
+                    .iter()
+                    .take(multisig.n as usize)
+                    .copied()
+                    .filter(|signer| *signer != Pubkey::default())
+                    .collect(),
+            )
+        };
+
+        Ok(verified_instruction_signers.intersection(&multisig_members).count() >= required_signers)
+    }
+
     async fn extract_user_from_payment_instruction(
         &self,
         transaction: &mut VersionedTransactionResolved,
@@ -98,6 +177,7 @@ impl UsageTracker {
         rpc_client: &RpcClient,
     ) -> Result<Option<Pubkey>, KoraError> {
         let payment_destination = config.kora.get_payment_address(fee_payer)?;
+        let verified_signers = transaction.verified_signers();
         let parsed_spl_instructions = transaction.get_or_parse_spl_instructions()?;
 
         for instruction in parsed_spl_instructions
@@ -105,7 +185,11 @@ impl UsageTracker {
             .unwrap_or(&vec![])
         {
             if let ParsedSPLInstructionData::SplTokenTransfer {
-                destination_address, owner, ..
+                destination_address,
+                owner,
+                multisig_signers,
+                is_2022,
+                ..
             } = instruction
             {
                 // Check if this is a payment to Kora by verifying the destination token account owner
@@ -125,7 +209,17 @@ impl UsageTracker {
                     token_program.unpack_token_account(&destination_account.data)?;
 
                 // Check if this is a payment to Kora
-                if token_account.owner() == payment_destination {
+                if token_account.owner() == payment_destination
+                    && Self::owner_signed_or_authorized_by_multisig(
+                        owner,
+                        multisig_signers,
+                        *is_2022,
+                        &verified_signers,
+                        config,
+                        rpc_client,
+                    )
+                    .await?
+                {
                     return Ok(Some(*owner));
                 }
             }
@@ -136,12 +230,9 @@ impl UsageTracker {
 
     /// Extract kora signer from transaction signers
     fn extract_kora_signer(&self, transaction: &VersionedTransactionResolved) -> Option<Pubkey> {
-        let account_keys = transaction.message.static_account_keys();
-        let num_signers = transaction.message.header().num_required_signatures as usize;
-
-        account_keys
+        transaction
+            .signer_pubkeys()
             .iter()
-            .take(num_signers)
             .find(|signer| self.kora_signers.contains(signer))
             .copied()
     }
@@ -399,11 +490,14 @@ mod tests {
     use super::*;
     use crate::{
         tests::{
-            config_mock::ConfigMockBuilder, rpc_mock::RpcMockBuilder,
-            transaction_mock::create_mock_resolved_transaction,
+            account_mock::create_mock_token_account, config_mock::ConfigMockBuilder,
+            rpc_mock::RpcMockBuilder, transaction_mock::create_mock_resolved_transaction,
         },
+        transaction::TransactionUtil,
         usage_limit::{InMemoryUsageStore, UsageLimitConfig, UsageLimitRuleConfig},
     };
+    use solana_message::{Message, VersionedMessage};
+    use solana_sdk::{account::Account, signature::Keypair, signer::Signer};
     use std::sync::Arc;
 
     fn create_test_tracker(max_transactions: u64) -> UsageTracker {
@@ -719,5 +813,218 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Usage limiter unavailable and fallback disabled"));
+    }
+
+    fn create_mock_spl_multisig_account(
+        required_signers: u8,
+        signer_pubkeys: &[Pubkey],
+    ) -> Account {
+        let mut multisig = spl_token_interface::state::Multisig {
+            m: required_signers,
+            n: signer_pubkeys.len() as u8,
+            is_initialized: true,
+            signers: [Pubkey::default(); spl_token_interface::instruction::MAX_SIGNERS],
+        };
+
+        for (slot, signer) in multisig.signers.iter_mut().zip(signer_pubkeys.iter().copied()) {
+            *slot = signer;
+        }
+
+        let mut data = vec![0u8; spl_token_interface::state::Multisig::LEN];
+        spl_token_interface::state::Multisig::pack(multisig, &mut data).unwrap();
+
+        Account {
+            lamports: 1,
+            data,
+            owner: spl_token_interface::id(),
+            executable: false,
+            rent_epoch: 0,
+        }
+    }
+
+    fn make_spl_transfer_transaction(
+        authority: &Pubkey,
+        instruction_signers: &[&Pubkey],
+        signing_keypairs: &[&Keypair],
+        destination_ata: Pubkey,
+        fee_payer: &Keypair,
+    ) -> VersionedTransactionResolved {
+        let ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &Pubkey::new_unique(),
+            &destination_ata,
+            authority,
+            instruction_signers,
+            1_000_000,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut tx = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let message_bytes = tx.message.serialize();
+
+        for keypair in signing_keypairs {
+            let signer_index = tx
+                .message
+                .static_account_keys()
+                .iter()
+                .position(|key| key == &keypair.pubkey())
+                .unwrap();
+            tx.signatures[signer_index] = keypair.sign_message(&message_bytes);
+        }
+
+        VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_extract_user_unsigned_owner_returns_none() {
+        let store = Arc::new(InMemoryUsageStore::new());
+        let tracker = UsageTracker::new(true, store, vec![], HashSet::new(), false);
+
+        let fee_payer = Keypair::new();
+        let victim_owner = Keypair::new();
+        let destination_ata = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
+        let rpc_client = RpcMockBuilder::new().with_account_info(&destination_account).build();
+        let config = ConfigMockBuilder::new().build();
+
+        let mut tx = make_spl_transfer_transaction(
+            &victim_owner.pubkey(),
+            &[],
+            &[],
+            destination_ata,
+            &fee_payer,
+        );
+
+        let result = tracker
+            .extract_user_from_payment_instruction(
+                &mut tx,
+                &config,
+                &fee_payer.pubkey(),
+                &rpc_client,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_extract_user_signed_owner_returns_owner() {
+        let store = Arc::new(InMemoryUsageStore::new());
+        let tracker = UsageTracker::new(true, store, vec![], HashSet::new(), false);
+
+        let fee_payer = Keypair::new();
+        let owner = Keypair::new();
+        let destination_ata = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
+        let rpc_client = RpcMockBuilder::new().with_account_info(&destination_account).build();
+        let config = ConfigMockBuilder::new().build();
+
+        let mut tx = make_spl_transfer_transaction(
+            &owner.pubkey(),
+            &[],
+            &[&owner],
+            destination_ata,
+            &fee_payer,
+        );
+
+        let result = tracker
+            .extract_user_from_payment_instruction(
+                &mut tx,
+                &config,
+                &fee_payer.pubkey(),
+                &rpc_client,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, Some(owner.pubkey()));
+    }
+
+    #[tokio::test]
+    async fn test_extract_user_multisig_owner_returns_owner_when_threshold_is_met() {
+        let store = Arc::new(InMemoryUsageStore::new());
+        let tracker = UsageTracker::new(true, store, vec![], HashSet::new(), false);
+
+        let fee_payer = Keypair::new();
+        let signer_one = Keypair::new();
+        let signer_two = Keypair::new();
+        let signer_three = Keypair::new();
+        let multisig_owner = Pubkey::new_unique();
+        let destination_ata = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
+        let multisig_account = create_mock_spl_multisig_account(
+            2,
+            &[signer_one.pubkey(), signer_two.pubkey(), signer_three.pubkey()],
+        );
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&destination_account, &multisig_account]);
+        let config = ConfigMockBuilder::new().build();
+
+        let mut tx = make_spl_transfer_transaction(
+            &multisig_owner,
+            &[&signer_one.pubkey(), &signer_two.pubkey()],
+            &[&signer_one, &signer_two],
+            destination_ata,
+            &fee_payer,
+        );
+
+        let result = tracker
+            .extract_user_from_payment_instruction(
+                &mut tx,
+                &config,
+                &fee_payer.pubkey(),
+                &rpc_client,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, Some(multisig_owner));
+    }
+
+    #[tokio::test]
+    async fn test_extract_user_multisig_owner_returns_none_when_threshold_is_not_met() {
+        let store = Arc::new(InMemoryUsageStore::new());
+        let tracker = UsageTracker::new(true, store, vec![], HashSet::new(), false);
+
+        let fee_payer = Keypair::new();
+        let signer_one = Keypair::new();
+        let signer_two = Keypair::new();
+        let signer_three = Keypair::new();
+        let multisig_owner = Pubkey::new_unique();
+        let destination_ata = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
+        let multisig_account = create_mock_spl_multisig_account(
+            2,
+            &[signer_one.pubkey(), signer_two.pubkey(), signer_three.pubkey()],
+        );
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&destination_account, &multisig_account]);
+        let config = ConfigMockBuilder::new().build();
+
+        let mut tx = make_spl_transfer_transaction(
+            &multisig_owner,
+            &[&signer_one.pubkey(), &signer_two.pubkey()],
+            &[&signer_one],
+            destination_ata,
+            &fee_payer,
+        );
+
+        let result = tracker
+            .extract_user_from_payment_instruction(
+                &mut tx,
+                &config,
+                &fee_payer.pubkey(),
+                &rpc_client,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, None);
     }
 }
