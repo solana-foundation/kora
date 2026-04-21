@@ -5,7 +5,10 @@ use std::sync::{
     Arc,
 };
 
-use crate::{config::Config, error::KoraError, signer::SignerPool};
+use crate::{
+    config::Config, error::KoraError, signer::SignerPool, transaction::signing_retry_window,
+};
+use std::time::Duration;
 
 // Global signer pool (for multi-signer support)
 static GLOBAL_SIGNER_POOL: Lazy<RwLock<Option<Arc<SignerPool>>>> = Lazy::new(|| RwLock::new(None));
@@ -17,7 +20,10 @@ static GLOBAL_CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
 pub fn get_request_signer_with_signer_key(
     signer_key: Option<&str>,
 ) -> Result<Arc<solana_keychain::Signer>, KoraError> {
+    let config = get_config()?;
     let pool = get_signer_pool()?;
+    let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
+    pool.set_probe_lease(signing_retry_window(sign_timeout, config.kora.sign_max_retries));
 
     // If client provided a signer signer_key, try to use that specific signer
     if let Some(signer_key) = signer_key {
@@ -110,4 +116,34 @@ pub fn update_config(new_config: Config) -> Result<(), KoraError> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{signer::pool::SignerWithMetadata, tests::config_mock::ConfigMockBuilder};
+    use solana_keychain::Signer;
+    use solana_sdk::signature::Keypair;
+
+    #[test]
+    fn test_get_request_signer_updates_probe_lease_from_config() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.kora.sign_timeout_seconds = 15;
+        config.kora.sign_max_retries = 5;
+        update_config(config).unwrap();
+
+        let keypair = Keypair::new();
+        let signer = Signer::from_memory(&keypair.to_base58_string()).unwrap();
+        let pool = SignerPool::new(vec![SignerWithMetadata::new(
+            "test_signer".to_string(),
+            Arc::new(signer),
+            1,
+        )]);
+        update_signer_pool(pool).unwrap();
+
+        let _ = get_request_signer_with_signer_key(None).unwrap();
+
+        let pool = get_signer_pool().unwrap();
+        assert_eq!(pool.probe_lease(), signing_retry_window(Duration::from_secs(15), 5));
+    }
 }
