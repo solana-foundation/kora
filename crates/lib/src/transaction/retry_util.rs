@@ -19,6 +19,16 @@ pub(crate) fn signing_retry_backoff_ms(attempt: u32) -> u64 {
     SIGNING_RETRY_BACKOFF_BASE_MS * 2u64.pow(exponent)
 }
 
+pub(crate) fn signing_retry_window(sign_timeout: Duration, max_retries: u32) -> Duration {
+    let per_attempt_timeout_ms = u64::try_from(sign_timeout.as_millis()).unwrap_or(u64::MAX);
+    let total_attempts = u64::from(max_retries).saturating_add(1);
+    let total_timeout_ms = per_attempt_timeout_ms.saturating_mul(total_attempts);
+    let total_backoff_ms = (1..=max_retries)
+        .fold(0u64, |total, attempt| total.saturating_add(signing_retry_backoff_ms(attempt)));
+
+    Duration::from_millis(total_timeout_ms.saturating_add(total_backoff_ms))
+}
+
 pub(crate) async fn sign_with_retry<F, Fut>(
     sign_timeout: Duration,
     max_retries: u32,
@@ -97,6 +107,16 @@ mod tests {
     fn test_signing_retry_backoff_ms_is_capped() {
         assert_eq!(signing_retry_backoff_ms(8), 12_800);
         assert_eq!(signing_retry_backoff_ms(20), 12_800);
+    }
+
+    #[test]
+    fn test_signing_retry_window_matches_default_signing_budget() {
+        assert_eq!(signing_retry_window(Duration::from_secs(10), 2), Duration::from_millis(30_300));
+    }
+
+    #[test]
+    fn test_signing_retry_window_grows_beyond_legacy_60_second_lease() {
+        assert_eq!(signing_retry_window(Duration::from_secs(15), 5), Duration::from_millis(93_100));
     }
 
     #[tokio::test]

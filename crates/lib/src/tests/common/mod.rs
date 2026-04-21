@@ -24,6 +24,8 @@ use solana_keychain::{Signer, SolanaSigner};
 ///
 /// Returns the signer's public key.
 pub fn setup_or_get_test_signer() -> Pubkey {
+    let _ = setup_or_get_test_config();
+
     if let Ok(signer) = get_request_signer_with_signer_key(None) {
         return signer.pubkey();
     }
