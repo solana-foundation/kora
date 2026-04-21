@@ -16,14 +16,34 @@ static GLOBAL_SIGNER_POOL: Lazy<RwLock<Option<Arc<SignerPool>>>> = Lazy::new(|| 
 // Global config with zero-cost reads and hot-reload capability
 static GLOBAL_CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
 
-/// Get a request-scoped signer with optional signer_key for consistency across related calls
+fn sync_probe_lease_from_config(pool: &SignerPool, config: &Config) {
+    let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
+    pool.set_probe_lease(signing_retry_window(sign_timeout, config.kora.sign_max_retries));
+}
+
+/// Select a request-scoped signer without mutating recovery probe state.
+pub fn select_request_signer_with_signer_key(
+    signer_key: Option<&str>,
+) -> Result<Arc<solana_keychain::Signer>, KoraError> {
+    let config = get_config()?;
+    let pool = get_signer_pool()?;
+    sync_probe_lease_from_config(&pool, config);
+
+    if let Some(signer_key) = signer_key {
+        return pool.select_signer_by_pubkey(signer_key);
+    }
+
+    pool.select_next_signer()
+        .map_err(|e| KoraError::InternalServerError(format!("Failed to get signer from pool: {e}")))
+}
+
+/// Reserve a request-scoped signer, acquiring a recovery probe lock if needed.
 pub fn get_request_signer_with_signer_key(
     signer_key: Option<&str>,
 ) -> Result<Arc<solana_keychain::Signer>, KoraError> {
     let config = get_config()?;
     let pool = get_signer_pool()?;
-    let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
-    pool.set_probe_lease(signing_retry_window(sign_timeout, config.kora.sign_max_retries));
+    sync_probe_lease_from_config(&pool, config);
 
     // If client provided a signer signer_key, try to use that specific signer
     if let Some(signer_key) = signer_key {
@@ -33,6 +53,12 @@ pub fn get_request_signer_with_signer_key(
     // Use configured selection strategy (defaults to round-robin if not specified)
     pool.get_next_signer()
         .map_err(|e| KoraError::InternalServerError(format!("Failed to get signer from pool: {e}")))
+}
+
+pub fn reserve_request_signer_by_pubkey(
+    signer_pubkey: &solana_sdk::pubkey::Pubkey,
+) -> Result<Arc<solana_keychain::Signer>, KoraError> {
+    get_request_signer_with_signer_key(Some(&signer_pubkey.to_string()))
 }
 
 /// Initialize the global signer pool with a SignerPool instance
@@ -126,7 +152,7 @@ mod tests {
     use solana_sdk::signature::Keypair;
 
     #[test]
-    fn test_get_request_signer_updates_probe_lease_from_config() {
+    fn test_select_request_signer_updates_probe_lease_from_config() {
         let mut config = ConfigMockBuilder::new().build();
         config.kora.sign_timeout_seconds = 15;
         config.kora.sign_max_retries = 5;
@@ -141,7 +167,7 @@ mod tests {
         )]);
         update_signer_pool(pool).unwrap();
 
-        let _ = get_request_signer_with_signer_key(None).unwrap();
+        let _ = select_request_signer_with_signer_key(None).unwrap();
 
         let pool = get_signer_pool().unwrap();
         assert_eq!(pool.probe_lease(), signing_retry_window(Duration::from_secs(15), 5));

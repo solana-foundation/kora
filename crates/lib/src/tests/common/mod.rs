@@ -6,9 +6,8 @@ use std::sync::Arc;
 /// 1. Setup functions for test environment initialization (signer & config)
 /// 2. Centralized re-exports of commonly used mock utilities
 use crate::{
-    get_request_signer_with_signer_key,
     signer::{pool::SignerWithMetadata, SignerPool},
-    state::{get_config, update_config, update_signer_pool},
+    state::{get_config, select_request_signer_with_signer_key, update_config, update_signer_pool},
     tests::{account_mock, config_mock::ConfigMockBuilder, rpc_mock},
     usage_limit::UsageTracker,
     Config, KoraError,
@@ -26,7 +25,7 @@ use solana_keychain::{Signer, SolanaSigner};
 pub fn setup_or_get_test_signer() -> Pubkey {
     let _ = setup_or_get_test_config();
 
-    if let Ok(signer) = get_request_signer_with_signer_key(None) {
+    if let Ok(signer) = select_request_signer_with_signer_key(None) {
         return signer.pubkey();
     }
 
@@ -49,6 +48,24 @@ pub fn setup_or_get_test_signer() -> Pubkey {
     }
 
     solana_sdk::signer::Signer::pubkey(&test_keypair)
+}
+
+pub fn create_probe_eligible_test_pool() -> (SignerPool, String) {
+    let keypair_1 = Keypair::new();
+    let keypair_2 = Keypair::new();
+
+    let signer_1 = Signer::from_memory(&keypair_1.to_base58_string()).unwrap();
+    let signer_2 = Signer::from_memory(&keypair_2.to_base58_string()).unwrap();
+    let target_pubkey = signer_1.pubkey();
+
+    let pool = SignerPool::new(vec![
+        SignerWithMetadata::new("signer_1".to_string(), Arc::new(signer_1), 1),
+        SignerWithMetadata::new("signer_2".to_string(), Arc::new(signer_2), 1),
+    ]);
+
+    pool.make_signer_probe_eligible(&target_pubkey).unwrap();
+
+    (pool, target_pubkey.to_string())
 }
 
 /// Setup or retrieve test config for global state initialization

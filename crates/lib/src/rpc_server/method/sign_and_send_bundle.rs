@@ -13,10 +13,10 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 
 #[cfg(not(test))]
-use crate::state::{get_config, get_request_signer_with_signer_key};
+use crate::state::{get_config, select_request_signer_with_signer_key};
 
 #[cfg(test)]
-use crate::state::get_request_signer_with_signer_key;
+use crate::state::select_request_signer_with_signer_key;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
 
@@ -72,7 +72,7 @@ pub async fn sign_and_send_bundle(
     let (transactions_to_process, index_to_position) =
         BundleProcessor::extract_transactions_to_process(&transactions, sign_only_indices.clone())?;
 
-    let signer = get_request_signer_with_signer_key(signer_key.as_deref())?;
+    let signer = select_request_signer_with_signer_key(signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 

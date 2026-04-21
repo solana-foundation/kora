@@ -1,6 +1,6 @@
 use crate::{
     error::KoraError,
-    state::{get_config, get_request_signer_with_signer_key},
+    state::{get_config, select_request_signer_with_signer_key},
 };
 use serde::{Deserialize, Serialize};
 use solana_keychain::SolanaSigner;
@@ -17,7 +17,7 @@ pub struct GetPayerSignerResponse {
 pub async fn get_payer_signer() -> Result<GetPayerSignerResponse, KoraError> {
     let config = get_config()?;
 
-    let signer = get_request_signer_with_signer_key(None)?;
+    let signer = select_request_signer_with_signer_key(None)?;
     let signer_pubkey = signer.pubkey();
     // Get the payment destination address (falls back to signer if no payment address is configured)
     let payment_destination = config.kora.get_payment_address(&signer_pubkey)?;

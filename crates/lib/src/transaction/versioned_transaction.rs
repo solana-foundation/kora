@@ -22,6 +22,7 @@ use crate::{
     lighthouse::LighthouseUtil,
     plugin::{PluginExecutionContext, TransactionPluginRunner},
     sanitize_error,
+    state::{get_signer_pool, reserve_request_signer_by_pubkey},
     token::token::TransferHookValidationFlow,
     transaction::{
         instruction_util::IxUtils, ParsedALTInstructionData, ParsedALTInstructionType,
@@ -298,11 +299,11 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
     async fn sign_transaction(
         &mut self,
         config: &Config,
-        signer: &std::sync::Arc<Signer>,
+        selected_signer: &std::sync::Arc<Signer>,
         rpc_client: &RpcClient,
         will_send: bool,
     ) -> Result<(VersionedTransaction, String), KoraError> {
-        let fee_payer = signer.pubkey();
+        let fee_payer = selected_signer.pubkey();
         let validator = TransactionValidator::new(config, fee_payer)?;
 
         // Validate transaction and accounts (already resolved)
@@ -385,6 +386,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         let message_bytes = transaction.message.serialize();
         let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
         let max_retries = config.kora.sign_max_retries;
+        let signer = reserve_request_signer_by_pubkey(&fee_payer)?;
         let signature =
             match sign_with_retry(sign_timeout, max_retries, "signing", "Signing", || async {
                 signer
@@ -396,8 +398,8 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             {
                 Ok(sig) => {
                     // Report success to the pool for health tracking
-                    match crate::state::get_signer_pool() {
-                        Ok(pool) => pool.record_signing_success(signer),
+                    match get_signer_pool() {
+                        Ok(pool) => pool.record_signing_success(&signer),
                         Err(e) => log::warn!(
                             "Could not record signing success to pool: {}",
                             sanitize_error!(e)
@@ -408,8 +410,8 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                 Err(err) => {
                     // Report failure to the pool to track signer health only after all retries are exhausted.
                     // This prevents a single failing request from immediately blacklisting a signer.
-                    match crate::state::get_signer_pool() {
-                        Ok(pool) => pool.record_signing_failure(signer),
+                    match get_signer_pool() {
+                        Ok(pool) => pool.record_signing_failure(&signer),
                         Err(pool_err) => log::error!(
                             "Signing failed AND pool health tracking unavailable: {}; \
                          signer failure will not be recorded, automatic failover is disabled",
