@@ -82,6 +82,26 @@ pub async fn sign_bundle(
     )
     .await?;
 
+    let signed_indices = BundleValidator::signed_indices_for_bundle(
+        transactions.len(),
+        sign_only_indices.as_deref(),
+    );
+
+    // When sig_verify = false (default), simulation accepts unsigned transactions
+    // (skipSigVerify = true). Validate the bundle sequentially before calling the
+    // signer so that invalid bundles are rejected before consuming signer resources.
+    if !sig_verify {
+        BundleValidator::simulate_and_validate_sequential_bundle(
+            rpc_client,
+            config,
+            &transactions,
+            &signed_indices,
+            &fee_payer,
+            true,
+        )
+        .await?;
+    }
+
     let signed_resolved =
         processor.sign_all(&signer, &fee_payer, rpc_client, config, false).await?;
 
@@ -98,19 +118,18 @@ pub async fn sign_bundle(
         &index_to_position,
     );
 
-    let signed_indices = BundleValidator::signed_indices_for_bundle(
-        transactions.len(),
-        sign_only_indices.as_deref(),
-    );
-    BundleValidator::simulate_and_validate_sequential_bundle(
-        rpc_client,
-        config,
-        &signed_transactions,
-        &signed_indices,
-        &fee_payer,
-        !sig_verify,
-    )
-    .await?;
+    // When sig_verify = true, simulation needs real signatures: validate after signing.
+    if sig_verify {
+        BundleValidator::simulate_and_validate_sequential_bundle(
+            rpc_client,
+            config,
+            &signed_transactions,
+            &signed_indices,
+            &fee_payer,
+            false,
+        )
+        .await?;
+    }
 
     Ok(SignBundleResponse { signed_transactions, signer_pubkey: fee_payer.to_string() })
 }
@@ -423,6 +442,67 @@ mod tests {
             sig_verify: true,
             user_id: None,
             sign_only_indices: Some(vec![1]),
+        };
+
+        let result = sign_bundle(&rpc_client, request).await;
+
+        simulate_mock.assert();
+        assert!(result.is_err(), "Expected sequential outflow validation error");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Total transfer amount"), "Unexpected error: {err}");
+        assert!(err.contains("exceeds maximum allowed"), "Unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_sign_bundle_rejects_outflow_violation_before_signing_when_sig_verify_false() {
+        // When sig_verify = false (default), simulation runs BEFORE signing.
+        // A bundle with sequential outflow violation must be rejected without calling the signer.
+        let mut server = Server::new_async().await;
+        let simulate_mock = server
+            .mock("POST", "/")
+            .match_header("content-type", "application/json")
+            .match_body(Matcher::PartialJson(json!({"method": "simulateBundle"})))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":123},"value":{"summary":"succeeded","transactionResults":[{"err":null,"logs":["Program 11111111111111111111111111111111 invoke [1]"],"preExecutionAccounts":[{"lamports":2500000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}],"postExecutionAccounts":[{"lamports":1000000,"owner":"11111111111111111111111111111111","data":["","base64"],"executable":false,"rentEpoch":0}]}]}}}"#,
+            )
+            .create();
+
+        let mut config = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_usage_limit_enabled(false)
+            .with_max_allowed_lamports(1_000_000)
+            .build();
+        config.validation.price = PriceConfig { model: PriceModel::Free };
+        config.kora.bundle.jito.block_engine_url = server.url();
+        config.kora.bundle.jito.simulate_bundle_url = Some(server.url());
+        let _m = setup_config_mock(config);
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let signer_pubkey = setup_or_get_test_signer();
+        let rpc_client = Arc::new(
+            RpcMockBuilder::new()
+                .with_fee_estimate(5000)
+                .with_blockhash()
+                .with_simulation()
+                .build(),
+        );
+
+        // Fee payer is signer_pubkey, but is NOT the transfer sender.
+        // process_bundle passes; the Jito simulation mock returns a large lamport drop
+        // for the fee payer account, which exceeds max_allowed_lamports.
+        let ix = transfer(&Pubkey::new_unique(), &Pubkey::new_unique(), 1_000_000_000);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&signer_pubkey)));
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let encoded = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
+
+        let request = SignBundleRequest {
+            transactions: vec![encoded],
+            signer_key: Some(signer_pubkey.to_string()),
+            sig_verify: false,
+            user_id: None,
+            sign_only_indices: None,
         };
 
         let result = sign_bundle(&rpc_client, request).await;
