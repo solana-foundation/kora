@@ -11,10 +11,10 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 
 #[cfg(not(test))]
-use crate::state::{get_config, get_request_signer_with_signer_key};
+use crate::state::{get_config, select_request_signer_with_signer_key};
 
 #[cfg(test)]
-use crate::state::get_request_signer_with_signer_key;
+use crate::state::select_request_signer_with_signer_key;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
 
@@ -56,7 +56,7 @@ pub async fn sign_transaction(
 
     let config = &get_config()?;
 
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let signer = select_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
 
     let sig_verify = request.sig_verify || config.kora.force_sig_verify;
@@ -92,11 +92,33 @@ pub async fn sign_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{
-        common::{setup_or_get_test_signer, setup_or_get_test_usage_limiter, RpcMockBuilder},
-        config_mock::ConfigMockBuilder,
-        transaction_mock::create_mock_encoded_transaction,
+    use crate::{
+        state::{get_signer_pool, update_config, update_signer_pool},
+        tests::{
+            common::{
+                create_probe_eligible_test_pool, setup_or_get_test_signer,
+                setup_or_get_test_usage_limiter, RpcMockBuilder,
+            },
+            config_mock::ConfigMockBuilder,
+            transaction_mock::create_mock_encoded_transaction,
+        },
+        transaction::TransactionUtil,
     };
+    use serial_test::serial;
+    use solana_compute_budget_interface::ComputeBudgetInstruction;
+    use solana_message::{Message, VersionedMessage};
+    use solana_sdk::pubkey::Pubkey;
+    use std::str::FromStr;
+
+    fn create_compute_budget_only_encoded_transaction() -> String {
+        let message = VersionedMessage::Legacy(Message::new(
+            &[ComputeBudgetInstruction::set_compute_unit_limit(200_000)],
+            Some(&Pubkey::new_unique()),
+        ));
+        let transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+
+        TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
+    }
 
     #[tokio::test]
     async fn test_sign_transaction_decode_error() {
@@ -140,5 +162,36 @@ mod tests {
         assert!(result.is_err(), "Should fail with invalid signer key");
         let error = result.unwrap_err();
         assert!(matches!(error, KoraError::ValidationError(_)), "Should return ValidationError");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_sign_transaction_pre_sign_validation_error_does_not_pin_probe_lock() {
+        let _config_guard = ConfigMockBuilder::new().build_and_setup();
+        update_config(ConfigMockBuilder::new().build()).unwrap();
+        let (pool, target_pubkey) = create_probe_eligible_test_pool();
+        update_signer_pool(pool).unwrap();
+
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+        let request = SignTransactionRequest {
+            transaction: create_compute_budget_only_encoded_transaction(),
+            signer_key: Some(target_pubkey.clone()),
+            sig_verify: true,
+            user_id: None,
+        };
+
+        let result = sign_transaction(&rpc_client, request).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("only ComputeBudget instructions")
+        ));
+
+        let target_pubkey = Pubkey::from_str(&target_pubkey).unwrap();
+        let pool = get_signer_pool().unwrap();
+        assert!(!pool.probe_in_flight(&target_pubkey).unwrap());
+        assert!(pool.get_signer_by_pubkey(&target_pubkey.to_string()).is_ok());
     }
 }

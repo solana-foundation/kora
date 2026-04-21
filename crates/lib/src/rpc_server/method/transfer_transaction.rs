@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 use crate::{
     constant::NATIVE_SOL,
-    state::get_request_signer_with_signer_key,
+    state::select_request_signer_with_signer_key,
     transaction::{TransactionUtil, VersionedMessageExt},
     validator::transaction_validator::TransactionValidator,
     CacheUtil, KoraError,
@@ -66,7 +66,7 @@ pub async fn transfer_transaction(
     rpc_client: &Arc<RpcClient>,
     request: TransferTransactionRequest,
 ) -> Result<TransferTransactionResponse, KoraError> {
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let signer = select_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let config = &get_config()?;
     let signer_pubkey = signer.pubkey();
 
@@ -168,10 +168,16 @@ pub async fn transfer_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{
-        common::{setup_or_get_test_signer, RpcMockBuilder},
-        config_mock::ConfigMockBuilder,
+    use crate::{
+        state::{get_signer_pool, update_config, update_signer_pool},
+        tests::{
+            common::{create_probe_eligible_test_pool, setup_or_get_test_signer, RpcMockBuilder},
+            config_mock::ConfigMockBuilder,
+        },
+        KoraError,
     };
+    use serial_test::serial;
+    use std::str::FromStr;
 
     #[tokio::test]
     #[allow(deprecated)]
@@ -294,5 +300,35 @@ mod tests {
         if let KoraError::RpcError(msg) = err {
             assert_eq!(msg, "Service Unavailable");
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[allow(deprecated)]
+    async fn test_transfer_transaction_does_not_pin_recovery_probe_lock() {
+        let _config_guard = ConfigMockBuilder::new().build_and_setup();
+        update_config(ConfigMockBuilder::new().build()).unwrap();
+        let (pool, target_pubkey) = create_probe_eligible_test_pool();
+        update_signer_pool(pool).unwrap();
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+        let request = TransferTransactionRequest {
+            amount: 1,
+            token: crate::constant::NATIVE_SOL.to_string(),
+            source: "invalid".to_string(),
+            destination: Pubkey::new_unique().to_string(),
+            signer_key: Some(target_pubkey.clone()),
+        };
+
+        let result = transfer_transaction(&rpc_client, request).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::ValidationError(message)) if message.contains("Invalid source address")
+        ));
+
+        let target_pubkey = Pubkey::from_str(&target_pubkey).unwrap();
+        let pool = get_signer_pool().unwrap();
+        assert!(!pool.probe_in_flight(&target_pubkey).unwrap());
+        assert!(pool.get_signer_by_pubkey(&target_pubkey.to_string()).is_ok());
     }
 }

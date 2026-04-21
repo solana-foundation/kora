@@ -11,10 +11,10 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 
 #[cfg(not(test))]
-use crate::state::{get_config, get_request_signer_with_signer_key};
+use crate::state::{get_config, select_request_signer_with_signer_key};
 
 #[cfg(test)]
-use crate::state::get_request_signer_with_signer_key;
+use crate::state::select_request_signer_with_signer_key;
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
 
@@ -49,7 +49,7 @@ pub async fn sign_and_send_transaction(
 
     let config = &get_config()?;
 
-    let signer = get_request_signer_with_signer_key(request.signer_key.as_deref())?;
+    let signer = select_request_signer_with_signer_key(request.signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
 
     let sig_verify = request.sig_verify || config.kora.force_sig_verify;

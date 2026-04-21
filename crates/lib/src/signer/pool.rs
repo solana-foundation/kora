@@ -156,6 +156,29 @@ impl SignerWithMetadata {
         }
     }
 
+    fn is_probe_lock_stale(&self, health: &HealthState, probe_lease: Duration) -> bool {
+        match health.probe_started_at {
+            Some(started_at) => started_at.elapsed() >= probe_lease,
+            None => true,
+        }
+    }
+
+    fn is_probe_eligible_without_lock(&self, health: &HealthState, probe_lease: Duration) -> bool {
+        if health.is_healthy {
+            return true;
+        }
+
+        let Some(last_failed) = health.last_failed_at else {
+            return false;
+        };
+
+        if last_failed.elapsed().as_secs() < Self::RECOVERY_PROBE_SECS {
+            return false;
+        }
+
+        !health.probe_in_flight || self.is_probe_lock_stale(health, probe_lease)
+    }
+
     fn is_probe_eligible_with_lock(&self, health: &mut HealthState, probe_lease: Duration) -> bool {
         if health.is_healthy {
             return true;
@@ -174,8 +197,8 @@ impl SignerWithMetadata {
     }
 
     fn is_eligible_for_selection(&self, probe_lease: Duration) -> bool {
-        let mut health = self.health.lock();
-        self.is_probe_eligible_with_lock(&mut health, probe_lease)
+        let health = self.health.lock();
+        self.is_probe_eligible_without_lock(&health, probe_lease)
     }
 
     fn try_acquire_probe_lock_if_needed(&self, probe_lease: Duration) -> bool {
@@ -324,8 +347,8 @@ impl SignerPool {
     }
 
     /// Filters the active signers down to healthy signers plus unhealthy signers whose
-    /// recovery probe cooldown has elapsed and no probe lock is currently held.
-    fn healthy_signers(&self) -> Result<Vec<&SignerWithMetadata>, KoraError> {
+    /// recovery probe cooldown has elapsed and whose probe lock is not actively in-flight.
+    fn eligible_signers(&self) -> Result<Vec<&SignerWithMetadata>, KoraError> {
         let probe_lease = self.probe_lease();
         let healthy: Vec<_> =
             self.signers.iter().filter(|s| s.is_eligible_for_selection(probe_lease)).collect();
@@ -344,6 +367,23 @@ impl SignerPool {
         Ok(healthy)
     }
 
+    /// Select the next eligible signer without mutating recovery probe state.
+    pub fn select_next_signer(&self) -> Result<Arc<Signer>, KoraError> {
+        if self.signers.is_empty() {
+            return Err(KoraError::InternalServerError("Signer pool is empty".to_string()));
+        }
+
+        let eligible = self.eligible_signers()?;
+        let signer_meta = match self.strategy {
+            SelectionStrategy::RoundRobin => self.round_robin_select_from(&eligible),
+            SelectionStrategy::Random => self.random_select_from(&eligible),
+            SelectionStrategy::Weighted => self.weighted_select_from(&eligible),
+        }?;
+
+        signer_meta.update_last_used();
+        Ok(Arc::clone(&signer_meta.signer))
+    }
+
     /// Get the next signer according to the configured strategy
     pub fn get_next_signer(&self) -> Result<Arc<Signer>, KoraError> {
         if self.signers.is_empty() {
@@ -353,13 +393,13 @@ impl SignerPool {
         // Retry selection a small bounded number of times to avoid transient
         // races where a signer becomes ineligible between filtering and probe lock acquisition.
         for _ in 0..self.signers.len().max(1) {
-            let healthy = self.healthy_signers()?;
+            let eligible = self.eligible_signers()?;
             let probe_lease = self.probe_lease();
 
             let signer_meta = match self.strategy {
-                SelectionStrategy::RoundRobin => self.round_robin_select_from(&healthy),
-                SelectionStrategy::Random => self.random_select_from(&healthy),
-                SelectionStrategy::Weighted => self.weighted_select_from(&healthy),
+                SelectionStrategy::RoundRobin => self.round_robin_select_from(&eligible),
+                SelectionStrategy::Random => self.random_select_from(&eligible),
+                SelectionStrategy::Weighted => self.weighted_select_from(&eligible),
             }?;
 
             if !signer_meta.try_acquire_probe_lock_if_needed(probe_lease) {
@@ -434,6 +474,60 @@ impl SignerPool {
     /// Get the configured strategy
     pub fn strategy(&self) -> &SelectionStrategy {
         &self.strategy
+    }
+
+    #[cfg(test)]
+    pub(crate) fn make_signer_probe_eligible(&self, pubkey: &Pubkey) -> Result<(), KoraError> {
+        let signer_meta =
+            self.signers.iter().find(|s| s.signer.pubkey() == *pubkey).ok_or_else(|| {
+                KoraError::ValidationError(format!(
+                    "Signer with pubkey {} not found in pool",
+                    pubkey
+                ))
+            })?;
+
+        signer_meta.record_failure();
+        signer_meta.record_failure();
+        signer_meta.record_failure();
+        signer_meta.health.lock().last_failed_at = Some(
+            std::time::Instant::now()
+                - std::time::Duration::from_secs(SignerWithMetadata::RECOVERY_PROBE_SECS + 1),
+        );
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn probe_in_flight(&self, pubkey: &Pubkey) -> Result<bool, KoraError> {
+        let signer_meta =
+            self.signers.iter().find(|s| s.signer.pubkey() == *pubkey).ok_or_else(|| {
+                KoraError::ValidationError(format!(
+                    "Signer with pubkey {} not found in pool",
+                    pubkey
+                ))
+            })?;
+        Ok(signer_meta.health.lock().probe_in_flight)
+    }
+
+    /// Select a signer by public key without mutating recovery probe state.
+    pub fn select_signer_by_pubkey(&self, pubkey: &str) -> Result<Arc<Signer>, KoraError> {
+        let target_pubkey = Pubkey::from_str(pubkey).map_err(|_| {
+            KoraError::ValidationError(format!("Invalid signer signer key pubkey: {pubkey}"))
+        })?;
+
+        let signer_meta =
+            self.signers.iter().find(|s| s.signer.pubkey() == target_pubkey).ok_or_else(|| {
+                KoraError::ValidationError(format!("Signer with pubkey {pubkey} not found in pool"))
+            })?;
+
+        if !signer_meta.is_eligible_for_selection(self.probe_lease()) {
+            return Err(KoraError::ValidationError(format!(
+                "Pinned signer {} is unhealthy or currently unavailable for recovery probe",
+                pubkey
+            )));
+        }
+
+        signer_meta.update_last_used();
+        Ok(Arc::clone(&signer_meta.signer))
     }
 
     /// Get a signer by public key (for client consistency signer keys)
@@ -589,7 +683,7 @@ mod tests {
         pool.signers[0].record_failure();
         pool.signers[0].record_failure();
 
-        let healthy = pool.healthy_signers().unwrap();
+        let healthy = pool.eligible_signers().unwrap();
         assert_eq!(healthy.len(), 1);
         assert_eq!(healthy[0].name(), "signer_2");
     }
@@ -605,7 +699,7 @@ mod tests {
             signer.record_failure();
         }
 
-        let healthy = pool.healthy_signers();
+        let healthy = pool.eligible_signers();
         assert!(healthy.is_err());
 
         // get_next_signer should now fail-fast instead of routing to unhealthy signers.
@@ -641,7 +735,7 @@ mod tests {
         assert!(!meta.is_healthy());
 
         // Immediately checking healthy signers should exclude signer_1
-        let healthy_before_time = pool.healthy_signers().unwrap();
+        let healthy_before_time = pool.eligible_signers().unwrap();
         assert_eq!(healthy_before_time.len(), 1);
         assert_eq!(healthy_before_time[0].name(), "signer_2");
 
@@ -651,8 +745,12 @@ mod tests {
 
         // Now healthy_signers() should tentatively ALLOW signer_1 back into the rotation
         // to probe for recovery, even though is_healthy() is strictly still false.
-        let healthy_after_time = pool.healthy_signers().unwrap();
+        let healthy_after_time = pool.eligible_signers().unwrap();
         assert_eq!(healthy_after_time.len(), 2); // Both signers included!
+
+        let selected_signer = pool.select_signer_by_pubkey(&meta.signer.pubkey().to_string());
+        assert!(selected_signer.is_ok());
+        assert!(!meta.health.lock().probe_in_flight);
 
         // Verify pinned path also allows after 30s mock
         let pinned_signer = pool.get_signer_by_pubkey(&meta.signer.pubkey().to_string());
@@ -691,7 +789,7 @@ mod tests {
         pool.record_signing_failure(&signer);
 
         assert!(!pool.signers[0].is_healthy());
-        let healthy = pool.healthy_signers().unwrap();
+        let healthy = pool.eligible_signers().unwrap();
         assert_eq!(healthy.len(), 1);
         assert_eq!(healthy[0].name(), "signer_2");
     }
@@ -721,6 +819,25 @@ mod tests {
     }
 
     #[test]
+    fn test_select_signer_by_pubkey_does_not_acquire_probe_lock() {
+        let pool = create_test_pool();
+        let meta = &pool.signers[0];
+        let pubkey = meta.signer.pubkey().to_string();
+
+        meta.record_failure();
+        meta.record_failure();
+        meta.record_failure();
+        assert!(!meta.is_healthy());
+
+        meta.health.lock().last_failed_at =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(31));
+
+        assert!(pool.select_signer_by_pubkey(&pubkey).is_ok());
+        assert!(!meta.health.lock().probe_in_flight);
+        assert!(pool.get_signer_by_pubkey(&pubkey).is_ok());
+    }
+
+    #[test]
     fn test_stale_probe_lock_is_released_after_lease_timeout() {
         let pool = create_test_pool();
         let meta = &pool.signers[0];
@@ -736,7 +853,7 @@ mod tests {
             Some(std::time::Instant::now() - std::time::Duration::from_secs(31));
 
         // Acquire a probe lock, then simulate a stuck request by backdating probe_started_at.
-        let healthy = pool.healthy_signers().unwrap();
+        let healthy = pool.eligible_signers().unwrap();
         assert_eq!(healthy.len(), 2);
         assert!(pool.signers[0].try_acquire_probe_lock_if_needed(pool.probe_lease()));
         {
@@ -746,8 +863,10 @@ mod tests {
         }
 
         // Stale lock should be cleared automatically and signer should become selectable again.
-        let healthy_after_lease = pool.healthy_signers().unwrap();
+        let healthy_after_lease = pool.eligible_signers().unwrap();
         assert_eq!(healthy_after_lease.len(), 2);
+        assert!(meta.health.lock().probe_in_flight);
+        assert!(pool.get_signer_by_pubkey(&meta.signer.pubkey().to_string()).is_ok());
     }
 
     #[test]
@@ -772,7 +891,7 @@ mod tests {
             health.probe_started_at = Some(std::time::Instant::now() - Duration::from_secs(61));
         }
 
-        let healthy = pool.healthy_signers().unwrap();
+        let healthy = pool.eligible_signers().unwrap();
         assert_eq!(healthy.len(), 1);
         assert_eq!(healthy[0].name(), "signer_2");
 
@@ -782,7 +901,7 @@ mod tests {
                 Some(std::time::Instant::now() - signing_budget - Duration::from_secs(1));
         }
 
-        let healthy_after_full_budget = pool.healthy_signers().unwrap();
+        let healthy_after_full_budget = pool.eligible_signers().unwrap();
         assert_eq!(healthy_after_full_budget.len(), 2);
     }
 }

@@ -3,7 +3,7 @@ use crate::{
     error::KoraError,
     fee::fee::FeeConfigUtil,
     rpc_server::middleware_utils::default_sig_verify,
-    state::get_request_signer_with_signer_key,
+    state::select_request_signer_with_signer_key,
     validator::bundle_validator::BundleValidator,
 };
 use serde::{Deserialize, Serialize};
@@ -69,7 +69,7 @@ pub async fn estimate_bundle_fee(
     let (transactions_to_process, _index_to_position) =
         BundleProcessor::extract_transactions_to_process(&transactions, sign_only_indices.clone())?;
 
-    let signer = get_request_signer_with_signer_key(signer_key.as_deref())?;
+    let signer = select_request_signer_with_signer_key(signer_key.as_deref())?;
     let fee_payer = signer.pubkey();
     let payment_destination = config.kora.get_payment_address(&fee_payer)?;
 
