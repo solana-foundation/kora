@@ -335,6 +335,10 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
         let required_lamports = fee_calculation.total_fee_lamports;
 
+        // Strict fixed pricing must run even when the fixed quote floors to 0 lamports,
+        // otherwise a sub-lamport quote would skip the strictness check and sign for free.
+        TransactionValidator::validate_strict_pricing_with_fee(config, &fee_calculation)?;
+
         // Validate payment if price model is not Free
         if required_lamports > 0 {
             log::info!("Payment validation: required_lamports={}", required_lamports);
@@ -350,9 +354,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                 &payment_destination,
             )
             .await?;
-
-            // Validate strict pricing if enabled
-            TransactionValidator::validate_strict_pricing_with_fee(config, &fee_calculation)?;
         }
 
         // Get latest blockhash and update transaction
