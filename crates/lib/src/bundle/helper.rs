@@ -133,6 +133,11 @@ impl BundleProcessor {
             }
 
             validator.validate_transaction(config, &mut resolved_tx, rpc_client).await?;
+            validator.validate_token2022_transfer_hook_signing_policies(
+                config,
+                &mut resolved_tx,
+                transfer_hook_validation_flow,
+            )?;
             if let Some(context) = plugin_context {
                 plugin_runner
                     .run(&mut resolved_tx, config, rpc_client, &fee_payer, context)

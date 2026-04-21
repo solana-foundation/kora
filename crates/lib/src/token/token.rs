@@ -131,7 +131,7 @@ pub struct AtaCreationInstructionInfo {
 }
 
 impl TokenUtil {
-    fn should_reject_mutable_transfer_hook(
+    pub(crate) fn should_reject_mutable_transfer_hook(
         config: &Config,
         validation_flow: TransferHookValidationFlow,
     ) -> bool {

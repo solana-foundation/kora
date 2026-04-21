@@ -3,7 +3,10 @@ use crate::{
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation},
     oracle::PriceSource,
-    token::{interface::TokenMint, token::TokenUtil},
+    token::{
+        interface::TokenMint,
+        token::{TokenUtil, TransferHookValidationFlow},
+    },
     transaction::{
         ParsedALTInstructionData, ParsedALTInstructionType, ParsedSPLInstructionData,
         ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
@@ -136,6 +139,37 @@ impl TransactionValidator {
         self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
         self.validate_disallowed_accounts(transaction_resolved)?;
         self.validate_fee_payer_usage(transaction_resolved)?;
+
+        Ok(())
+    }
+
+    pub(crate) fn validate_token2022_transfer_hook_signing_policies(
+        &self,
+        config: &Config,
+        transaction_resolved: &mut VersionedTransactionResolved,
+        transfer_hook_validation_flow: TransferHookValidationFlow,
+    ) -> Result<(), KoraError> {
+        if !TokenUtil::should_reject_mutable_transfer_hook(config, transfer_hook_validation_flow) {
+            return Ok(());
+        }
+
+        let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
+
+        validate_token2022!(self, spl_instructions, SplTokenInitializeTransferHook,
+            ParsedSPLInstructionData::SplTokenInitializeTransferHook {
+                authority: Some(authority),
+                ..
+            } => *authority == self.fee_payer_pubkey,
+            "Fee payer cannot initialize mutable Token2022 TransferHook authority");
+
+        validate_token2022!(self, spl_instructions, SplTokenTransferHookUpdate,
+            ParsedSPLInstructionData::SplTokenTransferHookUpdate {
+                authority,
+                multisig_signers,
+                ..
+            } => *authority == self.fee_payer_pubkey
+                || multisig_signers.contains(&self.fee_payer_pubkey) ,
+            "Fee payer cannot authorize mutable Token2022 TransferHook updates");
 
         Ok(())
     }
@@ -407,20 +441,40 @@ impl TransactionValidator {
             "ALT CloseLookupTable");
 
         let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
-        for instruction in
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenReallocate).unwrap_or(&vec![])
-        {
-            if let ParsedSPLInstructionData::SplTokenReallocate { payer, owner, is_2022, .. } =
-                instruction
-            {
-                if *is_2022 && (*payer == self.fee_payer_pubkey || *owner == self.fee_payer_pubkey)
-                {
-                    return Err(KoraError::InvalidTransaction(
-                        "Token2022 Reallocate is not allowed when involving fee payer".to_string(),
-                    ));
-                }
-            }
-        }
+        validate_token2022!(self, spl_instructions, SplTokenReallocate,
+            ParsedSPLInstructionData::SplTokenReallocate {
+                payer,
+                owner,
+                is_2022,
+                ..
+            } => *is_2022
+                && (*payer == self.fee_payer_pubkey || *owner == self.fee_payer_pubkey) ,
+            "Token2022 Reallocate is not allowed when involving fee payer");
+
+        validate_token2022!(self, spl_instructions, SplTokenInitializePausable,
+            ParsedSPLInstructionData::SplTokenInitializePausable { authority } =>
+            *authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.token_2022.allow_initialize_mint,
+            "Fee payer cannot be set as Token2022 pausable authority");
+
+        validate_token2022!(self, spl_instructions, SplTokenPause,
+            ParsedSPLInstructionData::SplTokenPause { authority, multisig_signers } =>
+            (*authority == self.fee_payer_pubkey
+                || multisig_signers.contains(&self.fee_payer_pubkey)),
+            self.fee_payer_policy.token_2022.allow_freeze_account,
+            "Fee payer cannot be used for Token2022 Pause");
+
+        validate_token2022!(self, spl_instructions, SplTokenResume,
+            ParsedSPLInstructionData::SplTokenResume { authority, multisig_signers } =>
+            (*authority == self.fee_payer_pubkey
+                || multisig_signers.contains(&self.fee_payer_pubkey)),
+            self.fee_payer_policy.token_2022.allow_thaw_account,
+            "Fee payer cannot be used for Token2022 Resume");
+
+        validate_token2022!(self, spl_instructions, SplTokenUnknownExtension,
+            ParsedSPLInstructionData::SplTokenUnknownExtension { accounts } =>
+            accounts.contains(&self.fee_payer_pubkey),
+            "Fee payer cannot be an account in an unsupported Token-2022 extension instruction");
 
         Ok(())
     }
@@ -547,6 +601,36 @@ impl TransactionValidator {
                         )?;
                     }
                 }
+                ParsedSPLInstructionData::SplTokenInitializePausable { authority } => {
+                    self.validate_disallowed_instruction_data_account(
+                        authority,
+                        "Token2022 InitializePausable authority",
+                    )?;
+                }
+                ParsedSPLInstructionData::SplTokenInitializeTransferHook {
+                    authority,
+                    program_id,
+                } => {
+                    if let Some(authority) = authority {
+                        self.validate_disallowed_instruction_data_account(
+                            authority,
+                            "Token2022 InitializeTransferHook authority",
+                        )?;
+                    }
+                    if let Some(program_id) = program_id {
+                        self.validate_disallowed_instruction_data_account(
+                            program_id,
+                            "Token2022 InitializeTransferHook program_id",
+                        )?;
+                    }
+                }
+                ParsedSPLInstructionData::SplTokenTransferHookUpdate {
+                    program_id: Some(program_id),
+                    ..
+                } => self.validate_disallowed_instruction_data_account(
+                    program_id,
+                    "Token2022 TransferHookUpdate program_id",
+                )?,
                 _ => {}
             }
         }
@@ -644,7 +728,7 @@ impl TransactionValidator {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{Config, FeePayerPolicy},
+        config::{Config, FeePayerPolicy, TransferHookPolicy},
         state::{get_config, update_config},
         tests::{
             account_mock::{AccountMockBuilder, MintAccountMockBuilder, TokenAccountMockBuilder},
@@ -661,7 +745,10 @@ mod tests {
     };
     use solana_compute_budget_interface::ComputeBudgetInstruction;
     use solana_message::{Message, VersionedMessage};
-    use solana_sdk::instruction::Instruction;
+    use solana_sdk::{
+        instruction::Instruction,
+        signature::{Keypair, Signer},
+    };
     use solana_system_interface::{
         instruction::{
             assign, create_account, create_account_with_seed, transfer, transfer_with_seed,
@@ -4339,6 +4426,210 @@ mod tests {
         } else {
             panic!("Expected InvalidTransaction error for token2022 reallocate");
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_pause_with_fee_payer_rejected() {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+        let mint = Pubkey::new_unique();
+
+        let ix = spl_token_2022_interface::extension::pausable::instruction::pause(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &fee_payer.pubkey(),
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("Token2022 Pause")),
+            "Expected rejection when fee payer is the pausable authority, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_resume_allowed_when_policy_explicitly_enabled() {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_thaw_account = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+        let mint = Pubkey::new_unique();
+
+        let ix = spl_token_2022_interface::extension::pausable::instruction::resume(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &fee_payer.pubkey(),
+            &[],
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_ok(), "Explicit thaw opt-in should allow Token2022 Resume: {result:?}");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_pausable_initialize_rejects_fee_payer_authority_by_default() {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+        let mint = Pubkey::new_unique();
+
+        let ix = spl_token_2022_interface::extension::pausable::instruction::initialize(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &fee_payer.pubkey(),
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("Token2022 pausable authority")),
+            "Expected rejection when fee payer is assigned as pausable authority, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_transfer_hook_update_rejected_when_policy_denies() {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let mut config = get_config().unwrap().clone();
+        config.validation.token_2022.transfer_hook_policy = TransferHookPolicy::DenyAll;
+        let validator = TransactionValidator::new(&config, fee_payer.pubkey()).unwrap();
+        let mint = Pubkey::new_unique();
+        let program_id = Pubkey::new_unique();
+
+        let ix = spl_token_2022_interface::extension::transfer_hook::instruction::update(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &fee_payer.pubkey(),
+            &[],
+            Some(program_id),
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        validator.validate_transaction(&config, &mut transaction, &rpc_client).await.unwrap();
+
+        let result = validator.validate_token2022_transfer_hook_signing_policies(
+            &config,
+            &mut transaction,
+            TransferHookValidationFlow::DelayedSigning,
+        );
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("TransferHook")),
+            "Expected transfer-hook policy rejection, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_transfer_hook_update_allowed_for_immediate_send_when_policy_is_delayed_only(
+    ) {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let mut config = get_config().unwrap().clone();
+        config.validation.token_2022.transfer_hook_policy =
+            TransferHookPolicy::DenyMutableForDelayedSigning;
+        let validator = TransactionValidator::new(&config, fee_payer.pubkey()).unwrap();
+        let mint = Pubkey::new_unique();
+        let program_id = Pubkey::new_unique();
+
+        let ix = spl_token_2022_interface::extension::transfer_hook::instruction::update(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &fee_payer.pubkey(),
+            &[],
+            Some(program_id),
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        validator.validate_transaction(&config, &mut transaction, &rpc_client).await.unwrap();
+
+        let result = validator.validate_token2022_transfer_hook_signing_policies(
+            &config,
+            &mut transaction,
+            TransferHookValidationFlow::ImmediateSignAndSend,
+        );
+        assert!(
+            result.is_ok(),
+            "Immediate-sign flow should be allowed under delayed-only policy: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_transfer_hook_initialize_disallowed_program_id_rejected() {
+        let fee_payer = Keypair::new();
+        let disallowed_program_id = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_config_with_policy_and_disallowed(
+            FeePayerPolicy::default(),
+            vec![spl_token_2022_interface::id().to_string()],
+            vec![disallowed_program_id.to_string()],
+        );
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+
+        let ix = spl_token_2022_interface::extension::transfer_hook::instruction::initialize(
+            &spl_token_2022_interface::id(),
+            &mint,
+            Some(authority),
+            Some(disallowed_program_id),
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("InitializeTransferHook program_id")),
+            "Expected disallowed transfer-hook program id rejection, got: {result:?}"
+        );
     }
 
     #[tokio::test]

@@ -324,6 +324,11 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         } else {
             TransferHookValidationFlow::DelayedSigning
         };
+        validator.validate_token2022_transfer_hook_signing_policies(
+            config,
+            self,
+            transfer_hook_validation_flow,
+        )?;
         let fee_calculation = FeeConfigUtil::estimate_kora_fee(
             self,
             &fee_payer,
