@@ -7,7 +7,11 @@ use solana_message::{
     compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup, VersionedMessage,
 };
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
-use std::{collections::HashMap, ops::Deref, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Deref,
+    time::Duration,
+};
 
 use solana_transaction_status_client_types::UiTransactionEncoding;
 
@@ -65,6 +69,8 @@ impl Deref for VersionedTransactionResolved {
 #[async_trait]
 pub trait VersionedTransactionOps {
     fn encode_b64_transaction(&self) -> Result<String, KoraError>;
+    fn signer_pubkeys(&self) -> &[Pubkey];
+    fn verified_signers(&self) -> HashSet<Pubkey>;
     fn find_signer_position(&self, signer_pubkey: &Pubkey) -> Result<usize, KoraError>;
 
     async fn sign_transaction(
@@ -262,20 +268,31 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         Ok(STANDARD.encode(serialized))
     }
 
-    fn find_signer_position(&self, signer_pubkey: &Pubkey) -> Result<usize, KoraError> {
+    fn signer_pubkeys(&self) -> &[Pubkey] {
         let num_required_signatures =
             self.transaction.message.header().num_required_signatures as usize;
+        &self.transaction.message.static_account_keys()[..num_required_signatures]
+    }
+
+    fn verified_signers(&self) -> HashSet<Pubkey> {
+        let message_bytes = self.transaction.message.serialize();
+
         self.transaction
-            .message
-            .static_account_keys()
+            .signatures
             .iter()
-            .take(num_required_signatures)
-            .position(|key| key == signer_pubkey)
-            .ok_or_else(|| {
-                KoraError::InvalidTransaction(format!(
-                    "Signer {signer_pubkey} not found in transaction signer keys"
-                ))
+            .zip(self.signer_pubkeys().iter())
+            .filter_map(|(signature, pubkey)| {
+                signature.verify(pubkey.as_ref(), &message_bytes).then_some(*pubkey)
             })
+            .collect()
+    }
+
+    fn find_signer_position(&self, signer_pubkey: &Pubkey) -> Result<usize, KoraError> {
+        self.signer_pubkeys().iter().position(|key| key == signer_pubkey).ok_or_else(|| {
+            KoraError::InvalidTransaction(format!(
+                "Signer {signer_pubkey} not found in transaction signer keys"
+            ))
+        })
     }
 
     async fn sign_transaction(
@@ -656,6 +673,68 @@ mod tests {
         assert_eq!(transaction.find_signer_position(&keypair1.pubkey()).unwrap(), 0);
         assert_eq!(transaction.find_signer_position(&keypair2.pubkey()).unwrap(), 1);
         assert_eq!(transaction.find_signer_position(&keypair3.pubkey()).unwrap(), 2);
+    }
+
+    #[test]
+    fn test_signer_pubkeys_returns_only_required_signers() {
+        let keypair1 = Keypair::new();
+        let keypair2 = Keypair::new();
+        let keypair3 = Keypair::new();
+        let program_id = Pubkey::new_unique();
+
+        let v0_message = v0::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 3,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 1,
+            },
+            account_keys: vec![keypair1.pubkey(), keypair2.pubkey(), keypair3.pubkey(), program_id],
+            recent_blockhash: Hash::default(),
+            instructions: vec![CompiledInstruction {
+                program_id_index: 3,
+                accounts: vec![0, 1, 2],
+                data: vec![1, 2, 3],
+            }],
+            address_table_lookups: vec![],
+        };
+        let message = VersionedMessage::V0(v0_message);
+        let transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        assert_eq!(
+            transaction.signer_pubkeys(),
+            &[keypair1.pubkey(), keypair2.pubkey(), keypair3.pubkey()]
+        );
+    }
+
+    #[test]
+    fn test_verified_signers_excludes_unsigned_signer_slots() {
+        let fee_payer = Keypair::new();
+        let other_signer = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new_readonly(other_signer.pubkey(), true)],
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer.pubkey())));
+        let mut transaction = TransactionUtil::new_unsigned_versioned_transaction(message);
+        let message_bytes = transaction.message.serialize();
+        let fee_payer_position = transaction
+            .message
+            .static_account_keys()
+            .iter()
+            .position(|key| key == &fee_payer.pubkey())
+            .unwrap();
+        transaction.signatures[fee_payer_position] = fee_payer.sign_message(&message_bytes);
+
+        let resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
+        let verified_signers = resolved.verified_signers();
+
+        assert_eq!(resolved.signer_pubkeys(), &[fee_payer.pubkey(), other_signer.pubkey()]);
+        assert!(verified_signers.contains(&fee_payer.pubkey()));
+        assert!(!verified_signers.contains(&other_signer.pubkey()));
     }
 
     #[test]

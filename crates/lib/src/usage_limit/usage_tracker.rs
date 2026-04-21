@@ -14,7 +14,8 @@ use crate::{
     state::get_signer_pool,
     token::token::TokenType,
     transaction::{
-        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionResolved,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, VersionedTransactionOps,
+        VersionedTransactionResolved,
     },
 };
 use deadpool_redis::Runtime;
@@ -88,20 +89,6 @@ impl UsageTracker {
 
     fn has_instruction_rules(&self) -> bool {
         !self.instruction_rule_indices.is_empty()
-    }
-
-    fn collect_verified_signers(transaction: &VersionedTransactionResolved) -> HashSet<Pubkey> {
-        let message_bytes = transaction.transaction.message.serialize();
-
-        transaction
-            .transaction
-            .signatures
-            .iter()
-            .zip(transaction.transaction.message.static_account_keys().iter())
-            .filter_map(|(signature, pubkey)| {
-                signature.verify(pubkey.as_ref(), &message_bytes).then_some(*pubkey)
-            })
-            .collect()
     }
 
     async fn owner_signed_or_authorized_by_multisig(
@@ -190,7 +177,7 @@ impl UsageTracker {
         rpc_client: &RpcClient,
     ) -> Result<Option<Pubkey>, KoraError> {
         let payment_destination = config.kora.get_payment_address(fee_payer)?;
-        let verified_signers = Self::collect_verified_signers(transaction);
+        let verified_signers = transaction.verified_signers();
         let parsed_spl_instructions = transaction.get_or_parse_spl_instructions()?;
 
         for instruction in parsed_spl_instructions
@@ -243,12 +230,9 @@ impl UsageTracker {
 
     /// Extract kora signer from transaction signers
     fn extract_kora_signer(&self, transaction: &VersionedTransactionResolved) -> Option<Pubkey> {
-        let account_keys = transaction.message.static_account_keys();
-        let num_signers = transaction.message.header().num_required_signatures as usize;
-
-        account_keys
+        transaction
+            .signer_pubkeys()
             .iter()
-            .take(num_signers)
             .find(|signer| self.kora_signers.contains(signer))
             .copied()
     }

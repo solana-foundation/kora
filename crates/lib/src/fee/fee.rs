@@ -15,7 +15,7 @@ use crate::{
     },
     transaction::{
         ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
-        ParsedSystemInstructionType, VersionedTransactionResolved,
+        ParsedSystemInstructionType, VersionedTransactionOps, VersionedTransactionResolved,
     },
 };
 
@@ -91,20 +91,7 @@ impl FeeConfigUtil {
         transaction: &VersionedTransactionResolved,
         fee_payer: &Pubkey,
     ) -> Result<bool, KoraError> {
-        let all_account_keys = &transaction.all_account_keys;
-        let transaction_inner = &transaction.transaction;
-
-        // In messages, the first num_required_signatures accounts are signers
-        Ok(match &transaction_inner.message {
-            VersionedMessage::Legacy(legacy_message) => {
-                let num_signers = legacy_message.header.num_required_signatures as usize;
-                all_account_keys.iter().take(num_signers).any(|key| *key == *fee_payer)
-            }
-            VersionedMessage::V0(v0_message) => {
-                let num_signers = v0_message.header.num_required_signatures as usize;
-                all_account_keys.iter().take(num_signers).any(|key| *key == *fee_payer)
-            }
-        })
+        Ok(transaction.signer_pubkeys().contains(fee_payer))
     }
 
     /// Helper function to check if a token transfer instruction is a payment to Kora
