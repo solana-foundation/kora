@@ -133,7 +133,7 @@ impl BundleProcessor {
             }
 
             validator.validate_transaction(config, &mut resolved_tx, rpc_client).await?;
-            validator.validate_token2022_signing_policies(
+            validator.validate_token2022_transfer_hook_signing_policies(
                 config,
                 &mut resolved_tx,
                 transfer_hook_validation_flow,

@@ -143,7 +143,7 @@ impl TransactionValidator {
         Ok(())
     }
 
-    pub(crate) fn validate_token2022_signing_policies(
+    pub(crate) fn validate_token2022_transfer_hook_signing_policies(
         &self,
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
@@ -4295,7 +4295,7 @@ mod tests {
 
         validator.validate_transaction(&config, &mut transaction, &rpc_client).await.unwrap();
 
-        let result = validator.validate_token2022_signing_policies(
+        let result = validator.validate_token2022_transfer_hook_signing_policies(
             &config,
             &mut transaction,
             TransferHookValidationFlow::DelayedSigning,
@@ -4336,7 +4336,7 @@ mod tests {
 
         validator.validate_transaction(&config, &mut transaction, &rpc_client).await.unwrap();
 
-        let result = validator.validate_token2022_signing_policies(
+        let result = validator.validate_token2022_transfer_hook_signing_policies(
             &config,
             &mut transaction,
             TransferHookValidationFlow::ImmediateSignAndSend,
