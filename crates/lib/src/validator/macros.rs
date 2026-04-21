@@ -73,3 +73,25 @@ macro_rules! validate_alt {
         }
     };
 }
+
+/// Macro to validate Token2022-only instructions with custom fee-payer matching logic
+macro_rules! validate_token2022 {
+    ($self:expr, $instructions:expr, $type:ident, $pattern:pat => $fee_payer_used:expr, $message:expr) => {
+        for instruction in $instructions.get(&ParsedSPLInstructionType::$type).unwrap_or(&vec![]) {
+            if let $pattern = instruction {
+                if $fee_payer_used {
+                    return Err(KoraError::InvalidTransaction($message.to_string()));
+                }
+            }
+        }
+    };
+    ($self:expr, $instructions:expr, $type:ident, $pattern:pat => $fee_payer_used:expr, $policy:expr, $message:expr) => {
+        for instruction in $instructions.get(&ParsedSPLInstructionType::$type).unwrap_or(&vec![]) {
+            if let $pattern = instruction {
+                if $fee_payer_used && !$policy {
+                    return Err(KoraError::InvalidTransaction($message.to_string()));
+                }
+            }
+        }
+    };
+}

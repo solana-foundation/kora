@@ -155,46 +155,21 @@ impl TransactionValidator {
 
         let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
 
-        if let Some(instructions) =
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenInitializeTransferHook)
-        {
-            for instruction in instructions {
-                if let ParsedSPLInstructionData::SplTokenInitializeTransferHook {
-                    authority: Some(authority),
-                    ..
-                } = instruction
-                {
-                    if *authority == self.fee_payer_pubkey {
-                        return Err(KoraError::InvalidTransaction(
-                            "Fee payer cannot initialize mutable Token2022 TransferHook authority"
-                                .to_string(),
-                        ));
-                    }
-                }
-            }
-        }
+        validate_token2022!(self, spl_instructions, SplTokenInitializeTransferHook,
+            ParsedSPLInstructionData::SplTokenInitializeTransferHook {
+                authority: Some(authority),
+                ..
+            } => *authority == self.fee_payer_pubkey,
+            "Fee payer cannot initialize mutable Token2022 TransferHook authority");
 
-        if let Some(instructions) =
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenTransferHookUpdate)
-        {
-            for instruction in instructions {
-                if let ParsedSPLInstructionData::SplTokenTransferHookUpdate {
-                    authority,
-                    multisig_signers,
-                    ..
-                } = instruction
-                {
-                    if *authority == self.fee_payer_pubkey
-                        || multisig_signers.contains(&self.fee_payer_pubkey)
-                    {
-                        return Err(KoraError::InvalidTransaction(
-                            "Fee payer cannot authorize mutable Token2022 TransferHook updates"
-                                .to_string(),
-                        ));
-                    }
-                }
-            }
-        }
+        validate_token2022!(self, spl_instructions, SplTokenTransferHookUpdate,
+            ParsedSPLInstructionData::SplTokenTransferHookUpdate {
+                authority,
+                multisig_signers,
+                ..
+            } => *authority == self.fee_payer_pubkey
+                || multisig_signers.contains(&self.fee_payer_pubkey) ,
+            "Fee payer cannot authorize mutable Token2022 TransferHook updates");
 
         Ok(())
     }
@@ -453,95 +428,40 @@ impl TransactionValidator {
             "ALT CloseLookupTable");
 
         let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
-        if let Some(instructions) =
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenReallocate)
-        {
-            for instruction in instructions {
-                if let ParsedSPLInstructionData::SplTokenReallocate {
-                    payer, owner, is_2022, ..
-                } = instruction
-                {
-                    if *is_2022
-                        && (*payer == self.fee_payer_pubkey || *owner == self.fee_payer_pubkey)
-                    {
-                        return Err(KoraError::InvalidTransaction(
-                            "Token2022 Reallocate is not allowed when involving fee payer"
-                                .to_string(),
-                        ));
-                    }
-                }
-            }
-        }
+        validate_token2022!(self, spl_instructions, SplTokenReallocate,
+            ParsedSPLInstructionData::SplTokenReallocate {
+                payer,
+                owner,
+                is_2022,
+                ..
+            } => *is_2022
+                && (*payer == self.fee_payer_pubkey || *owner == self.fee_payer_pubkey) ,
+            "Token2022 Reallocate is not allowed when involving fee payer");
 
-        if let Some(instructions) =
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenInitializePausable)
-        {
-            for instruction in instructions {
-                if let ParsedSPLInstructionData::SplTokenInitializePausable { authority } =
-                    instruction
-                {
-                    if *authority == self.fee_payer_pubkey
-                        && !self.fee_payer_policy.token_2022.allow_initialize_mint
-                    {
-                        return Err(KoraError::InvalidTransaction(
-                            "Fee payer cannot be set as Token2022 pausable authority".to_string(),
-                        ));
-                    }
-                }
-            }
-        }
+        validate_token2022!(self, spl_instructions, SplTokenInitializePausable,
+            ParsedSPLInstructionData::SplTokenInitializePausable { authority } =>
+            *authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.token_2022.allow_initialize_mint,
+            "Fee payer cannot be set as Token2022 pausable authority");
 
-        if let Some(instructions) = spl_instructions.get(&ParsedSPLInstructionType::SplTokenPause) {
-            for instruction in instructions {
-                if let ParsedSPLInstructionData::SplTokenPause { authority, multisig_signers } =
-                    instruction
-                {
-                    if (*authority == self.fee_payer_pubkey
-                        || multisig_signers.contains(&self.fee_payer_pubkey))
-                        && !self.fee_payer_policy.token_2022.allow_freeze_account
-                    {
-                        return Err(KoraError::InvalidTransaction(
-                            "Fee payer cannot be used for Token2022 Pause".to_string(),
-                        ));
-                    }
-                }
-            }
-        }
+        validate_token2022!(self, spl_instructions, SplTokenPause,
+            ParsedSPLInstructionData::SplTokenPause { authority, multisig_signers } =>
+            (*authority == self.fee_payer_pubkey
+                || multisig_signers.contains(&self.fee_payer_pubkey)),
+            self.fee_payer_policy.token_2022.allow_freeze_account,
+            "Fee payer cannot be used for Token2022 Pause");
 
-        if let Some(instructions) = spl_instructions.get(&ParsedSPLInstructionType::SplTokenResume)
-        {
-            for instruction in instructions {
-                if let ParsedSPLInstructionData::SplTokenResume { authority, multisig_signers } =
-                    instruction
-                {
-                    if (*authority == self.fee_payer_pubkey
-                        || multisig_signers.contains(&self.fee_payer_pubkey))
-                        && !self.fee_payer_policy.token_2022.allow_thaw_account
-                    {
-                        return Err(KoraError::InvalidTransaction(
-                            "Fee payer cannot be used for Token2022 Resume".to_string(),
-                        ));
-                    }
-                }
-            }
-        }
+        validate_token2022!(self, spl_instructions, SplTokenResume,
+            ParsedSPLInstructionData::SplTokenResume { authority, multisig_signers } =>
+            (*authority == self.fee_payer_pubkey
+                || multisig_signers.contains(&self.fee_payer_pubkey)),
+            self.fee_payer_policy.token_2022.allow_thaw_account,
+            "Fee payer cannot be used for Token2022 Resume");
 
-        if let Some(instructions) =
-            spl_instructions.get(&ParsedSPLInstructionType::SplTokenUnknownExtension)
-        {
-            for instruction in instructions {
-                if let ParsedSPLInstructionData::SplTokenUnknownExtension { accounts } = instruction
-                {
-                    if accounts.contains(&self.fee_payer_pubkey) {
-                        return Err(KoraError::InvalidTransaction(
-                            "Fee payer cannot be an account in an unsupported Token-2022 extension \
-                            instruction"
-                                .to_string(),
-                        ));
-                    }
-                }
-            }
-        }
+        validate_token2022!(self, spl_instructions, SplTokenUnknownExtension,
+            ParsedSPLInstructionData::SplTokenUnknownExtension { accounts } =>
+            accounts.contains(&self.fee_payer_pubkey),
+            "Fee payer cannot be an account in an unsupported Token-2022 extension instruction");
 
         Ok(())
     }
