@@ -691,14 +691,13 @@ impl TransactionValidator {
                         )?;
                     }
                 }
-                ParsedSPLInstructionData::SplTokenTransferHookUpdate { program_id, .. } => {
-                    if let Some(program_id) = program_id {
-                        self.validate_disallowed_instruction_data_account(
-                            program_id,
-                            "Token2022 TransferHookUpdate program_id",
-                        )?;
-                    }
-                }
+                ParsedSPLInstructionData::SplTokenTransferHookUpdate {
+                    program_id: Some(program_id),
+                    ..
+                } => self.validate_disallowed_instruction_data_account(
+                    program_id,
+                    "Token2022 TransferHookUpdate program_id",
+                )?,
                 _ => {}
             }
         }

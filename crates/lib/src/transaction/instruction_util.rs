@@ -10,6 +10,7 @@ use solana_sdk::{
     pubkey::Pubkey,
 };
 use solana_system_interface::{instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID};
+use solana_transaction_status::parse_token::UiExtensionType;
 use solana_transaction_status_client_types::{
     UiInstruction, UiParsedInstruction, UiPartiallyDecodedInstruction,
 };
@@ -352,6 +353,7 @@ pub const PARSED_DATA_FIELD_FREEZE_ACCOUNT: &str = "freezeAccount";
 pub const PARSED_DATA_FIELD_THAW_ACCOUNT: &str = "thawAccount";
 pub const PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE: &str = "getAccountDataSize";
 pub const PARSED_DATA_FIELD_INITIALIZE_IMMUTABLE_OWNER: &str = "initializeImmutableOwner";
+pub const PARSED_DATA_FIELD_EXTENSION_TYPES: &str = "extensionTypes";
 
 // Additional field names for new instructions
 pub const PARSED_DATA_FIELD_MINT_AUTHORITY: &str = "mintAuthority";
@@ -415,6 +417,114 @@ impl IxUtils {
             "Field '{}' is neither a number nor a string",
             field_name
         )))
+    }
+
+    fn get_token2022_extension_types(
+        info: &serde_json::Value,
+    ) -> Result<Vec<spl_token_2022_interface::extension::ExtensionType>, KoraError> {
+        let Some(extension_types) = info.get(PARSED_DATA_FIELD_EXTENSION_TYPES) else {
+            return Ok(vec![]);
+        };
+
+        let extension_types: Vec<UiExtensionType> = serde_json::from_value(extension_types.clone())
+            .map_err(|e| {
+                KoraError::SerializationError(format!(
+                    "Field '{}' is not a valid Token-2022 extension list: {}",
+                    PARSED_DATA_FIELD_EXTENSION_TYPES, e
+                ))
+            })?;
+
+        extension_types
+            .into_iter()
+            .map(|extension_type| {
+                Ok(match extension_type {
+                    UiExtensionType::Uninitialized => {
+                        spl_token_2022_interface::extension::ExtensionType::Uninitialized
+                    }
+                    UiExtensionType::TransferFeeConfig => {
+                        spl_token_2022_interface::extension::ExtensionType::TransferFeeConfig
+                    }
+                    UiExtensionType::TransferFeeAmount => {
+                        spl_token_2022_interface::extension::ExtensionType::TransferFeeAmount
+                    }
+                    UiExtensionType::MintCloseAuthority => {
+                        spl_token_2022_interface::extension::ExtensionType::MintCloseAuthority
+                    }
+                    UiExtensionType::ConfidentialTransferMint => {
+                        spl_token_2022_interface::extension::ExtensionType::ConfidentialTransferMint
+                    }
+                    UiExtensionType::ConfidentialTransferAccount => {
+                        spl_token_2022_interface::extension::ExtensionType::ConfidentialTransferAccount
+                    }
+                    UiExtensionType::DefaultAccountState => {
+                        spl_token_2022_interface::extension::ExtensionType::DefaultAccountState
+                    }
+                    UiExtensionType::ImmutableOwner => {
+                        spl_token_2022_interface::extension::ExtensionType::ImmutableOwner
+                    }
+                    UiExtensionType::MemoTransfer => {
+                        spl_token_2022_interface::extension::ExtensionType::MemoTransfer
+                    }
+                    UiExtensionType::NonTransferable => {
+                        spl_token_2022_interface::extension::ExtensionType::NonTransferable
+                    }
+                    UiExtensionType::InterestBearingConfig => {
+                        spl_token_2022_interface::extension::ExtensionType::InterestBearingConfig
+                    }
+                    UiExtensionType::CpiGuard => {
+                        spl_token_2022_interface::extension::ExtensionType::CpiGuard
+                    }
+                    UiExtensionType::PermanentDelegate => {
+                        spl_token_2022_interface::extension::ExtensionType::PermanentDelegate
+                    }
+                    UiExtensionType::NonTransferableAccount => {
+                        spl_token_2022_interface::extension::ExtensionType::NonTransferableAccount
+                    }
+                    UiExtensionType::TransferHook => {
+                        spl_token_2022_interface::extension::ExtensionType::TransferHook
+                    }
+                    UiExtensionType::TransferHookAccount => {
+                        spl_token_2022_interface::extension::ExtensionType::TransferHookAccount
+                    }
+                    UiExtensionType::ConfidentialTransferFeeConfig => {
+                        spl_token_2022_interface::extension::ExtensionType::ConfidentialTransferFeeConfig
+                    }
+                    UiExtensionType::ConfidentialTransferFeeAmount => {
+                        spl_token_2022_interface::extension::ExtensionType::ConfidentialTransferFeeAmount
+                    }
+                    UiExtensionType::MetadataPointer => {
+                        spl_token_2022_interface::extension::ExtensionType::MetadataPointer
+                    }
+                    UiExtensionType::TokenMetadata => {
+                        spl_token_2022_interface::extension::ExtensionType::TokenMetadata
+                    }
+                    UiExtensionType::GroupPointer => {
+                        spl_token_2022_interface::extension::ExtensionType::GroupPointer
+                    }
+                    UiExtensionType::GroupMemberPointer => {
+                        spl_token_2022_interface::extension::ExtensionType::GroupMemberPointer
+                    }
+                    UiExtensionType::TokenGroup => {
+                        spl_token_2022_interface::extension::ExtensionType::TokenGroup
+                    }
+                    UiExtensionType::TokenGroupMember => {
+                        spl_token_2022_interface::extension::ExtensionType::TokenGroupMember
+                    }
+                    UiExtensionType::ConfidentialMintBurn => {
+                        spl_token_2022_interface::extension::ExtensionType::ConfidentialMintBurn
+                    }
+                    UiExtensionType::ScaledUiAmount => {
+                        spl_token_2022_interface::extension::ExtensionType::ScaledUiAmount
+                    }
+                    UiExtensionType::Pausable => {
+                        spl_token_2022_interface::extension::ExtensionType::Pausable
+                    }
+                    UiExtensionType::PausableAccount => {
+                        spl_token_2022_interface::extension::ExtensionType::PausableAccount
+                    }
+                })
+            })
+            .collect()
     }
 
     /// Helper method to get account index from hashmap with proper error handling
@@ -1419,7 +1529,18 @@ impl IxUtils {
                     }
                     PARSED_DATA_FIELD_INITIALIZE_ACCOUNT3 => {
                         // InitializeAccount3: [account, mint], owner in data
-                        (vec![18], vec![account_idx, mint_idx])
+                        let data = if is_spl_token_program {
+                            spl_token_interface::instruction::TokenInstruction::InitializeAccount3 {
+                                owner,
+                            }
+                            .pack()
+                        } else {
+                            spl_token_2022_interface::instruction::TokenInstruction::InitializeAccount3 {
+                                owner,
+                            }
+                            .pack()
+                        };
+                        (data, vec![account_idx, mint_idx])
                     }
                     _ => unreachable!(),
                 };
@@ -1497,8 +1618,9 @@ impl IxUtils {
                 let data = if is_spl_token_program {
                     spl_token_interface::instruction::TokenInstruction::GetAccountDataSize.pack()
                 } else {
+                    let extension_types = Self::get_token2022_extension_types(info)?;
                     spl_token_2022_interface::instruction::TokenInstruction::GetAccountDataSize {
-                        extension_types: vec![],
+                        extension_types,
                     }
                     .pack()
                 };
@@ -3235,12 +3357,13 @@ mod tests {
 
     fn create_parsed_token2022_get_account_data_size(
         mint: &Pubkey,
+        extension_types: &[spl_token_2022_interface::extension::ExtensionType],
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
     {
         let solana_instruction = spl_token_2022_interface::instruction::get_account_data_size(
             &spl_token_2022_interface::ID,
             mint,
-            &[],
+            extension_types,
         )?;
 
         let message = Message::new(&[solana_instruction], None);
@@ -4749,7 +4872,7 @@ mod tests {
         )
         .expect("Failed to create get_account_data_size instruction");
 
-        let solana_parsed = create_parsed_token2022_get_account_data_size(&mint)
+        let solana_parsed = create_parsed_token2022_get_account_data_size(&mint, &[])
             .expect("Failed to create parsed instruction");
 
         let result = IxUtils::reconstruct_spl_token_instruction(
@@ -4761,6 +4884,97 @@ mod tests {
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1]); // mint index
+        assert_eq!(compiled.data, instruction.data);
+    }
+
+    fn create_parsed_token2022_initialize_account3(
+        account: &Pubkey,
+        mint: &Pubkey,
+        owner: &Pubkey,
+    ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
+    {
+        let solana_instruction = spl_token_2022_interface::instruction::initialize_account3(
+            &spl_token_2022_interface::ID,
+            account,
+            mint,
+            owner,
+        )?;
+
+        let message = Message::new(&[solana_instruction], None);
+        let compiled_instruction = &message.instructions[0];
+
+        let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
+
+        let parsed = parse_instruction::parse(
+            &spl_token_2022_interface::ID,
+            compiled_instruction,
+            &account_keys_for_parsing,
+            None,
+        )?;
+
+        Ok(parsed)
+    }
+
+    #[test]
+    fn test_reconstruct_token2022_get_account_data_size_instruction_with_extensions() {
+        let mint = Pubkey::new_unique();
+        let token_program_id = spl_token_2022_interface::ID;
+        let account_keys = vec![token_program_id, mint];
+        let extension_types = vec![
+            spl_token_2022_interface::extension::ExtensionType::ImmutableOwner,
+            spl_token_2022_interface::extension::ExtensionType::TransferFeeAmount,
+        ];
+
+        let instruction = spl_token_2022_interface::instruction::get_account_data_size(
+            &spl_token_2022_interface::ID,
+            &mint,
+            &extension_types,
+        )
+        .expect("Failed to create get_account_data_size instruction");
+
+        let solana_parsed = create_parsed_token2022_get_account_data_size(&mint, &extension_types)
+            .expect("Failed to create parsed instruction");
+
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
+
+        assert!(result.is_ok());
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1]);
+        assert_eq!(compiled.data, instruction.data);
+    }
+
+    #[test]
+    fn test_reconstruct_token2022_initialize_account3_instruction() {
+        let account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let token_program_id = spl_token_2022_interface::ID;
+        let account_keys = vec![token_program_id, account, mint];
+
+        let instruction = spl_token_2022_interface::instruction::initialize_account3(
+            &spl_token_2022_interface::ID,
+            &account,
+            &mint,
+            &owner,
+        )
+        .expect("Failed to create initialize_account3 instruction");
+
+        let solana_parsed = create_parsed_token2022_initialize_account3(&account, &mint, &owner)
+            .expect("Failed to create parsed instruction");
+
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
+
+        assert!(result.is_ok());
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1, 2]);
         assert_eq!(compiled.data, instruction.data);
     }
 
