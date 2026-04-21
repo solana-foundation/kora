@@ -3121,6 +3121,31 @@ mod tests {
         assert!(result.is_ok(), "Should pass when total equals fixed price");
     }
 
+    #[test]
+    #[serial]
+    fn test_strict_pricing_sub_lamport_quote_rejected() {
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = PriceModel::Fixed {
+            amount: 1,
+            token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
+            strict: true,
+        };
+        let _ = update_config(config);
+
+        // Sub-lamport configured price floors to 0 but real cost is positive (base_fee = 5000).
+        let fee_calc = TotalFeeCalculation::new(0, 5000, 0, 0, 0, 0);
+
+        let config = get_config().unwrap();
+        let result = TransactionValidator::validate_strict_pricing_with_fee(config, &fee_calc);
+
+        assert!(result.is_err(), "Strict mode must reject a zero quote with positive real cost");
+        if let Err(KoraError::ValidationError(msg)) = result {
+            assert!(msg.contains("Strict pricing violation"));
+        } else {
+            panic!("Expected ValidationError");
+        }
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_durable_transaction_rejected_by_default() {
