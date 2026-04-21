@@ -2096,6 +2096,38 @@ mod tests {
         let outflow =
             validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap();
         assert_eq!(outflow, 0, "CreateAccount funded by other account should not affect outflow");
+
+        // Test 9: Self-withdraw from a fee-payer-controlled nonce account is neutral.
+        let mut policy = FeePayerPolicy::default();
+        policy.system.nonce.allow_withdraw = true;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(10_000_000)
+            .with_fee_payer_policy(policy)
+            .with_allow_durable_transactions(true)
+            .build();
+        update_config(config).unwrap();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let nonce_account = Pubkey::new_unique();
+        let withdraw_instruction = solana_system_interface::instruction::withdraw_nonce_account(
+            &nonce_account,
+            &fee_payer,
+            &fee_payer,
+            25_000,
+        );
+        let message =
+            VersionedMessage::Legacy(Message::new(&[withdraw_instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow =
+            validator.calculate_total_outflow(config, &mut transaction, &rpc_client).await.unwrap();
+        assert_eq!(
+            outflow, 0,
+            "WithdrawNonceAccount from a fee-payer-controlled nonce account back to fee payer should be neutral"
+        );
     }
 
     #[tokio::test]
@@ -2893,6 +2925,48 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_nonce_self_withdraw_does_not_hide_excess_fee_payer_outflow() {
+        use solana_system_interface::instruction::withdraw_nonce_account;
+
+        let fee_payer = Pubkey::new_unique();
+        let nonce_account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_transfer = true;
+        policy.system.nonce.allow_withdraw = true;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(800)
+            .with_fee_payer_policy(policy)
+            .with_allow_durable_transactions(true)
+            .build();
+        update_config(config).unwrap();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let instructions = vec![
+            withdraw_nonce_account(&nonce_account, &fee_payer, &fee_payer, 1_000),
+            transfer(&fee_payer, &recipient, 900),
+        ];
+        let message = VersionedMessage::Legacy(Message::new(&instructions, Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        match result {
+            Err(KoraError::InvalidTransaction(msg)) => {
+                assert!(msg.contains("Total transfer amount"));
+                assert!(msg.contains("exceeds maximum allowed"));
+            }
+            _ => panic!("Expected self-withdraw not to mask oversized fee-payer transfer"),
+        }
     }
 
     #[tokio::test]
