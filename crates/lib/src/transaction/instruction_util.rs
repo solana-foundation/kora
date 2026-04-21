@@ -674,7 +674,7 @@ impl IxUtils {
         );
     }
 
-    fn push_unknown_token2022_extension(
+    fn push_unhandled_token2022_extension(
         parsed_instructions: &mut HashMap<ParsedSPLInstructionType, Vec<ParsedSPLInstructionData>>,
         instruction: &Instruction,
     ) {
@@ -2363,7 +2363,7 @@ impl IxUtils {
                                     );
                                 }
                                 _ => {
-                                    Self::push_unknown_token2022_extension(
+                                    Self::push_unhandled_token2022_extension(
                                         &mut parsed_instructions,
                                         instruction,
                                     );
@@ -2785,7 +2785,7 @@ impl IxUtils {
                             ));
                         }
                         _ => {
-                            Self::push_unknown_token2022_extension(
+                            Self::push_unhandled_token2022_extension(
                                 &mut parsed_instructions,
                                 instruction,
                             );
