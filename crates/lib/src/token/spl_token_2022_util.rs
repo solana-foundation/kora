@@ -353,6 +353,10 @@ mod tests {
             "non_transferable",
             "permanent_delegate",
             "transfer_hook",
+            "metadata_pointer",
+            "group_pointer",
+            "group_member_pointer",
+            "scaled_ui_amount",
             "pausable",
         ];
 
@@ -383,6 +387,10 @@ mod tests {
             ExtensionType::NonTransferable,
             ExtensionType::PermanentDelegate,
             ExtensionType::TransferHook,
+            ExtensionType::MetadataPointer,
+            ExtensionType::GroupPointer,
+            ExtensionType::GroupMemberPointer,
+            ExtensionType::ScaledUiAmount,
             ExtensionType::Pausable,
         ];
 
@@ -628,6 +636,10 @@ mod tests {
             ExtensionType::NonTransferable,
             ExtensionType::PermanentDelegate,
             ExtensionType::TransferHook,
+            ExtensionType::MetadataPointer,
+            ExtensionType::GroupPointer,
+            ExtensionType::GroupMemberPointer,
+            ExtensionType::ScaledUiAmount,
             ExtensionType::Pausable,
             ExtensionType::ConfidentialMintBurn,
         ];

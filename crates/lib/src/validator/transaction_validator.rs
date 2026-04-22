@@ -10,7 +10,7 @@ use crate::{
     transaction::{
         ParsedALTInstructionData, ParsedALTInstructionType, ParsedSPLInstructionData,
         ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
-        VersionedTransactionResolved,
+        Token2022AccountUsagePolicy, VersionedTransactionResolved,
     },
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -466,7 +466,7 @@ impl TransactionValidator {
             self.fee_payer_policy.token_2022.allow_thaw_account,
             "Fee payer cannot be used for Token2022 Resume");
 
-        self.validate_token2022_security_policies(config, transaction_resolved)?;
+        self.validate_token2022_extension_security(config, transaction_resolved)?;
 
         Ok(())
     }
@@ -624,14 +624,16 @@ impl TransactionValidator {
         self.disallowed_accounts.contains(account)
     }
 
-    fn validate_token2022_security_policies(
+    fn validate_token2022_extension_security(
         &self,
         config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
         for instruction in transaction_resolved.get_or_parse_token2022_security_instructions()? {
-            if instruction.reject_if_fee_payer_in_accounts
-                && instruction.accounts.contains(&self.fee_payer_pubkey)
+            if matches!(
+                instruction.account_usage_policy,
+                Token2022AccountUsagePolicy::RejectIfFeePayerPresent
+            ) && instruction.accounts.contains(&self.fee_payer_pubkey)
             {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Fee payer cannot be an account in {}",
@@ -648,7 +650,7 @@ impl TransactionValidator {
                 }
             }
 
-            if instruction.uses_fee_payer_as_update_authority(&self.fee_payer_pubkey)
+            if instruction.uses_fee_payer_as_current_extension_authority(&self.fee_payer_pubkey)
                 && !self.fee_payer_policy.token_2022.allow_update_extension_authority
             {
                 return Err(KoraError::InvalidTransaction(format!(
@@ -657,7 +659,9 @@ impl TransactionValidator {
                 )));
             }
 
-            if let Some(field) = instruction.planted_fee_payer_authority(&self.fee_payer_pubkey) {
+            if let Some(field) =
+                instruction.find_planted_fee_payer_authority(&self.fee_payer_pubkey)
+            {
                 if !self.fee_payer_policy.token_2022.allow_initialize_extension_authority {
                     return Err(KoraError::InvalidTransaction(format!(
                         "Fee payer cannot be planted as a Token2022 extension authority via {}",

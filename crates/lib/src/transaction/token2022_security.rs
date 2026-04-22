@@ -15,11 +15,24 @@ use spl_token_2022_interface::{
 
 use crate::{error::KoraError, sanitize_error};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Token2022FieldRole {
+    Reference,
+    ProgramId,
+    PlantedAuthority,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token2022SecurityField {
     pub context: &'static str,
     pub pubkey: Pubkey,
-    pub plants_extension_authority: bool,
+    pub role: Token2022FieldRole,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Token2022AccountUsagePolicy {
+    Ignore,
+    RejectIfFeePayerPresent,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,24 +40,24 @@ pub struct Token2022SecurityInstruction {
     pub instruction_name: &'static str,
     pub extension_type: Option<ExtensionType>,
     pub accounts: Vec<Pubkey>,
-    pub reject_if_fee_payer_in_accounts: bool,
+    pub account_usage_policy: Token2022AccountUsagePolicy,
     pub update_authority: Option<Pubkey>,
     pub multisig_signers: Vec<Pubkey>,
     pub data_pubkeys: Vec<Token2022SecurityField>,
 }
 
 impl Token2022SecurityInstruction {
-    pub fn uses_fee_payer_as_update_authority(&self, fee_payer: &Pubkey) -> bool {
+    pub fn uses_fee_payer_as_current_extension_authority(&self, fee_payer: &Pubkey) -> bool {
         self.update_authority == Some(*fee_payer) || self.multisig_signers.contains(fee_payer)
     }
 
-    pub fn planted_fee_payer_authority(
+    pub fn find_planted_fee_payer_authority(
         &self,
         fee_payer: &Pubkey,
     ) -> Option<&Token2022SecurityField> {
-        self.data_pubkeys
-            .iter()
-            .find(|field| field.plants_extension_authority && field.pubkey == *fee_payer)
+        self.data_pubkeys.iter().find(|field| {
+            matches!(field.role, Token2022FieldRole::PlantedAuthority) && field.pubkey == *fee_payer
+        })
     }
 }
 
@@ -74,13 +87,13 @@ impl Token2022SecurityParser {
                         instruction_name: "Token2022 InitializeMintCloseAuthority",
                         extension_type: Some(ExtensionType::MintCloseAuthority),
                         accounts: Self::instruction_accounts(instruction),
-                        reject_if_fee_payer_in_accounts: false,
+                        account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                         update_authority: None,
                         multisig_signers: vec![],
                         data_pubkeys: Self::optional_field(
                             close_authority.into(),
                             "Token2022 InitializeMintCloseAuthority newAuthority",
-                            true,
+                            Token2022FieldRole::PlantedAuthority,
                         )
                         .into_iter()
                         .collect(),
@@ -91,13 +104,13 @@ impl Token2022SecurityParser {
                         instruction_name: "Token2022 InitializePermanentDelegate",
                         extension_type: Some(ExtensionType::PermanentDelegate),
                         accounts: Self::instruction_accounts(instruction),
-                        reject_if_fee_payer_in_accounts: false,
+                        account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                         update_authority: None,
                         multisig_signers: vec![],
                         data_pubkeys: vec![Token2022SecurityField {
                             context: "Token2022 InitializePermanentDelegate delegate",
                             pubkey: delegate,
-                            plants_extension_authority: true,
+                            role: Token2022FieldRole::PlantedAuthority,
                         }],
                     });
                 }
@@ -182,19 +195,19 @@ impl Token2022SecurityParser {
                 instruction_name: "Token2022 InitializeTransferFeeConfig",
                 extension_type: Some(ExtensionType::TransferFeeConfig),
                 accounts: Self::instruction_accounts(instruction),
-                reject_if_fee_payer_in_accounts: false,
+                account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                 update_authority: None,
                 multisig_signers: vec![],
                 data_pubkeys: [
                     Self::optional_field(
                         transfer_fee_config_authority.into(),
                         "Token2022 InitializeTransferFeeConfig transferFeeConfigAuthority",
-                        true,
+                        Token2022FieldRole::PlantedAuthority,
                     ),
                     Self::optional_field(
                         withdraw_withheld_authority.into(),
                         "Token2022 InitializeTransferFeeConfig withdrawWithheldAuthority",
-                        true,
+                        Token2022FieldRole::PlantedAuthority,
                     ),
                 ]
                 .into_iter()
@@ -206,7 +219,7 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 SetTransferFee",
                     extension_type: Some(ExtensionType::TransferFeeConfig),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: Some(Self::required_account(
                         instruction,
                         1,
@@ -221,7 +234,7 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 WithdrawWithheldTokensFromMint",
                     extension_type: Some(ExtensionType::TransferFeeConfig),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: Some(Self::required_account(
                         instruction,
                         2,
@@ -238,7 +251,7 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 WithdrawWithheldTokensFromAccounts",
                     extension_type: Some(ExtensionType::TransferFeeConfig),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: Some(Self::required_account(
                         instruction,
                         2,
@@ -286,13 +299,13 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 InitializeInterestBearingConfig",
                     extension_type: Some(ExtensionType::InterestBearingConfig),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: None,
                     multisig_signers: vec![],
                     data_pubkeys: Self::optional_field(
                         initialize.rate_authority.into(),
                         "Token2022 InitializeInterestBearingConfig rateAuthority",
-                        true,
+                        Token2022FieldRole::PlantedAuthority,
                     )
                     .into_iter()
                     .collect(),
@@ -302,7 +315,7 @@ impl Token2022SecurityParser {
                 instruction_name: "Token2022 UpdateInterestBearingConfigRate",
                 extension_type: Some(ExtensionType::InterestBearingConfig),
                 accounts: Self::instruction_accounts(instruction),
-                reject_if_fee_payer_in_accounts: false,
+                account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                 update_authority: Some(Self::required_account(
                     instruction,
                     1,
@@ -337,19 +350,19 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 InitializeTransferHook",
                     extension_type: Some(ExtensionType::TransferHook),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: None,
                     multisig_signers: vec![],
                     data_pubkeys: [
                         Self::optional_field(
                             initialize.authority.into(),
                             "Token2022 InitializeTransferHook authority",
-                            true,
+                            Token2022FieldRole::PlantedAuthority,
                         ),
                         Self::optional_field(
                             initialize.program_id.into(),
                             "Token2022 InitializeTransferHook program_id",
-                            false,
+                            Token2022FieldRole::ProgramId,
                         ),
                     ]
                     .into_iter()
@@ -373,7 +386,7 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 TransferHookUpdate",
                     extension_type: Some(ExtensionType::TransferHook),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: Some(Self::required_account(
                         instruction,
                         1,
@@ -383,7 +396,7 @@ impl Token2022SecurityParser {
                     data_pubkeys: Self::optional_field(
                         update.program_id.into(),
                         "Token2022 TransferHookUpdate program_id",
-                        false,
+                        Token2022FieldRole::ProgramId,
                     )
                     .into_iter()
                     .collect(),
@@ -417,19 +430,19 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 InitializeMetadataPointer",
                     extension_type: Some(ExtensionType::MetadataPointer),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: None,
                     multisig_signers: vec![],
                     data_pubkeys: [
                         Self::optional_field(
                             initialize.authority.into(),
                             "Token2022 InitializeMetadataPointer authority",
-                            true,
+                            Token2022FieldRole::PlantedAuthority,
                         ),
                         Self::optional_field(
                             initialize.metadata_address.into(),
                             "Token2022 InitializeMetadataPointer metadataAddress",
-                            false,
+                            Token2022FieldRole::Reference,
                         ),
                     ]
                     .into_iter()
@@ -453,7 +466,7 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 UpdateMetadataPointer",
                     extension_type: Some(ExtensionType::MetadataPointer),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: Some(Self::required_account(
                         instruction,
                         1,
@@ -463,7 +476,7 @@ impl Token2022SecurityParser {
                     data_pubkeys: Self::optional_field(
                         update.metadata_address.into(),
                         "Token2022 UpdateMetadataPointer metadataAddress",
-                        false,
+                        Token2022FieldRole::Reference,
                     )
                     .into_iter()
                     .collect(),
@@ -495,19 +508,19 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 InitializeGroupPointer",
                     extension_type: Some(ExtensionType::GroupPointer),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: None,
                     multisig_signers: vec![],
                     data_pubkeys: [
                         Self::optional_field(
                             initialize.authority.into(),
                             "Token2022 InitializeGroupPointer authority",
-                            true,
+                            Token2022FieldRole::PlantedAuthority,
                         ),
                         Self::optional_field(
                             initialize.group_address.into(),
                             "Token2022 InitializeGroupPointer groupAddress",
-                            false,
+                            Token2022FieldRole::Reference,
                         ),
                     ]
                     .into_iter()
@@ -531,7 +544,7 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 UpdateGroupPointer",
                     extension_type: Some(ExtensionType::GroupPointer),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: Some(Self::required_account(
                         instruction,
                         1,
@@ -541,7 +554,7 @@ impl Token2022SecurityParser {
                     data_pubkeys: Self::optional_field(
                         update.group_address.into(),
                         "Token2022 UpdateGroupPointer groupAddress",
-                        false,
+                        Token2022FieldRole::Reference,
                     )
                     .into_iter()
                     .collect(),
@@ -574,19 +587,19 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 InitializeGroupMemberPointer",
                     extension_type: Some(ExtensionType::GroupMemberPointer),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: None,
                     multisig_signers: vec![],
                     data_pubkeys: [
                         Self::optional_field(
                             initialize.authority.into(),
                             "Token2022 InitializeGroupMemberPointer authority",
-                            true,
+                            Token2022FieldRole::PlantedAuthority,
                         ),
                         Self::optional_field(
                             initialize.member_address.into(),
                             "Token2022 InitializeGroupMemberPointer memberAddress",
-                            false,
+                            Token2022FieldRole::Reference,
                         ),
                     ]
                     .into_iter()
@@ -610,7 +623,7 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 UpdateGroupMemberPointer",
                     extension_type: Some(ExtensionType::GroupMemberPointer),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: Some(Self::required_account(
                         instruction,
                         1,
@@ -620,7 +633,7 @@ impl Token2022SecurityParser {
                     data_pubkeys: Self::optional_field(
                         update.member_address.into(),
                         "Token2022 UpdateGroupMemberPointer memberAddress",
-                        false,
+                        Token2022FieldRole::Reference,
                     )
                     .into_iter()
                     .collect(),
@@ -653,13 +666,13 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 InitializeScaledUiAmountConfig",
                     extension_type: Some(ExtensionType::ScaledUiAmount),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: None,
                     multisig_signers: vec![],
                     data_pubkeys: Self::optional_field(
                         initialize.authority.into(),
                         "Token2022 InitializeScaledUiAmountConfig authority",
-                        true,
+                        Token2022FieldRole::PlantedAuthority,
                     )
                     .into_iter()
                     .collect(),
@@ -669,7 +682,7 @@ impl Token2022SecurityParser {
                 instruction_name: "Token2022 UpdateScaledUiAmountConfigMultiplier",
                 extension_type: Some(ExtensionType::ScaledUiAmount),
                 accounts: Self::instruction_accounts(instruction),
-                reject_if_fee_payer_in_accounts: false,
+                account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                 update_authority: Some(Self::required_account(
                     instruction,
                     1,
@@ -704,13 +717,13 @@ impl Token2022SecurityParser {
                     instruction_name: "Token2022 InitializePausable",
                     extension_type: Some(ExtensionType::Pausable),
                     accounts: Self::instruction_accounts(instruction),
-                    reject_if_fee_payer_in_accounts: false,
+                    account_usage_policy: Token2022AccountUsagePolicy::Ignore,
                     update_authority: None,
                     multisig_signers: vec![],
                     data_pubkeys: vec![Token2022SecurityField {
                         context: "Token2022 InitializePausable authority",
                         pubkey: initialize.authority,
-                        plants_extension_authority: true,
+                        role: Token2022FieldRole::PlantedAuthority,
                     }],
                 }))
             }
@@ -739,9 +752,9 @@ impl Token2022SecurityParser {
     fn optional_field(
         pubkey: Option<Pubkey>,
         context: &'static str,
-        plants_extension_authority: bool,
+        role: Token2022FieldRole,
     ) -> Option<Token2022SecurityField> {
-        pubkey.map(|pubkey| Token2022SecurityField { context, pubkey, plants_extension_authority })
+        pubkey.map(|pubkey| Token2022SecurityField { context, pubkey, role })
     }
 
     fn required_account(
@@ -781,7 +794,7 @@ impl Token2022SecurityParser {
             instruction_name,
             extension_type: None,
             accounts: Self::instruction_accounts(instruction),
-            reject_if_fee_payer_in_accounts: true,
+            account_usage_policy: Token2022AccountUsagePolicy::RejectIfFeePayerPresent,
             update_authority: None,
             multisig_signers: vec![],
             data_pubkeys: vec![],
@@ -814,7 +827,7 @@ mod tests {
         assert_eq!(parsed[0].instruction_name, "Token2022 InitializeMetadataPointer");
         assert_eq!(parsed[0].extension_type, Some(ExtensionType::MetadataPointer));
         assert_eq!(
-            parsed[0].planted_fee_payer_authority(&authority).map(|field| field.context),
+            parsed[0].find_planted_fee_payer_authority(&authority).map(|field| field.context),
             Some("Token2022 InitializeMetadataPointer authority")
         );
         assert!(parsed[0].data_pubkeys.iter().any(|field| field.pubkey == metadata_address

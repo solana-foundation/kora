@@ -224,6 +224,7 @@ pub struct SplTokenInstructionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default)]
 pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be the owner in Token2022 Transfer/TransferChecked instructions
     pub allow_transfer: bool,
