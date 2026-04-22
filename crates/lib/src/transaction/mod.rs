@@ -1,10 +1,12 @@
 mod instruction_util;
 mod retry_util;
+mod token2022_security;
 mod transaction;
 mod versioned_message;
 mod versioned_transaction;
 pub use instruction_util::*;
 pub(crate) use retry_util::{sign_with_retry, signing_retry_window};
+pub(crate) use token2022_security::*;
 pub use transaction::*;
 pub use versioned_message::*;
 pub use versioned_transaction::*;

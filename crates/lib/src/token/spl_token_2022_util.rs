@@ -41,13 +41,17 @@ use spl_token_2022_interface::{
         confidential_transfer::{ConfidentialTransferAccount, ConfidentialTransferMint},
         cpi_guard::CpiGuard,
         default_account_state::DefaultAccountState,
+        group_member_pointer::GroupMemberPointer,
+        group_pointer::GroupPointer,
         immutable_owner::ImmutableOwner,
         interest_bearing_mint::InterestBearingConfig,
         memo_transfer::MemoTransfer,
+        metadata_pointer::MetadataPointer,
         mint_close_authority::MintCloseAuthority,
         non_transferable::{NonTransferable, NonTransferableAccount},
         pausable::{PausableAccount, PausableConfig},
         permanent_delegate::PermanentDelegate,
+        scaled_ui_amount::ScaledUiAmountConfig,
         transfer_fee::TransferFeeConfig,
         transfer_hook::{TransferHook, TransferHookAccount},
         BaseStateWithExtensions, ExtensionType, StateWithExtensions,
@@ -97,6 +101,10 @@ define_extensions!(MintExtension, [
     NonTransferable(NonTransferable) => ExtensionType::NonTransferable, "non_transferable",
     PermanentDelegate(PermanentDelegate) => ExtensionType::PermanentDelegate, "permanent_delegate",
     TransferHook(TransferHook) => ExtensionType::TransferHook, "transfer_hook",
+    MetadataPointer(MetadataPointer) => ExtensionType::MetadataPointer, "metadata_pointer",
+    GroupPointer(GroupPointer) => ExtensionType::GroupPointer, "group_pointer",
+    GroupMemberPointer(GroupMemberPointer) => ExtensionType::GroupMemberPointer, "group_member_pointer",
+    ScaledUiAmountConfig(ScaledUiAmountConfig) => ExtensionType::ScaledUiAmount, "scaled_ui_amount",
     PausableConfig(PausableConfig) => ExtensionType::Pausable, "pausable",
 ]);
 
@@ -198,6 +206,22 @@ pub fn try_parse_mint_extension(
             .get_extension::<TransferHook>()
             .ok()
             .map(|ext| ParsedExtension::Mint(MintExtension::TransferHook(*ext))),
+        ExtensionType::MetadataPointer => mint
+            .get_extension::<MetadataPointer>()
+            .ok()
+            .map(|ext| ParsedExtension::Mint(MintExtension::MetadataPointer(*ext))),
+        ExtensionType::GroupPointer => mint
+            .get_extension::<GroupPointer>()
+            .ok()
+            .map(|ext| ParsedExtension::Mint(MintExtension::GroupPointer(*ext))),
+        ExtensionType::GroupMemberPointer => mint
+            .get_extension::<GroupMemberPointer>()
+            .ok()
+            .map(|ext| ParsedExtension::Mint(MintExtension::GroupMemberPointer(*ext))),
+        ExtensionType::ScaledUiAmount => mint
+            .get_extension::<ScaledUiAmountConfig>()
+            .ok()
+            .map(|ext| ParsedExtension::Mint(MintExtension::ScaledUiAmountConfig(*ext))),
         ExtensionType::Pausable => mint
             .get_extension::<PausableConfig>()
             .ok()
@@ -329,6 +353,10 @@ mod tests {
             "non_transferable",
             "permanent_delegate",
             "transfer_hook",
+            "metadata_pointer",
+            "group_pointer",
+            "group_member_pointer",
+            "scaled_ui_amount",
             "pausable",
         ];
 
@@ -359,6 +387,10 @@ mod tests {
             ExtensionType::NonTransferable,
             ExtensionType::PermanentDelegate,
             ExtensionType::TransferHook,
+            ExtensionType::MetadataPointer,
+            ExtensionType::GroupPointer,
+            ExtensionType::GroupMemberPointer,
+            ExtensionType::ScaledUiAmount,
             ExtensionType::Pausable,
         ];
 
@@ -604,6 +636,10 @@ mod tests {
             ExtensionType::NonTransferable,
             ExtensionType::PermanentDelegate,
             ExtensionType::TransferHook,
+            ExtensionType::MetadataPointer,
+            ExtensionType::GroupPointer,
+            ExtensionType::GroupMemberPointer,
+            ExtensionType::ScaledUiAmount,
             ExtensionType::Pausable,
             ExtensionType::ConfidentialMintBurn,
         ];

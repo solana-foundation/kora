@@ -2084,6 +2084,8 @@ mod tests {
                         allow_initialize_mint: true,
                         allow_initialize_account: true,
                         allow_initialize_multisig: true,
+                        allow_initialize_extension_authority: true,
+                        allow_update_extension_authority: true,
                         allow_freeze_account: true,
                         allow_thaw_account: true,
                     },
