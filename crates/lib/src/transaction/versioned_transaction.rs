@@ -27,7 +27,7 @@ use crate::{
     transaction::{
         instruction_util::IxUtils, ParsedALTInstructionData, ParsedALTInstructionType,
         ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
-        ParsedSystemInstructionType,
+        ParsedSystemInstructionType, Token2022SecurityInstruction, Token2022SecurityParser,
     },
     validator::transaction_validator::TransactionValidator,
     CacheUtil,
@@ -57,6 +57,8 @@ pub struct VersionedTransactionResolved {
     // Parsed ALT instructions by type (None if not parsed yet)
     parsed_alt_instructions:
         Option<HashMap<ParsedALTInstructionType, Vec<ParsedALTInstructionData>>>,
+
+    parsed_token2022_security_instructions: Option<Vec<Token2022SecurityInstruction>>,
 }
 
 impl Deref for VersionedTransactionResolved {
@@ -103,6 +105,7 @@ impl VersionedTransactionResolved {
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
             parsed_alt_instructions: None,
+            parsed_token2022_security_instructions: None,
         };
 
         // 1. Resolve lookup table addresses based on transaction type
@@ -153,6 +156,7 @@ impl VersionedTransactionResolved {
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
             parsed_alt_instructions: None,
+            parsed_token2022_security_instructions: None,
         })
     }
 
@@ -252,6 +256,21 @@ impl VersionedTransactionResolved {
 
         self.parsed_alt_instructions.as_ref().ok_or_else(|| {
             KoraError::SerializationError("Parsed ALT instructions not found".to_string())
+        })
+    }
+
+    pub fn get_or_parse_token2022_security_instructions(
+        &mut self,
+    ) -> Result<&Vec<Token2022SecurityInstruction>, KoraError> {
+        if self.parsed_token2022_security_instructions.is_none() {
+            self.parsed_token2022_security_instructions =
+                Some(Token2022SecurityParser::parse(&self.all_instructions)?);
+        }
+
+        self.parsed_token2022_security_instructions.as_ref().ok_or_else(|| {
+            KoraError::SerializationError(
+                "Parsed Token-2022 security instructions not found".to_string(),
+            )
         })
     }
 }

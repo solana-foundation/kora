@@ -138,7 +138,7 @@ impl TransactionValidator {
         self.validate_require_one_of_programs(transaction_resolved)?;
         self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
         self.validate_disallowed_accounts(transaction_resolved)?;
-        self.validate_fee_payer_usage(transaction_resolved)?;
+        self.validate_fee_payer_usage(config, transaction_resolved)?;
 
         Ok(())
     }
@@ -258,6 +258,7 @@ impl TransactionValidator {
 
     fn validate_fee_payer_usage(
         &self,
+        config: &Config,
         transaction_resolved: &mut VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
         self.validate_ata_create_instructions(transaction_resolved)?;
@@ -451,12 +452,6 @@ impl TransactionValidator {
                 && (*payer == self.fee_payer_pubkey || *owner == self.fee_payer_pubkey) ,
             "Token2022 Reallocate is not allowed when involving fee payer");
 
-        validate_token2022!(self, spl_instructions, SplTokenInitializePausable,
-            ParsedSPLInstructionData::SplTokenInitializePausable { authority } =>
-            *authority == self.fee_payer_pubkey,
-            self.fee_payer_policy.token_2022.allow_initialize_mint,
-            "Fee payer cannot be set as Token2022 pausable authority");
-
         validate_token2022!(self, spl_instructions, SplTokenPause,
             ParsedSPLInstructionData::SplTokenPause { authority, multisig_signers } =>
             (*authority == self.fee_payer_pubkey
@@ -471,10 +466,7 @@ impl TransactionValidator {
             self.fee_payer_policy.token_2022.allow_thaw_account,
             "Fee payer cannot be used for Token2022 Resume");
 
-        validate_token2022!(self, spl_instructions, SplTokenUnknownExtension,
-            ParsedSPLInstructionData::SplTokenUnknownExtension { accounts } =>
-            accounts.contains(&self.fee_payer_pubkey),
-            "Fee payer cannot be an account in an unsupported Token-2022 extension instruction");
+        self.validate_token2022_security_policies(config, transaction_resolved)?;
 
         Ok(())
     }
@@ -601,37 +593,13 @@ impl TransactionValidator {
                         )?;
                     }
                 }
-                ParsedSPLInstructionData::SplTokenInitializePausable { authority } => {
-                    self.validate_disallowed_instruction_data_account(
-                        authority,
-                        "Token2022 InitializePausable authority",
-                    )?;
-                }
-                ParsedSPLInstructionData::SplTokenInitializeTransferHook {
-                    authority,
-                    program_id,
-                } => {
-                    if let Some(authority) = authority {
-                        self.validate_disallowed_instruction_data_account(
-                            authority,
-                            "Token2022 InitializeTransferHook authority",
-                        )?;
-                    }
-                    if let Some(program_id) = program_id {
-                        self.validate_disallowed_instruction_data_account(
-                            program_id,
-                            "Token2022 InitializeTransferHook program_id",
-                        )?;
-                    }
-                }
-                ParsedSPLInstructionData::SplTokenTransferHookUpdate {
-                    program_id: Some(program_id),
-                    ..
-                } => self.validate_disallowed_instruction_data_account(
-                    program_id,
-                    "Token2022 TransferHookUpdate program_id",
-                )?,
                 _ => {}
+            }
+        }
+
+        for instruction in transaction_resolved.get_or_parse_token2022_security_instructions()? {
+            for field in &instruction.data_pubkeys {
+                self.validate_disallowed_instruction_data_account(&field.pubkey, field.context)?;
             }
         }
 
@@ -654,6 +622,52 @@ impl TransactionValidator {
 
     pub fn is_disallowed_account(&self, account: &Pubkey) -> bool {
         self.disallowed_accounts.contains(account)
+    }
+
+    fn validate_token2022_security_policies(
+        &self,
+        config: &Config,
+        transaction_resolved: &mut VersionedTransactionResolved,
+    ) -> Result<(), KoraError> {
+        for instruction in transaction_resolved.get_or_parse_token2022_security_instructions()? {
+            if instruction.reject_if_fee_payer_in_accounts
+                && instruction.accounts.contains(&self.fee_payer_pubkey)
+            {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Fee payer cannot be an account in {}",
+                    instruction.instruction_name
+                )));
+            }
+
+            if let Some(extension_type) = instruction.extension_type {
+                if config.validation.token_2022.is_mint_extension_blocked(extension_type) {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Token2022 instruction '{}' is not allowed because extension '{extension_type:?}' is blocked",
+                        instruction.instruction_name
+                    )));
+                }
+            }
+
+            if instruction.uses_fee_payer_as_update_authority(&self.fee_payer_pubkey)
+                && !self.fee_payer_policy.token_2022.allow_update_extension_authority
+            {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Fee payer cannot be used as the current Token2022 extension authority for '{}'",
+                    instruction.instruction_name
+                )));
+            }
+
+            if let Some(field) = instruction.planted_fee_payer_authority(&self.fee_payer_pubkey) {
+                if !self.fee_payer_policy.token_2022.allow_initialize_extension_authority {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Fee payer cannot be planted as a Token2022 extension authority via {}",
+                        field.context
+                    )));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn calculate_total_outflow(
@@ -4511,7 +4525,7 @@ mod tests {
 
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
         assert!(
-            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("Token2022 pausable authority")),
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("Token2022 InitializePausable authority")),
             "Expected rejection when fee payer is assigned as pausable authority, got: {result:?}"
         );
     }
@@ -4525,6 +4539,7 @@ mod tests {
 
         let mut config = get_config().unwrap().clone();
         config.validation.token_2022.transfer_hook_policy = TransferHookPolicy::DenyAll;
+        config.validation.fee_payer_policy.token_2022.allow_update_extension_authority = true;
         let validator = TransactionValidator::new(&config, fee_payer.pubkey()).unwrap();
         let mint = Pubkey::new_unique();
         let program_id = Pubkey::new_unique();
@@ -4566,6 +4581,7 @@ mod tests {
         let mut config = get_config().unwrap().clone();
         config.validation.token_2022.transfer_hook_policy =
             TransferHookPolicy::DenyMutableForDelayedSigning;
+        config.validation.fee_payer_policy.token_2022.allow_update_extension_authority = true;
         let validator = TransactionValidator::new(&config, fee_payer.pubkey()).unwrap();
         let mint = Pubkey::new_unique();
         let program_id = Pubkey::new_unique();
@@ -4629,6 +4645,211 @@ mod tests {
         assert!(
             matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("InitializeTransferHook program_id")),
             "Expected disallowed transfer-hook program id rejection, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_initialize_transfer_fee_config_rejects_fee_payer_authorities_by_default(
+    ) {
+        let fee_payer = Keypair::new();
+        let mint = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+
+        let ix = spl_token_2022_interface::extension::transfer_fee::instruction::initialize_transfer_fee_config(
+            &spl_token_2022_interface::id(),
+            &mint,
+            Some(&fee_payer.pubkey()),
+            Some(&Pubkey::new_unique()),
+            25,
+            100,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("InitializeTransferFeeConfig transferFeeConfigAuthority")),
+            "Expected rejection when fee payer is planted as transfer-fee authority, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_initialize_transfer_fee_config_disallowed_withdraw_authority_rejected()
+    {
+        let fee_payer = Keypair::new();
+        let mint = Pubkey::new_unique();
+        let disallowed_authority = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_config_with_policy_and_disallowed(
+            FeePayerPolicy::default(),
+            vec![spl_token_2022_interface::id().to_string()],
+            vec![disallowed_authority.to_string()],
+        );
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+
+        let ix = spl_token_2022_interface::extension::transfer_fee::instruction::initialize_transfer_fee_config(
+            &spl_token_2022_interface::id(),
+            &mint,
+            Some(&Pubkey::new_unique()),
+            Some(&disallowed_authority),
+            25,
+            100,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("InitializeTransferFeeConfig withdrawWithheldAuthority")),
+            "Expected disallowed withdraw authority rejection, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_update_metadata_pointer_rejects_fee_payer_authority_by_default() {
+        let fee_payer = Keypair::new();
+        let mint = Pubkey::new_unique();
+        let metadata_address = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+
+        let ix = spl_token_2022_interface::extension::metadata_pointer::instruction::update(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &fee_payer.pubkey(),
+            &[],
+            Some(metadata_address),
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("current Token2022 extension authority")),
+            "Expected rejection when fee payer updates metadata pointer, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_update_metadata_pointer_allowed_when_extension_update_policy_enabled() {
+        let fee_payer = Keypair::new();
+        let mint = Pubkey::new_unique();
+        let metadata_address = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_update_extension_authority = true;
+        setup_token2022_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+
+        let ix = spl_token_2022_interface::extension::metadata_pointer::instruction::update(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &fee_payer.pubkey(),
+            &[],
+            Some(metadata_address),
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "Explicit extension update opt-in should allow metadata pointer updates: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_initialize_mint_close_authority_rejects_disallowed_new_authority() {
+        let fee_payer = Keypair::new();
+        let mint = Pubkey::new_unique();
+        let disallowed_authority = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_config_with_policy_and_disallowed(
+            FeePayerPolicy::default(),
+            vec![spl_token_2022_interface::id().to_string()],
+            vec![disallowed_authority.to_string()],
+        );
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer.pubkey()).unwrap();
+
+        let ix = spl_token_2022_interface::instruction::initialize_mint_close_authority(
+            &spl_token_2022_interface::id(),
+            &mint,
+            Some(&disallowed_authority),
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("InitializeMintCloseAuthority newAuthority")),
+            "Expected disallowed mint close authority rejection, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_initialize_metadata_pointer_rejects_blocked_extension() {
+        let fee_payer = Keypair::new();
+        let mint = Pubkey::new_unique();
+        let metadata_address = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.allowed_programs.push(spl_token_2022_interface::id().to_string());
+        config.validation.token_2022.blocked_mint_extensions = vec!["metadata_pointer".to_string()];
+        config.validation.token_2022.initialize().unwrap();
+        let _config_guard = setup_config_mock(config.clone());
+
+        let validator = TransactionValidator::new(&config, fee_payer.pubkey()).unwrap();
+
+        let ix = spl_token_2022_interface::extension::metadata_pointer::instruction::initialize(
+            &spl_token_2022_interface::id(),
+            &mint,
+            Some(Pubkey::new_unique()),
+            Some(metadata_address),
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(&config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("extension 'MetadataPointer' is blocked")),
+            "Expected blocked metadata pointer extension rejection, got: {result:?}"
         );
     }
 

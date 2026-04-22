@@ -687,6 +687,8 @@ impl FeePayerPolicyBuilder {
                     allow_revoke: false,
                     allow_set_authority: false,
                     allow_mint_to: false,
+                    allow_initialize_extension_authority: false,
+                    allow_update_extension_authority: false,
                     allow_freeze_account: false,
                     allow_thaw_account: false,
                     allow_initialize_mint: false,

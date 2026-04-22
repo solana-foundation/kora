@@ -245,6 +245,12 @@ pub struct Token2022InstructionPolicy {
     pub allow_initialize_account: bool,
     /// Allow fee payer to be a signer in Token2022 InitializeMultisig instructions
     pub allow_initialize_multisig: bool,
+    /// Allow fee payer to be planted as a future Token2022 extension authority/delegate during
+    /// extension initialization.
+    pub allow_initialize_extension_authority: bool,
+    /// Allow fee payer to be used as the current authority for Token2022 extension update/admin
+    /// instructions.
+    pub allow_update_extension_authority: bool,
     /// Allow fee payer to be the freeze authority in Token2022 FreezeAccount instructions
     pub allow_freeze_account: bool,
     /// Allow fee payer to be the freeze authority in Token2022 ThawAccount instructions
