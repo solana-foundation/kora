@@ -74,9 +74,11 @@ macro_rules! validate_spl_multisig {
     };
 }
 
-/// Macro to validate ALT instructions with custom fee-payer matching logic
+/// Macro to validate ALT instructions with custom fee-payer matching logic.
+/// The caller's `$fee_payer_used` expression is pre-evaluated and already references
+/// `self.fee_payer_pubkey`, so the macro does not need to capture `self`.
 macro_rules! validate_alt {
-    ($self:expr, $instructions:expr, $type:ident, $pattern:pat => $fee_payer_used:expr, $policy:expr, $name:expr) => {
+    ($instructions:expr, $type:ident, $pattern:pat => $fee_payer_used:expr, $policy:expr, $name:expr) => {
         for instruction in $instructions.get(&ParsedALTInstructionType::$type).unwrap_or(&vec![]) {
             if let $pattern = instruction {
                 if $fee_payer_used && !$policy {
@@ -90,9 +92,11 @@ macro_rules! validate_alt {
     };
 }
 
-/// Macro to validate Loader-v4 instructions with custom fee-payer matching logic
+/// Macro to validate Loader-v4 instructions with custom fee-payer matching logic.
+/// Same shape as `validate_alt!` — the caller's `$fee_payer_used` expression is
+/// pre-evaluated against `self.fee_payer_pubkey` at the call site.
 macro_rules! validate_loader_v4 {
-    ($self:expr, $instructions:expr, $type:ident, $pattern:pat => $fee_payer_used:expr, $policy:expr, $name:expr) => {
+    ($instructions:expr, $type:ident, $pattern:pat => $fee_payer_used:expr, $policy:expr, $name:expr) => {
         for instruction in
             $instructions.get(&ParsedLoaderV4InstructionType::$type).unwrap_or(&vec![])
         {

@@ -404,7 +404,7 @@ impl TransactionValidator {
         // Validate ALT instructions
         let alt_instructions = transaction_resolved.get_or_parse_alt_instructions()?;
 
-        validate_alt!(self, alt_instructions, AltCreateLookupTable,
+        validate_alt!(alt_instructions, AltCreateLookupTable,
             ParsedALTInstructionData::AltCreateLookupTable {
                 lookup_table_authority,
                 payer_account,
@@ -414,7 +414,7 @@ impl TransactionValidator {
             self.fee_payer_policy.alt.allow_create,
             "ALT CreateLookupTable");
 
-        validate_alt!(self, alt_instructions, AltExtendLookupTable,
+        validate_alt!(alt_instructions, AltExtendLookupTable,
             ParsedALTInstructionData::AltExtendLookupTable {
                 lookup_table_authority,
                 payer_account,
@@ -424,19 +424,19 @@ impl TransactionValidator {
             self.fee_payer_policy.alt.allow_extend,
             "ALT ExtendLookupTable");
 
-        validate_alt!(self, alt_instructions, AltFreezeLookupTable,
+        validate_alt!(alt_instructions, AltFreezeLookupTable,
             ParsedALTInstructionData::AltFreezeLookupTable { lookup_table_authority, .. } =>
             *lookup_table_authority == self.fee_payer_pubkey,
             self.fee_payer_policy.alt.allow_freeze,
             "ALT FreezeLookupTable");
 
-        validate_alt!(self, alt_instructions, AltDeactivateLookupTable,
+        validate_alt!(alt_instructions, AltDeactivateLookupTable,
             ParsedALTInstructionData::AltDeactivateLookupTable { lookup_table_authority, .. } =>
             *lookup_table_authority == self.fee_payer_pubkey,
             self.fee_payer_policy.alt.allow_deactivate,
             "ALT DeactivateLookupTable");
 
-        validate_alt!(self, alt_instructions, AltCloseLookupTable,
+        validate_alt!(alt_instructions, AltCloseLookupTable,
             ParsedALTInstructionData::AltCloseLookupTable { lookup_table_authority, .. } =>
             *lookup_table_authority == self.fee_payer_pubkey,
             self.fee_payer_policy.alt.allow_close,
@@ -445,19 +445,19 @@ impl TransactionValidator {
         // Validate Loader-v4 (BPF loader successor) instructions.
         let loader_v4_instructions = transaction_resolved.get_or_parse_loader_v4_instructions()?;
 
-        validate_loader_v4!(self, loader_v4_instructions, Write,
+        validate_loader_v4!(loader_v4_instructions, Write,
             ParsedLoaderV4InstructionData::Write { authority, .. } =>
             *authority == self.fee_payer_pubkey,
             self.fee_payer_policy.loader_v4.allow_write,
             "Loader-v4 Write");
 
-        validate_loader_v4!(self, loader_v4_instructions, Copy,
+        validate_loader_v4!(loader_v4_instructions, Copy,
             ParsedLoaderV4InstructionData::Copy { authority, .. } =>
             *authority == self.fee_payer_pubkey,
             self.fee_payer_policy.loader_v4.allow_copy,
             "Loader-v4 Copy");
 
-        validate_loader_v4!(self, loader_v4_instructions, SetProgramLength,
+        validate_loader_v4!(loader_v4_instructions, SetProgramLength,
             ParsedLoaderV4InstructionData::SetProgramLength { authority, recipient, .. } =>
             (*authority == self.fee_payer_pubkey
                 || recipient.is_some_and(|r| r == self.fee_payer_pubkey)),
@@ -489,25 +489,25 @@ impl TransactionValidator {
             }
         }
 
-        validate_loader_v4!(self, loader_v4_instructions, Deploy,
+        validate_loader_v4!(loader_v4_instructions, Deploy,
             ParsedLoaderV4InstructionData::Deploy { authority, .. } =>
             *authority == self.fee_payer_pubkey,
             self.fee_payer_policy.loader_v4.allow_deploy,
             "Loader-v4 Deploy");
 
-        validate_loader_v4!(self, loader_v4_instructions, Retract,
+        validate_loader_v4!(loader_v4_instructions, Retract,
             ParsedLoaderV4InstructionData::Retract { authority, .. } =>
             *authority == self.fee_payer_pubkey,
             self.fee_payer_policy.loader_v4.allow_retract,
             "Loader-v4 Retract");
 
-        validate_loader_v4!(self, loader_v4_instructions, TransferAuthority,
+        validate_loader_v4!(loader_v4_instructions, TransferAuthority,
             ParsedLoaderV4InstructionData::TransferAuthority { current_authority, .. } =>
             *current_authority == self.fee_payer_pubkey,
             self.fee_payer_policy.loader_v4.allow_transfer_authority,
             "Loader-v4 TransferAuthority");
 
-        validate_loader_v4!(self, loader_v4_instructions, Finalize,
+        validate_loader_v4!(loader_v4_instructions, Finalize,
             ParsedLoaderV4InstructionData::Finalize { current_authority, .. } =>
             *current_authority == self.fee_payer_pubkey,
             self.fee_payer_policy.loader_v4.allow_finalize,
