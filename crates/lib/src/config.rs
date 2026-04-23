@@ -281,19 +281,15 @@ pub struct LoaderV4InstructionPolicy {
     pub allow_write: bool,
     /// Allow fee payer to be the authority in Copy instructions
     pub allow_copy: bool,
-    /// Allow fee payer to be the authority in SetProgramLength instructions.
-    /// When enabled, the recipient must equal the fee payer (or be absent) to prevent drainage
-    /// via shrink-to-zero or over-funded-growth refunds flowing to an attacker's account.
+    /// Allow fee payer to be the authority in SetProgramLength instructions
     pub allow_set_program_length: bool,
     /// Allow fee payer to be the authority in Deploy instructions
     pub allow_deploy: bool,
     /// Allow fee payer to be the authority in Retract instructions
     pub allow_retract: bool,
     /// Allow fee payer to be the current authority in TransferAuthority instructions
-    /// (drainage vector: hands control to a new authority who can then drain)
     pub allow_transfer_authority: bool,
     /// Allow fee payer to be the current authority in Finalize instructions
-    /// (makes program immutable and forwards to a next-version program)
     pub allow_finalize: bool,
 }
 
