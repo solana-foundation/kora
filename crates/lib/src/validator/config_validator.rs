@@ -4,8 +4,8 @@ use crate::{
     admin::token_util::find_missing_atas,
     config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy},
     constant::{
-        BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE,
-        MIN_RECAPTCHA_SCORE, STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
+        LIGHTHOUSE_PROGRAM_ID, LOADER_V4_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE,
+        STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
     },
     fee::price::PriceModel,
     oracle::PriceSource,
@@ -211,6 +211,27 @@ impl ConfigValidator {
 
             alt, allow_close, "ALT CloseLookupTable instructions",
                 "Users can close lookup tables controlled by the fee payer and redirect lamports to arbitrary recipients";
+
+            loader_v4, allow_write, "Loader-v4 Write instructions",
+                "Users can make the fee payer write arbitrary bytes into program accounts it is the authority for";
+
+            loader_v4, allow_copy, "Loader-v4 Copy instructions",
+                "Users can make the fee payer copy data between program accounts it is the authority for";
+
+            loader_v4, allow_set_program_length, "Loader-v4 SetProgramLength instructions",
+                "Users can make the fee payer resize program accounts. A drainage guard keeps refunds flowing back to the fee payer, but enabling this still lets users force-grow accounts and consume fee-payer rent";
+
+            loader_v4, allow_deploy, "Loader-v4 Deploy instructions",
+                "Users can make the fee payer deploy programs it is the authority for, committing rent";
+
+            loader_v4, allow_retract, "Loader-v4 Retract instructions",
+                "Users can make the fee payer retract deployed programs, taking them out of execution";
+
+            loader_v4, allow_transfer_authority, "Loader-v4 TransferAuthority instructions",
+                "Users can make the fee payer hand program authority to a different account. This can lead to complete loss of control and subsequent drainage";
+
+            loader_v4, allow_finalize, "Loader-v4 Finalize instructions",
+                "Users can make the fee payer finalize programs, making them immutable and forwarding to a next-version program";
         }
 
         // Check nonce policy separately (nested structure)
@@ -251,18 +272,17 @@ impl ConfigValidator {
     /// instruction parser.
     ///
     /// Two tiers:
-    /// 1. **High-risk native programs** (Vote, Stake, BpfUpgradeableLoader) — these can
-    ///    directly control funds without routing through inner System/SPL instructions, so a
-    ///    targeted warning is emitted.
+    /// 1. **High-risk native programs** (Vote, Stake) — these can directly control funds
+    ///    without routing through inner System/SPL instructions, so a targeted warning is
+    ///    emitted.
     /// 2. **Any other unrecognised program** — custom programs always use inner instructions
-    ///    (System, SPL Token, Token-2022, ALT) for actual fund movement, so only those inner
-    ///    instructions are validated.  This is a known, accepted limitation; an informational
-    ///    warning is emitted so operators are aware.
+    ///    (System, SPL Token, Token-2022, ALT, Loader-v4) for actual fund movement, so only
+    ///    those inner instructions are validated. This is a known, accepted limitation; an
+    ///    informational warning is emitted so operators are aware.
     fn warn_unvalidated_programs(allowed_programs: &[String], warnings: &mut Vec<String>) {
         let high_risk = [
             (VOTE_PROGRAM_ID.to_string(), "Vote Program"),
             (STAKE_PROGRAM_ID.to_string(), "Stake Program"),
-            (BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string(), "BPF Loader Upgradeable"),
         ];
 
         for (program_id, program_name) in &high_risk {
@@ -284,6 +304,7 @@ impl ConfigValidator {
             spl_associated_token_account_interface::program::id().to_string(),
             solana_compute_budget_interface::id().to_string(),
             LIGHTHOUSE_PROGRAM_ID.to_string(),
+            LOADER_V4_PROGRAM_ID.to_string(),
         ]
         .into_iter()
         .chain(high_risk.iter().map(|(id, _)| id.clone()))
@@ -2096,6 +2117,15 @@ mod tests {
                         allow_deactivate: true,
                         allow_close: true,
                     },
+                    loader_v4: crate::config::LoaderV4InstructionPolicy {
+                        allow_write: true,
+                        allow_copy: true,
+                        allow_set_program_length: true,
+                        allow_deploy: true,
+                        allow_retract: true,
+                        allow_transfer_authority: true,
+                        allow_finalize: true,
+                    },
                 },
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
@@ -2243,6 +2273,29 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.contains("ALT CloseLookupTable") && w.contains("allow_close")));
+
+        // Loader-v4 policies
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 Write") && w.contains("allow_write")));
+        assert!(warnings.iter().any(|w| w.contains("Loader-v4 Copy") && w.contains("allow_copy")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 SetProgramLength")
+                && w.contains("allow_set_program_length")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 Deploy") && w.contains("allow_deploy")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 Retract") && w.contains("allow_retract")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 TransferAuthority")
+                && w.contains("allow_transfer_authority")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 Finalize") && w.contains("allow_finalize")));
 
         // Each warning should contain risk explanation
         let fee_payer_warnings: Vec<_> =
@@ -2677,13 +2730,18 @@ mod tests {
 
     #[test]
     fn test_warn_unvalidated_programs_warns_for_bpf_loader_upgradeable() {
+        // BPF Loader Upgradeable (loader-v3) no longer gets a targeted high-risk warning now
+        // that loader-v4 is the primary loader we validate. It still lacks a dedicated parser
+        // in Kora, so it falls through to the generic "no dedicated fee-payer instruction
+        // parser" warning like any other custom program.
         use crate::constant::BPF_LOADER_UPGRADEABLE_PROGRAM_ID;
         let allowed =
             vec![SYSTEM_PROGRAM_ID.to_string(), BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()];
         let mut warnings = Vec::new();
         ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
         assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("BPF Loader Upgradeable"));
+        assert!(warnings[0].contains(&BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()));
+        assert!(warnings[0].contains("no dedicated fee-payer instruction parser"));
     }
 
     #[test]

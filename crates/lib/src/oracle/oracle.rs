@@ -12,6 +12,7 @@ use tokio::time::sleep;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "docs", derive(utoipa::ToSchema))]
 pub struct TokenPrice {
+    #[cfg_attr(feature = "docs", schema(value_type = String))]
     pub price: Decimal,
     pub confidence: f64,
     pub source: PriceSource,

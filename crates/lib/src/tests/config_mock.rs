@@ -702,6 +702,7 @@ impl FeePayerPolicyBuilder {
                     allow_deactivate: false,
                     allow_close: false,
                 },
+                loader_v4: crate::config::LoaderV4InstructionPolicy::default(),
             },
         }
     }

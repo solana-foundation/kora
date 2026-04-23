@@ -69,7 +69,7 @@ impl Default for FeePayerBalanceMetricsConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub enum SplTokenConfig {
     All,
     #[serde(untagged)]
@@ -165,6 +165,7 @@ pub struct FeePayerPolicy {
     pub spl_token: SplTokenInstructionPolicy,
     pub token_2022: Token2022InstructionPolicy,
     pub alt: AltInstructionPolicy,
+    pub loader_v4: LoaderV4InstructionPolicy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
@@ -271,6 +272,25 @@ pub struct AltInstructionPolicy {
     pub allow_deactivate: bool,
     /// Allow fee payer to be authority in ALT CloseLookupTable instructions
     pub allow_close: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default)]
+pub struct LoaderV4InstructionPolicy {
+    /// Allow fee payer to be the authority in Write instructions
+    pub allow_write: bool,
+    /// Allow fee payer to be the authority in Copy instructions
+    pub allow_copy: bool,
+    /// Allow fee payer to be the authority in SetProgramLength instructions
+    pub allow_set_program_length: bool,
+    /// Allow fee payer to be the authority in Deploy instructions
+    pub allow_deploy: bool,
+    /// Allow fee payer to be the authority in Retract instructions
+    pub allow_retract: bool,
+    /// Allow fee payer to be the current authority in TransferAuthority instructions
+    pub allow_transfer_authority: bool,
+    /// Allow fee payer to be the current authority in Finalize instructions
+    pub allow_finalize: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]

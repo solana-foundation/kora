@@ -26,8 +26,9 @@ use crate::{
     token::token::TransferHookValidationFlow,
     transaction::{
         instruction_util::IxUtils, ParsedALTInstructionData, ParsedALTInstructionType,
-        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
-        ParsedSystemInstructionType, Token2022SecurityInstruction, Token2022SecurityParser,
+        ParsedLoaderV4InstructionData, ParsedLoaderV4InstructionType, ParsedSPLInstructionData,
+        ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
+        Token2022SecurityInstruction, Token2022SecurityParser,
     },
     validator::transaction_validator::TransactionValidator,
     CacheUtil,
@@ -57,6 +58,10 @@ pub struct VersionedTransactionResolved {
     // Parsed ALT instructions by type (None if not parsed yet)
     parsed_alt_instructions:
         Option<HashMap<ParsedALTInstructionType, Vec<ParsedALTInstructionData>>>,
+
+    // Parsed Loader-v4 instructions by type (None if not parsed yet)
+    parsed_loader_v4_instructions:
+        Option<HashMap<ParsedLoaderV4InstructionType, Vec<ParsedLoaderV4InstructionData>>>,
 
     parsed_token2022_security_instructions: Option<Vec<Token2022SecurityInstruction>>,
 }
@@ -105,6 +110,7 @@ impl VersionedTransactionResolved {
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
             parsed_alt_instructions: None,
+            parsed_loader_v4_instructions: None,
             parsed_token2022_security_instructions: None,
         };
 
@@ -156,6 +162,7 @@ impl VersionedTransactionResolved {
             parsed_system_instructions: None,
             parsed_spl_instructions: None,
             parsed_alt_instructions: None,
+            parsed_loader_v4_instructions: None,
             parsed_token2022_security_instructions: None,
         })
     }
@@ -256,6 +263,21 @@ impl VersionedTransactionResolved {
 
         self.parsed_alt_instructions.as_ref().ok_or_else(|| {
             KoraError::SerializationError("Parsed ALT instructions not found".to_string())
+        })
+    }
+
+    pub fn get_or_parse_loader_v4_instructions(
+        &mut self,
+    ) -> Result<
+        &HashMap<ParsedLoaderV4InstructionType, Vec<ParsedLoaderV4InstructionData>>,
+        KoraError,
+    > {
+        if self.parsed_loader_v4_instructions.is_none() {
+            self.parsed_loader_v4_instructions = Some(IxUtils::parse_loader_v4_instructions(self)?);
+        }
+
+        self.parsed_loader_v4_instructions.as_ref().ok_or_else(|| {
+            KoraError::SerializationError("Parsed Loader-v4 instructions not found".to_string())
         })
     }
 
