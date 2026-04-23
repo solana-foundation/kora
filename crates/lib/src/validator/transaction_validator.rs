@@ -501,9 +501,16 @@ impl TransactionValidator {
             self.fee_payer_policy.loader_v4.allow_retract,
             "Loader-v4 Retract");
 
+        // Both current_authority and new_authority are required signers in TransferAuthority.
+        // The fee payer's transaction-level signature satisfies either slot, so guard both:
+        // without the `new_authority` check, an attacker could craft a tx with
+        // current_authority=attacker and new_authority=fee_payer and silently transfer program
+        // authority to Kora (setting up later abuse if allow_write/allow_deploy are enabled).
         validate_loader_v4!(loader_v4_instructions, TransferAuthority,
-            ParsedLoaderV4InstructionData::TransferAuthority { current_authority, .. } =>
-            *current_authority == self.fee_payer_pubkey,
+            ParsedLoaderV4InstructionData::TransferAuthority {
+                current_authority, new_authority, ..
+            } => (*current_authority == self.fee_payer_pubkey
+                || *new_authority == self.fee_payer_pubkey),
             self.fee_payer_policy.loader_v4.allow_transfer_authority,
             "Loader-v4 TransferAuthority");
 
@@ -5314,6 +5321,36 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::transfer_authority(&program, &fee_payer, &new_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_loader_v4_transfer_authority_rejects_when_fee_payer_is_new_authority() {
+        // Regression: loader-v4 TransferAuthority requires BOTH current and new authority to
+        // sign. The fee payer's transaction-level signature satisfies the new_authority slot,
+        // so an attacker can set current_authority=attacker and new_authority=fee_payer and
+        // silently push program authority onto Kora. The validator must reject this even when
+        // current_authority != fee_payer.
+        use solana_loader_v4_interface::instruction as loader_v4;
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        setup_loader_v4_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // current_authority = attacker (not fee_payer), new_authority = fee_payer.
+        let ix = loader_v4::transfer_authority(&program, &attacker, &fee_payer);
         let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
