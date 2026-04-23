@@ -4,8 +4,8 @@ use crate::{
     admin::token_util::find_missing_atas,
     config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy},
     constant::{
-        BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_ID, LOADER_V4_PROGRAM_ID,
-        MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE, STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
+        LIGHTHOUSE_PROGRAM_ID, LOADER_V4_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE,
+        STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
     },
     fee::price::PriceModel,
     oracle::PriceSource,
@@ -272,18 +272,17 @@ impl ConfigValidator {
     /// instruction parser.
     ///
     /// Two tiers:
-    /// 1. **High-risk native programs** (Vote, Stake, BpfUpgradeableLoader) — these can
-    ///    directly control funds without routing through inner System/SPL instructions, so a
-    ///    targeted warning is emitted.
+    /// 1. **High-risk native programs** (Vote, Stake) — these can directly control funds
+    ///    without routing through inner System/SPL instructions, so a targeted warning is
+    ///    emitted.
     /// 2. **Any other unrecognised program** — custom programs always use inner instructions
-    ///    (System, SPL Token, Token-2022, ALT) for actual fund movement, so only those inner
-    ///    instructions are validated.  This is a known, accepted limitation; an informational
-    ///    warning is emitted so operators are aware.
+    ///    (System, SPL Token, Token-2022, ALT, Loader-v4) for actual fund movement, so only
+    ///    those inner instructions are validated. This is a known, accepted limitation; an
+    ///    informational warning is emitted so operators are aware.
     fn warn_unvalidated_programs(allowed_programs: &[String], warnings: &mut Vec<String>) {
         let high_risk = [
             (VOTE_PROGRAM_ID.to_string(), "Vote Program"),
             (STAKE_PROGRAM_ID.to_string(), "Stake Program"),
-            (BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string(), "BPF Loader Upgradeable"),
         ];
 
         for (program_id, program_name) in &high_risk {
@@ -2731,13 +2730,18 @@ mod tests {
 
     #[test]
     fn test_warn_unvalidated_programs_warns_for_bpf_loader_upgradeable() {
+        // BPF Loader Upgradeable (loader-v3) no longer gets a targeted high-risk warning now
+        // that loader-v4 is the primary loader we validate. It still lacks a dedicated parser
+        // in Kora, so it falls through to the generic "no dedicated fee-payer instruction
+        // parser" warning like any other custom program.
         use crate::constant::BPF_LOADER_UPGRADEABLE_PROGRAM_ID;
         let allowed =
             vec![SYSTEM_PROGRAM_ID.to_string(), BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()];
         let mut warnings = Vec::new();
         ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
         assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("BPF Loader Upgradeable"));
+        assert!(warnings[0].contains(&BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()));
+        assert!(warnings[0].contains("no dedicated fee-payer instruction parser"));
     }
 
     #[test]
