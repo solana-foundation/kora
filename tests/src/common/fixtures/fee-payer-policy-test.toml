@@ -33,6 +33,7 @@ allowed_programs = [
     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  # Token-2022 Program
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Program
     "AddressLookupTab1e1111111111111111111111111",  # Address Lookup Table Program
+    "LoaderV411111111111111111111111111111111111",  # Loader-v4 Program
 ]
 allowed_tokens = [
     "9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ", # Test USDC mint for local testing
@@ -95,6 +96,15 @@ allow_initialize_account = false
 allow_initialize_multisig = false
 allow_freeze_account = false
 allow_thaw_account = false
+
+[validation.fee_payer_policy.loader_v4]
+allow_write = false
+allow_copy = false
+allow_set_program_length = false
+allow_deploy = false
+allow_retract = false
+allow_transfer_authority = false
+allow_finalize = false
 
 [kora.usage_limit]
 enabled = false
