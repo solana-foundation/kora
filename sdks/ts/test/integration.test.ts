@@ -4,6 +4,7 @@ import {
     appendTransactionMessageInstruction,
     type Blockhash,
     compileTransaction,
+    createClient,
     createTransactionMessage,
     getBase64Decoder,
     getBase64EncodedWireTransaction,
@@ -18,10 +19,11 @@ import {
     type Transaction,
     type TransactionSigner,
 } from '@solana/kit';
+import { identity } from '@solana/kit-plugin-signer';
 import { getTransferSolInstruction } from '@solana-program/system';
 import { findAssociatedTokenPda, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 
-import { KoraClient, createKitKoraClient, type KoraKitClient } from '../src/index.js';
+import { KoraClient, kora } from '../src/index.js';
 import { runAuthenticationTests } from './auth-setup.js';
 import setupTestSuite from './setup.js';
 
@@ -425,16 +427,23 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
     if (FREE_PRICING) {
         describe('Kit Client (free pricing)', () => {
-            let freeClient: KoraKitClient;
+            let freeClient: Awaited<ReturnType<typeof buildFreeClient>>;
+
+            async function buildFreeClient() {
+                const koraRpcUrl = process.env.KORA_RPC_URL || 'http://127.0.0.1:8080';
+                return createClient()
+                    .use(identity(testWallet))
+                    .use(
+                        await kora({
+                            endpoint: koraRpcUrl,
+                            rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
+                            feeToken: usdcMint,
+                        }),
+                    );
+            }
 
             beforeAll(async () => {
-                const koraRpcUrl = process.env.KORA_RPC_URL || 'http://127.0.0.1:8080';
-                freeClient = await createKitKoraClient({
-                    endpoint: koraRpcUrl,
-                    rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
-                    feeToken: usdcMint,
-                    feePayerWallet: testWallet,
-                });
+                freeClient = await buildFreeClient();
             }, 30000);
 
             it('should send transaction without payment instruction when fee is 0', async () => {
