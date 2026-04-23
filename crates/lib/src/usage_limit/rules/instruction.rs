@@ -191,6 +191,25 @@ impl InstructionRule {
                                 }
                                 _ => {}
                             }
+                        } else if rule.program == LOADER_V4_PROGRAM_ID {
+                            // Loader-v4 instructions: only count when Kora is the (new/current)
+                            // authority, since those are the ops Kora actually subsidizes. All
+                            // 7 variants place the primary authority at account index 1;
+                            // TransferAuthority additionally has new_authority at index 2.
+                            let kora_is_authority = instruction
+                                .accounts
+                                .get(1)
+                                .zip(kora_signer)
+                                .is_some_and(|(acc, kora)| acc.pubkey == kora);
+                            let kora_is_new_authority = instr_type == LOADER_V4_TRANSFER_AUTHORITY
+                                && instruction
+                                    .accounts
+                                    .get(2)
+                                    .zip(kora_signer)
+                                    .is_some_and(|(acc, kora)| acc.pubkey == kora);
+                            if kora_is_authority || kora_is_new_authority {
+                                counts[*idx] += 1;
+                            }
                         } else {
                             // For other programs, count all matching instructions
                             counts[*idx] += 1;
@@ -449,5 +468,83 @@ mod tests {
         assert_eq!(batch_counts.len(), 2);
         assert_eq!(batch_counts[0], count1);
         assert_eq!(batch_counts[1], count2);
+    }
+
+    #[test]
+    fn test_loader_v4_counting_filters_by_kora_authority() {
+        // Usage limits for loader-v4 should only count instructions where Kora is the
+        // (current/new) authority, since those are the ops Kora subsidizes. A user-authored
+        // loader-v4 tx where Kora is only fee-paying (not authority) must not increment
+        // the user's loader-v4 deploy count.
+        use crate::transaction::VersionedTransactionResolved;
+        use solana_loader_v4_interface::instruction as loader_v4;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{signature::Keypair, signer::Signer, transaction::VersionedTransaction};
+
+        let kora = Keypair::new();
+        let user = Keypair::new();
+        let program = Pubkey::new_unique();
+
+        let build_tx = |authority: &Pubkey| -> VersionedTransactionResolved {
+            let ix = loader_v4::write(&program, authority, 0, vec![1, 2, 3]);
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&kora.pubkey())));
+            let tx = VersionedTransaction { signatures: vec![], message };
+            VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap()
+        };
+
+        let rule = InstructionRule::lifetime(LOADER_V4_PROGRAM_ID, LOADER_V4_WRITE.to_string(), 10);
+
+        // Kora is authority -> counted
+        let mut tx_kora = build_tx(&kora.pubkey());
+        let mut ctx = LimiterContext {
+            transaction: &mut tx_kora,
+            user_id: "user".to_string(),
+            kora_signer: Some(kora.pubkey()),
+            timestamp: 0,
+        };
+        assert_eq!(rule.count_increment(&mut ctx), 1);
+
+        // User is authority -> NOT counted (even though Kora is fee payer)
+        let mut tx_user = build_tx(&user.pubkey());
+        let mut ctx = LimiterContext {
+            transaction: &mut tx_user,
+            user_id: "user".to_string(),
+            kora_signer: Some(kora.pubkey()),
+            timestamp: 0,
+        };
+        assert_eq!(rule.count_increment(&mut ctx), 0);
+    }
+
+    #[test]
+    fn test_loader_v4_transfer_authority_counts_when_kora_is_new_authority() {
+        // TransferAuthority is special: Kora can be at index 1 (giving up authority) or
+        // index 2 (accepting authority). Both are subsidized operations — count both.
+        use crate::transaction::VersionedTransactionResolved;
+        use solana_loader_v4_interface::instruction as loader_v4;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{signature::Keypair, signer::Signer, transaction::VersionedTransaction};
+
+        let kora = Keypair::new();
+        let attacker = Keypair::new();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v4::transfer_authority(&program, &attacker.pubkey(), &kora.pubkey());
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&kora.pubkey())));
+        let tx = VersionedTransaction { signatures: vec![], message };
+        let mut tx_resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        let rule = InstructionRule::lifetime(
+            LOADER_V4_PROGRAM_ID,
+            LOADER_V4_TRANSFER_AUTHORITY.to_string(),
+            10,
+        );
+        let mut ctx = LimiterContext {
+            transaction: &mut tx_resolved,
+            user_id: "user".to_string(),
+            kora_signer: Some(kora.pubkey()),
+            timestamp: 0,
+        };
+        assert_eq!(rule.count_increment(&mut ctx), 1);
     }
 }
