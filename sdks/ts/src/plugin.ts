@@ -29,7 +29,7 @@ import type {
  *
  * The plugin exposes all Kora RPC methods with Kit-typed responses (Address, Blockhash).
  *
- * **Note:** The plugin pattern with `createEmptyClient().use()` requires `@solana/kit` v5.4.0+.
+ * **Note:** The plugin pattern with `createClient().use()` requires `@solana/kit` v6.8.0+.
  * For older kit versions, use `KoraClient` directly instead.
  *
  * @param config - Plugin configuration
@@ -40,10 +40,10 @@ import type {
  *
  * @example
  * ```typescript
- * import { createEmptyClient } from '@solana/kit';
+ * import { createClient } from '@solana/kit';
  * import { koraPlugin } from '@solana/kora';
  *
- * const client = createEmptyClient()
+ * const client = createClient()
  *   .use(koraPlugin({ endpoint: 'https://kora.example.com' }));
  *
  * // All responses have Kit-typed fields

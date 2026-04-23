@@ -1,12 +1,14 @@
 import {
     Address,
     assertIsAddress,
+    createClient,
     createKeyPairSignerFromBytes,
     getBase58Encoder,
     KeyPairSigner,
     lamports,
 } from '@solana/kit';
-import { createClient } from '@solana/kit-client-litesvm';
+import { litesvm } from '@solana/kit-plugin-litesvm';
+import { payer } from '@solana/kit-plugin-signer';
 import { tokenProgram, associatedTokenProgram } from '@solana-program/token';
 import { config } from 'dotenv';
 import path from 'path';
@@ -126,7 +128,11 @@ async function setupTestSuite(): Promise<TestSuite> {
             : undefined;
 
     const { testWallet, usdcMint, destinationAddress } = await createKeyPairSigners();
-    const client = await createClient({ payer: testWallet }).use(tokenProgram()).use(associatedTokenProgram());
+    const client = await createClient()
+        .use(payer(testWallet))
+        .use(litesvm())
+        .use(tokenProgram())
+        .use(associatedTokenProgram());
 
     // Airdrop SOL via LiteSVM
     await client.airdrop(koraAddress, lamports(solDropAmount));

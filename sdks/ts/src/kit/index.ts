@@ -1,11 +1,11 @@
-import { address, createEmptyClient, createNoopSigner, createSolanaRpc } from '@solana/kit';
+import { address, createClient, createNoopSigner, createSolanaRpc } from '@solana/kit';
 import {
     planAndSendTransactions,
     transactionPlanExecutor as transactionPlanExecutorPlugin,
     transactionPlanner as transactionPlannerPlugin,
 } from '@solana/kit-plugin-instruction-plan';
-import { payer } from '@solana/kit-plugin-payer';
-import { rpc } from '@solana/kit-plugin-rpc';
+import { solanaRpcConnection } from '@solana/kit-plugin-rpc';
+import { payer } from '@solana/kit-plugin-signer';
 import {
     estimateAndUpdateProvisoryComputeUnitLimitFactory,
     estimateComputeUnitLimitFactory,
@@ -97,8 +97,8 @@ export async function createKitKoraClient(config: KoraKitClientConfig) {
         resolveProvisoryComputeUnitLimit,
     );
 
-    return createEmptyClient()
-        .use(rpc(config.rpcUrl))
+    return createClient()
+        .use(solanaRpcConnection(config.rpcUrl))
         .use(
             koraPlugin({
                 endpoint: config.endpoint,
