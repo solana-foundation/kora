@@ -211,6 +211,27 @@ impl ConfigValidator {
 
             alt, allow_close, "ALT CloseLookupTable instructions",
                 "Users can close lookup tables controlled by the fee payer and redirect lamports to arbitrary recipients";
+
+            loader_v4, allow_write, "Loader-v4 Write instructions",
+                "Users can make the fee payer write arbitrary bytes into program accounts it is the authority for";
+
+            loader_v4, allow_copy, "Loader-v4 Copy instructions",
+                "Users can make the fee payer copy data between program accounts it is the authority for";
+
+            loader_v4, allow_set_program_length, "Loader-v4 SetProgramLength instructions",
+                "Users can make the fee payer resize program accounts. A drainage guard keeps refunds flowing back to the fee payer, but enabling this still lets users force-grow accounts and consume fee-payer rent";
+
+            loader_v4, allow_deploy, "Loader-v4 Deploy instructions",
+                "Users can make the fee payer deploy programs it is the authority for, committing rent";
+
+            loader_v4, allow_retract, "Loader-v4 Retract instructions",
+                "Users can make the fee payer retract deployed programs, taking them out of execution";
+
+            loader_v4, allow_transfer_authority, "Loader-v4 TransferAuthority instructions",
+                "Users can make the fee payer hand program authority to a different account. This can lead to complete loss of control and subsequent drainage";
+
+            loader_v4, allow_finalize, "Loader-v4 Finalize instructions",
+                "Users can make the fee payer finalize programs, making them immutable and forwarding to a next-version program";
         }
 
         // Check nonce policy separately (nested structure)
@@ -2097,7 +2118,15 @@ mod tests {
                         allow_deactivate: true,
                         allow_close: true,
                     },
-                    loader_v4: crate::config::LoaderV4InstructionPolicy::default(),
+                    loader_v4: crate::config::LoaderV4InstructionPolicy {
+                        allow_write: true,
+                        allow_copy: true,
+                        allow_set_program_length: true,
+                        allow_deploy: true,
+                        allow_retract: true,
+                        allow_transfer_authority: true,
+                        allow_finalize: true,
+                    },
                 },
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),
@@ -2245,6 +2274,29 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.contains("ALT CloseLookupTable") && w.contains("allow_close")));
+
+        // Loader-v4 policies
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 Write") && w.contains("allow_write")));
+        assert!(warnings.iter().any(|w| w.contains("Loader-v4 Copy") && w.contains("allow_copy")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 SetProgramLength")
+                && w.contains("allow_set_program_length")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 Deploy") && w.contains("allow_deploy")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 Retract") && w.contains("allow_retract")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 TransferAuthority")
+                && w.contains("allow_transfer_authority")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Loader-v4 Finalize") && w.contains("allow_finalize")));
 
         // Each warning should contain risk explanation
         let fee_payer_warnings: Vec<_> =

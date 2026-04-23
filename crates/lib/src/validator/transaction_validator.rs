@@ -5152,6 +5152,48 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_loader_v4_copy_requires_policy() {
+        use solana_loader_v4_interface::instruction as loader_v4;
+        let fee_payer = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+        let source = Pubkey::new_unique();
+
+        // allow_copy = true -> accepted
+        let mut policy = FeePayerPolicy::default();
+        policy.loader_v4.allow_copy = true;
+        setup_loader_v4_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::copy(&destination, &fee_payer, &source, 0, 0, 64);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // default (allow_copy = false) -> rejected
+        setup_loader_v4_config_with_policy(FeePayerPolicy::default());
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::copy(&destination, &fee_payer, &source, 0, 0, 64);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_loader_v4_retract_requires_policy() {
         use solana_loader_v4_interface::instruction as loader_v4;
         let fee_payer = Pubkey::new_unique();
