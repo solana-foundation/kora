@@ -69,7 +69,7 @@ impl Default for FeePayerBalanceMetricsConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub enum SplTokenConfig {
     All,
     #[serde(untagged)]

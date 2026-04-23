@@ -1,5 +1,9 @@
 use crate::{
-    config::{EnabledMethods, FeePayerPolicy, ValidationConfig},
+    config::{
+        AltInstructionPolicy, EnabledMethods, FeePayerPolicy, LoaderV4InstructionPolicy,
+        NonceInstructionPolicy, SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
+        Token2022Config, Token2022InstructionPolicy, TransferHookPolicy, ValidationConfig,
+    },
     fee::price::{PriceConfig, PriceModel},
     oracle::oracle::{PriceSource, TokenPrice},
 };
@@ -43,6 +47,15 @@ const JSON_CONTENT_TYPE: &str = "application/json";
     components(schemas(
         ValidationConfig,
         FeePayerPolicy,
+        SystemInstructionPolicy,
+        NonceInstructionPolicy,
+        SplTokenInstructionPolicy,
+        Token2022InstructionPolicy,
+        AltInstructionPolicy,
+        LoaderV4InstructionPolicy,
+        SplTokenConfig,
+        Token2022Config,
+        TransferHookPolicy,
         EnabledMethods,
         PriceConfig,
         PriceModel,

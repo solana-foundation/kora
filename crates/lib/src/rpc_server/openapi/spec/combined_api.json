@@ -14,6 +14,155 @@
     }
   ],
   "paths": {
+    "/estimateBundleFee": {
+      "summary": "estimateBundleFee",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "estimateBundleFee"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "transactions"
+                    ],
+                    "properties": {
+                      "fee_token": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "sig_verify": {
+                        "type": "boolean",
+                        "description": "Whether to verify signatures during simulation (defaults to false)"
+                      },
+                      "sign_only_indices": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "description": "Optional indices of transactions to estimate fees for (defaults to all if not specified)",
+                        "nullable": true
+                      },
+                      "signer_key": {
+                        "type": "string",
+                        "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+                        "nullable": true
+                      },
+                      "transactions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Array of base64-encoded transactions"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "fee_in_lamports",
+                    "signer_pubkey",
+                    "payment_address"
+                  ],
+                  "properties": {
+                    "fee_in_lamports": {
+                      "type": "integer",
+                      "format": "int64",
+                      "minimum": 0
+                    },
+                    "fee_in_token": {
+                      "type": "integer",
+                      "format": "int64",
+                      "nullable": true,
+                      "minimum": 0
+                    },
+                    "payment_address": {
+                      "type": "string",
+                      "description": "Public key of the payment destination"
+                    },
+                    "signer_pubkey": {
+                      "type": "string",
+                      "description": "Public key of the signer used for fee estimation (for client consistency)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/estimateTransactionFee": {
       "summary": "estimateTransactionFee",
       "post": {
@@ -52,25 +201,28 @@
                   },
                   "params": {
                     "type": "object",
+                    "description": "Request payload for estimating the fee of a transaction.\n\nThis endpoint calculates the required fee for a given transaction based on current\noracle prices and Kora's configuration. It can estimate fees in native SOL (lamports)\nand in a specific supported SPL token if `fee_token` is provided.",
                     "required": [
                       "transaction"
                     ],
                     "properties": {
                       "fee_token": {
                         "type": "string",
+                        "description": "Optional mint address of the SPL token to calculate the fee in. If omitted, returns only the lamport fee.",
                         "nullable": true
                       },
                       "sig_verify": {
                         "type": "boolean",
-                        "description": "Whether to verify signatures during simulation (defaults to true)"
+                        "description": "Whether to verify signatures during simulation (defaults to false)"
                       },
                       "signer_key": {
                         "type": "string",
-                        "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+                        "description": "Optional public key of the signer to ensure consistency",
                         "nullable": true
                       },
                       "transaction": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Base64-encoded serialized transaction"
                       }
                     }
                   }
@@ -87,6 +239,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "description": "Response payload containing the estimated transaction fee.",
                   "required": [
                     "fee_in_lamports",
                     "signer_pubkey",
@@ -96,16 +249,19 @@
                     "fee_in_lamports": {
                       "type": "integer",
                       "format": "int64",
+                      "description": "The exact fee required in native SOL (lamports)",
                       "minimum": 0
                     },
                     "fee_in_token": {
-                      "type": "number",
-                      "format": "double",
-                      "nullable": true
+                      "type": "integer",
+                      "format": "int64",
+                      "description": "The estimated fee in the requested SPL token (if `fee_token` was provided in the request)",
+                      "nullable": true,
+                      "minimum": 0
                     },
                     "payment_address": {
                       "type": "string",
-                      "description": "Public key of the payment destination"
+                      "description": "Public key of the payment destination where the fee should be sent"
                     },
                     "signer_pubkey": {
                       "type": "string",
@@ -541,6 +697,245 @@
         }
       }
     },
+    "/getVersion": {
+      "summary": "getVersion",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "getVersion"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "version"
+                  ],
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signAndSendBundle": {
+      "summary": "signAndSendBundle",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "signAndSendBundle"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "transactions"
+                    ],
+                    "properties": {
+                      "sig_verify": {
+                        "type": "boolean",
+                        "description": "Whether to verify signatures during simulation (defaults to false)"
+                      },
+                      "sign_only_indices": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "description": "Optional indices of transactions to sign (defaults to all if not specified)",
+                        "nullable": true
+                      },
+                      "signer_key": {
+                        "type": "string",
+                        "description": "Optional signer key to ensure consistency across related RPC calls",
+                        "nullable": true
+                      },
+                      "transactions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Array of base64-encoded transactions"
+                      },
+                      "user_id": {
+                        "type": "string",
+                        "description": "Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)",
+                        "nullable": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "signed_transactions",
+                    "signer_pubkey",
+                    "bundle_uuid"
+                  ],
+                  "properties": {
+                    "bundle_uuid": {
+                      "type": "string",
+                      "description": "Jito bundle UUID"
+                    },
+                    "signed_transactions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Array of base64-encoded signed transactions"
+                    },
+                    "signer_pubkey": {
+                      "type": "string",
+                      "description": "Public key of the signer used (for client consistency)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/signAndSendTransaction": {
       "summary": "signAndSendTransaction",
       "post": {
@@ -585,7 +980,7 @@
                     "properties": {
                       "sig_verify": {
                         "type": "boolean",
-                        "description": "Whether to verify signatures during simulation (defaults to true)"
+                        "description": "Whether to verify signatures during simulation (defaults to false)"
                       },
                       "signer_key": {
                         "type": "string",
@@ -594,6 +989,11 @@
                       },
                       "transaction": {
                         "type": "string"
+                      },
+                      "user_id": {
+                        "type": "string",
+                        "description": "Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)",
+                        "nullable": true
                       }
                     }
                   }
@@ -612,11 +1012,157 @@
                   "type": "object",
                   "required": [
                     "signed_transaction",
+                    "signer_pubkey",
+                    "signature"
+                  ],
+                  "properties": {
+                    "signature": {
+                      "type": "string",
+                      "description": "Transaction signature"
+                    },
+                    "signed_transaction": {
+                      "type": "string"
+                    },
+                    "signer_pubkey": {
+                      "type": "string",
+                      "description": "Public key of the signer used (for client consistency)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Exceeded rate limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signBundle": {
+      "summary": "signBundle",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "method",
+                  "params"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "An ID to identify the request.",
+                    "enum": [
+                      "test-account"
+                    ]
+                  },
+                  "jsonrpc": {
+                    "type": "string",
+                    "description": "The version of the JSON-RPC protocol.",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "The name of the method to invoke.",
+                    "enum": [
+                      "signBundle"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "transactions"
+                    ],
+                    "properties": {
+                      "sig_verify": {
+                        "type": "boolean",
+                        "description": "Whether to verify signatures during simulation (defaults to false)"
+                      },
+                      "sign_only_indices": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "description": "Optional indices of transactions to sign (defaults to all if not specified)",
+                        "nullable": true
+                      },
+                      "signer_key": {
+                        "type": "string",
+                        "description": "Optional signer key to ensure consistency across related RPC calls",
+                        "nullable": true
+                      },
+                      "transactions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Array of base64-encoded transactions"
+                      },
+                      "user_id": {
+                        "type": "string",
+                        "description": "Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)",
+                        "nullable": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "signed_transactions",
                     "signer_pubkey"
                   ],
                   "properties": {
-                    "signed_transaction": {
-                      "type": "string"
+                    "signed_transactions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Array of base64-encoded signed transactions"
                     },
                     "signer_pubkey": {
                       "type": "string",
@@ -698,21 +1244,28 @@
                   },
                   "params": {
                     "type": "object",
+                    "description": "Request payload for signing a transaction.\n\nThis endpoint accepts a base64-encoded Solana transaction, validates it against\nthe configured fee payer policies, and if successful, signs it using Kora's\nconfigured signer policy\nbut not broadcasted to the network.",
                     "required": [
                       "transaction"
                     ],
                     "properties": {
                       "sig_verify": {
                         "type": "boolean",
-                        "description": "Whether to verify signatures during simulation (defaults to true)"
+                        "description": "Whether to verify signatures during simulation (defaults to false)"
                       },
                       "signer_key": {
                         "type": "string",
-                        "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+                        "description": "Optional public key of the signer to ensure consistency",
                         "nullable": true
                       },
                       "transaction": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Base64-encoded Solana transaction"
+                      },
+                      "user_id": {
+                        "type": "string",
+                        "description": "Optional user ID for usage tracking (required when pricing is Free and usage tracking is enabled)",
+                        "nullable": true
                       }
                     }
                   }
@@ -729,13 +1282,15 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "description": "Response payload containing the signed transaction.",
                   "required": [
                     "signed_transaction",
                     "signer_pubkey"
                   ],
                   "properties": {
                     "signed_transaction": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Base64-encoded transaction signed by the Kora fee payer"
                     },
                     "signer_pubkey": {
                       "type": "string",
@@ -817,6 +1372,7 @@
                   },
                   "params": {
                     "type": "object",
+                    "description": "**DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.\nThis endpoint will be removed in a future version.\n\nRequest payload for creating a simple token or SOL transfer transaction.\nThis endpoint constructs an unsigned transfer where Kora acts as the fee payer,\nbut the user must still sign the transaction before it can be submitted.",
                     "required": [
                       "amount",
                       "token",
@@ -827,21 +1383,25 @@
                       "amount": {
                         "type": "integer",
                         "format": "int64",
+                        "description": "Amount to transfer (in the token's smallest unit, e.g. lamports for SOL)",
                         "minimum": 0
                       },
                       "destination": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The destination wallet address that will receive the tokens"
                       },
                       "signer_key": {
                         "type": "string",
-                        "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+                        "description": "Optional public key of the signer to ensure consistency",
                         "nullable": true
                       },
                       "source": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The source wallet address that will send the tokens"
                       },
                       "token": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Token mint address to transfer (use native SOL address for SOL transfers)"
                       }
                     }
                   }
@@ -858,6 +1418,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "description": "**DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.\n\nResponse payload containing the constructed transfer transaction.",
                   "required": [
                     "transaction",
                     "message",
@@ -866,17 +1427,20 @@
                   ],
                   "properties": {
                     "blockhash": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "The blockhash used when constructing the transaction"
                     },
                     "message": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Unsigned base64-encoded message"
                     },
                     "signer_pubkey": {
                       "type": "string",
-                      "description": "Public key of the signer used (for client consistency)"
+                      "description": "Public key of the Kora signer used as the fee payer (for client consistency)"
                     },
                     "transaction": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Unsigned base64-encoded transaction ready for the user to sign"
                     }
                   }
                 }
@@ -919,81 +1483,189 @@
   },
   "components": {
     "schemas": {
+      "AltInstructionPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_close": {
+            "type": "boolean",
+            "description": "Allow fee payer to be authority in ALT CloseLookupTable instructions",
+            "default": false
+          },
+          "allow_create": {
+            "type": "boolean",
+            "description": "Allow fee payer to be authority/payer in ALT CreateLookupTable instructions",
+            "default": false
+          },
+          "allow_deactivate": {
+            "type": "boolean",
+            "description": "Allow fee payer to be authority in ALT DeactivateLookupTable instructions",
+            "default": false
+          },
+          "allow_extend": {
+            "type": "boolean",
+            "description": "Allow fee payer to be authority/payer in ALT ExtendLookupTable instructions",
+            "default": false
+          },
+          "allow_freeze": {
+            "type": "boolean",
+            "description": "Allow fee payer to be authority in ALT FreezeLookupTable instructions",
+            "default": false
+          }
+        }
+      },
       "EnabledMethods": {
         "type": "object",
-        "required": [
-          "liveness",
-          "estimate_transaction_fee",
-          "get_supported_tokens",
-          "get_payer_signer",
-          "sign_transaction",
-          "sign_and_send_transaction",
-          "transfer_transaction",
-          "get_blockhash",
-          "get_config"
-        ],
         "properties": {
+          "estimate_bundle_fee": {
+            "type": "boolean",
+            "description": "Bundle methods (require bundle.enabled = true)",
+            "default": false
+          },
           "estimate_transaction_fee": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           },
           "get_blockhash": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           },
           "get_config": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           },
           "get_payer_signer": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           },
           "get_supported_tokens": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
+          },
+          "get_version": {
+            "type": "boolean",
+            "default": true
           },
           "liveness": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
+          },
+          "sign_and_send_bundle": {
+            "type": "boolean",
+            "default": false
           },
           "sign_and_send_transaction": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
+          },
+          "sign_bundle": {
+            "type": "boolean",
+            "default": false
           },
           "sign_transaction": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           },
           "transfer_transaction": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           }
         }
       },
       "FeePayerPolicy": {
         "type": "object",
-        "required": [
-          "allow_sol_transfers",
-          "allow_spl_transfers",
-          "allow_token2022_transfers",
-          "allow_assign",
-          "allow_burn",
-          "allow_close_account",
-          "allow_approve"
-        ],
         "properties": {
-          "allow_approve": {
-            "type": "boolean"
+          "alt": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AltInstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_close": false,
+              "allow_create": false,
+              "allow_deactivate": false,
+              "allow_extend": false,
+              "allow_freeze": false
+            }
           },
-          "allow_assign": {
-            "type": "boolean"
+          "loader_v4": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LoaderV4InstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_copy": false,
+              "allow_deploy": false,
+              "allow_finalize": false,
+              "allow_retract": false,
+              "allow_set_program_length": false,
+              "allow_transfer_authority": false,
+              "allow_write": false
+            }
           },
-          "allow_burn": {
-            "type": "boolean"
+          "spl_token": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SplTokenInstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_approve": false,
+              "allow_burn": false,
+              "allow_close_account": false,
+              "allow_freeze_account": false,
+              "allow_initialize_account": false,
+              "allow_initialize_mint": false,
+              "allow_initialize_multisig": false,
+              "allow_mint_to": false,
+              "allow_revoke": false,
+              "allow_set_authority": false,
+              "allow_thaw_account": false,
+              "allow_transfer": false
+            }
           },
-          "allow_close_account": {
-            "type": "boolean"
+          "system": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SystemInstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_allocate": false,
+              "allow_assign": false,
+              "allow_create_account": false,
+              "allow_transfer": false,
+              "nonce": {
+                "allow_advance": false,
+                "allow_authorize": false,
+                "allow_initialize": false,
+                "allow_withdraw": false
+              }
+            }
           },
-          "allow_sol_transfers": {
-            "type": "boolean"
-          },
-          "allow_spl_transfers": {
-            "type": "boolean"
-          },
-          "allow_token2022_transfers": {
-            "type": "boolean"
+          "token_2022": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Token2022InstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_approve": false,
+              "allow_burn": false,
+              "allow_close_account": false,
+              "allow_freeze_account": false,
+              "allow_initialize_account": false,
+              "allow_initialize_extension_authority": false,
+              "allow_initialize_mint": false,
+              "allow_initialize_multisig": false,
+              "allow_mint_to": false,
+              "allow_revoke": false,
+              "allow_set_authority": false,
+              "allow_thaw_account": false,
+              "allow_transfer": false,
+              "allow_update_extension_authority": false
+            }
           }
         }
       },
@@ -1061,6 +1733,84 @@
           }
         }
       },
+      "GetVersionResponse": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "LoaderV4InstructionPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_copy": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Copy instructions",
+            "default": false
+          },
+          "allow_deploy": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Deploy instructions",
+            "default": false
+          },
+          "allow_finalize": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current authority in Finalize instructions",
+            "default": false
+          },
+          "allow_retract": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Retract instructions",
+            "default": false
+          },
+          "allow_set_program_length": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in SetProgramLength instructions",
+            "default": false
+          },
+          "allow_transfer_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current authority in TransferAuthority instructions",
+            "default": false
+          },
+          "allow_write": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in Write instructions",
+            "default": false
+          }
+        }
+      },
+      "NonceInstructionPolicy": {
+        "type": "object",
+        "required": [
+          "allow_initialize",
+          "allow_advance",
+          "allow_withdraw",
+          "allow_authorize"
+        ],
+        "properties": {
+          "allow_advance": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the nonce authority in AdvanceNonceAccount instructions"
+          },
+          "allow_authorize": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current nonce authority in AuthorizeNonceAccount instructions"
+          },
+          "allow_initialize": {
+            "type": "boolean",
+            "description": "Allow fee payer to be set as the nonce authority in InitializeNonceAccount instructions"
+          },
+          "allow_withdraw": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the nonce authority in WithdrawNonceAccount instructions"
+          }
+        }
+      },
       "PriceConfig": {
         "allOf": [
           {
@@ -1097,6 +1847,7 @@
             "required": [
               "amount",
               "token",
+              "strict",
               "type"
             ],
             "properties": {
@@ -1104,6 +1855,9 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
+              },
+              "strict": {
+                "type": "boolean"
               },
               "token": {
                 "type": "string"
@@ -1150,7 +1904,7 @@
         "properties": {
           "sig_verify": {
             "type": "boolean",
-            "description": "Whether to verify signatures during simulation (defaults to true)"
+            "description": "Whether to verify signatures during simulation (defaults to false)"
           },
           "signer_key": {
             "type": "string",
@@ -1159,6 +1913,11 @@
           },
           "transaction": {
             "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)",
+            "nullable": true
           }
         }
       },
@@ -1170,51 +1929,292 @@
           "signature"
         ],
         "properties": {
+          "signature": {
+            "type": "string",
+            "description": "Transaction signature"
+          },
           "signed_transaction": {
             "type": "string"
           },
           "signer_pubkey": {
             "type": "string",
             "description": "Public key of the signer used (for client consistency)"
-          },
-          "signature": {
-            "type": "string"
           }
         }
       },
       "SignTransactionRequest": {
         "type": "object",
+        "description": "Request payload for signing a transaction.\n\nThis endpoint accepts a base64-encoded Solana transaction, validates it against\nthe configured fee payer policies, and if successful, signs it using Kora's\nconfigured signer policy\nbut not broadcasted to the network.",
         "required": [
           "transaction"
         ],
         "properties": {
           "sig_verify": {
             "type": "boolean",
-            "description": "Whether to verify signatures during simulation (defaults to true)"
+            "description": "Whether to verify signatures during simulation (defaults to false)"
           },
           "signer_key": {
             "type": "string",
-            "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+            "description": "Optional public key of the signer to ensure consistency",
             "nullable": true
           },
           "transaction": {
-            "type": "string"
+            "type": "string",
+            "description": "Base64-encoded Solana transaction"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Optional user ID for usage tracking (required when pricing is Free and usage tracking is enabled)",
+            "nullable": true
           }
         }
       },
       "SignTransactionResponse": {
         "type": "object",
+        "description": "Response payload containing the signed transaction.",
         "required": [
           "signed_transaction",
           "signer_pubkey"
         ],
         "properties": {
           "signed_transaction": {
-            "type": "string"
+            "type": "string",
+            "description": "Base64-encoded transaction signed by the Kora fee payer"
           },
           "signer_pubkey": {
             "type": "string",
             "description": "Public key of the signer used (for client consistency)"
+          }
+        }
+      },
+      "SplTokenConfig": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "All"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Allowlist"
+            ],
+            "properties": {
+              "Allowlist": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "SplTokenInstructionPolicy": {
+        "type": "object",
+        "required": [
+          "allow_transfer",
+          "allow_burn",
+          "allow_close_account",
+          "allow_approve",
+          "allow_revoke",
+          "allow_set_authority",
+          "allow_mint_to",
+          "allow_initialize_mint",
+          "allow_initialize_account",
+          "allow_initialize_multisig",
+          "allow_freeze_account",
+          "allow_thaw_account"
+        ],
+        "properties": {
+          "allow_approve": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in SPL Token Approve/ApproveChecked instructions"
+          },
+          "allow_burn": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in SPL Token Burn/BurnChecked instructions"
+          },
+          "allow_close_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in SPL Token CloseAccount instructions"
+          },
+          "allow_freeze_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the freeze authority in SPL Token FreezeAccount instructions"
+          },
+          "allow_initialize_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be set as the owner in SPL Token InitializeAccount instructions"
+          },
+          "allow_initialize_mint": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the mint authority in SPL Token InitializeMint/InitializeMint2 instructions"
+          },
+          "allow_initialize_multisig": {
+            "type": "boolean",
+            "description": "Allow fee payer to be a signer in SPL Token InitializeMultisig instructions"
+          },
+          "allow_mint_to": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the mint authority in SPL Token MintTo/MintToChecked instructions"
+          },
+          "allow_revoke": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in SPL Token Revoke instructions"
+          },
+          "allow_set_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current authority in SPL Token SetAuthority instructions"
+          },
+          "allow_thaw_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the freeze authority in SPL Token ThawAccount instructions"
+          },
+          "allow_transfer": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in SPL Token Transfer/TransferChecked instructions"
+          }
+        }
+      },
+      "SystemInstructionPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_allocate": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the account in System Allocate/AllocateWithSeed instructions",
+            "default": false
+          },
+          "allow_assign": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the authority in System Assign/AssignWithSeed instructions",
+            "default": false
+          },
+          "allow_create_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the payer in System CreateAccount/CreateAccountWithSeed instructions",
+            "default": false
+          },
+          "allow_transfer": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions",
+            "default": false
+          },
+          "nonce": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NonceInstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_advance": false,
+              "allow_authorize": false,
+              "allow_initialize": false,
+              "allow_withdraw": false
+            }
+          }
+        }
+      },
+      "Token2022Config": {
+        "type": "object",
+        "properties": {
+          "blocked_account_extensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "blocked_mint_extensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "transfer_hook_policy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TransferHookPolicy"
+              }
+            ],
+            "default": "deny_all"
+          }
+        }
+      },
+      "Token2022InstructionPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_approve": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in Token2022 Approve/ApproveChecked instructions",
+            "default": false
+          },
+          "allow_burn": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in Token2022 Burn/BurnChecked instructions",
+            "default": false
+          },
+          "allow_close_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in Token2022 CloseAccount instructions",
+            "default": false
+          },
+          "allow_freeze_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the freeze authority in Token2022 FreezeAccount instructions",
+            "default": false
+          },
+          "allow_initialize_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be set as the owner in Token2022 InitializeAccount instructions",
+            "default": false
+          },
+          "allow_initialize_extension_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be planted as a future Token2022 extension authority/delegate during\nextension initialization.",
+            "default": false
+          },
+          "allow_initialize_mint": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the mint authority in Token2022 InitializeMint/InitializeMint2 instructions",
+            "default": false
+          },
+          "allow_initialize_multisig": {
+            "type": "boolean",
+            "description": "Allow fee payer to be a signer in Token2022 InitializeMultisig instructions",
+            "default": false
+          },
+          "allow_mint_to": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the mint authority in Token2022 MintTo/MintToChecked instructions",
+            "default": false
+          },
+          "allow_revoke": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in Token2022 Revoke instructions",
+            "default": false
+          },
+          "allow_set_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the current authority in Token2022 SetAuthority instructions",
+            "default": false
+          },
+          "allow_thaw_account": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the freeze authority in Token2022 ThawAccount instructions",
+            "default": false
+          },
+          "allow_transfer": {
+            "type": "boolean",
+            "description": "Allow fee payer to be the owner in Token2022 Transfer/TransferChecked instructions",
+            "default": false
+          },
+          "allow_update_extension_authority": {
+            "type": "boolean",
+            "description": "Allow fee payer to be used as the current authority for Token2022 extension update/admin\ninstructions.",
+            "default": false
           }
         }
       },
@@ -1226,21 +2226,35 @@
           "source"
         ],
         "properties": {
+          "block_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
           "confidence": {
             "type": "number",
             "format": "double"
           },
           "price": {
-            "type": "number",
-            "format": "double"
+            "type": "string"
           },
           "source": {
             "$ref": "#/components/schemas/PriceSource"
           }
         }
       },
+      "TransferHookPolicy": {
+        "type": "string",
+        "enum": [
+          "deny_all",
+          "deny_mutable_for_delayed_signing",
+          "allow_all"
+        ]
+      },
       "TransferTransactionRequest": {
         "type": "object",
+        "description": "**DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.\nThis endpoint will be removed in a future version.\n\nRequest payload for creating a simple token or SOL transfer transaction.\nThis endpoint constructs an unsigned transfer where Kora acts as the fee payer,\nbut the user must still sign the transaction before it can be submitted.",
         "required": [
           "amount",
           "token",
@@ -1251,26 +2265,31 @@
           "amount": {
             "type": "integer",
             "format": "int64",
+            "description": "Amount to transfer (in the token's smallest unit, e.g. lamports for SOL)",
             "minimum": 0
           },
           "destination": {
-            "type": "string"
+            "type": "string",
+            "description": "The destination wallet address that will receive the tokens"
           },
           "signer_key": {
             "type": "string",
-            "description": "Optional signer signer_key to ensure consistency across related RPC calls",
+            "description": "Optional public key of the signer to ensure consistency",
             "nullable": true
           },
           "source": {
-            "type": "string"
+            "type": "string",
+            "description": "The source wallet address that will send the tokens"
           },
           "token": {
-            "type": "string"
+            "type": "string",
+            "description": "Token mint address to transfer (use native SOL address for SOL transfers)"
           }
         }
       },
       "TransferTransactionResponse": {
         "type": "object",
+        "description": "**DEPRECATED**: Use `getPaymentInstruction` instead for fee payment flows.\n\nResponse payload containing the constructed transfer transaction.",
         "required": [
           "transaction",
           "message",
@@ -1279,17 +2298,20 @@
         ],
         "properties": {
           "blockhash": {
-            "type": "string"
+            "type": "string",
+            "description": "The blockhash used when constructing the transaction"
           },
           "message": {
-            "type": "string"
+            "type": "string",
+            "description": "Unsigned base64-encoded message"
           },
           "signer_pubkey": {
             "type": "string",
-            "description": "Public key of the signer used (for client consistency)"
+            "description": "Public key of the Kora signer used as the fee payer (for client consistency)"
           },
           "transaction": {
-            "type": "string"
+            "type": "string",
+            "description": "Unsigned base64-encoded transaction ready for the user to sign"
           }
         }
       },
@@ -1305,6 +2327,10 @@
           "price_source"
         ],
         "properties": {
+          "allow_durable_transactions": {
+            "type": "boolean",
+            "description": "Allow durable transactions (nonce-based). Default: false.\nWhen false, rejects any transaction containing AdvanceNonceAccount instruction.\nWARNING: Enabling with dynamic pricing creates price arbitrage risk."
+          },
           "allowed_programs": {
             "type": "array",
             "items": {
@@ -1334,6 +2360,12 @@
             "format": "int64",
             "minimum": 0
           },
+          "max_price_staleness_slots": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum allowed age of oracle price data in slots. 0 = disabled (default).\nWhen >0, prices with a block_id older than `current_slot - max_price_staleness_slots` are rejected.",
+            "minimum": 0
+          },
           "max_signatures": {
             "type": "integer",
             "format": "int64",
@@ -1344,6 +2376,13 @@
           },
           "price_source": {
             "$ref": "#/components/schemas/PriceSource"
+          },
+          "require_one_of_programs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Programs where at least one must be called by the transaction (OR semantics).\nEach required program must also be listed in `allowed_programs`.\nDefault: empty (no restriction)."
           },
           "token_2022": {
             "$ref": "#/components/schemas/Token2022Config"
