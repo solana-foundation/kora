@@ -4,8 +4,8 @@ use crate::{
     admin::token_util::find_missing_atas,
     config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy},
     constant::{
-        BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_ID, MAX_RECAPTCHA_SCORE,
-        MIN_RECAPTCHA_SCORE, STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
+        BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_ID, LOADER_V4_PROGRAM_ID,
+        MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE, STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
     },
     fee::price::PriceModel,
     oracle::PriceSource,
@@ -284,6 +284,7 @@ impl ConfigValidator {
             spl_associated_token_account_interface::program::id().to_string(),
             solana_compute_budget_interface::id().to_string(),
             LIGHTHOUSE_PROGRAM_ID.to_string(),
+            LOADER_V4_PROGRAM_ID.to_string(),
         ]
         .into_iter()
         .chain(high_risk.iter().map(|(id, _)| id.clone()))
@@ -2096,6 +2097,7 @@ mod tests {
                         allow_deactivate: true,
                         allow_close: true,
                     },
+                    loader_v4: crate::config::LoaderV4InstructionPolicy::default(),
                 },
                 price: PriceConfig { model: PriceModel::Free },
                 token_2022: Token2022Config::default(),

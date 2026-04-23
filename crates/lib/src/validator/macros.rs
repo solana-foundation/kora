@@ -90,6 +90,24 @@ macro_rules! validate_alt {
     };
 }
 
+/// Macro to validate Loader-v4 instructions with custom fee-payer matching logic
+macro_rules! validate_loader_v4 {
+    ($self:expr, $instructions:expr, $type:ident, $pattern:pat => $fee_payer_used:expr, $policy:expr, $name:expr) => {
+        for instruction in
+            $instructions.get(&ParsedLoaderV4InstructionType::$type).unwrap_or(&vec![])
+        {
+            if let $pattern = instruction {
+                if $fee_payer_used && !$policy {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Fee payer cannot be used for '{}'",
+                        $name
+                    )));
+                }
+            }
+        }
+    };
+}
+
 /// Macro to validate Token2022-only instructions with custom fee-payer matching logic
 macro_rules! validate_token2022 {
     ($self:expr, $instructions:expr, $type:ident, $pattern:pat => $fee_payer_used:expr, $message:expr) => {

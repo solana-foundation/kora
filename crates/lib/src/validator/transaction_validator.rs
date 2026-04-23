@@ -8,9 +8,10 @@ use crate::{
         token::{TokenUtil, TransferHookValidationFlow},
     },
     transaction::{
-        ParsedALTInstructionData, ParsedALTInstructionType, ParsedSPLInstructionData,
-        ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
-        Token2022AccountUsagePolicy, VersionedTransactionResolved,
+        ParsedALTInstructionData, ParsedALTInstructionType, ParsedLoaderV4InstructionData,
+        ParsedLoaderV4InstructionType, ParsedSPLInstructionData, ParsedSPLInstructionType,
+        ParsedSystemInstructionData, ParsedSystemInstructionType, Token2022AccountUsagePolicy,
+        VersionedTransactionResolved,
     },
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -440,6 +441,77 @@ impl TransactionValidator {
             *lookup_table_authority == self.fee_payer_pubkey,
             self.fee_payer_policy.alt.allow_close,
             "ALT CloseLookupTable");
+
+        // Validate Loader-v4 (BPF loader successor) instructions.
+        let loader_v4_instructions = transaction_resolved.get_or_parse_loader_v4_instructions()?;
+
+        validate_loader_v4!(self, loader_v4_instructions, Write,
+            ParsedLoaderV4InstructionData::Write { authority, .. } =>
+            *authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.loader_v4.allow_write,
+            "Loader-v4 Write");
+
+        validate_loader_v4!(self, loader_v4_instructions, Copy,
+            ParsedLoaderV4InstructionData::Copy { authority, .. } =>
+            *authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.loader_v4.allow_copy,
+            "Loader-v4 Copy");
+
+        validate_loader_v4!(self, loader_v4_instructions, SetProgramLength,
+            ParsedLoaderV4InstructionData::SetProgramLength { authority, recipient, .. } =>
+            (*authority == self.fee_payer_pubkey
+                || recipient.is_some_and(|r| r == self.fee_payer_pubkey)),
+            self.fee_payer_policy.loader_v4.allow_set_program_length,
+            "Loader-v4 SetProgramLength");
+
+        // Drainage guard: when the fee payer is the SetProgramLength authority, the recipient
+        // (if present) must be the fee payer. Otherwise shrink-to-zero or over-funded-growth
+        // refunds would flow to an attacker-controlled account, draining Kora's rent.
+        for instruction in loader_v4_instructions
+            .get(&ParsedLoaderV4InstructionType::SetProgramLength)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedLoaderV4InstructionData::SetProgramLength {
+                authority, recipient, ..
+            } = instruction
+            {
+                if *authority == self.fee_payer_pubkey {
+                    if let Some(r) = recipient {
+                        if *r != self.fee_payer_pubkey {
+                            return Err(KoraError::InvalidTransaction(
+                                "Loader-v4 SetProgramLength: when fee payer is the authority, \
+                                 recipient must also be the fee payer (drainage guard)"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        validate_loader_v4!(self, loader_v4_instructions, Deploy,
+            ParsedLoaderV4InstructionData::Deploy { authority, .. } =>
+            *authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.loader_v4.allow_deploy,
+            "Loader-v4 Deploy");
+
+        validate_loader_v4!(self, loader_v4_instructions, Retract,
+            ParsedLoaderV4InstructionData::Retract { authority, .. } =>
+            *authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.loader_v4.allow_retract,
+            "Loader-v4 Retract");
+
+        validate_loader_v4!(self, loader_v4_instructions, TransferAuthority,
+            ParsedLoaderV4InstructionData::TransferAuthority { current_authority, .. } =>
+            *current_authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.loader_v4.allow_transfer_authority,
+            "Loader-v4 TransferAuthority");
+
+        validate_loader_v4!(self, loader_v4_instructions, Finalize,
+            ParsedLoaderV4InstructionData::Finalize { current_authority, .. } =>
+            *current_authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.loader_v4.allow_finalize,
+            "Loader-v4 Finalize");
 
         let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
         validate_token2022!(self, spl_instructions, SplTokenReallocate,
@@ -4977,5 +5049,259 @@ mod tests {
         } else {
             panic!("Expected InvalidTransaction error for revoke policy");
         }
+    }
+
+    // ----------------------------------------------------------------------------
+    // Loader-v4 tests
+    // ----------------------------------------------------------------------------
+
+    fn setup_loader_v4_config_with_policy(policy: FeePayerPolicy) {
+        use crate::constant::LOADER_V4_PROGRAM_ID;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![
+                LOADER_V4_PROGRAM_ID.to_string(),
+                SYSTEM_PROGRAM_ID.to_string(),
+            ])
+            .with_max_allowed_lamports(10_000_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_loader_v4_write_requires_policy() {
+        use solana_loader_v4_interface::instruction as loader_v4;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        // allow_write = true -> accepted
+        let mut policy = FeePayerPolicy::default();
+        policy.loader_v4.allow_write = true;
+        setup_loader_v4_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::write(&program, &fee_payer, 0, vec![1, 2, 3]);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // default (allow_write = false) -> rejected
+        setup_loader_v4_config_with_policy(FeePayerPolicy::default());
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::write(&program, &fee_payer, 0, vec![1, 2, 3]);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_loader_v4_deploy_requires_policy() {
+        use solana_loader_v4_interface::instruction as loader_v4;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.loader_v4.allow_deploy = true;
+        setup_loader_v4_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::deploy(&program, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // disabled -> rejected
+        setup_loader_v4_config_with_policy(FeePayerPolicy::default());
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::deploy(&program, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_loader_v4_retract_requires_policy() {
+        use solana_loader_v4_interface::instruction as loader_v4;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.loader_v4.allow_retract = true;
+        setup_loader_v4_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::retract(&program, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_loader_v4_set_program_length_accepts_self_recipient() {
+        // When the fee payer is authority AND recipient, freed lamports return to Kora.
+        use solana_loader_v4_interface::instruction as loader_v4;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.loader_v4.allow_set_program_length = true;
+        setup_loader_v4_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::set_program_length(&program, &fee_payer, 1024, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_loader_v4_set_program_length_rejects_foreign_recipient() {
+        // Drainage guard: when Kora is authority, any recipient other than Kora is rejected.
+        // Shrinking to zero with a user recipient would drain Kora's rent lamports.
+        use solana_loader_v4_interface::instruction as loader_v4;
+        let fee_payer = Pubkey::new_unique();
+        let user_recipient = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.loader_v4.allow_set_program_length = true;
+        setup_loader_v4_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::set_program_length(&program, &fee_payer, 0, &user_recipient);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("shrink to foreign recipient must be rejected");
+        if let KoraError::InvalidTransaction(msg) = err {
+            assert!(msg.contains("drainage guard"));
+        } else {
+            panic!("expected InvalidTransaction, got {err:?}");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_loader_v4_set_program_length_rejects_when_policy_disabled() {
+        use solana_loader_v4_interface::instruction as loader_v4;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        setup_loader_v4_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::set_program_length(&program, &fee_payer, 1024, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_loader_v4_transfer_authority_denied_by_default() {
+        use solana_loader_v4_interface::instruction as loader_v4;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let new_authority = Pubkey::new_unique();
+
+        setup_loader_v4_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::transfer_authority(&program, &fee_payer, &new_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_loader_v4_finalize_denied_by_default() {
+        use solana_loader_v4_interface::instruction as loader_v4;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let next_version = Pubkey::new_unique();
+
+        setup_loader_v4_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v4::finalize(&program, &fee_payer, &next_version);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
     }
 }

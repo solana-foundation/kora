@@ -4,7 +4,10 @@ use solana_sdk::pubkey::Pubkey;
 use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
 use spl_associated_token_account_interface::program::ID as ATA_PROGRAM_ID;
 
-use crate::transaction::{ParsedSystemInstructionData, ParsedSystemInstructionType};
+use crate::{
+    constant::LOADER_V4_PROGRAM_ID,
+    transaction::{ParsedSystemInstructionData, ParsedSystemInstructionType},
+};
 
 use super::super::limiter::LimiterContext;
 
@@ -18,6 +21,15 @@ const SYSTEM_CREATE_ACCOUNT_WITH_SEED: &str = "createaccountwithseed";
 const ATA_CREATE: &str = "create";
 const ATA_CREATE_IDEMPOTENT: &str = "createidempotent";
 
+// Loader-v4 instruction names. Values correspond to bincode discriminators of LoaderV4Instruction.
+const LOADER_V4_WRITE: &str = "write";
+const LOADER_V4_COPY: &str = "copy";
+const LOADER_V4_SET_PROGRAM_LENGTH: &str = "setprogramlength";
+const LOADER_V4_DEPLOY: &str = "deploy";
+const LOADER_V4_RETRACT: &str = "retract";
+const LOADER_V4_TRANSFER_AUTHORITY: &str = "transferauthority";
+const LOADER_V4_FINALIZE: &str = "finalize";
+
 /// Rule that limits specific instruction types per wallet
 ///
 /// Counts matching instructions in each transaction and enforces limits.
@@ -26,6 +38,7 @@ const ATA_CREATE_IDEMPOTENT: &str = "createidempotent";
 /// Currently supported instruction types:
 /// - System: CreateAccount / CreateAccountWithSeed
 /// - ATA: CreateIdempotent / Create
+/// - Loader-v4: Write / Copy / SetProgramLength / Deploy / Retract / TransferAuthority / Finalize
 #[derive(Debug)]
 pub struct InstructionRule {
     program: Pubkey,
@@ -224,6 +237,7 @@ impl InstructionIdentifier {
         match *program_id {
             _ if *program_id == SYSTEM_PROGRAM_ID => Self::system(data),
             _ if *program_id == ATA_PROGRAM_ID => Self::ata(data),
+            _ if *program_id == LOADER_V4_PROGRAM_ID => Self::loader_v4(data),
             _ => None,
         }
     }
@@ -241,6 +255,22 @@ impl InstructionIdentifier {
         match data.first().copied() {
             None | Some(0) => Some(ATA_CREATE.to_string()),
             Some(1) => Some(ATA_CREATE_IDEMPOTENT.to_string()),
+            _ => None,
+        }
+    }
+
+    fn loader_v4(data: &[u8]) -> Option<String> {
+        // bincode serializes enum variants as a little-endian u32 discriminator.
+        // Values match `LoaderV4Instruction` declaration order.
+        let discriminator = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
+        match discriminator {
+            0 => Some(LOADER_V4_WRITE.to_string()),
+            1 => Some(LOADER_V4_COPY.to_string()),
+            2 => Some(LOADER_V4_SET_PROGRAM_LENGTH.to_string()),
+            3 => Some(LOADER_V4_DEPLOY.to_string()),
+            4 => Some(LOADER_V4_RETRACT.to_string()),
+            5 => Some(LOADER_V4_TRANSFER_AUTHORITY.to_string()),
+            6 => Some(LOADER_V4_FINALIZE.to_string()),
             _ => None,
         }
     }
@@ -329,6 +359,34 @@ mod tests {
         assert_eq!(InstructionIdentifier::ata(&[]), Some(ATA_CREATE.to_string()));
         assert_eq!(InstructionIdentifier::ata(&[0]), Some(ATA_CREATE.to_string()));
         assert_eq!(InstructionIdentifier::ata(&[1]), Some(ATA_CREATE_IDEMPOTENT.to_string()));
+    }
+
+    #[test]
+    fn test_identify_loader_v4_via_bincode_serialized_data() {
+        use solana_loader_v4_interface::instruction::LoaderV4Instruction;
+
+        // Round-trip through bincode to keep our discriminator map aligned with the upstream enum.
+        let cases: &[(LoaderV4Instruction, &str)] = &[
+            (LoaderV4Instruction::Write { offset: 0, bytes: vec![1, 2] }, LOADER_V4_WRITE),
+            (
+                LoaderV4Instruction::Copy { destination_offset: 0, source_offset: 0, length: 16 },
+                LOADER_V4_COPY,
+            ),
+            (
+                LoaderV4Instruction::SetProgramLength { new_size: 1024 },
+                LOADER_V4_SET_PROGRAM_LENGTH,
+            ),
+            (LoaderV4Instruction::Deploy, LOADER_V4_DEPLOY),
+            (LoaderV4Instruction::Retract, LOADER_V4_RETRACT),
+            (LoaderV4Instruction::TransferAuthority, LOADER_V4_TRANSFER_AUTHORITY),
+            (LoaderV4Instruction::Finalize, LOADER_V4_FINALIZE),
+        ];
+
+        for (ix, expected_name) in cases {
+            let data = bincode::serialize(ix).unwrap();
+            let identified = InstructionIdentifier::identify(&LOADER_V4_PROGRAM_ID, &data);
+            assert_eq!(identified.as_deref(), Some(*expected_name), "failed to identify {ix:?}");
+        }
     }
 
     #[test]

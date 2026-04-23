@@ -37,6 +37,10 @@ pub const STAKE_PROGRAM_ID: Pubkey = pubkey!("Stake11111111111111111111111111111
 pub const BPF_LOADER_UPGRADEABLE_PROGRAM_ID: Pubkey =
     pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
 
+// Loader-v4 — successor to BPF Loader Upgradeable (loader-v3). Has a dedicated fee-payer parser
+// in Kora; policy enforcement lives in `LoaderV4InstructionPolicy`.
+pub const LOADER_V4_PROGRAM_ID: Pubkey = pubkey!("LoaderV411111111111111111111111111111111111");
+
 // Metrics
 pub const DEFAULT_METRICS_ENDPOINT: &str = "/metrics";
 pub const DEFAULT_METRICS_PORT: u16 = 8080;
@@ -278,5 +282,56 @@ pub mod instruction_indexes {
         pub const LOOKUP_TABLE_ACCOUNT_INDEX: usize = 0;
         pub const LOOKUP_TABLE_AUTHORITY_INDEX: usize = 1;
         pub const RECIPIENT_INDEX: usize = 2;
+    }
+
+    // Loader-v4 instruction layouts.
+    // Source: solana-loader-v4-interface::instruction::LoaderV4Instruction
+    pub mod loader_v4_write {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const PROGRAM_INDEX: usize = 0;
+        pub const AUTHORITY_INDEX: usize = 1;
+    }
+
+    pub mod loader_v4_copy {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const DESTINATION_PROGRAM_INDEX: usize = 0;
+        pub const AUTHORITY_INDEX: usize = 1;
+        pub const SOURCE_PROGRAM_INDEX: usize = 2;
+    }
+
+    pub mod loader_v4_set_program_length {
+        pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_RECIPIENT: usize = 3;
+        pub const PROGRAM_INDEX: usize = 0;
+        pub const AUTHORITY_INDEX: usize = 1;
+        pub const OPTIONAL_RECIPIENT_INDEX: usize = 2;
+    }
+
+    pub mod loader_v4_deploy {
+        pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_SOURCE: usize = 3;
+        pub const PROGRAM_INDEX: usize = 0;
+        pub const AUTHORITY_INDEX: usize = 1;
+        pub const OPTIONAL_SOURCE_PROGRAM_INDEX: usize = 2;
+    }
+
+    pub mod loader_v4_retract {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const PROGRAM_INDEX: usize = 0;
+        pub const AUTHORITY_INDEX: usize = 1;
+    }
+
+    pub mod loader_v4_transfer_authority {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const PROGRAM_INDEX: usize = 0;
+        pub const CURRENT_AUTHORITY_INDEX: usize = 1;
+        pub const NEW_AUTHORITY_INDEX: usize = 2;
+    }
+
+    pub mod loader_v4_finalize {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const PROGRAM_INDEX: usize = 0;
+        pub const CURRENT_AUTHORITY_INDEX: usize = 1;
+        pub const NEXT_VERSION_INDEX: usize = 2;
     }
 }

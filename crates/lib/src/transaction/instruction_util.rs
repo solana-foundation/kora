@@ -4,6 +4,7 @@ use solana_address_lookup_table_interface::{
     instruction::ProgramInstruction as AddressLookupTableInstruction,
     program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
 };
+use solana_loader_v4_interface::instruction::LoaderV4Instruction;
 use solana_message::compiled_instruction::CompiledInstruction;
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
@@ -16,7 +17,9 @@ use solana_transaction_status_client_types::{
 };
 
 use crate::{
-    constant::instruction_indexes, error::KoraError, sanitize_error,
+    constant::{instruction_indexes, LOADER_V4_PROGRAM_ID},
+    error::KoraError,
+    sanitize_error,
     transaction::VersionedTransactionResolved,
 };
 
@@ -247,6 +250,60 @@ pub enum ParsedALTInstructionData {
         lookup_table_account: Pubkey,
         lookup_table_authority: Pubkey,
         recipient: Pubkey,
+    },
+}
+
+/// Loader-v4 instruction types parsed from a transaction.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParsedLoaderV4InstructionType {
+    Write,
+    Copy,
+    SetProgramLength,
+    Deploy,
+    Retract,
+    TransferAuthority,
+    Finalize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParsedLoaderV4InstructionData {
+    Write {
+        program: Pubkey,
+        authority: Pubkey,
+        offset: u32,
+    },
+    Copy {
+        destination_program: Pubkey,
+        authority: Pubkey,
+        source_program: Pubkey,
+        destination_offset: u32,
+        source_offset: u32,
+        length: u32,
+    },
+    SetProgramLength {
+        program: Pubkey,
+        authority: Pubkey,
+        recipient: Option<Pubkey>,
+        new_size: u32,
+    },
+    Deploy {
+        program: Pubkey,
+        authority: Pubkey,
+        source_program: Option<Pubkey>,
+    },
+    Retract {
+        program: Pubkey,
+        authority: Pubkey,
+    },
+    TransferAuthority {
+        program: Pubkey,
+        current_authority: Pubkey,
+        new_authority: Pubkey,
+    },
+    Finalize {
+        program: Pubkey,
+        current_authority: Pubkey,
+        next_version: Pubkey,
     },
 }
 
@@ -1954,6 +2011,197 @@ impl IxUtils {
                                 .pubkey,
                             recipient: instruction.accounts
                                 [instruction_indexes::alt_close_lookup_table::RECIPIENT_INDEX]
+                                .pubkey,
+                        });
+                }
+            }
+        }
+
+        Ok(parsed_instructions)
+    }
+
+    pub fn parse_loader_v4_instructions(
+        transaction: &VersionedTransactionResolved,
+    ) -> Result<HashMap<ParsedLoaderV4InstructionType, Vec<ParsedLoaderV4InstructionData>>, KoraError>
+    {
+        let mut parsed_instructions: HashMap<
+            ParsedLoaderV4InstructionType,
+            Vec<ParsedLoaderV4InstructionData>,
+        > = HashMap::new();
+
+        for instruction in &transaction.all_instructions {
+            if instruction.program_id != LOADER_V4_PROGRAM_ID {
+                continue;
+            }
+
+            let loader_ix = bincode::deserialize::<LoaderV4Instruction>(&instruction.data)
+                .map_err(|e| {
+                    KoraError::InvalidTransaction(format!(
+                        "Failed to parse Loader-v4 instruction: {}",
+                        sanitize_error!(e)
+                    ))
+                })?;
+
+            match loader_ix {
+                LoaderV4Instruction::Write { offset, .. } => {
+                    validate_number_accounts!(
+                        instruction,
+                        instruction_indexes::loader_v4_write::REQUIRED_NUMBER_OF_ACCOUNTS
+                    );
+
+                    parsed_instructions
+                        .entry(ParsedLoaderV4InstructionType::Write)
+                        .or_default()
+                        .push(ParsedLoaderV4InstructionData::Write {
+                            program: instruction.accounts
+                                [instruction_indexes::loader_v4_write::PROGRAM_INDEX]
+                                .pubkey,
+                            authority: instruction.accounts
+                                [instruction_indexes::loader_v4_write::AUTHORITY_INDEX]
+                                .pubkey,
+                            offset,
+                        });
+                }
+                LoaderV4Instruction::Copy { destination_offset, source_offset, length } => {
+                    validate_number_accounts!(
+                        instruction,
+                        instruction_indexes::loader_v4_copy::REQUIRED_NUMBER_OF_ACCOUNTS
+                    );
+
+                    parsed_instructions
+                        .entry(ParsedLoaderV4InstructionType::Copy)
+                        .or_default()
+                        .push(ParsedLoaderV4InstructionData::Copy {
+                            destination_program: instruction.accounts
+                                [instruction_indexes::loader_v4_copy::DESTINATION_PROGRAM_INDEX]
+                                .pubkey,
+                            authority: instruction.accounts
+                                [instruction_indexes::loader_v4_copy::AUTHORITY_INDEX]
+                                .pubkey,
+                            source_program: instruction.accounts
+                                [instruction_indexes::loader_v4_copy::SOURCE_PROGRAM_INDEX]
+                                .pubkey,
+                            destination_offset,
+                            source_offset,
+                            length,
+                        });
+                }
+                LoaderV4Instruction::SetProgramLength { new_size } => {
+                    let account_count = instruction.accounts.len();
+                    if account_count
+                        < instruction_indexes::loader_v4_set_program_length::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                    {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "Loader-v4 SetProgramLength has {account_count} accounts, expected at least 2"
+                        )));
+                    }
+
+                    let recipient = if account_count
+                        >= instruction_indexes::loader_v4_set_program_length::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_RECIPIENT
+                    {
+                        Some(
+                            instruction.accounts[instruction_indexes::loader_v4_set_program_length::OPTIONAL_RECIPIENT_INDEX]
+                                .pubkey,
+                        )
+                    } else {
+                        None
+                    };
+
+                    parsed_instructions
+                        .entry(ParsedLoaderV4InstructionType::SetProgramLength)
+                        .or_default()
+                        .push(ParsedLoaderV4InstructionData::SetProgramLength {
+                            program: instruction.accounts[instruction_indexes::loader_v4_set_program_length::PROGRAM_INDEX].pubkey,
+                            authority: instruction.accounts[instruction_indexes::loader_v4_set_program_length::AUTHORITY_INDEX].pubkey,
+                            recipient,
+                            new_size,
+                        });
+                }
+                LoaderV4Instruction::Deploy => {
+                    let account_count = instruction.accounts.len();
+                    if account_count
+                        < instruction_indexes::loader_v4_deploy::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                    {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "Loader-v4 Deploy has {account_count} accounts, expected at least 2"
+                        )));
+                    }
+
+                    let source_program = if account_count
+                        >= instruction_indexes::loader_v4_deploy::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_SOURCE
+                    {
+                        Some(
+                            instruction.accounts[instruction_indexes::loader_v4_deploy::OPTIONAL_SOURCE_PROGRAM_INDEX]
+                                .pubkey,
+                        )
+                    } else {
+                        None
+                    };
+
+                    parsed_instructions
+                        .entry(ParsedLoaderV4InstructionType::Deploy)
+                        .or_default()
+                        .push(ParsedLoaderV4InstructionData::Deploy {
+                            program: instruction.accounts
+                                [instruction_indexes::loader_v4_deploy::PROGRAM_INDEX]
+                                .pubkey,
+                            authority: instruction.accounts
+                                [instruction_indexes::loader_v4_deploy::AUTHORITY_INDEX]
+                                .pubkey,
+                            source_program,
+                        });
+                }
+                LoaderV4Instruction::Retract => {
+                    validate_number_accounts!(
+                        instruction,
+                        instruction_indexes::loader_v4_retract::REQUIRED_NUMBER_OF_ACCOUNTS
+                    );
+
+                    parsed_instructions
+                        .entry(ParsedLoaderV4InstructionType::Retract)
+                        .or_default()
+                        .push(ParsedLoaderV4InstructionData::Retract {
+                            program: instruction.accounts
+                                [instruction_indexes::loader_v4_retract::PROGRAM_INDEX]
+                                .pubkey,
+                            authority: instruction.accounts
+                                [instruction_indexes::loader_v4_retract::AUTHORITY_INDEX]
+                                .pubkey,
+                        });
+                }
+                LoaderV4Instruction::TransferAuthority => {
+                    validate_number_accounts!(
+                        instruction,
+                        instruction_indexes::loader_v4_transfer_authority::REQUIRED_NUMBER_OF_ACCOUNTS
+                    );
+
+                    parsed_instructions
+                        .entry(ParsedLoaderV4InstructionType::TransferAuthority)
+                        .or_default()
+                        .push(ParsedLoaderV4InstructionData::TransferAuthority {
+                            program: instruction.accounts[instruction_indexes::loader_v4_transfer_authority::PROGRAM_INDEX].pubkey,
+                            current_authority: instruction.accounts[instruction_indexes::loader_v4_transfer_authority::CURRENT_AUTHORITY_INDEX].pubkey,
+                            new_authority: instruction.accounts[instruction_indexes::loader_v4_transfer_authority::NEW_AUTHORITY_INDEX].pubkey,
+                        });
+                }
+                LoaderV4Instruction::Finalize => {
+                    validate_number_accounts!(
+                        instruction,
+                        instruction_indexes::loader_v4_finalize::REQUIRED_NUMBER_OF_ACCOUNTS
+                    );
+
+                    parsed_instructions
+                        .entry(ParsedLoaderV4InstructionType::Finalize)
+                        .or_default()
+                        .push(ParsedLoaderV4InstructionData::Finalize {
+                            program: instruction.accounts
+                                [instruction_indexes::loader_v4_finalize::PROGRAM_INDEX]
+                                .pubkey,
+                            current_authority: instruction.accounts
+                                [instruction_indexes::loader_v4_finalize::CURRENT_AUTHORITY_INDEX]
+                                .pubkey,
+                            next_version: instruction.accounts
+                                [instruction_indexes::loader_v4_finalize::NEXT_VERSION_INDEX]
                                 .pubkey,
                         });
                 }
