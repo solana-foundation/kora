@@ -1,6 +1,13 @@
-FROM rust:1.88
+FROM rustlang/rust:nightly
 
-RUN cargo install kora-cli
+# Build from main until a crates.io release includes the DeployAuthority plugin and
+# KORA_REDIS_URL support. Switch back to `cargo install kora-cli` once that lands.
+# The Kora workspace pins nightly via rust-toolchain.toml; matching here avoids
+# dep-version skew (e.g. aws-sdk-kms currently requires rustc 1.91.1+).
+RUN cargo install \
+    --git https://github.com/solana-foundation/kora \
+    --branch main \
+    kora-cli
 
 COPY kora.toml ./
 COPY signers.toml ./
