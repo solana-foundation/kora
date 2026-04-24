@@ -325,11 +325,13 @@ impl ConfigValidator {
     pub async fn validate(_rpc_client: &RpcClient) -> Result<(), KoraError> {
         let config = &get_config()?;
 
-        if config.validation.allowed_tokens.is_empty() {
+        if config.validation.is_payment_required() && config.validation.allowed_tokens.is_empty() {
             return Err(KoraError::InternalServerError("No tokens enabled".to_string()));
         }
 
-        TokenUtil::check_valid_tokens(&config.validation.allowed_tokens)?;
+        if !config.validation.allowed_tokens.is_empty() {
+            TokenUtil::check_valid_tokens(&config.validation.allowed_tokens)?;
+        }
 
         if let Some(payment_address) = &config.kora.payment_address {
             if let Err(e) = Pubkey::from_str(payment_address) {
@@ -537,11 +539,15 @@ impl ConfigValidator {
             }
         }
 
-        // Validate allowed tokens
-        if config.validation.allowed_tokens.is_empty() {
+        // Validate allowed tokens. Only required when the price model actually charges fees;
+        // a Free-pricing operator (e.g. a devnet-deploy paymaster) has no reason to maintain
+        // an allowlist since no SPL token is ever used for payment.
+        if config.validation.is_payment_required() && config.validation.allowed_tokens.is_empty() {
             errors.push("No allowed tokens configured".to_string());
-        } else if let Err(e) = TokenUtil::check_valid_tokens(&config.validation.allowed_tokens) {
-            errors.push(format!("Invalid token address: {e}"));
+        } else if !config.validation.allowed_tokens.is_empty() {
+            if let Err(e) = TokenUtil::check_valid_tokens(&config.validation.allowed_tokens) {
+                errors.push(format!("Invalid token address: {e}"));
+            }
         }
 
         // Validate allowed spl paid tokens
@@ -1243,6 +1249,83 @@ mod tests {
             .unwrap_err()
             .iter()
             .any(|e| e.contains("GasSwap plugin cannot be used with Free pricing")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_empty_allowed_tokens_ok_when_free() {
+        // Free-pricing operators (e.g. devnet-deploy paymaster) have no reason to maintain
+        // an allowed_tokens list since no SPL token is ever used for payment.
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Free },
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_ok(), "Free pricing with empty allowed_tokens must not error");
+        let warnings = result.unwrap();
+        assert!(!warnings.iter().any(|w| w.contains("No allowed tokens configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_empty_allowed_tokens_errors_when_fees_required() {
+        // When the price model charges fees, allowed_tokens still must be populated.
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_tokens: vec![],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig { model: PriceModel::Margin { margin: 0.1 } },
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("No allowed tokens configured")));
     }
 
     #[tokio::test]
