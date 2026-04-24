@@ -1,6 +1,6 @@
 import { createKitKoraClient, kora, type KoraKitClient } from '../src/kit/index.js';
 import { address, createClient, createNoopSigner, type Address, signature as kitSignature } from '@solana/kit';
-import { identity } from '@solana/kit-plugin-signer';
+import { identity, signer } from '@solana/kit-plugin-signer';
 
 // Mock fetch globally
 const mockFetch = jest.fn();
@@ -601,7 +601,7 @@ describe('kora() bundle plugin', () => {
         const client = await createClient()
             .use(identity(MOCK_WALLET))
             .use(
-                await kora({
+                kora({
                     endpoint: MOCK_ENDPOINT,
                     rpcUrl: MOCK_RPC_URL,
                     feeToken: MOCK_FEE_TOKEN,
@@ -614,5 +614,27 @@ describe('kora() bundle plugin', () => {
         expect(typeof client.sendTransaction).toBe('function');
         expect(typeof client.planTransaction).toBe('function');
         expect(client.kora).toBeDefined();
+    });
+
+    // TODO: re-enable once @solana/kit supports overriding an already-set field on an
+    // extended client.
+    it.skip('overrides client.payer when the caller used signer() (sets identity + payer)', async () => {
+        mockRpcResponse({
+            signer_address: MOCK_PAYER_ADDRESS,
+            payment_address: MOCK_PAYMENT_ADDRESS,
+        });
+
+        const client = await createClient()
+            .use(signer(MOCK_WALLET))
+            .use(
+                kora({
+                    endpoint: MOCK_ENDPOINT,
+                    rpcUrl: MOCK_RPC_URL,
+                    feeToken: MOCK_FEE_TOKEN,
+                }),
+            );
+
+        expect(client.identity.address).toBe(MOCK_WALLET_ADDRESS);
+        expect(client.payer.address).toBe(MOCK_PAYER_ADDRESS);
     });
 });

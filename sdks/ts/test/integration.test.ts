@@ -434,7 +434,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
                 return createClient()
                     .use(identity(testWallet))
                     .use(
-                        await kora({
+                        kora({
                             endpoint: koraRpcUrl,
                             rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
                             feeToken: usdcMint,
