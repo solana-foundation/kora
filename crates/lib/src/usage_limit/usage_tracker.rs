@@ -366,8 +366,9 @@ impl UsageTracker {
             .filter_map(|info| info.public_key.parse().ok())
             .collect();
 
+        let resolved_cache_url = usage_config.resolved_cache_url();
         let (store, backend): (Arc<dyn UsageStore>, &str) =
-            if let Some(cache_url) = &usage_config.cache_url {
+            if let Some(cache_url) = &resolved_cache_url {
                 let cfg = deadpool_redis::Config::from_url(cache_url);
                 let pool = cfg.create_pool(Some(Runtime::Tokio1)).map_err(|e| {
                     KoraError::InternalServerError(format!(

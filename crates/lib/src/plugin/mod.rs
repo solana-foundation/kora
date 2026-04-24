@@ -9,8 +9,10 @@ use crate::{
     transaction::VersionedTransactionResolved,
 };
 
+mod plugin_deploy_authority;
 mod plugin_gas_swap;
 
+use plugin_deploy_authority::DeployAuthorityPlugin;
 use plugin_gas_swap::GasSwapPlugin;
 
 #[derive(Debug, Clone, Copy)]
@@ -78,6 +80,9 @@ impl TransactionPluginRunner {
                 TransactionPluginType::GasSwap => {
                     plugins.push(Box::new(GasSwapPlugin));
                 }
+                TransactionPluginType::DeployAuthority => {
+                    plugins.push(Box::new(DeployAuthorityPlugin));
+                }
             }
         }
 
@@ -95,6 +100,7 @@ impl TransactionPluginRunner {
             }
             let plugin: Box<dyn TransactionPlugin> = match plugin_type {
                 TransactionPluginType::GasSwap => Box::new(GasSwapPlugin),
+                TransactionPluginType::DeployAuthority => Box::new(DeployAuthorityPlugin),
             };
             let (e, w) = plugin.validate_config(config);
             errors.extend(e);

@@ -37,6 +37,13 @@ impl UsageLimitConfig {
     pub fn build_rules(&self) -> Result<Vec<UsageRule>, KoraError> {
         self.rules.iter().map(|r| r.build()).collect()
     }
+
+    /// Resolve the cache URL to use. Priority: `KORA_REDIS_URL` env var over the
+    /// `cache_url` field from the TOML config. Returns `None` (in-memory store) when
+    /// neither is set.
+    pub fn resolved_cache_url(&self) -> Option<String> {
+        std::env::var("KORA_REDIS_URL").ok().or_else(|| self.cache_url.clone())
+    }
 }
 
 /// Configuration for a single usage limit rule (TOML-serializable)
@@ -367,5 +374,51 @@ mod tests {
         assert_eq!(rules.len(), 2);
         assert_eq!(rules[0].rule_type(), "transaction");
         assert_eq!(rules[1].rule_type(), "instruction");
+    }
+
+    fn scoped_redis_env<F: FnOnce()>(value: Option<&str>, f: F) {
+        let previous = std::env::var("KORA_REDIS_URL").ok();
+        match value {
+            Some(v) => std::env::set_var("KORA_REDIS_URL", v),
+            None => std::env::remove_var("KORA_REDIS_URL"),
+        }
+        f();
+        match previous {
+            Some(v) => std::env::set_var("KORA_REDIS_URL", v),
+            None => std::env::remove_var("KORA_REDIS_URL"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_resolved_cache_url_env_var_takes_priority_over_config() {
+        let cfg = UsageLimitConfig {
+            cache_url: Some("redis://config:6379".into()),
+            ..Default::default()
+        };
+        scoped_redis_env(Some("redis://from-env:6379"), || {
+            assert_eq!(cfg.resolved_cache_url(), Some("redis://from-env:6379".into()));
+        });
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_resolved_cache_url_falls_back_to_config_when_env_missing() {
+        let cfg = UsageLimitConfig {
+            cache_url: Some("redis://from-config:6379".into()),
+            ..Default::default()
+        };
+        scoped_redis_env(None, || {
+            assert_eq!(cfg.resolved_cache_url(), Some("redis://from-config:6379".into()));
+        });
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_resolved_cache_url_returns_none_when_neither_set() {
+        let cfg = UsageLimitConfig::default();
+        scoped_redis_env(None, || {
+            assert_eq!(cfg.resolved_cache_url(), None);
+        });
     }
 }

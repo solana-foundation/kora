@@ -41,11 +41,13 @@ impl CacheUtil {
 
         #[allow(clippy::needless_borrow)]
         let pool = if CacheUtil::is_cache_enabled(&config) {
-            let redis_url = config.kora.cache.url.as_ref().ok_or(KoraError::ConfigError(
-                "Redis URL is required when cache is enabled. Set redis_url in config".to_string(),
+            let redis_url = config.kora.cache.resolved_url().ok_or(KoraError::ConfigError(
+                "Redis URL is required when cache is enabled. Set the url in config or the \
+                 KORA_REDIS_URL environment variable."
+                    .to_string(),
             ))?;
 
-            let cfg = deadpool_redis::Config::from_url(redis_url);
+            let cfg = deadpool_redis::Config::from_url(&redis_url);
             let pool = cfg.create_pool(Some(Runtime::Tokio1)).map_err(|e| {
                 KoraError::InternalServerError(format!(
                     "Failed to create cache pool: {}",
@@ -189,7 +191,7 @@ impl CacheUtil {
 
     /// Check if cache is enabled and available
     fn is_cache_enabled(config: &Config) -> bool {
-        config.kora.cache.enabled && config.kora.cache.url.is_some()
+        config.kora.cache.enabled && config.kora.cache.resolved_url().is_some()
     }
 
     /// Get account from cache with optional force refresh

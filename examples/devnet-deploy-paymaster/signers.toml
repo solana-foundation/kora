@@ -1,0 +1,9 @@
+[signer_pool]
+strategy = "round_robin"
+
+[[signers]]
+name = "kora_gcp_kms"
+type = "gcp_kms"
+key_name_env = "KORA_GCP_KMS_KEY_NAME"
+public_key_env = "KORA_GCP_KMS_PUBLIC_KEY"
+weight = 1
