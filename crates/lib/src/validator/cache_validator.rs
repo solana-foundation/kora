@@ -35,8 +35,10 @@ impl CacheValidator {
             return (errors, warnings);
         }
 
+        let resolved_cache_url = usage_config.resolved_cache_url();
+
         // Check if cache_url is provided when enabled
-        match &usage_config.cache_url {
+        match &resolved_cache_url {
             None => {
                 // In-memory store will be used - warn about non-persistence
                 warnings.push(
@@ -64,7 +66,7 @@ impl CacheValidator {
         }
 
         // Test Redis connection
-        if let Some(cache_url) = &usage_config.cache_url {
+        if let Some(cache_url) = &resolved_cache_url {
             if cache_url.starts_with("redis://") || cache_url.starts_with("rediss://") {
                 if let Err(e) = Self::test_redis_connection(cache_url).await {
                     if usage_config.fallback_if_unavailable {
@@ -95,7 +97,7 @@ impl CacheValidator {
             return (errors, warnings);
         }
 
-        match &cache_config.url {
+        match cache_config.resolved_url() {
             None => {
                 errors.push("RPC cache is enabled but no Redis URL is configured".to_string());
             }
@@ -105,7 +107,7 @@ impl CacheValidator {
                         "Invalid cache_url format: must start with redis:// or rediss://"
                             .to_string(),
                     );
-                } else if let Err(_e) = Self::test_redis_connection(cache_url).await {
+                } else if let Err(_e) = Self::test_redis_connection(&cache_url).await {
                     errors.push("RPC cache Redis connection failed".to_string());
                 }
             }

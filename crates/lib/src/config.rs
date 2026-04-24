@@ -547,10 +547,19 @@ impl Default for CacheConfig {
     }
 }
 
+impl CacheConfig {
+    /// Resolve the Redis URL to use. Priority: `KORA_REDIS_URL` env var over the `url`
+    /// field from the TOML config. Returns `None` when neither is set.
+    pub fn resolved_url(&self) -> Option<String> {
+        std::env::var("KORA_REDIS_URL").ok().or_else(|| self.url.clone())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum TransactionPluginType {
     GasSwap,
+    DeployAuthority,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
@@ -1098,5 +1107,46 @@ allow_create = true
 
         assert!(config.kora.enabled_methods.transfer_transaction);
         assert!(!config.kora.enabled_methods.sign_transaction);
+    }
+
+    fn scoped_redis_env<F: FnOnce()>(value: Option<&str>, f: F) {
+        let previous = std::env::var("KORA_REDIS_URL").ok();
+        match value {
+            Some(v) => std::env::set_var("KORA_REDIS_URL", v),
+            None => std::env::remove_var("KORA_REDIS_URL"),
+        }
+        f();
+        match previous {
+            Some(v) => std::env::set_var("KORA_REDIS_URL", v),
+            None => std::env::remove_var("KORA_REDIS_URL"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_resolved_url_env_var_takes_priority_over_config() {
+        let cfg = CacheConfig { url: Some("redis://config:6379".into()), ..Default::default() };
+        scoped_redis_env(Some("redis://from-env:6379"), || {
+            assert_eq!(cfg.resolved_url(), Some("redis://from-env:6379".into()));
+        });
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_resolved_url_falls_back_to_config_when_env_missing() {
+        let cfg =
+            CacheConfig { url: Some("redis://from-config:6379".into()), ..Default::default() };
+        scoped_redis_env(None, || {
+            assert_eq!(cfg.resolved_url(), Some("redis://from-config:6379".into()));
+        });
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_resolved_url_returns_none_when_neither_set() {
+        let cfg = CacheConfig::default();
+        scoped_redis_env(None, || {
+            assert_eq!(cfg.resolved_url(), None);
+        });
     }
 }

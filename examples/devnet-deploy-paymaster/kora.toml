@@ -1,0 +1,104 @@
+# Example config for a devnet-deploy paymaster.
+[kora]
+rate_limit = 100
+
+[kora.auth]
+
+[kora.cache]
+enabled = true
+# url is read from the KORA_REDIS_URL env var at startup.
+default_ttl = 300
+account_ttl = 60
+
+[kora.enabled_methods]
+liveness = true
+estimate_transaction_fee = false
+estimate_bundle_fee = false
+get_supported_tokens = false
+sign_transaction = true
+sign_and_send_transaction = true
+transfer_transaction = false
+get_blockhash = false
+get_config = false
+get_payer_signer = true
+get_version = true
+sign_bundle = false
+sign_and_send_bundle = false
+
+[kora.plugins]
+enabled = ["deploy_authority"]
+
+[validation]
+max_allowed_lamports = 10000000000
+max_signatures = 20
+price_source = "Mock"
+allow_durable_transactions = false
+allowed_programs = [
+    "11111111111111111111111111111111",             # System Program
+    "ComputeBudget111111111111111111111111111111",  # Compute Budget Program
+    "LoaderV411111111111111111111111111111111111",  # Loader-v4 Program
+]
+allowed_tokens = []
+allowed_spl_paid_tokens = []
+disallowed_accounts = []
+
+[validation.price]
+type = "free"
+
+[validation.token_2022]
+transfer_hook_policy = "deny_mutable_for_delayed_signing"
+blocked_mint_extensions = []
+blocked_account_extensions = []
+
+[validation.fee_payer_policy]
+
+[validation.fee_payer_policy.system]
+allow_transfer = false
+allow_assign = false
+# Needed so Kora can fund the loader-v4 program account (CreateAccount + SetProgramLength).
+allow_create_account = true
+allow_allocate = true
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false
+allow_advance = false
+allow_authorize = false
+allow_withdraw = false
+
+[validation.fee_payer_policy.loader_v4]
+# Operator opts Kora into being loader-v4 authority. The plugin then pins that authority to
+# Kora on every instruction.
+allow_write = true
+allow_copy = true
+allow_set_program_length = true
+allow_deploy = true
+allow_retract = true
+# Leave these false: the plugin enforces "new_authority == fee_payer" on TransferAuthority and
+# always rejects Finalize, so even if we flipped these on, the plugin layer would still block
+# any tx that tries to hand off or freeze control.
+allow_transfer_authority = false
+allow_finalize = false
+
+[kora.usage_limit]
+enabled = true
+# cache_url is read from the KORA_REDIS_URL env var at startup (shared with [kora.cache]).
+fallback_if_unavailable = false
+
+# Cap deploys per wallet per day. Covers initial deploy + several upgrades
+# (loader-v4 upgrade = Retract + Write + Deploy, so Deploy counts each upgrade).
+[[kora.usage_limit.rules]]
+type = "instruction"
+program = "LoaderV411111111111111111111111111111111111"
+instruction = "deploy"
+max = 5
+window_seconds = 86400
+
+[[kora.usage_limit.rules]]
+type = "instruction"
+program = "LoaderV411111111111111111111111111111111111"
+instruction = "write"
+max = 2000
+window_seconds = 86400
+
+[kora.bundle]
+enabled = false
