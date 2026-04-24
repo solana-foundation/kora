@@ -21,7 +21,12 @@ import {
 } from '@solana/kit';
 import { identity } from '@solana/kit-plugin-signer';
 import { getTransferSolInstruction } from '@solana-program/system';
-import { findAssociatedTokenPda, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
+import {
+    findAssociatedTokenPda,
+    getTransferInstruction,
+    TOKEN_PROGRAM_ADDRESS,
+    tokenProgram,
+} from '@solana-program/token';
 
 import { KoraClient, kora } from '../src/index.js';
 import { runAuthenticationTests } from './auth-setup.js';
@@ -470,4 +475,55 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
             }, 30000);
         });
     }
+
+    (FREE_PRICING ? describe.skip : describe)('Kit Client (standard pricing)', () => {
+        let paidClient: Awaited<ReturnType<typeof buildPaidClient>>;
+
+        async function buildPaidClient() {
+            const koraRpcUrl = process.env.KORA_RPC_URL || 'http://127.0.0.1:8080';
+            return createClient()
+                .use(identity(testWallet))
+                .use(
+                    kora({
+                        endpoint: koraRpcUrl,
+                        rpcUrl: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
+                        feeToken: usdcMint,
+                        ...(AUTH_ENABLED && {
+                            apiKey: process.env.KORA_API_KEY || 'test-api-key-123',
+                            hmacSecret: process.env.KORA_HMAC_SECRET || 'test-hmac-secret-456',
+                        }),
+                    }),
+                )
+                .use(tokenProgram());
+        }
+
+        beforeAll(async () => {
+            paidClient = await buildPaidClient();
+        }, 30000);
+
+        it('should send SPL token transfer with paid fee via kit client', async () => {
+            const [sourceAta] = await findAssociatedTokenPda({
+                mint: usdcMint,
+                owner: testWallet.address,
+                tokenProgram: TOKEN_PROGRAM_ADDRESS,
+            });
+            const [destinationAta] = await findAssociatedTokenPda({
+                mint: usdcMint,
+                owner: koraAddress,
+                tokenProgram: TOKEN_PROGRAM_ADDRESS,
+            });
+
+            const result = await paidClient.token.instructions
+                .transfer({
+                    amount: 1000000n,
+                    authority: testWallet,
+                    destination: destinationAta,
+                    source: sourceAta,
+                })
+                .sendTransaction();
+
+            expect(result.status).toBe('successful');
+            expect(result.context.signature).toBeDefined();
+        }, 30000);
+    });
 });
