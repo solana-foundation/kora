@@ -21,7 +21,7 @@ import {
 } from '@solana/kit';
 
 import { KoraClient } from '../client.js';
-import type { KoraKitClientConfig } from '../types/index.js';
+import type { KoraBundleConfig } from '../types/index.js';
 import { removePaymentInstruction, updatePaymentInstructionAmount } from './payment.js';
 
 // TODO: Create a bundle-aware executor (e.g. `createKoraBundlePlanExecutor`) that collects
@@ -31,7 +31,8 @@ import { removePaymentInstruction, updatePaymentInstructionAmount } from './paym
 // transactions and calling `client.kora.signAndSendBundle()`.
 export function createKoraTransactionPlanExecutor(
     koraClient: KoraClient,
-    config: KoraKitClientConfig,
+    config: KoraBundleConfig,
+    userSigner: TransactionSigner,
     payerSigner: TransactionSigner,
     payment: { destinationTokenAccount: Address; sourceTokenAccount: Address } | undefined,
     resolveProvisoryComputeUnitLimit:
@@ -98,7 +99,7 @@ export function createKoraTransactionPlanExecutor(
                     feeInToken > 0
                         ? updatePaymentInstructionAmount(
                               currentIxs,
-                              config.feePayerWallet,
+                              userSigner,
                               sourceTokenAccount,
                               destinationTokenAccount,
                               feeInToken,
@@ -108,7 +109,7 @@ export function createKoraTransactionPlanExecutor(
                               currentIxs,
                               sourceTokenAccount,
                               destinationTokenAccount,
-                              config.feePayerWallet,
+                              userSigner,
                               config.tokenProgramId,
                           );
 

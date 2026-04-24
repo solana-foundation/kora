@@ -1,6 +1,6 @@
 {
   "name": "@solana/kora",
-  "version": "0.3.0-beta.0",
+  "version": "0.3.0-beta.1",
   "description": "TypeScript SDK for Kora RPC",
   "main": "dist/src/index.js",
   "type": "module",
@@ -16,8 +16,8 @@
     "test:integration:free": "FREE_PRICING=true pnpm test integration.test.ts",
     "test:integration:privy": "KORA_SIGNER_TYPE=privy pnpm test integration.test.ts",
     "test:integration:turnkey": "KORA_SIGNER_TYPE=turnkey pnpm test integration.test.ts",
-    "test:unit": "pnpm test unit.test.ts",
-    "test:ci:unit": "jest test/unit.test.ts",
+    "test:unit": "pnpm test unit.test.ts kit-client.test.ts plugin.test.ts",
+    "test:ci:unit": "jest test/unit.test.ts test/kit-client.test.ts test/plugin.test.ts",
     "lint": "eslint src/",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -48,17 +48,17 @@
   },
   "peerDependencies": {
     "@solana-program/compute-budget": "^0.15.0",
-    "@solana-program/token": "^0.12.0",
-    "@solana/kit": "^6.3.0",
-    "@solana/kit-plugin-instruction-plan": "^0.7.0",
-    "@solana/kit-plugin-payer": "^0.6.0",
-    "@solana/kit-plugin-rpc": "^0.7.0"
+    "@solana-program/token": "^0.13.0",
+    "@solana/kit": "^6.8.0",
+    "@solana/kit-plugin-instruction-plan": "^0.10.0",
+    "@solana/kit-plugin-rpc": "^0.10.0",
+    "@solana/kit-plugin-signer": "^0.10.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
     "@solana-program/system": "^0.12.0",
     "@solana/eslint-config-solana": "6.0.0",
-    "@solana/kit-client-litesvm": "^0.7.0",
+    "@solana/kit-plugin-litesvm": "^0.10.0",
     "@solana/prettier-config-solana": "^0.0.6",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.17.27",

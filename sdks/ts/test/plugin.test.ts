@@ -1,5 +1,5 @@
 import type { Address, Base64EncodedWireTransaction, Blockhash, Signature } from '@solana/kit';
-import { createEmptyClient } from '@solana/kit';
+import { createClient } from '@solana/kit';
 
 import { type KoraApi, koraPlugin } from '../src/plugin.js';
 import type {
@@ -485,16 +485,16 @@ describe('Kora Kit Plugin', () => {
         });
     });
 
-    describe('createEmptyClient Integration', () => {
+    describe('createClient Integration', () => {
         it('should initialize kora property on Kit client', () => {
-            const client = createEmptyClient().use(koraPlugin(mockConfig));
+            const client = createClient().use(koraPlugin(mockConfig));
 
             expect(client).toHaveProperty('kora');
             expect(client.kora).toBeDefined();
         });
 
         it('should expose all Kora RPC methods', () => {
-            const client = createEmptyClient().use(koraPlugin(mockConfig));
+            const client = createClient().use(koraPlugin(mockConfig));
 
             expect(typeof client.kora.getConfig).toBe('function');
             expect(typeof client.kora.getPayerSigner).toBe('function');
@@ -517,7 +517,7 @@ describe('Kora Kit Plugin', () => {
                 hmacSecret: 'test-hmac-secret',
             };
 
-            const client = createEmptyClient().use(koraPlugin(authConfig));
+            const client = createClient().use(koraPlugin(authConfig));
 
             expect(client.kora).toBeDefined();
             expect(typeof client.kora.getConfig).toBe('function');
@@ -530,7 +530,7 @@ describe('Kora Kit Plugin', () => {
                 other: { foo: () => 'bar' },
             });
 
-            const client = createEmptyClient().use(koraPlugin(mockConfig)).use(otherPlugin);
+            const client = createClient().use(koraPlugin(mockConfig)).use(otherPlugin);
 
             // Both plugins should be available
             expect(client.kora).toBeDefined();
@@ -547,7 +547,7 @@ describe('Kora Kit Plugin', () => {
 
             mockSuccessfulResponse(mockResponse);
 
-            const client = createEmptyClient().use(koraPlugin(mockConfig));
+            const client = createClient().use(koraPlugin(mockConfig));
             const result = await client.kora.getPayerSigner();
 
             expect(result.signer_address).toBe('DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7');

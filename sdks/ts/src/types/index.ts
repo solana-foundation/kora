@@ -521,6 +521,7 @@ import type {
     Instruction as KitInstruction,
     Signature,
 } from '@solana/kit';
+
 import { KoraClient } from '../client.js';
 
 /** Configuration options for the Kora Kit plugin */
@@ -676,17 +677,30 @@ export interface KitValidationConfig {
  * Kit Client Types
  */
 
-/** Configuration for {@link createKitKoraClient}. */
-export interface KoraKitClientConfig {
+/**
+ * Configuration for the {@link kora} bundle plugin.
+ *
+ * The user's signer is read from `client.identity` (set via `identity()` from
+ * `@solana/kit-plugin-signer`), so this config intentionally omits any signer field.
+ */
+export interface KoraBundleConfig {
     readonly apiKey?: string;
     readonly computeUnitLimit?: number;
     readonly computeUnitPrice?: MicroLamports;
     readonly endpoint: string;
-    readonly feePayerWallet: TransactionSigner;
     readonly feeToken: Address;
     readonly getRecaptchaToken?: () => Promise<string> | string;
     readonly hmacSecret?: string;
     readonly rpcUrl: string;
     readonly tokenProgramId?: Address;
     readonly userId?: string;
+}
+
+/**
+ * Configuration for {@link createKitKoraClient}.
+ *
+ * @deprecated Use {@link KoraBundleConfig} with the {@link kora} plugin instead.
+ */
+export interface KoraKitClientConfig extends KoraBundleConfig {
+    readonly feePayerWallet: TransactionSigner;
 }

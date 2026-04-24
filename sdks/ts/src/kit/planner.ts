@@ -13,9 +13,9 @@ import {
     getSetComputeUnitPriceInstruction,
 } from '@solana-program/compute-budget';
 
-import type { KoraKitClientConfig } from '../types/index.js';
+import type { KoraBundleConfig } from '../types/index.js';
 
-export function buildComputeBudgetInstructions(config: KoraKitClientConfig): Instruction[] {
+export function buildComputeBudgetInstructions(config: KoraBundleConfig): Instruction[] {
     const instructions: Instruction[] = [];
     if (config.computeUnitLimit !== undefined) {
         instructions.push(getSetComputeUnitLimitInstruction({ units: config.computeUnitLimit }));
