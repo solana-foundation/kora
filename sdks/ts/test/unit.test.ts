@@ -12,6 +12,7 @@ import {
 } from '@solana/kit';
 
 import { KoraClient } from '../src/client.js';
+import { KoraError } from '../src/error.js';
 import {
     Config,
     EstimateTransactionFeeRequest,
@@ -113,7 +114,7 @@ describe('KoraClient Unit Tests', () => {
         it('should handle RPC error responses', async () => {
             const mockError = { code: -32601, message: 'Method not found' };
             mockErrorResponse(mockError);
-            await expect(client.getConfig()).rejects.toThrow('RPC Error -32601: Method not found');
+            await expect(client.getConfig()).rejects.toThrow('Kora Error -32601: Method not found');
         });
 
         it('should handle network errors', async () => {
@@ -337,7 +338,7 @@ describe('KoraClient Unit Tests', () => {
             };
             const mockError = { code: -32000, message: 'Bundle validation failed' };
             mockErrorResponse(mockError);
-            await expect(client.signBundle(request)).rejects.toThrow('RPC Error -32000: Bundle validation failed');
+            await expect(client.signBundle(request)).rejects.toThrow('Kora Error -32000: Bundle validation failed');
         });
     });
 
@@ -366,7 +367,9 @@ describe('KoraClient Unit Tests', () => {
             };
             const mockError = { code: -32000, message: 'Jito submission failed' };
             mockErrorResponse(mockError);
-            await expect(client.signAndSendBundle(request)).rejects.toThrow('RPC Error -32000: Jito submission failed');
+            await expect(client.signAndSendBundle(request)).rejects.toThrow(
+                'Kora Error -32000: Jito submission failed',
+            );
         });
     });
 
@@ -573,7 +576,7 @@ describe('KoraClient Unit Tests', () => {
             });
 
             await expect(client.getPaymentInstruction(validRequest)).rejects.toThrow(
-                'RPC Error -32602: Invalid transaction',
+                'Kora Error -32602: Invalid transaction',
             );
         });
 
@@ -707,12 +710,45 @@ describe('KoraClient Unit Tests', () => {
         it('should handle responses with an error object', async () => {
             const mockError = { code: -32602, message: 'Invalid params' };
             mockErrorResponse(mockError);
-            await expect(client.getConfig()).rejects.toThrow('RPC Error -32602: Invalid params');
+            await expect(client.getConfig()).rejects.toThrow('Kora Error -32602: Invalid params');
         });
 
-        it('should handle empty error object', async () => {
+        it('should handle empty error object gracefully', async () => {
             mockErrorResponse({});
-            await expect(client.getConfig()).rejects.toThrow('RPC Error undefined: undefined');
+            try {
+                await client.getConfig();
+                throw new Error('Should have thrown KoraError');
+            } catch (e: any) {
+                expect(e).toBeInstanceOf(KoraError);
+                expect(e.code).toBe(-32603);
+                expect(e.message).toBe('Kora Error -32603: Unknown error');
+                expect(e.data).toBeUndefined();
+            }
+        });
+
+        it('should populate KoraError properties (code and data)', async () => {
+            const mockError = {
+                code: -32050,
+                data: {
+                    error_type: 'AccountNotFound',
+                    message: 'Account not found message',
+                },
+                message: 'Account not found message',
+            };
+            mockErrorResponse(mockError);
+
+            try {
+                await client.getConfig();
+                throw new Error('Should have thrown KoraError');
+            } catch (e: any) {
+                expect(e).toBeInstanceOf(KoraError);
+                expect(e.code).toBe(-32050);
+                expect(e.data).toEqual({
+                    error_type: 'AccountNotFound',
+                    message: 'Account not found message',
+                });
+                expect(e.message).toBe('Kora Error -32050: Account not found message');
+            }
         });
     });
 
