@@ -35,13 +35,28 @@ jobs:
           workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
           service_account: ${{ env.GCP_DEPLOYER_SERVICE_ACCOUNT }}
 
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - id: build
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          PROJECT: ${{ env.GCP_PROJECT_ID }}
+          SERVICE: ${{ env.CLOUD_RUN_SERVICE }}
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/cloud-run-source-deploy/${SERVICE}:${GITHUB_SHA::12}"
+          gcloud builds submit examples/devnet-deploy-paymaster/ \
+            --tag "$IMAGE" \
+            --project="$PROJECT" \
+            --gcs-source-staging-dir="gs://${PROJECT}_cloudbuild/source"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
       - id: deploy
         uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ env.CLOUD_RUN_SERVICE }}
           region: ${{ env.GCP_REGION }}
           project_id: ${{ env.GCP_PROJECT_ID }}
-          source: examples/devnet-deploy-paymaster/
+          image: ${{ steps.build.outputs.image }}
           env_vars: |-
             RPC_URL=${{ env.DEVNET_RPC_URL }}
             KORA_GCP_KMS_KEY_NAME=${{ env.DEVNET_KORA_GCP_KMS_KEY_NAME }}
@@ -54,7 +69,6 @@ jobs:
             --memory=1Gi
             --vpc-connector=${{ env.VPC_CONNECTOR }}
             --vpc-egress=private-ranges-only
-            --gcs-source-staging-dir=gs://run-sources-${{ env.GCP_PROJECT_ID }}-${{ env.GCP_REGION }}/source
 
       - name: Print service URL
         run: echo "Deployed ${{ env.CLOUD_RUN_SERVICE }} -> ${{ steps.deploy.outputs.url }}"
