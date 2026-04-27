@@ -54,6 +54,7 @@ jobs:
             --memory=1Gi
             --vpc-connector=${{ env.VPC_CONNECTOR }}
             --vpc-egress=private-ranges-only
+            --gcs-source-staging-dir=gs://run-sources-${{ env.GCP_PROJECT_ID }}-${{ env.GCP_REGION }}/source
 
       - name: Print service URL
         run: echo "Deployed ${{ env.CLOUD_RUN_SERVICE }} -> ${{ steps.deploy.outputs.url }}"
