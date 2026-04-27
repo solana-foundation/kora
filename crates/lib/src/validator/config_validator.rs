@@ -232,6 +232,36 @@ impl ConfigValidator {
 
             loader_v4, allow_finalize, "Loader-v4 Finalize instructions",
                 "Users can make the fee payer finalize programs, making them immutable and forwarding to a next-version program";
+
+            bpf_loader_upgradeable, allow_initialize_buffer, "BPF Loader Upgradeable InitializeBuffer instructions",
+                "Users can make the fee payer the buffer authority on new buffers";
+
+            bpf_loader_upgradeable, allow_write, "BPF Loader Upgradeable Write instructions",
+                "Users can make the fee payer write arbitrary bytes into buffers it is the authority for";
+
+            bpf_loader_upgradeable, allow_deploy_with_max_data_len, "BPF Loader Upgradeable DeployWithMaxDataLen instructions",
+                "Users can make the fee payer fund + take upgrade authority on newly deployed programs, committing rent";
+
+            bpf_loader_upgradeable, allow_upgrade, "BPF Loader Upgradeable Upgrade instructions",
+                "Users can make the fee payer authorize program upgrades";
+
+            bpf_loader_upgradeable, allow_set_authority, "BPF Loader Upgradeable SetAuthority instructions",
+                "Users can make the fee payer hand buffer/program authority to a different account. This can lead to complete loss of control and subsequent drainage";
+
+            bpf_loader_upgradeable, allow_set_authority_checked, "BPF Loader Upgradeable SetAuthorityChecked instructions",
+                "Users can make the fee payer hand buffer/program authority to a different account (checked variant). Same drainage risk as SetAuthority";
+
+            bpf_loader_upgradeable, allow_close, "BPF Loader Upgradeable Close instructions",
+                "Users can make the fee payer close buffers/programs. The drainage guard rejects foreign-recipient closes, but enabling this still lets users force closure of buffers/programs Kora is the authority on";
+
+            bpf_loader_upgradeable, allow_extend_program, "BPF Loader Upgradeable ExtendProgram instructions",
+                "Users can make the fee payer fund extending program data accounts, draining rent";
+
+            bpf_loader_upgradeable, allow_extend_program_checked, "BPF Loader Upgradeable ExtendProgramChecked instructions",
+                "Users can make the fee payer authorize and/or fund extending program data accounts (checked variant requires authority signature)";
+
+            bpf_loader_upgradeable, allow_migrate, "BPF Loader Upgradeable Migrate instructions",
+                "Users can make the fee payer migrate programs from loader-v3 to loader-v4. Authority moves to a less-validated path on this Kora";
         }
 
         // Check nonce policy separately (nested structure)
@@ -2210,6 +2240,7 @@ mod tests {
                         allow_set_authority_checked: true,
                         allow_close: true,
                         allow_extend_program: true,
+                        allow_extend_program_checked: true,
                         allow_migrate: true,
                     },
                     loader_v4: crate::config::LoaderV4InstructionPolicy {
@@ -2391,6 +2422,25 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.contains("Loader-v4 Finalize") && w.contains("allow_finalize")));
+
+        // BPF Loader Upgradeable (loader-v3) policies
+        for (description, field) in [
+            ("BPF Loader Upgradeable InitializeBuffer", "allow_initialize_buffer"),
+            ("BPF Loader Upgradeable Write", "allow_write"),
+            ("BPF Loader Upgradeable DeployWithMaxDataLen", "allow_deploy_with_max_data_len"),
+            ("BPF Loader Upgradeable Upgrade", "allow_upgrade"),
+            ("BPF Loader Upgradeable SetAuthority", "allow_set_authority"),
+            ("BPF Loader Upgradeable SetAuthorityChecked", "allow_set_authority_checked"),
+            ("BPF Loader Upgradeable Close", "allow_close"),
+            ("BPF Loader Upgradeable ExtendProgram", "allow_extend_program"),
+            ("BPF Loader Upgradeable ExtendProgramChecked", "allow_extend_program_checked"),
+            ("BPF Loader Upgradeable Migrate", "allow_migrate"),
+        ] {
+            assert!(
+                warnings.iter().any(|w| w.contains(description) && w.contains(field)),
+                "missing warning for {description} ({field})"
+            );
+        }
 
         // Each warning should contain risk explanation
         let fee_payer_warnings: Vec<_> =

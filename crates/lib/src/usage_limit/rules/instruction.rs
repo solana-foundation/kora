@@ -41,6 +41,7 @@ const BPF_LOADER_CLOSE: &str = "close";
 const BPF_LOADER_EXTEND_PROGRAM: &str = "extendprogram";
 const BPF_LOADER_SET_AUTHORITY_CHECKED: &str = "setauthoritychecked";
 const BPF_LOADER_MIGRATE: &str = "migrate";
+const BPF_LOADER_EXTEND_PROGRAM_CHECKED: &str = "extendprogramchecked";
 
 /// Rule that limits specific instruction types per wallet
 ///
@@ -322,6 +323,7 @@ impl InstructionIdentifier {
             6 => Some(BPF_LOADER_EXTEND_PROGRAM.to_string()),
             7 => Some(BPF_LOADER_SET_AUTHORITY_CHECKED.to_string()),
             8 => Some(BPF_LOADER_MIGRATE.to_string()),
+            9 => Some(BPF_LOADER_EXTEND_PROGRAM_CHECKED.to_string()),
             _ => None,
         }
     }

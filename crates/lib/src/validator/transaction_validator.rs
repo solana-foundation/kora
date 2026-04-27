@@ -610,6 +610,16 @@ impl TransactionValidator {
             self.fee_payer_policy.bpf_loader_upgradeable.allow_extend_program,
             "BPF Loader Upgradeable ExtendProgram");
 
+        // ExtendProgramChecked: like ExtendProgram but the authority is also a required
+        // signer. Gate when fee_payer is either the authority or the (optional) payer.
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, ExtendProgramChecked,
+            ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
+                authority, payer, ..
+            } => (*authority == self.fee_payer_pubkey
+                || payer.is_some_and(|p| p == self.fee_payer_pubkey)),
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_extend_program_checked,
+            "BPF Loader Upgradeable ExtendProgramChecked");
+
         validate_bpf_loader_upgradeable!(bpf_v3_instructions, Migrate,
             ParsedBpfLoaderUpgradeableInstructionData::Migrate { current_authority, .. } =>
             *current_authority == self.fee_payer_pubkey,
@@ -5667,6 +5677,38 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_extend_program_checked_with_kora_payer_denied_by_default() {
+        // Regression: ExtendProgramChecked previously fell through a `_ => {}` wildcard in
+        // the parser and was completely unreached by the policy. An attacker with their own
+        // upgradeable program could submit one that named Kora as the optional payer at
+        // index 4 — Kora would silently fund the extension. Now `allow_extend_program_checked`
+        // gates it (default false).
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let programdata = Pubkey::new_unique();
+        setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // attacker is the authority; fee_payer is the (optional) payer.
+        let ix = loader_v3::extend_program_checked(&program, &attacker, Some(&fee_payer), 128);
+        // Force payer to be the fee_payer by re-deriving programdata.
+        let _ = programdata; // silence warning
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
     }
 
     #[tokio::test]

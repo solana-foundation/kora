@@ -405,6 +405,16 @@ pub mod instruction_indexes {
         pub const OPTIONAL_PAYER_INDEX: usize = 3;
     }
 
+    pub mod bpf_loader_upgradeable_extend_program_checked {
+        pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER: usize = 5;
+        pub const PROGRAM_DATA_INDEX: usize = 0;
+        pub const PROGRAM_INDEX: usize = 1;
+        pub const AUTHORITY_INDEX: usize = 2;
+        // Index 3 is the System program (optional).
+        pub const OPTIONAL_PAYER_INDEX: usize = 4;
+    }
+
     pub mod bpf_loader_upgradeable_migrate {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
         pub const PROGRAM_DATA_INDEX: usize = 0;

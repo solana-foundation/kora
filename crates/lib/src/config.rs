@@ -296,6 +296,9 @@ pub struct BpfLoaderUpgradeableInstructionPolicy {
     pub allow_close: bool,
     /// Allow fee payer to be the payer in ExtendProgram instructions
     pub allow_extend_program: bool,
+    /// Allow fee payer to be the authority or payer in ExtendProgramChecked
+    /// (variant of ExtendProgram that also requires the authority's signature)
+    pub allow_extend_program_checked: bool,
     /// Allow fee payer to be the current authority in Migrate instructions
     /// (moves the program to loader-v4)
     pub allow_migrate: bool,

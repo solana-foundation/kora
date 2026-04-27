@@ -319,6 +319,7 @@ pub enum ParsedBpfLoaderUpgradeableInstructionType {
     SetAuthorityChecked,
     Close,
     ExtendProgram,
+    ExtendProgramChecked,
     Migrate,
 }
 
@@ -366,6 +367,13 @@ pub enum ParsedBpfLoaderUpgradeableInstructionData {
     ExtendProgram {
         program_data: Pubkey,
         program: Pubkey,
+        payer: Option<Pubkey>,
+        additional_bytes: u32,
+    },
+    ExtendProgramChecked {
+        program_data: Pubkey,
+        program: Pubkey,
+        authority: Pubkey,
         payer: Option<Pubkey>,
         additional_bytes: u32,
     },
@@ -2470,10 +2478,31 @@ impl IxUtils {
                                 .pubkey,
                         });
                 }
-                // ExtendProgramChecked is a newer variant added in v3 6.x; we treat it as
-                // a no-op here so unrelated transactions don't fail. The fee_payer policy
-                // for v3 doesn't currently gate it.
-                _ => {}
+                UpgradeableLoaderInstruction::ExtendProgramChecked { additional_bytes } => {
+                    use instruction_indexes::bpf_loader_upgradeable_extend_program_checked as ix;
+                    let n = instruction.accounts.len();
+                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "BPF Loader Upgradeable ExtendProgramChecked has {n} accounts, expected at least {}",
+                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                        )));
+                    }
+                    let payer = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER {
+                        Some(instruction.accounts[ix::OPTIONAL_PAYER_INDEX].pubkey)
+                    } else {
+                        None
+                    };
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::ExtendProgramChecked)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
+                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
+                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
+                            authority: instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
+                            payer,
+                            additional_bytes,
+                        });
+                }
             }
         }
 

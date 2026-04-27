@@ -171,6 +171,31 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                         }
                     }
                 }
+                ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
+                    authority,
+                    payer,
+                    ..
+                } => {
+                    // Authority must always be Kora — it's a required signer.
+                    if authority != fee_payer {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "DeployAuthority plugin: ExtendProgramChecked authority must be \
+                             the fee payer ({fee_payer}), got {authority} in {}",
+                            context.method_name()
+                        )));
+                    }
+                    // Payer is optional but if present must also be Kora (drainage vector
+                    // otherwise: someone funds extension on their own program with our SOL).
+                    if let Some(p) = payer {
+                        if p != fee_payer {
+                            return Err(KoraError::InvalidTransaction(format!(
+                                "DeployAuthority plugin: ExtendProgramChecked payer must be \
+                                 the fee payer ({fee_payer}), got {p} in {}",
+                                context.method_name()
+                            )));
+                        }
+                    }
+                }
                 ParsedBpfLoaderUpgradeableInstructionData::Migrate { .. } => {
                     return Err(KoraError::InvalidTransaction(format!(
                         "DeployAuthority plugin: Migrate is not allowed; programs must remain \
@@ -600,6 +625,25 @@ mod tests {
         let buffer = Pubkey::new_unique();
         let ix = loader_v3::close(&buffer, &fee_payer, &fee_payer);
         assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn v3_rejects_extend_program_checked_with_attacker_authority_kora_payer() {
+        // Regression: ExtendProgramChecked previously hit a `_ => {}` wildcard in the
+        // parser, leaving the plugin's policy unreachable. An attacker who owned a program
+        // could submit one with their own pubkey as authority and Kora as payer (index 4),
+        // forcing Kora to fund their program data extension.
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let ix = loader_v3::extend_program_checked(&program, &attacker, Some(&fee_payer), 64);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("ExtendProgramChecked")),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]
