@@ -68,7 +68,9 @@ jobs:
           shared-key: "rust-integration-fork-live-manual"
 
       - name: Install just
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@v4
+        with:
+          just-version: "1.50.0"
 
       - name: Build workspace
         run: just build
