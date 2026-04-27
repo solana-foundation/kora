@@ -26,6 +26,7 @@ use crate::{
     token::token::TransferHookValidationFlow,
     transaction::{
         instruction_util::IxUtils, ParsedALTInstructionData, ParsedALTInstructionType,
+        ParsedBpfLoaderUpgradeableInstructionData, ParsedBpfLoaderUpgradeableInstructionType,
         ParsedLoaderV4InstructionData, ParsedLoaderV4InstructionType, ParsedSPLInstructionData,
         ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
         Token2022SecurityInstruction, Token2022SecurityParser,
@@ -62,6 +63,14 @@ pub struct VersionedTransactionResolved {
     // Parsed Loader-v4 instructions by type (None if not parsed yet)
     parsed_loader_v4_instructions:
         Option<HashMap<ParsedLoaderV4InstructionType, Vec<ParsedLoaderV4InstructionData>>>,
+
+    // Parsed BPF Loader Upgradeable (loader-v3) instructions by type (None if not parsed yet)
+    parsed_bpf_loader_upgradeable_instructions: Option<
+        HashMap<
+            ParsedBpfLoaderUpgradeableInstructionType,
+            Vec<ParsedBpfLoaderUpgradeableInstructionData>,
+        >,
+    >,
 
     parsed_token2022_security_instructions: Option<Vec<Token2022SecurityInstruction>>,
 }
@@ -111,6 +120,7 @@ impl VersionedTransactionResolved {
             parsed_spl_instructions: None,
             parsed_alt_instructions: None,
             parsed_loader_v4_instructions: None,
+            parsed_bpf_loader_upgradeable_instructions: None,
             parsed_token2022_security_instructions: None,
         };
 
@@ -163,6 +173,7 @@ impl VersionedTransactionResolved {
             parsed_spl_instructions: None,
             parsed_alt_instructions: None,
             parsed_loader_v4_instructions: None,
+            parsed_bpf_loader_upgradeable_instructions: None,
             parsed_token2022_security_instructions: None,
         })
     }
@@ -278,6 +289,26 @@ impl VersionedTransactionResolved {
 
         self.parsed_loader_v4_instructions.as_ref().ok_or_else(|| {
             KoraError::SerializationError("Parsed Loader-v4 instructions not found".to_string())
+        })
+    }
+
+    pub fn get_or_parse_bpf_loader_upgradeable_instructions(
+        &mut self,
+    ) -> Result<
+        &HashMap<
+            ParsedBpfLoaderUpgradeableInstructionType,
+            Vec<ParsedBpfLoaderUpgradeableInstructionData>,
+        >,
+        KoraError,
+    > {
+        if self.parsed_bpf_loader_upgradeable_instructions.is_none() {
+            self.parsed_bpf_loader_upgradeable_instructions =
+                Some(IxUtils::parse_bpf_loader_upgradeable_instructions(self)?);
+        }
+        self.parsed_bpf_loader_upgradeable_instructions.as_ref().ok_or_else(|| {
+            KoraError::SerializationError(
+                "Parsed BPF Loader Upgradeable instructions not found".to_string(),
+            )
         })
     }
 

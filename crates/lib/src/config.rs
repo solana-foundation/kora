@@ -165,6 +165,7 @@ pub struct FeePayerPolicy {
     pub spl_token: SplTokenInstructionPolicy,
     pub token_2022: Token2022InstructionPolicy,
     pub alt: AltInstructionPolicy,
+    pub bpf_loader_upgradeable: BpfLoaderUpgradeableInstructionPolicy,
     pub loader_v4: LoaderV4InstructionPolicy,
 }
 
@@ -272,6 +273,32 @@ pub struct AltInstructionPolicy {
     pub allow_deactivate: bool,
     /// Allow fee payer to be authority in ALT CloseLookupTable instructions
     pub allow_close: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(default)]
+pub struct BpfLoaderUpgradeableInstructionPolicy {
+    /// Allow fee payer to be the buffer authority in InitializeBuffer instructions
+    pub allow_initialize_buffer: bool,
+    /// Allow fee payer to be the buffer authority in Write instructions
+    pub allow_write: bool,
+    /// Allow fee payer to be the payer or upgrade authority in DeployWithMaxDataLen
+    pub allow_deploy_with_max_data_len: bool,
+    /// Allow fee payer to be the upgrade authority in Upgrade instructions
+    pub allow_upgrade: bool,
+    /// Allow fee payer to be the current authority in SetAuthority (drainage vector — hands
+    /// program control to a new authority that can then close + drain)
+    pub allow_set_authority: bool,
+    /// Allow fee payer to be the current authority in SetAuthorityChecked
+    pub allow_set_authority_checked: bool,
+    /// Allow fee payer to be the authority or recipient in Close instructions
+    /// (drainage vector — recipient gets the closed-account lamports)
+    pub allow_close: bool,
+    /// Allow fee payer to be the payer in ExtendProgram instructions
+    pub allow_extend_program: bool,
+    /// Allow fee payer to be the current authority in Migrate instructions
+    /// (moves the program to loader-v4)
+    pub allow_migrate: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]

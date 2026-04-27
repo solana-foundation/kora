@@ -702,6 +702,8 @@ impl FeePayerPolicyBuilder {
                     allow_deactivate: false,
                     allow_close: false,
                 },
+                bpf_loader_upgradeable:
+                    crate::config::BpfLoaderUpgradeableInstructionPolicy::default(),
                 loader_v4: crate::config::LoaderV4InstructionPolicy::default(),
             },
         }

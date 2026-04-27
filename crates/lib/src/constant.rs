@@ -334,4 +334,81 @@ pub mod instruction_indexes {
         pub const CURRENT_AUTHORITY_INDEX: usize = 1;
         pub const NEXT_VERSION_INDEX: usize = 2;
     }
+
+    // BPF Loader Upgradeable (loader-v3) instruction layouts.
+    // Source: solana-loader-v3-interface::instruction::UpgradeableLoaderInstruction.
+    pub mod bpf_loader_upgradeable_initialize_buffer {
+        pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 1;
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_AUTHORITY: usize = 2;
+        pub const BUFFER_INDEX: usize = 0;
+        pub const OPTIONAL_AUTHORITY_INDEX: usize = 1;
+    }
+
+    pub mod bpf_loader_upgradeable_write {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const BUFFER_INDEX: usize = 0;
+        pub const AUTHORITY_INDEX: usize = 1;
+    }
+
+    pub mod bpf_loader_upgradeable_deploy_with_max_data_len {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 8;
+        pub const PAYER_INDEX: usize = 0;
+        pub const PROGRAM_DATA_INDEX: usize = 1;
+        pub const PROGRAM_INDEX: usize = 2;
+        pub const BUFFER_INDEX: usize = 3;
+        // Indexes 4 (rent), 5 (clock), 6 (system program) are sysvars/builtins.
+        pub const UPGRADE_AUTHORITY_INDEX: usize = 7;
+    }
+
+    pub mod bpf_loader_upgradeable_upgrade {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 7;
+        pub const PROGRAM_DATA_INDEX: usize = 0;
+        pub const PROGRAM_INDEX: usize = 1;
+        pub const BUFFER_INDEX: usize = 2;
+        pub const SPILL_INDEX: usize = 3;
+        // Indexes 4 (rent) + 5 (clock) are sysvars.
+        pub const UPGRADE_AUTHORITY_INDEX: usize = 6;
+    }
+
+    pub mod bpf_loader_upgradeable_set_authority {
+        pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_NEW_AUTHORITY: usize = 3;
+        pub const TARGET_INDEX: usize = 0;
+        pub const CURRENT_AUTHORITY_INDEX: usize = 1;
+        pub const OPTIONAL_NEW_AUTHORITY_INDEX: usize = 2;
+    }
+
+    pub mod bpf_loader_upgradeable_set_authority_checked {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const TARGET_INDEX: usize = 0;
+        pub const CURRENT_AUTHORITY_INDEX: usize = 1;
+        pub const NEW_AUTHORITY_INDEX: usize = 2;
+    }
+
+    pub mod bpf_loader_upgradeable_close {
+        pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_AUTHORITY: usize = 3;
+        // Closing a ProgramData account requires the associated Program account too.
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PROGRAM: usize = 4;
+        pub const TARGET_INDEX: usize = 0;
+        pub const RECIPIENT_INDEX: usize = 1;
+        pub const OPTIONAL_AUTHORITY_INDEX: usize = 2;
+        pub const OPTIONAL_PROGRAM_INDEX: usize = 3;
+    }
+
+    pub mod bpf_loader_upgradeable_extend_program {
+        pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER: usize = 4;
+        pub const PROGRAM_DATA_INDEX: usize = 0;
+        pub const PROGRAM_INDEX: usize = 1;
+        // Index 2 is the System program (optional).
+        pub const OPTIONAL_PAYER_INDEX: usize = 3;
+    }
+
+    pub mod bpf_loader_upgradeable_migrate {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const PROGRAM_DATA_INDEX: usize = 0;
+        pub const PROGRAM_INDEX: usize = 1;
+        pub const CURRENT_AUTHORITY_INDEX: usize = 2;
+    }
 }

@@ -5,7 +5,7 @@ use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
 use spl_associated_token_account_interface::program::ID as ATA_PROGRAM_ID;
 
 use crate::{
-    constant::LOADER_V4_PROGRAM_ID,
+    constant::{BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LOADER_V4_PROGRAM_ID},
     transaction::{ParsedSystemInstructionData, ParsedSystemInstructionType},
 };
 
@@ -29,6 +29,18 @@ const LOADER_V4_DEPLOY: &str = "deploy";
 const LOADER_V4_RETRACT: &str = "retract";
 const LOADER_V4_TRANSFER_AUTHORITY: &str = "transferauthority";
 const LOADER_V4_FINALIZE: &str = "finalize";
+
+// BPF Loader Upgradeable (loader-v3) instruction names. Values correspond to bincode
+// discriminators of UpgradeableLoaderInstruction.
+const BPF_LOADER_INITIALIZE_BUFFER: &str = "initializebuffer";
+const BPF_LOADER_WRITE: &str = "write";
+const BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN: &str = "deploywithmaxdatalen";
+const BPF_LOADER_UPGRADE: &str = "upgrade";
+const BPF_LOADER_SET_AUTHORITY: &str = "setauthority";
+const BPF_LOADER_CLOSE: &str = "close";
+const BPF_LOADER_EXTEND_PROGRAM: &str = "extendprogram";
+const BPF_LOADER_SET_AUTHORITY_CHECKED: &str = "setauthoritychecked";
+const BPF_LOADER_MIGRATE: &str = "migrate";
 
 /// Rule that limits specific instruction types per wallet
 ///
@@ -257,6 +269,9 @@ impl InstructionIdentifier {
             _ if *program_id == SYSTEM_PROGRAM_ID => Self::system(data),
             _ if *program_id == ATA_PROGRAM_ID => Self::ata(data),
             _ if *program_id == LOADER_V4_PROGRAM_ID => Self::loader_v4(data),
+            _ if *program_id == BPF_LOADER_UPGRADEABLE_PROGRAM_ID => {
+                Self::bpf_loader_upgradeable(data)
+            }
             _ => None,
         }
     }
@@ -290,6 +305,23 @@ impl InstructionIdentifier {
             4 => Some(LOADER_V4_RETRACT.to_string()),
             5 => Some(LOADER_V4_TRANSFER_AUTHORITY.to_string()),
             6 => Some(LOADER_V4_FINALIZE.to_string()),
+            _ => None,
+        }
+    }
+
+    fn bpf_loader_upgradeable(data: &[u8]) -> Option<String> {
+        // Values match `UpgradeableLoaderInstruction` declaration order.
+        let discriminator = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
+        match discriminator {
+            0 => Some(BPF_LOADER_INITIALIZE_BUFFER.to_string()),
+            1 => Some(BPF_LOADER_WRITE.to_string()),
+            2 => Some(BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN.to_string()),
+            3 => Some(BPF_LOADER_UPGRADE.to_string()),
+            4 => Some(BPF_LOADER_SET_AUTHORITY.to_string()),
+            5 => Some(BPF_LOADER_CLOSE.to_string()),
+            6 => Some(BPF_LOADER_EXTEND_PROGRAM.to_string()),
+            7 => Some(BPF_LOADER_SET_AUTHORITY_CHECKED.to_string()),
+            8 => Some(BPF_LOADER_MIGRATE.to_string()),
             _ => None,
         }
     }
