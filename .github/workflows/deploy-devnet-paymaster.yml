@@ -44,9 +44,9 @@ jobs:
           source: examples/devnet-deploy-paymaster/
           env_vars: |-
             RPC_URL=${{ env.DEVNET_RPC_URL }}
-            KORA_GCP_KMS_KEY_NAME=${{ env.KORA_GCP_KMS_KEY_NAME }}
-            KORA_GCP_KMS_PUBLIC_KEY=${{ env.KORA_GCP_KMS_PUBLIC_KEY }}
-            KORA_REDIS_URL=${{ env.KORA_REDIS_URL }}
+            KORA_GCP_KMS_KEY_NAME=${{ env.DEVNET_KORA_GCP_KMS_KEY_NAME }}
+            KORA_GCP_KMS_PUBLIC_KEY=${{ env.DEVNET_KORA_GCP_KMS_PUBLIC_KEY }}
+            KORA_REDIS_URL=${{ env.DEVNET_KORA_REDIS_URL }}
           env_vars_update_strategy: overwrite
           flags: >-
             --allow-unauthenticated

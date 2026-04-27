@@ -53,14 +53,15 @@ with OIDC and injects them as env vars in subsequent steps.
 | `GCP_DEPLOYER_SERVICE_ACCOUNT` | `kora-deployer@solana-kora-devnet.iam.gserviceaccount.com` | |
 | `CLOUD_RUN_SERVICE` | `kora-devnet-paymaster` | |
 | `VPC_CONNECTOR` | `kora-vpc-connector` | |
-| `DEVNET_RPC_URL` | `https://api.devnet.solana.com` | mapped to `RPC_URL` on the Cloud Run revision; prefixed to avoid colliding with the integration test runner that reads `$RPC_URL` |
-| `KORA_GCP_KMS_KEY_NAME` | `projects/.../cryptoKeys/paymaster/cryptoKeyVersions/1` | |
-| `KORA_GCP_KMS_PUBLIC_KEY` | base58 Solana pubkey derived from the KMS public key | |
-| `KORA_REDIS_URL` | `redis://10.x.y.z:6379` | private VPC IP |
+| `DEVNET_RPC_URL` | `https://api.devnet.solana.com` | mapped to `RPC_URL` on the Cloud Run revision |
+| `DEVNET_KORA_GCP_KMS_KEY_NAME` | `projects/.../cryptoKeys/paymaster/cryptoKeyVersions/1` | mapped to `KORA_GCP_KMS_KEY_NAME` |
+| `DEVNET_KORA_GCP_KMS_PUBLIC_KEY` | base58 Solana pubkey derived from the KMS public key | mapped to `KORA_GCP_KMS_PUBLIC_KEY` |
+| `DEVNET_KORA_REDIS_URL` | `redis://10.x.y.z:6379` | private VPC IP, mapped to `KORA_REDIS_URL` |
 
-`KORA_GCP_KMS_PUBLIC_KEY` is derived once from the PEM that
-`gcloud kms keys versions get-public-key` returns; it never changes for a
-given key version. `KORA_REDIS_URL` is the private VPC IP — also stable.
+The 4 runtime keys carry a `DEVNET_` prefix so they don't collide with what
+the kora binary and the integration test runner read directly — `RPC_URL`,
+`KORA_REDIS_URL`, `KORA_GCP_KMS_KEY_NAME`, `KORA_GCP_KMS_PUBLIC_KEY` would
+otherwise leak into every CI job that loads `stg_github`.
 
 The Doppler service identity (`DOPPLER_SERVICE_IDENTITY_ID`) and project
 (`DOPPLER_PROJECT`, defaults to `kora`) live in repo Variables — already
