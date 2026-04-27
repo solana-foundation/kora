@@ -41,28 +41,26 @@ workflow can run. Re-running the workflow does not re-create them.
 
 ### Doppler config
 
-Deploy values live in the `prd_devnet_paymaster` Doppler config (override via
-the `DOPPLER_CONFIG_DEPLOY_DEVNET` repo Variable if you name it differently).
-The workflow fetches them via `dopplerhq/secrets-fetch-action` with OIDC, the
-same pattern as the rest of the CI in this repo, then injects them as env
-vars in subsequent steps.
+Deploy values live in the same `stg_github` Doppler config as the rest of
+the CI workflows. The workflow fetches them via `dopplerhq/secrets-fetch-action`
+with OIDC and injects them as env vars in subsequent steps.
 
-| Doppler key | Example |
-| --- | --- |
-| `GCP_PROJECT_ID` | `solana-kora-devnet` |
-| `GCP_REGION` | `us-central1` |
-| `GCP_WIF_PROVIDER` | `projects/123/locations/global/workloadIdentityPools/github/providers/kora` |
-| `GCP_DEPLOYER_SERVICE_ACCOUNT` | `kora-deployer@solana-kora-devnet.iam.gserviceaccount.com` |
-| `CLOUD_RUN_SERVICE` | `kora-devnet-paymaster` |
-| `VPC_CONNECTOR` | `kora-vpc-connector` |
-| `RPC_URL` | `https://api.devnet.solana.com` |
-| `KORA_GCP_KMS_KEY_NAME` | `projects/.../cryptoKeys/paymaster/cryptoKeyVersions/1` |
-| `KORA_GCP_KMS_PUBLIC_KEY` | base58 Solana pubkey derived from the KMS public key |
-| `KORA_REDIS_URL` | `redis://10.x.y.z:6379` |
+| Doppler key | Example | Notes |
+| --- | --- | --- |
+| `GCP_PROJECT_ID` | `solana-kora-devnet` | |
+| `GCP_REGION` | `us-central1` | |
+| `GCP_WIF_PROVIDER` | `projects/123/locations/global/workloadIdentityPools/github/providers/kora` | |
+| `GCP_DEPLOYER_SERVICE_ACCOUNT` | `kora-deployer@solana-kora-devnet.iam.gserviceaccount.com` | |
+| `CLOUD_RUN_SERVICE` | `kora-devnet-paymaster` | |
+| `VPC_CONNECTOR` | `kora-vpc-connector` | |
+| `DEVNET_RPC_URL` | `https://api.devnet.solana.com` | mapped to `RPC_URL` on the Cloud Run revision; prefixed to avoid colliding with the integration test runner that reads `$RPC_URL` |
+| `KORA_GCP_KMS_KEY_NAME` | `projects/.../cryptoKeys/paymaster/cryptoKeyVersions/1` | |
+| `KORA_GCP_KMS_PUBLIC_KEY` | base58 Solana pubkey derived from the KMS public key | |
+| `KORA_REDIS_URL` | `redis://10.x.y.z:6379` | private VPC IP |
 
-`KORA_GCP_KMS_PUBLIC_KEY` is the base58 Solana pubkey, derived once from the
-PEM that `gcloud kms keys versions get-public-key` returns; it never changes
-for a given key version. `KORA_REDIS_URL` is the private VPC IP — also stable.
+`KORA_GCP_KMS_PUBLIC_KEY` is derived once from the PEM that
+`gcloud kms keys versions get-public-key` returns; it never changes for a
+given key version. `KORA_REDIS_URL` is the private VPC IP — also stable.
 
 The Doppler service identity (`DOPPLER_SERVICE_IDENTITY_ID`) and project
 (`DOPPLER_PROJECT`, defaults to `kora`) live in repo Variables — already

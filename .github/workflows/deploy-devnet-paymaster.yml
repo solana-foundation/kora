@@ -26,7 +26,7 @@ jobs:
           auth-method: oidc
           doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
           doppler-project: ${{ vars.DOPPLER_PROJECT || 'kora' }}
-          doppler-config: ${{ vars.DOPPLER_CONFIG_DEPLOY_DEVNET || 'prd_devnet_paymaster' }}
+          doppler-config: ${{ vars.DOPPLER_CONFIG_CI || 'stg_github' }}
           inject-env-vars: true
 
       - id: auth
@@ -43,7 +43,7 @@ jobs:
           project_id: ${{ env.GCP_PROJECT_ID }}
           source: examples/devnet-deploy-paymaster/
           env_vars: |-
-            RPC_URL=${{ env.RPC_URL }}
+            RPC_URL=${{ env.DEVNET_RPC_URL }}
             KORA_GCP_KMS_KEY_NAME=${{ env.KORA_GCP_KMS_KEY_NAME }}
             KORA_GCP_KMS_PUBLIC_KEY=${{ env.KORA_GCP_KMS_PUBLIC_KEY }}
             KORA_REDIS_URL=${{ env.KORA_REDIS_URL }}
