@@ -1,0 +1,51 @@
+name: Deploy devnet paymaster
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy"
+        required: false
+        default: main
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: devnet-paymaster
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+
+      - id: deploy
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          service: ${{ vars.CLOUD_RUN_SERVICE }}
+          region: ${{ vars.GCP_REGION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          source: examples/devnet-deploy-paymaster/
+          env_vars: |-
+            RPC_URL=${{ vars.RPC_URL }}
+            KORA_GCP_KMS_KEY_NAME=${{ vars.KORA_GCP_KMS_KEY_NAME }}
+            KORA_GCP_KMS_PUBLIC_KEY=${{ vars.KORA_GCP_KMS_PUBLIC_KEY }}
+            KORA_REDIS_URL=${{ vars.KORA_REDIS_URL }}
+          env_vars_update_strategy: overwrite
+          flags: >-
+            --allow-unauthenticated
+            --port=8080
+            --memory=1Gi
+            --vpc-connector=${{ vars.VPC_CONNECTOR }}
+            --vpc-egress=private-ranges-only
+
+      - name: Print service URL
+        run: echo "Deployed ${{ vars.CLOUD_RUN_SERVICE }} -> ${{ steps.deploy.outputs.url }}"
