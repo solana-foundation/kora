@@ -33,11 +33,15 @@ workflow can run. Re-running the workflow does not re-create them.
    workflow updates revisions, it does not create the service.
 5. **Workload Identity Federation pool + provider** — trusts
    `solana-foundation/kora` (filter on `attribute.repository`) and is bound to
-   a deployer service account that holds:
-   - `roles/run.admin` on the Cloud Run service
-   - `roles/iam.serviceAccountUser` on the runtime service account
-   - `roles/cloudkms.signer` on the KMS key (the runtime SA needs this; the
-     deployer SA only needs it if it ever invokes KMS directly)
+   a deployer service account holding **only** these scoped roles (no
+   project-wide storage perms — important when the GCP project is shared):
+   - `roles/run.admin` scoped to the one Cloud Run service
+   - `roles/iam.serviceAccountUser` scoped to the runtime service account
+   - `roles/cloudbuild.builds.editor` (project — required by `gcloud builds submit`)
+   - `roles/artifactregistry.writer` scoped to the `cloud-run-source-deploy` AR repo
+   - `roles/storage.objectAdmin` scoped to `gs://<PROJECT>_cloudbuild` (build staging only)
+   - The runtime SA holds `roles/cloudkms.signer` on the KMS key. The deployer
+     SA does not need KMS access — it only orchestrates deploys.
 
 ### Doppler config
 
