@@ -148,10 +148,15 @@ pub fn update_config(new_config: Config) -> Result<(), KoraError> {
 mod tests {
     use super::*;
     use crate::{signer::pool::SignerWithMetadata, tests::config_mock::ConfigMockBuilder};
+    use serial_test::serial;
     use solana_keychain::Signer;
     use solana_sdk::signature::Keypair;
 
+    // Touches GLOBAL_CONFIG + GLOBAL_SIGNER_POOL — must serialize against any other test
+    // that mutates either via update_config / update_signer_pool, otherwise parallel tests
+    // race and the assertion intermittently observes a probe_lease set by another test.
     #[test]
+    #[serial]
     fn test_select_request_signer_updates_probe_lease_from_config() {
         let mut config = ConfigMockBuilder::new().build();
         config.kora.sign_timeout_seconds = 15;
