@@ -39,12 +39,15 @@ workflow can run. Re-running the workflow does not re-create them.
    - `roles/cloudkms.signer` on the KMS key (the runtime SA needs this; the
      deployer SA only needs it if it ever invokes KMS directly)
 
-### Required GitHub repo variables
+### Doppler config
 
-All of these are non-secret and live under
-**Settings → Secrets and variables → Actions → Variables**:
+Deploy values live in the `prd_devnet_paymaster` Doppler config (override via
+the `DOPPLER_CONFIG_DEPLOY_DEVNET` repo Variable if you name it differently).
+The workflow fetches them via `dopplerhq/secrets-fetch-action` with OIDC, the
+same pattern as the rest of the CI in this repo, then injects them as env
+vars in subsequent steps.
 
-| Variable | Example |
+| Doppler key | Example |
 | --- | --- |
 | `GCP_PROJECT_ID` | `solana-kora-devnet` |
 | `GCP_REGION` | `us-central1` |
@@ -60,6 +63,10 @@ All of these are non-secret and live under
 `KORA_GCP_KMS_PUBLIC_KEY` is the base58 Solana pubkey, derived once from the
 PEM that `gcloud kms keys versions get-public-key` returns; it never changes
 for a given key version. `KORA_REDIS_URL` is the private VPC IP — also stable.
+
+The Doppler service identity (`DOPPLER_SERVICE_IDENTITY_ID`) and project
+(`DOPPLER_PROJECT`, defaults to `kora`) live in repo Variables — already
+configured for the rest of the CI workflows.
 
 ### Triggering a deploy
 

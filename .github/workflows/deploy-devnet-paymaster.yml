@@ -21,31 +21,40 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      - name: Load deploy config from Doppler
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: ${{ vars.DOPPLER_PROJECT || 'kora' }}
+          doppler-config: ${{ vars.DOPPLER_CONFIG_DEPLOY_DEVNET || 'prd_devnet_paymaster' }}
+          inject-env-vars: true
+
       - id: auth
         uses: google-github-actions/auth@v3
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOYER_SERVICE_ACCOUNT }}
 
       - id: deploy
         uses: google-github-actions/deploy-cloudrun@v3
         with:
-          service: ${{ vars.CLOUD_RUN_SERVICE }}
-          region: ${{ vars.GCP_REGION }}
-          project_id: ${{ vars.GCP_PROJECT_ID }}
+          service: ${{ env.CLOUD_RUN_SERVICE }}
+          region: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
           source: examples/devnet-deploy-paymaster/
           env_vars: |-
-            RPC_URL=${{ vars.RPC_URL }}
-            KORA_GCP_KMS_KEY_NAME=${{ vars.KORA_GCP_KMS_KEY_NAME }}
-            KORA_GCP_KMS_PUBLIC_KEY=${{ vars.KORA_GCP_KMS_PUBLIC_KEY }}
-            KORA_REDIS_URL=${{ vars.KORA_REDIS_URL }}
+            RPC_URL=${{ env.RPC_URL }}
+            KORA_GCP_KMS_KEY_NAME=${{ env.KORA_GCP_KMS_KEY_NAME }}
+            KORA_GCP_KMS_PUBLIC_KEY=${{ env.KORA_GCP_KMS_PUBLIC_KEY }}
+            KORA_REDIS_URL=${{ env.KORA_REDIS_URL }}
           env_vars_update_strategy: overwrite
           flags: >-
             --allow-unauthenticated
             --port=8080
             --memory=1Gi
-            --vpc-connector=${{ vars.VPC_CONNECTOR }}
+            --vpc-connector=${{ env.VPC_CONNECTOR }}
             --vpc-egress=private-ranges-only
 
       - name: Print service URL
-        run: echo "Deployed ${{ vars.CLOUD_RUN_SERVICE }} -> ${{ steps.deploy.outputs.url }}"
+        run: echo "Deployed ${{ env.CLOUD_RUN_SERVICE }} -> ${{ steps.deploy.outputs.url }}"
