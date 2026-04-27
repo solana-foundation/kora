@@ -234,7 +234,12 @@ impl TransactionPlugin for DeployAuthorityPlugin {
             || v3.allow_write
             || v3.allow_deploy_with_max_data_len
             || v3.allow_upgrade
-            || v3.allow_extend_program;
+            || v3.allow_set_authority
+            || v3.allow_set_authority_checked
+            || v3.allow_close
+            || v3.allow_extend_program
+            || v3.allow_extend_program_checked
+            || v3.allow_migrate;
         let v4 = &config.validation.fee_payer_policy.loader_v4;
         let v4_any = v4.allow_write
             || v4.allow_copy
@@ -689,5 +694,68 @@ mod tests {
         let (errors, warnings) = plugin.validate_config(&config);
         assert!(errors.is_empty(), "got errors: {errors:?}");
         assert!(warnings.is_empty(), "got warnings: {warnings:?}");
+    }
+
+    #[test]
+    fn validate_config_no_warning_when_any_v3_flag_true() {
+        // Regression: every v3 allow_* flag must be reachable from `v3_any`. If we forget one,
+        // an operator who enabled (e.g.) only allow_close would see a misleading "plugin will
+        // never see a loader instruction" warning even though the plugin would actually run.
+        let new_config = || {
+            let mut config = ConfigMockBuilder::new()
+                .with_allowed_programs(vec![BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()])
+                .build();
+            enable_deploy_authority_plugin(&mut config);
+            config
+        };
+
+        type ToggleEntry = (&'static str, fn(&mut Config));
+        let toggle_one_v3_flag: [ToggleEntry; 10] = [
+            ("allow_initialize_buffer", |c| {
+                c.validation.fee_payer_policy.bpf_loader_upgradeable.allow_initialize_buffer = true;
+            }),
+            ("allow_write", |c| {
+                c.validation.fee_payer_policy.bpf_loader_upgradeable.allow_write = true;
+            }),
+            ("allow_deploy_with_max_data_len", |c| {
+                c.validation
+                    .fee_payer_policy
+                    .bpf_loader_upgradeable
+                    .allow_deploy_with_max_data_len = true;
+            }),
+            ("allow_upgrade", |c| {
+                c.validation.fee_payer_policy.bpf_loader_upgradeable.allow_upgrade = true;
+            }),
+            ("allow_set_authority", |c| {
+                c.validation.fee_payer_policy.bpf_loader_upgradeable.allow_set_authority = true;
+            }),
+            ("allow_set_authority_checked", |c| {
+                c.validation.fee_payer_policy.bpf_loader_upgradeable.allow_set_authority_checked =
+                    true;
+            }),
+            ("allow_close", |c| {
+                c.validation.fee_payer_policy.bpf_loader_upgradeable.allow_close = true;
+            }),
+            ("allow_extend_program", |c| {
+                c.validation.fee_payer_policy.bpf_loader_upgradeable.allow_extend_program = true;
+            }),
+            ("allow_extend_program_checked", |c| {
+                c.validation.fee_payer_policy.bpf_loader_upgradeable.allow_extend_program_checked =
+                    true;
+            }),
+            ("allow_migrate", |c| {
+                c.validation.fee_payer_policy.bpf_loader_upgradeable.allow_migrate = true;
+            }),
+        ];
+
+        let plugin = DeployAuthorityPlugin;
+        for (label, toggle) in toggle_one_v3_flag {
+            let mut config = new_config();
+            toggle(&mut config);
+
+            let (errors, warnings) = plugin.validate_config(&config);
+            assert!(errors.is_empty(), "{label}: got errors: {errors:?}");
+            assert!(warnings.is_empty(), "{label}: expected no warnings, got: {warnings:?}");
+        }
     }
 }
