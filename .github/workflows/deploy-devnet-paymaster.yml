@@ -15,7 +15,6 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: devnet-paymaster
     steps:
       - uses: actions/checkout@v4
         with:

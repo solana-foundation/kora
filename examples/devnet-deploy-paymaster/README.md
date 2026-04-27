@@ -72,6 +72,3 @@ configured for the rest of the CI workflows.
 
 GitHub → **Actions** → **Deploy devnet paymaster** → **Run workflow**.
 Optionally specify a git ref (defaults to `main`).
-
-The `devnet-paymaster` GitHub Environment can gate this with a manual
-approval reviewer if you want a second pair of eyes.
