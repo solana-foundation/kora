@@ -546,11 +546,12 @@ impl TransactionValidator {
             self.fee_payer_policy.bpf_loader_upgradeable.allow_deploy_with_max_data_len,
             "BPF Loader Upgradeable DeployWithMaxDataLen");
 
+        // Gate only on the upgrade_authority signing role. `spill` is a lamport recipient,
+        // not a signer — a user upgrading their own program can refund excess lamports to
+        // Kora without that being a Kora-as-authority operation.
         validate_bpf_loader_upgradeable!(bpf_v3_instructions, Upgrade,
-            ParsedBpfLoaderUpgradeableInstructionData::Upgrade {
-                upgrade_authority, spill, ..
-            } => (*upgrade_authority == self.fee_payer_pubkey
-                || *spill == self.fee_payer_pubkey),
+            ParsedBpfLoaderUpgradeableInstructionData::Upgrade { upgrade_authority, .. } =>
+            *upgrade_authority == self.fee_payer_pubkey,
             self.fee_payer_policy.bpf_loader_upgradeable.allow_upgrade,
             "BPF Loader Upgradeable Upgrade");
 
@@ -570,11 +571,13 @@ impl TransactionValidator {
             self.fee_payer_policy.bpf_loader_upgradeable.allow_set_authority_checked,
             "BPF Loader Upgradeable SetAuthorityChecked");
 
+        // Gate only on the authority signing role. `recipient` is a lamport sink, not a
+        // signer — a user closing their own buffer can legitimately refund lamports to Kora
+        // without that being a Kora-as-authority operation. The drainage guard below still
+        // catches the only real abuse vector: Kora as authority + foreign recipient.
         validate_bpf_loader_upgradeable!(bpf_v3_instructions, Close,
-            ParsedBpfLoaderUpgradeableInstructionData::Close {
-                authority, recipient, ..
-            } => (authority.is_some_and(|a| a == self.fee_payer_pubkey)
-                || *recipient == self.fee_payer_pubkey),
+            ParsedBpfLoaderUpgradeableInstructionData::Close { authority, .. } =>
+            authority.is_some_and(|a| a == self.fee_payer_pubkey),
             self.fee_payer_policy.bpf_loader_upgradeable.allow_close,
             "BPF Loader Upgradeable Close");
 
@@ -5603,6 +5606,60 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v3::close(&buffer, &fee_payer, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_upgrade_with_kora_as_spill_does_not_require_allow_upgrade() {
+        // Regression: spill is a lamport recipient, not a signer. A user upgrading their own
+        // program who picks Kora as the spill account is just refunding excess lamports;
+        // it should not trigger allow_upgrade gating.
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let user_authority = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        // allow_upgrade default = false.
+        setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // user_authority signs as upgrade_authority; spill = fee_payer.
+        let ix = loader_v3::upgrade(&program, &buffer, &user_authority, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_close_with_kora_as_recipient_does_not_require_allow_close() {
+        // Regression: recipient is a lamport sink, not a signer. A user closing their own
+        // buffer with Kora as recipient is just sending us money — should not be gated.
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let user_authority = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::close(&buffer, &fee_payer, &user_authority);
         let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();

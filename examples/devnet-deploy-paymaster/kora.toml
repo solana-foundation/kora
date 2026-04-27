@@ -67,24 +67,17 @@ allow_authorize = false
 allow_withdraw = false
 
 [validation.fee_payer_policy.bpf_loader_upgradeable]
-# Operator opts Kora into being the BPF Loader Upgradeable (loader-v3) authority. This is
-# what `solana program deploy` uses today. The plugin pins that authority to Kora on every
-# instruction.
 allow_initialize_buffer = true
 allow_write = true
 allow_deploy_with_max_data_len = true
 allow_upgrade = true
 allow_extend_program = true
-# Leave these false: the plugin enforces handoff/close/migrate rules independently, so even
-# if these flags flipped on, the plugin would still block any tx trying to drain or hand off.
 allow_set_authority = false
 allow_set_authority_checked = false
 allow_close = false
 allow_migrate = false
 
 [validation.fee_payer_policy.loader_v4]
-# Loader-v4 is currently feature-gated on all clusters (SIMD-0167). When activation lands we
-# get coverage for free; flip the flags then.
 allow_write = true
 allow_copy = true
 allow_set_program_length = true
