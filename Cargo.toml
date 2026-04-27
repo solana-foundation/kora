@@ -43,6 +43,7 @@ solana-system-interface = "2.0.0"
 solana-transaction-status-client-types = "3.0.8"
 solana-transaction-status = "3.0.8"
 solana-address-lookup-table-interface = "3.0.0"
+solana-loader-v3-interface = { version = "6.1.0", features = ["bincode", "serde"] }
 solana-loader-v4-interface = { version = "3.1.0", features = ["bincode", "serde"] }
 solana-program = "3.0.0"
 solana-program-pack = "3.0.0"

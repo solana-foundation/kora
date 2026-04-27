@@ -4,8 +4,8 @@ use crate::{
     admin::token_util::find_missing_atas,
     config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy},
     constant::{
-        LIGHTHOUSE_PROGRAM_ID, LOADER_V4_PROGRAM_ID, MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE,
-        STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
+        BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_ID, LOADER_V4_PROGRAM_ID,
+        MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE, STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
     },
     fee::price::PriceModel,
     oracle::PriceSource,
@@ -232,6 +232,36 @@ impl ConfigValidator {
 
             loader_v4, allow_finalize, "Loader-v4 Finalize instructions",
                 "Users can make the fee payer finalize programs, making them immutable and forwarding to a next-version program";
+
+            bpf_loader_upgradeable, allow_initialize_buffer, "BPF Loader Upgradeable InitializeBuffer instructions",
+                "Users can make the fee payer the buffer authority on new buffers";
+
+            bpf_loader_upgradeable, allow_write, "BPF Loader Upgradeable Write instructions",
+                "Users can make the fee payer write arbitrary bytes into buffers it is the authority for";
+
+            bpf_loader_upgradeable, allow_deploy_with_max_data_len, "BPF Loader Upgradeable DeployWithMaxDataLen instructions",
+                "Users can make the fee payer fund + take upgrade authority on newly deployed programs, committing rent";
+
+            bpf_loader_upgradeable, allow_upgrade, "BPF Loader Upgradeable Upgrade instructions",
+                "Users can make the fee payer authorize program upgrades";
+
+            bpf_loader_upgradeable, allow_set_authority, "BPF Loader Upgradeable SetAuthority instructions",
+                "Users can make the fee payer hand buffer/program authority to a different account. This can lead to complete loss of control and subsequent drainage";
+
+            bpf_loader_upgradeable, allow_set_authority_checked, "BPF Loader Upgradeable SetAuthorityChecked instructions",
+                "Users can make the fee payer hand buffer/program authority to a different account (checked variant). Same drainage risk as SetAuthority";
+
+            bpf_loader_upgradeable, allow_close, "BPF Loader Upgradeable Close instructions",
+                "Users can make the fee payer close buffers/programs. The drainage guard rejects foreign-recipient closes, but enabling this still lets users force closure of buffers/programs Kora is the authority on";
+
+            bpf_loader_upgradeable, allow_extend_program, "BPF Loader Upgradeable ExtendProgram instructions",
+                "Users can make the fee payer fund extending program data accounts, draining rent";
+
+            bpf_loader_upgradeable, allow_extend_program_checked, "BPF Loader Upgradeable ExtendProgramChecked instructions",
+                "Users can make the fee payer authorize and/or fund extending program data accounts (checked variant requires authority signature)";
+
+            bpf_loader_upgradeable, allow_migrate, "BPF Loader Upgradeable Migrate instructions",
+                "Users can make the fee payer migrate programs from loader-v3 to loader-v4. Authority moves to a less-validated path on this Kora";
         }
 
         // Check nonce policy separately (nested structure)
@@ -305,6 +335,7 @@ impl ConfigValidator {
             solana_compute_budget_interface::id().to_string(),
             LIGHTHOUSE_PROGRAM_ID.to_string(),
             LOADER_V4_PROGRAM_ID.to_string(),
+            BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string(),
         ]
         .into_iter()
         .chain(high_risk.iter().map(|(id, _)| id.clone()))
@@ -2200,6 +2231,18 @@ mod tests {
                         allow_deactivate: true,
                         allow_close: true,
                     },
+                    bpf_loader_upgradeable: crate::config::BpfLoaderUpgradeableInstructionPolicy {
+                        allow_initialize_buffer: true,
+                        allow_write: true,
+                        allow_deploy_with_max_data_len: true,
+                        allow_upgrade: true,
+                        allow_set_authority: true,
+                        allow_set_authority_checked: true,
+                        allow_close: true,
+                        allow_extend_program: true,
+                        allow_extend_program_checked: true,
+                        allow_migrate: true,
+                    },
                     loader_v4: crate::config::LoaderV4InstructionPolicy {
                         allow_write: true,
                         allow_copy: true,
@@ -2379,6 +2422,25 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.contains("Loader-v4 Finalize") && w.contains("allow_finalize")));
+
+        // BPF Loader Upgradeable (loader-v3) policies
+        for (description, field) in [
+            ("BPF Loader Upgradeable InitializeBuffer", "allow_initialize_buffer"),
+            ("BPF Loader Upgradeable Write", "allow_write"),
+            ("BPF Loader Upgradeable DeployWithMaxDataLen", "allow_deploy_with_max_data_len"),
+            ("BPF Loader Upgradeable Upgrade", "allow_upgrade"),
+            ("BPF Loader Upgradeable SetAuthority", "allow_set_authority"),
+            ("BPF Loader Upgradeable SetAuthorityChecked", "allow_set_authority_checked"),
+            ("BPF Loader Upgradeable Close", "allow_close"),
+            ("BPF Loader Upgradeable ExtendProgram", "allow_extend_program"),
+            ("BPF Loader Upgradeable ExtendProgramChecked", "allow_extend_program_checked"),
+            ("BPF Loader Upgradeable Migrate", "allow_migrate"),
+        ] {
+            assert!(
+                warnings.iter().any(|w| w.contains(description) && w.contains(field)),
+                "missing warning for {description} ({field})"
+            );
+        }
 
         // Each warning should contain risk explanation
         let fee_payer_warnings: Vec<_> =
@@ -2812,19 +2874,18 @@ mod tests {
     }
 
     #[test]
-    fn test_warn_unvalidated_programs_warns_for_bpf_loader_upgradeable() {
-        // BPF Loader Upgradeable (loader-v3) no longer gets a targeted high-risk warning now
-        // that loader-v4 is the primary loader we validate. It still lacks a dedicated parser
-        // in Kora, so it falls through to the generic "no dedicated fee-payer instruction
-        // parser" warning like any other custom program.
-        use crate::constant::BPF_LOADER_UPGRADEABLE_PROGRAM_ID;
+    fn test_warn_unvalidated_programs_no_warning_for_bpf_loader_upgradeable() {
+        // BPF Loader Upgradeable now has a dedicated fee-payer instruction parser
+        // (`BpfLoaderUpgradeableInstructionPolicy`) and is in `known_programs`. Operators
+        // who allowlist it should see no validation warning.
         let allowed =
             vec![SYSTEM_PROGRAM_ID.to_string(), BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()];
         let mut warnings = Vec::new();
         ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
-        assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains(&BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()));
-        assert!(warnings[0].contains("no dedicated fee-payer instruction parser"));
+        assert!(
+            warnings.is_empty(),
+            "BPF Loader Upgradeable has a parser; no warning expected. got: {warnings:?}"
+        );
     }
 
     #[test]

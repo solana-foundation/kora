@@ -4,6 +4,7 @@ use solana_address_lookup_table_interface::{
     instruction::ProgramInstruction as AddressLookupTableInstruction,
     program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
 };
+use solana_loader_v3_interface::instruction::UpgradeableLoaderInstruction;
 use solana_loader_v4_interface::instruction::LoaderV4Instruction;
 use solana_message::compiled_instruction::CompiledInstruction;
 use solana_sdk::{
@@ -17,7 +18,7 @@ use solana_transaction_status_client_types::{
 };
 
 use crate::{
-    constant::{instruction_indexes, LOADER_V4_PROGRAM_ID},
+    constant::{instruction_indexes, BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LOADER_V4_PROGRAM_ID},
     error::KoraError,
     sanitize_error,
     transaction::VersionedTransactionResolved,
@@ -304,6 +305,82 @@ pub enum ParsedLoaderV4InstructionData {
         program: Pubkey,
         current_authority: Pubkey,
         next_version: Pubkey,
+    },
+}
+
+/// BPF Loader Upgradeable (loader-v3) instruction types parsed from a transaction.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParsedBpfLoaderUpgradeableInstructionType {
+    InitializeBuffer,
+    Write,
+    DeployWithMaxDataLen,
+    Upgrade,
+    SetAuthority,
+    SetAuthorityChecked,
+    Close,
+    ExtendProgram,
+    ExtendProgramChecked,
+    Migrate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParsedBpfLoaderUpgradeableInstructionData {
+    InitializeBuffer {
+        buffer: Pubkey,
+        authority: Option<Pubkey>,
+    },
+    Write {
+        buffer: Pubkey,
+        authority: Pubkey,
+        offset: u32,
+    },
+    DeployWithMaxDataLen {
+        payer: Pubkey,
+        program_data: Pubkey,
+        program: Pubkey,
+        buffer: Pubkey,
+        upgrade_authority: Pubkey,
+        max_data_len: u64,
+    },
+    Upgrade {
+        program_data: Pubkey,
+        program: Pubkey,
+        buffer: Pubkey,
+        spill: Pubkey,
+        upgrade_authority: Pubkey,
+    },
+    SetAuthority {
+        target: Pubkey,
+        current_authority: Pubkey,
+        new_authority: Option<Pubkey>,
+    },
+    SetAuthorityChecked {
+        target: Pubkey,
+        current_authority: Pubkey,
+        new_authority: Pubkey,
+    },
+    Close {
+        target: Pubkey,
+        recipient: Pubkey,
+        authority: Option<Pubkey>,
+    },
+    ExtendProgram {
+        program_data: Pubkey,
+        program: Pubkey,
+        payer: Option<Pubkey>,
+        additional_bytes: u32,
+    },
+    ExtendProgramChecked {
+        program_data: Pubkey,
+        program: Pubkey,
+        authority: Pubkey,
+        payer: Option<Pubkey>,
+        additional_bytes: u32,
+    },
+    Migrate {
+        program_data: Pubkey,
+        program: Pubkey,
+        current_authority: Pubkey,
     },
 }
 
@@ -2203,6 +2280,227 @@ impl IxUtils {
                             next_version: instruction.accounts
                                 [instruction_indexes::loader_v4_finalize::NEXT_VERSION_INDEX]
                                 .pubkey,
+                        });
+                }
+            }
+        }
+
+        Ok(parsed_instructions)
+    }
+
+    pub fn parse_bpf_loader_upgradeable_instructions(
+        transaction: &VersionedTransactionResolved,
+    ) -> Result<
+        HashMap<
+            ParsedBpfLoaderUpgradeableInstructionType,
+            Vec<ParsedBpfLoaderUpgradeableInstructionData>,
+        >,
+        KoraError,
+    > {
+        let mut parsed_instructions: HashMap<
+            ParsedBpfLoaderUpgradeableInstructionType,
+            Vec<ParsedBpfLoaderUpgradeableInstructionData>,
+        > = HashMap::new();
+
+        for instruction in &transaction.all_instructions {
+            if instruction.program_id != BPF_LOADER_UPGRADEABLE_PROGRAM_ID {
+                continue;
+            }
+
+            let parsed = bincode::deserialize::<UpgradeableLoaderInstruction>(&instruction.data)
+                .map_err(|e| {
+                    KoraError::InvalidTransaction(format!(
+                        "Failed to parse BPF Loader Upgradeable instruction: {}",
+                        sanitize_error!(e)
+                    ))
+                })?;
+
+            match parsed {
+                UpgradeableLoaderInstruction::InitializeBuffer => {
+                    use instruction_indexes::bpf_loader_upgradeable_initialize_buffer as ix;
+                    let n = instruction.accounts.len();
+                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "BPF Loader Upgradeable InitializeBuffer has {n} accounts, expected at least {}",
+                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                        )));
+                    }
+                    let authority = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_AUTHORITY {
+                        Some(instruction.accounts[ix::OPTIONAL_AUTHORITY_INDEX].pubkey)
+                    } else {
+                        None
+                    };
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::InitializeBuffer)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::InitializeBuffer {
+                            buffer: instruction.accounts[ix::BUFFER_INDEX].pubkey,
+                            authority,
+                        });
+                }
+                UpgradeableLoaderInstruction::Write { offset, .. } => {
+                    use instruction_indexes::bpf_loader_upgradeable_write as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::Write)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::Write {
+                            buffer: instruction.accounts[ix::BUFFER_INDEX].pubkey,
+                            authority: instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
+                            offset,
+                        });
+                }
+                UpgradeableLoaderInstruction::DeployWithMaxDataLen { max_data_len } => {
+                    use instruction_indexes::bpf_loader_upgradeable_deploy_with_max_data_len as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::DeployWithMaxDataLen)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
+                            payer: instruction.accounts[ix::PAYER_INDEX].pubkey,
+                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
+                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
+                            buffer: instruction.accounts[ix::BUFFER_INDEX].pubkey,
+                            upgrade_authority: instruction.accounts[ix::UPGRADE_AUTHORITY_INDEX]
+                                .pubkey,
+                            max_data_len: max_data_len as u64,
+                        });
+                }
+                UpgradeableLoaderInstruction::Upgrade => {
+                    use instruction_indexes::bpf_loader_upgradeable_upgrade as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::Upgrade)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::Upgrade {
+                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
+                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
+                            buffer: instruction.accounts[ix::BUFFER_INDEX].pubkey,
+                            spill: instruction.accounts[ix::SPILL_INDEX].pubkey,
+                            upgrade_authority: instruction.accounts[ix::UPGRADE_AUTHORITY_INDEX]
+                                .pubkey,
+                        });
+                }
+                UpgradeableLoaderInstruction::SetAuthority => {
+                    use instruction_indexes::bpf_loader_upgradeable_set_authority as ix;
+                    let n = instruction.accounts.len();
+                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "BPF Loader Upgradeable SetAuthority has {n} accounts, expected at least {}",
+                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                        )));
+                    }
+                    let new_authority = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_NEW_AUTHORITY {
+                        Some(instruction.accounts[ix::OPTIONAL_NEW_AUTHORITY_INDEX].pubkey)
+                    } else {
+                        None
+                    };
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::SetAuthority)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::SetAuthority {
+                            target: instruction.accounts[ix::TARGET_INDEX].pubkey,
+                            current_authority: instruction.accounts[ix::CURRENT_AUTHORITY_INDEX]
+                                .pubkey,
+                            new_authority,
+                        });
+                }
+                UpgradeableLoaderInstruction::SetAuthorityChecked => {
+                    use instruction_indexes::bpf_loader_upgradeable_set_authority_checked as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::SetAuthorityChecked)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::SetAuthorityChecked {
+                            target: instruction.accounts[ix::TARGET_INDEX].pubkey,
+                            current_authority: instruction.accounts[ix::CURRENT_AUTHORITY_INDEX]
+                                .pubkey,
+                            new_authority: instruction.accounts[ix::NEW_AUTHORITY_INDEX].pubkey,
+                        });
+                }
+                UpgradeableLoaderInstruction::Close => {
+                    use instruction_indexes::bpf_loader_upgradeable_close as ix;
+                    let n = instruction.accounts.len();
+                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "BPF Loader Upgradeable Close has {n} accounts, expected at least {}",
+                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                        )));
+                    }
+                    let authority = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_AUTHORITY {
+                        Some(instruction.accounts[ix::OPTIONAL_AUTHORITY_INDEX].pubkey)
+                    } else {
+                        None
+                    };
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::Close)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::Close {
+                            target: instruction.accounts[ix::TARGET_INDEX].pubkey,
+                            recipient: instruction.accounts[ix::RECIPIENT_INDEX].pubkey,
+                            authority,
+                        });
+                }
+                UpgradeableLoaderInstruction::ExtendProgram { additional_bytes } => {
+                    use instruction_indexes::bpf_loader_upgradeable_extend_program as ix;
+                    let n = instruction.accounts.len();
+                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "BPF Loader Upgradeable ExtendProgram has {n} accounts, expected at least {}",
+                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                        )));
+                    }
+                    let payer = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER {
+                        Some(instruction.accounts[ix::OPTIONAL_PAYER_INDEX].pubkey)
+                    } else {
+                        None
+                    };
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::ExtendProgram)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram {
+                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
+                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
+                            payer,
+                            additional_bytes,
+                        });
+                }
+                UpgradeableLoaderInstruction::Migrate => {
+                    use instruction_indexes::bpf_loader_upgradeable_migrate as ix;
+                    validate_number_accounts!(instruction, ix::REQUIRED_NUMBER_OF_ACCOUNTS);
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::Migrate)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::Migrate {
+                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
+                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
+                            current_authority: instruction.accounts[ix::CURRENT_AUTHORITY_INDEX]
+                                .pubkey,
+                        });
+                }
+                UpgradeableLoaderInstruction::ExtendProgramChecked { additional_bytes } => {
+                    use instruction_indexes::bpf_loader_upgradeable_extend_program_checked as ix;
+                    let n = instruction.accounts.len();
+                    if n < ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "BPF Loader Upgradeable ExtendProgramChecked has {n} accounts, expected at least {}",
+                            ix::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                        )));
+                    }
+                    let payer = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PAYER {
+                        Some(instruction.accounts[ix::OPTIONAL_PAYER_INDEX].pubkey)
+                    } else {
+                        None
+                    };
+                    parsed_instructions
+                        .entry(ParsedBpfLoaderUpgradeableInstructionType::ExtendProgramChecked)
+                        .or_default()
+                        .push(ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
+                            program_data: instruction.accounts[ix::PROGRAM_DATA_INDEX].pubkey,
+                            program: instruction.accounts[ix::PROGRAM_INDEX].pubkey,
+                            authority: instruction.accounts[ix::AUTHORITY_INDEX].pubkey,
+                            payer,
+                            additional_bytes,
                         });
                 }
             }

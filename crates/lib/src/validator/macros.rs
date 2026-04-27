@@ -92,6 +92,26 @@ macro_rules! validate_alt {
     };
 }
 
+/// Macro to validate BPF Loader Upgradeable (loader-v3) instructions with custom
+/// fee-payer matching logic. Same shape as `validate_alt!` — the caller's
+/// `$fee_payer_used` expression is pre-evaluated against `self.fee_payer_pubkey`.
+macro_rules! validate_bpf_loader_upgradeable {
+    ($instructions:expr, $type:ident, $pattern:pat => $fee_payer_used:expr, $policy:expr, $name:expr) => {
+        for instruction in
+            $instructions.get(&ParsedBpfLoaderUpgradeableInstructionType::$type).unwrap_or(&vec![])
+        {
+            if let $pattern = instruction {
+                if $fee_payer_used && !$policy {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Fee payer cannot be used for '{}'",
+                        $name
+                    )));
+                }
+            }
+        }
+    };
+}
+
 /// Macro to validate Loader-v4 instructions with custom fee-payer matching logic.
 /// Same shape as `validate_alt!` — the caller's `$fee_payer_used` expression is
 /// pre-evaluated against `self.fee_payer_pubkey` at the call site.

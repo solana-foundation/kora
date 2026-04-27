@@ -32,6 +32,7 @@ solana-compute-budget-interface = { workspace = true }
 solana-transaction-status-client-types = { workspace = true }
 solana-transaction-status = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }
+solana-loader-v3-interface = { workspace = true }
 solana-loader-v4-interface = { workspace = true }
 solana-client = { workspace = true }
 bs58 = { workspace = true }

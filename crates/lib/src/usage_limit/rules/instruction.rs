@@ -5,7 +5,7 @@ use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
 use spl_associated_token_account_interface::program::ID as ATA_PROGRAM_ID;
 
 use crate::{
-    constant::LOADER_V4_PROGRAM_ID,
+    constant::{BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LOADER_V4_PROGRAM_ID},
     transaction::{ParsedSystemInstructionData, ParsedSystemInstructionType},
 };
 
@@ -29,6 +29,19 @@ const LOADER_V4_DEPLOY: &str = "deploy";
 const LOADER_V4_RETRACT: &str = "retract";
 const LOADER_V4_TRANSFER_AUTHORITY: &str = "transferauthority";
 const LOADER_V4_FINALIZE: &str = "finalize";
+
+// BPF Loader Upgradeable (loader-v3) instruction names. Values correspond to bincode
+// discriminators of UpgradeableLoaderInstruction.
+const BPF_LOADER_INITIALIZE_BUFFER: &str = "initializebuffer";
+const BPF_LOADER_WRITE: &str = "write";
+const BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN: &str = "deploywithmaxdatalen";
+const BPF_LOADER_UPGRADE: &str = "upgrade";
+const BPF_LOADER_SET_AUTHORITY: &str = "setauthority";
+const BPF_LOADER_CLOSE: &str = "close";
+const BPF_LOADER_EXTEND_PROGRAM: &str = "extendprogram";
+const BPF_LOADER_SET_AUTHORITY_CHECKED: &str = "setauthoritychecked";
+const BPF_LOADER_MIGRATE: &str = "migrate";
+const BPF_LOADER_EXTEND_PROGRAM_CHECKED: &str = "extendprogramchecked";
 
 /// Rule that limits specific instruction types per wallet
 ///
@@ -210,6 +223,42 @@ impl InstructionRule {
                             if kora_is_authority || kora_is_new_authority {
                                 counts[*idx] += 1;
                             }
+                        } else if rule.program == BPF_LOADER_UPGRADEABLE_PROGRAM_ID {
+                            // BPF Loader Upgradeable (loader-v3): only count when Kora is the
+                            // authority/payer that actually subsidizes the op. Authority and
+                            // payer indexes differ per variant, so route by instruction name.
+                            let kora_at = |index: usize| {
+                                instruction
+                                    .accounts
+                                    .get(index)
+                                    .zip(kora_signer)
+                                    .is_some_and(|(acc, kora)| acc.pubkey == kora)
+                            };
+                            let kora_is_authority_or_payer = if instr_type
+                                == BPF_LOADER_INITIALIZE_BUFFER
+                                || instr_type == BPF_LOADER_WRITE
+                                || instr_type == BPF_LOADER_SET_AUTHORITY
+                                || instr_type == BPF_LOADER_SET_AUTHORITY_CHECKED
+                            {
+                                kora_at(1)
+                            } else if instr_type == BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN {
+                                kora_at(0) || kora_at(7)
+                            } else if instr_type == BPF_LOADER_UPGRADE {
+                                kora_at(6)
+                            } else if instr_type == BPF_LOADER_CLOSE
+                                || instr_type == BPF_LOADER_MIGRATE
+                            {
+                                kora_at(2)
+                            } else if instr_type == BPF_LOADER_EXTEND_PROGRAM {
+                                kora_at(3)
+                            } else if instr_type == BPF_LOADER_EXTEND_PROGRAM_CHECKED {
+                                kora_at(2) || kora_at(4)
+                            } else {
+                                false
+                            };
+                            if kora_is_authority_or_payer {
+                                counts[*idx] += 1;
+                            }
                         } else {
                             // For other programs, count all matching instructions
                             counts[*idx] += 1;
@@ -257,6 +306,9 @@ impl InstructionIdentifier {
             _ if *program_id == SYSTEM_PROGRAM_ID => Self::system(data),
             _ if *program_id == ATA_PROGRAM_ID => Self::ata(data),
             _ if *program_id == LOADER_V4_PROGRAM_ID => Self::loader_v4(data),
+            _ if *program_id == BPF_LOADER_UPGRADEABLE_PROGRAM_ID => {
+                Self::bpf_loader_upgradeable(data)
+            }
             _ => None,
         }
     }
@@ -290,6 +342,24 @@ impl InstructionIdentifier {
             4 => Some(LOADER_V4_RETRACT.to_string()),
             5 => Some(LOADER_V4_TRANSFER_AUTHORITY.to_string()),
             6 => Some(LOADER_V4_FINALIZE.to_string()),
+            _ => None,
+        }
+    }
+
+    fn bpf_loader_upgradeable(data: &[u8]) -> Option<String> {
+        // Values match `UpgradeableLoaderInstruction` declaration order.
+        let discriminator = u32::from_le_bytes(data.get(..4)?.try_into().ok()?);
+        match discriminator {
+            0 => Some(BPF_LOADER_INITIALIZE_BUFFER.to_string()),
+            1 => Some(BPF_LOADER_WRITE.to_string()),
+            2 => Some(BPF_LOADER_DEPLOY_WITH_MAX_DATA_LEN.to_string()),
+            3 => Some(BPF_LOADER_UPGRADE.to_string()),
+            4 => Some(BPF_LOADER_SET_AUTHORITY.to_string()),
+            5 => Some(BPF_LOADER_CLOSE.to_string()),
+            6 => Some(BPF_LOADER_EXTEND_PROGRAM.to_string()),
+            7 => Some(BPF_LOADER_SET_AUTHORITY_CHECKED.to_string()),
+            8 => Some(BPF_LOADER_MIGRATE.to_string()),
+            9 => Some(BPF_LOADER_EXTEND_PROGRAM_CHECKED.to_string()),
             _ => None,
         }
     }
@@ -546,5 +616,131 @@ mod tests {
             timestamp: 0,
         };
         assert_eq!(rule.count_increment(&mut ctx), 1);
+    }
+
+    #[test]
+    fn test_bpf_loader_upgradeable_write_filters_by_kora_authority() {
+        // Same drainage-prevention principle as loader-v4: only count v3 Write when Kora is
+        // the buffer authority. Otherwise a user-authored Write where Kora just fee-pays
+        // would burn the user's quota for someone else's deploy progress.
+        use crate::transaction::VersionedTransactionResolved;
+        use solana_loader_v3_interface::instruction as loader_v3;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{signature::Keypair, signer::Signer, transaction::VersionedTransaction};
+
+        let kora = Keypair::new();
+        let user = Keypair::new();
+        let buffer = Pubkey::new_unique();
+
+        let build_tx = |authority: &Pubkey| -> VersionedTransactionResolved {
+            let ix = loader_v3::write(&buffer, authority, 0, vec![1, 2, 3]);
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&kora.pubkey())));
+            let tx = VersionedTransaction { signatures: vec![], message };
+            VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap()
+        };
+
+        let rule = InstructionRule::lifetime(
+            BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
+            BPF_LOADER_WRITE.to_string(),
+            10,
+        );
+
+        let mut tx_kora = build_tx(&kora.pubkey());
+        let mut ctx = LimiterContext {
+            transaction: &mut tx_kora,
+            user_id: "user".to_string(),
+            kora_signer: Some(kora.pubkey()),
+            timestamp: 0,
+        };
+        assert_eq!(rule.count_increment(&mut ctx), 1);
+
+        let mut tx_user = build_tx(&user.pubkey());
+        let mut ctx = LimiterContext {
+            transaction: &mut tx_user,
+            user_id: "user".to_string(),
+            kora_signer: Some(kora.pubkey()),
+            timestamp: 0,
+        };
+        assert_eq!(rule.count_increment(&mut ctx), 0);
+    }
+
+    #[test]
+    fn test_bpf_loader_upgradeable_extend_program_checked_counts_when_kora_is_payer() {
+        // ExtendProgramChecked is the variant that has both an authority (index 2) AND an
+        // optional payer (index 4). Either one being Kora means Kora is subsidizing the
+        // extension and the op should be counted against the user's quota.
+        use crate::transaction::VersionedTransactionResolved;
+        use solana_loader_v3_interface::instruction as loader_v3;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{signature::Keypair, signer::Signer, transaction::VersionedTransaction};
+
+        let kora = Keypair::new();
+        let attacker = Keypair::new();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v3::extend_program_checked(
+            &program,
+            &attacker.pubkey(),
+            Some(&kora.pubkey()),
+            64,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&kora.pubkey())));
+        let tx = VersionedTransaction { signatures: vec![], message };
+        let mut tx_resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        let rule = InstructionRule::lifetime(
+            BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
+            BPF_LOADER_EXTEND_PROGRAM_CHECKED.to_string(),
+            10,
+        );
+        let mut ctx = LimiterContext {
+            transaction: &mut tx_resolved,
+            user_id: "user".to_string(),
+            kora_signer: Some(kora.pubkey()),
+            timestamp: 0,
+        };
+        assert_eq!(rule.count_increment(&mut ctx), 1);
+    }
+
+    #[test]
+    fn test_bpf_loader_upgradeable_extend_program_checked_skips_when_kora_neither_authority_nor_payer(
+    ) {
+        // Negative: an attacker submitting ExtendProgramChecked with their own authority AND
+        // their own payer (Kora is just fee payer for the tx) must not increment the user's
+        // quota — Kora isn't subsidizing the extension lamports.
+        use crate::transaction::VersionedTransactionResolved;
+        use solana_loader_v3_interface::instruction as loader_v3;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{signature::Keypair, signer::Signer, transaction::VersionedTransaction};
+
+        let kora = Keypair::new();
+        let attacker = Keypair::new();
+        let payer = Keypair::new();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v3::extend_program_checked(
+            &program,
+            &attacker.pubkey(),
+            Some(&payer.pubkey()),
+            64,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&kora.pubkey())));
+        let tx = VersionedTransaction { signatures: vec![], message };
+        let mut tx_resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        let rule = InstructionRule::lifetime(
+            BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
+            BPF_LOADER_EXTEND_PROGRAM_CHECKED.to_string(),
+            10,
+        );
+        let mut ctx = LimiterContext {
+            transaction: &mut tx_resolved,
+            user_id: "user".to_string(),
+            kora_signer: Some(kora.pubkey()),
+            timestamp: 0,
+        };
+        assert_eq!(rule.count_increment(&mut ctx), 0);
     }
 }

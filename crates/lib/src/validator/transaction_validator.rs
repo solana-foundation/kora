@@ -8,10 +8,11 @@ use crate::{
         token::{TokenUtil, TransferHookValidationFlow},
     },
     transaction::{
-        ParsedALTInstructionData, ParsedALTInstructionType, ParsedLoaderV4InstructionData,
-        ParsedLoaderV4InstructionType, ParsedSPLInstructionData, ParsedSPLInstructionType,
-        ParsedSystemInstructionData, ParsedSystemInstructionType, Token2022AccountUsagePolicy,
-        VersionedTransactionResolved,
+        ParsedALTInstructionData, ParsedALTInstructionType,
+        ParsedBpfLoaderUpgradeableInstructionData, ParsedBpfLoaderUpgradeableInstructionType,
+        ParsedLoaderV4InstructionData, ParsedLoaderV4InstructionType, ParsedSPLInstructionData,
+        ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
+        Token2022AccountUsagePolicy, VersionedTransactionResolved,
     },
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -519,6 +520,111 @@ impl TransactionValidator {
             *current_authority == self.fee_payer_pubkey,
             self.fee_payer_policy.loader_v4.allow_finalize,
             "Loader-v4 Finalize");
+
+        // Validate BPF Loader Upgradeable (loader-v3) instructions.
+        let bpf_v3_instructions =
+            transaction_resolved.get_or_parse_bpf_loader_upgradeable_instructions()?;
+
+        // InitializeBuffer: authority is optional. Only gated when present and == fee_payer.
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, InitializeBuffer,
+            ParsedBpfLoaderUpgradeableInstructionData::InitializeBuffer { authority, .. } =>
+            authority.is_some_and(|a| a == self.fee_payer_pubkey),
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_initialize_buffer,
+            "BPF Loader Upgradeable InitializeBuffer");
+
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, Write,
+            ParsedBpfLoaderUpgradeableInstructionData::Write { authority, .. } =>
+            *authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_write,
+            "BPF Loader Upgradeable Write");
+
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, DeployWithMaxDataLen,
+            ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
+                payer, upgrade_authority, ..
+            } => (*payer == self.fee_payer_pubkey
+                || *upgrade_authority == self.fee_payer_pubkey),
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_deploy_with_max_data_len,
+            "BPF Loader Upgradeable DeployWithMaxDataLen");
+
+        // Gate only on the upgrade_authority signing role. `spill` is a lamport recipient,
+        // not a signer — a user upgrading their own program can refund excess lamports to
+        // Kora without that being a Kora-as-authority operation.
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, Upgrade,
+            ParsedBpfLoaderUpgradeableInstructionData::Upgrade { upgrade_authority, .. } =>
+            *upgrade_authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_upgrade,
+            "BPF Loader Upgradeable Upgrade");
+
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, SetAuthority,
+            ParsedBpfLoaderUpgradeableInstructionData::SetAuthority {
+                current_authority, new_authority, ..
+            } => (*current_authority == self.fee_payer_pubkey
+                || new_authority.is_some_and(|n| n == self.fee_payer_pubkey)),
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_set_authority,
+            "BPF Loader Upgradeable SetAuthority");
+
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, SetAuthorityChecked,
+            ParsedBpfLoaderUpgradeableInstructionData::SetAuthorityChecked {
+                current_authority, new_authority, ..
+            } => (*current_authority == self.fee_payer_pubkey
+                || *new_authority == self.fee_payer_pubkey),
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_set_authority_checked,
+            "BPF Loader Upgradeable SetAuthorityChecked");
+
+        // Gate only on the authority signing role. `recipient` is a lamport sink, not a
+        // signer — a user closing their own buffer can legitimately refund lamports to Kora
+        // without that being a Kora-as-authority operation. The drainage guard below still
+        // catches the only real abuse vector: Kora as authority + foreign recipient.
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, Close,
+            ParsedBpfLoaderUpgradeableInstructionData::Close { authority, .. } =>
+            authority.is_some_and(|a| a == self.fee_payer_pubkey),
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_close,
+            "BPF Loader Upgradeable Close");
+
+        // Drainage guard for Close: when the fee payer is the authority, the recipient must
+        // also be the fee payer. Otherwise the closed-account lamports flow to whoever the
+        // attacker put as recipient.
+        for instruction in bpf_v3_instructions
+            .get(&ParsedBpfLoaderUpgradeableInstructionType::Close)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedBpfLoaderUpgradeableInstructionData::Close {
+                authority, recipient, ..
+            } = instruction
+            {
+                if authority.is_some_and(|a| a == self.fee_payer_pubkey)
+                    && *recipient != self.fee_payer_pubkey
+                {
+                    return Err(KoraError::InvalidTransaction(
+                        "BPF Loader Upgradeable Close: when fee payer is the authority, \
+                         recipient must also be the fee payer (drainage guard)"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, ExtendProgram,
+            ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram { payer, .. } =>
+            payer.is_some_and(|p| p == self.fee_payer_pubkey),
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_extend_program,
+            "BPF Loader Upgradeable ExtendProgram");
+
+        // ExtendProgramChecked: like ExtendProgram but the authority is also a required
+        // signer. Gate when fee_payer is either the authority or the (optional) payer.
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, ExtendProgramChecked,
+            ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
+                authority, payer, ..
+            } => (*authority == self.fee_payer_pubkey
+                || payer.is_some_and(|p| p == self.fee_payer_pubkey)),
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_extend_program_checked,
+            "BPF Loader Upgradeable ExtendProgramChecked");
+
+        validate_bpf_loader_upgradeable!(bpf_v3_instructions, Migrate,
+            ParsedBpfLoaderUpgradeableInstructionData::Migrate { current_authority, .. } =>
+            *current_authority == self.fee_payer_pubkey,
+            self.fee_payer_policy.bpf_loader_upgradeable.allow_migrate,
+            "BPF Loader Upgradeable Migrate");
 
         let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
         validate_token2022!(self, spl_instructions, SplTokenReallocate,
@@ -5375,6 +5481,250 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let ix = loader_v4::finalize(&program, &fee_payer, &next_version);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    // ----------------------------------------------------------------------------
+    // BPF Loader Upgradeable (loader-v3) tests
+    // ----------------------------------------------------------------------------
+
+    fn setup_bpf_v3_config_with_policy(policy: FeePayerPolicy) {
+        use crate::constant::BPF_LOADER_UPGRADEABLE_PROGRAM_ID;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![
+                BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string(),
+                SYSTEM_PROGRAM_ID.to_string(),
+            ])
+            .with_max_allowed_lamports(10_000_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_write_requires_policy() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.bpf_loader_upgradeable.allow_write = true;
+        setup_bpf_v3_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::write(&buffer, &fee_payer, 0, vec![1, 2, 3]);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+
+        // default → rejected
+        setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let ix = loader_v3::write(&buffer, &fee_payer, 0, vec![1, 2, 3]);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_set_authority_denied_by_default() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let user = Pubkey::new_unique();
+        setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Try to transfer authority away from Kora.
+        let ix = loader_v3::set_buffer_authority(&buffer, &fee_payer, &user);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_close_with_foreign_recipient_blocked_by_drainage_guard() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.bpf_loader_upgradeable.allow_close = true;
+        setup_bpf_v3_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::close(&buffer, &attacker, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("foreign recipient must be rejected");
+        if let KoraError::InvalidTransaction(msg) = err {
+            assert!(msg.contains("drainage guard"), "got: {msg}");
+        } else {
+            panic!("expected InvalidTransaction, got {err:?}");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_close_with_self_recipient_accepted() {
+        // Closing back to Kora is fine — Kora reclaims its own rent.
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.bpf_loader_upgradeable.allow_close = true;
+        setup_bpf_v3_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::close(&buffer, &fee_payer, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_upgrade_with_kora_as_spill_does_not_require_allow_upgrade() {
+        // Regression: spill is a lamport recipient, not a signer. A user upgrading their own
+        // program who picks Kora as the spill account is just refunding excess lamports;
+        // it should not trigger allow_upgrade gating.
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let user_authority = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        // allow_upgrade default = false.
+        setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // user_authority signs as upgrade_authority; spill = fee_payer.
+        let ix = loader_v3::upgrade(&program, &buffer, &user_authority, &fee_payer);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_close_with_kora_as_recipient_does_not_require_allow_close() {
+        // Regression: recipient is a lamport sink, not a signer. A user closing their own
+        // buffer with Kora as recipient is just sending us money — should not be gated.
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let user_authority = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::close(&buffer, &fee_payer, &user_authority);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_extend_program_checked_with_kora_payer_denied_by_default() {
+        // Regression: ExtendProgramChecked previously fell through a `_ => {}` wildcard in
+        // the parser and was completely unreached by the policy. An attacker with their own
+        // upgradeable program could submit one that named Kora as the optional payer at
+        // index 4 — Kora would silently fund the extension. Now `allow_extend_program_checked`
+        // gates it (default false).
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let programdata = Pubkey::new_unique();
+        setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // attacker is the authority; fee_payer is the (optional) payer.
+        let ix = loader_v3::extend_program_checked(&program, &attacker, Some(&fee_payer), 128);
+        // Force payer to be the fee_payer by re-deriving programdata.
+        let _ = programdata; // silence warning
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_bpf_v3_migrate_denied_by_default() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let programdata = Pubkey::new_unique();
+        setup_bpf_v3_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let ix = loader_v3::migrate_program(&programdata, &program, &fee_payer);
         let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
