@@ -7889,6 +7889,7 @@ dependencies = [
  "solana-client",
  "solana-commitment-config",
  "solana-compute-budget-interface",
+ "solana-loader-v3-interface",
  "solana-message",
  "solana-nonce",
  "solana-program-pack",
