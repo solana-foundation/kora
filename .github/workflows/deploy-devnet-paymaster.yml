@@ -43,12 +43,31 @@ jobs:
           PROJECT: ${{ env.GCP_PROJECT_ID }}
           SERVICE: ${{ env.CLOUD_RUN_SERVICE }}
         run: |
+          set -euo pipefail
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/cloud-run-source-deploy/${SERVICE}:${GITHUB_SHA::12}"
-          gcloud builds submit examples/devnet-deploy-paymaster/ \
+
+          # --async + poll: log streaming needs Project Viewer/Owner; scoped SA isn't.
+          BUILD_ID=$(gcloud builds submit examples/devnet-deploy-paymaster/ \
             --tag "$IMAGE" \
             --project="$PROJECT" \
             --gcs-source-staging-dir="gs://${PROJECT}_cloudbuild/source" \
-            --default-buckets-behavior=regional-user-owned-bucket
+            --async --format='value(id)')
+          [ -n "$BUILD_ID" ] || { echo "empty build id"; exit 1; }
+          echo "Submitted $BUILD_ID"
+          echo "Logs: https://console.cloud.google.com/cloud-build/builds/$BUILD_ID?project=$PROJECT"
+
+          STATUS=
+          for i in $(seq 1 80); do
+            STATUS=$(gcloud builds describe "$BUILD_ID" --project="$PROJECT" --format='value(status)')
+            echo "  $i/80: $STATUS"
+            case "$STATUS" in
+              SUCCESS) break ;;
+              FAILURE|TIMEOUT|CANCELLED|EXPIRED|INTERNAL_ERROR) exit 1 ;;
+            esac
+            sleep 30
+          done
+          [ "$STATUS" = "SUCCESS" ] || { echo "timed out polling $BUILD_ID"; exit 1; }
+
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
       - id: deploy
