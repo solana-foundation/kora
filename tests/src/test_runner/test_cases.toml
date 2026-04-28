@@ -82,3 +82,10 @@ config = "tests/src/common/fixtures/lighthouse-test.toml"
 signers = "tests/src/common/fixtures/signers.toml"
 port = "8090"
 tests = ["lighthouse"]
+
+[test.loader_v3_deploy]
+name = "Loader-v3 Deploy Lifecycle Tests"
+config = "tests/src/common/fixtures/loader-v3-deploy-test.toml"
+signers = "tests/src/common/fixtures/signers.toml"
+port = "8092"
+tests = ["loader_v3_deploy"]
