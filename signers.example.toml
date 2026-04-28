@@ -86,7 +86,6 @@ weight = 1
 # export OPENFORT_SECRET_KEY_1="sk_test_or_sk_live_..."
 # export OPENFORT_ACCOUNT_ID_1="acc_<uuid>"
 # export OPENFORT_WALLET_SECRET_1="<base64-encoded PKCS#8 DER from the Openfort dashboard>"
-# (a full PEM string is also accepted, but the bare base64 body is easier to put in env vars)
 
 # Usage:
 # kora rpc start --signers-config signers.toml
