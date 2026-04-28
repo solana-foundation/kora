@@ -47,7 +47,8 @@ jobs:
           gcloud builds submit examples/devnet-deploy-paymaster/ \
             --tag "$IMAGE" \
             --project="$PROJECT" \
-            --gcs-source-staging-dir="gs://${PROJECT}_cloudbuild/source"
+            --gcs-source-staging-dir="gs://${PROJECT}_cloudbuild/source" \
+            --default-buckets-behavior=regional-user-owned-bucket
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
       - id: deploy
