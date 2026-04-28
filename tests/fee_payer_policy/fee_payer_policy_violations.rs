@@ -883,7 +883,12 @@ async fn test_burn_multisig_bypass() {
     let result =
         ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![bypass_tx]).await;
 
-    assert!(result.is_ok(), "expected bypass to succeed");
+    match result {
+        Err(error) => {
+            error.assert_contains_message("Fee payer cannot be used for 'SPL Token Burn'");
+        }
+        Ok(_) => panic!("Expected error for burn multisig bypass policy violation"),
+    }
 }
 
 #[tokio::test]
@@ -990,7 +995,12 @@ async fn test_approve_multisig_bypass() {
     let result =
         ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![bypass_tx]).await;
 
-    assert!(result.is_ok(), "expected bypass to succeed");
+    match result {
+        Err(error) => {
+            error.assert_contains_message("Fee payer cannot be used for 'SPL Token Approve'");
+        }
+        Ok(_) => panic!("Expected error for approve multisig bypass policy violation"),
+    }
 }
 
 #[tokio::test]
@@ -1125,5 +1135,125 @@ async fn test_transfer_multisig_bypass() {
     let result =
         ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![bypass_tx]).await;
 
-    assert!(result.is_ok(), "expected bypass to succeed");
+    match result {
+        Err(error) => {
+            error.assert_contains_message("Fee payer cannot be used for 'SPL Token Transfer'");
+        }
+        Ok(_) => panic!("Expected error for transfer multisig bypass policy violation"),
+    }
+}
+
+#[tokio::test]
+async fn test_set_authority_multisig_bypass() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let setup = TestAccountSetup::new().await;
+    setup.setup_fee_payer_policy_token_accounts().await.expect("Failed to setup token accounts");
+
+    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
+    let other_keypair = Keypair::new();
+    let multisig_account = Keypair::new();
+
+    let rent = ctx
+        .rpc_client()
+        .get_minimum_balance_for_rent_exemption(spl_token_interface::state::Multisig::LEN)
+        .await
+        .expect("Failed to get rent");
+
+    let create_multisig_ix = create_account(
+        &setup.sender_keypair.pubkey(),
+        &multisig_account.pubkey(),
+        rent,
+        spl_token_interface::state::Multisig::LEN as u64,
+        &spl_token_interface::id(),
+    );
+
+    let init_multisig_ix = token_instruction::initialize_multisig(
+        &spl_token_interface::id(),
+        &multisig_account.pubkey(),
+        &[&fee_payer_pubkey, &other_keypair.pubkey()],
+        1,
+    )
+    .expect("Failed to create init multisig ix");
+
+    let recent_blockhash =
+        ctx.rpc_client().get_latest_blockhash().await.expect("Failed to get blockhash");
+    let tx = Transaction::new_signed_with_payer(
+        &[create_multisig_ix, init_multisig_ix],
+        Some(&setup.sender_keypair.pubkey()),
+        &[&setup.sender_keypair, &multisig_account],
+        recent_blockhash,
+    );
+    ctx.rpc_client()
+        .send_and_confirm_transaction(&tx)
+        .await
+        .expect("Failed to setup multisig account");
+
+    let token_account = Keypair::new();
+    let rent = ctx
+        .rpc_client()
+        .get_minimum_balance_for_rent_exemption(spl_token_interface::state::Account::LEN)
+        .await
+        .expect("Failed to get rent");
+
+    let create_account_ix = create_account(
+        &setup.sender_keypair.pubkey(),
+        &token_account.pubkey(),
+        rent,
+        spl_token_interface::state::Account::LEN as u64,
+        &spl_token_interface::id(),
+    );
+
+    let init_account_ix = token_instruction::initialize_account(
+        &spl_token_interface::id(),
+        &token_account.pubkey(),
+        &setup.fee_payer_policy_mint.pubkey(),
+        &multisig_account.pubkey(),
+    )
+    .expect("Failed to create init account ix");
+
+    let tx = Transaction::new_signed_with_payer(
+        &[create_account_ix, init_account_ix],
+        Some(&setup.sender_keypair.pubkey()),
+        &[&setup.sender_keypair, &token_account],
+        recent_blockhash,
+    );
+    ctx.rpc_client()
+        .send_and_confirm_transaction(&tx)
+        .await
+        .expect("Failed to setup token account");
+
+    // fee payer signs as multisig co-signer, not direct owner
+    let set_authority_ix = token_instruction::set_authority(
+        &spl_token_interface::id(),
+        &token_account.pubkey(),
+        Some(&other_keypair.pubkey()),
+        token_instruction::AuthorityType::AccountOwner,
+        &multisig_account.pubkey(),
+        &[&fee_payer_pubkey],
+    )
+    .expect("Failed to create set_authority ix");
+
+    let bypass_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer_pubkey)
+        .with_spl_payment(
+            &setup.fee_payer_policy_mint.pubkey(),
+            &setup.sender_keypair.pubkey(),
+            &fee_payer_pubkey,
+            1_000_000,
+        )
+        .with_instruction(set_authority_ix)
+        .build()
+        .await
+        .expect("Failed to build tx");
+
+    let result =
+        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![bypass_tx]).await;
+
+    match result {
+        Err(error) => {
+            error.assert_contains_message("Fee payer cannot be used for 'SPL Token SetAuthority'");
+        }
+        Ok(_) => panic!("Expected error for set_authority multisig bypass policy violation"),
+    }
 }
