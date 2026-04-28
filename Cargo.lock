@@ -1624,6 +1624,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "devnet-deploy-paymaster-smoke"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bincode",
+ "clap",
+ "reqwest 0.12.23",
+ "serde_json",
+ "solana-client",
+ "solana-commitment-config",
+ "solana-loader-v3-interface",
+ "solana-sdk",
+ "tokio",
+]
+
+[[package]]
 name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
