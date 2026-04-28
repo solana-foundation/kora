@@ -1,5 +1,6 @@
 [workspace]
-members = ["crates/lib", "crates/cli", "tests"]
+members = ["crates/lib", "crates/cli", "tests", "examples/devnet-deploy-paymaster"]
+default-members = ["crates/lib", "crates/cli", "tests"]
 resolver = "2"
 
 [workspace.lints.rust]
