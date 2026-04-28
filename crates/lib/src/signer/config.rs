@@ -81,6 +81,17 @@ pub struct PrivySignerConfig {
     pub wallet_id_env: String,
 }
 
+/// Openfort backend wallet signer configuration
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OpenfortSignerConfig {
+    /// Env var holding the Openfort project secret key (`sk_test_*` / `sk_live_*`).
+    pub secret_key_env: String,
+    /// Env var holding the backend wallet account ID (`acc_<uuid>`).
+    pub account_id_env: String,
+    /// Env var holding the PEM PKCS#8 ECDSA P-256 wallet secret from the Openfort dashboard.
+    pub wallet_secret_env: String,
+}
+
 /// Vault signer configuration
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VaultSignerConfig {
@@ -227,6 +238,11 @@ pub enum SignerTypeConfig {
         #[serde(flatten)]
         config: CrossmintSignerConfig,
     },
+    /// Openfort backend wallet signer configuration
+    Openfort {
+        #[serde(flatten)]
+        config: OpenfortSignerConfig,
+    },
 }
 
 impl SignerPoolConfig {
@@ -340,6 +356,9 @@ impl SignerConfig {
             }
             SignerTypeConfig::Crossmint { config: crossmint_config } => {
                 Self::build_crossmint_signer(crossmint_config, &config.name).await
+            }
+            SignerTypeConfig::Openfort { config: openfort_config } => {
+                Self::build_openfort_signer(openfort_config, &config.name).await
             }
         }
     }
@@ -557,6 +576,22 @@ impl SignerConfig {
         })
     }
 
+    async fn build_openfort_signer(
+        config: &OpenfortSignerConfig,
+        signer_name: &str,
+    ) -> Result<Signer, KoraError> {
+        let secret_key = get_env_var_for_signer(&config.secret_key_env, signer_name)?;
+        let account_id = get_env_var_for_signer(&config.account_id_env, signer_name)?;
+        let wallet_secret = get_env_var_for_signer(&config.wallet_secret_env, signer_name)?;
+
+        Signer::from_openfort(secret_key, account_id, wallet_secret, None).await.map_err(|e| {
+            KoraError::SigningError(format!(
+                "Failed to create Openfort signer '{signer_name}': {}",
+                sanitize_error!(e)
+            ))
+        })
+    }
+
     /// Validate an individual signer configuration
     pub fn validate_individual_signer_config(&self, index: usize) -> Result<(), KoraError> {
         if self.name.is_empty() {
@@ -586,6 +621,9 @@ impl SignerConfig {
             SignerTypeConfig::Dfns { config } => Self::validate_dfns_config(config, &self.name),
             SignerTypeConfig::Crossmint { config } => {
                 Self::validate_crossmint_config(config, &self.name)
+            }
+            SignerTypeConfig::Openfort { config } => {
+                Self::validate_openfort_config(config, &self.name)
             }
         }
     }
@@ -798,6 +836,27 @@ impl SignerConfig {
                 )));
             }
             get_env_var_for_signer(env, signer_name)?;
+        }
+        Ok(())
+    }
+
+    fn validate_openfort_config(
+        config: &OpenfortSignerConfig,
+        signer_name: &str,
+    ) -> Result<(), KoraError> {
+        let env_vars = [
+            ("secret_key_env", &config.secret_key_env),
+            ("account_id_env", &config.account_id_env),
+            ("wallet_secret_env", &config.wallet_secret_env),
+        ];
+
+        for (field_name, env_var) in env_vars {
+            if env_var.is_empty() {
+                return Err(KoraError::ValidationError(format!(
+                    "Openfort signer '{signer_name}' must specify non-empty {field_name}"
+                )));
+            }
+            get_env_var_for_signer(env_var, signer_name)?;
         }
         Ok(())
     }

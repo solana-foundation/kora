@@ -7,8 +7,8 @@ pub mod signer;
 pub mod utils;
 
 pub use config::{
-    MemorySignerConfig, PrivySignerConfig, SelectionStrategy, SignerConfig, SignerPoolConfig,
-    SignerTypeConfig, TurnkeySignerConfig, VaultSignerConfig,
+    MemorySignerConfig, OpenfortSignerConfig, PrivySignerConfig, SelectionStrategy, SignerConfig,
+    SignerPoolConfig, SignerTypeConfig, TurnkeySignerConfig, VaultSignerConfig,
 };
 pub use keypair_util::KeypairUtil;
 pub use pool::{SignerInfo, SignerPool};

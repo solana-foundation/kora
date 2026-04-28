@@ -10,8 +10,9 @@ use crate::{
     fee::price::PriceConfig,
     oracle::PriceSource,
     signer::config::{
-        MemorySignerConfig, PrivySignerConfig, SelectionStrategy, SignerConfig, SignerPoolConfig,
-        SignerPoolSettings, SignerTypeConfig, TurnkeySignerConfig, VaultSignerConfig,
+        MemorySignerConfig, OpenfortSignerConfig, PrivySignerConfig, SelectionStrategy,
+        SignerConfig, SignerPoolConfig, SignerPoolSettings, SignerTypeConfig, TurnkeySignerConfig,
+        VaultSignerConfig,
     },
     usage_limit::{UsageLimitConfig, UsageLimitRuleConfig},
 };
@@ -854,6 +855,25 @@ impl SignerPoolConfigBuilder {
             weight,
             config: SignerTypeConfig::Privy {
                 config: PrivySignerConfig { app_id_env, app_secret_env, wallet_id_env },
+            },
+        };
+        self.config.signers.push(signer);
+        self
+    }
+
+    pub fn with_openfort_signer(
+        mut self,
+        name: String,
+        secret_key_env: String,
+        account_id_env: String,
+        wallet_secret_env: String,
+        weight: Option<u32>,
+    ) -> Self {
+        let signer = SignerConfig {
+            name,
+            weight,
+            config: SignerTypeConfig::Openfort {
+                config: OpenfortSignerConfig { secret_key_env, account_id_env, wallet_secret_env },
             },
         };
         self.config.signers.push(signer);
