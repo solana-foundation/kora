@@ -68,7 +68,9 @@ jobs:
       - name: Setup Solana CLI
         uses: ./.github/actions/setup-solana
 
-      - uses: dopplerhq/secrets-fetch-action@v2.0.0
+      - name: Fetch Doppler secrets
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
         with:
           auth-method: oidc
           doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
