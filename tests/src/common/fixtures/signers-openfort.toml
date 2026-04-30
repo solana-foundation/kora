@@ -1,0 +1,10 @@
+[signer_pool]
+strategy = "round_robin"
+
+[[signers]]
+name = "openfort_signer"
+type = "openfort"
+secret_key_env = "OPENFORT_SECRET_KEY"
+account_id_env = "OPENFORT_ACCOUNT_ID"
+wallet_secret_env = "OPENFORT_WALLET_SECRET"
+weight = 1

@@ -87,6 +87,7 @@ impl TestCommandHelper {
             "typescript_free" => "test:integration:free",
             "typescript_turnkey" => "test:integration:turnkey",
             "typescript_privy" => "test:integration:privy",
+            "typescript_openfort" => "test:integration:openfort",
             _ => return Err(format!("Unknown TypeScript test: {test_name}").into()),
         };
 

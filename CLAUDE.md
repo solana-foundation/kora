@@ -192,6 +192,9 @@ cargo run -p kora --bin kora -- rpc start --signers-config path/to/turnkey-signe
 # Run with Privy signer
 cargo run -p kora --bin kora -- rpc start --signers-config path/to/privy-signers.toml
 
+# Run with Openfort signer
+cargo run -p kora --bin kora -- rpc start --signers-config path/to/openfort-signers.toml
+
 # Run with Vault signer  
 cargo run -p kora --bin kora -- rpc start \
   --signers-config path/to/vault-signers.toml
@@ -307,6 +310,7 @@ A Claude skill is available at `.claude/skills/release/SKILL.md` that automates 
   - `VaultSigner` - HashiCorp Vault integration
   - `TurnkeySigner` - Turnkey API integration  
   - `PrivySigner` - Privy API integration
+  - `OpenfortSigner` - Openfort backend wallet API integration
   - Unified `KoraSigner` enum with trait implementation
   - optionally, `--no-signer` flag to run Kora without a signer
 
@@ -383,6 +387,7 @@ cargo run -p kora --bin kora --features docs -- openapi -o openapi.json
 
 - **kora-turnkey** - Turnkey key management API integration (separate crate)
 - **kora-privy** - Privy wallet API integration (separate crate)  
+- **OpenfortSigner** - Openfort backend wallet API integration (via solana-keychain)
 - **VaultSigner** - HashiCorp Vault integration (built into kora-lib)
 - Remote signers integrate via HTTP APIs to external services
 
@@ -601,9 +606,9 @@ pub trait VersionedTransactionExt {
 
 - **Trait-based design** - All signers implement unified `Signer` trait
 - **State management** - Global signer state with thread-safe access via `get_signer()`
-- **Multiple backends** - Runtime selection between Memory, Vault, Turnkey, Privy
+- **Multiple backends** - Runtime selection between Memory, Vault, Turnkey, Privy, Openfort
 - **Initialization** - Lazy initialization with validation on first use
-- **API Integration** - Turnkey and Privy use HTTP APIs for remote signing
+- **API Integration** - Turnkey, Privy, and Openfort use HTTP APIs for remote signing
 
 ## Code Style & Best Practices
 
@@ -630,7 +635,7 @@ Kora is designed for high-performance concurrent operations:
 All I/O operations and external API calls are async:
 
 - **RPC Client Operations**: Solana RPC calls are async to avoid blocking
-- **Remote Signer APIs**: Turnkey and Privy API calls are async HTTP requests
+- **Remote Signer APIs**: Turnkey, Privy, and Openfort API calls are async HTTP requests
 - **Database Operations**: Token cache operations are async
 - **Error Propagation**: Use `?` operator with async functions
 
