@@ -205,6 +205,7 @@ pub enum ParsedSPLInstructionData {
         account: Pubkey,
         payer: Pubkey,
         owner: Pubkey,
+        multisig_signers: Vec<Pubkey>,
         is_2022: bool,
     },
     SplTokenInitializePausable {
@@ -3206,6 +3207,7 @@ impl IxUtils {
                                     account: instruction.accounts[instruction_indexes::spl_token_reallocate::ACCOUNT_INDEX].pubkey,
                                     payer: instruction.accounts[instruction_indexes::spl_token_reallocate::PAYER_INDEX].pubkey,
                                     owner: instruction.accounts[instruction_indexes::spl_token_reallocate::OWNER_INDEX].pubkey,
+                                    multisig_signers: Self::extract_multisig_signers(instruction, 4),
                                     is_2022: true,
                                 });
                         }

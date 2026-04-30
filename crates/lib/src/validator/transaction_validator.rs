@@ -631,10 +631,13 @@ impl TransactionValidator {
             ParsedSPLInstructionData::SplTokenReallocate {
                 payer,
                 owner,
+                multisig_signers,
                 is_2022,
                 ..
             } => *is_2022
-                && (*payer == self.fee_payer_pubkey || *owner == self.fee_payer_pubkey) ,
+                && (*payer == self.fee_payer_pubkey
+                    || *owner == self.fee_payer_pubkey
+                    || multisig_signers.contains(&self.fee_payer_pubkey)) ,
             "Token2022 Reallocate is not allowed when involving fee payer");
 
         validate_token2022!(self, spl_instructions, SplTokenPause,
