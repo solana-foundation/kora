@@ -597,14 +597,15 @@ impl SignerConfig {
             ))
         };
 
-        let mut signer = KeychainOpenfortSigner::from_config(solana_keychain::OpenfortSignerConfig {
-            secret_key,
-            account_id,
-            wallet_secret,
-            api_base_url: config.api_base_url.clone(),
-            http_client_config: None,
-        })
-        .map_err(map_err)?;
+        let mut signer =
+            KeychainOpenfortSigner::from_config(solana_keychain::OpenfortSignerConfig {
+                secret_key,
+                account_id,
+                wallet_secret,
+                api_base_url: config.api_base_url.clone(),
+                http_client_config: None,
+            })
+            .map_err(map_err)?;
         signer.init().await.map_err(map_err)?;
         Ok(Signer::Openfort(signer))
     }
