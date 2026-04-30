@@ -49,6 +49,17 @@ key_name_env = "VAULT_KEY_NAME_1"
 pubkey_env = "VAULT_PUBKEY_1"
 weight = 1
 
+# Openfort backend wallet signer example
+[[signers]]
+name = "openfort_signer_1"
+type = "openfort"
+secret_key_env = "OPENFORT_SECRET_KEY_1"
+account_id_env = "OPENFORT_ACCOUNT_ID_1"
+wallet_secret_env = "OPENFORT_WALLET_SECRET_1"
+# Optional: override the Openfort API base URL (defaults to https://api.openfort.io). Must be HTTPS.
+# api_base_url = "https://staging.openfort.io"
+weight = 1
+
 # Environment Variables Required:
 # 
 # Memory Signers:
@@ -72,6 +83,11 @@ weight = 1
 # export VAULT_TOKEN_1="your_vault_token"
 # export VAULT_KEY_NAME_1="your_vault_key_name"
 # export VAULT_PUBKEY_1="your_vault_public_key_base58"
+#
+# Openfort Signer:
+# export OPENFORT_SECRET_KEY_1="sk_test_or_sk_live_..."
+# export OPENFORT_ACCOUNT_ID_1="acc_<uuid>"
+# export OPENFORT_WALLET_SECRET_1="<base64-encoded PKCS#8 DER from the Openfort dashboard>"
 
 # Usage:
 # kora rpc start --signers-config signers.toml

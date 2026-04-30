@@ -6205,9 +6205,9 @@ dependencies = [
 
 [[package]]
 name = "solana-keychain"
-version = "1.0.1"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bbe21603449eb0ff097c81be4c0547898db2d9f3bc59eb4f9afa853aeab1b1f"
+checksum = "60a9fc1ac28499fc3c913776c70bcf9a5373505b94e42d8b0f17ca2c57a47052"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -6231,6 +6231,7 @@ dependencies = [
  "sha2",
  "solana-sdk",
  "solana-shred-version",
+ "solana-signature",
  "thiserror 2.0.17",
  "tokio",
  "uuid",

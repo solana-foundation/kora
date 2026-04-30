@@ -35,7 +35,7 @@
 
 - **Language**: Rust with TypeScript SDK
 - **Protocol**: JSON-RPC 2.0  
-- **Signers**: Solana Private Key, Turnkey, Privy
+- **Signers**: Solana Private Key, Turnkey, Privy, Openfort
 - **Authentication**: API Key, HMAC, or none
 - **Deployment**: Flexible deployment options (Docker, Railway, etc.) 
 
@@ -45,7 +45,7 @@
 - Full Token-2022 support with extension filtering
 - Redis caching for improved performance
 - Rate limiting and spend protection
-- Secure key management (Turnkey, Privy, Vault)
+- Secure key management (Turnkey, Privy, Vault, Openfort)
 - HMAC and API key authentication
 - Prometheus metrics and monitoring
 - Enhanced fee payer protection policies

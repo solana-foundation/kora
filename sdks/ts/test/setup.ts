@@ -75,6 +75,12 @@ export function loadEnvironmentVariables() {
                     throw new Error('PRIVY_PUBLIC_KEY must be set when using Privy signer');
                 }
                 break;
+            case 'openfort':
+                koraAddress = process.env.OPENFORT_PUBLIC_KEY;
+                if (!koraAddress) {
+                    throw new Error('OPENFORT_PUBLIC_KEY must be set when using Openfort signer');
+                }
+                break;
             case 'memory':
             default:
                 koraAddress = DEFAULTS.KORA_ADDRESS;
