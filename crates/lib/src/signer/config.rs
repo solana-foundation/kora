@@ -88,7 +88,9 @@ pub struct OpenfortSignerConfig {
     pub secret_key_env: String,
     /// Env var holding the backend wallet account ID (`acc_<uuid>`).
     pub account_id_env: String,
-    /// Env var holding the PEM PKCS#8 ECDSA P-256 wallet secret from the Openfort dashboard.
+    /// Env var holding the ECDSA P-256 wallet secret from the Openfort dashboard.
+    /// Accepts either a base64-encoded PKCS#8 DER body (single-line, env-var-friendly)
+    /// or a full PEM string (`-----BEGIN PRIVATE KEY-----` ...).
     pub wallet_secret_env: String,
 }
 
