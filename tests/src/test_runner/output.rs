@@ -67,11 +67,11 @@ impl TestPhaseColor {
             Self::Payment => "\x1b[33m",     // Yellow
             Self::MultiSigner => "\x1b[35m", // Magenta
             Self::FeePayerPolicy => "\x1b[39m",
-            Self::TypeScriptBasic => "\x1b[36m",   // Cyan
-            Self::TypeScriptAuth => "\x1b[31m",    // Red
-            Self::TypeScriptTurnkey => "\x1b[37m",   // White
-            Self::TypeScriptPrivy => "\x1b[90m",     // Gray
-            Self::TypeScriptOpenfort => "\x1b[95m",  // Bright Magenta
+            Self::TypeScriptBasic => "\x1b[36m",    // Cyan
+            Self::TypeScriptAuth => "\x1b[31m",     // Red
+            Self::TypeScriptTurnkey => "\x1b[37m",  // White
+            Self::TypeScriptPrivy => "\x1b[90m",    // Gray
+            Self::TypeScriptOpenfort => "\x1b[95m", // Bright Magenta
         }
     }
 
