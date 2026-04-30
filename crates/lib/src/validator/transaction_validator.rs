@@ -330,43 +330,43 @@ impl TransactionValidator {
             let spl_instructions = transaction_resolved.get_or_parse_spl_instructions()?;
 
             validate_spl!(self, spl_instructions, SplTokenTransfer,
-                ParsedSPLInstructionData::SplTokenTransfer { owner, is_2022, .. } => { owner, is_2022 },
+                ParsedSPLInstructionData::SplTokenTransfer { owner, multisig_signers, is_2022, .. } => { owner, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_transfer,
                 self.fee_payer_policy.token_2022.allow_transfer,
                 "SPL Token Transfer", "Token2022 Token Transfer");
 
             validate_spl!(self, spl_instructions, SplTokenApprove,
-                ParsedSPLInstructionData::SplTokenApprove { owner, is_2022, .. } => { owner, is_2022 },
+                ParsedSPLInstructionData::SplTokenApprove { owner, multisig_signers, is_2022, .. } => { owner, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_approve,
                 self.fee_payer_policy.token_2022.allow_approve,
                 "SPL Token Approve", "Token2022 Token Approve");
 
             validate_spl!(self, spl_instructions, SplTokenBurn,
-                ParsedSPLInstructionData::SplTokenBurn { owner, is_2022 } => { owner, is_2022 },
+                ParsedSPLInstructionData::SplTokenBurn { owner, multisig_signers, is_2022 } => { owner, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_burn,
                 self.fee_payer_policy.token_2022.allow_burn,
                 "SPL Token Burn", "Token2022 Token Burn");
 
             validate_spl!(self, spl_instructions, SplTokenCloseAccount,
-                ParsedSPLInstructionData::SplTokenCloseAccount { owner, is_2022 } => { owner, is_2022 },
+                ParsedSPLInstructionData::SplTokenCloseAccount { owner, multisig_signers, is_2022 } => { owner, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_close_account,
                 self.fee_payer_policy.token_2022.allow_close_account,
                 "SPL Token Close Account", "Token2022 Token Close Account");
 
             validate_spl!(self, spl_instructions, SplTokenRevoke,
-                ParsedSPLInstructionData::SplTokenRevoke { owner, is_2022 } => { owner, is_2022 },
+                ParsedSPLInstructionData::SplTokenRevoke { owner, multisig_signers, is_2022 } => { owner, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_revoke,
                 self.fee_payer_policy.token_2022.allow_revoke,
                 "SPL Token Revoke", "Token2022 Token Revoke");
 
             validate_spl!(self, spl_instructions, SplTokenSetAuthority,
-                ParsedSPLInstructionData::SplTokenSetAuthority { authority, is_2022, .. } => { authority, is_2022 },
+                ParsedSPLInstructionData::SplTokenSetAuthority { authority, multisig_signers, is_2022, .. } => { authority, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_set_authority,
                 self.fee_payer_policy.token_2022.allow_set_authority,
                 "SPL Token SetAuthority", "Token2022 Token SetAuthority");
 
             validate_spl!(self, spl_instructions, SplTokenMintTo,
-                ParsedSPLInstructionData::SplTokenMintTo { mint_authority, is_2022 } => { mint_authority, is_2022 },
+                ParsedSPLInstructionData::SplTokenMintTo { mint_authority, multisig_signers, is_2022 } => { mint_authority, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_mint_to,
                 self.fee_payer_policy.token_2022.allow_mint_to,
                 "SPL Token MintTo", "Token2022 Token MintTo");
@@ -390,13 +390,13 @@ impl TransactionValidator {
                 "SPL Token InitializeMultisig", "Token2022 Token InitializeMultisig");
 
             validate_spl!(self, spl_instructions, SplTokenFreezeAccount,
-                ParsedSPLInstructionData::SplTokenFreezeAccount { freeze_authority, is_2022 } => { freeze_authority, is_2022 },
+                ParsedSPLInstructionData::SplTokenFreezeAccount { freeze_authority, multisig_signers, is_2022 } => { freeze_authority, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_freeze_account,
                 self.fee_payer_policy.token_2022.allow_freeze_account,
                 "SPL Token FreezeAccount", "Token2022 Token FreezeAccount");
 
             validate_spl!(self, spl_instructions, SplTokenThawAccount,
-                ParsedSPLInstructionData::SplTokenThawAccount { freeze_authority, is_2022 } => { freeze_authority, is_2022 },
+                ParsedSPLInstructionData::SplTokenThawAccount { freeze_authority, multisig_signers, is_2022 } => { freeze_authority, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_thaw_account,
                 self.fee_payer_policy.token_2022.allow_thaw_account,
                 "SPL Token ThawAccount", "Token2022 Token ThawAccount");
@@ -631,10 +631,13 @@ impl TransactionValidator {
             ParsedSPLInstructionData::SplTokenReallocate {
                 payer,
                 owner,
+                multisig_signers,
                 is_2022,
                 ..
             } => *is_2022
-                && (*payer == self.fee_payer_pubkey || *owner == self.fee_payer_pubkey) ,
+                && (*payer == self.fee_payer_pubkey
+                    || *owner == self.fee_payer_pubkey
+                    || multisig_signers.contains(&self.fee_payer_pubkey)) ,
             "Token2022 Reallocate is not allowed when involving fee payer");
 
         validate_token2022!(self, spl_instructions, SplTokenPause,
