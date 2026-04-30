@@ -1,6 +1,6 @@
 use crate::{error::KoraError, sanitize_error, signer::utils::get_env_var_for_signer};
 use serde::{Deserialize, Serialize};
-use solana_keychain::Signer;
+use solana_keychain::{OpenfortSigner as KeychainOpenfortSigner, Signer};
 use std::{fmt, fs, path::Path};
 
 /// Configuration for a pool of signers
@@ -92,6 +92,10 @@ pub struct OpenfortSignerConfig {
     /// Accepts either a base64-encoded PKCS#8 DER body (single-line, env-var-friendly)
     /// or a full PEM string (`-----BEGIN PRIVATE KEY-----` ...).
     pub wallet_secret_env: String,
+    /// Optional override for the Openfort API base URL (defaults to `https://api.openfort.io`).
+    /// Useful for pointing at staging or mock endpoints during testing. Must use HTTPS.
+    #[serde(default)]
+    pub api_base_url: Option<String>,
 }
 
 /// Vault signer configuration
@@ -586,12 +590,23 @@ impl SignerConfig {
         let account_id = get_env_var_for_signer(&config.account_id_env, signer_name)?;
         let wallet_secret = get_env_var_for_signer(&config.wallet_secret_env, signer_name)?;
 
-        Signer::from_openfort(secret_key, account_id, wallet_secret, None).await.map_err(|e| {
+        let map_err = |e| {
             KoraError::SigningError(format!(
                 "Failed to create Openfort signer '{signer_name}': {}",
                 sanitize_error!(e)
             ))
+        };
+
+        let mut signer = KeychainOpenfortSigner::from_config(solana_keychain::OpenfortSignerConfig {
+            secret_key,
+            account_id,
+            wallet_secret,
+            api_base_url: config.api_base_url.clone(),
+            http_client_config: None,
         })
+        .map_err(map_err)?;
+        signer.init().await.map_err(map_err)?;
+        Ok(Signer::Openfort(signer))
     }
 
     /// Validate an individual signer configuration

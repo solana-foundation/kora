@@ -56,6 +56,8 @@ type = "openfort"
 secret_key_env = "OPENFORT_SECRET_KEY_1"
 account_id_env = "OPENFORT_ACCOUNT_ID_1"
 wallet_secret_env = "OPENFORT_WALLET_SECRET_1"
+# Optional: override the Openfort API base URL (defaults to https://api.openfort.io). Must be HTTPS.
+# api_base_url = "https://staging.openfort.io"
 weight = 1
 
 # Environment Variables Required:

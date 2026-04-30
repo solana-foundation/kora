@@ -873,7 +873,12 @@ impl SignerPoolConfigBuilder {
             name,
             weight,
             config: SignerTypeConfig::Openfort {
-                config: OpenfortSignerConfig { secret_key_env, account_id_env, wallet_secret_env },
+                config: OpenfortSignerConfig {
+                    secret_key_env,
+                    account_id_env,
+                    wallet_secret_env,
+                    api_base_url: None,
+                },
             },
         };
         self.config.signers.push(signer);
