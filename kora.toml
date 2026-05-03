@@ -53,6 +53,12 @@ max_allowed_lamports = 1000000
 max_signatures = 10
 price_source = "Mock"
 allow_durable_transactions = false
+cross_cluster_check = false
+cross_cluster_endpoints = [
+    "https://api.mainnet-beta.solana.com",
+    "https://api.devnet.solana.com",
+    "https://api.testnet.solana.com",
+]
 
 allowed_programs = [
     "11111111111111111111111111111111",              # System Program

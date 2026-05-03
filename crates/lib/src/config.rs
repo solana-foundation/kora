@@ -115,6 +115,10 @@ impl SplTokenConfig {
             SplTokenConfig::Allowlist(v) => v.as_slice(),
         }
     }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, String> {
+        self.into_iter()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -146,6 +150,22 @@ pub struct ValidationConfig {
     /// Default: empty (no restriction).
     #[serde(default)]
     pub require_one_of_programs: Vec<String>,
+    /// When true, checks configured mint addresses against other known clusters
+    /// and warns if a mint is found on a different cluster than the one connected.
+    /// Disabled by default: the check contacts public RPC endpoints, which may be undesirable
+    /// for operators who want to keep their mint addresses private.
+    #[serde(default)]
+    pub cross_cluster_check: bool,
+    #[serde(default = "default_cross_cluster_endpoints")]
+    pub cross_cluster_endpoints: Vec<String>,
+}
+
+fn default_cross_cluster_endpoints() -> Vec<String> {
+    vec![
+        "https://api.mainnet-beta.solana.com".to_string(),
+        "https://api.devnet.solana.com".to_string(),
+        "https://api.testnet.solana.com".to_string(),
+    ]
 }
 
 impl ValidationConfig {
