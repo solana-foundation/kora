@@ -486,8 +486,16 @@ impl ConfigValidator {
             );
         }
 
-        // Validate allowed programs (warn if empty or missing system/token programs)
-        if config.validation.allowed_programs.is_empty() {
+        // Validate allowed programs (warn if empty, wildcard, or missing system/token programs)
+        let has_wildcard = config.validation.allowed_programs.iter().any(|p| p == "*");
+        if has_wildcard {
+            warnings.push(
+                "allowed_programs contains \"*\" — WILDCARD MODE: any program will be accepted. \
+                 Ensure upstream policy enforcement and fee_payer_policy / disallowed_accounts \
+                 are configured to bound drainage risk."
+                    .to_string(),
+            );
+        } else if config.validation.allowed_programs.is_empty() {
             warnings.push(
                 "No allowed programs configured - this will block all transactions".to_string(),
             );

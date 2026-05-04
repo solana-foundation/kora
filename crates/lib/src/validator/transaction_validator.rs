@@ -25,6 +25,7 @@ pub struct TransactionValidator {
     fee_payer_pubkey: Pubkey,
     max_allowed_lamports: u64,
     allowed_programs: Vec<Pubkey>,
+    allow_all_programs: bool,
     require_one_of_programs: Vec<Pubkey>,
     max_signatures: u64,
     allowed_tokens: Vec<Pubkey>,
@@ -38,10 +39,13 @@ impl TransactionValidator {
     pub fn new(config: &Config, fee_payer_pubkey: Pubkey) -> Result<Self, KoraError> {
         let config = &config.validation;
 
-        // Convert string program IDs to Pubkeys
+        // "*" is a wildcard sentinel, filtered out before parsing remaining entries as Pubkeys.
+        let allow_all_programs = config.allowed_programs.iter().any(|addr| addr == "*");
+
         let allowed_programs = config
             .allowed_programs
             .iter()
+            .filter(|addr| addr.as_str() != "*")
             .map(|addr| {
                 Pubkey::from_str(addr).map_err(|e| {
                     KoraError::InternalServerError(format!(
@@ -67,6 +71,7 @@ impl TransactionValidator {
             fee_payer_pubkey,
             max_allowed_lamports: config.max_allowed_lamports,
             allowed_programs,
+            allow_all_programs,
             require_one_of_programs,
             max_signatures: config.max_signatures,
             _price_source: config.price_source.clone(),
@@ -225,6 +230,9 @@ impl TransactionValidator {
         &self,
         transaction_resolved: &VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
+        if self.allow_all_programs {
+            return Ok(());
+        }
         for instruction in &transaction_resolved.all_instructions {
             if !self.allowed_programs.contains(&instruction.program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
@@ -293,7 +301,7 @@ impl TransactionValidator {
         validate_system!(self, system_instructions, SystemCreateAccount,
         ParsedSystemInstructionData::SystemCreateAccount { payer, owner, .. } => payer,
         self.fee_payer_policy.system.allow_create_account, "System Create Account", {
-            if !self.allowed_programs.contains(owner) {
+            if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
                 return Err(KoraError::InvalidTransaction(format!(
                     "CreateAccount owner program {} is not in the allowed programs list",
                     owner
@@ -1128,6 +1136,31 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_programs_wildcard_sentinel() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec!["*".to_string()])
+            .build();
+        setup_both_configs(config);
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let arbitrary_program = Pubkey::new_unique();
+        let instruction = Instruction::new_with_bincode(arbitrary_program, &[0u8], vec![]);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
