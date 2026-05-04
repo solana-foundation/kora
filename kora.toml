@@ -54,7 +54,14 @@ max_signatures = 10
 price_source = "Mock"
 allow_durable_transactions = false
 
-allowed_programs = ["*"]
+allowed_programs = [
+    "11111111111111111111111111111111",              # System Program
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",   # Token Program
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",  # Associated Token Program
+    "AddressLookupTab1e1111111111111111111111111",   # Address Lookup Table Program
+    "ComputeBudget111111111111111111111111111111",   # Compute Budget Program
+    # "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95", # Lighthouse Program (uncomment when lighthouse enabled)
+]
 allowed_tokens = [
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
 ]
