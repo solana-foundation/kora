@@ -148,6 +148,21 @@ pub struct ValidationConfig {
     pub require_one_of_programs: Vec<String>,
 }
 
+/// Sentinel string in `allowed_programs` that, when used as the sole entry,
+/// disables program allow-listing entirely.
+pub const ALLOWED_PROGRAMS_WILDCARD: &str = "*";
+
+/// How `allowed_programs` should be interpreted with respect to the "*" sentinel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AllowedProgramsMode {
+    /// Exactly `["*"]` — accept any program.
+    Wildcard,
+    /// `"*"` mixed with other entries — likely an operator mistake.
+    StrayWildcard,
+    /// No `"*"` present — use the literal list.
+    Explicit,
+}
+
 impl ValidationConfig {
     pub fn is_payment_required(&self) -> bool {
         !matches!(&self.price.model, PriceModel::Free)
@@ -155,6 +170,16 @@ impl ValidationConfig {
 
     pub fn supports_token(&self, token: &str) -> bool {
         self.allowed_spl_paid_tokens.has_token(token)
+    }
+
+    pub fn allowed_programs_mode(&self) -> AllowedProgramsMode {
+        match self.allowed_programs.as_slice() {
+            [only] if only == ALLOWED_PROGRAMS_WILDCARD => AllowedProgramsMode::Wildcard,
+            entries if entries.iter().any(|e| e == ALLOWED_PROGRAMS_WILDCARD) => {
+                AllowedProgramsMode::StrayWildcard
+            }
+            _ => AllowedProgramsMode::Explicit,
+        }
     }
 }
 

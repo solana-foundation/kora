@@ -1,5 +1,5 @@
 use crate::{
-    config::{Config, FeePayerPolicy},
+    config::{AllowedProgramsMode, Config, FeePayerPolicy},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation},
     oracle::PriceSource,
@@ -39,21 +39,30 @@ impl TransactionValidator {
     pub fn new(config: &Config, fee_payer_pubkey: Pubkey) -> Result<Self, KoraError> {
         let config = &config.validation;
 
-        // "*" is a wildcard sentinel, filtered out before parsing remaining entries as Pubkeys.
-        let allow_all_programs = config.allowed_programs.iter().any(|addr| addr == "*");
-
-        let allowed_programs = config
-            .allowed_programs
-            .iter()
-            .filter(|addr| addr.as_str() != "*")
-            .map(|addr| {
-                Pubkey::from_str(addr).map_err(|e| {
-                    KoraError::InternalServerError(format!(
-                        "Invalid program address in config: {e}"
-                    ))
-                })
-            })
-            .collect::<Result<Vec<Pubkey>, KoraError>>()?;
+        let (allow_all_programs, allowed_programs) = match config.allowed_programs_mode() {
+            AllowedProgramsMode::Wildcard => (true, Vec::new()),
+            AllowedProgramsMode::StrayWildcard => {
+                return Err(KoraError::InternalServerError(
+                    "allowed_programs contains \"*\" alongside other entries; \
+                     the wildcard is only valid as the sole entry"
+                        .to_string(),
+                ));
+            }
+            AllowedProgramsMode::Explicit => (
+                false,
+                config
+                    .allowed_programs
+                    .iter()
+                    .map(|addr| {
+                        Pubkey::from_str(addr).map_err(|e| {
+                            KoraError::InternalServerError(format!(
+                                "Invalid program address in config: {e}"
+                            ))
+                        })
+                    })
+                    .collect::<Result<Vec<Pubkey>, KoraError>>()?,
+            ),
+        };
 
         let require_one_of_programs = config
             .require_one_of_programs
@@ -1161,6 +1170,23 @@ mod tests {
             .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_programs_stray_wildcard_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec!["*".to_string(), SYSTEM_PROGRAM_ID.to_string()])
+            .build();
+        setup_both_configs(config);
+
+        let err = TransactionValidator::new(get_config().unwrap(), fee_payer)
+            .err()
+            .expect("expected stray wildcard rejection");
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("\"*\""), "expected wildcard error, got: {err_msg}");
     }
 
     #[tokio::test]

@@ -2,7 +2,9 @@ use std::{collections::HashSet, path::Path, str::FromStr};
 
 use crate::{
     admin::token_util::find_missing_atas,
-    config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy},
+    config::{
+        AllowedProgramsMode, FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy,
+    },
     constant::{
         BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_ID, LOADER_V4_PROGRAM_ID,
         MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE, STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
@@ -486,36 +488,54 @@ impl ConfigValidator {
             );
         }
 
-        // Validate allowed programs (warn if empty, wildcard, or missing system/token programs)
-        let has_wildcard = config.validation.allowed_programs.iter().any(|p| p == "*");
-        if has_wildcard {
-            warnings.push(
-                "allowed_programs contains \"*\" — WILDCARD MODE: any program will be accepted. \
-                 Ensure upstream policy enforcement and fee_payer_policy / disallowed_accounts \
-                 are configured to bound drainage risk."
+        // Validate allowed programs (warn if empty, wildcard, or missing system/token programs).
+        let mode = config.validation.allowed_programs_mode();
+        let is_wildcard = matches!(mode, AllowedProgramsMode::Wildcard);
+        match mode {
+            AllowedProgramsMode::StrayWildcard => errors.push(
+                "allowed_programs contains \"*\" alongside other entries; \
+                 the wildcard is only valid as the sole entry"
                     .to_string(),
-            );
-        } else if config.validation.allowed_programs.is_empty() {
-            warnings.push(
-                "No allowed programs configured - this will block all transactions".to_string(),
-            );
-        } else {
-            if !config.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string()) {
-                warnings.push("Missing System Program in allowed programs - SOL transfers and account operations will be blocked".to_string());
-            }
-            if !config.validation.allowed_programs.contains(&SPL_TOKEN_PROGRAM_ID.to_string())
-                && !config.validation.allowed_programs.contains(&TOKEN_2022_PROGRAM_ID.to_string())
-            {
-                warnings.push("Missing Token Program in allowed programs - SPL token operations will be blocked".to_string());
+            ),
+            AllowedProgramsMode::Wildcard => warnings.push(
+                "allowed_programs is set to [\"*\"] — WILDCARD MODE: any program will be \
+                 accepted. Ensure upstream policy enforcement and fee_payer_policy / \
+                 disallowed_accounts are configured to bound drainage risk."
+                    .to_string(),
+            ),
+            AllowedProgramsMode::Explicit => {}
+        }
+        if !is_wildcard {
+            if config.validation.allowed_programs.is_empty() {
+                warnings.push(
+                    "No allowed programs configured - this will block all transactions"
+                        .to_string(),
+                );
+            } else {
+                if !config.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string()) {
+                    warnings.push("Missing System Program in allowed programs - SOL transfers and account operations will be blocked".to_string());
+                }
+                if !config.validation.allowed_programs.contains(&SPL_TOKEN_PROGRAM_ID.to_string())
+                    && !config
+                        .validation
+                        .allowed_programs
+                        .contains(&TOKEN_2022_PROGRAM_ID.to_string())
+                {
+                    warnings.push("Missing Token Program in allowed programs - SPL token operations will be blocked".to_string());
+                }
             }
         }
 
-        Self::warn_unvalidated_programs(&config.validation.allowed_programs, &mut warnings);
+        if !is_wildcard {
+            Self::warn_unvalidated_programs(&config.validation.allowed_programs, &mut warnings);
+        }
 
         // Validate lighthouse configuration
         if config.kora.lighthouse.enabled {
             let lighthouse_program = LIGHTHOUSE_PROGRAM_ID.to_string();
-            if !config.validation.allowed_programs.contains(&lighthouse_program) {
+            if !is_wildcard
+                && !config.validation.allowed_programs.contains(&lighthouse_program)
+            {
                 errors.push(format!(
                     "Lighthouse is enabled but {} is not in allowed_programs. Consider adding it to allowed_programs.",
                     LIGHTHOUSE_PROGRAM_ID
