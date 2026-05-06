@@ -117,11 +117,50 @@ impl SplTokenConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub enum ProgramsConfig {
+    All,
+    #[serde(untagged)]
+    Allowlist(Vec<String>),
+}
+
+impl<'a> IntoIterator for &'a ProgramsConfig {
+    type Item = &'a String;
+    type IntoIter = std::slice::Iter<'a, String>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            ProgramsConfig::All => [].iter(),
+            ProgramsConfig::Allowlist(programs) => programs.iter(),
+        }
+    }
+}
+
+impl ProgramsConfig {
+    pub fn is_all(&self) -> bool {
+        matches!(self, ProgramsConfig::All)
+    }
+
+    pub fn contains(&self, program: &str) -> bool {
+        match self {
+            ProgramsConfig::All => true,
+            ProgramsConfig::Allowlist(programs) => programs.iter().any(|p| p == program),
+        }
+    }
+
+    pub fn as_slice(&self) -> &[String] {
+        match self {
+            ProgramsConfig::All => &[],
+            ProgramsConfig::Allowlist(v) => v.as_slice(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ValidationConfig {
     pub max_allowed_lamports: u64,
     pub max_signatures: u64,
-    pub allowed_programs: Vec<String>,
+    pub allowed_programs: ProgramsConfig,
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: SplTokenConfig,
     pub disallowed_accounts: Vec<String>,
@@ -148,21 +187,6 @@ pub struct ValidationConfig {
     pub require_one_of_programs: Vec<String>,
 }
 
-/// Sentinel string in `allowed_programs` that, when used as the sole entry,
-/// disables program allow-listing entirely.
-pub const ALLOWED_PROGRAMS_WILDCARD: &str = "*";
-
-/// How `allowed_programs` should be interpreted with respect to the "*" sentinel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AllowedProgramsMode {
-    /// Exactly `["*"]` — accept any program.
-    Wildcard,
-    /// `"*"` mixed with other entries — likely an operator mistake.
-    StrayWildcard,
-    /// No `"*"` present — use the literal list.
-    Explicit,
-}
-
 impl ValidationConfig {
     pub fn is_payment_required(&self) -> bool {
         !matches!(&self.price.model, PriceModel::Free)
@@ -170,16 +194,6 @@ impl ValidationConfig {
 
     pub fn supports_token(&self, token: &str) -> bool {
         self.allowed_spl_paid_tokens.has_token(token)
-    }
-
-    pub fn allowed_programs_mode(&self) -> AllowedProgramsMode {
-        match self.allowed_programs.as_slice() {
-            [only] if only == ALLOWED_PROGRAMS_WILDCARD => AllowedProgramsMode::Wildcard,
-            entries if entries.iter().any(|e| e == ALLOWED_PROGRAMS_WILDCARD) => {
-                AllowedProgramsMode::StrayWildcard
-            }
-            _ => AllowedProgramsMode::Explicit,
-        }
     }
 }
 
@@ -784,7 +798,10 @@ mod tests {
 
         assert_eq!(config.validation.max_allowed_lamports, 1000000000);
         assert_eq!(config.validation.max_signatures, 10);
-        assert_eq!(config.validation.allowed_programs, vec!["program1", "program2"]);
+        assert_eq!(
+            config.validation.allowed_programs,
+            ProgramsConfig::Allowlist(vec!["program1".to_string(), "program2".to_string()])
+        );
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
         assert_eq!(
             config.validation.allowed_spl_paid_tokens,

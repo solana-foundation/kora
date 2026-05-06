@@ -62,17 +62,17 @@ mod tests {
         // Assert ValidationConfig defaults
         assert_eq!(response.validation_config.max_allowed_lamports, 1_000_000_000);
         assert_eq!(response.validation_config.max_signatures, 10);
-        assert_eq!(response.validation_config.allowed_programs.len(), 3);
+        assert_eq!(response.validation_config.allowed_programs.as_slice().len(), 3);
         assert_eq!(
-            response.validation_config.allowed_programs[0],
+            response.validation_config.allowed_programs.as_slice()[0],
             "11111111111111111111111111111111"
         ); // System Program
         assert_eq!(
-            response.validation_config.allowed_programs[1],
+            response.validation_config.allowed_programs.as_slice()[1],
             "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         ); // Token Program
         assert_eq!(
-            response.validation_config.allowed_programs[2],
+            response.validation_config.allowed_programs.as_slice()[2],
             "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         ); // ATA Program
         assert_eq!(response.validation_config.allowed_tokens.len(), 1);

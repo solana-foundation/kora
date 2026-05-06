@@ -3,8 +3,9 @@ use crate::{
     config::{
         AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods,
         FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, LighthouseConfig, MetricsConfig,
-        NonceInstructionPolicy, PluginsConfig, SplTokenConfig, SplTokenInstructionPolicy,
-        SystemInstructionPolicy, Token2022Config, Token2022InstructionPolicy, ValidationConfig,
+        NonceInstructionPolicy, PluginsConfig, ProgramsConfig, SplTokenConfig,
+        SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
+        Token2022InstructionPolicy, ValidationConfig,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::PriceConfig,
@@ -78,11 +79,11 @@ impl ConfigMockBuilder {
                 validation: ValidationConfig {
                     max_allowed_lamports: 1_000_000_000,
                     max_signatures: 10,
-                    allowed_programs: vec![
+                    allowed_programs: ProgramsConfig::Allowlist(vec![
                         "11111111111111111111111111111111".parse().unwrap(), // System Program
                         "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".parse().unwrap(), // Token Program
                         "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL".parse().unwrap(), // ATA Program
-                    ],
+                    ]),
                     allowed_tokens: vec![
                         "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".parse().unwrap(), // USDC devnet
                     ],
@@ -169,7 +170,7 @@ impl ConfigMockBuilder {
     }
 
     pub fn with_allowed_programs(mut self, programs: Vec<String>) -> Self {
-        self.config.validation.allowed_programs = programs;
+        self.config.validation.allowed_programs = ProgramsConfig::Allowlist(programs);
         self
     }
 
@@ -298,7 +299,7 @@ impl ValidationConfigBuilder {
             config: ValidationConfig {
                 max_allowed_lamports: 1_000_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![],
+                allowed_programs: ProgramsConfig::Allowlist(vec![]),
                 allowed_tokens: vec![],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -328,7 +329,7 @@ impl ValidationConfigBuilder {
     }
 
     pub fn with_allowed_programs(mut self, programs: Vec<String>) -> Self {
-        self.config.allowed_programs = programs;
+        self.config.allowed_programs = ProgramsConfig::Allowlist(programs);
         self
     }
 

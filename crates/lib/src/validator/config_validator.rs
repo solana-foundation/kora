@@ -2,9 +2,7 @@ use std::{collections::HashSet, path::Path, str::FromStr};
 
 use crate::{
     admin::token_util::find_missing_atas,
-    config::{
-        AllowedProgramsMode, FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy,
-    },
+    config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy},
     constant::{
         BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_ID, LOADER_V4_PROGRAM_ID,
         MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE, STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
@@ -489,53 +487,40 @@ impl ConfigValidator {
         }
 
         // Validate allowed programs (warn if empty, wildcard, or missing system/token programs).
-        let mode = config.validation.allowed_programs_mode();
-        let is_wildcard = matches!(mode, AllowedProgramsMode::Wildcard);
-        match mode {
-            AllowedProgramsMode::StrayWildcard => errors.push(
-                "allowed_programs contains \"*\" alongside other entries; \
-                 the wildcard is only valid as the sole entry"
-                    .to_string(),
-            ),
-            AllowedProgramsMode::Wildcard => warnings.push(
-                "allowed_programs is set to [\"*\"] — WILDCARD MODE: any program will be \
+        let is_wildcard = config.validation.allowed_programs.is_all();
+        if is_wildcard {
+            warnings.push(
+                "allowed_programs is set to \"All\" — WILDCARD MODE: any program will be \
                  accepted. Ensure upstream policy enforcement and fee_payer_policy / \
                  disallowed_accounts are configured to bound drainage risk."
                     .to_string(),
-            ),
-            AllowedProgramsMode::Explicit => {}
-        }
-        if !is_wildcard {
-            if config.validation.allowed_programs.is_empty() {
-                warnings.push(
-                    "No allowed programs configured - this will block all transactions"
-                        .to_string(),
-                );
-            } else {
-                if !config.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string()) {
-                    warnings.push("Missing System Program in allowed programs - SOL transfers and account operations will be blocked".to_string());
-                }
-                if !config.validation.allowed_programs.contains(&SPL_TOKEN_PROGRAM_ID.to_string())
-                    && !config
-                        .validation
-                        .allowed_programs
-                        .contains(&TOKEN_2022_PROGRAM_ID.to_string())
-                {
-                    warnings.push("Missing Token Program in allowed programs - SPL token operations will be blocked".to_string());
-                }
+            );
+        } else if config.validation.allowed_programs.as_slice().is_empty() {
+            warnings.push(
+                "No allowed programs configured - this will block all transactions".to_string(),
+            );
+        } else {
+            if !config.validation.allowed_programs.contains(&SYSTEM_PROGRAM_ID.to_string()) {
+                warnings.push("Missing System Program in allowed programs - SOL transfers and account operations will be blocked".to_string());
+            }
+            if !config.validation.allowed_programs.contains(&SPL_TOKEN_PROGRAM_ID.to_string())
+                && !config.validation.allowed_programs.contains(&TOKEN_2022_PROGRAM_ID.to_string())
+            {
+                warnings.push("Missing Token Program in allowed programs - SPL token operations will be blocked".to_string());
             }
         }
 
         if !is_wildcard {
-            Self::warn_unvalidated_programs(&config.validation.allowed_programs, &mut warnings);
+            Self::warn_unvalidated_programs(
+                config.validation.allowed_programs.as_slice(),
+                &mut warnings,
+            );
         }
 
         // Validate lighthouse configuration
         if config.kora.lighthouse.enabled {
             let lighthouse_program = LIGHTHOUSE_PROGRAM_ID.to_string();
-            if !is_wildcard
-                && !config.validation.allowed_programs.contains(&lighthouse_program)
-            {
+            if !is_wildcard && !config.validation.allowed_programs.contains(&lighthouse_program) {
                 errors.push(format!(
                     "Lighthouse is enabled but {} is not in allowed_programs. Consider adding it to allowed_programs.",
                     LIGHTHOUSE_PROGRAM_ID
@@ -947,7 +932,7 @@ mod tests {
         config::{
             AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods, FeePayerPolicy,
             KoraConfig, LighthouseConfig, MetricsConfig, NonceInstructionPolicy, PluginsConfig,
-            SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
+            ProgramsConfig, SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
             Token2022InstructionPolicy, TransactionPluginType, TransferHookPolicy,
             UsageLimitConfig, ValidationConfig,
         },
@@ -977,7 +962,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1000000000,
                 max_signatures: 10,
-                allowed_programs: vec!["program1".to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec!["program1".to_string()]),
                 allowed_tokens: vec!["token1".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec!["token3".to_string()]),
                 disallowed_accounts: vec!["account1".to_string()],
@@ -1017,10 +1002,10 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1063,11 +1048,11 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                     TOKEN_2022_PROGRAM_ID.to_string(),
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1106,11 +1091,11 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                     TOKEN_2022_PROGRAM_ID.to_string(),
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1150,9 +1135,9 @@ mod tests {
     async fn test_validate_with_result_warnings() {
         let config = Config {
             validation: ValidationConfig {
-                max_allowed_lamports: 0,  // Should warn
-                max_signatures: 0,        // Should warn
-                allowed_programs: vec![], // Should warn
+                max_allowed_lamports: 0,                             // Should warn
+                max_signatures: 0,                                   // Should warn
+                allowed_programs: ProgramsConfig::Allowlist(vec![]), // Should warn
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -1240,7 +1225,8 @@ mod tests {
         let mut config = ConfigMockBuilder::new().build();
         config.kora.cache.enabled = false;
         config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
-        config.validation.allowed_programs = vec![SPL_TOKEN_PROGRAM_ID.to_string()]; // no system program
+        config.validation.allowed_programs =
+            ProgramsConfig::Allowlist(vec![SPL_TOKEN_PROGRAM_ID.to_string()]); // no system program
 
         let _ = update_config(config);
 
@@ -1259,7 +1245,8 @@ mod tests {
         let mut config = ConfigMockBuilder::new().build();
         config.kora.cache.enabled = false;
         config.kora.plugins.enabled = vec![TransactionPluginType::GasSwap];
-        config.validation.allowed_programs = vec![SYSTEM_PROGRAM_ID.to_string()]; // no token program
+        config.validation.allowed_programs =
+            ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]); // no token program
 
         let _ = update_config(config);
 
@@ -1320,7 +1307,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec![],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -1357,7 +1344,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec![],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1395,7 +1382,9 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec!["11111111111111111111111111111112".to_string()], // Missing system program, but valid base58
+                allowed_programs: ProgramsConfig::Allowlist(vec![
+                    "11111111111111111111111111111112".to_string(),
+                ]), // Missing system program, but valid base58
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -1472,11 +1461,11 @@ mod tests {
         let mut config = ConfigMockBuilder::new().build();
         config.kora.cache.enabled = false;
         let compute_budget_program = solana_compute_budget_interface::id().to_string();
-        config.validation.allowed_programs = vec![
+        config.validation.allowed_programs = ProgramsConfig::Allowlist(vec![
             SYSTEM_PROGRAM_ID.to_string(),
             SPL_TOKEN_PROGRAM_ID.to_string(),
             compute_budget_program.clone(),
-        ];
+        ]);
         config.validation.require_one_of_programs = vec![compute_budget_program];
 
         let _ = update_config(config);
@@ -1507,7 +1496,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec![], // Error - no tokens
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "invalid_token_address".to_string()
@@ -1550,7 +1539,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1594,7 +1583,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1644,10 +1633,10 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1693,7 +1682,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()], // Missing token programs
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]), // Missing token programs
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]), // Empty when fees enabled - should error
                 disallowed_accounts: vec![],
@@ -1733,10 +1722,10 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::All, // All tokens are allowed
                 disallowed_accounts: vec![],
@@ -1772,10 +1761,10 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(), // Not in allowed_tokens
@@ -1809,7 +1798,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()], // Required to pass basic validation
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -1834,7 +1823,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![], // No programs
+                allowed_programs: ProgramsConfig::Allowlist(vec![]), // No programs
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]), // Empty to avoid duplicate validation
                 disallowed_accounts: vec![],
@@ -1900,7 +1889,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -1935,7 +1924,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -1970,7 +1959,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2004,7 +1993,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2044,7 +2033,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2084,7 +2073,7 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![SYSTEM_PROGRAM_ID.to_string()],
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![]),
                 disallowed_accounts: vec![],
@@ -2198,11 +2187,11 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                     TOKEN_2022_PROGRAM_ID.to_string(),
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -2588,10 +2577,10 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -2628,10 +2617,10 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -2669,10 +2658,10 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -2709,10 +2698,10 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ], // Lighthouse program NOT included
+                ]), // Lighthouse program NOT included
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -2756,11 +2745,11 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
                     LIGHTHOUSE_PROGRAM_ID.to_string(), // Lighthouse in allowed
-                ],
+                ]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
@@ -2805,10 +2794,10 @@ mod tests {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
                 max_signatures: 10,
-                allowed_programs: vec![
+                allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
                     SPL_TOKEN_PROGRAM_ID.to_string(),
-                ], // Lighthouse NOT included - but should be OK since disabled
+                ]), // Lighthouse NOT included - but should be OK since disabled
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
                 allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
                     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),

@@ -1,5 +1,5 @@
 use crate::{
-    config::{AllowedProgramsMode, Config, FeePayerPolicy},
+    config::{Config, FeePayerPolicy, ProgramsConfig},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation},
     oracle::PriceSource,
@@ -39,19 +39,11 @@ impl TransactionValidator {
     pub fn new(config: &Config, fee_payer_pubkey: Pubkey) -> Result<Self, KoraError> {
         let config = &config.validation;
 
-        let (allow_all_programs, allowed_programs) = match config.allowed_programs_mode() {
-            AllowedProgramsMode::Wildcard => (true, Vec::new()),
-            AllowedProgramsMode::StrayWildcard => {
-                return Err(KoraError::InternalServerError(
-                    "allowed_programs contains \"*\" alongside other entries; \
-                     the wildcard is only valid as the sole entry"
-                        .to_string(),
-                ));
-            }
-            AllowedProgramsMode::Explicit => (
+        let (allow_all_programs, allowed_programs) = match &config.allowed_programs {
+            ProgramsConfig::All => (true, Vec::new()),
+            ProgramsConfig::Allowlist(programs) => (
                 false,
-                config
-                    .allowed_programs
+                programs
                     .iter()
                     .map(|addr| {
                         Pubkey::from_str(addr).map_err(|e| {
@@ -1151,10 +1143,8 @@ mod tests {
     #[serial]
     async fn test_validate_programs_wildcard_sentinel() {
         let fee_payer = Pubkey::new_unique();
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec!["*".to_string()])
-            .build();
+        let mut config = ConfigMockBuilder::new().with_price_source(PriceSource::Mock).build();
+        config.validation.allowed_programs = ProgramsConfig::All;
         setup_both_configs(config);
         let rpc_client = RpcMockBuilder::new().build();
 
@@ -1170,23 +1160,6 @@ mod tests {
             .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
             .await
             .is_ok());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_validate_programs_stray_wildcard_rejected() {
-        let fee_payer = Pubkey::new_unique();
-        let config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec!["*".to_string(), SYSTEM_PROGRAM_ID.to_string()])
-            .build();
-        setup_both_configs(config);
-
-        let err = TransactionValidator::new(get_config().unwrap(), fee_payer)
-            .err()
-            .expect("expected stray wildcard rejection");
-        let err_msg = err.to_string();
-        assert!(err_msg.contains("\"*\""), "expected wildcard error, got: {err_msg}");
     }
 
     #[tokio::test]
@@ -5078,7 +5051,8 @@ mod tests {
         let metadata_address = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().build();
         let mut config = ConfigMockBuilder::new().build();
-        config.validation.allowed_programs.push(spl_token_2022_interface::id().to_string());
+        config.validation.allowed_programs =
+            ProgramsConfig::Allowlist(vec![spl_token_2022_interface::id().to_string()]);
         config.validation.token_2022.blocked_mint_extensions = vec!["metadata_pointer".to_string()];
         config.validation.token_2022.initialize().unwrap();
         let _config_guard = setup_config_mock(config.clone());
