@@ -46,8 +46,7 @@ static PRICE_ORACLE: OnceCell<Arc<RetryingPriceOracle>> = OnceCell::const_new();
 /// The map grows by one entry per distinct mint ever queried. In practice the
 /// set is bounded by `allowed_tokens` / `allowed_spl_paid_tokens`, so we
 /// don't bother evicting entries.
-static PRICE_FETCH_LOCKS: OnceCell<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
-    OnceCell::const_new();
+static PRICE_FETCH_LOCKS: OnceCell<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceCell::const_new();
 
 /// Cached account data with metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -395,9 +394,7 @@ impl CacheUtil {
 
     /// Get (or insert) the lock that serializes oracle fetches for `mint`.
     async fn get_price_fetch_lock(mint: &str) -> Arc<Mutex<()>> {
-        let map_cell = PRICE_FETCH_LOCKS
-            .get_or_init(|| async { Mutex::new(HashMap::new()) })
-            .await;
+        let map_cell = PRICE_FETCH_LOCKS.get_or_init(|| async { Mutex::new(HashMap::new()) }).await;
         let mut map = map_cell.lock().await;
         map.entry(mint.to_string()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
     }
@@ -547,16 +544,14 @@ impl CacheUtil {
 
         // Re-read the cache while holding the locks: prior leaders may have
         // populated some keys while we waited.
-        let (mut hits, still_missing) = match Self::get_prices_from_cache(pool, &sorted_misses).await
-        {
-            Ok(result) => result,
-            Err(e) => {
-                log::warn!(
-                    "Failed to re-read prices from cache after lock acquisition: {e}"
-                );
-                (HashMap::new(), sorted_misses)
-            }
-        };
+        let (mut hits, still_missing) =
+            match Self::get_prices_from_cache(pool, &sorted_misses).await {
+                Ok(result) => result,
+                Err(e) => {
+                    log::warn!("Failed to re-read prices from cache after lock acquisition: {e}");
+                    (HashMap::new(), sorted_misses)
+                }
+            };
 
         if !still_missing.is_empty() {
             let oracle = Self::get_price_oracle_singleton(config).await?;
