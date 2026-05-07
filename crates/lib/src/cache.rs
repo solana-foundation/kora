@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{account::Account, hash::Hash, pubkey::Pubkey};
-use std::{collections::HashMap, str::FromStr, time::Duration};
-use tokio::sync::OnceCell;
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
+use tokio::sync::{Mutex, OnceCell};
 
 use crate::{
     config::Config,
@@ -33,6 +33,21 @@ const PRICE_ORACLE_BASE_DELAY: Duration = Duration::from_secs(1);
 
 /// Global cache pool instance
 static CACHE_POOL: OnceCell<Option<Pool>> = OnceCell::const_new();
+
+/// Process-wide price oracle. Held as an `Arc` so the inner `reqwest::Client`
+/// (and its connection pool) is reused across all cache misses instead of
+/// being rebuilt per request.
+static PRICE_ORACLE: OnceCell<Arc<RetryingPriceOracle>> = OnceCell::const_new();
+
+/// Per-mint locks used to coalesce concurrent oracle fetches for the same
+/// price key (singleflight). Without this, a TTL expiry under load triggers
+/// N parallel Jupiter requests for the same mint instead of one.
+///
+/// The map grows by one entry per distinct mint ever queried. In practice the
+/// set is bounded by `allowed_tokens` / `allowed_spl_paid_tokens`, so we
+/// don't bother evicting entries.
+static PRICE_FETCH_LOCKS: OnceCell<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+    OnceCell::const_new();
 
 /// Cached account data with metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -358,13 +373,33 @@ impl CacheUtil {
         format!("{PRICE_CACHE_KEY_PREFIX}:{mint_address}")
     }
 
-    /// Build a `RetryingPriceOracle` for the configured price source.
-    fn build_price_oracle(config: &Config) -> Result<RetryingPriceOracle, KoraError> {
-        Ok(RetryingPriceOracle::new(
-            PRICE_ORACLE_MAX_RETRIES,
-            PRICE_ORACLE_BASE_DELAY,
-            get_price_oracle(config.validation.price_source.clone())?,
-        ))
+    /// Return the process-wide `RetryingPriceOracle`, building it on first use.
+    ///
+    /// Initialization is fallible (Jupiter requires `JUPITER_API_KEY`); on
+    /// failure the cell is left empty so a later call can retry.
+    async fn get_price_oracle_singleton(
+        config: &Config,
+    ) -> Result<Arc<RetryingPriceOracle>, KoraError> {
+        let oracle = PRICE_ORACLE
+            .get_or_try_init(|| async {
+                let inner = get_price_oracle(config.validation.price_source.clone())?;
+                Ok::<_, KoraError>(Arc::new(RetryingPriceOracle::new(
+                    PRICE_ORACLE_MAX_RETRIES,
+                    PRICE_ORACLE_BASE_DELAY,
+                    inner,
+                )))
+            })
+            .await?;
+        Ok(oracle.clone())
+    }
+
+    /// Get (or insert) the lock that serializes oracle fetches for `mint`.
+    async fn get_price_fetch_lock(mint: &str) -> Arc<Mutex<()>> {
+        let map_cell = PRICE_FETCH_LOCKS
+            .get_or_init(|| async { Mutex::new(HashMap::new()) })
+            .await;
+        let mut map = map_cell.lock().await;
+        map.entry(mint.to_string()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
     }
 
     /// Read cached prices for the given mints from Redis. Mints with no entry
@@ -451,12 +486,20 @@ impl CacheUtil {
         // If cache is disabled globally, pool not initialized, or price caching
         // is opted out via `price_ttl = 0`, go straight to the oracle.
         if !Self::is_cache_enabled(config) || config.kora.cache.price_ttl == 0 {
-            return Self::build_price_oracle(config)?.get_token_prices(mint_addresses).await;
+            return Self::get_price_oracle_singleton(config)
+                .await?
+                .get_token_prices(mint_addresses)
+                .await;
         }
 
         let pool = match CACHE_POOL.get() {
             Some(Some(pool)) => pool,
-            _ => return Self::build_price_oracle(config)?.get_token_prices(mint_addresses).await,
+            _ => {
+                return Self::get_price_oracle_singleton(config)
+                    .await?
+                    .get_token_prices(mint_addresses)
+                    .await;
+            }
         };
 
         // Try cache first; on errors, fall through to a full live fetch.
@@ -464,7 +507,10 @@ impl CacheUtil {
             Ok(result) => result,
             Err(e) => {
                 log::warn!("Failed to read prices from cache, falling back to oracle: {e}");
-                return Self::build_price_oracle(config)?.get_token_prices(mint_addresses).await;
+                return Self::get_price_oracle_singleton(config)
+                    .await?
+                    .get_token_prices(mint_addresses)
+                    .await;
             }
         };
 
@@ -472,14 +518,58 @@ impl CacheUtil {
             return Ok(hits);
         }
 
-        let fetched = Self::build_price_oracle(config)?.get_token_prices(&misses).await?;
+        let fetched = Self::fetch_misses_with_singleflight(config, pool, misses).await?;
+        hits.extend(fetched);
+        Ok(hits)
+    }
 
-        if let Err(e) = Self::set_prices_in_cache(pool, &fetched, config.kora.cache.price_ttl).await
-        {
-            log::warn!("Failed to cache fetched prices: {e}");
+    /// Fetch the given mints from the oracle while coalescing concurrent
+    /// requests for the same key.
+    ///
+    /// Per-mint locks are acquired in sorted order so concurrent batch
+    /// requests with overlapping mint sets queue deterministically rather
+    /// than deadlocking. After the locks are held, the cache is re-read so
+    /// requests that lost the race read whatever the leader just wrote.
+    async fn fetch_misses_with_singleflight(
+        config: &Config,
+        pool: &Pool,
+        misses: Vec<String>,
+    ) -> Result<HashMap<String, TokenPrice>, KoraError> {
+        let mut sorted_misses = misses;
+        sorted_misses.sort();
+        sorted_misses.dedup();
+
+        let mut guards = Vec::with_capacity(sorted_misses.len());
+        for mint in &sorted_misses {
+            let lock = Self::get_price_fetch_lock(mint).await;
+            guards.push(lock.lock_owned().await);
         }
 
-        hits.extend(fetched);
+        // Re-read the cache while holding the locks: prior leaders may have
+        // populated some keys while we waited.
+        let (mut hits, still_missing) = match Self::get_prices_from_cache(pool, &sorted_misses).await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                log::warn!(
+                    "Failed to re-read prices from cache after lock acquisition: {e}"
+                );
+                (HashMap::new(), sorted_misses)
+            }
+        };
+
+        if !still_missing.is_empty() {
+            let oracle = Self::get_price_oracle_singleton(config).await?;
+            let fetched = oracle.get_token_prices(&still_missing).await?;
+            if let Err(e) =
+                Self::set_prices_in_cache(pool, &fetched, config.kora.cache.price_ttl).await
+            {
+                log::warn!("Failed to cache fetched prices: {e}");
+            }
+            hits.extend(fetched);
+        }
+
+        drop(guards);
         Ok(hits)
     }
 
