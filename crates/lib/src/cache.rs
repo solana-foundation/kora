@@ -438,6 +438,8 @@ impl CacheUtil {
     /// On cache miss, fetches only the missing mints from the configured price
     /// oracle (Jupiter or Mock) and writes the results back with `price_ttl`.
     /// Falls back to a direct oracle call when caching is disabled or unreachable.
+    /// Setting `price_ttl = 0` disables price caching independently of the
+    /// global cache switch (so account caching can stay on).
     pub async fn get_or_fetch_token_prices(
         config: &Config,
         mint_addresses: &[String],
@@ -446,8 +448,9 @@ impl CacheUtil {
             return Ok(HashMap::new());
         }
 
-        // If cache is disabled or pool not initialized, go straight to the oracle.
-        if !Self::is_cache_enabled(config) {
+        // If cache is disabled globally, pool not initialized, or price caching
+        // is opted out via `price_ttl = 0`, go straight to the oracle.
+        if !Self::is_cache_enabled(config) || config.kora.cache.price_ttl == 0 {
             return Self::build_price_oracle(config)?.get_token_prices(mint_addresses).await;
         }
 
@@ -569,6 +572,27 @@ mod tests {
             .unwrap();
 
         // Mock oracle (default in ConfigMockBuilder) always returns a price for any mint.
+        assert!(prices.contains_key(&mint));
+    }
+
+    #[tokio::test]
+    async fn test_get_or_fetch_token_prices_zero_ttl_bypasses_cache() {
+        // Cache enabled globally (so account caching would still run), but
+        // price_ttl = 0 should opt price lookups out of Redis entirely.
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(true)
+            .with_cache_url(Some("redis://localhost:6379".to_string()))
+            .build_and_setup();
+
+        let mut config = get_config().unwrap();
+        config.kora.cache.price_ttl = 0;
+
+        let mint = Pubkey::new_unique().to_string();
+        // No real Redis is needed: the zero-ttl branch must short-circuit before any pool access.
+        let prices = CacheUtil::get_or_fetch_token_prices(&config, std::slice::from_ref(&mint))
+            .await
+            .unwrap();
+
         assert!(prices.contains_key(&mint));
     }
 
