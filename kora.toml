@@ -34,6 +34,7 @@ enabled = false                    # Enable/disable caching (set to true with ur
 url = "redis://localhost:6379"    # Redis connection URL (uncomment and set when enabling cache)
 default_ttl = 300                  # Default TTL in seconds (5 minutes)
 account_ttl = 60                   # Account data TTL in seconds (1 minute)
+price_ttl = 30                     # Token price TTL in seconds (30 seconds)
 
 # Enable/disable specific RPC methods
 [kora.enabled_methods]

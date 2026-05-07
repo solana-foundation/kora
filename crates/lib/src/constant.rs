@@ -49,6 +49,7 @@ pub const DEFAULT_METRICS_SCRAPE_INTERVAL: u64 = 60;
 // Cache
 pub const DEFAULT_CACHE_DEFAULT_TTL: u64 = 300; // 5 minutes
 pub const DEFAULT_CACHE_ACCOUNT_TTL: u64 = 60; // 1 minute for account data
+pub const DEFAULT_CACHE_PRICE_TTL: u64 = 30; // 30 seconds for token price data
 pub const DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS: u64 = 30; // 30 seconds
 
 pub const DEFAULT_USAGE_LIMIT_MAX_TRANSACTIONS: u64 = 0; // 0 = unlimited

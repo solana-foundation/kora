@@ -4,10 +4,15 @@ use serde::{Deserialize, Serialize};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{account::Account, hash::Hash, pubkey::Pubkey};
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr, time::Duration};
 use tokio::sync::OnceCell;
 
-use crate::{config::Config, error::KoraError, sanitize_error};
+use crate::{
+    config::Config,
+    error::KoraError,
+    oracle::{get_price_oracle, RetryingPriceOracle, TokenPrice},
+    sanitize_error,
+};
 
 #[cfg(not(test))]
 use crate::state::get_config;
@@ -17,9 +22,14 @@ use crate::tests::config_mock::mock_state::get_config;
 
 const ACCOUNT_CACHE_KEY: &str = "account";
 const BLOCKHASH_CACHE_KEY: &str = "kora:blockhash";
+const PRICE_CACHE_KEY_PREFIX: &str = "kora:price";
 /// TTL for cached blockhash in seconds. Blockhashes are valid for ~60s,
 /// but we use a short TTL to keep the hash fresh.
 const BLOCKHASH_TTL: u64 = 5;
+/// Number of retries for the underlying price oracle on cache misses.
+const PRICE_ORACLE_MAX_RETRIES: u32 = 3;
+/// Base delay for the price oracle retry loop.
+const PRICE_ORACLE_BASE_DELAY: Duration = Duration::from_secs(1);
 
 /// Global cache pool instance
 static CACHE_POOL: OnceCell<Option<Pool>> = OnceCell::const_new();
@@ -343,6 +353,146 @@ impl CacheUtil {
 
         Ok(())
     }
+
+    fn get_price_key(mint_address: &str) -> String {
+        format!("{PRICE_CACHE_KEY_PREFIX}:{mint_address}")
+    }
+
+    /// Build a `RetryingPriceOracle` for the configured price source.
+    fn build_price_oracle(config: &Config) -> Result<RetryingPriceOracle, KoraError> {
+        Ok(RetryingPriceOracle::new(
+            PRICE_ORACLE_MAX_RETRIES,
+            PRICE_ORACLE_BASE_DELAY,
+            get_price_oracle(config.validation.price_source.clone())?,
+        ))
+    }
+
+    /// Read cached prices for the given mints from Redis. Mints with no entry
+    /// (or whose entry fails to deserialize) are returned in `misses`.
+    async fn get_prices_from_cache(
+        pool: &Pool,
+        mint_addresses: &[String],
+    ) -> Result<(HashMap<String, TokenPrice>, Vec<String>), KoraError> {
+        let mut conn = Self::get_connection(pool).await?;
+
+        let keys: Vec<String> = mint_addresses.iter().map(|m| Self::get_price_key(m)).collect();
+
+        // MGET returns Vec<Option<String>> aligned with the input keys.
+        let raw: Vec<Option<String>> = conn.mget(&keys).await.map_err(|e| {
+            KoraError::InternalServerError(format!(
+                "Failed to get prices from cache: {}",
+                sanitize_error!(e)
+            ))
+        })?;
+
+        let mut hits = HashMap::new();
+        let mut misses = Vec::new();
+
+        for (mint, value) in mint_addresses.iter().zip(raw) {
+            match value.as_deref().map(serde_json::from_str::<TokenPrice>) {
+                Some(Ok(price)) => {
+                    hits.insert(mint.clone(), price);
+                }
+                Some(Err(e)) => {
+                    log::warn!("Failed to deserialize cached price for {mint}: {e}");
+                    misses.push(mint.clone());
+                }
+                None => misses.push(mint.clone()),
+            }
+        }
+
+        Ok((hits, misses))
+    }
+
+    /// Write fetched prices back to Redis with `price_ttl`.
+    async fn set_prices_in_cache(
+        pool: &Pool,
+        prices: &HashMap<String, TokenPrice>,
+        ttl: u64,
+    ) -> Result<(), KoraError> {
+        let mut conn = Self::get_connection(pool).await?;
+
+        for (mint, price) in prices {
+            let serialized = serde_json::to_string(price).map_err(|e| {
+                KoraError::InternalServerError(format!(
+                    "Failed to serialize price for {mint}: {}",
+                    sanitize_error!(e)
+                ))
+            })?;
+            let key = Self::get_price_key(mint);
+            if let Err(e) = conn.set_ex::<_, _, ()>(&key, serialized, ttl).await.map_err(|e| {
+                KoraError::InternalServerError(format!(
+                    "Failed to set price in cache: {}",
+                    sanitize_error!(e)
+                ))
+            }) {
+                log::warn!("Failed to cache price for {mint}: {e}");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get token prices for the given mints, using Redis cache when available.
+    ///
+    /// On cache miss, fetches only the missing mints from the configured price
+    /// oracle (Jupiter or Mock) and writes the results back with `price_ttl`.
+    /// Falls back to a direct oracle call when caching is disabled or unreachable.
+    pub async fn get_or_fetch_token_prices(
+        config: &Config,
+        mint_addresses: &[String],
+    ) -> Result<HashMap<String, TokenPrice>, KoraError> {
+        if mint_addresses.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // If cache is disabled or pool not initialized, go straight to the oracle.
+        if !Self::is_cache_enabled(config) {
+            return Self::build_price_oracle(config)?.get_token_prices(mint_addresses).await;
+        }
+
+        let pool = match CACHE_POOL.get() {
+            Some(Some(pool)) => pool,
+            _ => return Self::build_price_oracle(config)?.get_token_prices(mint_addresses).await,
+        };
+
+        // Try cache first; on errors, fall through to a full live fetch.
+        let (mut hits, misses) = match Self::get_prices_from_cache(pool, mint_addresses).await {
+            Ok(result) => result,
+            Err(e) => {
+                log::warn!("Failed to read prices from cache, falling back to oracle: {e}");
+                return Self::build_price_oracle(config)?.get_token_prices(mint_addresses).await;
+            }
+        };
+
+        if misses.is_empty() {
+            return Ok(hits);
+        }
+
+        let fetched = Self::build_price_oracle(config)?.get_token_prices(&misses).await?;
+
+        if let Err(e) = Self::set_prices_in_cache(pool, &fetched, config.kora.cache.price_ttl).await
+        {
+            log::warn!("Failed to cache fetched prices: {e}");
+        }
+
+        hits.extend(fetched);
+        Ok(hits)
+    }
+
+    /// Get a single token price, using Redis cache when available.
+    pub async fn get_or_fetch_token_price(
+        config: &Config,
+        mint_address: &str,
+    ) -> Result<TokenPrice, KoraError> {
+        let prices = Self::get_or_fetch_token_prices(config, &[mint_address.to_string()]).await?;
+
+        prices.get(mint_address).cloned().ok_or_else(|| {
+            KoraError::InternalServerError(format!(
+                "Failed to fetch token price for {mint_address}"
+            ))
+        })
+    }
 }
 
 #[cfg(test)]
@@ -390,6 +540,36 @@ mod tests {
         let pubkey = Pubkey::new_unique();
         let key = CacheUtil::get_account_key(&pubkey);
         assert_eq!(key, format!("account:{pubkey}"));
+    }
+
+    #[tokio::test]
+    async fn test_get_price_key_format() {
+        let mint = Pubkey::new_unique().to_string();
+        let key = CacheUtil::get_price_key(&mint);
+        assert_eq!(key, format!("kora:price:{mint}"));
+    }
+
+    #[tokio::test]
+    async fn test_get_or_fetch_token_prices_empty_returns_empty() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let config = get_config().unwrap();
+
+        let prices = CacheUtil::get_or_fetch_token_prices(&config, &[]).await.unwrap();
+        assert!(prices.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_or_fetch_token_prices_cache_disabled_falls_back_to_oracle() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let config = get_config().unwrap();
+
+        let mint = Pubkey::new_unique().to_string();
+        let prices = CacheUtil::get_or_fetch_token_prices(&config, std::slice::from_ref(&mint))
+            .await
+            .unwrap();
+
+        // Mock oracle (default in ConfigMockBuilder) always returns a price for any mint.
+        assert!(prices.contains_key(&mint));
     }
 
     #[tokio::test]
