@@ -10,7 +10,7 @@ use tokio::sync::{Mutex, OnceCell};
 use crate::{
     config::Config,
     error::KoraError,
-    oracle::{get_price_oracle, RetryingPriceOracle, TokenPrice},
+    oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
     sanitize_error,
 };
 
@@ -37,7 +37,7 @@ static CACHE_POOL: OnceCell<Option<Pool>> = OnceCell::const_new();
 /// Process-wide price oracle. Held as an `Arc` so the inner `reqwest::Client`
 /// (and its connection pool) is reused across all cache misses instead of
 /// being rebuilt per request.
-static PRICE_ORACLE: OnceCell<Arc<RetryingPriceOracle>> = OnceCell::const_new();
+static PRICE_ORACLE: OnceCell<(PriceSource, Arc<RetryingPriceOracle>)> = OnceCell::const_new();
 
 /// Per-mint locks used to coalesce concurrent oracle fetches for the same
 /// price key (singleflight). Without this, a TTL expiry under load triggers
@@ -379,16 +379,29 @@ impl CacheUtil {
     async fn get_price_oracle_singleton(
         config: &Config,
     ) -> Result<Arc<RetryingPriceOracle>, KoraError> {
-        let oracle = PRICE_ORACLE
+        let requested = &config.validation.price_source;
+        let (initialized, oracle) = PRICE_ORACLE
             .get_or_try_init(|| async {
-                let inner = get_price_oracle(config.validation.price_source.clone())?;
-                Ok::<_, KoraError>(Arc::new(RetryingPriceOracle::new(
-                    PRICE_ORACLE_MAX_RETRIES,
-                    PRICE_ORACLE_BASE_DELAY,
-                    inner,
-                )))
+                let source = config.validation.price_source.clone();
+                let inner = get_price_oracle(source.clone())?;
+                Ok::<_, KoraError>((
+                    source,
+                    Arc::new(RetryingPriceOracle::new(
+                        PRICE_ORACLE_MAX_RETRIES,
+                        PRICE_ORACLE_BASE_DELAY,
+                        inner,
+                    )),
+                ))
             })
             .await?;
+        if initialized != requested {
+            log::warn!(
+                "Price oracle already initialized with {:?}; ignoring request for {:?}. \
+                 The price_source is fixed for the lifetime of the process.",
+                initialized,
+                requested
+            );
+        }
         Ok(oracle.clone())
     }
 
