@@ -453,9 +453,6 @@ impl CacheUtil {
     async fn set_prices_in_cache(
         pool: &Pool,
         prices: &HashMap<String, TokenPrice>,
-    async fn set_prices_in_cache(
-        pool: &Pool,
-        prices: &HashMap<String, TokenPrice>,
         ttl: u64,
     ) -> Result<(), KoraError> {
         if prices.is_empty() {
@@ -466,12 +463,16 @@ impl CacheUtil {
         let mut pipe = redis::pipe();
 
         for (mint, price) in prices {
-            let serialized = serde_json::to_string(price).map_err(|e| {
-                KoraError::InternalServerError(format!(
-                    "Failed to serialize price for {mint}: {}",
-                    sanitize_error!(e)
-                ))
-            })?;
+            let serialized = match serde_json::to_string(price) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!(
+                        "Failed to serialize price for {mint}: {}",
+                        sanitize_error!(e)
+                    );
+                    continue;
+                }
+            };
             let key = Self::get_price_key(mint);
             pipe.set_ex(&key, serialized, ttl);
         }
@@ -482,6 +483,9 @@ impl CacheUtil {
 
         Ok(())
     }
+
+    /// Get token prices for the given mints, using Redis cache when available.
+    ///
     /// On cache miss, fetches only the missing mints from the configured price
     /// oracle (Jupiter or Mock) and writes the results back with `price_ttl`.
     /// Falls back to a direct oracle call when caching is disabled or unreachable.
