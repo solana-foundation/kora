@@ -167,6 +167,32 @@ async fn main() -> Result<(), KoraError> {
                         }
                     }
 
+                    let mut startup_warnings: Vec<String> = Vec::new();
+                    let active_config = kora_lib::state::get_config().unwrap_or_else(|e| {
+                        print_error(&format!("Failed to retrieve config: {e}"));
+                        std::process::exit(1);
+                    });
+                    if active_config.validation.cross_cluster_check {
+                        let mut all_tokens: Vec<String> = active_config
+                            .validation
+                            .allowed_tokens
+                            .iter()
+                            .chain(active_config.validation.allowed_spl_paid_tokens.iter())
+                            .cloned()
+                            .collect();
+                        all_tokens.sort_unstable();
+                        all_tokens.dedup();
+                        ConfigValidator::check_cross_cluster_mints(
+                            rpc_client.as_ref(),
+                            &all_tokens,
+                            &mut startup_warnings,
+                        )
+                        .await;
+                        for w in &startup_warnings {
+                            println!("⚠️  {}", w);
+                        }
+                    }
+
                     setup_logging(&rpc_args.logging_format);
 
                     // Initialize signer(s) - supports both single and multi-signer modes

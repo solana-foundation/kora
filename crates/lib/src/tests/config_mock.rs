@@ -97,6 +97,7 @@ impl ConfigMockBuilder {
                     allow_durable_transactions: false,
                     max_price_staleness_slots: 0,
                     require_one_of_programs: vec![],
+                    cross_cluster_check: false,
                 },
                 kora: KoraConfig {
                     rate_limit: 100,
@@ -309,6 +310,7 @@ impl ValidationConfigBuilder {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
             },
         }
     }
