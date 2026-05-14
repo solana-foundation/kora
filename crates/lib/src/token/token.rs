@@ -2,7 +2,7 @@ use crate::{
     config::{Config, TransferHookPolicy},
     constant,
     error::KoraError,
-    oracle::{get_price_oracle, RetryingPriceOracle, TokenPrice},
+    oracle::TokenPrice,
     token::{
         interface::TokenMint,
         spl_token::TokenProgram,
@@ -25,7 +25,6 @@ use spl_associated_token_account_interface::program::id as ata_program_id;
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
-    time::Duration,
 };
 
 #[cfg(test)]
@@ -421,15 +420,8 @@ impl TokenUtil {
     ) -> Result<(TokenPrice, u8), KoraError> {
         let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
 
-        let oracle = RetryingPriceOracle::new(
-            3,
-            Duration::from_secs(1),
-            get_price_oracle(config.validation.price_source.clone())?,
-        );
-
-        // Get token price in SOL directly
-        let token_price = oracle
-            .get_token_price(&mint.to_string())
+        // Get token price in SOL directly (cached when Redis is enabled).
+        let token_price = CacheUtil::get_or_fetch_token_price(config, &mint.to_string())
             .await
             .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {e}")))?;
 
@@ -568,13 +560,7 @@ impl TokenUtil {
         let mint_addresses: Vec<String> =
             mint_to_transfers.keys().map(|mint| mint.to_string()).collect();
 
-        let oracle = RetryingPriceOracle::new(
-            3,
-            Duration::from_secs(1),
-            get_price_oracle(config.validation.price_source.clone())?,
-        );
-
-        let prices = oracle.get_token_prices(&mint_addresses).await?;
+        let prices = CacheUtil::get_or_fetch_token_prices(config, &mint_addresses).await?;
 
         let current_slot = if config.validation.max_price_staleness_slots > 0 {
             Some(
