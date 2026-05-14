@@ -40,7 +40,10 @@ pub async fn get_config() -> Result<GetConfigResponse, KoraError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{common::setup_or_get_test_signer, config_mock::ConfigMockBuilder};
+    use crate::{
+        config::ProgramsConfig,
+        tests::{common::setup_or_get_test_signer, config_mock::ConfigMockBuilder},
+    };
     use serial_test::serial;
 
     #[tokio::test]
@@ -153,5 +156,25 @@ mod tests {
         assert!(response.enabled_methods.transfer_transaction);
         assert!(response.enabled_methods.get_blockhash);
         assert!(response.enabled_methods.get_config);
+    }
+
+    #[test]
+    fn test_get_config_response_serializes_programs_config_all_as_string() {
+        // The TS SDK / OpenAPI contract relies on `allowed_programs` being either
+        // the string "All" or an array of strings on the wire. Guard against any
+        // future field annotation that would break this user-facing shape.
+        let mut validation_config = crate::tests::config_mock::ValidationConfigBuilder::new()
+            .with_allowed_programs(vec!["program1".to_string()])
+            .build();
+        validation_config.allowed_programs = ProgramsConfig::All;
+
+        let response = GetConfigResponse {
+            fee_payers: vec![],
+            validation_config,
+            enabled_methods: EnabledMethods::default(),
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["validation_config"]["allowed_programs"], serde_json::json!("All"));
     }
 }
