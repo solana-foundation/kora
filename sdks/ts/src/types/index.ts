@@ -257,8 +257,8 @@ export type PriceSource = 'Jupiter' | 'Mock';
  * Validation configuration for the Kora server.
  */
 export interface ValidationConfig {
-    /** List of allowed Solana program IDs */
-    allowed_programs: string[];
+    /** List of allowed Solana program IDs, or "All" to allow any program. */
+    allowed_programs: 'All' | string[];
     /** List of SPL tokens accepted for paid transactions */
     allowed_spl_paid_tokens: string[];
     /** List of allowed token mint addresses for fee payment */
@@ -651,8 +651,8 @@ export interface KitSignAndSendBundleResponse {
 
 /** Plugin validation config with Kit Address types */
 export interface KitValidationConfig {
-    /** List of allowed Solana program IDs */
-    allowed_programs: Address[];
+    /** List of allowed Solana program IDs, or "All" to allow any program. */
+    allowed_programs: 'All' | Address[];
     /** List of SPL tokens accepted for paid transactions */
     allowed_spl_paid_tokens: Address[];
     /** List of allowed token mint addresses for fee payment */

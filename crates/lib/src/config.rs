@@ -117,11 +117,76 @@ impl SplTokenConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ProgramsConfig {
+    All,
+    #[serde(untagged)]
+    Allowlist(Vec<String>),
+}
+
+impl<'__s> utoipa::ToSchema<'__s> for ProgramsConfig {
+    fn schema() -> (&'__s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        ("ProgramsConfig", string_or_string_array_schema())
+    }
+}
+
+/// OpenAPI schema for enums that serialize as either the literal string `"All"` or a JSON array
+/// of strings. The auto-derived schema treats the untagged `Allowlist` variant as an object
+/// wrapper, which does not match the actual JSON form.
+fn string_or_string_array_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+    use utoipa::openapi::{ArrayBuilder, ObjectBuilder, OneOfBuilder, SchemaType};
+    OneOfBuilder::new()
+        .item(
+            ObjectBuilder::new()
+                .schema_type(SchemaType::String)
+                .enum_values(Some(vec!["All"]))
+                .build(),
+        )
+        .item(
+            ArrayBuilder::new()
+                .items(ObjectBuilder::new().schema_type(SchemaType::String).build())
+                .build(),
+        )
+        .into()
+}
+
+impl<'a> IntoIterator for &'a ProgramsConfig {
+    type Item = &'a String;
+    type IntoIter = std::slice::Iter<'a, String>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            ProgramsConfig::All => [].iter(),
+            ProgramsConfig::Allowlist(programs) => programs.iter(),
+        }
+    }
+}
+
+impl ProgramsConfig {
+    pub fn is_all(&self) -> bool {
+        matches!(self, ProgramsConfig::All)
+    }
+
+    pub fn contains(&self, program: &str) -> bool {
+        match self {
+            ProgramsConfig::All => true,
+            ProgramsConfig::Allowlist(programs) => programs.iter().any(|p| p == program),
+        }
+    }
+
+    pub fn as_slice(&self) -> &[String] {
+        match self {
+            ProgramsConfig::All => &[],
+            ProgramsConfig::Allowlist(v) => v.as_slice(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ValidationConfig {
     pub max_allowed_lamports: u64,
     pub max_signatures: u64,
-    pub allowed_programs: Vec<String>,
+    pub allowed_programs: ProgramsConfig,
     pub allowed_tokens: Vec<String>,
     pub allowed_spl_paid_tokens: SplTokenConfig,
     pub disallowed_accounts: Vec<String>,
@@ -759,7 +824,10 @@ mod tests {
 
         assert_eq!(config.validation.max_allowed_lamports, 1000000000);
         assert_eq!(config.validation.max_signatures, 10);
-        assert_eq!(config.validation.allowed_programs, vec!["program1", "program2"]);
+        assert_eq!(
+            config.validation.allowed_programs,
+            ProgramsConfig::Allowlist(vec!["program1".to_string(), "program2".to_string()])
+        );
         assert_eq!(config.validation.allowed_tokens, vec!["token1", "token2"]);
         assert_eq!(
             config.validation.allowed_spl_paid_tokens,
@@ -823,6 +891,41 @@ mod tests {
             ConfigBuilder::new().with_spl_paid_tokens(SplTokenConfig::All).build_config().unwrap();
 
         assert_eq!(config.validation.allowed_spl_paid_tokens, SplTokenConfig::All);
+    }
+
+    #[test]
+    fn test_parse_allowed_programs_all_from_toml() {
+        let toml_content = r#"
+                            [validation]
+                            max_allowed_lamports = 1
+                            max_signatures = 1
+                            allowed_programs = "All"
+                            allowed_tokens = []
+                            allowed_spl_paid_tokens = []
+                            disallowed_accounts = []
+                            price_source = "Mock"
+
+                            [kora]
+                            rate_limit = 1
+                            "#;
+        let config = crate::tests::toml_mock::create_invalid_config(toml_content)
+            .expect("TOML with allowed_programs = \"All\" should parse");
+        assert_eq!(config.validation.allowed_programs, ProgramsConfig::All);
+    }
+
+    #[test]
+    fn test_allowed_programs_json_serialization() {
+        // ProgramsConfig::All must serialize as the string "All" — the user-facing
+        // getConfig contract depends on this wire format.
+        let all_json = serde_json::to_string(&ProgramsConfig::All).unwrap();
+        assert_eq!(all_json, "\"All\"");
+
+        let allowlist_json = serde_json::to_string(&ProgramsConfig::Allowlist(vec![
+            "program1".to_string(),
+            "program2".to_string(),
+        ]))
+        .unwrap();
+        assert_eq!(allowlist_json, "[\"program1\",\"program2\"]");
     }
 
     #[test]

@@ -266,7 +266,7 @@ impl TransactionPlugin for DeployAuthorityPlugin {
 mod tests {
     use super::{super::TransactionPluginRunner, *};
     use crate::{
-        config::TransactionPluginType,
+        config::{ProgramsConfig, TransactionPluginType},
         constant::LOADER_V4_PROGRAM_ID,
         tests::{common::RpcMockBuilder, config_mock::ConfigMockBuilder},
         transaction::TransactionUtil,
@@ -672,7 +672,7 @@ mod tests {
         let mut config = ConfigMockBuilder::new().build();
         enable_deploy_authority_plugin(&mut config);
         // Ensure neither loader is in allowed_programs.
-        config.validation.allowed_programs.clear();
+        config.validation.allowed_programs = ProgramsConfig::Allowlist(vec![]);
         config.validation.fee_payer_policy.bpf_loader_upgradeable.allow_write = true;
 
         let (errors, _) = plugin.validate_config(&config);

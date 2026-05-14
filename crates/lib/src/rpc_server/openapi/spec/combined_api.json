@@ -1588,6 +1588,25 @@
               "allow_freeze": false
             }
           },
+          "bpf_loader_upgradeable": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BpfLoaderUpgradeableInstructionPolicy"
+              }
+            ],
+            "default": {
+              "allow_close": false,
+              "allow_deploy_with_max_data_len": false,
+              "allow_extend_program": false,
+              "allow_extend_program_checked": false,
+              "allow_initialize_buffer": false,
+              "allow_migrate": false,
+              "allow_set_authority": false,
+              "allow_set_authority_checked": false,
+              "allow_upgrade": false,
+              "allow_write": false
+            }
+          },
           "loader_v4": {
             "allOf": [
               {
@@ -1894,6 +1913,22 @@
         "enum": [
           "Jupiter",
           "Mock"
+        ]
+      },
+      "ProgramsConfig": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "All"
+            ]
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         ]
       },
       "SignAndSendTransactionRequest": {
@@ -2332,10 +2367,7 @@
             "description": "Allow durable transactions (nonce-based). Default: false.\nWhen false, rejects any transaction containing AdvanceNonceAccount instruction.\nWARNING: Enabling with dynamic pricing creates price arbitrage risk."
           },
           "allowed_programs": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "$ref": "#/components/schemas/ProgramsConfig"
           },
           "allowed_spl_paid_tokens": {
             "$ref": "#/components/schemas/SplTokenConfig"

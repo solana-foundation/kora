@@ -1,5 +1,5 @@
 use crate::{
-    config::{Config, FeePayerPolicy},
+    config::{Config, FeePayerPolicy, ProgramsConfig},
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation},
     oracle::PriceSource,
@@ -25,6 +25,7 @@ pub struct TransactionValidator {
     fee_payer_pubkey: Pubkey,
     max_allowed_lamports: u64,
     allowed_programs: Vec<Pubkey>,
+    allow_all_programs: bool,
     require_one_of_programs: Vec<Pubkey>,
     max_signatures: u64,
     allowed_tokens: Vec<Pubkey>,
@@ -38,18 +39,22 @@ impl TransactionValidator {
     pub fn new(config: &Config, fee_payer_pubkey: Pubkey) -> Result<Self, KoraError> {
         let config = &config.validation;
 
-        // Convert string program IDs to Pubkeys
-        let allowed_programs = config
-            .allowed_programs
-            .iter()
-            .map(|addr| {
-                Pubkey::from_str(addr).map_err(|e| {
-                    KoraError::InternalServerError(format!(
-                        "Invalid program address in config: {e}"
-                    ))
-                })
-            })
-            .collect::<Result<Vec<Pubkey>, KoraError>>()?;
+        let (allow_all_programs, allowed_programs) = match &config.allowed_programs {
+            ProgramsConfig::All => (true, Vec::new()),
+            ProgramsConfig::Allowlist(programs) => (
+                false,
+                programs
+                    .iter()
+                    .map(|addr| {
+                        Pubkey::from_str(addr).map_err(|e| {
+                            KoraError::InternalServerError(format!(
+                                "Invalid program address in config: {e}"
+                            ))
+                        })
+                    })
+                    .collect::<Result<Vec<Pubkey>, KoraError>>()?,
+            ),
+        };
 
         let require_one_of_programs = config
             .require_one_of_programs
@@ -67,6 +72,7 @@ impl TransactionValidator {
             fee_payer_pubkey,
             max_allowed_lamports: config.max_allowed_lamports,
             allowed_programs,
+            allow_all_programs,
             require_one_of_programs,
             max_signatures: config.max_signatures,
             _price_source: config.price_source.clone(),
@@ -225,6 +231,9 @@ impl TransactionValidator {
         &self,
         transaction_resolved: &VersionedTransactionResolved,
     ) -> Result<(), KoraError> {
+        if self.allow_all_programs {
+            return Ok(());
+        }
         for instruction in &transaction_resolved.all_instructions {
             if !self.allowed_programs.contains(&instruction.program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
@@ -293,7 +302,7 @@ impl TransactionValidator {
         validate_system!(self, system_instructions, SystemCreateAccount,
         ParsedSystemInstructionData::SystemCreateAccount { payer, owner, .. } => payer,
         self.fee_payer_policy.system.allow_create_account, "System Create Account", {
-            if !self.allowed_programs.contains(owner) {
+            if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
                 return Err(KoraError::InvalidTransaction(format!(
                     "CreateAccount owner program {} is not in the allowed programs list",
                     owner
@@ -1128,6 +1137,29 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_programs_wildcard_sentinel() {
+        let fee_payer = Pubkey::new_unique();
+        let mut config = ConfigMockBuilder::new().with_price_source(PriceSource::Mock).build();
+        config.validation.allowed_programs = ProgramsConfig::All;
+        setup_both_configs(config);
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let arbitrary_program = Pubkey::new_unique();
+        let instruction = Instruction::new_with_bincode(arbitrary_program, &[0u8], vec![]);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(get_config().unwrap(), &mut transaction, &rpc_client)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -5019,7 +5051,8 @@ mod tests {
         let metadata_address = Pubkey::new_unique();
         let rpc_client = RpcMockBuilder::new().build();
         let mut config = ConfigMockBuilder::new().build();
-        config.validation.allowed_programs.push(spl_token_2022_interface::id().to_string());
+        config.validation.allowed_programs =
+            ProgramsConfig::Allowlist(vec![spl_token_2022_interface::id().to_string()]);
         config.validation.token_2022.blocked_mint_extensions = vec!["metadata_pointer".to_string()];
         config.validation.token_2022.initialize().unwrap();
         let _config_guard = setup_config_mock(config.clone());
