@@ -241,8 +241,11 @@ impl UsageTracker {
         SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
     }
 
-    /// Check and record usage for a transaction
-    /// Uses two-phase commit: check all rules first, then increment only if all pass
+    /// Check and record usage for a transaction.
+    /// Uses a two-pass approach:
+    /// 1. Pre-check all rules (fast fail) to avoid partial increments.
+    /// 2. Atomically check-and-increment. If a concurrent race causes a failure here,
+    ///    we deny the request, though some previous rules in this pass may have already incremented.
     async fn check_and_record(
         &self,
         ctx: &mut LimiterContext<'_>,
@@ -265,75 +268,61 @@ impl UsageTracker {
             Vec::new()
         };
 
-        // Build HashSet for O(1) lookup instead of Vec::contains O(n)
         let ix_idx_set: HashSet<usize> = self.instruction_rule_indices.iter().copied().collect();
 
-        // Phase 1: Check all rules first (no incrementing yet)
-        // Collect rule checks: (key, increment_count, window_seconds)
-        let mut pending_increments: Vec<(String, u64, Option<u64>)> = Vec::new();
+        let mut rule_increments = Vec::with_capacity(self.rules.len());
         let mut instruction_count_idx = 0;
 
-        for (idx, rule) in self.rules.iter().enumerate() {
+        for (idx, _rule) in self.rules.iter().enumerate() {
             let increment_count = if ix_idx_set.contains(&idx) {
-                // Use pre-computed count for instruction rule
                 let count = instruction_counts[instruction_count_idx];
                 instruction_count_idx += 1;
                 count
             } else {
-                // Transaction rules always increment by 1
                 1
             };
+            rule_increments.push(increment_count);
+        }
 
+        let mut pending_increments = Vec::with_capacity(self.rules.len());
+
+        for (idx, rule) in self.rules.iter().enumerate() {
+            let increment_count = rule_increments[idx];
             if increment_count == 0 {
                 continue;
             }
 
             let key = rule.storage_key(&ctx.user_id, ctx.timestamp);
+            let expiry =
+                rule.window_seconds().filter(|&w| w > 0).map(|w| (ctx.timestamp / w + 1) * w);
+            let max = rule.max();
+            let description = rule.description();
 
             let current = self.store.get(&key).await?;
-            let new_count = current as u64 + increment_count;
 
-            if new_count > rule.max() {
+            if current as u64 + increment_count > max {
                 return Ok(LimiterResult::Denied {
                     reason: format!(
                         "User {} exceeded {} limit: {}/{}",
                         ctx.user_id,
-                        rule.description(),
-                        new_count,
-                        rule.max()
+                        description,
+                        current as u64 + increment_count,
+                        max
                     ),
                 });
             }
 
-            // Queue for increment (don't increment yet)
-            pending_increments.push((key, increment_count, rule.window_seconds()));
-
-            log::debug!(
-                "[rule] User {} {}: {}/{} ({})",
-                ctx.user_id,
-                rule.description(),
-                new_count,
-                rule.max(),
-                rule.window_seconds().map_or("lifetime".to_string(), |w| format!("{}s window", w))
-            );
+            pending_increments.push((key, increment_count, max, expiry, description));
         }
 
-        for (key, increment_count, window_seconds) in pending_increments {
-            if let Some(window) = window_seconds.filter(|&w| w > 0) {
-                // Calculate bucket boundary: key expires at end of current bucket
-                // bucket = timestamp / window, so bucket_end = (bucket + 1) * window
-                let expires_at = (ctx.timestamp / window + 1) * window;
-                // First increment with expiry
-                self.store.increment_with_expiry(&key, expires_at).await?;
-                // Subsequent increments without resetting expiry
-                for _ in 1..increment_count {
-                    self.store.increment(&key).await?;
-                }
-            } else {
-                for _ in 0..increment_count {
-                    self.store.increment(&key).await?;
-                }
+        for (key, increment_count, max, expiry, description) in pending_increments {
+            if !self.store.check_and_increment(&key, increment_count, max, expiry).await? {
+                return Ok(LimiterResult::Denied {
+                    reason: format!("User {} exceeded {} limit", ctx.user_id, description),
+                });
             }
+
+            log::debug!("[rule] User {} {}: (atomic check+inc)", ctx.user_id, description);
         }
 
         Ok(LimiterResult::Allowed)
@@ -497,9 +486,57 @@ mod tests {
         transaction::TransactionUtil,
         usage_limit::{InMemoryUsageStore, UsageLimitConfig, UsageLimitRuleConfig},
     };
+    use async_trait::async_trait;
     use solana_message::{Message, VersionedMessage};
     use solana_sdk::{account::Account, signature::Keypair, signer::Signer};
     use std::sync::Arc;
+
+    struct ConcurrentMockStore {
+        inner: InMemoryUsageStore,
+    }
+
+    impl ConcurrentMockStore {
+        fn new() -> Self {
+            Self { inner: InMemoryUsageStore::new() }
+        }
+    }
+
+    #[async_trait]
+    impl UsageStore for ConcurrentMockStore {
+        async fn increment(&self, key: &str) -> Result<u32, KoraError> {
+            tokio::task::yield_now().await;
+            self.inner.increment(key).await
+        }
+
+        async fn increment_with_expiry(
+            &self,
+            key: &str,
+            expires_at: u64,
+        ) -> Result<u32, KoraError> {
+            tokio::task::yield_now().await;
+            self.inner.increment_with_expiry(key, expires_at).await
+        }
+
+        async fn get(&self, key: &str) -> Result<u32, KoraError> {
+            tokio::task::yield_now().await;
+            self.inner.get(key).await
+        }
+
+        async fn clear(&self) -> Result<(), KoraError> {
+            self.inner.clear().await
+        }
+
+        async fn check_and_increment(
+            &self,
+            key: &str,
+            delta: u64,
+            max: u64,
+            expiry: Option<u64>,
+        ) -> Result<bool, KoraError> {
+            tokio::task::yield_now().await;
+            self.inner.check_and_increment(key, delta, max, expiry).await
+        }
+    }
 
     fn create_test_tracker(max_transactions: u64) -> UsageTracker {
         let store = Arc::new(InMemoryUsageStore::new());
@@ -1027,5 +1064,93 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_requests_enforce_limit() {
+        let max = 5;
+        let store = Arc::new(ConcurrentMockStore::new());
+        let config = UsageLimitConfig {
+            enabled: true,
+            cache_url: None,
+            fallback_if_unavailable: false,
+            rules: vec![UsageLimitRuleConfig::Transaction { max, window_seconds: None }],
+        };
+        let rules = config.build_rules().unwrap();
+        let tracker = Arc::new(UsageTracker::new(true, store, rules, HashSet::new(), false));
+        let user_id = "concurrent-user".to_string();
+        let mut handles = Vec::new();
+
+        for _ in 0..10 {
+            let tracker = tracker.clone();
+            let user_id = user_id.clone();
+            handles.push(tokio::spawn(async move {
+                let mut tx = create_mock_resolved_transaction();
+                let mut ctx = LimiterContext {
+                    transaction: &mut tx,
+                    user_id,
+                    kora_signer: None,
+                    timestamp: 1000000,
+                };
+                tracker.check_and_record(&mut ctx).await.unwrap()
+            }));
+        }
+
+        let mut allowed_count = 0;
+        for handle in handles {
+            if matches!(handle.await.unwrap(), LimiterResult::Allowed) {
+                allowed_count += 1;
+            }
+        }
+
+        assert_eq!(allowed_count, max as usize);
+    }
+
+    #[tokio::test]
+    async fn test_multi_rule_concurrent_enforces_bottleneck_rule() {
+        let store = Arc::new(ConcurrentMockStore::new());
+        let config = UsageLimitConfig {
+            enabled: true,
+            cache_url: None,
+            fallback_if_unavailable: false,
+            rules: vec![
+                UsageLimitRuleConfig::Transaction { max: 10, window_seconds: None },
+                UsageLimitRuleConfig::Transaction { max: 2, window_seconds: Some(60) },
+            ],
+        };
+        let rules = config.build_rules().unwrap();
+        let tracker =
+            Arc::new(UsageTracker::new(true, store.clone(), rules, HashSet::new(), false));
+        let user_id = "multi-rule-concurrent-user".to_string();
+        let mut handles = Vec::new();
+
+        for _ in 0..10 {
+            let tracker = tracker.clone();
+            let user_id = user_id.clone();
+            handles.push(tokio::spawn(async move {
+                let mut tx = create_mock_resolved_transaction();
+                let mut ctx = LimiterContext {
+                    transaction: &mut tx,
+                    user_id,
+                    kora_signer: None,
+                    timestamp: UsageTracker::current_timestamp(),
+                };
+                tracker.check_and_record(&mut ctx).await.unwrap()
+            }));
+        }
+
+        let mut allowed_count = 0;
+        for handle in handles {
+            if matches!(handle.await.unwrap(), LimiterResult::Allowed) {
+                allowed_count += 1;
+            }
+        }
+
+        assert_eq!(allowed_count, 2);
+
+        let lifetime_key = "kora:tx:multi-rule-concurrent-user";
+        let lifetime_count = store.get(lifetime_key).await.unwrap();
+        // Pass 1 reads stale state under concurrency, so earlier rules may over-consume quota.
+        assert!(lifetime_count >= allowed_count as u32);
     }
 }
