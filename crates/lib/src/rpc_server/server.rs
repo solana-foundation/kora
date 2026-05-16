@@ -1,4 +1,5 @@
 use crate::{
+    config::AuthConfig,
     constant::{X_API_KEY, X_HMAC_SIGNATURE, X_RECAPTCHA_TOKEN, X_TIMESTAMP},
     metrics::run_metrics_server_if_required,
     rpc_server::{
@@ -34,7 +35,8 @@ pub struct ServerHandles {
 
 // We'll always prioritize the environment variable over the config value
 fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<String> {
-    std::env::var(env_var).ok().or(config_value)
+    AuthConfig::normalize_optional_secret(std::env::var(env_var).ok())
+        .or_else(|| AuthConfig::normalize_optional_secret(config_value))
 }
 
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, anyhow::Error> {
@@ -280,6 +282,25 @@ mod tests {
         let env_var_name = "TEST_ENV_VAR_MISSING_UNIQUE_ABC789";
 
         let result = get_value_by_priority(env_var_name, None);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_get_value_by_priority_empty_env_var_falls_back_to_config() {
+        let env_var_name = "TEST_ENV_VAR_EMPTY_ENV_UNIQUE_DEF456";
+        env::set_var(env_var_name, "");
+
+        let result = get_value_by_priority(env_var_name, Some("config_value".to_string()));
+        assert_eq!(result, Some("config_value".to_string()));
+
+        env::remove_var(env_var_name);
+    }
+
+    #[test]
+    fn test_get_value_by_priority_empty_config_value_is_ignored() {
+        let env_var_name = "TEST_ENV_VAR_EMPTY_CONFIG_UNIQUE_GHI789";
+
+        let result = get_value_by_priority(env_var_name, Some("".to_string()));
         assert_eq!(result, None);
     }
 
