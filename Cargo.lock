@@ -3497,7 +3497,7 @@ dependencies = [
  "spl-token-interface",
  "subtle",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
  "tokio",
  "toml 0.9.6",
  "tower 0.4.13",
