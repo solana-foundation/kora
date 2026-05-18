@@ -55,7 +55,7 @@ bs58 = "0.5.1"
 bincode = "1.3.3"
 borsh = "1.5.3"
 async-std = "1.13.0"
-jsonrpsee-core = { version = "0.16.2", features = ["server"] }
+jsonrpsee-core = { version = "0.26.0", features = ["server"] }
 env_logger = "0.11.5"
 async-trait = "0.1.89"
 base64 = "0.22.1"
