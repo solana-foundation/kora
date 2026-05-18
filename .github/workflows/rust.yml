@@ -48,7 +48,7 @@ jobs:
       matrix:
         test-group: [regular, auth, payment_address, multi_signer]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -57,7 +57,7 @@ jobs:
           shared-key: "rust-integration"
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ needs.build.outputs.artifact-name }}
           path: target/debug/
