@@ -1,0 +1,42 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+      semver-patch-days: 1
+    groups:
+      cargo-non-major:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directory: "/sdks"
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+      semver-patch-days: 1
+    groups:
+      npm-non-major:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns:
+          - "*"
