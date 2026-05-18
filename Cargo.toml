@@ -80,7 +80,7 @@ spl-associated-token-account-interface = { version = "2.0.0" }
 chrono = "0.4.39"
 hex = "0.4.3"
 p256 = "0.13.3"
-redis = { version = "0.32.5", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "1.0.2", features = ["tokio-comp", "connection-manager"] }
 deadpool-redis = "0.22.0"
 vaultrs = "0.7.3"
 utoipa = { version = "4.2.0", features = ["yaml", "chrono"] }
