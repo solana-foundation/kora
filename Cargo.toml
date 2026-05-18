@@ -29,7 +29,7 @@ progenitor = "0.8.0"
 futures = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-config = "0.13"
+config = "0.15"
 dotenv = "0.15"
 jsonrpsee = { version = "0.16.2", features = [
     "server",
