@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Resolve PR context
         id: pr
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const prNumber = Number("${{ inputs.pr_number }}");
@@ -57,7 +57,7 @@ jobs:
           exit 1
 
       - name: Checkout PR merge ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.pr.outputs.merge_ref }}
 
@@ -110,7 +110,7 @@ jobs:
 
       - name: Verify PR head is unchanged
         if: success()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const prNumber = Number("${{ steps.pr.outputs.pr_number }}");
@@ -130,7 +130,7 @@ jobs:
 
       - name: Record fork live approval marker
         if: success()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const prNumber = Number("${{ steps.pr.outputs.pr_number }}");
@@ -147,7 +147,7 @@ jobs:
 
       - name: Rerun fork live gate
         if: success()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const headSha = "${{ steps.pr.outputs.head_sha }}";
