@@ -43,14 +43,14 @@ solana-message = "3.0.1"
 solana-system-interface = "2.0.0"
 solana-transaction-status-client-types = "3.0.8"
 solana-transaction-status = "3.0.8"
-solana-address-lookup-table-interface = "3.1.0"
+solana-address-lookup-table-interface = "3.0.0"
 solana-loader-v3-interface = { version = "6.1.0", features = ["bincode", "serde"] }
 solana-loader-v4-interface = { version = "3.1.0", features = ["bincode", "serde"] }
 solana-program = "3.0.0"
 solana-program-pack = "3.1.0"
 solana-compute-budget-interface = "3.0.0"
 solana-client = "3.0.8"
-solana-nonce = "3.2.0"
+solana-nonce = "3.0.0"
 bs58 = "0.5.1"
 bincode = "1.3.3"
 borsh = "1.6.1"
@@ -63,7 +63,7 @@ log = "0.4.22"
 bytes = "1.11.1"
 reqwest = { version = "0.12.9", features = ["json", "blocking", "native-tls"] }
 tower = { version = "0.4.13", features = ["full"] }
-tower-http = { version = "0.6.8", features = ["full", "cors"] }
+tower-http = { version = "0.3.5", features = ["full", "cors"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 tokio = { version = "1.50.0", features = ["full"] }
 prettyplease = "0.2.25"
@@ -72,7 +72,7 @@ parking_lot = "0.12"
 once_cell = "1.21.4"
 futures-util = "0.3.32"
 hyper = "1.9.0"
-http = "1.3"
+http = "0.2"
 toml = "0.9.6"
 spl-token-interface = { version = "2.0.0" }
 spl-token-2022-interface = { version = "2.1.0" }
@@ -81,11 +81,11 @@ chrono = "0.4.44"
 hex = "0.4.3"
 p256 = "0.13.3"
 redis = { version = "1.0.2", features = ["tokio-comp", "connection-manager"] }
-deadpool-redis = "0.22.0"
+deadpool-redis = "0.23.0"
 vaultrs = "0.7.3"
 utoipa = { version = "4.2.0", features = ["yaml", "chrono"] }
 hmac = "0.13.0"
-sha2 = "0.10.9"
+sha2 = "0.11.0"
 prometheus = "0.14.0"
 http-body-util = "0.1.3"
 subtle = "2.6.1"

@@ -4,7 +4,7 @@ use crate::{
         build_response_with_graceful_error, extract_parts_and_body_bytes, get_jsonrpc_method,
     },
 };
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use http::{Request, Response, StatusCode};
 use jsonrpsee::server::logger::Body;
 use sha2::Sha256;
