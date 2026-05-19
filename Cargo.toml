@@ -31,7 +31,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 config = "0.15"
 dotenv = "0.15"
-jsonrpsee = { version = "0.16.2", features = [
+jsonrpsee = { version = "0.26.0", features = [
     "server",
     "macros",
     "http-client",
