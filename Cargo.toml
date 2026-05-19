@@ -40,7 +40,7 @@ jsonrpsee = { version = "0.16.2", features = [
 solana-sdk = "3.0.0"
 solana-commitment-config = "3.1.1"
 solana-message = "3.0.1"
-solana-system-interface = "2.0.0"
+solana-system-interface = "3.2.0"
 solana-transaction-status-client-types = "3.0.8"
 solana-transaction-status = "3.0.8"
 solana-address-lookup-table-interface = "3.0.0"
