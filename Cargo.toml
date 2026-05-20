@@ -82,7 +82,7 @@ hex = "0.4.3"
 p256 = "0.13.3"
 redis = { version = "1.0.2", features = ["tokio-comp", "connection-manager"] }
 deadpool-redis = "0.23.0"
-vaultrs = "0.7.3"
+vaultrs = "0.8.0"
 utoipa = { version = "5.5.0", features = ["yaml", "chrono"] }
 hmac = "0.13.0"
 sha2 = "0.11.0"
