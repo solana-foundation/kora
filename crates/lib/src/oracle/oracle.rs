@@ -20,8 +20,7 @@ pub struct TokenPrice {
     pub block_id: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "docs", derive(utoipa::ToSchema))]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 pub enum PriceSource {
     Jupiter,
     Mock,
