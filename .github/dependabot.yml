@@ -7,13 +7,15 @@ updates:
     open-pull-requests-limit: 10
     cooldown:
       default-days: 7
-      semver-patch-days: 1
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-patch
     groups:
       cargo-non-major:
         applies-to: version-updates
         update-types:
           - minor
-          - patch
 
   - package-ecosystem: npm
     directory: "/sdks"
@@ -22,13 +24,15 @@ updates:
     open-pull-requests-limit: 10
     cooldown:
       default-days: 7
-      semver-patch-days: 1
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-patch
     groups:
       npm-non-major:
         applies-to: version-updates
         update-types:
           - minor
-          - patch
 
   - package-ecosystem: github-actions
     directory: "/"
@@ -36,6 +40,10 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-patch
     groups:
       actions:
         patterns:
