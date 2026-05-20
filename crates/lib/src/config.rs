@@ -696,6 +696,17 @@ impl Default for AuthConfig {
     }
 }
 
+impl AuthConfig {
+    pub(crate) fn normalize_optional_secret(value: Option<String>) -> Option<String> {
+        value.filter(|value| !value.is_empty())
+    }
+
+    pub(crate) fn has_auth(&self) -> bool {
+        self.api_key.as_deref().is_some_and(|key| !key.is_empty())
+            || self.hmac_secret.as_deref().is_some_and(|key| !key.is_empty())
+    }
+}
+
 impl Config {
     pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, KoraError> {
         let contents = fs::read_to_string(path).map_err(|e| {

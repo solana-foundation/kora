@@ -692,8 +692,7 @@ impl ConfigValidator {
                 }
 
                 // Warn about dangerous configurations with fixed pricing
-                let has_auth =
-                    config.kora.auth.api_key.is_some() || config.kora.auth.hmac_secret.is_some();
+                let has_auth = config.kora.auth.has_auth();
                 if !has_auth {
                     warnings.push(
                         "⚠️  SECURITY: Fixed pricing with NO authentication enabled. \
@@ -723,7 +722,7 @@ impl ConfigValidator {
         };
 
         // General authentication warning
-        let has_auth = config.kora.auth.api_key.is_some() || config.kora.auth.hmac_secret.is_some();
+        let has_auth = config.kora.auth.has_auth();
         if !has_auth {
             warnings.push(
                 "⚠️  SECURITY: No authentication configured (neither api_key nor hmac_secret). \
