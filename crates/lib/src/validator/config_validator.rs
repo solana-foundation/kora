@@ -32,6 +32,14 @@ use spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID;
 
 const MIN_SIGN_TIMEOUT_SECONDS: u64 = 1;
 const HIGH_SIGN_MAX_RETRIES_WARNING_THRESHOLD: u32 = 10;
+const CROSS_CLUSTER_TIMEOUT_SECS: u64 = 5;
+
+enum ProbeOutcome {
+    Found(Vec<String>),
+    NotFound,
+    /// RPC error or timeout cannot conclude the mint is absent on this cluster.
+    Failed,
+}
 
 pub struct ConfigValidator {}
 
@@ -88,6 +96,129 @@ impl ConfigValidator {
                     token_str
                 ));
             }
+        }
+    }
+
+    pub async fn check_cross_cluster_mints(
+        rpc_client: &RpcClient,
+        tokens: &[String],
+        endpoints: &[String],
+        warnings: &mut Vec<String>,
+    ) {
+        let pubkeys: Vec<(String, Pubkey)> = tokens
+            .iter()
+            .filter_map(|t| Pubkey::from_str(t).ok().map(|pk| (t.clone(), pk)))
+            .collect();
+
+        if pubkeys.is_empty() {
+            return;
+        }
+
+        let pks: Vec<Pubkey> = pubkeys.iter().map(|(_, pk)| *pk).collect();
+        let accounts = match rpc_client.get_multiple_accounts(&pks).await {
+            Ok(a) => a,
+            Err(_) => {
+                warnings.push(
+                    "cross-cluster check skipped (could not reach connected cluster)".to_string(),
+                );
+                return;
+            }
+        };
+
+        let missing: Vec<String> = pubkeys
+            .iter()
+            .zip(accounts.iter())
+            .filter_map(|((addr, _), acct)| acct.is_none().then_some(addr.clone()))
+            .collect();
+
+        if missing.is_empty() {
+            return;
+        }
+
+        let probe_futures: Vec<_> = endpoints
+            .iter()
+            .map(|rpc_url| {
+                let missing = missing.clone();
+                let url = rpc_url.clone();
+                async move {
+                    let client = RpcClient::new(url.clone());
+                    let missing_pks: Vec<Pubkey> =
+                        missing.iter().filter_map(|addr| Pubkey::from_str(addr).ok()).collect();
+
+                    let result = tokio::time::timeout(
+                        std::time::Duration::from_secs(CROSS_CLUSTER_TIMEOUT_SECS),
+                        client.get_multiple_accounts(&missing_pks),
+                    )
+                    .await;
+
+                    match result {
+                        Ok(Ok(accounts)) => {
+                            let found: Vec<String> = missing
+                                .iter()
+                                .zip(accounts.iter())
+                                .filter_map(|(addr, acct)| acct.is_some().then_some(addr.clone()))
+                                .collect();
+                            if found.is_empty() {
+                                (url, ProbeOutcome::NotFound)
+                            } else {
+                                (url, ProbeOutcome::Found(found))
+                            }
+                        }
+                        Ok(Err(_)) => (url, ProbeOutcome::Failed),
+                        Err(_) => (url, ProbeOutcome::Failed),
+                    }
+                }
+            })
+            .collect();
+
+        let probe_results = futures::future::join_all(probe_futures).await;
+        Self::emit_cluster_warnings(&missing, &probe_results, warnings);
+    }
+
+    fn emit_cluster_warnings(
+        missing: &[String],
+        probe_results: &[(String, ProbeOutcome)],
+        warnings: &mut Vec<String>,
+    ) {
+        for mint_addr in missing {
+            let found_on: Vec<&str> = probe_results
+                .iter()
+                .filter_map(|(cluster_name, outcome)| match outcome {
+                    ProbeOutcome::Found(mints) if mints.contains(mint_addr) => {
+                        Some(cluster_name.as_str())
+                    }
+                    _ => None,
+                })
+                .collect();
+
+            let conclusive: Vec<&str> = probe_results
+                .iter()
+                .filter_map(|(name, outcome)| match outcome {
+                    ProbeOutcome::Found(_) | ProbeOutcome::NotFound => Some(name.as_str()),
+                    ProbeOutcome::Failed => None,
+                })
+                .collect();
+
+            let warning = if !found_on.is_empty() {
+                format!(
+                    "mint {} not found on the connected cluster\n  found on: {}\n  possible cluster mismatch",
+                    mint_addr,
+                    found_on.join(", ")
+                )
+            } else if conclusive.is_empty() {
+                format!(
+                    "mint {} not found on the connected cluster\n  cross-cluster check inconclusive (all probes failed or timed out)",
+                    mint_addr,
+                )
+            } else {
+                format!(
+                    "mint {} not found on the connected cluster or on: {}",
+                    mint_addr,
+                    conclusive.join(", ")
+                )
+            };
+
+            warnings.push(warning);
         }
     }
 
@@ -817,6 +948,25 @@ impl ConfigValidator {
             }
         }
 
+        if config.validation.cross_cluster_check {
+            let mut all_tokens: Vec<String> = config
+                .validation
+                .allowed_tokens
+                .iter()
+                .chain(config.validation.allowed_spl_paid_tokens.iter())
+                .cloned()
+                .collect();
+            all_tokens.sort_unstable();
+            all_tokens.dedup();
+            Self::check_cross_cluster_mints(
+                rpc_client,
+                &all_tokens,
+                &config.validation.cross_cluster_endpoints,
+                &mut warnings,
+            )
+            .await;
+        }
+
         // Validate signers configuration if provided
         if let Some(path) = signers_config_path {
             match SignerPoolConfig::load_config(path.as_ref()) {
@@ -959,6 +1109,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1004,6 +1156,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1051,6 +1205,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1098,6 +1254,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1134,6 +1292,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig {
                 rate_limit: 0, // Should warn
@@ -1302,6 +1462,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1341,6 +1503,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1377,6 +1541,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -1493,6 +1659,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1540,6 +1708,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1584,6 +1754,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1637,6 +1809,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1675,6 +1849,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1718,6 +1894,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1759,6 +1937,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1793,6 +1973,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1816,6 +1998,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1882,6 +2066,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1917,6 +2103,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1952,6 +2140,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -1993,6 +2183,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -2030,6 +2222,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -2071,6 +2265,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -2257,6 +2453,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             metrics: MetricsConfig::default(),
             kora: KoraConfig::default(),
@@ -2575,6 +2773,8 @@ mod tests {
                 allow_durable_transactions: true, // Enabled - should warn
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -2615,6 +2815,8 @@ mod tests {
                 allow_durable_transactions: false, // Disabled - should not warn
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -2656,6 +2858,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig::default(),
             metrics: MetricsConfig::default(),
@@ -2696,6 +2900,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig {
                 lighthouse: LighthouseConfig {
@@ -2744,6 +2950,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig {
                 lighthouse: LighthouseConfig {
@@ -2792,6 +3000,8 @@ mod tests {
                 allow_durable_transactions: false,
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig {
                 lighthouse: LighthouseConfig {
@@ -2910,5 +3120,67 @@ mod tests {
         assert_eq!(warnings.len(), 2);
         assert!(warnings.iter().any(|w| w.contains("Vote Program")));
         assert!(warnings.iter().any(|w| w.contains(&custom)));
+    }
+
+    #[test]
+    fn test_missing_mint_triggers_warning() {
+        let mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string();
+        let probe_results: Vec<(String, ProbeOutcome)> = vec![
+            ("devnet".into(), ProbeOutcome::NotFound),
+            ("testnet".into(), ProbeOutcome::Failed),
+        ];
+        let mut warnings = Vec::new();
+        ConfigValidator::emit_cluster_warnings(&[mint.clone()], &probe_results, &mut warnings);
+
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0].contains(&mint)
+                && warnings[0].contains("not found on the connected cluster or on:"),
+            "unexpected warning: {}",
+            warnings[0]
+        );
+    }
+
+    #[test]
+    fn test_all_probes_failed() {
+        let mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string();
+        let probe_results: Vec<(String, ProbeOutcome)> =
+            vec![("devnet".into(), ProbeOutcome::Failed), ("testnet".into(), ProbeOutcome::Failed)];
+        let mut warnings = Vec::new();
+        ConfigValidator::emit_cluster_warnings(&[mint.clone()], &probe_results, &mut warnings);
+
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0].contains(&mint) && warnings[0].contains("cross-cluster check inconclusive"),
+            "unexpected warning: {}",
+            warnings[0]
+        );
+    }
+
+    #[test]
+    fn test_existing_mint_no_warning() {
+        let probe_results: Vec<(String, ProbeOutcome)> = vec![];
+        let mut warnings = Vec::new();
+        ConfigValidator::emit_cluster_warnings(&[], &probe_results, &mut warnings);
+
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_mint_found_on_other_cluster_warning() {
+        let mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string();
+        let probe_results: Vec<(String, ProbeOutcome)> = vec![
+            ("devnet".into(), ProbeOutcome::Found(vec![mint.clone()])),
+            ("testnet".into(), ProbeOutcome::NotFound),
+        ];
+        let mut warnings = Vec::new();
+        ConfigValidator::emit_cluster_warnings(&[mint.clone()], &probe_results, &mut warnings);
+
+        assert_eq!(warnings.len(), 1);
+        let w = &warnings[0];
+        assert!(w.contains(&mint), "mint address missing from warning");
+        assert!(w.contains("found on:"), "expected 'found on:' in warning");
+        assert!(w.contains("devnet"), "expected cluster name in warning");
+        assert!(w.contains("possible cluster mismatch"), "expected mismatch note");
     }
 }
