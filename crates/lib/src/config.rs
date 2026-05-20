@@ -565,12 +565,8 @@ pub struct CacheConfig {
     /// TTL for account data cache in seconds
     pub account_ttl: u64,
     /// TTL for token price data cache in seconds
-    #[serde(default = "default_price_ttl")]
+    #[serde(default)]
     pub price_ttl: u64,
-}
-
-fn default_price_ttl() -> u64 {
-    DEFAULT_CACHE_PRICE_TTL
 }
 
 impl Default for CacheConfig {

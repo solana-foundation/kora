@@ -421,9 +421,10 @@ impl TokenUtil {
         let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
 
         // Get token price in SOL directly (cached when Redis is enabled).
-        let token_price = CacheUtil::get_or_fetch_token_price(config, &mint.to_string())
-            .await
-            .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {e}")))?;
+        let token_price =
+            CacheUtil::get_or_fetch_token_price(rpc_client, config, &mint.to_string())
+                .await
+                .map_err(|e| KoraError::RpcError(format!("Failed to fetch token price: {e}")))?;
 
         Self::check_price_staleness(rpc_client, config, &token_price, "", None).await?;
 
@@ -560,7 +561,8 @@ impl TokenUtil {
         let mint_addresses: Vec<String> =
             mint_to_transfers.keys().map(|mint| mint.to_string()).collect();
 
-        let prices = CacheUtil::get_or_fetch_token_prices(config, &mint_addresses).await?;
+        let prices =
+            CacheUtil::get_or_fetch_token_prices(rpc_client, config, &mint_addresses).await?;
 
         let current_slot = if config.validation.max_price_staleness_slots > 0 {
             Some(

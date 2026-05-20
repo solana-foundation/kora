@@ -368,8 +368,12 @@ impl CacheUtil {
         Ok(())
     }
 
-    fn get_price_key(mint_address: &str) -> String {
-        format!("{PRICE_CACHE_KEY_PREFIX}:{mint_address}")
+    /// Cache key for a token price. Includes the `PriceSource` so entries
+    /// written by one oracle (e.g. Mock) are not served when the node is
+    /// reconfigured to a different source (e.g. Jupiter) against the same
+    /// Redis instance.
+    fn get_price_key(mint_address: &str, source: &PriceSource) -> String {
+        format!("{PRICE_CACHE_KEY_PREFIX}:{}:{mint_address}", source.as_cache_key())
     }
 
     /// Return the process-wide `RetryingPriceOracle`, building it on first use.
@@ -414,13 +418,21 @@ impl CacheUtil {
 
     /// Read cached prices for the given mints from Redis. Mints with no entry
     /// (or whose entry fails to deserialize) are returned in `misses`.
+    ///
+    /// When `min_fresh_block_id` is `Some`, any cached price with a `block_id`
+    /// at or below that slot is treated as a miss so the caller refetches a
+    /// fresh price instead of letting downstream staleness validation reject
+    /// the request.
     async fn get_prices_from_cache(
         pool: &Pool,
+        source: &PriceSource,
         mint_addresses: &[String],
+        min_fresh_block_id: Option<u64>,
     ) -> Result<(HashMap<String, TokenPrice>, Vec<String>), KoraError> {
         let mut conn = Self::get_connection(pool).await?;
 
-        let keys: Vec<String> = mint_addresses.iter().map(|m| Self::get_price_key(m)).collect();
+        let keys: Vec<String> =
+            mint_addresses.iter().map(|m| Self::get_price_key(m, source)).collect();
 
         // MGET returns Vec<Option<String>> aligned with the input keys.
         let raw: Vec<Option<String>> = conn.mget(&keys).await.map_err(|e| {
@@ -436,7 +448,11 @@ impl CacheUtil {
         for (mint, value) in mint_addresses.iter().zip(raw) {
             match value.as_deref().map(serde_json::from_str::<TokenPrice>) {
                 Some(Ok(price)) => {
-                    hits.insert(mint.clone(), price);
+                    if Self::is_cached_price_stale(&price, min_fresh_block_id) {
+                        misses.push(mint.clone());
+                    } else {
+                        hits.insert(mint.clone(), price);
+                    }
                 }
                 Some(Err(e)) => {
                     log::warn!("Failed to deserialize cached price for {mint}: {e}");
@@ -452,6 +468,7 @@ impl CacheUtil {
     /// Write fetched prices back to Redis with `price_ttl`.
     async fn set_prices_in_cache(
         pool: &Pool,
+        source: &PriceSource,
         prices: &HashMap<String, TokenPrice>,
         ttl: u64,
     ) -> Result<(), KoraError> {
@@ -466,14 +483,11 @@ impl CacheUtil {
             let serialized = match serde_json::to_string(price) {
                 Ok(s) => s,
                 Err(e) => {
-                    log::warn!(
-                        "Failed to serialize price for {mint}: {}",
-                        sanitize_error!(e)
-                    );
+                    log::warn!("Failed to serialize price for {mint}: {}", sanitize_error!(e));
                     continue;
                 }
             };
-            let key = Self::get_price_key(mint);
+            let key = Self::get_price_key(mint, source);
             pipe.set_ex(&key, serialized, ttl);
         }
 
@@ -484,6 +498,37 @@ impl CacheUtil {
         Ok(())
     }
 
+    /// Returns `true` if a cached price's `block_id` is at or below the
+    /// minimum-fresh slot, meaning the cached value would fail downstream
+    /// staleness validation and should be refetched. Cached prices missing a
+    /// `block_id` are treated as fresh here; the validation layer enforces
+    /// the missing-block_id case.
+    fn is_cached_price_stale(price: &TokenPrice, min_fresh_block_id: Option<u64>) -> bool {
+        match (min_fresh_block_id, price.block_id) {
+            (Some(threshold), Some(block_id)) => block_id <= threshold,
+            _ => false,
+        }
+    }
+
+    /// Compute the minimum `block_id` a cached price must have to be considered
+    /// fresh. Returns `None` when staleness validation is disabled
+    /// (`max_price_staleness_slots == 0`), so the cache layer doesn't pay for
+    /// an extra `get_slot` RPC.
+    async fn min_fresh_price_block_id(
+        rpc_client: &RpcClient,
+        config: &Config,
+    ) -> Result<Option<u64>, KoraError> {
+        let max_staleness = config.validation.max_price_staleness_slots;
+        if max_staleness == 0 {
+            return Ok(None);
+        }
+        let current_slot = rpc_client
+            .get_slot()
+            .await
+            .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?;
+        Ok(Some(current_slot.saturating_sub(max_staleness)))
+    }
+
     /// Get token prices for the given mints, using Redis cache when available.
     ///
     /// On cache miss, fetches only the missing mints from the configured price
@@ -491,7 +536,13 @@ impl CacheUtil {
     /// Falls back to a direct oracle call when caching is disabled or unreachable.
     /// Setting `price_ttl = 0` disables price caching independently of the
     /// global cache switch (so account caching can stay on).
+    ///
+    /// When `validation.max_price_staleness_slots > 0`, cached prices whose
+    /// `block_id` is older than the threshold are treated as misses and
+    /// refetched, so a stale-but-cached price is replaced transparently
+    /// instead of being served to the staleness validator only to be rejected.
     pub async fn get_or_fetch_token_prices(
+        rpc_client: &RpcClient,
         config: &Config,
         mint_addresses: &[String],
     ) -> Result<HashMap<String, TokenPrice>, KoraError> {
@@ -518,23 +569,30 @@ impl CacheUtil {
             }
         };
 
+        let min_fresh_block_id = Self::min_fresh_price_block_id(rpc_client, config).await?;
+        let source = &config.validation.price_source;
+
         // Try cache first; on errors, fall through to a full live fetch.
-        let (mut hits, misses) = match Self::get_prices_from_cache(pool, mint_addresses).await {
-            Ok(result) => result,
-            Err(e) => {
-                log::warn!("Failed to read prices from cache, falling back to oracle: {e}");
-                return Self::get_price_oracle_singleton(config)
-                    .await?
-                    .get_token_prices(mint_addresses)
-                    .await;
-            }
-        };
+        let (mut hits, misses) =
+            match Self::get_prices_from_cache(pool, source, mint_addresses, min_fresh_block_id)
+                .await
+            {
+                Ok(result) => result,
+                Err(e) => {
+                    log::warn!("Failed to read prices from cache, falling back to oracle: {e}");
+                    return Self::get_price_oracle_singleton(config)
+                        .await?
+                        .get_token_prices(mint_addresses)
+                        .await;
+                }
+            };
 
         if misses.is_empty() {
             return Ok(hits);
         }
 
-        let fetched = Self::fetch_misses_with_singleflight(config, pool, misses).await?;
+        let fetched =
+            Self::fetch_misses_with_singleflight(config, pool, misses, min_fresh_block_id).await?;
         hits.extend(fetched);
         Ok(hits)
     }
@@ -550,6 +608,7 @@ impl CacheUtil {
         config: &Config,
         pool: &Pool,
         misses: Vec<String>,
+        min_fresh_block_id: Option<u64>,
     ) -> Result<HashMap<String, TokenPrice>, KoraError> {
         let mut sorted_misses = misses;
         sorted_misses.sort();
@@ -561,10 +620,14 @@ impl CacheUtil {
             guards.push(lock.lock_owned().await);
         }
 
+        let source = &config.validation.price_source;
+
         // Re-read the cache while holding the locks: prior leaders may have
         // populated some keys while we waited.
         let (mut hits, still_missing) =
-            match Self::get_prices_from_cache(pool, &sorted_misses).await {
+            match Self::get_prices_from_cache(pool, source, &sorted_misses, min_fresh_block_id)
+                .await
+            {
                 Ok(result) => result,
                 Err(e) => {
                     log::warn!("Failed to re-read prices from cache after lock acquisition: {e}");
@@ -576,7 +639,7 @@ impl CacheUtil {
             let oracle = Self::get_price_oracle_singleton(config).await?;
             let fetched = oracle.get_token_prices(&still_missing).await?;
             if let Err(e) =
-                Self::set_prices_in_cache(pool, &fetched, config.kora.cache.price_ttl).await
+                Self::set_prices_in_cache(pool, source, &fetched, config.kora.cache.price_ttl).await
             {
                 log::warn!("Failed to cache fetched prices: {e}");
             }
@@ -589,10 +652,13 @@ impl CacheUtil {
 
     /// Get a single token price, using Redis cache when available.
     pub async fn get_or_fetch_token_price(
+        rpc_client: &RpcClient,
         config: &Config,
         mint_address: &str,
     ) -> Result<TokenPrice, KoraError> {
-        let prices = Self::get_or_fetch_token_prices(config, &[mint_address.to_string()]).await?;
+        let prices =
+            Self::get_or_fetch_token_prices(rpc_client, config, &[mint_address.to_string()])
+                .await?;
 
         prices.get(mint_address).cloned().ok_or_else(|| {
             KoraError::InternalServerError(format!(
@@ -652,16 +718,20 @@ mod tests {
     #[tokio::test]
     async fn test_get_price_key_format() {
         let mint = Pubkey::new_unique().to_string();
-        let key = CacheUtil::get_price_key(&mint);
-        assert_eq!(key, format!("kora:price:{mint}"));
+        let jupiter_key = CacheUtil::get_price_key(&mint, &PriceSource::Jupiter);
+        let mock_key = CacheUtil::get_price_key(&mint, &PriceSource::Mock);
+        assert_eq!(jupiter_key, format!("kora:price:jupiter:{mint}"));
+        assert_eq!(mock_key, format!("kora:price:mock:{mint}"));
+        assert_ne!(jupiter_key, mock_key);
     }
 
     #[tokio::test]
     async fn test_get_or_fetch_token_prices_empty_returns_empty() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let config = get_config().unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
 
-        let prices = CacheUtil::get_or_fetch_token_prices(&config, &[]).await.unwrap();
+        let prices = CacheUtil::get_or_fetch_token_prices(&rpc_client, &config, &[]).await.unwrap();
         assert!(prices.is_empty());
     }
 
@@ -669,11 +739,13 @@ mod tests {
     async fn test_get_or_fetch_token_prices_cache_disabled_falls_back_to_oracle() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let config = get_config().unwrap();
+        let rpc_client = RpcMockBuilder::new().build();
 
         let mint = Pubkey::new_unique().to_string();
-        let prices = CacheUtil::get_or_fetch_token_prices(&config, std::slice::from_ref(&mint))
-            .await
-            .unwrap();
+        let prices =
+            CacheUtil::get_or_fetch_token_prices(&rpc_client, &config, std::slice::from_ref(&mint))
+                .await
+                .unwrap();
 
         // Mock oracle (default in ConfigMockBuilder) always returns a price for any mint.
         assert!(prices.contains_key(&mint));
@@ -690,12 +762,14 @@ mod tests {
 
         let mut config = get_config().unwrap();
         config.kora.cache.price_ttl = 0;
+        let rpc_client = RpcMockBuilder::new().build();
 
         let mint = Pubkey::new_unique().to_string();
         // No real Redis is needed: the zero-ttl branch must short-circuit before any pool access.
-        let prices = CacheUtil::get_or_fetch_token_prices(&config, std::slice::from_ref(&mint))
-            .await
-            .unwrap();
+        let prices =
+            CacheUtil::get_or_fetch_token_prices(&rpc_client, &config, std::slice::from_ref(&mint))
+                .await
+                .unwrap();
 
         assert!(prices.contains_key(&mint));
     }
