@@ -251,6 +251,7 @@ impl UsageStore for ErrorUsageStore {
 mod tests {
     use super::*;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_in_memory_usage_store() {
         let store = InMemoryUsageStore::new();

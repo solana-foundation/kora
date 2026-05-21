@@ -1112,6 +1112,7 @@ mod tests_token {
         assert!(matches!(result.unwrap_err(), KoraError::ValidationError(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_mint_valid() {
         // Any valid mint account (valid owner and valid data) will count as valid here. (not related to allowed mint in Kora's config)
@@ -1126,6 +1127,7 @@ mod tests_token {
         assert_eq!(mint_data.decimals(), 9);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_mint_account_not_found() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1137,6 +1139,7 @@ mod tests_token {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_mint_decimals_valid() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1149,6 +1152,7 @@ mod tests_token {
         assert_eq!(result.unwrap(), 6);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_token_price_and_decimals_spl() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1163,6 +1167,7 @@ mod tests_token {
         assert_eq!(token_price.price, Decimal::from(1));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_token_price_and_decimals_token2022() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1177,6 +1182,7 @@ mod tests_token {
         assert_eq!(token_price.price, dec!(0.0075));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_token_price_and_decimals_account_not_found() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1210,6 +1216,7 @@ mod tests_token {
         assert!(err.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_sol() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1226,6 +1233,7 @@ mod tests_token {
         assert_eq!(result, 1_000_000_000); // Should equal input since SOL price is 1.0
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_usdc() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1243,6 +1251,7 @@ mod tests_token {
         assert_eq!(result, 7_500_000);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_zero_amount() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1259,6 +1268,7 @@ mod tests_token {
         assert_eq!(result, 0);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_token_value_in_lamports_small_amount() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1276,6 +1286,7 @@ mod tests_token {
         assert_eq!(result, 7);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_sol() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1292,6 +1303,7 @@ mod tests_token {
         assert_eq!(result, 1_000_000_000); // Should equal input since SOL price is 1.0
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_usdc() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1309,6 +1321,7 @@ mod tests_token {
         assert_eq!(result, 1_000_000);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_zero_lamports() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1325,6 +1338,7 @@ mod tests_token {
         assert_eq!(result, 0);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_price_functions_consistency() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1361,6 +1375,7 @@ mod tests_token {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_spl_transfers_value_in_lamports_ignores_inflows() {
         let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -1415,6 +1430,7 @@ mod tests_token {
         assert_eq!(spl_outflow_value, 750_000_000);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_spl_transfers_value_in_lamports_token2022_outflow_remains_gross() {
         let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -1450,6 +1466,7 @@ mod tests_token {
         assert_eq!(spl_outflow_value, 750_000_000);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_price_calculation_with_account_error() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1464,6 +1481,7 @@ mod tests_token {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_lamports_calculation_with_account_error() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1478,6 +1496,7 @@ mod tests_token {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_lamports_value_in_token_decimal_precision() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1522,6 +1541,7 @@ mod tests_token {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_token2022_extensions_for_payment_rpc_error() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1545,6 +1565,7 @@ mod tests_token {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_token2022_extensions_for_payment_allows_mutable_transfer_hook_authority()
     {
@@ -1584,6 +1605,7 @@ mod tests_token {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_token2022_extensions_for_payment_allows_immutable_transfer_hook_authority(
     ) {
@@ -1623,6 +1645,7 @@ mod tests_token {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_token2022_partial_for_ata_creation_allows_mutable_transfer_hook_authority(
     ) {
@@ -1655,6 +1678,7 @@ mod tests_token {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_token2022_extensions_for_payment_no_mint_provided() {
         let _lock = ConfigMockBuilder::new().build_and_setup();
@@ -1685,6 +1709,7 @@ mod tests_token {
         assert!(!error_msg.contains("Blocked account extension found on source account"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_payment_lamport_totals_validates_token2022_when_both_sides_match_expected_owner(
     ) {

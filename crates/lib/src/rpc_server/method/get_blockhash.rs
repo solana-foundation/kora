@@ -27,6 +27,7 @@ mod tests {
     use super::*;
     use crate::tests::{config_mock::ConfigMockBuilder, rpc_mock::RpcMockBuilder};
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_blockhash_success() {
         let _m = ConfigMockBuilder::new().build_and_setup();

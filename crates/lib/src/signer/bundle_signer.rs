@@ -137,6 +137,7 @@ mod tests {
         VersionedTransactionResolved::from_kora_built_transaction(&versioned).unwrap()
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_sign_transaction_for_bundle_success() {
@@ -162,6 +163,7 @@ mod tests {
         assert!(!resolved.transaction.signatures[0].to_string().is_empty());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_sign_transaction_for_bundle_invalid_fee_payer() {
@@ -187,6 +189,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_sign_transaction_for_bundle_rejects_unsigned_fee_payer_occurrence() {
@@ -211,6 +214,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_sign_transaction_for_bundle_signature_position() {
@@ -240,6 +244,7 @@ mod tests {
         assert_ne!(resolved.transaction.signatures[0], original_sig);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_sign_transaction_for_bundle_verifies_signature() {

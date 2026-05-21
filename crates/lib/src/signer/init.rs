@@ -40,6 +40,7 @@ mod tests {
     };
     use std::path::PathBuf;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_init_signers_skip_signer() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -56,6 +57,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_init_signers_no_config_no_skip() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -73,6 +75,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), KoraError::ValidationError(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_init_signers_with_invalid_config_path() {
         let _m = ConfigMockBuilder::new().build_and_setup();

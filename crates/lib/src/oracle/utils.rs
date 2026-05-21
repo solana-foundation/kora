@@ -58,6 +58,7 @@ mod tests {
     use super::*;
     use reqwest::Client;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_mock_oracle_prices() {
         let oracle = OracleUtil::get_mock_oracle_price();

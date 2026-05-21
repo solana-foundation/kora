@@ -258,6 +258,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_api_key_auth_valid_key() {
         let layer = ApiKeyAuthLayer::new("test-key".to_string());
@@ -273,6 +274,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_api_key_auth_invalid_key() {
         let layer = ApiKeyAuthLayer::new("test-key".to_string());
@@ -288,6 +290,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_api_key_auth_missing_header() {
         let layer = ApiKeyAuthLayer::new("test-key".to_string());
@@ -299,6 +302,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_api_key_auth_liveness_bypass() {
         let layer = ApiKeyAuthLayer::new("test-key".to_string());
@@ -314,6 +318,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_hmac_auth_valid_signature() {
         let secret = "test-secret";
@@ -345,6 +350,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_hmac_auth_invalid_signature() {
         let secret = "test-secret";
@@ -371,6 +377,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_hmac_auth_missing_headers() {
         let secret = "test-secret";
@@ -385,6 +392,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_hmac_auth_expired_timestamp() {
         let secret = "test-secret";
@@ -416,6 +424,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_hmac_auth_malformed_timestamp() {
         let secret = "test-secret";
@@ -436,6 +445,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_hmac_auth_liveness_bypass() {
         let secret = "test-secret";

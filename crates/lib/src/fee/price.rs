@@ -113,6 +113,7 @@ mod tests {
         config_mock::{mock_state::get_config, ConfigMockBuilder},
     };
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_margin_model_get_required_lamports() {
         // Test margin of 0.1 (10%)
@@ -127,6 +128,7 @@ mod tests {
         assert_eq!(result, expected_lamports);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_margin_model_get_required_lamports_zero_margin() {
         // Test margin of 0.0 (no margin)
@@ -140,6 +142,7 @@ mod tests {
         assert_eq!(result, min_transaction_fee);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_with_oracle() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -167,6 +170,7 @@ mod tests {
         assert_eq!(result, 7500000);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_with_custom_price() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -194,6 +198,7 @@ mod tests {
         assert_eq!(result, 500000000);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_fixed_model_get_required_lamports_small_amount() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -219,6 +224,7 @@ mod tests {
         assert_eq!(result, 7500);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_default_price_config() {
         // Test that default creates Margin with 0.0 margin

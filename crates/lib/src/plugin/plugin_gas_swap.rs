@@ -182,6 +182,7 @@ mod tests {
         (config, rpc_client)
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn gas_swap_accepts_valid_top_level_swap_shape() {
         let (config, rpc_client) = build_runner();
@@ -222,6 +223,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn gas_swap_rejects_non_swap_programs() {
         let (config, rpc_client) = build_runner();
@@ -265,6 +267,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn gas_swap_rejects_non_transfer_system_instruction() {
         let (config, rpc_client) = build_runner();
@@ -304,6 +307,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn gas_swap_rejects_sol_transfer_not_from_fee_payer() {
         let (config, rpc_client) = build_runner();
@@ -346,6 +350,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn gas_swap_rejects_when_no_token_transfer() {
         let (config, rpc_client) = build_runner();
@@ -374,6 +379,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn gas_swap_accepts_compute_budget_instructions() {
         let (config, rpc_client) = build_runner();
@@ -416,6 +422,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn gas_swap_rejects_extra_non_budget_instruction() {
         let (config, rpc_client) = build_runner();

@@ -113,6 +113,7 @@ mod tests {
         )
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_recaptcha_layer_bypasses_unprotected_method() {
         let config = test_recaptcha_config();
@@ -127,6 +128,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_recaptcha_layer_rejects_protected_method_missing_token() {
         let config = test_recaptcha_config();
@@ -141,6 +143,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_recaptcha_layer_rejects_sign_and_send_missing_token() {
         let config = test_recaptcha_config();
@@ -155,6 +158,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_recaptcha_layer_rejects_empty_token() {
         let config = test_recaptcha_config();

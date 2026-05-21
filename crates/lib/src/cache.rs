@@ -676,6 +676,7 @@ mod tests {
         config_mock::ConfigMockBuilder,
     };
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_is_cache_enabled_disabled() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -684,6 +685,7 @@ mod tests {
         assert!(!CacheUtil::is_cache_enabled(&config));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_is_cache_enabled_no_url() {
         let _m = ConfigMockBuilder::new()
@@ -696,6 +698,7 @@ mod tests {
         assert!(!CacheUtil::is_cache_enabled(&config));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_is_cache_enabled_with_url() {
         let _m = ConfigMockBuilder::new()
@@ -708,6 +711,7 @@ mod tests {
         assert!(CacheUtil::is_cache_enabled(&config));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_account_key_format() {
         let pubkey = Pubkey::new_unique();
@@ -715,6 +719,7 @@ mod tests {
         assert_eq!(key, format!("account:{pubkey}"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_price_key_format() {
         let mint = Pubkey::new_unique().to_string();
@@ -789,6 +794,7 @@ mod tests {
         assert_eq!(account.owner, expected_account.owner);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_account_from_rpc_error() {
         let pubkey = Pubkey::new_unique();
@@ -805,6 +811,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_account_cache_disabled_fallback_to_rpc() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -822,6 +829,7 @@ mod tests {
         assert_eq!(account.lamports, expected_account.lamports);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_account_force_refresh_bypasses_cache() {
         let _m = ConfigMockBuilder::new()
@@ -842,6 +850,7 @@ mod tests {
         assert_eq!(account.lamports, expected_account.lamports);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_or_fetch_blockhash_cache_disabled() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -856,6 +865,7 @@ mod tests {
         assert_ne!(hash, Hash::default(), "Blockhash should not be the default hash");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_fetch_blockhash_from_rpc_success() {
         let rpc_client = RpcMockBuilder::new().with_blockhash().build();

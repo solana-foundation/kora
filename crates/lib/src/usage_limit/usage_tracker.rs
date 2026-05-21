@@ -516,6 +516,7 @@ mod tests {
         UsageTracker::new(true, store, rules, HashSet::new(), false)
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_usage_limit_enforcement() {
         let tracker = create_test_tracker(2);
@@ -564,6 +565,7 @@ mod tests {
         ));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_independent_user_limits() {
         let tracker = create_test_tracker(2);
@@ -642,6 +644,7 @@ mod tests {
         ));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_unlimited_usage() {
         let store = Arc::new(InMemoryUsageStore::new());
@@ -672,6 +675,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_multiple_rules() {
         let store: Arc<dyn UsageStore> = Arc::new(InMemoryUsageStore::new());
@@ -733,6 +737,7 @@ mod tests {
         ));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_usage_limiter_disabled_fallback() {
         // Test that when usage limiting is disabled, transactions are allowed
@@ -760,6 +765,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_usage_limiter_fallback_allowed() {
         let _m = ConfigMockBuilder::new()
@@ -786,6 +792,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_usage_limiter_fallback_denied() {
         let _m = ConfigMockBuilder::new()
@@ -877,6 +884,7 @@ mod tests {
         VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap()
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_extract_user_unsigned_owner_returns_none() {
         let store = Arc::new(InMemoryUsageStore::new());
@@ -911,6 +919,7 @@ mod tests {
         assert_eq!(result, None);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_extract_user_signed_owner_returns_owner() {
         let store = Arc::new(InMemoryUsageStore::new());
@@ -945,6 +954,7 @@ mod tests {
         assert_eq!(result, Some(owner.pubkey()));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_extract_user_multisig_owner_returns_owner_when_threshold_is_met() {
         let store = Arc::new(InMemoryUsageStore::new());
@@ -987,6 +997,7 @@ mod tests {
         assert_eq!(result, Some(multisig_owner));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_extract_user_multisig_owner_returns_none_when_threshold_is_not_met() {
         let store = Arc::new(InMemoryUsageStore::new());

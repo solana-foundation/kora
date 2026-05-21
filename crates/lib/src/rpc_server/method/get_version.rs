@@ -15,6 +15,7 @@ pub async fn get_version() -> Result<GetVersionResponse, KoraError> {
 mod tests {
     use super::*;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_version_success() {
         let result = get_version().await;

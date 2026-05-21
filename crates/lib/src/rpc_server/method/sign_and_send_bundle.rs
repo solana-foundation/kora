@@ -165,6 +165,7 @@ mod tests {
     use solana_sdk::pubkey::Pubkey;
     use solana_system_interface::instruction::transfer;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_bundle_empty_bundle() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
@@ -187,6 +188,7 @@ mod tests {
         assert!(matches!(err, KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_bundle_disabled() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(false).build_and_setup();
@@ -212,6 +214,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_bundle_too_large() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
@@ -237,6 +240,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_bundle_invalid_signer_key() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
@@ -259,6 +263,7 @@ mod tests {
         assert!(matches!(err, KoraError::ValidationError(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_bundle_sends_full_bundle_when_sign_only_indices_set() {
         let mut server = Server::new_async().await;
@@ -351,6 +356,7 @@ mod tests {
         assert_eq!(response.signed_transactions.len(), 3);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_bundle_rejects_sequential_outflow_violation() {
         let mut server = Server::new_async().await;
@@ -419,6 +425,7 @@ mod tests {
         assert!(err.contains("exceeds maximum allowed"), "Unexpected error: {err}");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_bundle_request_deserialization() {
         let json = r#"{
@@ -436,6 +443,7 @@ mod tests {
         assert!(request.sign_only_indices.is_none());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_bundle_request_deserialization_with_sign_only_indices() {
         let json = r#"{
@@ -452,6 +460,7 @@ mod tests {
         assert_eq!(request.sign_only_indices, Some(vec![1, 2]));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_bundle_sig_verify_default() {
         // sig_verify defaults to false
@@ -478,6 +487,7 @@ mod tests {
         assert!(json.contains("bundle-uuid-12345"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_bundle_rejects_outflow_violation_before_signing_when_sig_verify_false(
     ) {

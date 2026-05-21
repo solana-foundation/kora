@@ -179,6 +179,7 @@ mod tests {
     use serial_test::serial;
     use std::str::FromStr;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[allow(deprecated)]
     async fn test_transfer_transaction_invalid_source() {
@@ -208,6 +209,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[allow(deprecated)]
     async fn test_transfer_transaction_invalid_destination() {
@@ -236,6 +238,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[allow(deprecated)]
     async fn test_transfer_transaction_invalid_token() {
@@ -264,6 +267,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[allow(deprecated)]
     async fn test_transfer_transaction_account_not_found_preserved() {
@@ -281,6 +285,7 @@ mod tests {
         assert!(matches!(mapped_error.unwrap_err(), KoraError::AccountNotFound(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[allow(deprecated)]
     async fn test_transfer_transaction_rpc_error_preserved() {
@@ -302,6 +307,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     #[allow(deprecated)]

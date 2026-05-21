@@ -46,6 +46,7 @@ mod tests {
     };
     use serial_test::serial;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_get_config_success() {

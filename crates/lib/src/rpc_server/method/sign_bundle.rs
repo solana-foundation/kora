@@ -153,6 +153,7 @@ mod tests {
     use solana_sdk::pubkey::Pubkey;
     use solana_system_interface::instruction::transfer;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_empty_bundle() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
@@ -175,6 +176,7 @@ mod tests {
         assert!(matches!(err, KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_disabled() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(false).build_and_setup();
@@ -200,6 +202,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_too_large() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
@@ -225,6 +228,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_invalid_signer_key() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
@@ -247,6 +251,7 @@ mod tests {
         assert!(matches!(err, KoraError::ValidationError(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_exactly_max_size() {
         let mut validation = ValidationConfigBuilder::new()
@@ -297,6 +302,7 @@ mod tests {
         assert!(!response.signer_pubkey.is_empty());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_single_transaction() {
         let mut validation = ValidationConfigBuilder::new()
@@ -342,6 +348,7 @@ mod tests {
         assert!(!response.signer_pubkey.is_empty());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_sig_verify_default() {
         // Test that sig_verify defaults correctly via serde (defaults to false)
@@ -352,6 +359,7 @@ mod tests {
         assert!(request.signer_key.is_none());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_request_deserialization() {
         let json = r#"{
@@ -369,6 +377,7 @@ mod tests {
         assert!(request.sign_only_indices.is_none());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_request_deserialization_with_sign_only_indices() {
         let json = r#"{
@@ -385,6 +394,7 @@ mod tests {
         assert_eq!(request.sign_only_indices, Some(vec![0, 2]));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_rejects_sequential_outflow_violation() {
         let mut server = Server::new_async().await;
@@ -453,6 +463,7 @@ mod tests {
         assert!(err.contains("exceeds maximum allowed"), "Unexpected error: {err}");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_bundle_rejects_outflow_violation_before_signing_when_sig_verify_false() {
         // When sig_verify = false (default), simulation runs BEFORE signing.

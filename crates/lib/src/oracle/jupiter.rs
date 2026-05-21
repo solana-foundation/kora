@@ -242,6 +242,7 @@ mod tests {
         assert!(matches!(result.err(), Some(KoraError::ConfigError(_))));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_jupiter_price_fetch_with_api_key() {
@@ -286,6 +287,7 @@ mod tests {
         assert_eq!(price.source, PriceSource::Jupiter);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_jupiter_missing_price_data_returns_error() {
@@ -328,6 +330,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_jupiter_rate_limit_429() {
@@ -355,6 +358,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.err(), Some(KoraError::RateLimitExceeded));
     }
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_jupiter_price_exceeds_max_bounds() {
@@ -401,6 +405,7 @@ mod tests {
             matches!(result.err(), Some(KoraError::RpcError(msg)) if msg.contains("exceeds reasonable bounds"))
         );
     }
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_jupiter_price_below_min_bounds() {

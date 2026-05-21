@@ -439,6 +439,7 @@ mod tests {
         assert!(programs.contains(&Pubkey::from_str(token_program).unwrap()));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_simulation_policy_rejects_disallowed_program() {
         let fee_payer = Pubkey::new_unique();
@@ -476,6 +477,7 @@ mod tests {
         assert!(err.contains("disallowed"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_simulation_policy_wildcard_accepts_arbitrary_program() {
         let fee_payer = Pubkey::new_unique();
@@ -577,6 +579,7 @@ mod tests {
         assert!(err.contains("exceeds maximum allowed"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_simulation_policy_accepts_outflow_within_limit() {
         let fee_payer = Pubkey::new_unique();
@@ -609,6 +612,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_simulation_policy_requires_per_tx_results() {
         let fee_payer = Pubkey::new_unique();

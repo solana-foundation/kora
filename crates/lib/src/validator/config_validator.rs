@@ -1104,6 +1104,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_config() {
@@ -1145,6 +1146,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), KoraError::InternalServerError(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_successful_config() {
@@ -1192,6 +1194,7 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_warns_for_unblocked_permanent_delegate_when_token2022_enabled(
@@ -1238,6 +1241,7 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_no_permanent_delegate_warning_when_blocked() {
@@ -1287,6 +1291,7 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_warnings() {
@@ -1360,6 +1365,7 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_duplicate_plugins_warn() {
@@ -1378,6 +1384,7 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("Duplicate transaction plugin configured")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_gas_swap_plugin_requires_system_program() {
@@ -1398,6 +1405,7 @@ mod tests {
             .any(|e| e.contains("GasSwap plugin requires System Program")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_gas_swap_plugin_requires_token_program() {
@@ -1418,6 +1426,7 @@ mod tests {
             .any(|e| e.contains("GasSwap plugin requires at least one token program")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_gas_swap_plugin_requires_allowed_tokens() {
@@ -1437,6 +1446,7 @@ mod tests {
             .any(|e| e.contains("GasSwap plugin requires at least one token in allowed_tokens")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_gas_swap_plugin_rejects_free_pricing() {
@@ -1456,6 +1466,7 @@ mod tests {
             .any(|e| e.contains("GasSwap plugin cannot be used with Free pricing")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_empty_allowed_tokens_ok_when_free() {
@@ -1496,6 +1507,7 @@ mod tests {
         assert!(!warnings.iter().any(|w| w.contains("No allowed tokens configured")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_empty_allowed_tokens_errors_when_fees_required() {
@@ -1537,6 +1549,7 @@ mod tests {
         assert!(errors.iter().any(|e| e.contains("No allowed tokens configured")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_missing_system_program_warning() {
@@ -1580,6 +1593,7 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("Missing Token Program in allowed programs")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_invalid_must_call_program_pubkey() {
@@ -1599,6 +1613,7 @@ mod tests {
             .any(|e| e.contains("Invalid base58 pubkey format in require_one_of_programs")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_must_call_program_not_in_allowed_programs() {
@@ -1620,6 +1635,7 @@ mod tests {
         }));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_require_one_of_programs_allows_compute_budget_program() {
@@ -1640,6 +1656,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_valid_require_one_of_programs() {
@@ -1654,6 +1671,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_errors() {
@@ -1699,6 +1717,7 @@ mod tests {
         assert!(errors.iter().any(|e| e.contains("Margin cannot be negative")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_fixed_price_errors() {
@@ -1745,6 +1764,7 @@ mod tests {
         assert!(errors.iter().any(|e| e.contains("Invalid token address for fixed price")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_fixed_price_not_in_allowed_tokens() {
@@ -1796,6 +1816,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_fixed_price_zero_amount_warning() {
@@ -1848,6 +1869,7 @@ mod tests {
             .any(|w| w.contains("Fixed price amount is 0 - transactions will be free")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_fee_validation_errors() {
@@ -1889,6 +1911,7 @@ mod tests {
             .any(|e| e.contains("When fees are enabled, allowed_spl_paid_tokens cannot be empty")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_fee_and_any_spl_token_allowed() {
@@ -1931,6 +1954,7 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("volatility risk")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_paid_tokens_not_in_allowed_tokens() {
@@ -2023,6 +2047,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_rpc_validation_valid_program() {
@@ -2045,6 +2070,7 @@ mod tests {
         assert!(!errors.iter().any(|e| e.contains("Program") && e.contains("validation failed")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_rpc_validation_valid_token_mint() {
@@ -2065,6 +2091,7 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_rpc_validation_non_executable_program_fails() {
@@ -2102,6 +2129,7 @@ mod tests {
         assert!(errors.iter().any(|e| e.contains("Program") && e.contains("validation failed")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_rpc_validation_account_not_found_fails() {
@@ -2138,6 +2166,7 @@ mod tests {
         assert!(errors.len() >= 2, "Should have validation errors for programs and tokens");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_skip_rpc_validation() {
@@ -2174,6 +2203,7 @@ mod tests {
         assert!(result.is_ok()); // Should pass because RPC validation is skipped
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_valid_token2022_extensions() {
@@ -2217,6 +2247,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_invalid_token2022_mint_extension() {
@@ -2259,6 +2290,7 @@ mod tests {
             && e.contains("Invalid mint extension name: 'invalid_mint_extension'")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_invalid_token2022_account_extension() {
@@ -2374,6 +2406,7 @@ mod tests {
             .any(|w| w.contains("transfer_hook_policy is 'deny_mutable_for_delayed_signing'")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_with_result_fee_payer_policy_warnings() {
@@ -2665,6 +2698,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_check_token_mint_extensions_permanent_delegate() {
@@ -2691,6 +2725,7 @@ mod tests {
         assert!(warnings[0].contains("permanent delegate can transfer or burn tokens"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_check_token_mint_extensions_transfer_hook() {
@@ -2717,6 +2752,7 @@ mod tests {
         assert!(warnings[0].contains("custom program executes on every transfer"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_check_token_mint_extensions_both() {
@@ -2744,6 +2780,7 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("TransferHook extension")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_check_token_mint_extensions_no_risky_extensions() {
@@ -2766,6 +2803,7 @@ mod tests {
         assert_eq!(warnings.len(), 0);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_durable_transactions_warning_when_enabled() {
@@ -2808,6 +2846,7 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("hold signed transactions indefinitely")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_durable_transactions_no_warning_when_disabled() {
@@ -2849,6 +2888,7 @@ mod tests {
         assert!(!warnings.iter().any(|w| w.contains("allow_durable_transactions")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_jupiter_price_source_requires_api_key() {
@@ -2894,6 +2934,7 @@ mod tests {
         assert!(errors.iter().any(|e| e.contains("price_source = Jupiter")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_lighthouse_enabled_not_in_allowed_programs_error() {
@@ -2943,6 +2984,7 @@ mod tests {
                 && e.contains("is not in allowed_programs")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_lighthouse_enabled_in_disallowed_accounts_error() {
@@ -2993,6 +3035,7 @@ mod tests {
                 && e.contains("is in disallowed_accounts")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_lighthouse_disabled_no_validation() {
@@ -3041,6 +3084,7 @@ mod tests {
         assert!(!warnings.iter().any(|w| w.contains("Lighthouse")));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_sign_timeout_zero() {

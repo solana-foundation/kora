@@ -1042,6 +1042,7 @@ mod tests {
         setup_both_configs(config);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_transaction() {
@@ -1065,6 +1066,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_transfer_amount_limits() {
@@ -1100,6 +1102,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_programs() {
@@ -1139,6 +1142,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_programs_wildcard_sentinel() {
@@ -1189,6 +1193,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_require_one_of_programs_only_cu_blocked() {
@@ -1217,6 +1222,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_require_one_of_programs_required_program_called() {
@@ -1249,6 +1255,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_require_one_of_programs_no_required_program_fails() {
@@ -1278,6 +1285,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_require_one_of_programs_or_semantics() {
@@ -1308,6 +1316,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_signatures() {
@@ -1343,6 +1352,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_sign_and_send_transaction_mode() {
@@ -1376,6 +1386,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_empty_transaction() {
@@ -1396,6 +1407,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_reject_compute_budget_only_transaction() {
@@ -1424,6 +1436,7 @@ mod tests {
         assert!(error_message.contains("only ComputeBudget instructions"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_allow_transaction_with_compute_budget_and_non_compute_instruction() {
@@ -1460,6 +1473,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_disallowed_accounts() {
@@ -1492,6 +1506,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_disallowed_instruction_data_spl_set_authority_new_authority() {
@@ -1528,6 +1543,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_disallowed_instruction_data_token2022_set_authority_new_authority() {
@@ -1564,6 +1580,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_disallowed_instruction_data_nonce_authorize_new_authority() {
@@ -1594,6 +1611,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_disallowed_instruction_data_nonce_initialize_nonce_authority() {
@@ -1627,6 +1645,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_disallowed_instruction_data_spl_initialize_account2_owner() {
@@ -1662,6 +1681,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_disallowed_instruction_data_spl_initialize_mint2_freeze_authority() {
@@ -1697,6 +1717,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_sol_transfers() {
@@ -1741,6 +1762,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_assign() {
@@ -1788,6 +1810,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_spl_transfers() {
@@ -1881,6 +1904,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_transfers() {
@@ -1980,6 +2004,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_alt_freeze_lookup_table() {
@@ -2035,6 +2060,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_alt_create_lookup_table() {
@@ -2080,6 +2106,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_alt_extend_lookup_table() {
@@ -2173,6 +2200,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_alt_deactivate_lookup_table() {
@@ -2228,6 +2256,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_alt_close_lookup_table() {
@@ -2289,6 +2318,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_transfer_amounts_rejects_alt_close_outflow_above_max_allowed_lamports() {
@@ -2327,6 +2357,7 @@ mod tests {
         ));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_transfer_amounts_allows_alt_close_to_fee_payer() {
@@ -2362,6 +2393,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_calculate_total_outflow() {
@@ -2532,6 +2564,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_burn() {
@@ -2621,6 +2654,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_close_account() {
@@ -2685,6 +2719,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_approve() {
@@ -2776,6 +2811,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_burn() {
@@ -2813,6 +2849,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_close_account() {
@@ -2849,6 +2886,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_approve() {
@@ -2941,6 +2979,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_create_account() {
@@ -2986,6 +3025,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_create_account_rejects_disallowed_owner() {
@@ -3012,6 +3052,7 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("not in the allowed programs list"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_create_account_allows_valid_owner() {
@@ -3045,6 +3086,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_ata_create_idempotent() {
@@ -3092,6 +3134,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_ata_create_idempotent_charged_in_outflow_without_inner_create() {
@@ -3140,6 +3183,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_allocate() {
@@ -3182,6 +3226,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_nonce_initialize() {
@@ -3228,6 +3273,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_nonce_advance() {
@@ -3285,6 +3331,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_nonce_withdraw() {
@@ -3329,6 +3376,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_nonce_self_withdraw_does_not_hide_excess_fee_payer_outflow() {
@@ -3371,6 +3419,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_nonce_authorize() {
@@ -3548,6 +3597,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_durable_transaction_rejected_by_default() {
@@ -3580,6 +3630,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_durable_transaction_allowed_when_enabled() {
@@ -3616,6 +3667,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_non_durable_transaction_passes() {
@@ -3643,6 +3695,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_revoke() {
@@ -3702,6 +3755,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_revoke() {
@@ -3761,6 +3815,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_set_authority() {
@@ -3825,6 +3880,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_set_authority() {
@@ -3889,6 +3945,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_mint_to() {
@@ -3953,6 +4010,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_mint_to() {
@@ -4017,6 +4075,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_initialize_mint() {
@@ -4079,6 +4138,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_initialize_mint() {
@@ -4140,6 +4200,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_initialize_account() {
@@ -4201,6 +4262,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_initialize_account() {
@@ -4261,6 +4323,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_initialize_multisig() {
@@ -4322,6 +4385,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_initialize_multisig() {
@@ -4382,6 +4446,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_freeze_account() {
@@ -4445,6 +4510,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_freeze_account() {
@@ -4507,6 +4573,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_thaw_account() {
@@ -4570,6 +4637,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_thaw_account() {
@@ -4632,6 +4700,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_token2022_reallocate_rejected_for_fee_payer() {
@@ -4666,6 +4735,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_pause_with_fee_payer_rejected() {
@@ -4696,6 +4766,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_resume_allowed_when_policy_explicitly_enabled() {
@@ -4725,6 +4796,7 @@ mod tests {
         assert!(result.is_ok(), "Explicit thaw opt-in should allow Token2022 Resume: {result:?}");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_pausable_initialize_rejects_fee_payer_authority_by_default() {
@@ -4754,6 +4826,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_transfer_hook_update_rejected_when_policy_denies() {
@@ -4794,6 +4867,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_transfer_hook_update_allowed_for_immediate_send_when_policy_is_delayed_only(
@@ -4836,6 +4910,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_transfer_hook_initialize_disallowed_program_id_rejected() {
@@ -4872,6 +4947,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_initialize_transfer_fee_config_rejects_fee_payer_authorities_by_default(
@@ -4905,6 +4981,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_initialize_transfer_fee_config_disallowed_withdraw_authority_rejected()
@@ -4943,6 +5020,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_update_metadata_pointer_rejects_fee_payer_authority_by_default() {
@@ -4975,6 +5053,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_update_metadata_pointer_allowed_when_extension_update_policy_enabled() {
@@ -5009,6 +5088,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_initialize_mint_close_authority_rejects_disallowed_new_authority() {
@@ -5043,6 +5123,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_initialize_metadata_pointer_rejects_blocked_extension() {
@@ -5078,6 +5159,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_token2022_confidential_extension_instructions_rejected() {
@@ -5107,6 +5189,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_mixed_instructions() {
@@ -5218,6 +5301,7 @@ mod tests {
         setup_both_configs(config);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_loader_v4_write_requires_policy() {
@@ -5259,6 +5343,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_loader_v4_deploy_requires_policy() {
@@ -5299,6 +5384,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_loader_v4_copy_requires_policy() {
@@ -5341,6 +5427,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_loader_v4_retract_requires_policy() {
@@ -5366,6 +5453,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_loader_v4_set_program_length_accepts_self_recipient() {
@@ -5392,6 +5480,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_loader_v4_set_program_length_rejects_foreign_recipient() {
@@ -5425,6 +5514,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_loader_v4_set_program_length_rejects_when_policy_disabled() {
@@ -5448,6 +5538,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_loader_v4_transfer_authority_denied_by_default() {
@@ -5472,6 +5563,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_loader_v4_transfer_authority_rejects_when_fee_payer_is_new_authority() {
@@ -5502,6 +5594,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_loader_v4_finalize_denied_by_default() {
@@ -5544,6 +5637,7 @@ mod tests {
         setup_both_configs(config);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_bpf_v3_write_requires_policy() {
@@ -5582,6 +5676,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_bpf_v3_set_authority_denied_by_default() {
@@ -5606,6 +5701,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_bpf_v3_close_with_foreign_recipient_blocked_by_drainage_guard() {
@@ -5636,6 +5732,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_bpf_v3_close_with_self_recipient_accepted() {
@@ -5661,6 +5758,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_bpf_v3_upgrade_with_kora_as_spill_does_not_require_allow_upgrade() {
@@ -5690,6 +5788,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_bpf_v3_close_with_kora_as_recipient_does_not_require_allow_close() {
@@ -5715,6 +5814,7 @@ mod tests {
             .is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_bpf_v3_extend_program_checked_with_kora_payer_denied_by_default() {
@@ -5747,6 +5847,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_bpf_v3_migrate_denied_by_default() {

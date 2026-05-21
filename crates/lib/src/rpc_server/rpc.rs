@@ -252,6 +252,7 @@ mod tests {
         KoraRpc::new(rpc_client)
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_liveness() {
         let kora_rpc = create_test_kora_rpc();
@@ -261,6 +262,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_version() {
         let kora_rpc = create_test_kora_rpc();
@@ -272,6 +274,7 @@ mod tests {
         assert_eq!(response.version, env!("CARGO_PKG_VERSION"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_method_delegation_with_mocks() {
         // Setup test environment with both config and signer

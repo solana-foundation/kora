@@ -120,6 +120,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_price_oracle_retries() {
         let mut mock_oracle = MockPriceOracle::new();
@@ -143,6 +144,7 @@ mod tests {
         let result = oracle.get_token_price("test").await;
         assert!(result.is_ok());
     }
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_price_oracle_empty_mints() {
         let mut mock_oracle = MockPriceOracle::new();
@@ -154,6 +156,7 @@ mod tests {
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_price_oracle_retries_all_fail() {
         let mut mock_oracle = MockPriceOracle::new();
@@ -167,6 +170,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.err(), Some(KoraError::RpcError("mock error".to_string())));
     }
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_price_oracle_retry_then_succeed() {
         let mut mock_oracle = MockPriceOracle::new();
@@ -197,6 +201,7 @@ mod tests {
         let price = result.unwrap();
         assert_eq!(price.price, Decimal::from(42));
     }
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_token_price_not_found() {
         let mut mock_oracle = MockPriceOracle::new();

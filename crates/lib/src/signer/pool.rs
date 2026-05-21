@@ -618,6 +618,7 @@ mod tests {
         assert!(selections.values().all(|&count| count == 50));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[test]
     fn test_weighted_selection() {
         let mut pool = create_test_pool();

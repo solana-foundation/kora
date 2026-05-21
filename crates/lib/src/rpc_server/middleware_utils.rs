@@ -162,6 +162,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_method_validation_disallowed_method() {
         let allowed_methods = vec!["liveness".to_string(), "getConfig".to_string()];
@@ -176,6 +177,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_method_validation_malformed_json() {
         let allowed_methods = vec!["liveness".to_string(), "getConfig".to_string()];
@@ -190,6 +192,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_method_validation_missing_method_field() {
         let allowed_methods = vec!["liveness".to_string(), "getConfig".to_string()];
@@ -204,6 +207,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_method_validation_multiple_allowed_methods() {
         let allowed_methods = vec![

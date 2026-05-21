@@ -138,6 +138,7 @@ mod tests {
     use solana_sdk::pubkey::Pubkey;
     use solana_system_interface::instruction::transfer;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_bundle_fee_empty_bundle() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
@@ -160,6 +161,7 @@ mod tests {
         assert!(matches!(err, KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_bundle_fee_disabled() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(false).build_and_setup();
@@ -185,6 +187,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_bundle_fee_too_large() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
@@ -210,6 +213,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_bundle_fee_invalid_signer_key() {
         let _m = ConfigMockBuilder::new().with_bundle_enabled(true).build_and_setup();
@@ -232,6 +236,7 @@ mod tests {
         assert!(matches!(err, KoraError::ValidationError(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_bundle_fee_exactly_max_size() {
         let _m = ConfigMockBuilder::new()
@@ -264,6 +269,7 @@ mod tests {
         assert!(!response.payment_address.is_empty());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_bundle_fee_single_transaction() {
         let _m = ConfigMockBuilder::new()
@@ -294,6 +300,7 @@ mod tests {
         assert!(!response.payment_address.is_empty());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_bundle_fee_sig_verify_default() {
         // Test that sig_verify defaults correctly via serde (defaults to false)
@@ -304,6 +311,7 @@ mod tests {
         assert!(request.signer_key.is_none());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_bundle_fee_request_deserialization() {
         let json = r#"{
@@ -323,6 +331,7 @@ mod tests {
         assert!(!request.sig_verify);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_bundle_fee_skips_plugins() {
         let mut config = ConfigMockBuilder::new()
@@ -351,6 +360,7 @@ mod tests {
         assert!(result.is_ok(), "estimateBundleFee should skip transaction plugins");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_bundle_fee_rejects_sequential_outflow_violation() {
         let mut server = Server::new_async().await;

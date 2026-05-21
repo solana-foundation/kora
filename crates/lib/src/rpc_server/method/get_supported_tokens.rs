@@ -26,6 +26,7 @@ mod tests {
     use crate::{state::update_config, tests::config_mock::ConfigMockBuilder};
     use serial_test::serial;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_get_supported_tokens_empty_list() {
@@ -42,6 +43,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_get_supported_tokens_contains_expected_tokens() {

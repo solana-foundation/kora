@@ -113,6 +113,7 @@ mod tests {
         transaction_mock::create_mock_encoded_transaction,
     };
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_transaction_fee_decode_error() {
         let _ = setup_or_get_test_config();
@@ -132,6 +133,7 @@ mod tests {
         assert!(result.is_err(), "Should fail with decode error");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_transaction_fee_invalid_signer_key() {
         let _ = setup_or_get_test_config();
@@ -153,6 +155,7 @@ mod tests {
         assert!(matches!(error, KoraError::ValidationError(_)), "Should return ValidationError");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_transaction_fee_invalid_token_mint() {
         let _ = setup_or_get_test_config();

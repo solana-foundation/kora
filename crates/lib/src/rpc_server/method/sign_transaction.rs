@@ -120,6 +120,7 @@ mod tests {
         TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_transaction_decode_error() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -141,6 +142,7 @@ mod tests {
         assert!(result.is_err(), "Should fail with decode error");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_transaction_invalid_signer_key() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -164,6 +166,7 @@ mod tests {
         assert!(matches!(error, KoraError::ValidationError(_)), "Should return ValidationError");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_sign_transaction_pre_sign_validation_error_does_not_pin_probe_lock() {

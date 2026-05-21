@@ -935,6 +935,7 @@ mod tests {
         assert_eq!(resolved.all_instructions[0].data, vec![1, 2, 3]);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_from_transaction_legacy() {
         let config = setup_test_config();
@@ -995,6 +996,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_from_transaction_v0_with_lookup_tables() {
         let config = setup_test_config();
@@ -1093,6 +1095,7 @@ mod tests {
         assert_eq!(resolved.all_account_keys[2], resolved_address);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_from_transaction_simulation_failure() {
         let config = setup_test_config();
@@ -1147,6 +1150,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_fetch_inner_instructions_with_inner_instructions() {
         let config = setup_test_config();
@@ -1200,6 +1204,7 @@ mod tests {
         assert_eq!(inner_instructions[0].data, vec![10, 20, 30]);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_fetch_inner_instructions_with_sig_verify_false() {
         let config = setup_test_config();
@@ -1253,6 +1258,7 @@ mod tests {
         assert_eq!(inner_instructions[0].data, vec![10, 20, 30]);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_or_parse_system_instructions() {
         let config = setup_test_config();
@@ -1288,6 +1294,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses() {
         let config = setup_test_config();
@@ -1338,6 +1345,7 @@ mod tests {
         assert_eq!(resolved_addresses[2], address2);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses_empty() {
         let config = setup_test_config();
@@ -1354,6 +1362,7 @@ mod tests {
         assert_eq!(resolved_addresses.len(), 0);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses_account_not_found() {
         let config = setup_test_config();
@@ -1375,6 +1384,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses_invalid_index() {
         let config = setup_test_config();
@@ -1422,6 +1432,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_resolve_lookup_table_addresses_invalid_readonly_index() {
         let config = setup_test_config();

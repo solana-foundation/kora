@@ -44,6 +44,8 @@ jobs:
 
   miri:
     runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
@@ -55,5 +57,4 @@ jobs:
             ~/.cache/org.rust-lang.miri
           key: miri-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo +nightly miri setup
-      - run: cargo +nightly miri test -p kora-lib --lib bundle::helper::tests
-      - run: cargo +nightly miri test -p kora-lib --lib error::tests
+      - run: cargo +nightly miri test -p kora-lib --lib

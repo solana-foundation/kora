@@ -863,6 +863,7 @@ mod tests {
         .await
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_kora_fee_free_rejects_mutable_transfer_hook_authority() {
         let result = estimate_free_fee_with_mutable_transfer_hook(
@@ -877,6 +878,7 @@ mod tests {
         assert!(msg.contains("Mutable transfer-hook authority found on mint account"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_kora_fee_free_allows_mutable_transfer_hook_authority_for_immediate_sign_and_send(
     ) {
@@ -892,6 +894,7 @@ mod tests {
         assert_eq!(calculation.total_fee_lamports, 0);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_kora_fee_free_rejects_mutable_transfer_hook_authority_when_policy_is_deny_all(
     ) {
@@ -907,6 +910,7 @@ mod tests {
         assert!(msg.contains("Mutable transfer-hook authority found on mint account"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_kora_fee_free_allows_mutable_transfer_hook_authority_when_policy_is_allow_all(
     ) {
@@ -922,6 +926,7 @@ mod tests {
         assert_eq!(calculation.total_fee_lamports, 0);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_kora_fee_free_allows_immutable_transfer_hook_authority() {
         let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
@@ -973,6 +978,7 @@ mod tests {
         assert_eq!(calculation.total_fee_lamports, 0);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_kora_fee_free_rejects_mutable_transfer_hook_authority_for_transfer_checked_with_fee(
     ) {
@@ -1065,6 +1071,7 @@ mod tests {
             .unwrap());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_transfer() {
         setup_or_get_test_config();
@@ -1127,6 +1134,7 @@ mod tests {
         assert_eq!(outflow, 0, "Transfer from other account should not affect outflow");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_transfer_with_seed() {
         setup_or_get_test_config();
@@ -1187,6 +1195,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_create_account() {
         setup_or_get_test_config();
@@ -1232,6 +1241,7 @@ mod tests {
         assert_eq!(outflow, 0, "CreateAccount funded by other account should not affect outflow");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_create_account_with_seed() {
         setup_or_get_test_config();
@@ -1268,6 +1278,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_nonce_withdraw() {
         setup_or_get_test_config();
@@ -1367,6 +1378,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_alt_close_lookup_table() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -1443,6 +1455,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_kora_fee_margin_includes_alt_close_outflow() {
         let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
@@ -1485,6 +1498,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_multiple_instructions() {
         setup_or_get_test_config();
@@ -1518,6 +1532,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_non_system_program() {
         setup_or_get_test_config();
@@ -1546,6 +1561,7 @@ mod tests {
         assert_eq!(outflow, 0, "Non-system program should not affect outflow");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_ata_idempotent_without_inner_create() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -1587,6 +1603,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_ata_not_double_counted_with_system_create() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -1636,6 +1653,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_duplicate_ata_idempotent_only_charged_once() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -1686,6 +1704,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_calculate_fee_payer_outflow_multiple_distinct_ata_idempotent_charged_per_ata() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -1737,6 +1756,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_analyze_payment_instructions_with_payment() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -1784,6 +1804,7 @@ mod tests {
         assert_eq!(transfer_fees, 0, "Should have no transfer fees for SPL token");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_analyze_payment_instructions_without_payment() {
         let signer = setup_or_get_test_signer();
@@ -1815,6 +1836,7 @@ mod tests {
         assert_eq!(transfer_fees, 0, "Should have no transfer fees");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_analyze_payment_instructions_with_wrong_destination() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -1863,6 +1885,7 @@ mod tests {
         assert_eq!(transfer_fees, 0, "Should have no transfer fees");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_transaction_fee_basic() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -1897,6 +1920,7 @@ mod tests {
         assert_eq!(result.total_fee_lamports, 105_000, "Should return base fee + outflow");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_transaction_fee_kora_signer_not_in_signers() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -1933,6 +1957,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_estimate_transaction_fee_with_payment_required() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -1972,6 +1997,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_analyze_payment_instructions_with_multiple_payments() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -2025,6 +2051,7 @@ mod tests {
         assert_eq!(transfer_fees, 0, "Should have no transfer fees for SPL tokens");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_transaction_fee_util_get_estimate_fee_legacy() {
         let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(7500).build();
@@ -2043,6 +2070,7 @@ mod tests {
         assert_eq!(result, 7500, "Should return mocked base fee for legacy message");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_transaction_fee_util_get_estimate_fee_v0() {
         let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(12500).build();

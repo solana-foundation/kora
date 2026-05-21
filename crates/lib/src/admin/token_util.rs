@@ -326,6 +326,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_find_missing_atas_no_spl_tokens() {
         let _m = ConfigMockBuilder::new()
@@ -345,6 +346,7 @@ mod tests {
         assert!(result.is_empty(), "Should return empty vec when no SPL tokens configured");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_find_missing_atas_with_spl_tokens() {
         let allowed_spl_tokens = [Pubkey::new_unique(), Pubkey::new_unique()];
@@ -389,6 +391,7 @@ mod tests {
         assert_eq!(atas.len(), 1, "Should return 1 missing ATAs");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_find_missing_atas_detects_existing_token2022_ata() {
         let token2022_mint = Pubkey::new_unique();
@@ -449,6 +452,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_create_atas_for_signer_calls_rpc_correctly() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -508,6 +512,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_initialize_atas_when_all_tokens_are_allowed() {
         let _m = ConfigMockBuilder::new()

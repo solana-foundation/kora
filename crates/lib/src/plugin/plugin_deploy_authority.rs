@@ -312,6 +312,7 @@ mod tests {
             .await
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn accepts_write_when_kora_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -322,6 +323,7 @@ mod tests {
         assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn rejects_write_when_user_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -337,6 +339,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn accepts_copy_when_kora_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -348,6 +351,7 @@ mod tests {
         assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn rejects_copy_when_user_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -361,6 +365,7 @@ mod tests {
         assert!(matches!(err, KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn accepts_set_program_length_when_kora_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -371,6 +376,7 @@ mod tests {
         assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn rejects_set_program_length_when_user_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -383,6 +389,7 @@ mod tests {
         assert!(matches!(err, KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn accepts_deploy_when_kora_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -393,6 +400,7 @@ mod tests {
         assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn rejects_deploy_when_user_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -405,6 +413,7 @@ mod tests {
         assert!(matches!(err, KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn accepts_retract_when_kora_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -415,6 +424,7 @@ mod tests {
         assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn rejects_retract_when_user_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -427,6 +437,7 @@ mod tests {
         assert!(matches!(err, KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn accepts_transfer_authority_when_new_is_kora() {
         // Attacker hands authority to Kora via TransferAuthority — plugin accepts because the
@@ -441,6 +452,7 @@ mod tests {
         assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn rejects_transfer_authority_to_user() {
         let (config, rpc_client) = build_runner();
@@ -456,6 +468,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn rejects_finalize_even_when_kora_is_authority() {
         let (config, rpc_client) = build_runner();
@@ -471,6 +484,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn mixed_tx_rejects_when_loader_v4_authority_wrong() {
         let (config, rpc_client) = build_runner();
@@ -500,6 +514,7 @@ mod tests {
         assert!(matches!(err, KoraError::InvalidTransaction(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn no_loader_v4_instructions_is_noop() {
         // Plugin should not interfere with non-loader-v4 transactions.
@@ -567,6 +582,7 @@ mod tests {
         (config, rpc_client)
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn v3_accepts_write_when_kora_is_authority() {
         use solana_loader_v3_interface::instruction as loader_v3;
@@ -577,6 +593,7 @@ mod tests {
         assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn v3_rejects_write_with_user_authority() {
         use solana_loader_v3_interface::instruction as loader_v3;
@@ -592,6 +609,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn v3_rejects_set_authority_handoff() {
         use solana_loader_v3_interface::instruction as loader_v3;
@@ -607,6 +625,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn v3_rejects_close_with_foreign_recipient() {
         use solana_loader_v3_interface::instruction as loader_v3;
@@ -622,6 +641,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn v3_accepts_close_back_to_kora() {
         use solana_loader_v3_interface::instruction as loader_v3;
@@ -632,6 +652,7 @@ mod tests {
         assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn v3_rejects_extend_program_checked_with_attacker_authority_kora_payer() {
         // Regression: ExtendProgramChecked previously hit a `_ => {}` wildcard in the
@@ -651,6 +672,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn v3_rejects_migrate() {
         use solana_loader_v3_interface::instruction as loader_v3;

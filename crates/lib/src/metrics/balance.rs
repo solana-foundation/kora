@@ -184,6 +184,7 @@ mod tests {
         let _ = update_signer_pool(pool);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_is_enabled_when_disabled() {
         let _m = ConfigMockBuilder::new()
@@ -201,6 +202,7 @@ mod tests {
         assert!(!BalanceTracker::is_enabled());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_is_enabled_when_enabled() {
         let _m = ConfigMockBuilder::new()
@@ -218,6 +220,7 @@ mod tests {
         assert!(BalanceTracker::is_enabled());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_is_enabled_requires_both_flags() {
         // Test case: metrics enabled but balance metrics disabled
@@ -236,6 +239,7 @@ mod tests {
         assert!(!BalanceTracker::is_enabled());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_is_enabled_metrics_disabled_balance_enabled() {
         let _m = ConfigMockBuilder::new()
@@ -253,6 +257,7 @@ mod tests {
         assert!(!BalanceTracker::is_enabled());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_init_when_disabled() {
         let _m = ConfigMockBuilder::new()
@@ -271,6 +276,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_init_when_enabled() {
         let _m = ConfigMockBuilder::new()
@@ -289,6 +295,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_track_all_signer_balances_when_disabled() {
         let _m = ConfigMockBuilder::new()
@@ -309,6 +316,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_track_all_signer_balances_successful() {
         let _m = ConfigMockBuilder::new()
@@ -334,6 +342,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_track_all_signer_balances_handles_rpc_errors() {
         let _m = ConfigMockBuilder::new()
@@ -358,6 +367,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_start_background_tracking_when_disabled() {
         let _m = ConfigMockBuilder::new()
@@ -378,6 +388,7 @@ mod tests {
         assert!(handle.is_none());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_start_background_tracking_when_enabled() {
         let _m = ConfigMockBuilder::new()

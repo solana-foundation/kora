@@ -90,6 +90,7 @@ mod tests {
         transaction_mock::create_mock_encoded_transaction,
     };
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_transaction_decode_error() {
         let _m = ConfigMockBuilder::new().build_and_setup();
@@ -111,6 +112,7 @@ mod tests {
         assert!(result.is_err(), "Should fail with decode error");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_and_send_transaction_invalid_signer_key() {
         let _m = ConfigMockBuilder::new().build_and_setup();

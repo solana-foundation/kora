@@ -123,6 +123,7 @@ mod tests {
     use crate::tests::config_mock::ConfigMockBuilder;
     use serial_test::serial;
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_usage_limit_disabled() {
@@ -134,6 +135,7 @@ mod tests {
         assert!(warnings.is_empty());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_usage_limit_enabled_no_cache_url_fallback_enabled() {
@@ -151,6 +153,7 @@ mod tests {
         ));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_usage_limit_enabled_no_cache_url_fallback_disabled() {
@@ -173,6 +176,7 @@ mod tests {
         )));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_usage_limit_invalid_cache_url_format() {
@@ -193,6 +197,7 @@ mod tests {
         )));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_usage_limit_fallback_disabled_warning() {
@@ -215,6 +220,7 @@ mod tests {
         )));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_usage_limit_valid_redis_url() {
@@ -235,6 +241,7 @@ mod tests {
     }
 
     // Cache disabled — should skip all validation and return no errors
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_rpc_cache_disabled() {
@@ -252,6 +259,7 @@ mod tests {
     }
 
     // Cache enabled but Redis URL missing — should return a config error
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_rpc_cache_enabled_no_url() {
@@ -265,6 +273,7 @@ mod tests {
     }
 
     // Cache enabled but URL is not redis:// or rediss:// — should return format error
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_rpc_cache_invalid_url_format() {
@@ -282,6 +291,7 @@ mod tests {
     }
 
     // Cache enabled, valid URL format but Redis unreachable — should return connection error
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     #[serial]
     async fn test_validate_rpc_cache_connection_failed() {

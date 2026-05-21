@@ -358,6 +358,7 @@ mod tests {
             .contains("has invalid data for a TokenAccount account"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_account_success_with_type() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -372,6 +373,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_account_success_without_type() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -385,6 +387,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_account_rpc_error() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
@@ -401,6 +404,7 @@ mod tests {
         assert!(error_msg.contains("Account") && error_msg.contains("not found"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_validate_account_type_validation_failure() {
         let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();

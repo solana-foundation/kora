@@ -482,6 +482,7 @@ mod tests {
     use crate::tests::transaction_mock::create_mock_encoded_transaction;
     use mockito::{Matcher, Server};
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_send_bundle_success() {
         let mut server = Server::new_async().await;
@@ -507,6 +508,7 @@ mod tests {
         assert_eq!(result.unwrap(), "bundle-uuid-12345");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_send_bundle_http_error() {
         let mut server = Server::new_async().await;
@@ -528,6 +530,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_send_bundle_rpc_error() {
         let mut server = Server::new_async().await;
@@ -550,6 +553,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_bundle_statuses_success() {
         let mut server = Server::new_async().await;
@@ -571,6 +575,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_simulate_bundle_success() {
         let mut server = Server::new_async().await;
@@ -607,6 +612,7 @@ mod tests {
         assert_eq!(simulation.transaction_results[0].units_consumed, Some(42));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_simulate_bundle_success_with_transaction_results_shape() {
         let mut server = Server::new_async().await;
@@ -644,6 +650,7 @@ mod tests {
         assert_eq!(simulation.transaction_results[0].units_consumed, Some(84));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_simulate_bundle_execution_failure() {
         let mut server = Server::new_async().await;
@@ -675,6 +682,7 @@ mod tests {
         assert!(err.contains("failed log"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_simulate_bundle_summary_failure_without_transaction_results() {
         let mut server = Server::new_async().await;
@@ -705,6 +713,7 @@ mod tests {
         assert!(err.contains("Bundle simulation failed"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_simulate_bundle_with_config_includes_second_param() {
         let mut server = Server::new_async().await;
@@ -755,6 +764,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_send_bundle_invalid_uuid_response() {
         let mut server = Server::new_async().await;
@@ -777,6 +787,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_send_bundle_empty_result() {
         let mut server = Server::new_async().await;
@@ -799,6 +810,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_send_bundle_multiple_transactions() {
         let mut server = Server::new_async().await;
@@ -826,6 +838,7 @@ mod tests {
         assert_eq!(result.unwrap(), "multi-tx-bundle-uuid");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_send_bundle_malformed_json_response() {
         let mut server = Server::new_async().await;
@@ -848,6 +861,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_bundle_statuses_empty_uuids() {
         let mut server = Server::new_async().await;
@@ -871,6 +885,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_get_bundle_statuses_multiple_uuids() {
         let mut server = Server::new_async().await;
@@ -901,6 +916,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_jito_bundle_client_dispatches_to_mock() {
         let config = JitoConfig {
@@ -919,6 +935,7 @@ mod tests {
         assert!(uuid.starts_with("mock-bundle-"), "Expected mock UUID prefix");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_jito_bundle_client_dispatches_to_real() {
         let config = JitoConfig {
@@ -930,6 +947,7 @@ mod tests {
         assert!(matches!(client, JitoBundleClient::Live(_)));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_mock_client_get_bundle_statuses() {
         let config = JitoConfig {
@@ -946,6 +964,7 @@ mod tests {
         assert_eq!(statuses["value"][0]["status"], "Landed");
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_mock_client_simulate_bundle() {
         let config = JitoConfig {

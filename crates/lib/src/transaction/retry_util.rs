@@ -119,6 +119,7 @@ mod tests {
         assert_eq!(signing_retry_window(Duration::from_secs(15), 5), Duration::from_millis(93_100));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_with_retry_succeeds_after_retries() {
         let calls = Arc::new(AtomicUsize::new(0));
@@ -140,6 +141,7 @@ mod tests {
         assert_eq!(calls.load(Ordering::Relaxed), 3);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_sign_with_retry_returns_last_error_after_exhaustion() {
         let result = sign_with_retry(Duration::from_secs(1), 1, "signing", "Signing", || async {
