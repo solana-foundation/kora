@@ -16,22 +16,22 @@ For security vulnerabilities related to code on `main`, please review [SECURITY.
 
 ## Getting Started
 
-1. Install Rust and Cargo
-2. Build all packages: `make build`
-3. Run formatting and lint checks: `make check`
-4. Run unit tests: `make unit-test`
-5. Run integration tests: `make integration-test`
+1. Install Rust, Cargo, and `just`
+2. Build all packages: `just build`
+3. Run formatting and lint checks: `just check`
+4. Run unit tests: `just unit-test`
+5. Run integration tests: `just integration-test`
 
 ## TypeScript SDK
 
 ```shell
-make install-ts-sdk
-make build-ts-sdk
-make unit-test-ts
+just install-ts-sdk
+just build-ts-sdk
+just unit-test-ts
 ```
 
 ## Before Submitting
 
-- Run `make check` (formatting + clippy)
-- Run `make unit-test`
+- Run `just check` (formatting + clippy)
+- Run `just unit-test`
 - Use [conventional commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, etc.)

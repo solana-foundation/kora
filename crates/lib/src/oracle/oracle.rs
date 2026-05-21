@@ -25,6 +25,17 @@ pub enum PriceSource {
     Mock,
 }
 
+impl PriceSource {
+    /// Stable lowercase identifier used in cache keys; changing these values
+    /// invalidates existing Redis entries.
+    pub fn as_cache_key(&self) -> &'static str {
+        match self {
+            PriceSource::Jupiter => "jupiter",
+            PriceSource::Mock => "mock",
+        }
+    }
+}
+
 #[automock]
 #[async_trait::async_trait]
 pub trait PriceOracle {

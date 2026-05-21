@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 use crate::{
     bundle::JitoConfig,
     constant::{
-        DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL,
+        DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL, DEFAULT_CACHE_PRICE_TTL,
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
         DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
         DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_PROTECTED_METHODS,
@@ -115,6 +115,10 @@ impl SplTokenConfig {
             SplTokenConfig::Allowlist(v) => v.as_slice(),
         }
     }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, String> {
+        self.into_iter()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -208,6 +212,22 @@ pub struct ValidationConfig {
     /// Default: empty (no restriction).
     #[serde(default)]
     pub require_one_of_programs: Vec<String>,
+    /// When true, checks configured mint addresses against other known clusters
+    /// and warns if a mint is found on a different cluster than the one connected.
+    /// Disabled by default: the check contacts public RPC endpoints, which may be undesirable
+    /// for operators who want to keep their mint addresses private.
+    #[serde(default)]
+    pub cross_cluster_check: bool,
+    #[serde(default = "default_cross_cluster_endpoints")]
+    pub cross_cluster_endpoints: Vec<String>,
+}
+
+fn default_cross_cluster_endpoints() -> Vec<String> {
+    vec![
+        "https://api.mainnet-beta.solana.com".to_string(),
+        "https://api.devnet.solana.com".to_string(),
+        "https://api.testnet.solana.com".to_string(),
+    ]
 }
 
 impl ValidationConfig {
@@ -626,6 +646,9 @@ pub struct CacheConfig {
     pub default_ttl: u64,
     /// TTL for account data cache in seconds
     pub account_ttl: u64,
+    /// TTL for token price data cache in seconds
+    #[serde(default)]
+    pub price_ttl: u64,
 }
 
 impl Default for CacheConfig {
@@ -635,6 +658,7 @@ impl Default for CacheConfig {
             enabled: false,
             default_ttl: DEFAULT_CACHE_DEFAULT_TTL,
             account_ttl: DEFAULT_CACHE_ACCOUNT_TTL,
+            price_ttl: DEFAULT_CACHE_PRICE_TTL,
         }
     }
 }
@@ -755,6 +779,17 @@ impl Default for AuthConfig {
             max_timestamp_age: DEFAULT_MAX_TIMESTAMP_AGE,
             protected_methods: DEFAULT_PROTECTED_METHODS.iter().map(|s| s.to_string()).collect(),
         }
+    }
+}
+
+impl AuthConfig {
+    pub(crate) fn normalize_optional_secret(value: Option<String>) -> Option<String> {
+        value.filter(|value| !value.is_empty())
+    }
+
+    pub(crate) fn has_auth(&self) -> bool {
+        self.api_key.as_deref().is_some_and(|key| !key.is_empty())
+            || self.hmac_secret.as_deref().is_some_and(|key| !key.is_empty())
     }
 }
 
@@ -1181,6 +1216,7 @@ allow_create = true
         assert!(!config.kora.cache.enabled);
         assert_eq!(config.kora.cache.default_ttl, 300);
         assert_eq!(config.kora.cache.account_ttl, 60);
+        assert_eq!(config.kora.cache.price_ttl, 0);
     }
 
     #[test]

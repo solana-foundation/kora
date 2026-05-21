@@ -17,7 +17,7 @@ pub async fn get_kora_binary_path() -> Result<String, Box<dyn std::error::Error 
     if !Path::new(KORA_BINARY_PATH).exists() {
         return Err(format!(
             "Pre-built Kora binary not found at '{KORA_BINARY_PATH}'. \
-            Run 'cargo build --bin kora' or 'make build' first for much better performance.",
+            Run 'cargo build --bin kora' or 'just build' first for much better performance.",
         )
         .into());
     }

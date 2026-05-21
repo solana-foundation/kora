@@ -61,8 +61,8 @@ clap = { workspace = true }
 rand = "0.10.1"
 utoipa = { workspace = true }
 dirs = "6.0.0"
-mockall = "0.13.1"
-spl-pod = "0.7.1"
+mockall = "0.14.0"
+spl-pod = "0.7.3"
 p256 = { version = "0.13", features = ["ecdsa"] }
 chrono = { workspace = true }
 hex = { workspace = true }
@@ -96,7 +96,7 @@ docs = []
 unsafe-debug = []
 
 [dev-dependencies]
-tempfile = "3.2"
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
-mockito = "1.2.0"
-serial_test = "3.2.0"
+tempfile = "3.27"
+tokio = { version = "1.50", features = ["macros", "rt-multi-thread"] }
+mockito = "1.7.2"
+serial_test = "3.4.0"

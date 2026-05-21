@@ -498,6 +498,7 @@ pub const PARSED_DATA_FIELD_FREEZE_ACCOUNT: &str = "freezeAccount";
 pub const PARSED_DATA_FIELD_THAW_ACCOUNT: &str = "thawAccount";
 pub const PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE: &str = "getAccountDataSize";
 pub const PARSED_DATA_FIELD_INITIALIZE_IMMUTABLE_OWNER: &str = "initializeImmutableOwner";
+pub const PARSED_DATA_FIELD_SYNC_NATIVE: &str = "syncNative";
 pub const PARSED_DATA_FIELD_EXTENSION_TYPES: &str = "extensionTypes";
 
 // Additional field names for new instructions
@@ -1823,6 +1824,22 @@ impl IxUtils {
                 } else {
                     spl_token_2022_interface::instruction::TokenInstruction::InitializeImmutableOwner
                         .pack()
+                };
+
+                Ok(CompiledInstruction {
+                    program_id_index,
+                    accounts: vec![account_idx],
+                    data,
+                })
+            }
+            PARSED_DATA_FIELD_SYNC_NATIVE => {
+                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                let account_idx = Self::get_account_index(account_keys_hashmap, &account)?;
+
+                let data = if is_spl_token_program {
+                    spl_token_interface::instruction::TokenInstruction::SyncNative.pack()
+                } else {
+                    spl_token_2022_interface::instruction::TokenInstruction::SyncNative.pack()
                 };
 
                 Ok(CompiledInstruction {
@@ -3740,6 +3757,28 @@ mod tests {
         Ok(parsed)
     }
 
+    fn create_parsed_spl_token_sync_native(
+        account: &Pubkey,
+    ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
+    {
+        let solana_instruction =
+            spl_token_interface::instruction::sync_native(&spl_token_interface::ID, account)?;
+
+        let message = Message::new(&[solana_instruction], None);
+        let compiled_instruction = &message.instructions[0];
+
+        let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
+
+        let parsed = parse_instruction::parse(
+            &spl_token_interface::ID,
+            compiled_instruction,
+            &account_keys_for_parsing,
+            None,
+        )?;
+
+        Ok(parsed)
+    }
+
     fn create_parsed_spl_token_approve(
         source: &Pubkey,
         delegate: &Pubkey,
@@ -5453,6 +5492,31 @@ mod tests {
         let compiled = result.unwrap();
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // account, destination, authority indices
+        assert_eq!(compiled.data, instruction.data);
+    }
+
+    #[test]
+    fn test_reconstruct_spl_token_sync_native_instruction() {
+        let account = Pubkey::new_unique();
+        let token_program_id = spl_token_interface::ID;
+        let account_keys = vec![token_program_id, account];
+
+        let instruction =
+            spl_token_interface::instruction::sync_native(&spl_token_interface::ID, &account)
+                .expect("Failed to create sync_native instruction");
+
+        let solana_parsed = create_parsed_spl_token_sync_native(&account)
+            .expect("Failed to create parsed instruction");
+
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
+
+        assert!(result.is_ok(), "syncNative CPI should reconstruct: {:?}", result.err());
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1]);
         assert_eq!(compiled.data, instruction.data);
     }
 

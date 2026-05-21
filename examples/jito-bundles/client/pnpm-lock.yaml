@@ -18,11 +18,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0(typescript@5.9.3)
       '@solana/kora':
-        specifier: 0.2.0-beta.1
-        version: 0.2.0-beta.1(@solana-program/token@0.9.0(@solana/kit@5.3.0(typescript@5.9.3)))(@solana/kit@5.3.0(typescript@5.9.3))
-      dotenv:
-        specifier: ^17.2.3
-        version: 17.2.3
+        specifier: 0.2.0-beta.2
+        version: 0.2.0-beta.2(@solana-program/token@0.9.0(@solana/kit@5.3.0(typescript@5.9.3)))(@solana/kit@5.3.0(typescript@5.9.3))
     devDependencies:
       '@types/node':
         specifier: ^25.0.3
@@ -302,8 +299,8 @@ packages:
     peerDependencies:
       typescript: '>=5.9.3'
 
-  '@solana/kora@0.2.0-beta.1':
-    resolution: {integrity: sha512-BKhP6Rb4FoL8cEWaH7/t57jwAzmKOsVNbTbGbJ5UNG9fgvwS+j0TIVJbQJDIqXInqC7c9m02wd3v4HdsndH90A==}
+  '@solana/kora@0.2.0-beta.2':
+    resolution: {integrity: sha512-8vvtRauCQReFSVqCW7wuceFSoH+bO20X+PpotGpponsCAwBLniJNvypseGN9ISrsKKVj1UlSCyZk27qBibN4BQ==}
     peerDependencies:
       '@solana-program/token': ^0.9.0
       '@solana/kit': ^5.0.0
@@ -463,10 +460,6 @@ packages:
     resolution: {integrity: sha512-TywoWNNRbhoD0BXs1P3ZEScW8W5iKrnbithIl0YH+uCmBd0QpPOA8yc82DS3BIE5Ma6FnBVUsJ7wVUDz4dvOWQ==}
     engines: {node: '>=20'}
 
-  dotenv@17.2.3:
-    resolution: {integrity: sha512-JVUnt+DUIzu87TABbhPmNfVdBDt18BLOWjMUFJMSi/Qqg7NTYtabbvSNJGOJ7afbRuv9D/lngizHtP7QyLQ+9w==}
-    engines: {node: '>=12'}
-
   esbuild@0.27.2:
     resolution: {integrity: sha512-HyNQImnsOC7X9PMNaCIeAm4ISCQXs5a5YasTXVliKv4uuBo1dKrG0A+uQS8M5eXjVMnLg3WgXaKvprHlFJQffw==}
     engines: {node: '>=18'}
@@ -499,8 +492,8 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
-  ws@8.19.0:
-    resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
+  ws@8.20.1:
+    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -740,7 +733,7 @@ snapshots:
       - fastestsmallesttextencoderdecoder
       - utf-8-validate
 
-  '@solana/kora@0.2.0-beta.1(@solana-program/token@0.9.0(@solana/kit@5.3.0(typescript@5.9.3)))(@solana/kit@5.3.0(typescript@5.9.3))':
+  '@solana/kora@0.2.0-beta.2(@solana-program/token@0.9.0(@solana/kit@5.3.0(typescript@5.9.3)))(@solana/kit@5.3.0(typescript@5.9.3))':
     dependencies:
       '@solana-program/token': 0.9.0(@solana/kit@5.3.0(typescript@5.9.3))
       '@solana/kit': 5.3.0(typescript@5.9.3)
@@ -841,7 +834,7 @@ snapshots:
       '@solana/rpc-subscriptions-spec': 5.3.0(typescript@5.9.3)
       '@solana/subscribable': 5.3.0(typescript@5.9.3)
       typescript: 5.9.3
-      ws: 8.19.0
+      ws: 8.20.1
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -1008,8 +1001,6 @@ snapshots:
 
   commander@14.0.2: {}
 
-  dotenv@17.2.3: {}
-
   esbuild@0.27.2:
     optionalDependencies:
       '@esbuild/aix-ppc64': 0.27.2
@@ -1061,4 +1052,4 @@ snapshots:
 
   undici-types@7.18.2: {}
 
-  ws@8.19.0: {}
+  ws@8.20.1: {}

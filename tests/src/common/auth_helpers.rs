@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use kora_lib::constant::{X_HMAC_SIGNATURE, X_TIMESTAMP};
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};

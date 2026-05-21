@@ -23,13 +23,13 @@ repository = "https://github.com/solana-foundation/kora"
 kora-lib = { path = "crates/lib", version = "2.2.0-beta.7" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-anyhow = "1.0.95"
-thiserror = "1.0"
+anyhow = "1.0.102"
+thiserror = "2.0"
 progenitor = "0.8.0"
 futures = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-config = "0.13"
+config = "0.15"
 dotenv = "0.15"
 jsonrpsee = { version = "0.16.2", features = [
     "server",
@@ -38,7 +38,7 @@ jsonrpsee = { version = "0.16.2", features = [
     "client",
 ] }
 solana-sdk = "3.0.0"
-solana-commitment-config = "3.0.0"
+solana-commitment-config = "3.1.1"
 solana-message = "3.0.1"
 solana-system-interface = "2.0.0"
 solana-transaction-status-client-types = "3.0.8"
@@ -47,47 +47,47 @@ solana-address-lookup-table-interface = "3.0.0"
 solana-loader-v3-interface = { version = "6.1.0", features = ["bincode", "serde"] }
 solana-loader-v4-interface = { version = "3.1.0", features = ["bincode", "serde"] }
 solana-program = "3.0.0"
-solana-program-pack = "3.0.0"
+solana-program-pack = "3.1.0"
 solana-compute-budget-interface = "3.0.0"
 solana-client = "3.0.8"
 solana-nonce = "3.0.0"
 bs58 = "0.5.1"
 bincode = "1.3.3"
-borsh = "1.5.3"
+borsh = "1.6.1"
 async-std = "1.13.0"
-jsonrpsee-core = { version = "0.16.2", features = ["server"] }
-env_logger = "0.11.5"
+jsonrpsee-core = { version = "0.26.0", features = ["server"] }
+env_logger = "0.11.9"
 async-trait = "0.1.89"
 base64 = "0.22.1"
 log = "0.4.22"
 bytes = "1.11.1"
-reqwest = { version = "0.12.9", features = ["json", "blocking", "native-tls"] }
+reqwest = { version = "0.13.2", features = ["json", "blocking", "native-tls"] }
 tower = { version = "0.4.13", features = ["full"] }
 tower-http = { version = "0.3.5", features = ["full", "cors"] }
-clap = { version = "4.4", features = ["derive", "env"] }
-tokio = { version = "1.41.1", features = ["full"] }
+clap = { version = "4.6", features = ["derive", "env"] }
+tokio = { version = "1.50.0", features = ["full"] }
 prettyplease = "0.2.25"
 syn = "2.0.89"
 parking_lot = "0.12"
-once_cell = "1.20.2"
-futures-util = "0.3.31"
-hyper = "1.5.1"
+once_cell = "1.21.4"
+futures-util = "0.3.32"
+hyper = "1.9.0"
 http = "0.2"
-toml = "0.8.19"
+toml = "1.1.2"
 spl-token-interface = { version = "2.0.0" }
-spl-token-2022-interface = { version = "2.0.0" }
+spl-token-2022-interface = { version = "2.1.0" }
 spl-associated-token-account-interface = { version = "2.0.0" }
-chrono = "0.4.39"
+chrono = "0.4.44"
 hex = "0.4.3"
 p256 = "0.13.3"
-redis = { version = "0.32.5", features = ["tokio-comp", "connection-manager"] }
-deadpool-redis = "0.22.0"
-vaultrs = "0.7.3"
-utoipa = { version = "5.5", features = ["yaml", "chrono"] }
-hmac = "0.12.1"
-sha2 = "0.10.9"
+redis = { version = "1.0.2", features = ["tokio-comp", "connection-manager"] }
+deadpool-redis = "0.23.0"
+vaultrs = "0.8.0"
+utoipa = { version = "5.5.0", features = ["yaml", "chrono"] }
+hmac = "0.13.0"
+sha2 = "0.11.0"
 prometheus = "0.14.0"
 http-body-util = "0.1.3"
 subtle = "2.6.1"
-rust_decimal = "1.39"
-rust_decimal_macros = "1.39"
+rust_decimal = "1.42"
+rust_decimal_macros = "1.40"

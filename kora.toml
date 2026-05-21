@@ -34,6 +34,7 @@ enabled = false                    # Enable/disable caching (set to true with ur
 url = "redis://localhost:6379"    # Redis connection URL (uncomment and set when enabling cache)
 default_ttl = 300                  # Default TTL in seconds (5 minutes)
 account_ttl = 60                   # Account data TTL in seconds (1 minute)
+price_ttl = 0                     # Token price TTL in seconds (set to 0 to disable price caching while keeping account caching on)
 
 # Enable/disable specific RPC methods
 [kora.enabled_methods]
@@ -53,6 +54,12 @@ max_allowed_lamports = 1000000
 max_signatures = 10
 price_source = "Mock"
 allow_durable_transactions = false
+cross_cluster_check = false
+cross_cluster_endpoints = [
+    "https://api.mainnet-beta.solana.com",
+    "https://api.devnet.solana.com",
+    "https://api.testnet.solana.com",
+]
 
 allowed_programs = [
     "11111111111111111111111111111111",              # System Program
