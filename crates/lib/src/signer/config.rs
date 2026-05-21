@@ -2,6 +2,7 @@ use crate::{error::KoraError, sanitize_error, signer::utils::get_env_var_for_sig
 use serde::{Deserialize, Serialize};
 use solana_keychain::{OpenfortSigner as KeychainOpenfortSigner, Signer};
 use std::{fmt, fs, path::Path};
+use utoipa::ToSchema;
 
 /// Configuration for a pool of signers
 #[derive(Clone, Serialize, Deserialize)]
@@ -21,7 +22,7 @@ pub struct SignerPoolSettings {
 }
 
 /// Available signer selection strategies
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionStrategy {
     RoundRobin,

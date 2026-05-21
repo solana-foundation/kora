@@ -124,27 +124,24 @@ pub enum ProgramsConfig {
     Allowlist(Vec<String>),
 }
 
-impl<'__s> utoipa::ToSchema<'__s> for ProgramsConfig {
-    fn schema() -> (&'__s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
-        ("ProgramsConfig", string_or_string_array_schema())
+impl utoipa::PartialSchema for ProgramsConfig {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        string_or_string_array_schema()
     }
 }
+
+impl utoipa::ToSchema for ProgramsConfig {}
 
 /// OpenAPI schema for enums that serialize as either the literal string `"All"` or a JSON array
 /// of strings. The auto-derived schema treats the untagged `Allowlist` variant as an object
 /// wrapper, which does not match the actual JSON form.
 fn string_or_string_array_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
-    use utoipa::openapi::{ArrayBuilder, ObjectBuilder, OneOfBuilder, SchemaType};
+    use utoipa::openapi::{schema::Type, ArrayBuilder, ObjectBuilder, OneOfBuilder};
     OneOfBuilder::new()
-        .item(
-            ObjectBuilder::new()
-                .schema_type(SchemaType::String)
-                .enum_values(Some(vec!["All"]))
-                .build(),
-        )
+        .item(ObjectBuilder::new().schema_type(Type::String).enum_values(Some(vec!["All"])).build())
         .item(
             ArrayBuilder::new()
-                .items(ObjectBuilder::new().schema_type(SchemaType::String).build())
+                .items(ObjectBuilder::new().schema_type(Type::String).build())
                 .build(),
         )
         .into()

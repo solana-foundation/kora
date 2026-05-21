@@ -83,7 +83,7 @@ p256 = "0.13.3"
 redis = { version = "0.32.5", features = ["tokio-comp", "connection-manager"] }
 deadpool-redis = "0.22.0"
 vaultrs = "0.7.3"
-utoipa = { version = "4.2.0", features = ["yaml", "chrono"] }
+utoipa = { version = "5.5", features = ["yaml", "chrono"] }
 hmac = "0.12.1"
 sha2 = "0.10.9"
 prometheus = "0.14.0"
