@@ -75,7 +75,7 @@ hyper = "1.9.0"
 http = "0.2"
 toml = "1.1.2"
 spl-token-interface = { version = "2.0.0" }
-spl-token-2022-interface = { version = "2.1.0" }
+spl-token-2022-interface = { version = "3.0.0" }
 spl-associated-token-account-interface = { version = "2.0.0" }
 chrono = "0.4.44"
 hex = "0.4.3"
