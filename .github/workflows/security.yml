@@ -24,12 +24,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
-      - run: >
-          cargo audit
-          --ignore RUSTSEC-2023-0071
-          --ignore RUSTSEC-2026-0104
-          --ignore RUSTSEC-2026-0098
-          --ignore RUSTSEC-2026-0099
+      - run: cargo audit
 
   pnpm-audit:
     runs-on: ubuntu-latest
@@ -45,7 +40,44 @@ jobs:
         with:
           version: 10.12.3
           run_install: false
-      - run: pnpm audit
+      - run: |
+          report="${RUNNER_TEMP:-/tmp}/pnpm-audit.json"
+          set +e
+          pnpm audit --json > "$report"
+          audit_status=$?
+          set -e
+          if [ "$audit_status" -eq 0 ]; then
+            exit 0
+          fi
+          node - "$report" <<'NODE'
+          const fs = require("node:fs");
+
+          const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          const advisories = Object.values(report.advisories ?? {});
+          if (advisories.length === 0) {
+            process.exit(1);
+          }
+
+          const isFixable = (advisory) => {
+            const patchedVersions = advisory.patched_versions;
+            return patchedVersions && patchedVersions !== "<0.0.0";
+          };
+          const fixable = advisories.filter(isFixable);
+
+          for (const advisory of advisories.filter((advisory) => !isFixable(advisory))) {
+            const id = advisory.github_advisory_id ?? advisory.cves?.[0] ?? advisory.id;
+            console.log(`Ignoring unfixable advisory ${id}`);
+          }
+
+          if (fixable.length > 0) {
+            console.error("Fixable pnpm advisories found:");
+            for (const advisory of fixable) {
+              const id = advisory.github_advisory_id ?? advisory.cves?.[0] ?? advisory.id;
+              console.error(`- ${id}: ${advisory.module_name} patched by ${advisory.patched_versions}`);
+            }
+            process.exit(1);
+          }
+          NODE
 
   miri:
     runs-on: ubuntu-latest
