@@ -1085,7 +1085,7 @@ allow_create = true
         assert!(!config.kora.cache.enabled);
         assert_eq!(config.kora.cache.default_ttl, 300);
         assert_eq!(config.kora.cache.account_ttl, 60);
-        assert_eq!(config.kora.cache.price_ttl, 30);
+        assert_eq!(config.kora.cache.price_ttl, 0);
     }
 
     #[test]
