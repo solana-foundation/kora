@@ -131,12 +131,15 @@ impl BundleValidator {
             )));
         }
 
-        let allowed_programs = Self::parse_pubkey_set(&config.validation.allowed_programs)?;
+        let allow_all_programs = config.validation.allowed_programs.is_all();
+        let allowed_programs =
+            Self::parse_pubkey_set(config.validation.allowed_programs.as_slice())?;
         let disallowed_programs = Self::parse_pubkey_set(&config.validation.disallowed_accounts)?;
         let signed_set: HashSet<usize> = signed_indices.iter().copied().collect();
 
         for (tx_idx, tx_result) in simulation_result.transaction_results.iter().enumerate() {
             Self::validate_invoked_programs(
+                allow_all_programs,
                 &allowed_programs,
                 &disallowed_programs,
                 &tx_result.logs,
@@ -158,6 +161,7 @@ impl BundleValidator {
     }
 
     fn validate_invoked_programs(
+        allow_all_programs: bool,
         allowed_programs: &HashSet<Pubkey>,
         disallowed_programs: &HashSet<Pubkey>,
         logs: &[String],
@@ -178,7 +182,7 @@ impl BundleValidator {
                 )));
             }
 
-            if !allowed_programs.contains(&program_id) {
+            if !allow_all_programs && !allowed_programs.contains(&program_id) {
                 return Err(KoraError::InvalidTransaction(format!(
                     "Program {} is not in the allowed list",
                     program_id
@@ -470,6 +474,72 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("disallowed"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_simulation_policy_wildcard_accepts_arbitrary_program() {
+        let fee_payer = Pubkey::new_unique();
+        let encoded_transactions = vec![make_test_transaction(&fee_payer)];
+        let mut config = ConfigMockBuilder::new().with_max_allowed_lamports(1_000_000).build();
+        config.validation.allowed_programs = crate::config::ProgramsConfig::All;
+        let rpc_client = RpcMockBuilder::new().with_fee_estimate(5_000).build();
+
+        let simulation_result = JitoBundleSimulationResult {
+            context: json!({ "slot": 1 }),
+            summary: Some(json!("succeeded")),
+            transaction_results: vec![make_tx_result(
+                vec!["Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [1]".to_string()],
+                Some(1_000_000),
+                Some(1_000_000),
+            )],
+        };
+
+        let result = BundleValidator::validate_simulation_policy(
+            &rpc_client,
+            &config,
+            &encoded_transactions,
+            &[0],
+            &simulation_result,
+        )
+        .await;
+
+        assert!(result.is_ok(), "wildcard should accept arbitrary program: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_validate_simulation_policy_wildcard_still_rejects_disallowed() {
+        let fee_payer = Pubkey::new_unique();
+        let encoded_transactions = vec![make_test_transaction(&fee_payer)];
+        let mut config = ConfigMockBuilder::new()
+            .with_max_allowed_lamports(1_000_000)
+            .with_disallowed_accounts(vec![
+                "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string()
+            ])
+            .build();
+        config.validation.allowed_programs = crate::config::ProgramsConfig::All;
+        let rpc_client = RpcMockBuilder::new().with_fee_estimate(5_000).build();
+
+        let simulation_result = JitoBundleSimulationResult {
+            context: json!({ "slot": 1 }),
+            summary: Some(json!("succeeded")),
+            transaction_results: vec![make_tx_result(
+                vec!["Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [1]".to_string()],
+                Some(1_000_000),
+                Some(1_000_000),
+            )],
+        };
+
+        let result = BundleValidator::validate_simulation_policy(
+            &rpc_client,
+            &config,
+            &encoded_transactions,
+            &[0],
+            &simulation_result,
+        )
+        .await;
+
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("disallowed"), "expected disallowed error, got: {err}");
     }
 
     #[tokio::test]

@@ -40,7 +40,10 @@ pub async fn get_config() -> Result<GetConfigResponse, KoraError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{common::setup_or_get_test_signer, config_mock::ConfigMockBuilder};
+    use crate::{
+        config::ProgramsConfig,
+        tests::{common::setup_or_get_test_signer, config_mock::ConfigMockBuilder},
+    };
     use serial_test::serial;
 
     #[tokio::test]
@@ -62,17 +65,17 @@ mod tests {
         // Assert ValidationConfig defaults
         assert_eq!(response.validation_config.max_allowed_lamports, 1_000_000_000);
         assert_eq!(response.validation_config.max_signatures, 10);
-        assert_eq!(response.validation_config.allowed_programs.len(), 3);
+        assert_eq!(response.validation_config.allowed_programs.as_slice().len(), 3);
         assert_eq!(
-            response.validation_config.allowed_programs[0],
+            response.validation_config.allowed_programs.as_slice()[0],
             "11111111111111111111111111111111"
         ); // System Program
         assert_eq!(
-            response.validation_config.allowed_programs[1],
+            response.validation_config.allowed_programs.as_slice()[1],
             "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         ); // Token Program
         assert_eq!(
-            response.validation_config.allowed_programs[2],
+            response.validation_config.allowed_programs.as_slice()[2],
             "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         ); // ATA Program
         assert_eq!(response.validation_config.allowed_tokens.len(), 1);
@@ -153,5 +156,25 @@ mod tests {
         assert!(response.enabled_methods.transfer_transaction);
         assert!(response.enabled_methods.get_blockhash);
         assert!(response.enabled_methods.get_config);
+    }
+
+    #[test]
+    fn test_get_config_response_serializes_programs_config_all_as_string() {
+        // The TS SDK / OpenAPI contract relies on `allowed_programs` being either
+        // the string "All" or an array of strings on the wire. Guard against any
+        // future field annotation that would break this user-facing shape.
+        let mut validation_config = crate::tests::config_mock::ValidationConfigBuilder::new()
+            .with_allowed_programs(vec!["program1".to_string()])
+            .build();
+        validation_config.allowed_programs = ProgramsConfig::All;
+
+        let response = GetConfigResponse {
+            fee_payers: vec![],
+            validation_config,
+            enabled_methods: EnabledMethods::default(),
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["validation_config"]["allowed_programs"], serde_json::json!("All"));
     }
 }

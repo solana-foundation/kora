@@ -1,8 +1,9 @@
 use crate::{
     config::{
         AltInstructionPolicy, EnabledMethods, FeePayerPolicy, LoaderV4InstructionPolicy,
-        NonceInstructionPolicy, SplTokenConfig, SplTokenInstructionPolicy, SystemInstructionPolicy,
-        Token2022Config, Token2022InstructionPolicy, TransferHookPolicy, ValidationConfig,
+        NonceInstructionPolicy, ProgramsConfig, SplTokenConfig, SplTokenInstructionPolicy,
+        SystemInstructionPolicy, Token2022Config, Token2022InstructionPolicy, TransferHookPolicy,
+        ValidationConfig,
     },
     fee::price::{PriceConfig, PriceModel},
     oracle::oracle::{PriceSource, TokenPrice},
@@ -54,6 +55,7 @@ const JSON_CONTENT_TYPE: &str = "application/json";
         AltInstructionPolicy,
         LoaderV4InstructionPolicy,
         SplTokenConfig,
+        ProgramsConfig,
         Token2022Config,
         TransferHookPolicy,
         EnabledMethods,

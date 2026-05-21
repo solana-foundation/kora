@@ -186,6 +186,45 @@ describe('Kora Kit Plugin', () => {
                 expect(result.validation_config.allowed_tokens).toHaveLength(1);
                 expect(result.validation_config.allowed_tokens[0]).toBe('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
             });
+
+            it('should pass through the "All" wildcard for allowed_programs without crashing', async () => {
+                // Regression: ProgramsConfig::All serializes as the string "All" on the wire,
+                // which would crash the kit wrapper if it called .map() unconditionally.
+                const rawResponse = {
+                    enabled_methods: {
+                        estimate_transaction_fee: true,
+                        get_blockhash: true,
+                        get_config: true,
+                        get_supported_tokens: true,
+                        liveness: true,
+                        sign_and_send_transaction: true,
+                        sign_transaction: true,
+                        transfer_transaction: true,
+                    },
+                    fee_payers: ['DemoKMZWkk483QoFPLRPQ2XVKB7bWnuXwSjvDE1JsWk7'],
+                    validation_config: {
+                        allowed_programs: 'All',
+                        allowed_spl_paid_tokens: [],
+                        allowed_tokens: [],
+                        disallowed_accounts: [],
+                        fee_payer_policy: {},
+                        max_allowed_lamports: 1000000,
+                        max_signatures: 10,
+                        price: { margin: 0.1, type: 'margin' },
+                        price_source: 'Jupiter',
+                        token2022: {
+                            blocked_account_extensions: [],
+                            blocked_mint_extensions: [],
+                        },
+                    },
+                };
+
+                mockSuccessfulResponse(rawResponse);
+
+                const result: KitConfigResponse = await kora.getConfig();
+
+                expect(result.validation_config.allowed_programs).toBe('All');
+            });
         });
 
         describe('getPayerSigner', () => {

@@ -113,7 +113,9 @@ export function koraPlugin(config: KoraPluginConfig) {
                     fee_payers: result.fee_payers.map(addr => address(addr)),
                     validation_config: {
                         ...result.validation_config,
-                        allowed_programs: result.validation_config.allowed_programs.map(addr => address(addr)),
+                        allowed_programs: Array.isArray(result.validation_config.allowed_programs)
+                            ? result.validation_config.allowed_programs.map(addr => address(addr))
+                            : result.validation_config.allowed_programs,
                         allowed_spl_paid_tokens: result.validation_config.allowed_spl_paid_tokens.map(addr =>
                             address(addr),
                         ),

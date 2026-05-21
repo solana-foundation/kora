@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use utoipa::{
     openapi::{
-        Components, ContentBuilder, ObjectBuilder, RefOr, Response, ResponseBuilder, Schema,
-        SchemaType,
+        schema::Type, Components, ContentBuilder, ObjectBuilder, RefOr, Response, ResponseBuilder,
+        Schema,
     },
     OpenApi,
 };
@@ -19,7 +19,7 @@ pub(crate) fn add_string_property(
     description: &str,
 ) -> ObjectBuilder {
     let string_object = ObjectBuilder::new()
-        .schema_type(SchemaType::String)
+        .schema_type(Type::String)
         .description(Some(description.to_string()))
         .enum_values(Some(vec![value.to_string()]))
         .build();
@@ -39,7 +39,7 @@ pub(crate) fn build_error_response(description: &str) -> Response {
                         .property(
                             "error",
                             RefOr::T(Schema::Object(
-                                ObjectBuilder::new().schema_type(SchemaType::String).build(),
+                                ObjectBuilder::new().schema_type(Type::String).build(),
                             )),
                         )
                         .build(),
