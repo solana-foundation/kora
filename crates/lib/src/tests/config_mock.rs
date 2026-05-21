@@ -111,6 +111,7 @@ impl ConfigMockBuilder {
                         enabled: true,
                         default_ttl: 300,
                         account_ttl: 60,
+                        price_ttl: 30,
                     },
                     usage_limit: UsageLimitConfig::default(),
                     plugins: PluginsConfig::default(),
@@ -381,6 +382,7 @@ impl KoraConfigBuilder {
                     enabled: true,
                     default_ttl: 300,
                     account_ttl: 60,
+                    price_ttl: 30,
                 },
                 usage_limit: UsageLimitConfig::default(),
                 plugins: PluginsConfig::default(),
@@ -441,6 +443,7 @@ impl CacheConfigBuilder {
                 enabled: true,
                 default_ttl: 300,
                 account_ttl: 60,
+                price_ttl: 30,
             },
         }
     }
@@ -469,8 +472,21 @@ impl CacheConfigBuilder {
         self
     }
 
+    pub fn with_price_ttl(mut self, ttl: u64) -> Self {
+        self.config.price_ttl = ttl;
+        self
+    }
+
     pub fn disabled() -> Self {
-        Self { config: CacheConfig { url: None, enabled: false, default_ttl: 0, account_ttl: 0 } }
+        Self {
+            config: CacheConfig {
+                url: None,
+                enabled: false,
+                default_ttl: 0,
+                account_ttl: 0,
+                price_ttl: 0,
+            },
+        }
     }
 }
 

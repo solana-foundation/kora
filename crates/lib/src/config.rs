@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 use crate::{
     bundle::JitoConfig,
     constant::{
-        DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL,
+        DEFAULT_CACHE_ACCOUNT_TTL, DEFAULT_CACHE_DEFAULT_TTL, DEFAULT_CACHE_PRICE_TTL,
         DEFAULT_FEE_PAYER_BALANCE_METRICS_EXPIRY_SECONDS, DEFAULT_MAX_REQUEST_BODY_SIZE,
         DEFAULT_MAX_TIMESTAMP_AGE, DEFAULT_METRICS_ENDPOINT, DEFAULT_METRICS_PORT,
         DEFAULT_METRICS_SCRAPE_INTERVAL, DEFAULT_PROTECTED_METHODS,
@@ -584,6 +584,9 @@ pub struct CacheConfig {
     pub default_ttl: u64,
     /// TTL for account data cache in seconds
     pub account_ttl: u64,
+    /// TTL for token price data cache in seconds
+    #[serde(default)]
+    pub price_ttl: u64,
 }
 
 impl Default for CacheConfig {
@@ -593,6 +596,7 @@ impl Default for CacheConfig {
             enabled: false,
             default_ttl: DEFAULT_CACHE_DEFAULT_TTL,
             account_ttl: DEFAULT_CACHE_ACCOUNT_TTL,
+            price_ttl: DEFAULT_CACHE_PRICE_TTL,
         }
     }
 }
@@ -1112,6 +1116,7 @@ allow_create = true
         assert!(!config.kora.cache.enabled);
         assert_eq!(config.kora.cache.default_ttl, 300);
         assert_eq!(config.kora.cache.account_ttl, 60);
+        assert_eq!(config.kora.cache.price_ttl, 0);
     }
 
     #[test]
