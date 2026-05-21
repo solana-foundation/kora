@@ -1,0 +1,11 @@
+[advisories]
+ignore = [
+    # rsa has no patched release; reached via solana-keychain/jsonwebtoken.
+    "RUSTSEC-2023-0071",
+    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
+    "RUSTSEC-2026-0104",
+    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
+    "RUSTSEC-2026-0098",
+    # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
+    "RUSTSEC-2026-0099",
+]

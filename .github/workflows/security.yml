@@ -1,0 +1,59 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+
+  pnpm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+      - uses: pnpm/action-setup@v6.0.7
+        with:
+          version: 10.12.3
+          run_install: false
+      - run: pnpm audit --ignore-unfixable
+
+  miri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/org.rust-lang.miri
+          key: miri-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - run: cargo +nightly miri setup
+      - run: cargo +nightly miri test -p kora-lib --lib bundle::helper::tests
+      - run: cargo +nightly miri test -p kora-lib --lib error::tests
