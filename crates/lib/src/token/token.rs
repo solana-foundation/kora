@@ -809,6 +809,7 @@ impl TokenUtil {
         let mut cached_epoch: Option<u64> = None;
         let mut token2022_mints: HashMap<Pubkey, Box<dyn TokenMint>> = HashMap::new();
         let mut payment_mints: HashSet<Pubkey> = HashSet::new();
+        let mut valid_transfers = Vec::new();
 
         let all_instructions = bundle_instructions
             .map(|instructions| instructions.to_vec())
@@ -919,35 +920,115 @@ impl TokenUtil {
                     *amount
                 };
 
-                let inflow_lamports = if is_inflow {
-                    Self::calculate_token_value_in_lamports(
-                        inflow_amount,
-                        &token_mint,
-                        rpc_client,
-                        config,
-                    )
-                    .await?
-                } else {
-                    0
-                };
-
-                let outflow_lamports = if is_outflow {
-                    Self::calculate_token_value_in_lamports(
-                        *amount,
-                        &token_mint,
-                        rpc_client,
-                        config,
-                    )
-                    .await?
-                } else {
-                    0
-                };
-
-                totals.checked_add_assign(PaymentLamportTotals {
-                    inflow: inflow_lamports,
-                    outflow: outflow_lamports,
-                })?;
+                valid_transfers.push((is_inflow, is_outflow, token_mint, inflow_amount, *amount));
             }
+        }
+
+        if payment_mints.is_empty() {
+            return Ok(totals);
+        }
+
+        let mint_addresses: Vec<String> =
+            payment_mints.iter().map(|mint| mint.to_string()).collect();
+
+        let oracle = RetryingPriceOracle::new(
+            3,
+            Duration::from_secs(1),
+            get_price_oracle(config.validation.price_source.clone())?,
+        );
+
+        let prices = oracle.get_token_prices(&mint_addresses).await?;
+
+        let current_slot = if config.validation.max_price_staleness_slots > 0 {
+            Some(
+                rpc_client
+                    .get_slot()
+                    .await
+                    .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?,
+            )
+        } else {
+            None
+        };
+
+        for (mint_addr, price) in &prices {
+            Self::check_price_staleness(
+                rpc_client,
+                config,
+                price,
+                &format!(" for {mint_addr}"),
+                current_slot,
+            )
+            .await?;
+        }
+
+        for (is_inflow, is_outflow, token_mint, inflow_amount, amount) in valid_transfers {
+            let decimals = Self::get_mint_decimals(config, rpc_client, &token_mint).await?;
+            let price = prices.get(&token_mint.to_string()).ok_or_else(|| {
+                KoraError::RpcError(format!("No price data for mint {token_mint}"))
+            })?;
+
+            let inflow_lamports = if is_inflow {
+                let amount_decimal = Decimal::from_u64(inflow_amount).ok_or_else(|| {
+                    KoraError::ValidationError("Invalid token amount".to_string())
+                })?;
+                let decimals_scale = decimal_scale(decimals)?;
+                let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL).ok_or_else(|| {
+                    KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string())
+                })?;
+
+                let lamports_decimal = amount_decimal.checked_mul(price.price)
+                    .and_then(|result| result.checked_mul(lamports_per_sol))
+                    .and_then(|result| result.checked_div(decimals_scale))
+                    .ok_or_else(|| {
+                        log::error!("Token value calculation overflow: amount={}, price={}, decimals={}, lamports_per_sol={}",
+                            inflow_amount,
+                            price.price,
+                            decimals,
+                            lamports_per_sol
+                        );
+                        KoraError::ValidationError("Token value calculation overflow".to_string())
+                    })?;
+
+                lamports_decimal.floor().to_u64().ok_or_else(|| {
+                    KoraError::ValidationError("Lamports value overflow".to_string())
+                })?
+            } else {
+                0
+            };
+
+            let outflow_lamports = if is_outflow {
+                let amount_decimal = Decimal::from_u64(amount).ok_or_else(|| {
+                    KoraError::ValidationError("Invalid token amount".to_string())
+                })?;
+                let decimals_scale = decimal_scale(decimals)?;
+                let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL).ok_or_else(|| {
+                    KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string())
+                })?;
+
+                let lamports_decimal = amount_decimal.checked_mul(price.price)
+                    .and_then(|result| result.checked_mul(lamports_per_sol))
+                    .and_then(|result| result.checked_div(decimals_scale))
+                    .ok_or_else(|| {
+                        log::error!("Token value calculation overflow: amount={}, price={}, decimals={}, lamports_per_sol={}",
+                            amount,
+                            price.price,
+                            decimals,
+                            lamports_per_sol
+                        );
+                        KoraError::ValidationError("Token value calculation overflow".to_string())
+                    })?;
+
+                lamports_decimal.floor().to_u64().ok_or_else(|| {
+                    KoraError::ValidationError("Lamports value overflow".to_string())
+                })?
+            } else {
+                0
+            };
+
+            totals.checked_add_assign(PaymentLamportTotals {
+                inflow: inflow_lamports,
+                outflow: outflow_lamports,
+            })?;
         }
 
         Ok(totals)
@@ -2158,14 +2239,14 @@ mod tests_token {
         let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
             &source_account,
             &destination_account,
-            &mint_account,
             &source_account,
             &destination_account,
+            &mint_account,
             &mint_account,
         ]);
 
         let mut mock_oracle = crate::oracle::MockPriceOracle::new();
-        mock_oracle.expect_get_prices().times(2).returning(|_, mint_addresses| {
+        mock_oracle.expect_get_prices().times(1).returning(|_, mint_addresses| {
             let mut result = HashMap::new();
             for mint in mint_addresses {
                 result.insert(
