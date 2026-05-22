@@ -808,6 +808,7 @@ impl TokenUtil {
         let mut totals = PaymentLamportTotals::default();
         let mut cached_epoch: Option<u64> = None;
         let mut token2022_mints: HashMap<Pubkey, Box<dyn TokenMint>> = HashMap::new();
+        let mut payment_mints: HashSet<Pubkey> = HashSet::new();
 
         let all_instructions = bundle_instructions
             .map(|instructions| instructions.to_vec())
@@ -901,6 +902,8 @@ impl TokenUtil {
                         continue;
                     }
                 }
+
+                payment_mints.insert(token_mint);
 
                 let inflow_amount = if *is_2022 && is_inflow {
                     Self::calculate_token2022_net_amount(
