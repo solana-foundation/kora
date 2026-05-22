@@ -82,7 +82,12 @@ impl RetryingPriceOracle {
         base_delay: Duration,
         oracle: Arc<dyn PriceOracle + Send + Sync>,
     ) -> Self {
-        Self { client: Client::new(), max_retries, base_delay, oracle }
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(10))
+            .build()
+            .expect("Failed to build reqwest client");
+        Self { client, max_retries, base_delay, oracle }
     }
 
     pub async fn get_token_price(&self, mint_address: &str) -> Result<TokenPrice, KoraError> {
@@ -229,7 +234,7 @@ mod tests {
 
         let _server_handle = std::thread::spawn(move || {
             if let Ok((stream, _)) = listener.accept() {
-                std::thread::sleep(Duration::from_secs(10));
+                std::thread::sleep(Duration::from_secs(30));
                 let _ = stream;
             }
         });
@@ -264,14 +269,16 @@ mod tests {
 
         let hanging_oracle = Arc::new(HangingOracle { url: server_url });
         let retrying_oracle =
-            RetryingPriceOracle::new(3, Duration::from_millis(10), hanging_oracle);
+            RetryingPriceOracle::new(1, Duration::from_millis(10), hanging_oracle);
 
         let result = tokio::time::timeout(
-            Duration::from_secs(2),
+            Duration::from_secs(15),
             retrying_oracle.get_token_prices(&["dummy_mint".to_string()]),
         )
         .await;
 
-        assert!(result.is_err(), "Expected request to hang and timeout");
+        assert!(result.is_ok(), "Expected request to actually timeout within the window");
+        let inner_result = result.unwrap();
+        assert!(inner_result.is_err());
     }
 }
