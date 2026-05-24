@@ -1054,4 +1054,108 @@ private_key_env = "KORA_LOAD_CONFIG_KEY_99"
         assert!(result.is_ok());
         std::env::remove_var("KORA_TEST_PRESENT_KEY_12345");
     }
+
+    #[test]
+    fn test_turnkey_signer_builds_with_no_http_config() {
+        std::env::set_var(
+            "TURNKEY_API_PUBLIC_KEY",
+            "04746f04b2c1b181db8fb777e487504a500a501a500a501a500a501a500a501a501a501a501a501a501a501a501a501a501a501a501a501a501a501a501a50",
+        );
+        std::env::set_var(
+            "TURNKEY_API_PRIVATE_KEY",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        );
+        std::env::set_var("TURNKEY_ORG_ID", "test-org");
+        std::env::set_var("TURNKEY_PRIVATE_KEY_ID", "test-key-id");
+        std::env::set_var("TURNKEY_PUBLIC_KEY", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV");
+
+        let config = TurnkeySignerConfig {
+            api_public_key_env: "TURNKEY_API_PUBLIC_KEY".to_string(),
+            api_private_key_env: "TURNKEY_API_PRIVATE_KEY".to_string(),
+            organization_id_env: "TURNKEY_ORG_ID".to_string(),
+            private_key_id_env: "TURNKEY_PRIVATE_KEY_ID".to_string(),
+            public_key_env: "TURNKEY_PUBLIC_KEY".to_string(),
+        };
+
+        let result = SignerConfig::build_turnkey_signer(&config, "test");
+        assert!(result.is_ok());
+
+        std::env::remove_var("TURNKEY_API_PUBLIC_KEY");
+        std::env::remove_var("TURNKEY_API_PRIVATE_KEY");
+        std::env::remove_var("TURNKEY_ORG_ID");
+        std::env::remove_var("TURNKEY_PRIVATE_KEY_ID");
+        std::env::remove_var("TURNKEY_PUBLIC_KEY");
+    }
+
+    #[test]
+    fn test_vault_signer_builds_with_no_http_config() {
+        std::env::set_var("VAULT_ADDR", "http://127.0.0.1:8200");
+        std::env::set_var("VAULT_TOKEN", "token");
+        std::env::set_var("VAULT_KEY_NAME", "key");
+        std::env::set_var("VAULT_PUBKEY", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV");
+
+        let config = VaultSignerConfig {
+            vault_addr_env: "VAULT_ADDR".to_string(),
+            vault_token_env: "VAULT_TOKEN".to_string(),
+            key_name_env: "VAULT_KEY_NAME".to_string(),
+            pubkey_env: "VAULT_PUBKEY".to_string(),
+        };
+
+        let result = SignerConfig::build_vault_signer(&config, "test");
+        assert!(result.is_ok());
+
+        std::env::remove_var("VAULT_ADDR");
+        std::env::remove_var("VAULT_TOKEN");
+        std::env::remove_var("VAULT_KEY_NAME");
+        std::env::remove_var("VAULT_PUBKEY");
+    }
+
+    #[test]
+    fn test_cdp_signer_builds_with_no_http_config() {
+        std::env::set_var("CDP_API_KEY_ID", "key-id");
+        std::env::set_var("CDP_API_KEY_SECRET", "secret");
+        std::env::set_var("CDP_WALLET_SECRET", "secret");
+        std::env::set_var("CDP_ADDRESS", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV");
+
+        let config = CdpSignerConfig {
+            api_key_id_env: "CDP_API_KEY_ID".to_string(),
+            api_key_secret_env: "CDP_API_KEY_SECRET".to_string(),
+            wallet_secret_env: "CDP_WALLET_SECRET".to_string(),
+            address_env: "CDP_ADDRESS".to_string(),
+        };
+
+        let result = SignerConfig::build_cdp_signer(&config, "test");
+        assert!(result.is_ok());
+
+        std::env::remove_var("CDP_API_KEY_ID");
+        std::env::remove_var("CDP_API_KEY_SECRET");
+        std::env::remove_var("CDP_WALLET_SECRET");
+        std::env::remove_var("CDP_ADDRESS");
+    }
+
+    #[tokio::test]
+    async fn test_fireblocks_signer_builds_with_no_http_config() {
+        const TEST_RSA_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDKKw7fHhfK3/Ts\n-----END PRIVATE KEY-----";
+        std::env::set_var("FIREBLOCKS_API_KEY", "test");
+        std::env::set_var("FIREBLOCKS_PRIVATE_KEY_PEM", TEST_RSA_KEY);
+        std::env::set_var("FIREBLOCKS_VAULT_ACCOUNT_ID", "1");
+
+        let config = FireblocksSignerConfig {
+            api_key_env: "FIREBLOCKS_API_KEY".to_string(),
+            private_key_pem_env: "FIREBLOCKS_PRIVATE_KEY_PEM".to_string(),
+            vault_account_id_env: "FIREBLOCKS_VAULT_ACCOUNT_ID".to_string(),
+            asset_id: None,
+            api_base_url: None,
+            poll_interval_ms: None,
+            max_poll_attempts: None,
+            use_program_call: None,
+        };
+
+        let result = SignerConfig::build_fireblocks_signer(&config, "test").await;
+        assert!(result.is_err());
+
+        std::env::remove_var("FIREBLOCKS_API_KEY");
+        std::env::remove_var("FIREBLOCKS_PRIVATE_KEY_PEM");
+        std::env::remove_var("FIREBLOCKS_VAULT_ACCOUNT_ID");
+    }
 }
