@@ -428,7 +428,7 @@ impl SignerConfig {
             organization_id,
             private_key_id,
             public_key,
-            None,
+            config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
         )
         .map_err(|e| {
             KoraError::SigningError(format!(
@@ -446,7 +446,14 @@ impl SignerConfig {
         let app_secret = get_env_var_for_signer(&config.app_secret_env, signer_name)?;
         let wallet_id = get_env_var_for_signer(&config.wallet_id_env, signer_name)?;
 
-        Signer::from_privy(app_id, app_secret, wallet_id, None).await.map_err(|e| {
+        Signer::from_privy(
+            app_id,
+            app_secret,
+            wallet_id,
+            config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
+        )
+        .await
+        .map_err(|e| {
             KoraError::SigningError(format!(
                 "Failed to create Privy signer '{signer_name}': {}",
                 sanitize_error!(e)
@@ -463,7 +470,14 @@ impl SignerConfig {
         let key_name = get_env_var_for_signer(&config.key_name_env, signer_name)?;
         let pubkey = get_env_var_for_signer(&config.pubkey_env, signer_name)?;
 
-        Signer::from_vault(vault_addr, vault_token, key_name, pubkey, None).map_err(|e| {
+        Signer::from_vault(
+            vault_addr,
+            vault_token,
+            key_name,
+            pubkey,
+            config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
+        )
+        .map_err(|e| {
             KoraError::SigningError(format!(
                 "Failed to create Vault signer '{signer_name}': {}",
                 sanitize_error!(e)
@@ -552,7 +566,14 @@ impl SignerConfig {
         let api_key_secret = get_env_var_for_signer(&config.api_key_secret_env, signer_name)?;
         let wallet_secret = get_env_var_for_signer(&config.wallet_secret_env, signer_name)?;
         let address = get_env_var_for_signer(&config.address_env, signer_name)?;
-        Signer::from_cdp(api_key_id, api_key_secret, wallet_secret, address, None).map_err(|e| {
+        Signer::from_cdp(
+            api_key_id,
+            api_key_secret,
+            wallet_secret,
+            address,
+            config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
+        )
+        .map_err(|e| {
             KoraError::SigningError(format!(
                 "Failed to create CDP signer '{signer_name}': {}",
                 sanitize_error!(e)
