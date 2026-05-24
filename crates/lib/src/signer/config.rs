@@ -522,7 +522,7 @@ impl SignerConfig {
             poll_interval_ms: config.poll_interval_ms,
             max_poll_attempts: config.max_poll_attempts,
             use_program_call: config.use_program_call,
-            http_client_config: None,
+            http_client_config: config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
         };
 
         Signer::from_fireblocks(keychain_config).await.map_err(|e| {
@@ -595,7 +595,7 @@ impl SignerConfig {
             private_key_pem,
             wallet_id,
             api_base_url: config.api_base_url.clone(),
-            http_client_config: None,
+            http_client_config: config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
         };
         Signer::from_dfns(keychain_config).await.map_err(|e| {
             KoraError::SigningError(format!(
@@ -654,7 +654,10 @@ impl SignerConfig {
                 account_id,
                 wallet_secret,
                 api_base_url: config.api_base_url.clone(),
-                http_client_config: None,
+                http_client_config: config
+                    .http_config
+                    .as_ref()
+                    .map(|c| c.to_keychain_http_config()),
             })
             .map_err(map_err)?;
         signer.init().await.map_err(map_err)?;
