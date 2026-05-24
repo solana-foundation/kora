@@ -28,6 +28,7 @@ api_private_key_env = "TURNKEY_API_PRIVATE_KEY_1"
 organization_id_env = "TURNKEY_ORG_ID_1"
 private_key_id_env = "TURNKEY_PRIVATE_KEY_ID_1"
 public_key_env = "TURNKEY_PUBLIC_KEY_1"
+# http_config = { request_timeout_secs = 30, connect_timeout_secs = 10 }
 weight = 2                                        # Higher weight = selected more often
 
 # Privy signer example
@@ -37,6 +38,7 @@ type = "privy"
 app_id_env = "PRIVY_APP_ID_1"
 app_secret_env = "PRIVY_APP_SECRET_1"
 wallet_id_env = "PRIVY_WALLET_ID_1"
+# http_config = { request_timeout_secs = 30, connect_timeout_secs = 10 }
 weight = 1
 
 # Vault signer example
@@ -47,6 +49,7 @@ addr_env = "VAULT_ADDR_1"
 token_env = "VAULT_TOKEN_1"
 key_name_env = "VAULT_KEY_NAME_1"
 pubkey_env = "VAULT_PUBKEY_1"
+# http_config = { request_timeout_secs = 30, connect_timeout_secs = 10 }
 weight = 1
 
 # Openfort backend wallet signer example
@@ -58,6 +61,7 @@ account_id_env = "OPENFORT_ACCOUNT_ID_1"
 wallet_secret_env = "OPENFORT_WALLET_SECRET_1"
 # Optional: override the Openfort API base URL (defaults to https://api.openfort.io). Must be HTTPS.
 # api_base_url = "https://staging.openfort.io"
+# http_config = { request_timeout_secs = 30, connect_timeout_secs = 10 }
 weight = 1
 
 # Environment Variables Required:
