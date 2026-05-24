@@ -63,6 +63,22 @@ pub struct MemorySignerConfig {
     pub private_key_env: String,
 }
 
+/// Configuration for remote signer HTTP request and connection settings
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemoteSignerHttpConfig {
+    pub request_timeout_secs: Option<u64>,
+    pub connect_timeout_secs: Option<u64>,
+}
+
+impl RemoteSignerHttpConfig {
+    fn to_keychain_http_config(&self) -> solana_keychain::HttpClientConfig {
+        solana_keychain::HttpClientConfig {
+            request_timeout: self.request_timeout_secs.map(std::time::Duration::from_secs),
+            connect_timeout: self.connect_timeout_secs.map(std::time::Duration::from_secs),
+        }
+    }
+}
+
 /// Turnkey signer configuration
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TurnkeySignerConfig {
@@ -71,6 +87,8 @@ pub struct TurnkeySignerConfig {
     pub organization_id_env: String,
     pub private_key_id_env: String,
     pub public_key_env: String,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Privy signer configuration
@@ -79,6 +97,8 @@ pub struct PrivySignerConfig {
     pub app_id_env: String,
     pub app_secret_env: String,
     pub wallet_id_env: String,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Openfort backend wallet signer configuration
@@ -96,6 +116,8 @@ pub struct OpenfortSignerConfig {
     /// Useful for pointing at staging or mock endpoints during testing. Must use HTTPS.
     #[serde(default)]
     pub api_base_url: Option<String>,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Vault signer configuration
@@ -105,6 +127,8 @@ pub struct VaultSignerConfig {
     pub vault_token_env: String,
     pub key_name_env: String,
     pub pubkey_env: String,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// AWS KMS signer configuration
@@ -137,6 +161,8 @@ pub struct CdpSignerConfig {
     pub api_key_secret_env: String,
     pub wallet_secret_env: String,
     pub address_env: String,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Dfns signer configuration
@@ -148,6 +174,8 @@ pub struct DfnsSignerConfig {
     pub wallet_id_env: String,
     #[serde(default)]
     pub api_base_url: Option<String>,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Crossmint signer configuration
@@ -183,6 +211,8 @@ pub struct FireblocksSignerConfig {
     pub max_poll_attempts: Option<u32>,
     #[serde(default)]
     pub use_program_call: Option<bool>,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Signer type-specific configuration
@@ -1075,6 +1105,7 @@ private_key_env = "KORA_LOAD_CONFIG_KEY_99"
             organization_id_env: "TURNKEY_ORG_ID".to_string(),
             private_key_id_env: "TURNKEY_PRIVATE_KEY_ID".to_string(),
             public_key_env: "TURNKEY_PUBLIC_KEY".to_string(),
+            http_config: None,
         };
 
         let result = SignerConfig::build_turnkey_signer(&config, "test");
@@ -1099,6 +1130,7 @@ private_key_env = "KORA_LOAD_CONFIG_KEY_99"
             vault_token_env: "VAULT_TOKEN".to_string(),
             key_name_env: "VAULT_KEY_NAME".to_string(),
             pubkey_env: "VAULT_PUBKEY".to_string(),
+            http_config: None,
         };
 
         let result = SignerConfig::build_vault_signer(&config, "test");
@@ -1122,6 +1154,7 @@ private_key_env = "KORA_LOAD_CONFIG_KEY_99"
             api_key_secret_env: "CDP_API_KEY_SECRET".to_string(),
             wallet_secret_env: "CDP_WALLET_SECRET".to_string(),
             address_env: "CDP_ADDRESS".to_string(),
+            http_config: None,
         };
 
         let result = SignerConfig::build_cdp_signer(&config, "test");
@@ -1149,6 +1182,7 @@ private_key_env = "KORA_LOAD_CONFIG_KEY_99"
             poll_interval_ms: None,
             max_poll_attempts: None,
             use_program_call: None,
+            http_config: None,
         };
 
         let result = SignerConfig::build_fireblocks_signer(&config, "test").await;
