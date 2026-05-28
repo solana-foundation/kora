@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
-use devnet_deploy_paymaster::reaper::{self, LoaderFilter, ReaperConfig};
+use devnet_deploy_paymaster::reaper::{self, ReaperConfig};
 use kora_lib::{
     rpc::get_rpc_client,
     signer::{SignerPool, SignerPoolConfig, SolanaSigner},
@@ -22,37 +22,14 @@ struct Args {
     signers_config: PathBuf,
     #[arg(long, default_value = "https://api.devnet.solana.com")]
     rpc_url: String,
-    /// Idle threshold (humantime: `7d`, `48h`).
-    #[arg(long, default_value = "7d", value_parser = parse_duration)]
-    threshold: Duration,
+    /// Idle threshold in hours.
+    #[arg(long, default_value_t = 168)]
+    threshold_hours: u64,
     /// Log what would close, change nothing on-chain.
     #[arg(long)]
     dry_run: bool,
     #[arg(long)]
     max_closes: Option<usize>,
-    #[arg(long, value_enum, default_value_t = LoaderFilterArg::Both)]
-    loader: LoaderFilterArg,
-}
-
-#[derive(clap::ValueEnum, Clone, Copy)]
-enum LoaderFilterArg {
-    V3,
-    V4,
-    Both,
-}
-
-impl From<LoaderFilterArg> for LoaderFilter {
-    fn from(arg: LoaderFilterArg) -> Self {
-        match arg {
-            LoaderFilterArg::V3 => LoaderFilter::V3Only,
-            LoaderFilterArg::V4 => LoaderFilter::V4Only,
-            LoaderFilterArg::Both => LoaderFilter::Both,
-        }
-    }
-}
-
-fn parse_duration(s: &str) -> Result<Duration, String> {
-    humantime::parse_duration(s).map_err(|e| e.to_string())
 }
 
 #[tokio::main]
@@ -82,18 +59,16 @@ async fn main() -> Result<()> {
 
     let cfg = ReaperConfig {
         fee_payer,
-        threshold: args.threshold,
+        threshold: Duration::from_secs(args.threshold_hours * 3600),
         dry_run: args.dry_run,
         max_closes: args.max_closes,
-        loader_filter: args.loader.into(),
     };
 
     log::info!(
-        "reaper start: fee_payer={fee_payer} threshold={:?} dry_run={} max_closes={:?} loader={:?}",
-        cfg.threshold,
+        "reaper start: fee_payer={fee_payer} threshold_hours={} dry_run={} max_closes={:?}",
+        args.threshold_hours,
         cfg.dry_run,
         cfg.max_closes,
-        cfg.loader_filter,
     );
 
     let report = reaper::run(rpc, cfg).await?;

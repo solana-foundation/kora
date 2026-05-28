@@ -24,7 +24,6 @@ chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 dotenv = { workspace = true }
 futures = { workspace = true }
-humantime = "2.1"
 kora-lib = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }

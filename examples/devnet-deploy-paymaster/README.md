@@ -88,8 +88,8 @@ Optionally specify a git ref (defaults to `main`).
 ## Reaper
 
 `devnet_deploy_reaper` runs daily as a Cloud Run Job, finds paymaster-owned
-programs idle past the threshold (default 7d), and closes them — rent goes
-back to the fee payer.
+programs idle past the threshold (default 168h / 7d), and closes them — rent
+goes back to the fee payer.
 
 Flow: discover via `getProgramAccounts` filtered on upgrade authority →
 classify via `getSignaturesForAddress(limit=1)` (slot fallback) → close.
@@ -106,7 +106,7 @@ gcloud run jobs execute "$CLOUD_RUN_REAPER_JOB" --region "$GCP_REGION" --project
 cargo run --release --bin devnet_deploy_reaper -- \
     --config examples/devnet-deploy-paymaster/kora.toml \
     --signers-config examples/devnet-deploy-paymaster/signers.toml \
-    --threshold 7d --dry-run
+    --threshold-hours 168 --dry-run
 ```
 
-Flags: `--threshold`, `--dry-run`, `--max-closes`, `--loader v3|v4|both`.
+Flags: `--threshold-hours`, `--dry-run`, `--max-closes`.

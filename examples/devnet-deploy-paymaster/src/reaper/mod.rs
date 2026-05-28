@@ -29,25 +29,6 @@ pub struct ReaperConfig {
     pub threshold: Duration,
     pub dry_run: bool,
     pub max_closes: Option<usize>,
-    pub loader_filter: LoaderFilter,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoaderFilter {
-    V3Only,
-    V4Only,
-    Both,
-}
-
-impl LoaderFilter {
-    pub fn includes(self, loader: Loader) -> bool {
-        matches!(
-            (self, loader),
-            (LoaderFilter::Both, _)
-                | (LoaderFilter::V3Only, Loader::V3)
-                | (LoaderFilter::V4Only, Loader::V4)
-        )
-    }
 }
 
 #[derive(Debug, Default)]
@@ -81,9 +62,6 @@ pub async fn run(rpc: Arc<RpcClient>, cfg: ReaperConfig) -> Result<ReaperReport>
     let mut idle: Vec<OwnedProgram> = Vec::new();
 
     for program in owned {
-        if !cfg.loader_filter.includes(program.loader) {
-            continue;
-        }
         match activity::classify(&rpc, &program, cfg.threshold).await {
             Ok(activity::ActivityVerdict::Recent { .. }) => report.skipped_recent += 1,
             Ok(activity::ActivityVerdict::Idle { last_seen_unix }) => {

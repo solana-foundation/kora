@@ -14,4 +14,4 @@ COPY examples/devnet-deploy-paymaster/kora.toml ./kora.toml
 COPY examples/devnet-deploy-paymaster/signers.toml ./signers.toml
 
 ENTRYPOINT ["devnet_deploy_reaper"]
-CMD ["--config", "kora.toml", "--signers-config", "signers.toml", "--threshold", "7d"]
+CMD ["--config", "kora.toml", "--signers-config", "signers.toml", "--threshold-hours", "168"]
