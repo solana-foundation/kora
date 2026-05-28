@@ -1,0 +1,17 @@
+FROM rustlang/rust:nightly AS builder
+WORKDIR /workspace
+COPY . .
+RUN cargo build --release --package devnet-deploy-paymaster --bin devnet_deploy_reaper
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /workspace/target/release/devnet_deploy_reaper /usr/local/bin/devnet_deploy_reaper
+COPY examples/devnet-deploy-paymaster/kora.toml ./kora.toml
+COPY examples/devnet-deploy-paymaster/signers.toml ./signers.toml
+
+ENTRYPOINT ["devnet_deploy_reaper"]
+CMD ["--config", "kora.toml", "--signers-config", "signers.toml", "--threshold-hours", "168"]

@@ -1656,20 +1656,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "devnet-deploy-paymaster-smoke"
+name = "devnet-deploy-paymaster"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "bincode",
+ "chrono",
  "clap",
+ "dotenv",
+ "futures",
+ "kora-lib",
+ "log",
  "reqwest 0.13.2",
+ "serde",
  "serde_json",
  "solana-client",
  "solana-commitment-config",
+ "solana-keychain",
  "solana-loader-v3-interface",
+ "solana-loader-v4-interface",
  "solana-sdk",
+ "solana-transaction-status-client-types",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

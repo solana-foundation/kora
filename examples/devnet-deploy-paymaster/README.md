@@ -10,9 +10,12 @@ uses Memorystore Redis for usage limits.
 - `Dockerfile` — installs `kora-cli` from the `main` branch (until a release
   ships with the `DeployAuthority` plugin + `KORA_REDIS_URL` support) and runs
   `kora rpc start` on port `$PORT`.
+- `Dockerfile.reaper` + `cloudbuild.reaper.yaml` — build for the
+  `devnet_deploy_reaper` binary (workspace-context, multi-stage).
 - `kora.toml` — paymaster config: allowlists loader-v3 + loader-v4, enables the
   `DeployAuthority` plugin, sets the loader-v3/v4 fee-payer policy.
 - `signers.toml` — single GCP KMS signer; key name + public key come from env.
+- `src/reaper/` + `src/bin/reaper.rs` — reaper source (see Reaper section).
 
 ## Deploying
 
@@ -42,6 +45,11 @@ workflow can run. Re-running the workflow does not re-create them.
    - `roles/storage.objectAdmin` scoped to `gs://<PROJECT>_cloudbuild` (build staging only)
    - The runtime SA holds `roles/cloudkms.signer` on the KMS key. The deployer
      SA does not need KMS access — it only orchestrates deploys.
+6. **Cloud Run Job** for the reaper (see Reaper section below); runtime SA
+   needs `roles/cloudkms.signer` on the KMS key. Workflow updates it; doesn't
+   create it.
+7. **Cloud Scheduler** entry triggering the reaper Job's `:run` endpoint
+   (suggested `0 3 * * *` UTC) with its own SA as invoker.
 
 ### Doppler config
 
@@ -56,6 +64,7 @@ with OIDC and injects them as env vars in subsequent steps.
 | `GCP_WIF_PROVIDER` | `projects/123/locations/global/workloadIdentityPools/github/providers/kora` | |
 | `GCP_DEPLOYER_SERVICE_ACCOUNT` | `kora-deployer@solana-kora-devnet.iam.gserviceaccount.com` | |
 | `CLOUD_RUN_SERVICE` | `kora-devnet-paymaster` | |
+| `CLOUD_RUN_REAPER_JOB` | `kora-devnet-reaper` | Cloud Run Job for the reaper. |
 | `VPC_CONNECTOR` | `kora-vpc-connector` | |
 | `DEVNET_RPC_URL` | `https://api.devnet.solana.com` | mapped to `RPC_URL` on the Cloud Run revision |
 | `DEVNET_KORA_GCP_KMS_KEY_NAME` | `projects/.../cryptoKeys/paymaster/cryptoKeyVersions/1` | mapped to `KORA_GCP_KMS_KEY_NAME` |
@@ -75,3 +84,29 @@ configured for the rest of the CI workflows.
 
 GitHub → **Actions** → **Deploy devnet paymaster** → **Run workflow**.
 Optionally specify a git ref (defaults to `main`).
+
+## Reaper
+
+`devnet_deploy_reaper` runs daily as a Cloud Run Job, finds paymaster-owned
+programs idle past the threshold (default 168h / 7d), and closes them — rent
+goes back to the fee payer.
+
+Flow: discover via `getProgramAccounts` filtered on upgrade authority →
+classify via `getSignaturesForAddress(limit=1)` (slot fallback) → close.
+v3 uses `close_any`; v4 uses `Retract` + `SetProgramLength(0)`. Audit trail
+= Cloud Logging + on-chain signatures.
+
+### Manual trigger
+
+```bash
+# Trigger the Job out-of-band.
+gcloud run jobs execute "$CLOUD_RUN_REAPER_JOB" --region "$GCP_REGION" --project "$GCP_PROJECT_ID"
+
+# Local dry-run.
+cargo run --release --bin devnet_deploy_reaper -- \
+    --config examples/devnet-deploy-paymaster/kora.toml \
+    --signers-config examples/devnet-deploy-paymaster/signers.toml \
+    --threshold-hours 168 --dry-run
+```
+
+Flags: `--threshold-hours`, `--dry-run`, `--max-closes`.

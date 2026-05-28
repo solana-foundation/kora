@@ -92,3 +92,52 @@ jobs:
 
       - name: Print service URL
         run: echo "Deployed ${{ env.CLOUD_RUN_SERVICE }} -> ${{ steps.deploy.outputs.url }}"
+
+      - id: build-reaper
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          PROJECT: ${{ env.GCP_PROJECT_ID }}
+          JOB: ${{ env.CLOUD_RUN_REAPER_JOB }}
+        run: |
+          set -euo pipefail
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/cloud-run-source-deploy/${JOB}:${GITHUB_SHA::12}"
+
+          BUILD_ID=$(gcloud builds submit . \
+            --config=examples/devnet-deploy-paymaster/cloudbuild.reaper.yaml \
+            --substitutions="_IMAGE=$IMAGE" \
+            --project="$PROJECT" \
+            --gcs-source-staging-dir="gs://${PROJECT}_cloudbuild/source" \
+            --async --format='value(id)')
+          [ -n "$BUILD_ID" ] || { echo "empty reaper build id"; exit 1; }
+          echo "Submitted reaper build $BUILD_ID"
+          echo "Logs: https://console.cloud.google.com/cloud-build/builds/$BUILD_ID?project=$PROJECT"
+
+          STATUS=
+          for i in $(seq 1 80); do
+            STATUS=$(gcloud builds describe "$BUILD_ID" --project="$PROJECT" --format='value(status)')
+            echo "  $i/80: $STATUS"
+            case "$STATUS" in
+              SUCCESS) break ;;
+              FAILURE|TIMEOUT|CANCELLED|EXPIRED|INTERNAL_ERROR) exit 1 ;;
+            esac
+            sleep 30
+          done
+          [ "$STATUS" = "SUCCESS" ] || { echo "timed out polling reaper $BUILD_ID"; exit 1; }
+
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - id: deploy-reaper
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          job: ${{ env.CLOUD_RUN_REAPER_JOB }}
+          region: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          image: ${{ steps.build-reaper.outputs.image }}
+          env_vars: |-
+            RPC_URL=${{ env.DEVNET_RPC_URL }}
+            KORA_GCP_KMS_KEY_NAME=${{ env.DEVNET_KORA_GCP_KMS_KEY_NAME }}
+            KORA_GCP_KMS_PUBLIC_KEY=${{ env.DEVNET_KORA_GCP_KMS_PUBLIC_KEY }}
+          env_vars_update_strategy: overwrite
+
+      - name: Print reaper job
+        run: echo "Updated Cloud Run Job ${{ env.CLOUD_RUN_REAPER_JOB }} (image ${{ steps.build-reaper.outputs.image }})"
