@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, LazyLock},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use kora_lib::constant::{BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LOADER_V4_PROGRAM_ID};
@@ -17,53 +14,19 @@ use solana_sdk::{account::Account, pubkey::Pubkey};
 
 use super::{Loader, OwnedProgram};
 
-// Sentinel pubkey used to locate fields in serialized state. Unlikely to
-// collide with any real ProgramData bytes.
-const SENTINEL_BYTES: [u8; 32] = [0xAB; 32];
+// v3 ProgramData bincode: [discriminator 4][slot 8][Option tag 1][authority 32].
+const V3_PROGRAMDATA_DISCRIMINATOR: [u8; 4] = [3, 0, 0, 0];
+const V3_PROGRAMDATA_SLOT_OFFSET: usize = 4;
+const V3_PROGRAMDATA_AUTH_OFFSET: usize = 13;
 
-/// Bincode-serialized v3 layout, computed once from the canonical types in
-/// `solana-loader-v3-interface`. If that crate ever changes its enum order or
-/// `ProgramData` layout, these values shift automatically.
-struct V3Layout {
-    programdata_discriminator: [u8; 4],
-    program_discriminator: [u8; 4],
-    /// Byte index of the `Option<Pubkey>` tag in front of the upgrade authority.
-    auth_tag_offset: usize,
-    /// Offset of the `slot` field inside `ProgramData`.
-    slot_offset: usize,
-    /// Total length of a serialized `Program` account.
-    program_account_size: u64,
-}
+// v3 Program: [discriminator 4][programdata_address 32].
+const V3_PROGRAM_DISCRIMINATOR: [u8; 4] = [2, 0, 0, 0];
+const V3_PROGRAM_PDATA_OFFSET: usize = 4;
+const V3_PROGRAM_ACCOUNT_SIZE: u64 = UpgradeableLoaderState::size_of_program() as u64;
 
-static V3: LazyLock<V3Layout> = LazyLock::new(|| {
-    let sentinel = Pubkey::new_from_array(SENTINEL_BYTES);
-    let pdata_bytes = bincode::serialize(&UpgradeableLoaderState::ProgramData {
-        slot: 0,
-        upgrade_authority_address: Some(sentinel),
-    })
-    .expect("serialize ProgramData sentinel");
-    let program_bytes =
-        bincode::serialize(&UpgradeableLoaderState::Program { programdata_address: sentinel })
-            .expect("serialize Program sentinel");
-
-    // Authority is preceded by an Option::Some tag (1) and 32 sentinel bytes.
-    let auth_start = pdata_bytes
-        .windows(33)
-        .position(|w| w[0] == 1 && w[1..] == SENTINEL_BYTES)
-        .expect("authority bytes not found in serialized ProgramData");
-
-    V3Layout {
-        programdata_discriminator: pdata_bytes[0..4].try_into().unwrap(),
-        program_discriminator: program_bytes[0..4].try_into().unwrap(),
-        auth_tag_offset: auth_start,
-        slot_offset: 4,
-        program_account_size: UpgradeableLoaderState::size_of_program() as u64,
-    }
-});
-
-const V4_AUTHORITY_OFFSET: usize =
-    std::mem::offset_of!(LoaderV4State, authority_address_or_next_version);
 const V4_SLOT_OFFSET: usize = std::mem::offset_of!(LoaderV4State, slot);
+const V4_AUTH_OFFSET: usize =
+    std::mem::offset_of!(LoaderV4State, authority_address_or_next_version);
 
 pub async fn discover_owned_programs(
     rpc: &Arc<RpcClient>,
@@ -76,13 +39,12 @@ pub async fn discover_owned_programs(
 }
 
 async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<OwnedProgram>> {
-    let mut auth_blob = Vec::with_capacity(33);
-    auth_blob.push(1);
-    auth_blob.extend_from_slice(fee_payer.as_ref());
-
     let filters = vec![
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, V3.programdata_discriminator.to_vec())),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(V3.auth_tag_offset, auth_blob)),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, V3_PROGRAMDATA_DISCRIMINATOR.to_vec())),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            V3_PROGRAMDATA_AUTH_OFFSET,
+            fee_payer.as_ref().to_vec(),
+        )),
     ];
 
     let programdata_accounts = rpc
@@ -123,8 +85,8 @@ async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
 
 async fn build_v3_program_index(rpc: &Arc<RpcClient>) -> Result<HashMap<Pubkey, Pubkey>> {
     let filters = vec![
-        RpcFilterType::DataSize(V3.program_account_size),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, V3.program_discriminator.to_vec())),
+        RpcFilterType::DataSize(V3_PROGRAM_ACCOUNT_SIZE),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, V3_PROGRAM_DISCRIMINATOR.to_vec())),
     ];
 
     let accounts = rpc
@@ -142,24 +104,25 @@ async fn build_v3_program_index(rpc: &Arc<RpcClient>) -> Result<HashMap<Pubkey, 
 
     let mut map = HashMap::with_capacity(accounts.len());
     for (program_pubkey, account) in accounts {
-        if account.data.len() as u64 != V3.program_account_size {
+        if account.data.len() as u64 != V3_PROGRAM_ACCOUNT_SIZE {
             continue;
         }
-        let pdata = Pubkey::try_from(&account.data[4..36])
-            .map_err(|e| anyhow!("malformed Program account {program_pubkey}: {e}"))?;
+        let pdata =
+            Pubkey::try_from(&account.data[V3_PROGRAM_PDATA_OFFSET..V3_PROGRAM_PDATA_OFFSET + 32])
+                .map_err(|e| anyhow!("malformed Program account {program_pubkey}: {e}"))?;
         map.insert(pdata, program_pubkey);
     }
     Ok(map)
 }
 
 fn parse_v3_programdata_slot(account: &Account) -> Option<u64> {
-    let bytes = account.data.get(V3.slot_offset..V3.slot_offset + 8)?;
+    let bytes = account.data.get(V3_PROGRAMDATA_SLOT_OFFSET..V3_PROGRAMDATA_SLOT_OFFSET + 8)?;
     Some(u64::from_le_bytes(bytes.try_into().ok()?))
 }
 
 async fn discover_v4(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<OwnedProgram>> {
     let filters = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-        V4_AUTHORITY_OFFSET,
+        V4_AUTH_OFFSET,
         fee_payer.as_ref().to_vec(),
     ))];
 
@@ -208,7 +171,7 @@ mod tests {
     #[test]
     fn parse_v3_programdata_slot_reads_le_u64() {
         let mut data = vec![0u8; 45];
-        data[V3.slot_offset..V3.slot_offset + 8]
+        data[V3_PROGRAMDATA_SLOT_OFFSET..V3_PROGRAMDATA_SLOT_OFFSET + 8]
             .copy_from_slice(&0x0123_4567_89AB_CDEFu64.to_le_bytes());
         let account = Account {
             lamports: 0,
