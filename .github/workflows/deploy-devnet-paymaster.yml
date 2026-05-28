@@ -127,20 +127,17 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
       - id: deploy-reaper
-        env:
-          JOB: ${{ env.CLOUD_RUN_REAPER_JOB }}
-          REGION: ${{ env.GCP_REGION }}
-          PROJECT: ${{ env.GCP_PROJECT_ID }}
-          IMAGE: ${{ steps.build-reaper.outputs.image }}
-        run: |
-          set -euo pipefail
-          # `update` requires the Cloud Run Job to already exist (created once
-          # as part of the GCP setup documented in README.md).
-          gcloud run jobs update "$JOB" \
-            --image="$IMAGE" \
-            --region="$REGION" \
-            --project="$PROJECT" \
-            --set-env-vars="RPC_URL=${{ env.DEVNET_RPC_URL }},KORA_GCP_KMS_KEY_NAME=${{ env.DEVNET_KORA_GCP_KMS_KEY_NAME }},KORA_GCP_KMS_PUBLIC_KEY=${{ env.DEVNET_KORA_GCP_KMS_PUBLIC_KEY }}"
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          job: ${{ env.CLOUD_RUN_REAPER_JOB }}
+          region: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          image: ${{ steps.build-reaper.outputs.image }}
+          env_vars: |-
+            RPC_URL=${{ env.DEVNET_RPC_URL }}
+            KORA_GCP_KMS_KEY_NAME=${{ env.DEVNET_KORA_GCP_KMS_KEY_NAME }}
+            KORA_GCP_KMS_PUBLIC_KEY=${{ env.DEVNET_KORA_GCP_KMS_PUBLIC_KEY }}
+          env_vars_update_strategy: overwrite
 
       - name: Print reaper job
         run: echo "Updated Cloud Run Job ${{ env.CLOUD_RUN_REAPER_JOB }} (image ${{ steps.build-reaper.outputs.image }})"
