@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use kora_lib::constant::{BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LOADER_V4_PROGRAM_ID};
@@ -60,16 +60,10 @@ async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
         .await
         .map_err(|e| anyhow!("getProgramAccounts(loader-v3 ProgramData): {e}"))?;
 
-    if programdata_accounts.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let pdata_to_program = build_v3_program_index(rpc).await?;
-
     let mut out = Vec::with_capacity(programdata_accounts.len());
     for (pdata_pubkey, pdata_account) in programdata_accounts {
         let last_state_slot = parse_v3_programdata_slot(&pdata_account).unwrap_or(0);
-        let Some(program) = pdata_to_program.get(&pdata_pubkey).copied() else {
+        let Some(program) = find_v3_program_for_pdata(rpc, &pdata_pubkey).await? else {
             log::warn!("skipping orphan v3 ProgramData {pdata_pubkey}");
             continue;
         };
@@ -83,10 +77,14 @@ async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
     Ok(out)
 }
 
-async fn build_v3_program_index(rpc: &Arc<RpcClient>) -> Result<HashMap<Pubkey, Pubkey>> {
+async fn find_v3_program_for_pdata(rpc: &Arc<RpcClient>, pdata: &Pubkey) -> Result<Option<Pubkey>> {
     let filters = vec![
         RpcFilterType::DataSize(V3_PROGRAM_ACCOUNT_SIZE),
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, V3_PROGRAM_DISCRIMINATOR.to_vec())),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            V3_PROGRAM_PDATA_OFFSET,
+            pdata.as_ref().to_vec(),
+        )),
     ];
 
     let accounts = rpc
@@ -100,19 +98,9 @@ async fn build_v3_program_index(rpc: &Arc<RpcClient>) -> Result<HashMap<Pubkey, 
             },
         )
         .await
-        .map_err(|e| anyhow!("getProgramAccounts(loader-v3 Program): {e}"))?;
+        .map_err(|e| anyhow!("getProgramAccounts(loader-v3 Program for {pdata}): {e}"))?;
 
-    let mut map = HashMap::with_capacity(accounts.len());
-    for (program_pubkey, account) in accounts {
-        if account.data.len() as u64 != V3_PROGRAM_ACCOUNT_SIZE {
-            continue;
-        }
-        let pdata =
-            Pubkey::try_from(&account.data[V3_PROGRAM_PDATA_OFFSET..V3_PROGRAM_PDATA_OFFSET + 32])
-                .map_err(|e| anyhow!("malformed Program account {program_pubkey}: {e}"))?;
-        map.insert(pdata, program_pubkey);
-    }
-    Ok(map)
+    Ok(accounts.into_iter().next().map(|(pk, _)| pk))
 }
 
 fn parse_v3_programdata_slot(account: &Account) -> Option<u64> {
