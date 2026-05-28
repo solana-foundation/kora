@@ -1,9 +1,3 @@
-//! `devnet_deploy_reaper` — daily Cloud Run Job that closes programs the
-//! deploy-paymaster owns and that have been idle past a threshold.
-//!
-//! See `examples/devnet-deploy-paymaster/README.md` for the Cloud Run + Cloud
-//! Scheduler wiring.
-
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
@@ -22,31 +16,20 @@ use kora_lib::{
     about = "Close devnet programs the paymaster owns that have been idle past a threshold."
 )]
 struct Args {
-    /// Path to the paymaster `kora.toml`.
     #[arg(long, default_value = "kora.toml")]
     config: PathBuf,
-
-    /// Path to `signers.toml` — same shape as `kora rpc start --signers-config`.
     #[arg(long)]
     signers_config: PathBuf,
-
-    /// Solana RPC URL. Defaults to devnet.
     #[arg(long, default_value = "https://api.devnet.solana.com")]
     rpc_url: String,
-
-    /// Idle threshold. Accepts humantime strings like `7d`, `48h`.
+    /// Idle threshold (humantime: `7d`, `48h`).
     #[arg(long, default_value = "7d", value_parser = parse_duration)]
     threshold: Duration,
-
-    /// Discover + classify, log what would close, change nothing on-chain.
+    /// Log what would close, change nothing on-chain.
     #[arg(long)]
     dry_run: bool,
-
-    /// Cap closes per invocation. Useful for the first real run.
     #[arg(long)]
     max_closes: Option<usize>,
-
-    /// Restrict to a single loader. Default closes both.
     #[arg(long, value_enum, default_value_t = LoaderFilterArg::Both)]
     loader: LoaderFilterArg,
 }
@@ -106,7 +89,7 @@ async fn main() -> Result<()> {
     };
 
     log::info!(
-        "reaper starting: fee_payer={fee_payer} threshold={:?} dry_run={} max_closes={:?} loader={:?}",
+        "reaper start: fee_payer={fee_payer} threshold={:?} dry_run={} max_closes={:?} loader={:?}",
         cfg.threshold,
         cfg.dry_run,
         cfg.max_closes,

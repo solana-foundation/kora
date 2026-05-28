@@ -10,16 +10,12 @@ uses Memorystore Redis for usage limits.
 - `Dockerfile` — installs `kora-cli` from the `main` branch (until a release
   ships with the `DeployAuthority` plugin + `KORA_REDIS_URL` support) and runs
   `kora rpc start` on port `$PORT`.
-- `Dockerfile.reaper` — multi-stage build of the `devnet_deploy_reaper` binary
-  from the local workspace source. Shipped as a separate image because the
-  reaper isn't published on crates.io and needs path deps on `kora-lib`.
-- `cloudbuild.reaper.yaml` — Cloud Build config that points at
-  `Dockerfile.reaper` with the workspace root as build context.
+- `Dockerfile.reaper` + `cloudbuild.reaper.yaml` — build for the
+  `devnet_deploy_reaper` binary (workspace-context, multi-stage).
 - `kora.toml` — paymaster config: allowlists loader-v3 + loader-v4, enables the
   `DeployAuthority` plugin, sets the loader-v3/v4 fee-payer policy.
 - `signers.toml` — single GCP KMS signer; key name + public key come from env.
-- `src/reaper/` + `src/bin/reaper.rs` — Rust source for the reaper binary that
-  closes paymaster-owned programs after a configurable idle threshold.
+- `src/reaper/` + `src/bin/reaper.rs` — reaper source (see Reaper section).
 
 ## Deploying
 
@@ -83,66 +79,42 @@ configured for the rest of the CI workflows.
 GitHub → **Actions** → **Deploy devnet paymaster** → **Run workflow**.
 Optionally specify a git ref (defaults to `main`).
 
-## Reaper (inactive-program cleanup)
+## Reaper
 
-The paymaster keeps upgrade authority on every program it sponsors so users
-can't close the program and drain the rent SOL. The `devnet_deploy_reaper`
-binary in this crate runs on a daily Cloud Run Job, scans for programs that
-haven't seen on-chain activity in 7 days, and closes them — recovering the
-rent back to the fee payer.
+`devnet_deploy_reaper` runs daily as a Cloud Run Job, finds paymaster-owned
+programs idle past the threshold (default 7d), and closes them — rent goes
+back to the fee payer.
 
-### How it works
+Flow: discover via `getProgramAccounts` filtered on upgrade authority →
+classify via `getSignaturesForAddress(limit=1)` (slot fallback) → close.
+v3 uses `close_any`; v4 uses `Retract` + `SetProgramLength(0)`.
 
-1. **Discovery**: scans the chain for programs whose upgrade authority is the
-   paymaster's fee payer. Two `getProgramAccounts` queries for loader-v3
-   (`ProgramData` accounts filtered by authority + an index of all `Program`
-   pointer accounts) and one for loader-v4 (state account filtered by
-   authority offset).
-2. **Activity**: per program, `getSignaturesForAddress(limit=1)` and compare
-   the newest `block_time` to `now − threshold`. Fallback to
-   `getBlockTime(last_state_slot)` when no signatures are returned.
-3. **Close**: for v3, a single `close_any(program_data, fee_payer, fee_payer,
-   program)` instruction; for v4, `Retract` + `SetProgramLength(0,
-   recipient=fee_payer)` in one transaction. Signed locally via the same
-   `SignerPool` the RPC uses.
+Audit trail = Cloud Logging + on-chain signatures. No DB.
 
-The audit trail is whatever lands in Cloud Logging plus the on-chain close
-signatures — there is no extra DB or Redis record.
+### Additional GCP setup
 
-### One-time GCP setup (in addition to the RPC setup above)
+6. **Cloud Run Job** matching `CLOUD_RUN_REAPER_JOB`, runtime SA needs
+   `roles/cloudkms.signer`. Workflow updates it; doesn't create it.
+7. **Cloud Scheduler** triggering the Job's `:run` endpoint (suggest
+   `0 3 * * *` UTC) with its own SA as invoker.
 
-7. **Cloud Run Job** named to match the `CLOUD_RUN_REAPER_JOB` Doppler key
-   (e.g. `kora-devnet-reaper`). Created once with the same KMS-signing service
-   account the RPC uses. The deploy workflow runs `gcloud run jobs update`
-   against it — it does not create the Job.
-8. **Cloud Scheduler entry** triggering the Job on a cron (recommend
-   `0 3 * * *` UTC). Targets the Cloud Run Job's `:run` endpoint with the
-   scheduler's own service account as the invoker.
-9. **Reaper runtime service account permissions**: the runtime SA on the Job
-   needs `roles/cloudkms.signer` on the KMS key (same as the RPC's runtime
-   SA). It does **not** need Redis access — the reaper doesn't use Redis.
-
-### Doppler key to add
+### Additional Doppler key
 
 | Doppler key | Example | Notes |
 | --- | --- | --- |
-| `CLOUD_RUN_REAPER_JOB` | `kora-devnet-reaper` | Name of the Cloud Run Job created in step 7 above. |
+| `CLOUD_RUN_REAPER_JOB` | `kora-devnet-reaper` | Cloud Run Job name. |
 
 ### Manual trigger
 
 ```bash
-# Production: trigger the Cloud Run Job out-of-band.
+# Trigger the Job out-of-band.
 gcloud run jobs execute "$CLOUD_RUN_REAPER_JOB" --region "$GCP_REGION" --project "$GCP_PROJECT_ID"
 
-# Local dry-run: log what would close, change nothing on-chain.
-KORA_GCP_KMS_KEY_NAME=...  KORA_GCP_KMS_PUBLIC_KEY=... \
-  cargo run --release --bin devnet_deploy_reaper -- \
+# Local dry-run.
+cargo run --release --bin devnet_deploy_reaper -- \
     --config examples/devnet-deploy-paymaster/kora.toml \
     --signers-config examples/devnet-deploy-paymaster/signers.toml \
-    --rpc-url https://api.devnet.solana.com \
-    --threshold 7d \
-    --dry-run
+    --threshold 7d --dry-run
 ```
 
-Flags: `--threshold` (humantime: `7d`, `48h`), `--dry-run`,
-`--max-closes <n>` (cap per invocation), `--loader v3|v4|both`.
+Flags: `--threshold`, `--dry-run`, `--max-closes`, `--loader v3|v4|both`.

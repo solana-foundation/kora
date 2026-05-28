@@ -1,19 +1,7 @@
-# Builds the `devnet_deploy_reaper` binary from the local workspace source.
-# Unlike the paymaster image (which pulls kora-cli from `main`), the reaper
-# lives in this example crate and isn't published — so we build it in place.
-#
-# Two-stage build: cargo nightly to match the workspace's rust-toolchain.toml,
-# then a slim runtime image carrying only the binary + configs.
-
 FROM rustlang/rust:nightly AS builder
 WORKDIR /workspace
-
-# Copy the whole workspace so cargo can resolve path deps (kora-lib, etc.).
 COPY . .
-
-RUN cargo build --release \
-    --package devnet-deploy-paymaster \
-    --bin devnet_deploy_reaper
+RUN cargo build --release --package devnet-deploy-paymaster --bin devnet_deploy_reaper
 
 FROM debian:bookworm-slim
 RUN apt-get update \
@@ -25,6 +13,5 @@ COPY --from=builder /workspace/target/release/devnet_deploy_reaper /usr/local/bi
 COPY examples/devnet-deploy-paymaster/kora.toml ./kora.toml
 COPY examples/devnet-deploy-paymaster/signers.toml ./signers.toml
 
-# Cloud Run Job picks up these args; override at job level if needed.
 ENTRYPOINT ["devnet_deploy_reaper"]
 CMD ["--config", "kora.toml", "--signers-config", "signers.toml", "--threshold", "7d"]

@@ -1,14 +1,4 @@
-//! Build and send the close transaction for an idle program.
-//!
-//! Loader-v3: a single `close_any(program_data, recipient=fee_payer,
-//! authority=fee_payer, program)` instruction recovers rent from both the
-//! `ProgramData` account and the small `Program` pointer account.
-//!
-//! Loader-v4: two instructions in one transaction — `Retract` (so the program
-//! is in the maintenance state and can shrink) followed by
-//! `SetProgramLength(0)` with the fee payer as the rent recipient.
-
-#![allow(deprecated)] // loader-v3 helpers are tagged "use loader-v4" but v4 isn't ubiquitous yet.
+#![allow(deprecated)] // loader-v3 helpers marked deprecated upstream; v4 isn't ubiquitous yet.
 
 use std::sync::Arc;
 
@@ -73,7 +63,7 @@ pub async fn close_program(rpc: &Arc<RpcClient>, program: &OwnedProgram) -> Resu
 fn build_v3_close(fee_payer: &Pubkey, program: &OwnedProgram) -> Result<Vec<Instruction>> {
     let program_data = program
         .program_data
-        .ok_or_else(|| anyhow!("v3 program {} missing program_data pubkey", program.program))?;
+        .ok_or_else(|| anyhow!("v3 program {} missing program_data", program.program))?;
     Ok(vec![loader_v3::close_any(
         &program_data,
         fee_payer,
@@ -104,42 +94,36 @@ mod tests {
     use super::*;
     use solana_sdk::pubkey::Pubkey;
 
-    fn v3_program() -> (Pubkey, OwnedProgram) {
+    #[test]
+    fn build_v3_close_uses_fee_payer_as_authority_and_recipient() {
         let fee_payer = Pubkey::new_unique();
-        let program = OwnedProgram {
+        let p = OwnedProgram {
             loader: Loader::V3,
             program: Pubkey::new_unique(),
             program_data: Some(Pubkey::new_unique()),
             last_state_slot: 100,
         };
-        (fee_payer, program)
-    }
+        let ixs = build_v3_close(&fee_payer, &p).unwrap();
 
-    #[test]
-    fn build_v3_close_uses_fee_payer_as_authority_and_recipient() {
-        let (fee_payer, p) = v3_program();
-        let ixs = build_v3_close(&fee_payer, &p).expect("v3 close");
-
-        assert_eq!(ixs.len(), 1, "v3 close is a single instruction");
+        assert_eq!(ixs.len(), 1);
         let ix = &ixs[0];
-        // close_any account ordering: [program_data, recipient, authority, program]
+        // close_any: [program_data, recipient, authority, program]
         assert_eq!(ix.accounts[0].pubkey, p.program_data.unwrap());
-        assert_eq!(ix.accounts[1].pubkey, fee_payer, "recipient must be fee payer");
-        assert_eq!(ix.accounts[2].pubkey, fee_payer, "authority must be fee payer");
-        assert!(ix.accounts[2].is_signer, "authority signs");
+        assert_eq!(ix.accounts[1].pubkey, fee_payer);
+        assert_eq!(ix.accounts[2].pubkey, fee_payer);
+        assert!(ix.accounts[2].is_signer);
         assert_eq!(ix.accounts[3].pubkey, p.program);
     }
 
     #[test]
     fn build_v3_close_errors_without_program_data() {
-        let fee_payer = Pubkey::new_unique();
         let bad = OwnedProgram {
             loader: Loader::V3,
             program: Pubkey::new_unique(),
             program_data: None,
             last_state_slot: 0,
         };
-        assert!(build_v3_close(&fee_payer, &bad).is_err());
+        assert!(build_v3_close(&Pubkey::new_unique(), &bad).is_err());
     }
 
     #[test]
@@ -153,17 +137,14 @@ mod tests {
         };
         let ixs = build_v4_close(&fee_payer, &p);
 
-        assert_eq!(ixs.len(), 2, "v4 close is retract + set_program_length");
+        assert_eq!(ixs.len(), 2);
+        assert_eq!(ixs[0].accounts[0].pubkey, p.program);
+        assert_eq!(ixs[0].accounts[1].pubkey, fee_payer);
+        assert!(ixs[0].accounts[1].is_signer);
 
-        let retract = &ixs[0];
-        assert_eq!(retract.accounts[0].pubkey, p.program);
-        assert_eq!(retract.accounts[1].pubkey, fee_payer, "retract authority must be fee payer");
-        assert!(retract.accounts[1].is_signer);
-
-        let spl = &ixs[1];
-        assert_eq!(spl.accounts[0].pubkey, p.program);
-        assert_eq!(spl.accounts[1].pubkey, fee_payer, "set_program_length authority is fee payer");
-        assert!(spl.accounts[1].is_signer);
-        assert_eq!(spl.accounts[2].pubkey, fee_payer, "rent recipient must be fee payer");
+        assert_eq!(ixs[1].accounts[0].pubkey, p.program);
+        assert_eq!(ixs[1].accounts[1].pubkey, fee_payer);
+        assert!(ixs[1].accounts[1].is_signer);
+        assert_eq!(ixs[1].accounts[2].pubkey, fee_payer);
     }
 }
