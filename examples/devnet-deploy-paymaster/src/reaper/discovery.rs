@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
+use kora_lib::constant::{BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LOADER_V4_PROGRAM_ID};
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
@@ -15,10 +16,6 @@ use solana_loader_v4_interface::state::LoaderV4State;
 use solana_sdk::{account::Account, pubkey::Pubkey};
 
 use super::{Loader, OwnedProgram};
-
-const BPF_LOADER_UPGRADEABLE_ID: Pubkey =
-    solana_sdk::pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
-const LOADER_V4_ID: Pubkey = solana_sdk::pubkey!("LoaderV411111111111111111111111111111111111");
 
 // Sentinel pubkey used to locate fields in serialized state. Unlikely to
 // collide with any real ProgramData bytes.
@@ -90,7 +87,7 @@ async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
 
     let programdata_accounts = rpc
         .get_program_accounts_with_config(
-            &BPF_LOADER_UPGRADEABLE_ID,
+            &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
                 account_config: minimal_account_config(),
@@ -132,7 +129,7 @@ async fn build_v3_program_index(rpc: &Arc<RpcClient>) -> Result<HashMap<Pubkey, 
 
     let accounts = rpc
         .get_program_accounts_with_config(
-            &BPF_LOADER_UPGRADEABLE_ID,
+            &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
                 account_config: minimal_account_config(),
@@ -168,7 +165,7 @@ async fn discover_v4(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
 
     let accounts = rpc
         .get_program_accounts_with_config(
-            &LOADER_V4_ID,
+            &LOADER_V4_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
                 account_config: minimal_account_config(),
