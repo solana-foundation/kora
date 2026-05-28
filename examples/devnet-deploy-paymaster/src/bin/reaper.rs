@@ -59,6 +59,7 @@ async fn main() -> Result<()> {
 
     let cfg = ReaperConfig {
         fee_payer,
+        signer,
         threshold: Duration::from_secs(args.threshold_hours * 3600),
         dry_run: args.dry_run,
         max_closes: args.max_closes,

@@ -1674,6 +1674,7 @@ dependencies = [
  "serde_json",
  "solana-client",
  "solana-commitment-config",
+ "solana-keychain",
  "solana-loader-v3-interface",
  "solana-loader-v4-interface",
  "solana-sdk",

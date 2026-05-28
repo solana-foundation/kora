@@ -3,10 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
-use kora_lib::{
-    signer::SolanaSigner, state::select_request_signer_with_signer_key,
-    transaction::TransactionUtil,
-};
+use kora_lib::{signer::SolanaSigner, transaction::TransactionUtil};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_loader_v3_interface::instruction as loader_v3;
 use solana_loader_v4_interface::instruction as loader_v4;
@@ -18,18 +15,19 @@ use solana_sdk::{
 
 use super::{ClosedProgram, Loader, OwnedProgram};
 
-pub async fn close_program(rpc: &Arc<RpcClient>, program: &OwnedProgram) -> Result<ClosedProgram> {
-    let signer = select_request_signer_with_signer_key(None)
-        .map_err(|e| anyhow!("selecting signer: {e}"))?;
-    let fee_payer = signer.pubkey();
-
+pub async fn close_program(
+    rpc: &Arc<RpcClient>,
+    program: &OwnedProgram,
+    signer: &solana_keychain::Signer,
+    fee_payer: &Pubkey,
+) -> Result<ClosedProgram> {
     let reclaimed_lamports = sum_reclaimable_lamports(rpc, program)
         .await
         .with_context(|| format!("reading lamports for {}", program.program))?;
 
     let instructions = match program.loader {
-        Loader::V3 => build_v3_close(&fee_payer, program)?,
-        Loader::V4 => build_v4_close(&fee_payer, program),
+        Loader::V3 => build_v3_close(fee_payer, program)?,
+        Loader::V4 => build_v4_close(fee_payer, program),
     };
 
     let blockhash =
@@ -37,7 +35,7 @@ pub async fn close_program(rpc: &Arc<RpcClient>, program: &OwnedProgram) -> Resu
 
     let message = VersionedMessage::Legacy(Message::new_with_blockhash(
         &instructions,
-        Some(&fee_payer),
+        Some(fee_payer),
         &blockhash,
     ));
     let mut tx = TransactionUtil::new_unsigned_versioned_transaction(message);

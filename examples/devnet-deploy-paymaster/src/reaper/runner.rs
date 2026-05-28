@@ -45,7 +45,7 @@ pub async fn run(rpc: Arc<RpcClient>, cfg: ReaperConfig) -> Result<ReaperReport>
     }
 
     for program in idle {
-        match closer::close_program(&rpc, &program).await {
+        match closer::close_program(&rpc, &program, &cfg.signer, &cfg.fee_payer).await {
             Ok(closed) => report.closed.push(closed),
             Err(e) => report.failed.push(FailedClose {
                 program: program.program,

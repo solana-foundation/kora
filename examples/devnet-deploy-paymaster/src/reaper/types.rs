@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use solana_sdk::pubkey::Pubkey;
 
@@ -17,9 +17,10 @@ pub struct OwnedProgram {
     pub last_state_slot: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ReaperConfig {
     pub fee_payer: Pubkey,
+    pub signer: Arc<solana_keychain::Signer>,
     pub threshold: Duration,
     pub dry_run: bool,
     pub max_closes: Option<usize>,
