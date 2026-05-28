@@ -45,6 +45,11 @@ workflow can run. Re-running the workflow does not re-create them.
    - `roles/storage.objectAdmin` scoped to `gs://<PROJECT>_cloudbuild` (build staging only)
    - The runtime SA holds `roles/cloudkms.signer` on the KMS key. The deployer
      SA does not need KMS access — it only orchestrates deploys.
+6. **Cloud Run Job** for the reaper (see Reaper section below); runtime SA
+   needs `roles/cloudkms.signer` on the KMS key. Workflow updates it; doesn't
+   create it.
+7. **Cloud Scheduler** entry triggering the reaper Job's `:run` endpoint
+   (suggested `0 3 * * *` UTC) with its own SA as invoker.
 
 ### Doppler config
 
@@ -59,6 +64,7 @@ with OIDC and injects them as env vars in subsequent steps.
 | `GCP_WIF_PROVIDER` | `projects/123/locations/global/workloadIdentityPools/github/providers/kora` | |
 | `GCP_DEPLOYER_SERVICE_ACCOUNT` | `kora-deployer@solana-kora-devnet.iam.gserviceaccount.com` | |
 | `CLOUD_RUN_SERVICE` | `kora-devnet-paymaster` | |
+| `CLOUD_RUN_REAPER_JOB` | `kora-devnet-reaper` | Cloud Run Job for the reaper. |
 | `VPC_CONNECTOR` | `kora-vpc-connector` | |
 | `DEVNET_RPC_URL` | `https://api.devnet.solana.com` | mapped to `RPC_URL` on the Cloud Run revision |
 | `DEVNET_KORA_GCP_KMS_KEY_NAME` | `projects/.../cryptoKeys/paymaster/cryptoKeyVersions/1` | mapped to `KORA_GCP_KMS_KEY_NAME` |
@@ -87,22 +93,8 @@ back to the fee payer.
 
 Flow: discover via `getProgramAccounts` filtered on upgrade authority →
 classify via `getSignaturesForAddress(limit=1)` (slot fallback) → close.
-v3 uses `close_any`; v4 uses `Retract` + `SetProgramLength(0)`.
-
-Audit trail = Cloud Logging + on-chain signatures. No DB.
-
-### Additional GCP setup
-
-6. **Cloud Run Job** matching `CLOUD_RUN_REAPER_JOB`, runtime SA needs
-   `roles/cloudkms.signer`. Workflow updates it; doesn't create it.
-7. **Cloud Scheduler** triggering the Job's `:run` endpoint (suggest
-   `0 3 * * *` UTC) with its own SA as invoker.
-
-### Additional Doppler key
-
-| Doppler key | Example | Notes |
-| --- | --- | --- |
-| `CLOUD_RUN_REAPER_JOB` | `kora-devnet-reaper` | Cloud Run Job name. |
+v3 uses `close_any`; v4 uses `Retract` + `SetProgramLength(0)`. Audit trail
+= Cloud Logging + on-chain signatures.
 
 ### Manual trigger
 
