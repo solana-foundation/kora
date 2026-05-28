@@ -3584,7 +3584,7 @@ dependencies = [
  "spl-associated-token-account-interface",
  "spl-pod",
  "spl-token-2022-interface",
- "spl-token-interface",
+ "spl-token-interface 3.0.0",
  "subtle",
  "tempfile",
  "thiserror 2.0.18",
@@ -5803,7 +5803,7 @@ dependencies = [
  "spl-generic-token",
  "spl-token-2022-interface",
  "spl-token-group-interface",
- "spl-token-interface",
+ "spl-token-interface 2.0.0",
  "spl-token-metadata-interface",
  "thiserror 2.0.18",
  "zstd",
@@ -7428,7 +7428,7 @@ dependencies = [
  "spl-memo-interface",
  "spl-token-2022-interface",
  "spl-token-group-interface",
- "spl-token-interface",
+ "spl-token-interface 2.0.0",
  "spl-token-metadata-interface",
  "thiserror 2.0.18",
 ]
@@ -7821,6 +7821,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "spl-token-interface"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7143c4e676984047a400e2fbd7ac29a1659f2b1b52b897cfde19316b562e4589"
+dependencies = [
+ "arrayref",
+ "bytemuck",
+ "num-derive",
+ "num-traits",
+ "num_enum",
+ "solana-instruction",
+ "solana-program-error",
+ "solana-program-option",
+ "solana-program-pack",
+ "solana-pubkey",
+ "solana-sdk-ids",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "spl-token-metadata-interface"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8037,7 +8057,7 @@ dependencies = [
  "solana-system-interface",
  "spl-associated-token-account-interface",
  "spl-token-2022-interface",
- "spl-token-interface",
+ "spl-token-interface 3.0.0",
  "spl-transfer-hook-interface",
  "tokio",
  "toml",
