@@ -1656,20 +1656,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "devnet-deploy-paymaster-smoke"
+name = "devnet-deploy-paymaster"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "bincode",
+ "chrono",
  "clap",
+ "dotenv",
+ "futures",
+ "humantime",
+ "kora-lib",
+ "log",
  "reqwest 0.13.2",
+ "serde",
  "serde_json",
  "solana-client",
  "solana-commitment-config",
  "solana-loader-v3-interface",
+ "solana-loader-v4-interface",
  "solana-sdk",
+ "solana-transaction-status-client-types",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2791,6 +2802,12 @@ name = "httpdate"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
+name = "humantime"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
 
 [[package]]
 name = "hybrid-array"

@@ -1,0 +1,21 @@
+# Cloud Build config for the reaper image. The reaper Dockerfile needs the
+# full workspace as build context (path deps on kora-lib), so we submit from
+# the repo root and point Cloud Build at the example's Dockerfile.reaper.
+#
+# Invoked by `.github/workflows/deploy-devnet-paymaster.yml`:
+#   gcloud builds submit . \
+#     --config=examples/devnet-deploy-paymaster/cloudbuild.reaper.yaml \
+#     --substitutions=_IMAGE=...
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - examples/devnet-deploy-paymaster/Dockerfile.reaper
+      - -t
+      - ${_IMAGE}
+      - .
+images:
+  - ${_IMAGE}
+options:
+  logging: CLOUD_LOGGING_ONLY
