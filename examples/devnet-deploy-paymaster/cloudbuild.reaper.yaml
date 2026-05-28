@@ -1,10 +1,9 @@
-# Build context = repo root (path deps on kora-lib).
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - -f
-      - examples/devnet-deploy-paymaster/Dockerfile.reaper
+      - Dockerfile.reaper
       - -t
       - ${_IMAGE}
       - .
