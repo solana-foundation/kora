@@ -13,6 +13,11 @@ on:
         required: true
         default: true
         type: boolean
+      publish-kora-deploy:
+        description: 'Publish kora-deploy to crates.io'
+        required: true
+        default: false
+        type: boolean
       create-github-release:
         description: 'Create GitHub release'
         required: true
@@ -74,13 +79,25 @@ jobs:
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Get kora-deploy version
+        if: ${{ github.event.inputs.publish-kora-deploy == 'true' }}
+        id: kora_deploy_version
+        run: |
+          VERSION=$(grep "^version" crates/kora-deploy/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 kora-deploy v$VERSION"
+
       - name: Create and push git tags
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           VERSION="${{ steps.version.outputs.version }}"
-          for tag in "v$VERSION" "kora-lib-v$VERSION" "kora-cli-v$VERSION"; do
+          tags=("v$VERSION" "kora-lib-v$VERSION" "kora-cli-v$VERSION")
+          if [ "${{ github.event.inputs.publish-kora-deploy }}" == "true" ]; then
+            tags+=("kora-deploy-v${{ steps.kora_deploy_version.outputs.version }}")
+          fi
+          for tag in "${tags[@]}"; do
             if git rev-parse "$tag" >/dev/null 2>&1; then
               echo "⏭️ Tag $tag already exists, skipping"
             else
@@ -91,7 +108,7 @@ jobs:
           git push origin --tags 2>/dev/null || echo "⏭️ Tags already pushed"
 
       - name: Authenticate crates.io trusted publisher
-        if: ${{ github.event.inputs.publish-kora-lib == 'true' || github.event.inputs.publish-kora-cli == 'true' }}
+        if: ${{ github.event.inputs.publish-kora-lib == 'true' || github.event.inputs.publish-kora-cli == 'true' || github.event.inputs.publish-kora-deploy == 'true' }}
         id: crates_io_auth
         uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1.0.4
 
@@ -116,6 +133,14 @@ jobs:
         run: |
           echo "📦 Publishing kora-cli@${{ steps.version.outputs.version }} to crates.io..."
           cargo publish -p kora-cli --locked
+
+      - name: Publish kora-deploy to crates.io
+        if: ${{ github.event.inputs.publish-kora-deploy == 'true' }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
+        run: |
+          echo "📦 Publishing kora-deploy@${{ steps.kora_deploy_version.outputs.version }} to crates.io..."
+          cargo publish -p kora-deploy --locked
 
       - name: Create GitHub Release
         if: ${{ github.event.inputs.create-github-release == 'true' }}
@@ -177,6 +202,11 @@ jobs:
             echo "- ✅ kora-cli: https://crates.io/crates/kora-cli/${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           else
             echo "- ⏭️ kora-cli: skipped" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ github.event.inputs.publish-kora-deploy }}" == "true" ]; then
+            echo "- ✅ kora-deploy: https://crates.io/crates/kora-deploy/${{ steps.kora_deploy_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ kora-deploy: skipped" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.event.inputs.create-github-release }}" == "true" ]; then
