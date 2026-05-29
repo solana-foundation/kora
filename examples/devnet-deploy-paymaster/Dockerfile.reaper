@@ -9,4 +9,4 @@ RUN cargo install \
 COPY kora.toml ./
 COPY signers.toml ./
 
-CMD devnet_deploy_reaper --config kora.toml --signers-config signers.toml --threshold-hours ${THRESHOLD_HOURS:-168}
+ENTRYPOINT ["devnet_deploy_reaper", "--config", "kora.toml", "--signers-config", "signers.toml"]
