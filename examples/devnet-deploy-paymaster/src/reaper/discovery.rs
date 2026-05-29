@@ -15,12 +15,12 @@ use solana_sdk::pubkey::Pubkey;
 
 use super::{Loader, OwnedProgram};
 
-// v3 ProgramData bincode: [discriminator 4][slot 8][Option tag 1][authority 32].
+// UpgradeableLoaderState::ProgramData bincode layout: [discriminator 4][slot 8][Option tag 1][authority 32]
 const V3_PROGRAMDATA_DISCRIMINATOR: [u8; 4] = [3, 0, 0, 0];
 const V3_PROGRAMDATA_SLOT_OFFSET: usize = 4;
 const V3_PROGRAMDATA_AUTH_OFFSET: usize = 13;
 
-// v3 Program: [discriminator 4][programdata_address 32].
+// UpgradeableLoaderState::Program bincode layout: [discriminator 4][programdata_address 32]
 const V3_PROGRAM_DISCRIMINATOR: [u8; 4] = [2, 0, 0, 0];
 const V3_PROGRAM_PDATA_OFFSET: usize = 4;
 const V3_PROGRAM_ACCOUNT_SIZE: u64 = UpgradeableLoaderState::size_of_program() as u64;
@@ -93,7 +93,6 @@ async fn find_v3_program_for_pdata(rpc: &Arc<RpcClient>, pdata: &Pubkey) -> Resu
             &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
-                // No data needed — we just want the matched pubkey.
                 account_config: account_config_slice(0, 0),
                 with_context: None,
                 sort_results: None,
@@ -140,8 +139,7 @@ fn parse_u64_le(bytes: &[u8]) -> Option<u64> {
     Some(u64::from_le_bytes(arr))
 }
 
-// Cap the response to the bytes we need + use base64. The default base58
-// encoding on Helius rejects accounts larger than 128 bytes outright.
+// Helius rejects base58-encoded account data over 128 bytes; force base64.
 fn account_config_slice(offset: usize, length: usize) -> RpcAccountInfoConfig {
     RpcAccountInfoConfig {
         encoding: Some(UiAccountEncoding::Base64),
@@ -167,8 +165,7 @@ mod tests {
         assert_eq!(parse_u64_le(&[0u8; 4]), None);
     }
 
-    /// Hits real devnet. Run with:
-    ///   DEVNET_RPC_URL=<url> cargo test -p devnet-deploy-paymaster -- --ignored
+    // DEVNET_RPC_URL=<url> cargo test -p devnet-deploy-paymaster -- --ignored
     #[tokio::test]
     #[ignore]
     async fn discover_against_devnet() {
