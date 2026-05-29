@@ -29,6 +29,7 @@ log = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+solana-account-decoder-client-types = "3.0"
 solana-client = { workspace = true }
 solana-commitment-config = { workspace = true }
 solana-keychain = { version = "1.2.0", default-features = false, features = ["memory"] }

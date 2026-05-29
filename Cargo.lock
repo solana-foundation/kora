@@ -1672,6 +1672,7 @@ dependencies = [
  "reqwest 0.13.2",
  "serde",
  "serde_json",
+ "solana-account-decoder-client-types",
  "solana-client",
  "solana-commitment-config",
  "solana-keychain",
