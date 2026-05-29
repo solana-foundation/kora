@@ -8,8 +8,12 @@ publish = false
 path = "src/lib.rs"
 
 [[bin]]
+name = "kora-deploy"
+path = "src/bin/kora_deploy.rs"
+
+[[bin]]
 name = "devnet_smoke"
-path = "src/main.rs"
+path = "src/bin/devnet_smoke.rs"
 
 [[bin]]
 name = "devnet_deploy_reaper"
