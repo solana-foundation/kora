@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use kora_lib::constant::{BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LOADER_V4_PROGRAM_ID};
+use solana_account_decoder_client_types::{UiAccountEncoding, UiDataSliceConfig};
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
@@ -10,7 +11,7 @@ use solana_client::{
 use solana_commitment_config::CommitmentConfig;
 use solana_loader_v3_interface::state::UpgradeableLoaderState;
 use solana_loader_v4_interface::state::LoaderV4State;
-use solana_sdk::{account::Account, pubkey::Pubkey};
+use solana_sdk::pubkey::Pubkey;
 
 use super::{Loader, OwnedProgram};
 
@@ -52,7 +53,7 @@ async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
             &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
-                account_config: minimal_account_config(),
+                account_config: account_config_slice(V3_PROGRAMDATA_SLOT_OFFSET, 8),
                 with_context: None,
                 sort_results: None,
             },
@@ -62,7 +63,7 @@ async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
 
     let mut out = Vec::with_capacity(programdata_accounts.len());
     for (pdata_pubkey, pdata_account) in programdata_accounts {
-        let last_state_slot = parse_v3_programdata_slot(&pdata_account).unwrap_or(0);
+        let last_state_slot = parse_u64_le(&pdata_account.data).unwrap_or(0);
         let Some(program) = find_v3_program_for_pdata(rpc, &pdata_pubkey).await? else {
             log::warn!("skipping orphan v3 ProgramData {pdata_pubkey}");
             continue;
@@ -92,7 +93,8 @@ async fn find_v3_program_for_pdata(rpc: &Arc<RpcClient>, pdata: &Pubkey) -> Resu
             &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
-                account_config: minimal_account_config(),
+                // No data needed — we just want the matched pubkey.
+                account_config: account_config_slice(0, 0),
                 with_context: None,
                 sort_results: None,
             },
@@ -101,11 +103,6 @@ async fn find_v3_program_for_pdata(rpc: &Arc<RpcClient>, pdata: &Pubkey) -> Resu
         .map_err(|e| anyhow!("getProgramAccounts(loader-v3 Program for {pdata}): {e}"))?;
 
     Ok(accounts.into_iter().next().map(|(pk, _)| pk))
-}
-
-fn parse_v3_programdata_slot(account: &Account) -> Option<u64> {
-    let bytes = account.data.get(V3_PROGRAMDATA_SLOT_OFFSET..V3_PROGRAMDATA_SLOT_OFFSET + 8)?;
-    Some(u64::from_le_bytes(bytes.try_into().ok()?))
 }
 
 async fn discover_v4(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<OwnedProgram>> {
@@ -119,7 +116,7 @@ async fn discover_v4(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
             &LOADER_V4_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
-                account_config: minimal_account_config(),
+                account_config: account_config_slice(V4_SLOT_OFFSET, 8),
                 with_context: None,
                 sort_results: None,
             },
@@ -133,20 +130,22 @@ async fn discover_v4(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
             loader: Loader::V4,
             program: program_pubkey,
             program_data: None,
-            last_state_slot: parse_v4_slot(&account).unwrap_or(0),
+            last_state_slot: parse_u64_le(&account.data).unwrap_or(0),
         })
         .collect())
 }
 
-fn parse_v4_slot(account: &Account) -> Option<u64> {
-    let bytes = account.data.get(V4_SLOT_OFFSET..V4_SLOT_OFFSET + 8)?;
-    Some(u64::from_le_bytes(bytes.try_into().ok()?))
+fn parse_u64_le(bytes: &[u8]) -> Option<u64> {
+    let arr: [u8; 8] = bytes.get(..8)?.try_into().ok()?;
+    Some(u64::from_le_bytes(arr))
 }
 
-fn minimal_account_config() -> RpcAccountInfoConfig {
+// Cap the response to the bytes we need + use base64. The default base58
+// encoding on Helius rejects accounts larger than 128 bytes outright.
+fn account_config_slice(offset: usize, length: usize) -> RpcAccountInfoConfig {
     RpcAccountInfoConfig {
-        encoding: None,
-        data_slice: None,
+        encoding: Some(UiAccountEncoding::Base64),
+        data_slice: Some(UiDataSliceConfig { offset, length }),
         commitment: Some(CommitmentConfig::confirmed()),
         min_context_slot: None,
     }
@@ -155,31 +154,36 @@ fn minimal_account_config() -> RpcAccountInfoConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
-    fn parse_v3_programdata_slot_reads_le_u64() {
-        let mut data = vec![0u8; 45];
-        data[V3_PROGRAMDATA_SLOT_OFFSET..V3_PROGRAMDATA_SLOT_OFFSET + 8]
-            .copy_from_slice(&0x0123_4567_89AB_CDEFu64.to_le_bytes());
-        let account = Account {
-            lamports: 0,
-            data,
-            owner: Pubkey::default(),
-            executable: false,
-            rent_epoch: 0,
-        };
-        assert_eq!(parse_v3_programdata_slot(&account), Some(0x0123_4567_89AB_CDEF));
+    fn parse_u64_le_reads_eight_bytes() {
+        let bytes = 0x0123_4567_89AB_CDEFu64.to_le_bytes();
+        assert_eq!(parse_u64_le(&bytes), Some(0x0123_4567_89AB_CDEF));
     }
 
     #[test]
-    fn parse_v3_programdata_slot_returns_none_when_truncated() {
-        let account = Account {
-            lamports: 0,
-            data: vec![0u8; 4],
-            owner: Pubkey::default(),
-            executable: false,
-            rent_epoch: 0,
-        };
-        assert_eq!(parse_v3_programdata_slot(&account), None);
+    fn parse_u64_le_returns_none_when_truncated() {
+        assert_eq!(parse_u64_le(&[0u8; 4]), None);
+    }
+
+    /// Hits real devnet. Run with:
+    ///   DEVNET_RPC_URL=<url> cargo test -p devnet-deploy-paymaster -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn discover_against_devnet() {
+        use std::time::Duration;
+        let url = std::env::var("DEVNET_RPC_URL")
+            .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
+        let rpc = Arc::new(RpcClient::new_with_timeout(url, Duration::from_secs(120)));
+        let kora = Pubkey::from_str("FEvT5nka9qBSXryv65P8ScjvGtfLUE7LgPu1rzuJ38h8").unwrap();
+        let programs = discover_owned_programs(&rpc, &kora).await.unwrap();
+        println!("found {} owned programs", programs.len());
+        for p in &programs {
+            println!(
+                "  {:?}: program={} pdata={:?} slot={}",
+                p.loader, p.program, p.program_data, p.last_state_slot
+            );
+        }
     }
 }
