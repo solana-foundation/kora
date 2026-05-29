@@ -9,7 +9,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "devnet_smoke"
-path = "src/main.rs"
+path = "src/bin/devnet_smoke.rs"
 
 [[bin]]
 name = "devnet_deploy_reaper"
@@ -24,6 +24,7 @@ chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 dotenv = { workspace = true }
 futures = { workspace = true }
+kora-deploy = { workspace = true }
 kora-lib = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }

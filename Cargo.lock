@@ -1667,6 +1667,7 @@ dependencies = [
  "clap",
  "dotenv",
  "futures",
+ "kora-deploy",
  "kora-lib",
  "log",
  "reqwest 0.13.2",
@@ -3533,6 +3534,25 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "utoipa",
+]
+
+[[package]]
+name = "kora-deploy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bincode",
+ "clap",
+ "log",
+ "reqwest 0.13.2",
+ "serde_json",
+ "solana-client",
+ "solana-commitment-config",
+ "solana-loader-v3-interface",
+ "solana-sdk",
+ "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
