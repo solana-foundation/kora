@@ -7,6 +7,15 @@ on:
         description: "Git ref to deploy"
         required: false
         default: main
+      deploy_target:
+        description: "What to deploy"
+        required: false
+        default: both
+        type: choice
+        options:
+          - both
+          - rpc
+          - reaper
 
 permissions:
   contents: read
@@ -38,6 +47,7 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v3
 
       - id: build
+        if: inputs.deploy_target == 'both' || inputs.deploy_target == 'rpc'
         env:
           REGION: ${{ env.GCP_REGION }}
           PROJECT: ${{ env.GCP_PROJECT_ID }}
@@ -71,6 +81,7 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
       - id: deploy
+        if: inputs.deploy_target == 'both' || inputs.deploy_target == 'rpc'
         uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ env.CLOUD_RUN_SERVICE }}
@@ -91,9 +102,11 @@ jobs:
             --vpc-egress=private-ranges-only
 
       - name: Print service URL
+        if: inputs.deploy_target == 'both' || inputs.deploy_target == 'rpc'
         run: echo "Deployed ${{ env.CLOUD_RUN_SERVICE }} -> ${{ steps.deploy.outputs.url }}"
 
       - id: build-reaper
+        if: inputs.deploy_target == 'both' || inputs.deploy_target == 'reaper'
         env:
           REGION: ${{ env.GCP_REGION }}
           PROJECT: ${{ env.GCP_PROJECT_ID }}
@@ -127,6 +140,7 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
       - id: deploy-reaper
+        if: inputs.deploy_target == 'both' || inputs.deploy_target == 'reaper'
         uses: google-github-actions/deploy-cloudrun@v3
         with:
           job: ${{ env.CLOUD_RUN_REAPER_JOB }}
@@ -140,4 +154,5 @@ jobs:
           env_vars_update_strategy: overwrite
 
       - name: Print reaper job
+        if: inputs.deploy_target == 'both' || inputs.deploy_target == 'reaper'
         run: echo "Updated Cloud Run Job ${{ env.CLOUD_RUN_REAPER_JOB }} (image ${{ steps.build-reaper.outputs.image }})"
