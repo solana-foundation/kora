@@ -10,4 +10,4 @@
 #   ./smoke-test.sh --program-so <path.so>  # deploy a different program
 
 set -euo pipefail
-exec cargo run --quiet --manifest-path "$(dirname "$0")/Cargo.toml" -- "$@"
+exec cargo run --quiet --manifest-path "$(dirname "$0")/Cargo.toml" --bin devnet_smoke -- "$@"
