@@ -21,8 +21,9 @@ struct Args {
     #[arg(long)]
     program_so: PathBuf,
     /// Arbitrary tag the paymaster buckets by for usage limits.
-    #[arg(long, default_value_t = String::from("kora-deploy"))]
-    user_id: String,
+    /// Defaults to a per-invocation random ID so each run gets its own bucket.
+    #[arg(long)]
+    user_id: Option<String>,
 }
 
 #[tokio::main]
@@ -30,11 +31,13 @@ async fn main() -> Result<()> {
     init_logging();
     let args = Args::parse();
 
+    let user_id = args.user_id.unwrap_or_else(|| format!("kora-deploy-{}", Pubkey::new_unique()));
+
     let result = deploy(&DeployConfig {
         kora_url: &args.kora_url,
         rpc_url: &args.rpc_url,
         program_so: &args.program_so,
-        user_id: args.user_id,
+        user_id,
     })
     .await?;
 
