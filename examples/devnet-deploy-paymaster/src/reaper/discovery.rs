@@ -139,7 +139,6 @@ fn parse_u64_le(bytes: &[u8]) -> Option<u64> {
     Some(u64::from_le_bytes(arr))
 }
 
-// Helius rejects base58-encoded account data over 128 bytes; force base64.
 fn account_config_slice(offset: usize, length: usize) -> RpcAccountInfoConfig {
     RpcAccountInfoConfig {
         encoding: Some(UiAccountEncoding::Base64),
