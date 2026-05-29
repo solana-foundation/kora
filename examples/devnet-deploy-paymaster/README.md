@@ -15,37 +15,73 @@ Constraints:
   programs (no on-chain activity in 7 days) are reaped automatically; the rent
   goes back to the paymaster.
 
-Reference flow (see [`src/main.rs`](src/main.rs), runnable via
-[`smoke-test.sh`](smoke-test.sh)):
+Get the paymaster's pubkey:
 
-1. `getPayerSigner` → paymaster pubkey. Use it as fee payer + buffer/program
-   authority + upgrade authority.
-2. `loader_v3::create_buffer(paymaster, buffer, paymaster, lamports, len)` →
-   `signAndSendTransaction`. Buffer keypair signs as extra signer.
-3. Chunk the `.so` with `loader_v3::write(buffer, paymaster, offset, bytes)`
-   (≤900 bytes per chunk to stay under tx size).
-4. `loader_v3::deploy_with_max_program_len(paymaster, program, buffer,
-   paymaster, lamports, len)` → `signAndSendTransaction`. Program keypair
-   signs as extra signer.
+```bash
+curl -sS https://deployer.devnet.solana.com -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getPayerSigner","params":[]}' \
+  | jq -r .result.signer_address
+```
 
-JSON-RPC shape:
+Deploy flow (Rust, using `solana-loader-v3-interface`):
 
-```json
-{
-  "jsonrpc": "2.0", "id": 1,
-  "method": "signAndSendTransaction",
-  "params": {
-    "transaction": "<base64 partially-signed tx, fee_payer = paymaster pubkey>",
-    "user_id": "<arbitrary tag for rate-limit bucketing>"
-  }
+```rust
+use solana_loader_v3_interface::{instruction as loader_v3, state::UpgradeableLoaderState};
+use solana_sdk::{message::Message, signature::Keypair, signer::Signer, transaction::Transaction};
+
+let paymaster: Pubkey = /* fetched via getPayerSigner */;
+let buffer = Keypair::new();
+let program = Keypair::new();
+let elf: Vec<u8> = std::fs::read("program.so")?;
+
+// 1. create_buffer (paymaster is buffer authority + funder)
+let buffer_lamports = rpc
+    .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_buffer(elf.len()))
+    .await?;
+let ixs = loader_v3::create_buffer(&paymaster, &buffer.pubkey(), &paymaster, buffer_lamports, elf.len())?;
+submit(&rpc, &paymaster, &ixs, &[&buffer]).await?;
+
+// 2. write the .so in ≤900-byte chunks
+for (i, chunk) in elf.chunks(900).enumerate() {
+    let ix = loader_v3::write(&buffer.pubkey(), &paymaster, (i * 900) as u32, chunk.to_vec());
+    submit(&rpc, &paymaster, &[ix], &[]).await?;
+}
+
+// 3. deploy (paymaster becomes upgrade authority + funder)
+let program_lamports = rpc
+    .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_program())
+    .await?;
+let ixs = loader_v3::deploy_with_max_program_len(
+    &paymaster, &program.pubkey(), &buffer.pubkey(), &paymaster,
+    program_lamports, elf.len(),
+)?;
+submit(&rpc, &paymaster, &ixs, &[&program]).await?;
+```
+
+Where `submit` builds the message with `fee_payer = paymaster`, partially
+signs with the extra keypairs, base64-encodes, and POSTs:
+
+```rust
+async fn submit(rpc: &RpcClient, paymaster: &Pubkey, ixs: &[Instruction], extra_signers: &[&Keypair]) -> Result<Signature> {
+    let blockhash = rpc.get_latest_blockhash().await?;
+    let mut tx = Transaction::new_unsigned(Message::new_with_blockhash(ixs, Some(paymaster), &blockhash));
+    if !extra_signers.is_empty() {
+        tx.partial_sign(extra_signers, blockhash);
+    }
+    let tx_b64 = base64::encode(bincode::serialize(&tx)?);
+    let resp: Value = http
+        .post("https://deployer.devnet.solana.com")
+        .json(&json!({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "signAndSendTransaction",
+            "params": { "transaction": tx_b64, "user_id": user_id }
+        }))
+        .send().await?.json().await?;
+    Signature::from_str(resp["result"]["signature"].as_str().unwrap())
 }
 ```
 
-Smoke test against the live deployer:
-
-```bash
-./smoke-test.sh --kora-url https://deployer.devnet.solana.com
-```
+`user_id` is an arbitrary string the paymaster buckets by for usage limits.
 
 ## Deploying your own paymaster
 
