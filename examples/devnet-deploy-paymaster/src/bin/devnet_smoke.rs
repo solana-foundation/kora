@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use devnet_deploy_paymaster::deploy::{close, deploy, verify_upgrade_authority, DeployConfig};
+use kora_deploy::{close, deploy, verify_upgrade_authority, DeployConfig};
 use solana_sdk::pubkey::Pubkey;
 
 const DEFAULT_PROGRAM_SO: &str = concat!(

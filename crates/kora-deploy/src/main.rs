@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use devnet_deploy_paymaster::deploy::{deploy, DeployConfig};
+use kora_deploy::{deploy, DeployConfig};
 use solana_sdk::pubkey::Pubkey;
 
 #[derive(Parser)]
