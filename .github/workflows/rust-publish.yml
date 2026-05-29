@@ -166,13 +166,19 @@ jobs:
             }
 
             const version = '${{ steps.version.outputs.version }}';
-            const body = [
+            const koraDeployVersion = '${{ steps.kora_deploy_version.outputs.version }}';
+            const publishedKoraDeploy = '${{ github.event.inputs.publish-kora-deploy }}' === 'true';
+            const bodyLines = [
               `Release of Kora v${version}`,
               '',
               '**Crates:**',
               `- [kora-lib v${version}](https://crates.io/crates/kora-lib/${version})`,
               `- [kora-cli v${version}](https://crates.io/crates/kora-cli/${version})`,
-            ].join('\n');
+            ];
+            if (publishedKoraDeploy) {
+              bodyLines.push(`- [kora-deploy v${koraDeployVersion}](https://crates.io/crates/kora-deploy/${koraDeployVersion})`);
+            }
+            const body = bodyLines.join('\n');
 
             await github.rest.repos.createRelease({
               owner: context.repo.owner,
