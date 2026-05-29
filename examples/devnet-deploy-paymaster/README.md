@@ -1,27 +1,66 @@
 # Devnet Deploy Paymaster
 
-Reference Kora paymaster that sponsors program deploys on Solana devnet, with
-loader-v3 / loader-v4 upgrade authority pinned to Kora so users can't drain
-program-data rent. Deploys to GCP Cloud Run, signs via GCP KMS (Ed25519), and
-uses Memorystore Redis for usage limits.
+A Kora paymaster that sponsors program deploys on Solana devnet so devs don't
+have to drip-faucet several SOL. Upgrade authority is pinned to the paymaster
+so the SOL can't be drained; programs idle for 7+ days are closed automatically.
 
-## Files in this directory
+## Using the paymaster
 
-- `Dockerfile` — installs `kora-cli` from the `main` branch (until a release
-  ships with the `DeployAuthority` plugin + `KORA_REDIS_URL` support) and runs
-  `kora rpc start` on port `$PORT`.
-- `Dockerfile.reaper` + `cloudbuild.reaper.yaml` — build for the
-  `devnet_deploy_reaper` binary (workspace-context, multi-stage).
-- `kora.toml` — paymaster config: allowlists loader-v3 + loader-v4, enables the
-  `DeployAuthority` plugin, sets the loader-v3/v4 fee-payer policy.
-- `signers.toml` — single GCP KMS signer; key name + public key come from env.
-- `src/reaper/` + `src/bin/reaper.rs` — reaper source (see Reaper section).
+Endpoint: `https://deployer.devnet.solana.com`
 
-## Deploying
+Constraints:
+- The paymaster must be **fee payer AND upgrade authority** on every loader
+  instruction. Transactions with any other authority are rejected.
+- Programs are not yours to close — authority belongs to the paymaster. Idle
+  programs (no on-chain activity in 7 days) are reaped automatically; the rent
+  goes back to the paymaster.
 
-Triggered manually via the **Deploy devnet paymaster** workflow in the GitHub
-Actions tab. The workflow uses Workload Identity Federation — no service
-account JSON keys live in the repo.
+Reference flow (see [`src/main.rs`](src/main.rs), runnable via
+[`smoke-test.sh`](smoke-test.sh)):
+
+1. `getPayerSigner` → paymaster pubkey. Use it as fee payer + buffer/program
+   authority + upgrade authority.
+2. `loader_v3::create_buffer(paymaster, buffer, paymaster, lamports, len)` →
+   `signAndSendTransaction`. Buffer keypair signs as extra signer.
+3. Chunk the `.so` with `loader_v3::write(buffer, paymaster, offset, bytes)`
+   (≤900 bytes per chunk to stay under tx size).
+4. `loader_v3::deploy_with_max_program_len(paymaster, program, buffer,
+   paymaster, lamports, len)` → `signAndSendTransaction`. Program keypair
+   signs as extra signer.
+
+JSON-RPC shape:
+
+```json
+{
+  "jsonrpc": "2.0", "id": 1,
+  "method": "signAndSendTransaction",
+  "params": {
+    "transaction": "<base64 partially-signed tx, fee_payer = paymaster pubkey>",
+    "user_id": "<arbitrary tag for rate-limit bucketing>"
+  }
+}
+```
+
+Smoke test against the live deployer:
+
+```bash
+./smoke-test.sh --kora-url https://deployer.devnet.solana.com
+```
+
+## Deploying your own paymaster
+
+Runs on GCP Cloud Run, signs via GCP KMS (Ed25519), uses Redis for usage
+limits, and ships a daily Cloud Run Job that closes idle programs.
+
+### Files
+
+- `Dockerfile` — installs `kora-cli` from `main` and runs `kora rpc start`.
+- `Dockerfile.reaper` + `cloudbuild.reaper.yaml` — builds the
+  `devnet_deploy_reaper` binary that closes idle programs daily.
+- `kora.toml` — allowlists loader-v3 + loader-v4, enables the
+  `DeployAuthority` plugin, sets the fee-payer policy.
+- `signers.toml` — single GCP KMS signer; key name + pubkey come from env.
+- `src/reaper/` + `src/bin/reaper.rs` — reaper source.
 
 ### One-time GCP setup
 
@@ -36,8 +75,7 @@ workflow can run. Re-running the workflow does not re-create them.
    workflow updates revisions, it does not create the service.
 5. **Workload Identity Federation pool + provider** — trusts
    `solana-foundation/kora` (filter on `attribute.repository`) and is bound to
-   a deployer service account holding **only** these scoped roles (no
-   project-wide storage perms — important when the GCP project is shared):
+   a deployer service account holding **only** these scoped roles:
    - `roles/run.admin` scoped to the one Cloud Run service
    - `roles/iam.serviceAccountUser` scoped to the runtime service account
    - `roles/cloudbuild.builds.editor` (project — required by `gcloud builds submit`)
@@ -45,19 +83,17 @@ workflow can run. Re-running the workflow does not re-create them.
    - `roles/storage.objectAdmin` scoped to `gs://<PROJECT>_cloudbuild` (build staging only)
    - The runtime SA holds `roles/cloudkms.signer` on the KMS key. The deployer
      SA does not need KMS access — it only orchestrates deploys.
-6. **Cloud Run Job** for the reaper (see Reaper section below); runtime SA
-   needs `roles/cloudkms.signer` on the KMS key. Workflow updates it; doesn't
-   create it.
+6. **Cloud Run Job** for the reaper; runtime SA needs `roles/cloudkms.signer`
+   on the KMS key. The workflow updates it; doesn't create it.
 7. **Cloud Scheduler** entry triggering the reaper Job's `:run` endpoint
    (suggested `0 3 * * *` UTC) with its own SA as invoker.
 
-### Doppler config
+### Environment variables
 
-Deploy values live in the same `stg_github` Doppler config as the rest of
-the CI workflows. The workflow fetches them via `dopplerhq/secrets-fetch-action`
-with OIDC and injects them as env vars in subsequent steps.
+The deploy workflow expects these to be available in the job env before any
+`gcloud` step runs. Source them from whatever secret store you use.
 
-| Doppler key | Example | Notes |
+| Variable | Example | Notes |
 | --- | --- | --- |
 | `GCP_PROJECT_ID` | `solana-kora-devnet` | |
 | `GCP_REGION` | `us-central1` | |
@@ -68,41 +104,37 @@ with OIDC and injects them as env vars in subsequent steps.
 | `VPC_CONNECTOR` | `kora-vpc-connector` | |
 | `DEVNET_RPC_URL` | `https://api.devnet.solana.com` | mapped to `RPC_URL` on the Cloud Run revision |
 | `DEVNET_KORA_GCP_KMS_KEY_NAME` | `projects/.../cryptoKeys/paymaster/cryptoKeyVersions/1` | mapped to `KORA_GCP_KMS_KEY_NAME` |
-| `DEVNET_KORA_GCP_KMS_PUBLIC_KEY` | base58 Solana pubkey derived from the KMS public key | mapped to `KORA_GCP_KMS_PUBLIC_KEY` |
+| `DEVNET_KORA_GCP_KMS_PUBLIC_KEY` | base58 pubkey derived from the KMS public key | mapped to `KORA_GCP_KMS_PUBLIC_KEY` |
 | `DEVNET_KORA_REDIS_URL` | `redis://10.x.y.z:6379` | private VPC IP, mapped to `KORA_REDIS_URL` |
 
-The 4 runtime keys carry a `DEVNET_` prefix so they don't collide with what
-the kora binary and the integration test runner read directly — `RPC_URL`,
-`KORA_REDIS_URL`, `KORA_GCP_KMS_KEY_NAME`, `KORA_GCP_KMS_PUBLIC_KEY` would
-otherwise leak into every CI job that loads `stg_github`.
-
-The Doppler service identity (`DOPPLER_SERVICE_IDENTITY_ID`) and project
-(`DOPPLER_PROJECT`, defaults to `kora`) live in repo Variables — already
-configured for the rest of the CI workflows.
+The 4 runtime vars carry a `DEVNET_` prefix so they don't collide with names
+the kora binary and the integration test runner read directly (`RPC_URL`,
+`KORA_REDIS_URL`, `KORA_GCP_KMS_KEY_NAME`, `KORA_GCP_KMS_PUBLIC_KEY`).
 
 ### Triggering a deploy
 
-GitHub → **Actions** → **Deploy devnet paymaster** → **Run workflow**.
-Optionally specify a git ref (defaults to `main`).
+GitHub → **Actions** → **Deploy devnet paymaster** → **Run workflow**. Pick
+`deploy_target` (`both` / `rpc` / `reaper`, default `both`) and optional git
+ref.
 
-## Reaper
+### Reaper
 
-`devnet_deploy_reaper` runs daily as a Cloud Run Job, finds paymaster-owned
-programs idle past the threshold (default 168h / 7d), and closes them — rent
-goes back to the fee payer.
+`devnet_deploy_reaper` runs as a Cloud Run Job: discover programs via
+`getProgramAccounts` filtered on upgrade authority → classify via
+`getSignaturesForAddress(limit=1)` (slot fallback) → close. v3 uses
+`close_any`; v4 uses `Retract` + `SetProgramLength(0)`. Audit trail =
+Cloud Logging + on-chain signatures.
 
-Flow: discover via `getProgramAccounts` filtered on upgrade authority →
-classify via `getSignaturesForAddress(limit=1)` (slot fallback) → close.
-v3 uses `close_any`; v4 uses `Retract` + `SetProgramLength(0)`. Audit trail
-= Cloud Logging + on-chain signatures.
-
-### Manual trigger
+Manual trigger:
 
 ```bash
-# Trigger the Job out-of-band.
-gcloud run jobs execute "$CLOUD_RUN_REAPER_JOB" --region "$GCP_REGION" --project "$GCP_PROJECT_ID"
+gcloud run jobs execute "$CLOUD_RUN_REAPER_JOB" \
+    --region "$GCP_REGION" --project "$GCP_PROJECT_ID"
+```
 
-# Local dry-run.
+Local dry-run:
+
+```bash
 cargo run --release --bin devnet_deploy_reaper -- \
     --config examples/devnet-deploy-paymaster/kora.toml \
     --signers-config examples/devnet-deploy-paymaster/signers.toml \
