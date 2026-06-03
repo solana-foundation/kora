@@ -113,12 +113,21 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                     }
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::Upgrade {
-                    upgrade_authority, ..
+                    upgrade_authority,
+                    spill,
+                    ..
                 } => {
                     if upgrade_authority != fee_payer {
                         return Err(KoraError::InvalidTransaction(format!(
                             "DeployAuthority plugin: Upgrade upgrade_authority must be the \
                              fee payer ({fee_payer}), got {upgrade_authority} in {}",
+                            context.method_name()
+                        )));
+                    }
+                    if spill != fee_payer {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "DeployAuthority plugin: Upgrade spill must be the fee payer \
+                             ({fee_payer}), got {spill} in {}",
                             context.method_name()
                         )));
                     }
@@ -207,8 +216,20 @@ impl TransactionPlugin for DeployAuthorityPlugin {
             }
         }
 
-        // Fee-payer-funded CreateAccount must land in a loader-owned account, else the caller
-        // siphons the deploy budget into a wallet they control.
+        // A fee-payer-funded account must be loader-owned and, for loader-v3, consumed in the same
+        // tx (buffer init or program deploy) — otherwise its rent is siphoned or stranded.
+        let mut v3_consumed: Vec<Pubkey> = Vec::new();
+        for data in bpf_v3.values().flatten() {
+            match data {
+                ParsedBpfLoaderUpgradeableInstructionData::InitializeBuffer { buffer, .. } => {
+                    v3_consumed.push(*buffer)
+                }
+                ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
+                    program, ..
+                } => v3_consumed.push(*program),
+                _ => {}
+            }
+        }
         let system = transaction.get_or_parse_system_instructions()?.clone();
         for data in
             system.get(&ParsedSystemInstructionType::SystemCreateAccount).into_iter().flatten()
@@ -220,14 +241,23 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                 ..
             } = data
             {
-                if payer == fee_payer
-                    && *owner != BPF_LOADER_UPGRADEABLE_PROGRAM_ID
-                    && *owner != LOADER_V4_PROGRAM_ID
-                {
+                if payer != fee_payer {
+                    continue;
+                }
+                if *owner != BPF_LOADER_UPGRADEABLE_PROGRAM_ID && *owner != LOADER_V4_PROGRAM_ID {
                     return Err(KoraError::InvalidTransaction(format!(
                         "DeployAuthority plugin: fee payer ({fee_payer}) may only fund \
                          loader-owned accounts; CreateAccount for {new_account} assigns owner \
                          {owner} in {}",
+                        context.method_name()
+                    )));
+                }
+                if *owner == BPF_LOADER_UPGRADEABLE_PROGRAM_ID && !v3_consumed.contains(new_account)
+                {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "DeployAuthority plugin: fee payer ({fee_payer}) funded CreateAccount for \
+                         {new_account} that is not initialized as a buffer or deployed as a \
+                         program in the same transaction in {}",
                         context.method_name()
                     )));
                 }
@@ -326,8 +356,17 @@ mod tests {
         fee_payer: &Pubkey,
         ix: solana_sdk::instruction::Instruction,
     ) -> Result<(), KoraError> {
+        run_plugin_ixs(config, rpc_client, fee_payer, &[ix]).await
+    }
+
+    async fn run_plugin_ixs(
+        config: &Config,
+        rpc_client: &Arc<RpcClient>,
+        fee_payer: &Pubkey,
+        ixs: &[solana_sdk::instruction::Instruction],
+    ) -> Result<(), KoraError> {
         let tx = TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::Legacy(
-            Message::new(&[ix], Some(fee_payer)),
+            Message::new(ixs, Some(fee_payer)),
         ));
         let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
         let runner = TransactionPluginRunner::from_config(config);
@@ -697,6 +736,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn v3_rejects_upgrade_with_foreign_spill() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let ix = loader_v3::upgrade(&program, &buffer, &fee_payer, &attacker);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("Upgrade spill")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn v3_accepts_upgrade_spill_to_kora() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let ix = loader_v3::upgrade(&program, &buffer, &fee_payer, &fee_payer);
+        assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
+    }
+
+    #[tokio::test]
     async fn rejects_create_account_funding_caller_wallet() {
         let (config, rpc_client) = build_runner_v3();
         let fee_payer = Pubkey::new_unique();
@@ -716,7 +782,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn accepts_create_account_funding_loader_owned_account() {
+    async fn accepts_create_account_paired_with_initialize_buffer() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let ixs = loader_v3::create_buffer(&fee_payer, &buffer, &fee_payer, 1_000_000, 0).unwrap();
+        assert!(run_plugin_ixs(&config, &rpc_client, &fee_payer, &ixs).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn accepts_create_account_paired_with_deploy() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let ixs = loader_v3::deploy_with_max_program_len(
+            &fee_payer, &program, &buffer, &fee_payer, 1_000_000, 0,
+        )
+        .unwrap();
+        assert!(run_plugin_ixs(&config, &rpc_client, &fee_payer, &ixs).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn rejects_orphan_loader_owned_create_account() {
         let (config, rpc_client) = build_runner_v3();
         let fee_payer = Pubkey::new_unique();
         let buffer = Pubkey::new_unique();
@@ -727,7 +817,12 @@ mod tests {
             36,
             &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
         );
-        assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg)
+                if msg.contains("not initialized as a buffer or deployed as a program")),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]

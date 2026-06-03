@@ -56,9 +56,8 @@ blocked_account_extensions = []
 [validation.fee_payer_policy.system]
 allow_transfer = false
 allow_assign = false
-# Needed so Kora can fund the loader-v4 program account (CreateAccount + SetProgramLength).
 allow_create_account = true
-allow_allocate = true
+allow_allocate = false
 
 [validation.fee_payer_policy.system.nonce]
 allow_initialize = false
