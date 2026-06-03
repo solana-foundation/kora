@@ -225,8 +225,13 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                     v3_consumed.push(*buffer)
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
-                    program, ..
-                } => v3_consumed.push(*program),
+                    program,
+                    program_data,
+                    ..
+                } => {
+                    v3_consumed.push(*program);
+                    v3_consumed.push(*program_data);
+                }
                 _ => {}
             }
         }
@@ -792,16 +797,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn accepts_create_account_paired_with_deploy() {
+    async fn accepts_deploy_with_inner_programdata_create() {
         use solana_loader_v3_interface::instruction as loader_v3;
         let (config, rpc_client) = build_runner_v3();
         let fee_payer = Pubkey::new_unique();
         let program = Pubkey::new_unique();
         let buffer = Pubkey::new_unique();
-        let ixs = loader_v3::deploy_with_max_program_len(
+        let program_data =
+            Pubkey::find_program_address(&[program.as_ref()], &BPF_LOADER_UPGRADEABLE_PROGRAM_ID).0;
+        let mut ixs = loader_v3::deploy_with_max_program_len(
             &fee_payer, &program, &buffer, &fee_payer, 1_000_000, 0,
         )
         .unwrap();
+        ixs.push(system_create_account(
+            &fee_payer,
+            &program_data,
+            1_000_000,
+            0,
+            &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
+        ));
         assert!(run_plugin_ixs(&config, &rpc_client, &fee_payer, &ixs).await.is_ok());
     }
 
