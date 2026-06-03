@@ -8,8 +8,8 @@ publish = false
 path = "src/lib.rs"
 
 [[bin]]
-name = "devnet_smoke"
-path = "src/bin/devnet_smoke.rs"
+name = "devnet_deployer_smoke"
+path = "src/bin/devnet_deployer_smoke.rs"
 
 [[bin]]
 name = "devnet_deploy_reaper"
@@ -33,10 +33,12 @@ serde_json = { workspace = true }
 solana-account-decoder-client-types = "3.0"
 solana-client = { workspace = true }
 solana-commitment-config = { workspace = true }
+solana-compute-budget-interface = { workspace = true }
 solana-keychain = { version = "1.2.0", default-features = false, features = ["memory"] }
 solana-loader-v3-interface = { workspace = true }
 solana-loader-v4-interface = { workspace = true }
 solana-sdk = { workspace = true }
+solana-system-interface = { workspace = true }
 solana-transaction-status-client-types = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
