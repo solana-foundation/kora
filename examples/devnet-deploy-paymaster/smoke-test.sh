@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# End-to-end smoke test against the live devnet paymaster.
+# Verify a live devnet deployer: happy-path deploy lifecycle + adversarial drain/grief probes.
 #
-# Deploys a real program through Kora (transfer-hook-example.so by default),
-# verifies on-chain that Kora is the upgrade authority, then closes the program
-# to recover rent. Self-cleaning, zero net SOL cost.
-#
-#   ./smoke-test.sh                         # default URL + program
+#   ./smoke-test.sh                         # full suite, default URL + program
+#   ./smoke-test.sh --happy-only            # deploy/verify/close only
+#   ./smoke-test.sh --adversarial-only      # probes only
 #   ./smoke-test.sh --kora-url <URL>        # override paymaster URL
-#   ./smoke-test.sh --program-so <path.so>  # deploy a different program
-
+#   ./smoke-test.sh --program-so <path.so>  # use a different program
+#
+# Provisions real accounts (spends recoverable devnet SOL) and may leave orphan buffers on failure.
 set -euo pipefail
-exec cargo run --quiet --manifest-path "$(dirname "$0")/Cargo.toml" --bin devnet_smoke -- "$@"
+exec cargo run --quiet --manifest-path "$(dirname "$0")/Cargo.toml" --bin devnet_deployer_smoke -- "$@"
