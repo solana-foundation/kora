@@ -8,11 +8,18 @@ pub enum Loader {
     V4,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountKind {
+    Program,
+    Buffer,
+}
+
 #[derive(Debug, Clone)]
 pub struct OwnedProgram {
     pub loader: Loader,
+    pub kind: AccountKind,
     pub program: Pubkey,
-    /// `None` for v4 — state and code share one account.
+    /// `None` for v4 and for buffers — state and code share one account.
     pub program_data: Option<Pubkey>,
     pub last_state_slot: u64,
 }
