@@ -21,7 +21,8 @@ pub async fn run(rpc: Arc<RpcClient>, cfg: ReaperConfig) -> Result<ReaperReport>
             Ok(ActivityVerdict::Recent { .. }) => report.skipped_recent += 1,
             Ok(ActivityVerdict::Idle { last_seen_unix }) => {
                 log::info!(
-                    "idle program={} loader={:?} last_seen={:?}",
+                    "idle {:?} {} loader={:?} last_seen={:?}",
+                    program.kind,
                     program.program,
                     program.loader,
                     last_seen_unix

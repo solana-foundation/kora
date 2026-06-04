@@ -13,7 +13,7 @@ use solana_sdk::{
     pubkey::Pubkey,
 };
 
-use super::{ClosedProgram, Loader, OwnedProgram};
+use super::{AccountKind, ClosedProgram, Loader, OwnedProgram};
 
 pub async fn close_program(
     rpc: &Arc<RpcClient>,
@@ -59,6 +59,9 @@ pub async fn close_program(
 }
 
 fn build_v3_close(fee_payer: &Pubkey, program: &OwnedProgram) -> Result<Vec<Instruction>> {
+    if program.kind == AccountKind::Buffer {
+        return Ok(vec![loader_v3::close_any(&program.program, fee_payer, Some(fee_payer), None)]);
+    }
     let program_data = program
         .program_data
         .ok_or_else(|| anyhow!("v3 program {} missing program_data", program.program))?;
@@ -97,6 +100,7 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let p = OwnedProgram {
             loader: Loader::V3,
+            kind: AccountKind::Program,
             program: Pubkey::new_unique(),
             program_data: Some(Pubkey::new_unique()),
             last_state_slot: 100,
@@ -114,9 +118,33 @@ mod tests {
     }
 
     #[test]
+    fn build_v3_close_buffer_targets_buffer_with_no_program_account() {
+        let fee_payer = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let b = OwnedProgram {
+            loader: Loader::V3,
+            kind: AccountKind::Buffer,
+            program: buffer,
+            program_data: None,
+            last_state_slot: 0,
+        };
+        let ixs = build_v3_close(&fee_payer, &b).unwrap();
+
+        assert_eq!(ixs.len(), 1);
+        let ix = &ixs[0];
+        // close_any: [buffer, recipient, authority]
+        assert_eq!(ix.accounts.len(), 3);
+        assert_eq!(ix.accounts[0].pubkey, buffer);
+        assert_eq!(ix.accounts[1].pubkey, fee_payer);
+        assert_eq!(ix.accounts[2].pubkey, fee_payer);
+        assert!(ix.accounts[2].is_signer);
+    }
+
+    #[test]
     fn build_v3_close_errors_without_program_data() {
         let bad = OwnedProgram {
             loader: Loader::V3,
+            kind: AccountKind::Program,
             program: Pubkey::new_unique(),
             program_data: None,
             last_state_slot: 0,
@@ -129,6 +157,7 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let p = OwnedProgram {
             loader: Loader::V4,
+            kind: AccountKind::Program,
             program: Pubkey::new_unique(),
             program_data: None,
             last_state_slot: 0,

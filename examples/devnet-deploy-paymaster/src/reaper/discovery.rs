@@ -13,7 +13,7 @@ use solana_loader_v3_interface::state::UpgradeableLoaderState;
 use solana_loader_v4_interface::state::LoaderV4State;
 use solana_sdk::pubkey::Pubkey;
 
-use super::{Loader, OwnedProgram};
+use super::{AccountKind, Loader, OwnedProgram};
 
 // UpgradeableLoaderState::ProgramData bincode layout: [discriminator 4][slot 8][Option tag 1][authority 32]
 const V3_PROGRAMDATA_DISCRIMINATOR: [u8; 4] = [3, 0, 0, 0];
@@ -25,6 +25,10 @@ const V3_PROGRAM_DISCRIMINATOR: [u8; 4] = [2, 0, 0, 0];
 const V3_PROGRAM_PDATA_OFFSET: usize = 4;
 const V3_PROGRAM_ACCOUNT_SIZE: u64 = UpgradeableLoaderState::size_of_program() as u64;
 
+// UpgradeableLoaderState::Buffer bincode layout: [discriminator 4][Option tag 1][authority 32]
+const V3_BUFFER_DISCRIMINATOR: [u8; 4] = [1, 0, 0, 0];
+const V3_BUFFER_AUTH_OFFSET: usize = 5;
+
 const V4_SLOT_OFFSET: usize = std::mem::offset_of!(LoaderV4State, slot);
 const V4_AUTH_OFFSET: usize =
     std::mem::offset_of!(LoaderV4State, authority_address_or_next_version);
@@ -35,8 +39,46 @@ pub async fn discover_owned_programs(
 ) -> Result<Vec<OwnedProgram>> {
     let mut out = Vec::new();
     out.extend(discover_v3(rpc, fee_payer).await.context("discover v3")?);
+    out.extend(discover_v3_buffers(rpc, fee_payer).await.context("discover v3 buffers")?);
     out.extend(discover_v4(rpc, fee_payer).await.context("discover v4")?);
     Ok(out)
+}
+
+async fn discover_v3_buffers(
+    rpc: &Arc<RpcClient>,
+    fee_payer: &Pubkey,
+) -> Result<Vec<OwnedProgram>> {
+    let filters = vec![
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, V3_BUFFER_DISCRIMINATOR.to_vec())),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            V3_BUFFER_AUTH_OFFSET,
+            fee_payer.as_ref().to_vec(),
+        )),
+    ];
+
+    let accounts = rpc
+        .get_program_accounts_with_config(
+            &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
+            RpcProgramAccountsConfig {
+                filters: Some(filters),
+                account_config: account_config_slice(0, 0),
+                with_context: None,
+                sort_results: None,
+            },
+        )
+        .await
+        .map_err(|e| anyhow!("getProgramAccounts(loader-v3 Buffer): {e}"))?;
+
+    Ok(accounts
+        .into_iter()
+        .map(|(buffer, _)| OwnedProgram {
+            loader: Loader::V3,
+            kind: AccountKind::Buffer,
+            program: buffer,
+            program_data: None,
+            last_state_slot: 0,
+        })
+        .collect())
 }
 
 async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<OwnedProgram>> {
@@ -70,6 +112,7 @@ async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
         };
         out.push(OwnedProgram {
             loader: Loader::V3,
+            kind: AccountKind::Program,
             program,
             program_data: Some(pdata_pubkey),
             last_state_slot,
@@ -127,6 +170,7 @@ async fn discover_v4(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
         .into_iter()
         .map(|(program_pubkey, account)| OwnedProgram {
             loader: Loader::V4,
+            kind: AccountKind::Program,
             program: program_pubkey,
             program_data: None,
             last_state_slot: parse_u64_le(&account.data).unwrap_or(0),
