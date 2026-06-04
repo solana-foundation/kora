@@ -1,4 +1,4 @@
-use solana_message::VersionedMessage;
+use solana_message::{VersionedMessage, MESSAGE_VERSION_PREFIX};
 use solana_sdk::{
     signature::Signature,
     transaction::{Transaction, VersionedTransaction},
@@ -15,21 +15,7 @@ impl TransactionUtil {
             KoraError::InvalidTransaction(format!("Failed to decode base64 transaction: {e}"))
         })?;
 
-        // First try to deserialize as VersionedTransaction
-        if let Ok(versioned_tx) = bincode::deserialize::<VersionedTransaction>(&decoded) {
-            return Ok(versioned_tx);
-        }
-
-        // Fall back to legacy Transaction and convert to VersionedTransaction
-        let legacy_tx: Transaction = bincode::deserialize(&decoded).map_err(|e| {
-            KoraError::InvalidTransaction(format!("Failed to deserialize transaction: {e}"))
-        })?;
-
-        // Convert legacy Transaction to VersionedTransaction
-        Ok(VersionedTransaction {
-            signatures: legacy_tx.signatures,
-            message: VersionedMessage::Legacy(legacy_tx.message),
-        })
+        Self::deserialize_transaction(&decoded)
     }
 
     pub fn new_unsigned_versioned_transaction(message: VersionedMessage) -> VersionedTransaction {
@@ -54,6 +40,30 @@ impl TransactionUtil {
             KoraError::SerializationError("Failed to serialize transaction.".to_string())
         })?;
         Ok(STANDARD.encode(serialized))
+    }
+
+    fn deserialize_transaction(decoded: &[u8]) -> Result<VersionedTransaction, KoraError> {
+        if decoded.is_empty() {
+            return Err(KoraError::InvalidTransaction("Empty transaction data".to_string()));
+        }
+
+        let is_versioned = decoded[0] & MESSAGE_VERSION_PREFIX != 0;
+
+        if is_versioned {
+            bincode::deserialize::<VersionedTransaction>(decoded).map_err(|e| {
+                KoraError::InvalidTransaction(format!(
+                    "Failed to deserialize versioned transaction: {e}"
+                ))
+            })
+        } else {
+            let legacy_tx = bincode::deserialize::<Transaction>(decoded).map_err(|e| {
+                KoraError::InvalidTransaction(format!(
+                    "Failed to deserialize legacy transaction: {e}"
+                ))
+            })?;
+
+            Ok(VersionedTransaction::from(legacy_tx))
+        }
     }
 }
 
