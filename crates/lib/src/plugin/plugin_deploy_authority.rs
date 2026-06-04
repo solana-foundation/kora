@@ -216,8 +216,8 @@ impl TransactionPlugin for DeployAuthorityPlugin {
             }
         }
 
-        // A fee-payer-funded account must be loader-owned and, for loader-v3, consumed in the same
-        // tx (buffer init or program deploy) — otherwise its rent is siphoned or stranded.
+        // A fee-payer-funded account must be loader-owned and consumed in the same tx (initialized
+        // or operated on by its loader) — otherwise its rent is siphoned or stranded.
         let mut v3_consumed: Vec<Pubkey> = Vec::new();
         for data in bpf_v3.values().flatten() {
             match data {
@@ -233,6 +233,22 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                     v3_consumed.push(*program_data);
                 }
                 _ => {}
+            }
+        }
+        let mut v4_consumed: Vec<Pubkey> = Vec::new();
+        for data in loader_v4.values().flatten() {
+            match data {
+                ParsedLoaderV4InstructionData::Write { program, .. }
+                | ParsedLoaderV4InstructionData::SetProgramLength { program, .. }
+                | ParsedLoaderV4InstructionData::Deploy { program, .. }
+                | ParsedLoaderV4InstructionData::Retract { program, .. }
+                | ParsedLoaderV4InstructionData::TransferAuthority { program, .. } => {
+                    v4_consumed.push(*program)
+                }
+                ParsedLoaderV4InstructionData::Copy { destination_program, .. } => {
+                    v4_consumed.push(*destination_program)
+                }
+                ParsedLoaderV4InstructionData::Finalize { .. } => {}
             }
         }
         let system = transaction.get_or_parse_system_instructions()?.clone();
@@ -257,12 +273,16 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                         context.method_name()
                     )));
                 }
-                if *owner == BPF_LOADER_UPGRADEABLE_PROGRAM_ID && !v3_consumed.contains(new_account)
-                {
+                let consumed = if *owner == LOADER_V4_PROGRAM_ID {
+                    v4_consumed.contains(new_account)
+                } else {
+                    v3_consumed.contains(new_account)
+                };
+                if !consumed {
                     return Err(KoraError::InvalidTransaction(format!(
                         "DeployAuthority plugin: fee payer ({fee_payer}) funded CreateAccount for \
-                         {new_account} that is not initialized as a buffer or deployed as a \
-                         program in the same transaction in {}",
+                         {new_account} that is not initialized or operated on by its loader in the \
+                         same transaction in {}",
                         context.method_name()
                     )));
                 }
@@ -834,18 +854,35 @@ mod tests {
         let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
         assert!(
             matches!(&err, KoraError::InvalidTransaction(msg)
-                if msg.contains("not initialized as a buffer or deployed as a program")),
+                if msg.contains("not initialized or operated on by its loader")),
             "{err:?}"
         );
     }
 
     #[tokio::test]
-    async fn accepts_create_account_funding_loader_v4_owned_account() {
-        let (config, rpc_client) = build_runner_v3();
+    async fn accepts_create_account_paired_with_loader_v4_set_program_length() {
+        let (config, rpc_client) = build_runner();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let ixs = vec![
+            system_create_account(&fee_payer, &program, 1_000_000, 36, &LOADER_V4_PROGRAM_ID),
+            loader_v4::set_program_length(&program, &fee_payer, 1024, &fee_payer),
+        ];
+        assert!(run_plugin_ixs(&config, &rpc_client, &fee_payer, &ixs).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn rejects_orphan_loader_v4_owned_create_account() {
+        let (config, rpc_client) = build_runner();
         let fee_payer = Pubkey::new_unique();
         let program = Pubkey::new_unique();
         let ix = system_create_account(&fee_payer, &program, 1_000_000, 36, &LOADER_V4_PROGRAM_ID);
-        assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg)
+                if msg.contains("not initialized or operated on by its loader")),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]
