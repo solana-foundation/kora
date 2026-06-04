@@ -17,19 +17,19 @@ use crate::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
-use std::str::FromStr;
+use std::{collections::HashSet, str::FromStr};
 
 use crate::fee::price::PriceModel;
 
 pub struct TransactionValidator {
     fee_payer_pubkey: Pubkey,
     max_allowed_lamports: u64,
-    allowed_programs: Vec<Pubkey>,
+    allowed_programs: HashSet<Pubkey>,
     allow_all_programs: bool,
-    require_one_of_programs: Vec<Pubkey>,
+    require_one_of_programs: HashSet<Pubkey>,
     max_signatures: u64,
-    allowed_tokens: Vec<Pubkey>,
-    disallowed_accounts: Vec<Pubkey>,
+    allowed_tokens: HashSet<Pubkey>,
+    disallowed_accounts: HashSet<Pubkey>,
     _price_source: PriceSource,
     fee_payer_policy: FeePayerPolicy,
     allow_durable_transactions: bool,
@@ -40,7 +40,7 @@ impl TransactionValidator {
         let config = &config.validation;
 
         let (allow_all_programs, allowed_programs) = match &config.allowed_programs {
-            ProgramsConfig::All => (true, Vec::new()),
+            ProgramsConfig::All => (true, HashSet::new()),
             ProgramsConfig::Allowlist(programs) => (
                 false,
                 programs
@@ -52,7 +52,7 @@ impl TransactionValidator {
                             ))
                         })
                     })
-                    .collect::<Result<Vec<Pubkey>, KoraError>>()?,
+                    .collect::<Result<HashSet<Pubkey>, KoraError>>()?,
             ),
         };
 
@@ -66,7 +66,7 @@ impl TransactionValidator {
                     ))
                 })
             })
-            .collect::<Result<Vec<Pubkey>, KoraError>>()?;
+            .collect::<Result<HashSet<Pubkey>, KoraError>>()?;
 
         Ok(Self {
             fee_payer_pubkey,
@@ -80,7 +80,7 @@ impl TransactionValidator {
                 .allowed_tokens
                 .iter()
                 .map(|addr| Pubkey::from_str(addr))
-                .collect::<Result<Vec<Pubkey>, _>>()
+                .collect::<Result<HashSet<Pubkey>, _>>()
                 .map_err(|e| {
                     KoraError::InternalServerError(format!("Invalid allowed token address: {e}"))
                 })?,
@@ -88,7 +88,7 @@ impl TransactionValidator {
                 .disallowed_accounts
                 .iter()
                 .map(|addr| Pubkey::from_str(addr))
-                .collect::<Result<Vec<Pubkey>, _>>()
+                .collect::<Result<HashSet<Pubkey>, _>>()
                 .map_err(|e| {
                     KoraError::InternalServerError(format!(
                         "Invalid disallowed account address: {e}"
