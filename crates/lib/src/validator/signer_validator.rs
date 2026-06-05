@@ -1,6 +1,6 @@
 use crate::{
     error::KoraError,
-    signer::{SelectionStrategy, SignerPoolConfig},
+    signer::{SelectionStrategy, SignerPoolConfig, SignerTypeConfig},
 };
 
 pub struct SignerValidator {}
@@ -27,6 +27,41 @@ impl SignerValidator {
 
         // Generate strategy-specific warnings
         Self::validate_strategy_warnings(config, &mut warnings);
+
+        for signer in &config.signers {
+            let name = &signer.name;
+            let http_config = match &signer.config {
+                SignerTypeConfig::Turnkey { config } => &config.http_config,
+                SignerTypeConfig::Privy { config } => &config.http_config,
+                SignerTypeConfig::Vault { config } => &config.http_config,
+                SignerTypeConfig::Cdp { config } => &config.http_config,
+                SignerTypeConfig::Fireblocks { config } => &config.http_config,
+                SignerTypeConfig::Dfns { config } => &config.http_config,
+                SignerTypeConfig::Openfort { config } => &config.http_config,
+                SignerTypeConfig::Memory { .. } => &None,
+                SignerTypeConfig::AwsKms { .. } => &None,
+                SignerTypeConfig::GcpKms { .. } => &None,
+                SignerTypeConfig::Para { .. } => &None,
+                SignerTypeConfig::Crossmint { .. } => &None,
+            };
+
+            if let Some(c) = http_config {
+                if let Some(t) = c.request_timeout_secs {
+                    if t == 0 {
+                        errors.push(format!(
+                            "request_timeout_secs must be greater than 0 for signer '{name}'"
+                        ));
+                    }
+                }
+                if let Some(t) = c.connect_timeout_secs {
+                    if t == 0 {
+                        errors.push(format!(
+                            "connect_timeout_secs must be greater than 0 for signer '{name}'"
+                        ));
+                    }
+                }
+            }
+        }
 
         (warnings, errors)
     }

@@ -70,11 +70,11 @@ pub struct RemoteSignerHttpConfig {
     pub connect_timeout_secs: Option<u64>,
 }
 
-impl RemoteSignerHttpConfig {
-    fn to_keychain_http_config(&self) -> solana_keychain::HttpClientConfig {
+impl From<&RemoteSignerHttpConfig> for solana_keychain::HttpClientConfig {
+    fn from(c: &RemoteSignerHttpConfig) -> Self {
         solana_keychain::HttpClientConfig {
-            request_timeout: self.request_timeout_secs.map(std::time::Duration::from_secs),
-            connect_timeout: self.connect_timeout_secs.map(std::time::Duration::from_secs),
+            request_timeout: c.request_timeout_secs.map(std::time::Duration::from_secs),
+            connect_timeout: c.connect_timeout_secs.map(std::time::Duration::from_secs),
         }
     }
 }
@@ -428,7 +428,7 @@ impl SignerConfig {
             organization_id,
             private_key_id,
             public_key,
-            config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
+            config.http_config.as_ref().map(solana_keychain::HttpClientConfig::from),
         )
         .map_err(|e| {
             KoraError::SigningError(format!(
@@ -450,7 +450,7 @@ impl SignerConfig {
             app_id,
             app_secret,
             wallet_id,
-            config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
+            config.http_config.as_ref().map(solana_keychain::HttpClientConfig::from),
         )
         .await
         .map_err(|e| {
@@ -475,7 +475,7 @@ impl SignerConfig {
             vault_token,
             key_name,
             pubkey,
-            config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
+            config.http_config.as_ref().map(solana_keychain::HttpClientConfig::from),
         )
         .map_err(|e| {
             KoraError::SigningError(format!(
@@ -522,7 +522,10 @@ impl SignerConfig {
             poll_interval_ms: config.poll_interval_ms,
             max_poll_attempts: config.max_poll_attempts,
             use_program_call: config.use_program_call,
-            http_client_config: config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
+            http_client_config: config
+                .http_config
+                .as_ref()
+                .map(solana_keychain::HttpClientConfig::from),
         };
 
         Signer::from_fireblocks(keychain_config).await.map_err(|e| {
@@ -571,7 +574,7 @@ impl SignerConfig {
             api_key_secret,
             wallet_secret,
             address,
-            config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
+            config.http_config.as_ref().map(solana_keychain::HttpClientConfig::from),
         )
         .map_err(|e| {
             KoraError::SigningError(format!(
@@ -595,7 +598,10 @@ impl SignerConfig {
             private_key_pem,
             wallet_id,
             api_base_url: config.api_base_url.clone(),
-            http_client_config: config.http_config.as_ref().map(|c| c.to_keychain_http_config()),
+            http_client_config: config
+                .http_config
+                .as_ref()
+                .map(solana_keychain::HttpClientConfig::from),
         };
         Signer::from_dfns(keychain_config).await.map_err(|e| {
             KoraError::SigningError(format!(
@@ -657,7 +663,7 @@ impl SignerConfig {
                 http_client_config: config
                     .http_config
                     .as_ref()
-                    .map(|c| c.to_keychain_http_config()),
+                    .map(solana_keychain::HttpClientConfig::from),
             })
             .map_err(map_err)?;
         signer.init().await.map_err(map_err)?;

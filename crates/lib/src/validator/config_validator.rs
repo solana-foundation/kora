@@ -988,51 +988,6 @@ impl ConfigValidator {
                         SignerValidator::validate_with_result(&signer_config);
                     warnings.extend(signer_warnings);
                     errors.extend(signer_errors);
-
-                    for signer in &signer_config.signers {
-                        let name = &signer.name;
-                        let http_config = match &signer.config {
-                            crate::signer::SignerTypeConfig::Turnkey { config } => {
-                                &config.http_config
-                            }
-                            crate::signer::SignerTypeConfig::Privy { config } => {
-                                &config.http_config
-                            }
-                            crate::signer::SignerTypeConfig::Vault { config } => {
-                                &config.http_config
-                            }
-                            crate::signer::SignerTypeConfig::Cdp { config } => &config.http_config,
-                            crate::signer::SignerTypeConfig::Fireblocks { config } => {
-                                &config.http_config
-                            }
-                            crate::signer::SignerTypeConfig::Dfns { config } => &config.http_config,
-                            crate::signer::SignerTypeConfig::Openfort { config } => {
-                                &config.http_config
-                            }
-                            crate::signer::SignerTypeConfig::Memory { .. } => &None,
-                            crate::signer::SignerTypeConfig::AwsKms { .. } => &None,
-                            crate::signer::SignerTypeConfig::GcpKms { .. } => &None,
-                            crate::signer::SignerTypeConfig::Para { .. } => &None,
-                            crate::signer::SignerTypeConfig::Crossmint { .. } => &None,
-                        };
-
-                        if let Some(c) = http_config {
-                            if let Some(t) = c.request_timeout_secs {
-                                if t == 0 {
-                                    errors.push(format!(
-                                        "request_timeout_secs must be greater than 0 for signer '{name}'"
-                                    ));
-                                }
-                            }
-                            if let Some(t) = c.connect_timeout_secs {
-                                if t == 0 {
-                                    errors.push(format!(
-                                        "connect_timeout_secs must be greater than 0 for signer '{name}'"
-                                    ));
-                                }
-                            }
-                        }
-                    }
                 }
                 Err(e) => {
                     errors.push(format!("Failed to load signers config: {e}"));
