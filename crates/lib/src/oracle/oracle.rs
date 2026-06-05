@@ -56,20 +56,12 @@ pub struct RetryingPriceOracle {
     oracle: Arc<dyn PriceOracle + Send + Sync>,
 }
 
-#[cfg(test)]
-thread_local! {
-    pub static TEST_ORACLE: std::cell::RefCell<Option<Arc<dyn PriceOracle + Send + Sync>>> = std::cell::RefCell::new(None);
-}
+const ORACLE_CONNECT_TIMEOUT_SECS: u64 = 5;
+const ORACLE_REQUEST_TIMEOUT_SECS: u64 = 10;
 
 pub fn get_price_oracle(
     source: PriceSource,
 ) -> Result<Arc<dyn PriceOracle + Send + Sync>, KoraError> {
-    #[cfg(test)]
-    {
-        if let Some(oracle) = TEST_ORACLE.with(|o| o.borrow().clone()) {
-            return Ok(oracle);
-        }
-    }
     match source {
         PriceSource::Jupiter => Ok(Arc::new(JupiterPriceOracle::new()?)),
         PriceSource::Mock => Ok(OracleUtil::get_mock_oracle_price()),
@@ -83,8 +75,8 @@ impl RetryingPriceOracle {
         oracle: Arc<dyn PriceOracle + Send + Sync>,
     ) -> Self {
         let client = Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(10))
+            .connect_timeout(Duration::from_secs(ORACLE_CONNECT_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(ORACLE_REQUEST_TIMEOUT_SECS))
             .build()
             .expect("Failed to build reqwest client");
         Self { client, max_retries, base_delay, oracle }

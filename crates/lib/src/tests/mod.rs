@@ -18,3 +18,6 @@ pub mod toml_mock;
 
 #[cfg(test)]
 pub mod transaction_mock;
+
+#[cfg(test)]
+pub mod oracle_mock;
