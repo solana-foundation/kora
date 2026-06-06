@@ -296,6 +296,7 @@ impl UsageTracker {
             let max = rule.max();
             let description = rule.description();
 
+            // fast path: skip check_and_increment if already over limit
             let current = self.store.get(&key).await?;
 
             if current as u64 + increment_count > max {
@@ -319,8 +320,6 @@ impl UsageTracker {
                     reason: format!("User {} exceeded {} limit", ctx.user_id, description),
                 });
             }
-
-            log::debug!("[rule] User {} {}: (atomic check+inc)", ctx.user_id, description);
         }
 
         Ok(LimiterResult::Allowed)

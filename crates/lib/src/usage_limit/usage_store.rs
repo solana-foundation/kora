@@ -33,7 +33,8 @@ pub trait UsageStore: Send + Sync {
     async fn clear(&self) -> Result<(), KoraError>;
 }
 
-/// Atomically checks the limit and increments - sets TTL only on first increment.
+/// Atomically checks the limit and increments — sets TTL only on first
+/// increment. ARGV[3] = 0 is the sentinel for "no expiry".
 static CHECK_AND_INCREMENT_SCRIPT: Lazy<redis::Script> = Lazy::new(|| {
     redis::Script::new(
         r"
