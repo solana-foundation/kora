@@ -56,8 +56,8 @@ pub struct RetryingPriceOracle {
     oracle: Arc<dyn PriceOracle + Send + Sync>,
 }
 
-const ORACLE_CONNECT_TIMEOUT_SECS: u64 = 5;
-const ORACLE_REQUEST_TIMEOUT_SECS: u64 = 10;
+const ORACLE_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const ORACLE_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn get_price_oracle(
     source: PriceSource,
@@ -75,8 +75,8 @@ impl RetryingPriceOracle {
         oracle: Arc<dyn PriceOracle + Send + Sync>,
     ) -> Self {
         let client = Client::builder()
-            .connect_timeout(Duration::from_secs(ORACLE_CONNECT_TIMEOUT_SECS))
-            .timeout(Duration::from_secs(ORACLE_REQUEST_TIMEOUT_SECS))
+            .connect_timeout(ORACLE_CONNECT_TIMEOUT)
+            .timeout(ORACLE_REQUEST_TIMEOUT)
             .build()
             .expect("Failed to build reqwest client");
         Self { client, max_retries, base_delay, oracle }
@@ -126,6 +126,7 @@ impl RetryingPriceOracle {
 mod tests {
 
     use super::*;
+    use crate::tests::oracle_mock::{spawn_hanging_server, HangingOracle};
     use std::time::Duration;
 
     #[tokio::test]
@@ -220,44 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retrying_price_oracle_times_out_on_hanging_request() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let server_url = format!("http://127.0.0.1:{}", port);
-
-        let _server_handle = std::thread::spawn(move || {
-            if let Ok((stream, _)) = listener.accept() {
-                std::thread::sleep(Duration::from_secs(30));
-                let _ = stream;
-            }
-        });
-
-        struct HangingOracle {
-            url: String,
-        }
-
-        #[async_trait::async_trait]
-        impl PriceOracle for HangingOracle {
-            async fn get_price(
-                &self,
-                _client: &Client,
-                _mint_address: &str,
-            ) -> Result<TokenPrice, KoraError> {
-                unimplemented!()
-            }
-
-            async fn get_prices(
-                &self,
-                client: &Client,
-                _mint_addresses: &[String],
-            ) -> Result<HashMap<String, TokenPrice>, KoraError> {
-                client
-                    .get(&self.url)
-                    .send()
-                    .await
-                    .map_err(|e| KoraError::RpcError(format!("Request failed: {}", e)))?;
-                Ok(HashMap::new())
-            }
-        }
+        let server_url = spawn_hanging_server();
 
         let hanging_oracle = Arc::new(HangingOracle { url: server_url });
         let retrying_oracle =

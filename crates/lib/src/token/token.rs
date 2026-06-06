@@ -469,33 +469,7 @@ impl TokenUtil {
     ) -> Result<u64, KoraError> {
         let (token_price, decimals) =
             Self::get_token_price_and_decimals(mint, rpc_client, config).await?;
-
-        // Convert amount to Decimal with proper scaling
-        let amount_decimal = Decimal::from_u64(amount)
-            .ok_or_else(|| KoraError::ValidationError("Invalid token amount".to_string()))?;
-        let decimals_scale = decimal_scale(decimals)?;
-        let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL)
-            .ok_or_else(|| KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string()))?;
-
-        // Calculate: (amount * price * LAMPORTS_PER_SOL) / 10^decimals
-        // Multiply before divide to preserve precision
-        let lamports_decimal = amount_decimal.checked_mul(token_price.price).and_then(|result| result.checked_mul(lamports_per_sol)).and_then(|result| result.checked_div(decimals_scale)).ok_or_else(|| {
-            log::error!("Token value calculation overflow: amount={}, price={}, decimals={}, lamports_per_sol={}",
-                amount,
-                token_price.price,
-                decimals,
-                lamports_per_sol
-            );
-            KoraError::ValidationError("Token value calculation overflow".to_string())
-        })?;
-
-        // Floor and convert to u64
-        let lamports = lamports_decimal
-            .floor()
-            .to_u64()
-            .ok_or_else(|| KoraError::ValidationError("Lamports value overflow".to_string()))?;
-
-        Ok(lamports)
+        Self::calculate_token_value_in_lamports_from_price(amount, token_price.price, decimals)
     }
 
     pub async fn calculate_lamports_value_in_token(
@@ -1091,11 +1065,15 @@ impl TokenUtil {
 #[cfg(test)]
 mod tests_token {
     use crate::{
-        oracle::utils::{USDC_DEVNET_MINT, WSOL_DEVNET_MINT},
+        oracle::{
+            utils::{USDC_DEVNET_MINT, WSOL_DEVNET_MINT},
+            PriceSource, TokenPrice,
+        },
         tests::{
             account_mock::create_transfer_fee_config,
             common::{MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder},
             config_mock::ConfigMockBuilder,
+            oracle_mock::TEST_ORACLE,
         },
         transaction::TransactionUtil,
     };
@@ -1107,6 +1085,7 @@ mod tests_token {
         },
         pod::PodMint,
     };
+    use std::sync::Arc;
 
     use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 
@@ -1778,10 +1757,11 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_payment_lamport_totals_validates_token2022_when_both_sides_match_expected_owner(
     ) {
-        let _lock = ConfigMockBuilder::new()
-            .with_cache_enabled(false)
-            .with_blocked_token2022_mint_extensions(vec!["transfer_fee_config".to_string()])
-            .build_and_setup();
+        let mut config = get_config().unwrap();
+        config.kora.cache.enabled = false;
+        config.validation.token_2022.blocked_mint_extensions =
+            vec!["transfer_fee_config".to_string()];
+        let _ = config.validation.token_2022.initialize();
 
         let expected_destination_owner = Pubkey::new_unique();
         let source_address = Pubkey::new_unique();
@@ -1826,7 +1806,6 @@ mod tests_token {
             &source_account,
         ]);
 
-        let config = get_config().unwrap();
         let result = TokenUtil::calculate_payment_lamport_totals(
             &config,
             &mut transaction_resolved,
@@ -2246,7 +2225,40 @@ mod tests_token {
             &mint_account,
         ]);
 
-        let config = get_config().unwrap();
+        let mut mock_oracle = crate::oracle::MockPriceOracle::new();
+        mock_oracle.expect_get_prices().times(1).returning(|_, mint_addresses| {
+            let mut result = HashMap::new();
+            for mint in mint_addresses {
+                result.insert(
+                    mint.clone(),
+                    TokenPrice {
+                        price: Decimal::from(1),
+                        confidence: 1.0,
+                        source: PriceSource::Mock,
+                        block_id: None,
+                    },
+                );
+            }
+            Ok(result)
+        });
+
+        let shared_mock_oracle = Arc::new(mock_oracle);
+        TEST_ORACLE.with(|o| {
+            *o.borrow_mut() = Some(shared_mock_oracle.clone());
+        });
+
+        struct OracleGuard;
+        impl Drop for OracleGuard {
+            fn drop(&mut self) {
+                TEST_ORACLE.with(|o| {
+                    *o.borrow_mut() = None;
+                });
+            }
+        }
+        let _guard = OracleGuard;
+
+        let mut config = get_config().unwrap();
+        config.kora.cache.enabled = false;
         let result = TokenUtil::calculate_payment_lamport_totals(
             &config,
             &mut transaction_resolved,
@@ -2258,7 +2270,7 @@ mod tests_token {
 
         assert!(result.is_ok());
         let totals = result.unwrap();
-        assert_eq!(totals.inflow, 22_500_000);
+        assert_eq!(totals.inflow, 3_000_000_000);
         assert_eq!(totals.outflow, 0);
     }
 }

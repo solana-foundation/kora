@@ -10,15 +10,19 @@ use tokio::sync::{Mutex, OnceCell};
 use crate::{
     config::Config,
     error::KoraError,
-    oracle::{get_price_oracle, PriceSource, RetryingPriceOracle, TokenPrice},
+    oracle::{PriceSource, RetryingPriceOracle, TokenPrice},
     sanitize_error,
 };
 
+#[cfg(not(test))]
+use crate::oracle::get_price_oracle;
 #[cfg(not(test))]
 use crate::state::get_config;
 
 #[cfg(test)]
 use crate::tests::config_mock::mock_state::get_config;
+#[cfg(test)]
+use crate::tests::oracle_mock::get_price_oracle;
 
 const ACCOUNT_CACHE_KEY: &str = "account";
 const BLOCKHASH_CACHE_KEY: &str = "kora:blockhash";
