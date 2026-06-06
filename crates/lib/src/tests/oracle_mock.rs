@@ -19,11 +19,8 @@ impl PriceOracle for TestOracleProxy {
         client: &Client,
         mint_address: &str,
     ) -> Result<TokenPrice, KoraError> {
-        let oracle = TEST_ORACLE.with(|o| {
-            o.borrow()
-                .clone()
-                .ok_or_else(|| KoraError::InternalServerError("No test oracle set".to_string()))
-        })?;
+        let oracle = TEST_ORACLE
+            .with(|o| o.borrow().clone().unwrap_or_else(|| OracleUtil::get_mock_oracle_price()));
         oracle.get_price(client, mint_address).await
     }
 
