@@ -3,6 +3,7 @@
 //! This module provides utilities to automatically redact sensitive information
 //! from error messages and logs, including:
 //! - URLs with embedded credentials (any protocol: redis://, postgres://, http://, etc.)
+//! - HTTP(S) URL paths and query strings (api-key / path-token RPC providers)
 //! - Long hex strings (potential private keys)
 
 use regex::Regex;
@@ -16,6 +17,14 @@ static URL_WITH_CREDENTIALS_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
         .expect("Failed to create url regex pattern")
 });
 
+static HTTP_URL_PATH_QUERY_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    // HTTP(S) URLs where the secret lives in the path or query string rather than
+    // userinfo (e.g. Helius `?api-key=`, QuickNode/Alchemy path tokens). Keeps the
+    // scheme+host for debugging context and redacts everything after it.
+    Regex::new(r#"(https?://[^/?\s]+)[/?][^\s)'".,;!\]]*"#)
+        .expect("Failed to create http url path/query regex pattern")
+});
+
 static HEX_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     // Long hex strings (likely keys/hashes) - 32+ chars, with optional 0x prefix
     Regex::new(r"(?:0x)?[0-9a-fA-F]{32,}").expect("Failed to create hex regex pattern")
@@ -26,6 +35,8 @@ pub fn sanitize_message(message: &str) -> String {
     let mut result = message.to_string();
 
     result = URL_WITH_CREDENTIALS_PATTERN.replace_all(&result, "[REDACTED_URL]").to_string();
+
+    result = HTTP_URL_PATH_QUERY_PATTERN.replace_all(&result, "${1}[REDACTED_PATH]").to_string();
 
     result = HEX_PATTERN.replace_all(&result, "[REDACTED_HEX]").to_string();
 
@@ -81,6 +92,47 @@ mod tests {
         assert!(sanitized.contains("[REDACTED_URL]"));
         assert!(!sanitized.contains("admin"));
         assert!(!sanitized.contains("secret123"));
+    }
+
+    #[test]
+    fn test_sanitize_url_api_key_query() {
+        let msg =
+            "error sending request for url (https://devnet.helius-rpc.com/?api-key=abc-123-secret)";
+        let sanitized = sanitize_message(msg);
+        assert!(!sanitized.contains("api-key"));
+        assert!(!sanitized.contains("abc-123-secret"));
+        assert!(sanitized.contains("https://devnet.helius-rpc.com[REDACTED_PATH]"));
+    }
+
+    #[test]
+    fn test_sanitize_url_path_token() {
+        let msg = "Request failed: https://name.solana-devnet.quiknode.pro/SECRETTOKEN/";
+        let sanitized = sanitize_message(msg);
+        assert!(!sanitized.contains("SECRETTOKEN"));
+        assert!(sanitized.contains("https://name.solana-devnet.quiknode.pro[REDACTED_PATH]"));
+    }
+
+    #[test]
+    fn test_sanitize_url_alchemy_path_key() {
+        let msg = "transport error: https://solana-devnet.g.alchemy.com/v2/myalchemykey";
+        let sanitized = sanitize_message(msg);
+        assert!(!sanitized.contains("myalchemykey"));
+        assert!(sanitized.contains("https://solana-devnet.g.alchemy.com[REDACTED_PATH]"));
+    }
+
+    #[test]
+    fn test_sanitize_preserves_public_url_without_path() {
+        let msg = "failed to reach https://api.devnet.solana.com";
+        let sanitized = sanitize_message(msg);
+        assert_eq!(sanitized, "failed to reach https://api.devnet.solana.com");
+    }
+
+    #[test]
+    fn test_sanitize_preserves_trailing_prose_punctuation() {
+        let msg = "failed to send request to https://node.example.com/secret, please retry";
+        let sanitized = sanitize_message(msg);
+        assert!(!sanitized.contains("/secret"));
+        assert!(sanitized.contains("https://node.example.com[REDACTED_PATH], please retry"));
     }
 
     #[test]
