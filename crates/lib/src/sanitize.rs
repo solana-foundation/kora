@@ -21,7 +21,7 @@ static HTTP_URL_PATH_QUERY_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     // HTTP(S) URLs where the secret lives in the path or query string rather than
     // userinfo (e.g. Helius `?api-key=`, QuickNode/Alchemy path tokens). Keeps the
     // scheme+host for debugging context and redacts everything after it.
-    Regex::new(r#"(https?://[^/?\s]+)[/?][^\s)'"]*"#)
+    Regex::new(r#"(https?://[^/?\s]+)[/?][^\s)'".,;!\]]*"#)
         .expect("Failed to create http url path/query regex pattern")
 });
 
@@ -125,6 +125,14 @@ mod tests {
         let msg = "failed to reach https://api.devnet.solana.com";
         let sanitized = sanitize_message(msg);
         assert_eq!(sanitized, "failed to reach https://api.devnet.solana.com");
+    }
+
+    #[test]
+    fn test_sanitize_preserves_trailing_prose_punctuation() {
+        let msg = "failed to send request to https://node.example.com/secret, please retry";
+        let sanitized = sanitize_message(msg);
+        assert!(!sanitized.contains("/secret"));
+        assert!(sanitized.contains("https://node.example.com[REDACTED_PATH], please retry"));
     }
 
     #[test]
