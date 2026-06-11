@@ -63,6 +63,22 @@ pub struct MemorySignerConfig {
     pub private_key_env: String,
 }
 
+/// Configuration for remote signer HTTP request and connection settings
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemoteSignerHttpConfig {
+    pub request_timeout_secs: Option<u64>,
+    pub connect_timeout_secs: Option<u64>,
+}
+
+impl From<&RemoteSignerHttpConfig> for solana_keychain::HttpClientConfig {
+    fn from(c: &RemoteSignerHttpConfig) -> Self {
+        solana_keychain::HttpClientConfig {
+            request_timeout: c.request_timeout_secs.map(std::time::Duration::from_secs),
+            connect_timeout: c.connect_timeout_secs.map(std::time::Duration::from_secs),
+        }
+    }
+}
+
 /// Turnkey signer configuration
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TurnkeySignerConfig {
@@ -71,6 +87,8 @@ pub struct TurnkeySignerConfig {
     pub organization_id_env: String,
     pub private_key_id_env: String,
     pub public_key_env: String,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Privy signer configuration
@@ -79,6 +97,8 @@ pub struct PrivySignerConfig {
     pub app_id_env: String,
     pub app_secret_env: String,
     pub wallet_id_env: String,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Openfort backend wallet signer configuration
@@ -96,6 +116,8 @@ pub struct OpenfortSignerConfig {
     /// Useful for pointing at staging or mock endpoints during testing. Must use HTTPS.
     #[serde(default)]
     pub api_base_url: Option<String>,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Vault signer configuration
@@ -105,6 +127,8 @@ pub struct VaultSignerConfig {
     pub vault_token_env: String,
     pub key_name_env: String,
     pub pubkey_env: String,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// AWS KMS signer configuration
@@ -137,6 +161,8 @@ pub struct CdpSignerConfig {
     pub api_key_secret_env: String,
     pub wallet_secret_env: String,
     pub address_env: String,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Dfns signer configuration
@@ -148,6 +174,8 @@ pub struct DfnsSignerConfig {
     pub wallet_id_env: String,
     #[serde(default)]
     pub api_base_url: Option<String>,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Crossmint signer configuration
@@ -183,6 +211,8 @@ pub struct FireblocksSignerConfig {
     pub max_poll_attempts: Option<u32>,
     #[serde(default)]
     pub use_program_call: Option<bool>,
+    #[serde(default)]
+    pub http_config: Option<RemoteSignerHttpConfig>,
 }
 
 /// Signer type-specific configuration
@@ -398,7 +428,7 @@ impl SignerConfig {
             organization_id,
             private_key_id,
             public_key,
-            None,
+            config.http_config.as_ref().map(solana_keychain::HttpClientConfig::from),
         )
         .map_err(|e| {
             KoraError::SigningError(format!(
@@ -416,7 +446,14 @@ impl SignerConfig {
         let app_secret = get_env_var_for_signer(&config.app_secret_env, signer_name)?;
         let wallet_id = get_env_var_for_signer(&config.wallet_id_env, signer_name)?;
 
-        Signer::from_privy(app_id, app_secret, wallet_id, None).await.map_err(|e| {
+        Signer::from_privy(
+            app_id,
+            app_secret,
+            wallet_id,
+            config.http_config.as_ref().map(solana_keychain::HttpClientConfig::from),
+        )
+        .await
+        .map_err(|e| {
             KoraError::SigningError(format!(
                 "Failed to create Privy signer '{signer_name}': {}",
                 sanitize_error!(e)
@@ -433,7 +470,14 @@ impl SignerConfig {
         let key_name = get_env_var_for_signer(&config.key_name_env, signer_name)?;
         let pubkey = get_env_var_for_signer(&config.pubkey_env, signer_name)?;
 
-        Signer::from_vault(vault_addr, vault_token, key_name, pubkey, None).map_err(|e| {
+        Signer::from_vault(
+            vault_addr,
+            vault_token,
+            key_name,
+            pubkey,
+            config.http_config.as_ref().map(solana_keychain::HttpClientConfig::from),
+        )
+        .map_err(|e| {
             KoraError::SigningError(format!(
                 "Failed to create Vault signer '{signer_name}': {}",
                 sanitize_error!(e)
@@ -478,7 +522,10 @@ impl SignerConfig {
             poll_interval_ms: config.poll_interval_ms,
             max_poll_attempts: config.max_poll_attempts,
             use_program_call: config.use_program_call,
-            http_client_config: None,
+            http_client_config: config
+                .http_config
+                .as_ref()
+                .map(solana_keychain::HttpClientConfig::from),
         };
 
         Signer::from_fireblocks(keychain_config).await.map_err(|e| {
@@ -522,7 +569,14 @@ impl SignerConfig {
         let api_key_secret = get_env_var_for_signer(&config.api_key_secret_env, signer_name)?;
         let wallet_secret = get_env_var_for_signer(&config.wallet_secret_env, signer_name)?;
         let address = get_env_var_for_signer(&config.address_env, signer_name)?;
-        Signer::from_cdp(api_key_id, api_key_secret, wallet_secret, address, None).map_err(|e| {
+        Signer::from_cdp(
+            api_key_id,
+            api_key_secret,
+            wallet_secret,
+            address,
+            config.http_config.as_ref().map(solana_keychain::HttpClientConfig::from),
+        )
+        .map_err(|e| {
             KoraError::SigningError(format!(
                 "Failed to create CDP signer '{signer_name}': {}",
                 sanitize_error!(e)
@@ -544,7 +598,10 @@ impl SignerConfig {
             private_key_pem,
             wallet_id,
             api_base_url: config.api_base_url.clone(),
-            http_client_config: None,
+            http_client_config: config
+                .http_config
+                .as_ref()
+                .map(solana_keychain::HttpClientConfig::from),
         };
         Signer::from_dfns(keychain_config).await.map_err(|e| {
             KoraError::SigningError(format!(
@@ -603,7 +660,10 @@ impl SignerConfig {
                 account_id,
                 wallet_secret,
                 api_base_url: config.api_base_url.clone(),
-                http_client_config: None,
+                http_client_config: config
+                    .http_config
+                    .as_ref()
+                    .map(solana_keychain::HttpClientConfig::from),
             })
             .map_err(map_err)?;
         signer.init().await.map_err(map_err)?;
@@ -1053,5 +1113,113 @@ private_key_env = "KORA_LOAD_CONFIG_KEY_99"
         let result = config.validate_signer_config();
         assert!(result.is_ok());
         std::env::remove_var("KORA_TEST_PRESENT_KEY_12345");
+    }
+
+    #[test]
+    fn test_turnkey_signer_builds_with_no_http_config() {
+        std::env::set_var(
+            "TURNKEY_API_PUBLIC_KEY",
+            "04746f04b2c1b181db8fb777e487504a500a501a500a501a500a501a500a501a501a501a501a501a501a501a501a501a501a501a501a501a501a501a501a50",
+        );
+        std::env::set_var(
+            "TURNKEY_API_PRIVATE_KEY",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        );
+        std::env::set_var("TURNKEY_ORG_ID", "test-org");
+        std::env::set_var("TURNKEY_PRIVATE_KEY_ID", "test-key-id");
+        std::env::set_var("TURNKEY_PUBLIC_KEY", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV");
+
+        let config = TurnkeySignerConfig {
+            api_public_key_env: "TURNKEY_API_PUBLIC_KEY".to_string(),
+            api_private_key_env: "TURNKEY_API_PRIVATE_KEY".to_string(),
+            organization_id_env: "TURNKEY_ORG_ID".to_string(),
+            private_key_id_env: "TURNKEY_PRIVATE_KEY_ID".to_string(),
+            public_key_env: "TURNKEY_PUBLIC_KEY".to_string(),
+            http_config: None,
+        };
+
+        let result = SignerConfig::build_turnkey_signer(&config, "test");
+        assert!(result.is_ok());
+
+        std::env::remove_var("TURNKEY_API_PUBLIC_KEY");
+        std::env::remove_var("TURNKEY_API_PRIVATE_KEY");
+        std::env::remove_var("TURNKEY_ORG_ID");
+        std::env::remove_var("TURNKEY_PRIVATE_KEY_ID");
+        std::env::remove_var("TURNKEY_PUBLIC_KEY");
+    }
+
+    #[test]
+    fn test_vault_signer_builds_with_no_http_config() {
+        std::env::set_var("VAULT_ADDR", "http://127.0.0.1:8200");
+        std::env::set_var("VAULT_TOKEN", "token");
+        std::env::set_var("VAULT_KEY_NAME", "key");
+        std::env::set_var("VAULT_PUBKEY", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV");
+
+        let config = VaultSignerConfig {
+            vault_addr_env: "VAULT_ADDR".to_string(),
+            vault_token_env: "VAULT_TOKEN".to_string(),
+            key_name_env: "VAULT_KEY_NAME".to_string(),
+            pubkey_env: "VAULT_PUBKEY".to_string(),
+            http_config: None,
+        };
+
+        let result = SignerConfig::build_vault_signer(&config, "test");
+        assert!(result.is_ok());
+
+        std::env::remove_var("VAULT_ADDR");
+        std::env::remove_var("VAULT_TOKEN");
+        std::env::remove_var("VAULT_KEY_NAME");
+        std::env::remove_var("VAULT_PUBKEY");
+    }
+
+    #[test]
+    fn test_cdp_signer_builds_with_no_http_config() {
+        std::env::set_var("CDP_API_KEY_ID", "key-id");
+        std::env::set_var("CDP_API_KEY_SECRET", "secret");
+        std::env::set_var("CDP_WALLET_SECRET", "secret");
+        std::env::set_var("CDP_ADDRESS", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV");
+
+        let config = CdpSignerConfig {
+            api_key_id_env: "CDP_API_KEY_ID".to_string(),
+            api_key_secret_env: "CDP_API_KEY_SECRET".to_string(),
+            wallet_secret_env: "CDP_WALLET_SECRET".to_string(),
+            address_env: "CDP_ADDRESS".to_string(),
+            http_config: None,
+        };
+
+        let result = SignerConfig::build_cdp_signer(&config, "test");
+        assert!(result.is_ok());
+
+        std::env::remove_var("CDP_API_KEY_ID");
+        std::env::remove_var("CDP_API_KEY_SECRET");
+        std::env::remove_var("CDP_WALLET_SECRET");
+        std::env::remove_var("CDP_ADDRESS");
+    }
+
+    #[tokio::test]
+    async fn test_fireblocks_signer_builds_with_no_http_config() {
+        const TEST_RSA_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDKKw7fHhfK3/Ts\n-----END PRIVATE KEY-----";
+        std::env::set_var("FIREBLOCKS_API_KEY", "test");
+        std::env::set_var("FIREBLOCKS_PRIVATE_KEY_PEM", TEST_RSA_KEY);
+        std::env::set_var("FIREBLOCKS_VAULT_ACCOUNT_ID", "1");
+
+        let config = FireblocksSignerConfig {
+            api_key_env: "FIREBLOCKS_API_KEY".to_string(),
+            private_key_pem_env: "FIREBLOCKS_PRIVATE_KEY_PEM".to_string(),
+            vault_account_id_env: "FIREBLOCKS_VAULT_ACCOUNT_ID".to_string(),
+            asset_id: None,
+            api_base_url: None,
+            poll_interval_ms: None,
+            max_poll_attempts: None,
+            use_program_call: None,
+            http_config: None,
+        };
+
+        let result = SignerConfig::build_fireblocks_signer(&config, "test").await;
+        assert!(result.is_err());
+
+        std::env::remove_var("FIREBLOCKS_API_KEY");
+        std::env::remove_var("FIREBLOCKS_PRIVATE_KEY_PEM");
+        std::env::remove_var("FIREBLOCKS_VAULT_ACCOUNT_ID");
     }
 }

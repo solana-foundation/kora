@@ -3200,4 +3200,94 @@ mod tests {
         assert!(w.contains("devnet"), "expected cluster name in warning");
         assert!(w.contains("possible cluster mismatch"), "expected mismatch note");
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_signers_http_config() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: ProgramsConfig::Allowlist(vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ]),
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
+            },
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let toml_content = r#"
+[signer_pool]
+strategy = "round_robin"
+
+[[signers]]
+name = "turnkey_signer_invalid"
+type = "turnkey"
+api_public_key_env = "TURNKEY_API_PUBLIC_KEY"
+api_private_key_env = "TURNKEY_API_PRIVATE_KEY"
+organization_id_env = "TURNKEY_ORG_ID"
+private_key_id_env = "TURNKEY_PRIVATE_KEY_ID"
+public_key_env = "TURNKEY_PUBLIC_KEY"
+http_config = { request_timeout_secs = 0, connect_timeout_secs = 0 }
+"#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(toml_content.as_bytes()).unwrap();
+        temp_file.flush().unwrap();
+
+        std::env::set_var("TURNKEY_API_PUBLIC_KEY", "dummy");
+        std::env::set_var("TURNKEY_API_PRIVATE_KEY", "dummy");
+        std::env::set_var("TURNKEY_ORG_ID", "dummy");
+        std::env::set_var("TURNKEY_PRIVATE_KEY_ID", "dummy");
+        std::env::set_var("TURNKEY_PUBLIC_KEY", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV");
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+
+        let result = ConfigValidator::validate_with_result_and_signers(
+            &rpc_client,
+            true,
+            Some(temp_file.path()),
+        )
+        .await;
+
+        std::env::remove_var("TURNKEY_API_PUBLIC_KEY");
+        std::env::remove_var("TURNKEY_API_PRIVATE_KEY");
+        std::env::remove_var("TURNKEY_ORG_ID");
+        std::env::remove_var("TURNKEY_PRIVATE_KEY_ID");
+        std::env::remove_var("TURNKEY_PUBLIC_KEY");
+        std::env::remove_var("JUPITER_API_KEY");
+
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains(
+            "request_timeout_secs must be greater than 0 for signer 'turnkey_signer_invalid'"
+        )));
+        assert!(errors.iter().any(|e| e.contains(
+            "connect_timeout_secs must be greater than 0 for signer 'turnkey_signer_invalid'"
+        )));
+    }
 }

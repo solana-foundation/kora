@@ -858,6 +858,7 @@ impl SignerPoolConfigBuilder {
                     organization_id_env,
                     private_key_id_env,
                     public_key_env,
+                    http_config: None,
                 },
             },
         };
@@ -877,7 +878,12 @@ impl SignerPoolConfigBuilder {
             name,
             weight,
             config: SignerTypeConfig::Privy {
-                config: PrivySignerConfig { app_id_env, app_secret_env, wallet_id_env },
+                config: PrivySignerConfig {
+                    app_id_env,
+                    app_secret_env,
+                    wallet_id_env,
+                    http_config: None,
+                },
             },
         };
         self.config.signers.push(signer);
@@ -901,6 +907,7 @@ impl SignerPoolConfigBuilder {
                     account_id_env,
                     wallet_secret_env,
                     api_base_url: None,
+                    http_config: None,
                 },
             },
         };
@@ -926,6 +933,7 @@ impl SignerPoolConfigBuilder {
                     vault_token_env: token_env,
                     key_name_env,
                     pubkey_env,
+                    http_config: None,
                 },
             },
         };
