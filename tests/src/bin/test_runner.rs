@@ -13,6 +13,7 @@ use tests::{
         config::{TestPhaseConfig, TestRunnerConfig},
         kora::{
             get_kora_binary_path, is_kora_running_with_client, release_port, start_kora_rpc_server,
+            stop_kora_gracefully,
         },
         output::{
             filter_command_output, limit_output_size, OutputFilter, PhaseOutput, TestPhaseColor,
@@ -438,7 +439,7 @@ pub async fn run_test_phase(
     }
     .await;
 
-    kora_pid.kill().await.ok();
+    stop_kora_gracefully(&mut kora_pid).await;
     release_port(actual_port);
 
     let success = result.is_ok();
@@ -522,11 +523,8 @@ pub async fn clean_up(
 
     // Kill tracked Kora processes (though they're managed locally in each test phase)
     for kora_pid in &mut test_runner.kora_pids {
-        if let Err(e) = kora_pid.kill().await {
-            println!("Failed to stop Kora process: {e}");
-        } else {
-            println!("Stopped Kora process");
-        }
+        stop_kora_gracefully(kora_pid).await;
+        println!("Stopped Kora process");
     }
 
     println!("=== Cleanup complete ===");

@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "crates/**"
+      - "tests/**"
       - "Cargo.*"
       - "justfile"
       - ".github/workflows/rust-unit.yml"
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - "crates/**"
+      - "tests/**"
       - "Cargo.*"
       - "justfile"
       - ".github/workflows/rust-unit.yml"
@@ -25,7 +27,7 @@ jobs:
   test:
     name: Rust Unit Tests & Coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -66,12 +68,23 @@ jobs:
       - name: Run unit tests with coverage
         run: |
           echo "🧪 Running unit tests with coverage instrumentation..."
+          source <(cargo llvm-cov show-env --sh)
           cargo llvm-cov clean --workspace
-          cargo llvm-cov test --no-report --workspace --lib
+          cargo test --workspace --lib
+
+      - name: Run integration tests with coverage
+        run: |
+          echo "🧪 Running integration tests with instrumented Kora servers..."
+          source <(cargo llvm-cov show-env --sh)
+          cargo build --bin kora -p tests --bin test_runner
+          cargo run -p tests --bin test_runner -- --backend agave \
+            --filter regular --filter auth --filter payment_address --filter multi_signer \
+            --filter fee_payer_policy --filter free_signing --filter lighthouse --filter loader_v3_deploy
 
       - name: Generate coverage reports
         run: |
           echo "📊 Generating coverage reports..."
+          source <(cargo llvm-cov show-env --sh)
           mkdir -p coverage
           cargo llvm-cov report --lcov --output-path coverage/lcov.info
 
@@ -124,13 +137,13 @@ jobs:
 
             // Create coverage badge section
             const coverageBadge = `![Coverage](https://img.shields.io/badge/coverage-${coverage}%25-${color})`;
-            const coverageSection = `\n\n## 📊 Unit Test Coverage\n${coverageBadge}\n\n**Unit Test Coverage: ${coverage}%**\n\n[View Detailed Coverage Report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+            const coverageSection = `\n\n## 📊 Test Coverage (unit + integration)\n${coverageBadge}\n\n**Test Coverage (unit + integration): ${coverage}%**\n\n[View Detailed Coverage Report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
 
             // Update PR body
             let newBody = pr.body || '';
 
             // Remove existing coverage section if present
-            newBody = newBody.replace(/\n## 📊 Unit Test Coverage[\s\S]*?(?=\n## |\n$|$)/g, '');
+            newBody = newBody.replace(/\n## 📊 Test Coverage \(unit \+ integration\)[\s\S]*?(?=\n## |\n$|$)/g, '');
 
             // Add new coverage section
             newBody += coverageSection;

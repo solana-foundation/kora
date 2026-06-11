@@ -10,18 +10,20 @@ use tokio::{net::TcpListener, process::Child};
 static USED_PORTS: LazyLock<Mutex<HashSet<u16>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
 pub const KORA_BINARY_PATH: &str = "target/debug/kora";
+pub const KORA_BINARY_PATH_ENV: &str = "KORA_TEST_BINARY_PATH";
 pub const PORT_RANGE_START: u16 = 8080;
 pub const PORT_RANGE_END: u16 = 8180;
 
 pub async fn get_kora_binary_path() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    if !Path::new(KORA_BINARY_PATH).exists() {
+    let path = std::env::var(KORA_BINARY_PATH_ENV).unwrap_or_else(|_| KORA_BINARY_PATH.to_string());
+    if !Path::new(&path).exists() {
         return Err(format!(
-            "Pre-built Kora binary not found at '{KORA_BINARY_PATH}'. \
+            "Pre-built Kora binary not found at '{path}'. \
             Run 'cargo build --bin kora' or 'just build' first for much better performance.",
         )
         .into());
     }
-    Ok(KORA_BINARY_PATH.to_string())
+    Ok(path)
 }
 
 pub async fn check_port_available(port: u16) -> bool {
@@ -45,6 +47,24 @@ pub async fn find_available_port() -> Result<u16, Box<dyn std::error::Error + Se
 pub fn release_port(port: u16) {
     let mut used_ports = USED_PORTS.lock().unwrap();
     used_ports.remove(&port);
+}
+
+/// SIGTERM first so an llvm-cov-instrumented Kora can flush coverage data on
+/// exit; SIGKILL only if it doesn't terminate in time.
+pub async fn stop_kora_gracefully(child: &mut Child) {
+    if let Some(pid) = child.id() {
+        let terminated = std::process::Command::new("kill")
+            .arg(pid.to_string())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if terminated
+            && tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await.is_ok()
+        {
+            return;
+        }
+    }
+    child.kill().await.ok();
 }
 
 pub async fn is_kora_running_with_client(client: &reqwest::Client, port: &str) -> bool {

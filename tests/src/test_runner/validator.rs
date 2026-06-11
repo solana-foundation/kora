@@ -39,6 +39,15 @@ pub async fn start_test_validator(
     backend: ValidatorBackend,
     load_accounts: bool,
 ) -> Result<Child, Box<dyn std::error::Error + Send + Sync>> {
+    if check_test_validator(DEFAULT_RPC_URL).await {
+        return Err(format!(
+            "A validator is already running on {DEFAULT_RPC_URL}; the new one would fail to \
+            bind and tests would silently run against stale state. Stop it first \
+            (pkill -f solana-test-validator; pkill -f 'surfpool start')."
+        )
+        .into());
+    }
+
     let validator_pid = match backend {
         ValidatorBackend::Surfpool => spawn_surfpool().await?,
         ValidatorBackend::Agave => spawn_agave(load_accounts).await?,
