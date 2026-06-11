@@ -76,7 +76,8 @@ jobs:
         run: |
           echo "🧪 Running integration tests with instrumented Kora servers..."
           source <(cargo llvm-cov show-env --sh)
-          cargo build --bin kora -p tests --bin test_runner
+          cargo build -p kora-cli --bin kora
+          cargo build -p tests --bin test_runner
           cargo run -p tests --bin test_runner -- --backend agave \
             --filter regular --filter auth --filter payment_address --filter multi_signer \
             --filter fee_payer_policy --filter free_signing --filter lighthouse --filter loader_v3_deploy
