@@ -1,17 +1,31 @@
 use crate::{
-    common::constants::DEFAULT_RPC_URL,
+    common::{
+        constants::{
+            DEFAULT_RPC_URL, LIGHTHOUSE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_PATH,
+            TRANSFER_HOOK_PROGRAM_ID, TRANSFER_HOOK_PROGRAM_PATH,
+        },
+        surfnet::SURFPOOL_BACKEND,
+    },
     test_runner::accounts::{get_account_address_from_file, AccountFile},
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::path::Path;
 use tokio::process::Child;
 
-const TRANSFER_HOOK_PROGRAM_ID: &str = "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA";
-const TRANSFER_HOOK_PROGRAM_PATH: &str =
-    "tests/src/common/transfer-hook-example/transfer_hook_example.so";
-const LIGHTHOUSE_PROGRAM_ID: &str = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ValidatorBackend {
+    Surfpool,
+    Agave,
+}
 
-const LIGHTHOUSE_PROGRAM_PATH: &str = "tests/src/common/fixtures/test-programs/lighthouse.so";
+impl ValidatorBackend {
+    pub fn env_value(&self) -> &'static str {
+        match self {
+            Self::Surfpool => SURFPOOL_BACKEND,
+            Self::Agave => "agave",
+        }
+    }
+}
 
 pub async fn check_test_validator(rpc_url: &str) -> bool {
     let client = RpcClient::new_with_commitment(
@@ -22,10 +36,73 @@ pub async fn check_test_validator(rpc_url: &str) -> bool {
 }
 
 pub async fn start_test_validator(
+    backend: ValidatorBackend,
+    load_accounts: bool,
+) -> Result<Child, Box<dyn std::error::Error + Send + Sync>> {
+    let validator_pid = match backend {
+        ValidatorBackend::Surfpool => spawn_surfpool().await?,
+        ValidatorBackend::Agave => spawn_agave(load_accounts).await?,
+    };
+
+    let mut attempts = 0;
+    let mut delay = std::time::Duration::from_millis(100);
+    let max_delay = std::time::Duration::from_secs(2);
+    let max_attempts = 15;
+
+    while !check_test_validator(DEFAULT_RPC_URL).await {
+        attempts += 1;
+        if attempts > max_attempts {
+            return Err(format!(
+                "{backend:?} test validator failed to start within {max_attempts} attempts"
+            )
+            .into());
+        }
+
+        tokio::time::sleep(delay).await;
+        delay = std::cmp::min(delay * 2, max_delay);
+    }
+
+    println!("{backend:?} test validator started successfully");
+    Ok(validator_pid)
+}
+
+async fn spawn_surfpool() -> Result<Child, Box<dyn std::error::Error + Send + Sync>> {
+    let workdir = std::env::temp_dir().join("kora-surfpool");
+    tokio::fs::create_dir_all(&workdir).await?;
+
+    let mut cmd = tokio::process::Command::new("surfpool");
+    cmd.args([
+        "start",
+        "--no-tui",
+        "--no-deploy",
+        "--no-studio",
+        "--offline",
+        "-y",
+        "--port",
+        "8899",
+        "--slot-time",
+        "100",
+    ])
+    .current_dir(&workdir)
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null());
+
+    cmd.spawn().map_err(|e| {
+        format!(
+            "Failed to spawn surfpool ({e}). Install it (https://docs.surfpool.run) \
+            or run with --backend agave."
+        )
+        .into()
+    })
+}
+
+async fn spawn_agave(
     load_accounts: bool,
 ) -> Result<Child, Box<dyn std::error::Error + Send + Sync>> {
     let mut cmd = tokio::process::Command::new("solana-test-validator");
-    cmd.arg("--reset").arg("--quiet");
+    // 32 ticks/slot = ~200ms slots: halves confirmation latency while keeping
+    // blockhash wall-clock expiry (~30s) safe for concurrent test phases
+    cmd.arg("--reset").arg("--quiet").arg("--ticks-per-slot").arg("32");
 
     if Path::new(TRANSFER_HOOK_PROGRAM_PATH).exists() {
         cmd.arg("--bpf-program").arg(TRANSFER_HOOK_PROGRAM_ID).arg(TRANSFER_HOOK_PROGRAM_PATH);
@@ -57,27 +134,5 @@ pub async fn start_test_validator(
         }
     }
 
-    let validator_pid =
-        cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn()?;
-
-    let mut attempts = 0;
-    let mut delay = std::time::Duration::from_millis(100);
-    let max_delay = std::time::Duration::from_secs(2);
-    let max_attempts = 15;
-
-    while !check_test_validator(DEFAULT_RPC_URL).await {
-        attempts += 1;
-        if attempts > max_attempts {
-            return Err(format!(
-                "Solana test validator failed to start within {max_attempts} attempts"
-            )
-            .into());
-        }
-
-        tokio::time::sleep(delay).await;
-        delay = std::cmp::min(delay * 2, max_delay);
-    }
-
-    println!("Solana test validator started successfully");
-    Ok(validator_pid)
+    Ok(cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn()?)
 }

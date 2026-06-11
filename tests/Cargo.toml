@@ -70,6 +70,8 @@ spl-token-interface = { workspace = true }
 spl-token-2022-interface = { workspace = true }
 spl-associated-token-account-interface = { workspace = true }
 spl-transfer-hook-interface = { version = "2.1.0" }
+spl-pod = "0.7.3"
+solana-program-option = "3.0.0"
 bincode = { workspace = true }
 bs58 = { workspace = true }
 dotenv = { workspace = true }

@@ -10,6 +10,8 @@ pub struct TestPhaseConfig {
     pub tests: Vec<String>,
     #[serde(default)]
     pub initialize_payments_atas: bool,
+    #[serde(default)]
+    pub agave_only: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

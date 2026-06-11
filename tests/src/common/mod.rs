@@ -7,6 +7,7 @@ pub mod extension_helpers;
 pub mod helpers;
 pub mod lookup_tables;
 pub mod setup;
+pub mod surfnet;
 pub mod transaction;
 
 pub use assertions::*;
@@ -19,4 +20,5 @@ pub use extension_helpers::*;
 pub use helpers::*;
 pub use lookup_tables::*;
 pub use setup::*;
+pub use surfnet::is_surfpool_backend;
 pub use transaction::*;

@@ -17,6 +17,10 @@ inputs:
     description: "Force refresh of test accounts"
     required: false
     default: "false"
+  backend:
+    description: "Validator backend (agave or surfpool)"
+    required: false
+    default: "agave"
 
 runs:
   using: "composite"
@@ -37,6 +41,8 @@ runs:
         if [ "${{ inputs.rpc-url }}" != "http://127.0.0.1:8899" ]; then
           ARGS="$ARGS --rpc-url ${{ inputs.rpc-url }}"
         fi
+
+        ARGS="$ARGS --backend ${{ inputs.backend }}"
 
         # Add filters
         ARGS="$ARGS ${{ inputs.filters }}"

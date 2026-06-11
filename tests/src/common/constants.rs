@@ -27,6 +27,16 @@ pub const PYUSD_MINT: &str = "CXk2AMBfi3TwaEL2468s6zP8xq9NxTXjp9gjMgzeUynM";
 /// Transfer hook program ID
 pub const TRANSFER_HOOK_PROGRAM_ID: &str = "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA";
 
+/// Transfer hook program binary path (relative to workspace root)
+pub const TRANSFER_HOOK_PROGRAM_PATH: &str =
+    "tests/src/common/transfer-hook-example/transfer_hook_example.so";
+
+/// Lighthouse program ID
+pub const LIGHTHOUSE_PROGRAM_ID: &str = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
+
+/// Lighthouse program binary path (relative to workspace root)
+pub const LIGHTHOUSE_PROGRAM_PATH: &str = "tests/src/common/fixtures/test-programs/lighthouse.so";
+
 // ============================================================================
 // Test Configuration
 // ============================================================================

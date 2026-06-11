@@ -95,7 +95,7 @@ impl ExtensionHelpers {
             recent_blockhash,
         );
 
-        rpc_client.send_and_confirm_transaction(&transaction).await?;
+        crate::common::helpers::send_and_confirm_allow_duplicate(rpc_client, &transaction).await?;
         Ok(())
     }
 
@@ -156,7 +156,7 @@ impl ExtensionHelpers {
             recent_blockhash,
         );
 
-        rpc_client.send_and_confirm_transaction(&transaction).await?;
+        crate::common::helpers::send_and_confirm_allow_duplicate(rpc_client, &transaction).await?;
         Ok(())
     }
 
@@ -189,7 +189,7 @@ impl ExtensionHelpers {
             recent_blockhash,
         );
 
-        rpc_client.send_and_confirm_transaction(&transaction).await?;
+        crate::common::helpers::send_and_confirm_allow_duplicate(rpc_client, &transaction).await?;
         Ok(())
     }
 

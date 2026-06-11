@@ -22,15 +22,22 @@ impl LookupTableHelper {
     ) -> Result<(Pubkey, Pubkey, Pubkey)> {
         let sender = SenderTestHelper::get_test_sender_keypair();
 
-        // Create all standard lookup tables
-        let allowed_lookup_table =
-            Self::create_allowed_lookup_table(rpc_client.clone(), &sender).await?;
-        let disallowed_lookup_table =
-            Self::create_disallowed_lookup_table(rpc_client.clone(), &sender).await?;
-        let transaction_lookup_table =
-            Self::create_transaction_lookup_table(rpc_client.clone(), &sender).await?;
+        // Right after validator boot the earliest slots may be missing from the
+        // SlotHashes sysvar, which CreateLookupTable validates derivation slots against
+        let mut current_slot = rpc_client.get_slot().await?;
+        while current_slot < 10 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            current_slot = rpc_client.get_slot().await?;
+        }
 
-        Ok((allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table))
+        // Distinct derivation slots so concurrently created tables get distinct addresses
+        let base_slot = current_slot.saturating_sub(3);
+
+        tokio::try_join!(
+            Self::create_allowed_lookup_table(rpc_client.clone(), &sender, base_slot + 2),
+            Self::create_disallowed_lookup_table(rpc_client.clone(), &sender, base_slot + 1),
+            Self::create_transaction_lookup_table(rpc_client.clone(), &sender, base_slot),
+        )
     }
 
     pub fn get_test_disallowed_address() -> Result<Pubkey> {
@@ -69,53 +76,38 @@ impl LookupTableHelper {
         rpc_client: Arc<RpcClient>,
         authority: &Keypair,
         addresses: Vec<Pubkey>,
+        derivation_slot: u64,
     ) -> Result<Pubkey> {
-        let recent_slot = rpc_client.get_slot().await?;
-
-        // Create the lookup table
         let (create_instruction, lookup_table_key) =
-            create_lookup_table(authority.pubkey(), authority.pubkey(), recent_slot - 1);
+            create_lookup_table(authority.pubkey(), authority.pubkey(), derivation_slot);
+
+        let mut instructions = vec![create_instruction];
+        if !addresses.is_empty() {
+            instructions.push(extend_lookup_table(
+                lookup_table_key,
+                authority.pubkey(),
+                Some(authority.pubkey()),
+                addresses,
+            ));
+        }
 
         let recent_blockhash = rpc_client.get_latest_blockhash().await?;
 
-        let create_transaction = Transaction::new_signed_with_payer(
-            &[create_instruction],
+        let transaction = Transaction::new_signed_with_payer(
+            &instructions,
             Some(&authority.pubkey()),
             &[authority],
             recent_blockhash,
         );
 
-        rpc_client.send_and_confirm_transaction(&create_transaction).await?;
+        rpc_client.send_and_confirm_transaction(&transaction).await?;
 
-        // Add addresses to the lookup table
-        if !addresses.is_empty() {
-            let extend_instruction = extend_lookup_table(
-                lookup_table_key,
-                authority.pubkey(),
-                Some(authority.pubkey()),
-                addresses.clone(),
-            );
-
-            let recent_blockhash = rpc_client.get_latest_blockhash().await?;
-
-            let extend_transaction = Transaction::new_signed_with_payer(
-                &[extend_instruction],
-                Some(&authority.pubkey()),
-                &[authority],
-                recent_blockhash,
-            );
-
-            rpc_client.send_and_confirm_transaction(&extend_transaction).await?;
-        }
-
-        // Wait for the lookup table to be activated
         // Lookup tables need to be activated for at least one slot before they can be used
         let creation_slot = rpc_client.get_slot().await?;
         let mut current_slot = creation_slot;
 
-        // Wait until we're at least 2 slots past creation to ensure activation
         while current_slot <= creation_slot + 1 {
-            tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             current_slot = rpc_client.get_slot().await?;
         }
 
@@ -129,26 +121,25 @@ impl LookupTableHelper {
     pub async fn create_allowed_lookup_table(
         rpc_client: Arc<RpcClient>,
         authority: &Keypair,
+        derivation_slot: u64,
     ) -> Result<Pubkey> {
-        let allowed_lookup_table = Self::create_lookup_table(
+        Self::create_lookup_table(
             rpc_client,
             authority,
             vec![solana_system_interface::program::ID],
+            derivation_slot,
         )
-        .await?;
-
-        Ok(allowed_lookup_table)
+        .await
     }
 
     pub async fn create_disallowed_lookup_table(
         rpc_client: Arc<RpcClient>,
         authority: &Keypair,
+        derivation_slot: u64,
     ) -> Result<Pubkey> {
         let disallowed_address = Self::get_test_disallowed_address()?;
-        let blocked_lookup_table: Pubkey =
-            Self::create_lookup_table(rpc_client, authority, vec![disallowed_address]).await?;
-
-        Ok(blocked_lookup_table)
+        Self::create_lookup_table(rpc_client, authority, vec![disallowed_address], derivation_slot)
+            .await
     }
 
     // ============================================================================
@@ -157,11 +148,12 @@ impl LookupTableHelper {
     pub async fn create_transaction_lookup_table(
         rpc_client: Arc<RpcClient>,
         authority: &Keypair,
+        derivation_slot: u64,
     ) -> Result<Pubkey> {
         let usdc_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
         let addresses = vec![usdc_mint, spl_token_interface::ID];
 
-        Self::create_lookup_table(rpc_client, authority, addresses).await
+        Self::create_lookup_table(rpc_client, authority, addresses, derivation_slot).await
     }
 }

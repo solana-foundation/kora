@@ -210,6 +210,20 @@ impl FeePayerPolicyMintTestHelper {
     }
 }
 
+/// Concurrent tests sharing static keypairs can submit byte-identical setup
+/// transactions within one blockhash window; the duplicate is rejected with
+/// "already been processed" even though the intended state change landed.
+pub async fn send_and_confirm_allow_duplicate(
+    rpc_client: &solana_client::nonblocking::rpc_client::RpcClient,
+    transaction: &solana_sdk::transaction::Transaction,
+) -> anyhow::Result<()> {
+    match rpc_client.send_and_confirm_transaction(transaction).await {
+        Ok(_) => Ok(()),
+        Err(e) if e.to_string().contains("already been processed") => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
 #[cfg(test)]
 pub async fn create_funded_wallet(ctx: &TestContext) -> Keypair {
     let wallet = Keypair::new();

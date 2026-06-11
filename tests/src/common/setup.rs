@@ -11,17 +11,27 @@ use solana_sdk::{
 use spl_associated_token_account_interface::address::{
     get_associated_token_address, get_associated_token_address_with_program_id,
 };
+use spl_pod::{optional_keys::OptionalNonZeroPubkey, primitives::PodU64};
 use spl_token_2022_interface::{
-    extension::{transfer_fee::instruction::initialize_transfer_fee_config, ExtensionType},
+    extension::{
+        immutable_owner::ImmutableOwner,
+        transfer_fee::{
+            instruction::initialize_transfer_fee_config, TransferFee, TransferFeeAmount,
+            TransferFeeConfig,
+        },
+        BaseStateWithExtensionsMut, ExtensionType, StateWithExtensionsMut,
+    },
     instruction as token_2022_instruction,
-    state::Mint as Token2022Mint,
+    state::{Account as Token2022Account, Mint as Token2022Mint},
 };
 use spl_token_interface::instruction as token_instruction;
 use std::sync::Arc;
 
 use crate::common::{
-    FeePayerPolicyMintTestHelper, FeePayerTestHelper, LookupTableHelper, RecipientTestHelper,
-    SenderTestHelper, USDCMint2022TestHelper, USDCMintTestHelper, DEFAULT_RPC_URL,
+    constants::LIGHTHOUSE_PROGRAM_ID, surfnet, FeePayerPolicyMintTestHelper, FeePayerTestHelper,
+    LookupTableHelper, RecipientTestHelper, SenderTestHelper, USDCMint2022TestHelper,
+    USDCMintTestHelper, DEFAULT_RPC_URL, LIGHTHOUSE_PROGRAM_PATH, TRANSFER_HOOK_PROGRAM_ID,
+    TRANSFER_HOOK_PROGRAM_PATH,
 };
 
 /// Test account information for outputting to the user
@@ -110,74 +120,257 @@ impl TestAccountSetup {
     }
 
     pub async fn setup_all_accounts(&mut self) -> Result<TestAccountInfo> {
-        let mut account_infos = TestAccountInfo::default();
+        if surfnet::is_surfpool_backend() {
+            return self.setup_all_accounts_via_cheatcodes().await;
+        }
 
         let (sender_pubkey, recipient_pubkey, fee_payer_pubkey) = self.fund_sol_accounts().await?;
-        account_infos.sender_pubkey = sender_pubkey;
-        account_infos.recipient_pubkey = recipient_pubkey;
-        account_infos.fee_payer_pubkey = fee_payer_pubkey;
 
-        let usdc_mint_pubkey = self.create_usdc_mint().await?;
-        account_infos.usdc_mint_pubkey = usdc_mint_pubkey;
+        let usdc_branch = async {
+            tokio::try_join!(self.create_usdc_mint(), self.create_usdc_mint_2022())?;
+            self.setup_token_accounts().await
+        };
 
-        let usdc_mint_2022_pubkey = self.create_usdc_mint_2022().await?;
-        account_infos.usdc_mint_2022_pubkey = usdc_mint_2022_pubkey;
-
-        let fee_payer_policy_mint_pubkey = self.create_fee_payer_policy_mint().await?;
-        account_infos.fee_payer_policy_mint_pubkey = fee_payer_policy_mint_pubkey;
-
-        let fee_payer_policy_mint_2022_pubkey = self.create_fee_payer_policy_mint_2022().await?;
-        account_infos.fee_payer_policy_mint_2022_pubkey = fee_payer_policy_mint_2022_pubkey;
-
-        let (allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table) =
-            self.create_lookup_tables().await?;
-        account_infos.allowed_lookup_table = allowed_lookup_table;
-        account_infos.disallowed_lookup_table = disallowed_lookup_table;
-        account_infos.transaction_lookup_table = transaction_lookup_table;
+        let policy_branch = async {
+            tokio::try_join!(
+                self.create_fee_payer_policy_mint(),
+                self.create_fee_payer_policy_mint_2022()
+            )?;
+            self.setup_fee_payer_policy_token_accounts().await
+        };
 
         let (
+            (
+                sender_token_account,
+                recipient_token_account,
+                fee_payer_token_account,
+                sender_token_2022_account,
+                recipient_token_2022_account,
+                fee_payer_token_2022_account,
+            ),
+            (
+                fee_payer_policy_sender_token_account,
+                fee_payer_policy_recipient_token_account,
+                fee_payer_policy_fee_payer_token_account,
+                fee_payer_policy_sender_token_2022_account,
+                fee_payer_policy_recipient_token_2022_account,
+                fee_payer_policy_fee_payer_token_2022_account,
+            ),
+            (allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table),
+        ) = tokio::try_join!(usdc_branch, policy_branch, self.create_lookup_tables())?;
+
+        Ok(TestAccountInfo {
+            fee_payer_pubkey,
+            sender_pubkey,
+            recipient_pubkey,
+            usdc_mint_pubkey: self.usdc_mint.pubkey(),
             sender_token_account,
             recipient_token_account,
             fee_payer_token_account,
+            usdc_mint_2022_pubkey: self.usdc_mint_2022.pubkey(),
             sender_token_2022_account,
             recipient_token_2022_account,
             fee_payer_token_2022_account,
-        ) = self.setup_token_accounts().await?;
-        account_infos.sender_token_account = sender_token_account;
-        account_infos.recipient_token_account = recipient_token_account;
-        account_infos.fee_payer_token_account = fee_payer_token_account;
-        account_infos.sender_token_2022_account = sender_token_2022_account;
-        account_infos.recipient_token_2022_account = recipient_token_2022_account;
-        account_infos.fee_payer_token_2022_account = fee_payer_token_2022_account;
-
-        let (
+            fee_payer_policy_mint_pubkey: self.fee_payer_policy_mint.pubkey(),
             fee_payer_policy_sender_token_account,
             fee_payer_policy_recipient_token_account,
             fee_payer_policy_fee_payer_token_account,
+            fee_payer_policy_mint_2022_pubkey: self.fee_payer_policy_mint_2022.pubkey(),
             fee_payer_policy_sender_token_2022_account,
             fee_payer_policy_recipient_token_2022_account,
             fee_payer_policy_fee_payer_token_2022_account,
-        ) = self.setup_fee_payer_policy_token_accounts().await?;
-        account_infos.fee_payer_policy_sender_token_account = fee_payer_policy_sender_token_account;
-        account_infos.fee_payer_policy_recipient_token_account =
-            fee_payer_policy_recipient_token_account;
-        account_infos.fee_payer_policy_fee_payer_token_account =
-            fee_payer_policy_fee_payer_token_account;
-        account_infos.fee_payer_policy_sender_token_2022_account =
-            fee_payer_policy_sender_token_2022_account;
-        account_infos.fee_payer_policy_recipient_token_2022_account =
-            fee_payer_policy_recipient_token_2022_account;
-        account_infos.fee_payer_policy_fee_payer_token_2022_account =
-            fee_payer_policy_fee_payer_token_2022_account;
+            allowed_lookup_table,
+            disallowed_lookup_table,
+            transaction_lookup_table,
+        })
+    }
 
-        // Wait for the accounts to be fully initialized (lookup tables, etc.)
-        let await_for_slot = self.rpc_client.get_slot().await? + 30;
+    async fn setup_all_accounts_via_cheatcodes(&self) -> Result<TestAccountInfo> {
+        use std::str::FromStr;
 
-        while self.rpc_client.get_slot().await? < await_for_slot {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let rpc = self.rpc_client.as_ref();
+        let sender = self.sender_keypair.pubkey();
+        let fee_payer = self.fee_payer_keypair.pubkey();
+        let recipient = self.recipient_pubkey;
+        let decimals = USDCMintTestHelper::get_test_usdc_mint_decimals();
+        let mint_amount = 1_000_000 * 10_u64.pow(decimals as u32);
+        let system_program = solana_system_interface::program::ID;
+
+        for account in [&sender, &recipient, &fee_payer] {
+            surfnet::set_account(rpc, account, 10 * LAMPORTS_PER_SOL, &[], &system_program, false)
+                .await?;
+        }
+
+        let usdc_mint = self.usdc_mint.pubkey();
+        let usdc_mint_2022 = self.usdc_mint_2022.pubkey();
+        let policy_mint = self.fee_payer_policy_mint.pubkey();
+        let policy_mint_2022 = self.fee_payer_policy_mint_2022.pubkey();
+
+        surfnet::set_rent_exempt_account(
+            rpc,
+            &usdc_mint,
+            &pack_spl_mint(&sender, mint_amount, decimals)?,
+            &spl_token_interface::id(),
+        )
+        .await?;
+        surfnet::set_rent_exempt_account(
+            rpc,
+            &usdc_mint_2022,
+            &pack_token_2022_mint_with_transfer_fee(&sender, mint_amount, decimals)?,
+            &spl_token_2022_interface::id(),
+        )
+        .await?;
+        surfnet::set_rent_exempt_account(
+            rpc,
+            &policy_mint,
+            &pack_spl_mint(&fee_payer, mint_amount, decimals)?,
+            &spl_token_interface::id(),
+        )
+        .await?;
+        surfnet::set_rent_exempt_account(
+            rpc,
+            &policy_mint_2022,
+            &pack_token_2022_mint(&fee_payer, mint_amount, decimals)?,
+            &spl_token_2022_interface::id(),
+        )
+        .await?;
+
+        let mut account_infos = TestAccountInfo {
+            fee_payer_pubkey: fee_payer,
+            sender_pubkey: sender,
+            recipient_pubkey: recipient,
+            usdc_mint_pubkey: usdc_mint,
+            usdc_mint_2022_pubkey: usdc_mint_2022,
+            fee_payer_policy_mint_pubkey: policy_mint,
+            fee_payer_policy_mint_2022_pubkey: policy_mint_2022,
+            ..TestAccountInfo::default()
+        };
+
+        for (mint, owner, amount, target) in [
+            (&usdc_mint, &sender, mint_amount, &mut account_infos.sender_token_account),
+            (&usdc_mint, &recipient, 0, &mut account_infos.recipient_token_account),
+            (&usdc_mint, &fee_payer, 0, &mut account_infos.fee_payer_token_account),
+            (
+                &policy_mint,
+                &sender,
+                mint_amount,
+                &mut account_infos.fee_payer_policy_sender_token_account,
+            ),
+            (
+                &policy_mint,
+                &recipient,
+                0,
+                &mut account_infos.fee_payer_policy_recipient_token_account,
+            ),
+            (
+                &policy_mint,
+                &fee_payer,
+                0,
+                &mut account_infos.fee_payer_policy_fee_payer_token_account,
+            ),
+        ] {
+            let ata = get_associated_token_address(owner, mint);
+            surfnet::set_rent_exempt_account(
+                rpc,
+                &ata,
+                &pack_spl_token_account(mint, owner, amount)?,
+                &spl_token_interface::id(),
+            )
+            .await?;
+            *target = ata;
+        }
+
+        for (mint, owner, amount, with_transfer_fee, target) in [
+            (
+                &usdc_mint_2022,
+                &sender,
+                mint_amount,
+                true,
+                &mut account_infos.sender_token_2022_account,
+            ),
+            (&usdc_mint_2022, &recipient, 0, true, &mut account_infos.recipient_token_2022_account),
+            (&usdc_mint_2022, &fee_payer, 0, true, &mut account_infos.fee_payer_token_2022_account),
+            (
+                &policy_mint_2022,
+                &sender,
+                mint_amount,
+                false,
+                &mut account_infos.fee_payer_policy_sender_token_2022_account,
+            ),
+            (
+                &policy_mint_2022,
+                &recipient,
+                0,
+                false,
+                &mut account_infos.fee_payer_policy_recipient_token_2022_account,
+            ),
+            (
+                &policy_mint_2022,
+                &fee_payer,
+                0,
+                false,
+                &mut account_infos.fee_payer_policy_fee_payer_token_2022_account,
+            ),
+        ] {
+            let ata = get_associated_token_address_with_program_id(
+                owner,
+                mint,
+                &spl_token_2022_interface::id(),
+            );
+            surfnet::set_rent_exempt_account(
+                rpc,
+                &ata,
+                &pack_token_2022_account(mint, owner, amount, with_transfer_fee)?,
+                &spl_token_2022_interface::id(),
+            )
+            .await?;
+            *target = ata;
+        }
+
+        let alt_program = solana_address_lookup_table_interface::program::id();
+        let disallowed_address = LookupTableHelper::get_test_disallowed_address()?;
+        for (derivation_slot, addresses, target) in [
+            (
+                0,
+                vec![solana_system_interface::program::ID],
+                &mut account_infos.allowed_lookup_table,
+            ),
+            (1, vec![disallowed_address], &mut account_infos.disallowed_lookup_table),
+            (
+                2,
+                vec![usdc_mint, spl_token_interface::ID],
+                &mut account_infos.transaction_lookup_table,
+            ),
+        ] {
+            let (table_address, _) =
+                solana_address_lookup_table_interface::instruction::derive_lookup_table_address(
+                    &sender,
+                    derivation_slot,
+                );
+            surfnet::set_rent_exempt_account(
+                rpc,
+                &table_address,
+                &pack_lookup_table(&sender, &addresses)?,
+                &alt_program,
+            )
+            .await?;
+            *target = table_address;
+        }
+
+        for (program_id, program_path) in [
+            (TRANSFER_HOOK_PROGRAM_ID, TRANSFER_HOOK_PROGRAM_PATH),
+            (LIGHTHOUSE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_PATH),
+        ] {
+            let elf = tokio::fs::read(program_path).await?;
+            surfnet::load_upgradeable_program(rpc, &Pubkey::from_str(program_id)?, &elf).await?;
         }
 
         Ok(account_infos)
+    }
+
+    async fn all_token_accounts_exist(&self, accounts: &[Pubkey]) -> Result<bool> {
+        let fetched = self.rpc_client.get_multiple_accounts(accounts).await?;
+        Ok(fetched.iter().all(Option::is_some))
     }
 
     pub async fn airdrop_if_required_sol(&self, receiver: &Pubkey, amount: u64) -> Result<()> {
@@ -345,6 +538,28 @@ impl TestAccountSetup {
             &spl_token_2022_interface::id(),
         );
 
+        let all_accounts = (
+            sender_token_account,
+            recipient_token_account,
+            fee_payer_token_account,
+            sender_token_2022_account,
+            recipient_token_2022_account,
+            fee_payer_token_2022_account,
+        );
+        if self
+            .all_token_accounts_exist(&[
+                sender_token_account,
+                recipient_token_account,
+                fee_payer_token_account,
+                sender_token_2022_account,
+                recipient_token_2022_account,
+                fee_payer_token_2022_account,
+            ])
+            .await?
+        {
+            return Ok(all_accounts);
+        }
+
         // Create regular SPL Token accounts
         let create_associated_token_account_instruction =
             spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
@@ -395,9 +610,9 @@ impl TestAccountSetup {
                 &spl_token_2022_interface::id(),
             );
 
-        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let mint_amount =
+            1_000_000 * 10_u64.pow(USDCMintTestHelper::get_test_usdc_mint_decimals() as u32);
 
-        // Combine all instructions
         let all_instructions = vec![
             create_associated_token_account_instruction,
             create_associated_token_account_instruction_recipient,
@@ -405,7 +620,25 @@ impl TestAccountSetup {
             create_token_2022_account_instruction_sender,
             create_token_2022_account_instruction_recipient,
             create_token_2022_account_instruction_fee_payer,
+            token_instruction::mint_to(
+                &spl_token_interface::id(),
+                &self.usdc_mint.pubkey(),
+                &sender_token_account,
+                &self.sender_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
+            token_2022_instruction::mint_to(
+                &spl_token_2022_interface::id(),
+                &self.usdc_mint_2022.pubkey(),
+                &sender_token_2022_account,
+                &self.sender_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
         ];
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
 
         let transaction = Transaction::new_signed_with_payer(
             &all_instructions,
@@ -415,15 +648,6 @@ impl TestAccountSetup {
         );
 
         self.rpc_client.send_and_confirm_transaction(&transaction).await?;
-
-        let mint_amount =
-            1_000_000 * 10_u64.pow(USDCMintTestHelper::get_test_usdc_mint_decimals() as u32);
-
-        // Mint regular SPL tokens
-        self.mint_tokens_to_account(&sender_token_account, mint_amount).await?;
-
-        // Mint Token 2022 tokens
-        self.mint_tokens_2022_to_account(&sender_token_2022_account, mint_amount).await?;
 
         Ok((
             sender_token_account,
@@ -483,7 +707,7 @@ impl TestAccountSetup {
         Ok(())
     }
 
-    async fn create_lookup_tables(&mut self) -> Result<(Pubkey, Pubkey, Pubkey)> {
+    async fn create_lookup_tables(&self) -> Result<(Pubkey, Pubkey, Pubkey)> {
         let (allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table) =
             LookupTableHelper::setup_and_save_lookup_tables(self.rpc_client.clone()).await?;
 
@@ -607,6 +831,28 @@ impl TestAccountSetup {
             &spl_token_2022_interface::id(),
         );
 
+        let all_accounts = (
+            sender_token_account,
+            recipient_token_account,
+            fee_payer_token_account,
+            sender_token_2022_account,
+            recipient_token_2022_account,
+            fee_payer_token_2022_account,
+        );
+        if self
+            .all_token_accounts_exist(&[
+                sender_token_account,
+                recipient_token_account,
+                fee_payer_token_account,
+                sender_token_2022_account,
+                recipient_token_2022_account,
+                fee_payer_token_2022_account,
+            ])
+            .await?
+        {
+            return Ok(all_accounts);
+        }
+
         // Create regular SPL Token accounts
         let create_associated_token_account_instruction =
             spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
@@ -657,7 +903,8 @@ impl TestAccountSetup {
                 &spl_token_2022_interface::id(),
             );
 
-        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let mint_amount =
+            1_000_000 * 10_u64.pow(USDCMintTestHelper::get_test_usdc_mint_decimals() as u32);
 
         let all_instructions = vec![
             create_associated_token_account_instruction,
@@ -666,7 +913,25 @@ impl TestAccountSetup {
             create_token_2022_account_instruction_sender,
             create_token_2022_account_instruction_recipient,
             create_token_2022_account_instruction_fee_payer,
+            token_instruction::mint_to(
+                &spl_token_interface::id(),
+                &self.fee_payer_policy_mint.pubkey(),
+                &sender_token_account,
+                &self.fee_payer_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
+            token_2022_instruction::mint_to(
+                &spl_token_2022_interface::id(),
+                &self.fee_payer_policy_mint_2022.pubkey(),
+                &sender_token_2022_account,
+                &self.fee_payer_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
         ];
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
 
         let transaction = Transaction::new_signed_with_payer(
             &all_instructions,
@@ -676,16 +941,6 @@ impl TestAccountSetup {
         );
 
         self.rpc_client.send_and_confirm_transaction(&transaction).await?;
-
-        let mint_amount =
-            1_000_000 * 10_u64.pow(USDCMintTestHelper::get_test_usdc_mint_decimals() as u32);
-
-        // Mint regular SPL tokens
-        self.mint_fee_payer_policy_tokens_to_account(&sender_token_account, mint_amount).await?;
-
-        // Mint Token 2022 tokens
-        self.mint_fee_payer_policy_tokens_2022_to_account(&sender_token_2022_account, mint_amount)
-            .await?;
 
         Ok((
             sender_token_account,
@@ -820,4 +1075,137 @@ impl TestAccountSetup {
         self.rpc_client.send_and_confirm_transaction(&transaction).await?;
         Ok(token_account)
     }
+}
+
+fn pack_spl_mint(authority: &Pubkey, supply: u64, decimals: u8) -> Result<Vec<u8>> {
+    let mint = spl_token_interface::state::Mint {
+        mint_authority: solana_program_option::COption::Some(*authority),
+        supply,
+        decimals,
+        is_initialized: true,
+        freeze_authority: solana_program_option::COption::Some(*authority),
+    };
+    let mut data = vec![0u8; spl_token_interface::state::Mint::LEN];
+    spl_token_interface::state::Mint::pack(mint, &mut data)
+        .map_err(|e| anyhow::anyhow!("pack mint: {e}"))?;
+    Ok(data)
+}
+
+fn token_2022_mint_base(authority: &Pubkey, supply: u64, decimals: u8) -> Token2022Mint {
+    Token2022Mint {
+        mint_authority: solana_program_option::COption::Some(*authority),
+        supply,
+        decimals,
+        is_initialized: true,
+        freeze_authority: solana_program_option::COption::Some(*authority),
+    }
+}
+
+fn pack_token_2022_mint(authority: &Pubkey, supply: u64, decimals: u8) -> Result<Vec<u8>> {
+    let mut data = vec![0u8; Token2022Mint::LEN];
+    Token2022Mint::pack(token_2022_mint_base(authority, supply, decimals), &mut data)
+        .map_err(|e| anyhow::anyhow!("pack token-2022 mint: {e}"))?;
+    Ok(data)
+}
+
+fn pack_token_2022_mint_with_transfer_fee(
+    authority: &Pubkey,
+    supply: u64,
+    decimals: u8,
+) -> Result<Vec<u8>> {
+    let space = ExtensionType::try_calculate_account_len::<Token2022Mint>(&[
+        ExtensionType::TransferFeeConfig,
+    ])?;
+    let mut data = vec![0u8; space];
+    let mut state = StateWithExtensionsMut::<Token2022Mint>::unpack_uninitialized(&mut data)
+        .map_err(|e| anyhow::anyhow!("unpack uninitialized mint: {e}"))?;
+
+    let fee_config = state
+        .init_extension::<TransferFeeConfig>(true)
+        .map_err(|e| anyhow::anyhow!("init transfer fee config: {e}"))?;
+    let authority_option = OptionalNonZeroPubkey::try_from(Some(*authority))
+        .map_err(|e| anyhow::anyhow!("authority option: {e}"))?;
+    fee_config.transfer_fee_config_authority = authority_option;
+    fee_config.withdraw_withheld_authority = authority_option;
+    fee_config.withheld_amount = PodU64::from(0);
+    let transfer_fee = TransferFee {
+        epoch: PodU64::from(0),
+        maximum_fee: PodU64::from(1_000_000),
+        transfer_fee_basis_points: 100u16.into(),
+    };
+    fee_config.older_transfer_fee = transfer_fee;
+    fee_config.newer_transfer_fee = transfer_fee;
+
+    state.base = token_2022_mint_base(authority, supply, decimals);
+    state.pack_base();
+    state.init_account_type().map_err(|e| anyhow::anyhow!("init account type: {e}"))?;
+    Ok(data)
+}
+
+fn pack_spl_token_account(mint: &Pubkey, owner: &Pubkey, amount: u64) -> Result<Vec<u8>> {
+    let account = spl_token_interface::state::Account {
+        mint: *mint,
+        owner: *owner,
+        amount,
+        delegate: solana_program_option::COption::None,
+        state: spl_token_interface::state::AccountState::Initialized,
+        is_native: solana_program_option::COption::None,
+        delegated_amount: 0,
+        close_authority: solana_program_option::COption::None,
+    };
+    let mut data = vec![0u8; spl_token_interface::state::Account::LEN];
+    spl_token_interface::state::Account::pack(account, &mut data)
+        .map_err(|e| anyhow::anyhow!("pack token account: {e}"))?;
+    Ok(data)
+}
+
+fn pack_token_2022_account(
+    mint: &Pubkey,
+    owner: &Pubkey,
+    amount: u64,
+    with_transfer_fee: bool,
+) -> Result<Vec<u8>> {
+    let mut extensions = vec![ExtensionType::ImmutableOwner];
+    if with_transfer_fee {
+        extensions.push(ExtensionType::TransferFeeAmount);
+    }
+    let space = ExtensionType::try_calculate_account_len::<Token2022Account>(&extensions)?;
+    let mut data = vec![0u8; space];
+    let mut state = StateWithExtensionsMut::<Token2022Account>::unpack_uninitialized(&mut data)
+        .map_err(|e| anyhow::anyhow!("unpack uninitialized account: {e}"))?;
+
+    state
+        .init_extension::<ImmutableOwner>(true)
+        .map_err(|e| anyhow::anyhow!("init immutable owner: {e}"))?;
+    if with_transfer_fee {
+        let fee_amount = state
+            .init_extension::<TransferFeeAmount>(true)
+            .map_err(|e| anyhow::anyhow!("init transfer fee amount: {e}"))?;
+        fee_amount.withheld_amount = PodU64::from(0);
+    }
+
+    state.base = Token2022Account {
+        mint: *mint,
+        owner: *owner,
+        amount,
+        delegate: solana_program_option::COption::None,
+        state: spl_token_2022_interface::state::AccountState::Initialized,
+        is_native: solana_program_option::COption::None,
+        delegated_amount: 0,
+        close_authority: solana_program_option::COption::None,
+    };
+    state.pack_base();
+    state.init_account_type().map_err(|e| anyhow::anyhow!("init account type: {e}"))?;
+    Ok(data)
+}
+
+fn pack_lookup_table(authority: &Pubkey, addresses: &[Pubkey]) -> Result<Vec<u8>> {
+    let table = solana_address_lookup_table_interface::state::AddressLookupTable {
+        meta: solana_address_lookup_table_interface::state::LookupTableMeta {
+            authority: Some(*authority),
+            ..Default::default()
+        },
+        addresses: std::borrow::Cow::Owned(addresses.to_vec()),
+    };
+    table.serialize_for_tests().map_err(|e| anyhow::anyhow!("serialize lookup table: {e}"))
 }

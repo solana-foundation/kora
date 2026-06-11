@@ -3,6 +3,7 @@
 use crate::common::*;
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use futures::TryStreamExt;
 use jsonrpsee::rpc_params;
 use kora_lib::constant::BPF_LOADER_UPGRADEABLE_PROGRAM_ID;
 use serde_json::Value;
@@ -46,11 +47,14 @@ async fn deploy_v3_program_through_kora() -> Result<()> {
     submit_and_confirm(&ctx, &kora_pubkey, &create_buf, &[&buffer]).await?;
 
     // 2. Write the full program in chunks (Kora as authority)
-    for (i, chunk) in bytes.chunks(WRITE_CHUNK_SIZE).enumerate() {
-        let offset = (i * WRITE_CHUNK_SIZE) as u32;
-        let ix = loader_v3::write(&buffer.pubkey(), &kora_pubkey, offset, chunk.to_vec());
-        submit_and_confirm(&ctx, &kora_pubkey, &[ix], &[]).await?;
-    }
+    futures::stream::iter(bytes.chunks(WRITE_CHUNK_SIZE).enumerate().map(Ok))
+        .try_for_each_concurrent(16, |(i, chunk)| {
+            let offset = (i * WRITE_CHUNK_SIZE) as u32;
+            let ix = loader_v3::write(&buffer.pubkey(), &kora_pubkey, offset, chunk.to_vec());
+            let ctx = &ctx;
+            async move { submit_and_confirm(ctx, &kora_pubkey, &[ix], &[]).await }
+        })
+        .await?;
 
     // 3. Deploy with Kora as upgrade authority
     let program_lamports = ctx
@@ -159,7 +163,7 @@ async fn submit_and_confirm(
     let sig = Signature::from_str(
         resp["signature"].as_str().ok_or_else(|| anyhow::anyhow!("missing signature: {resp}"))?,
     )?;
-    for _ in 0..60 {
+    for _ in 0..300 {
         if ctx
             .rpc_client()
             .confirm_transaction_with_commitment(&sig, CommitmentConfig::confirmed())
@@ -168,7 +172,7 @@ async fn submit_and_confirm(
         {
             return Ok(());
         }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     anyhow::bail!("timed out waiting for {sig}")
 }

@@ -63,7 +63,7 @@ async fn build_transfer_hook_transaction_for_free_signing(
         recent_blockhash,
     );
 
-    rpc_client.send_and_confirm_transaction(&create_atas_tx).await?;
+    send_and_confirm_allow_duplicate(rpc_client, &create_atas_tx).await?;
 
     ExtensionHelpers::mint_tokens_to_account(
         rpc_client,
