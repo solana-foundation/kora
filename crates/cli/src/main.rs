@@ -190,9 +190,7 @@ async fn main() -> Result<(), KoraError> {
                     let ServerHandles { rpc_handle, metrics_handle, balance_tracker_handle } =
                         run_rpc_server(kora_rpc, rpc_args.port).await?;
 
-                    if let Err(e) = tokio::signal::ctrl_c().await {
-                        panic!("Error waiting for Ctrl+C signal: {e:?}");
-                    }
+                    wait_for_shutdown_signal().await;
                     println!("Shutting down server...");
 
                     // Stop the balance tracker task
@@ -288,6 +286,27 @@ async fn main() -> Result<(), KoraError> {
 
 fn print_error(message: &str) {
     eprintln!("Error: {message}");
+}
+
+#[cfg(unix)]
+async fn wait_for_shutdown_signal() {
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .expect("Failed to install SIGTERM handler");
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => {
+            if let Err(e) = result {
+                panic!("Error waiting for Ctrl+C signal: {e:?}");
+            }
+        }
+        _ = sigterm.recv() => {}
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_shutdown_signal() {
+    if let Err(e) = tokio::signal::ctrl_c().await {
+        panic!("Error waiting for Ctrl+C signal: {e:?}");
+    }
 }
 
 fn setup_logging(format: &LoggingFormat) {
