@@ -431,6 +431,36 @@ impl TokenUtil {
         Ok((token_price, decimals))
     }
 
+    fn calculate_token_value_in_lamports_from_price(
+        amount: u64,
+        price: Decimal,
+        decimals: u8,
+    ) -> Result<u64, KoraError> {
+        let amount_decimal = Decimal::from_u64(amount)
+            .ok_or_else(|| KoraError::ValidationError("Invalid token amount".to_string()))?;
+        let decimals_scale = decimal_scale(decimals)?;
+        let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL)
+            .ok_or_else(|| KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string()))?;
+
+        let lamports_decimal = amount_decimal.checked_mul(price)
+            .and_then(|result| result.checked_mul(lamports_per_sol))
+            .and_then(|result| result.checked_div(decimals_scale))
+            .ok_or_else(|| {
+                log::error!("Token value calculation overflow: amount={}, price={}, decimals={}, lamports_per_sol={}",
+                    amount,
+                    price,
+                    decimals,
+                    lamports_per_sol
+                );
+                KoraError::ValidationError("Token value calculation overflow".to_string())
+            })?;
+
+        lamports_decimal
+            .floor()
+            .to_u64()
+            .ok_or_else(|| KoraError::ValidationError("Lamports value overflow".to_string()))
+    }
+
     pub async fn calculate_token_value_in_lamports(
         amount: u64,
         mint: &Pubkey,
@@ -439,33 +469,7 @@ impl TokenUtil {
     ) -> Result<u64, KoraError> {
         let (token_price, decimals) =
             Self::get_token_price_and_decimals(mint, rpc_client, config).await?;
-
-        // Convert amount to Decimal with proper scaling
-        let amount_decimal = Decimal::from_u64(amount)
-            .ok_or_else(|| KoraError::ValidationError("Invalid token amount".to_string()))?;
-        let decimals_scale = decimal_scale(decimals)?;
-        let lamports_per_sol = Decimal::from_u64(LAMPORTS_PER_SOL)
-            .ok_or_else(|| KoraError::ValidationError("Invalid LAMPORTS_PER_SOL".to_string()))?;
-
-        // Calculate: (amount * price * LAMPORTS_PER_SOL) / 10^decimals
-        // Multiply before divide to preserve precision
-        let lamports_decimal = amount_decimal.checked_mul(token_price.price).and_then(|result| result.checked_mul(lamports_per_sol)).and_then(|result| result.checked_div(decimals_scale)).ok_or_else(|| {
-            log::error!("Token value calculation overflow: amount={}, price={}, decimals={}, lamports_per_sol={}",
-                amount,
-                token_price.price,
-                decimals,
-                lamports_per_sol
-            );
-            KoraError::ValidationError("Token value calculation overflow".to_string())
-        })?;
-
-        // Floor and convert to u64
-        let lamports = lamports_decimal
-            .floor()
-            .to_u64()
-            .ok_or_else(|| KoraError::ValidationError("Lamports value overflow".to_string()))?;
-
-        Ok(lamports)
+        Self::calculate_token_value_in_lamports_from_price(amount, token_price.price, decimals)
     }
 
     pub async fn calculate_lamports_value_in_token(
@@ -808,6 +812,15 @@ impl TokenUtil {
         let mut totals = PaymentLamportTotals::default();
         let mut cached_epoch: Option<u64> = None;
         let mut token2022_mints: HashMap<Pubkey, Box<dyn TokenMint>> = HashMap::new();
+        let mut payment_mints: HashSet<Pubkey> = HashSet::new();
+        struct ValidTransfer {
+            is_inflow: bool,
+            is_outflow: bool,
+            token_mint: Pubkey,
+            inflow_amount: u64,
+            amount: u64,
+        }
+        let mut valid_transfers = Vec::new();
 
         let all_instructions = bundle_instructions
             .map(|instructions| instructions.to_vec())
@@ -902,6 +915,8 @@ impl TokenUtil {
                     }
                 }
 
+                payment_mints.insert(token_mint);
+
                 let inflow_amount = if *is_2022 && is_inflow {
                     Self::calculate_token2022_net_amount(
                         *amount,
@@ -916,35 +931,84 @@ impl TokenUtil {
                     *amount
                 };
 
-                let inflow_lamports = if is_inflow {
-                    Self::calculate_token_value_in_lamports(
-                        inflow_amount,
-                        &token_mint,
-                        rpc_client,
-                        config,
-                    )
-                    .await?
-                } else {
-                    0
-                };
-
-                let outflow_lamports = if is_outflow {
-                    Self::calculate_token_value_in_lamports(
-                        *amount,
-                        &token_mint,
-                        rpc_client,
-                        config,
-                    )
-                    .await?
-                } else {
-                    0
-                };
-
-                totals.checked_add_assign(PaymentLamportTotals {
-                    inflow: inflow_lamports,
-                    outflow: outflow_lamports,
-                })?;
+                valid_transfers.push(ValidTransfer {
+                    is_inflow,
+                    is_outflow,
+                    token_mint,
+                    inflow_amount,
+                    amount: *amount,
+                });
             }
+        }
+
+        if payment_mints.is_empty() {
+            return Ok(totals);
+        }
+
+        let mint_addresses: Vec<String> =
+            payment_mints.iter().map(|mint| mint.to_string()).collect();
+
+        let prices =
+            CacheUtil::get_or_fetch_token_prices(rpc_client, config, &mint_addresses).await?;
+
+        let current_slot = if config.validation.max_price_staleness_slots > 0 {
+            Some(
+                rpc_client
+                    .get_slot()
+                    .await
+                    .map_err(|e| KoraError::RpcError(format!("Failed to get current slot: {e}")))?,
+            )
+        } else {
+            None
+        };
+
+        for (mint_addr, price) in &prices {
+            Self::check_price_staleness(
+                rpc_client,
+                config,
+                price,
+                &format!(" for {mint_addr}"),
+                current_slot,
+            )
+            .await?;
+        }
+
+        let mut mint_decimals = HashMap::new();
+        for mint in &payment_mints {
+            let decimals = Self::get_mint_decimals(config, rpc_client, mint).await?;
+            mint_decimals.insert(*mint, decimals);
+        }
+
+        for transfer in valid_transfers {
+            let ValidTransfer { is_inflow, is_outflow, token_mint, inflow_amount, amount } =
+                transfer;
+            let decimals = *mint_decimals.get(&token_mint).ok_or_else(|| {
+                KoraError::RpcError(format!("No decimals data for mint {token_mint}"))
+            })?;
+            let price = prices.get(&token_mint.to_string()).ok_or_else(|| {
+                KoraError::RpcError(format!("No price data for mint {token_mint}"))
+            })?;
+
+            let inflow_lamports = if is_inflow {
+                Self::calculate_token_value_in_lamports_from_price(
+                    inflow_amount,
+                    price.price,
+                    decimals,
+                )?
+            } else {
+                0
+            };
+
+            let outflow_lamports = if is_outflow {
+                Self::calculate_token_value_in_lamports_from_price(amount, price.price, decimals)?
+            } else {
+                0
+            };
+
+            totals.checked_add_assign(PaymentLamportTotals {
+                inflow: inflow_lamports,
+                outflow: outflow_lamports,
+            })?;
         }
 
         Ok(totals)
@@ -1001,11 +1065,15 @@ impl TokenUtil {
 #[cfg(test)]
 mod tests_token {
     use crate::{
-        oracle::utils::{USDC_DEVNET_MINT, WSOL_DEVNET_MINT},
+        oracle::{
+            utils::{USDC_DEVNET_MINT, WSOL_DEVNET_MINT},
+            PriceSource, TokenPrice,
+        },
         tests::{
             account_mock::create_transfer_fee_config,
             common::{MintAccountMockBuilder, RpcMockBuilder, TokenAccountMockBuilder},
             config_mock::ConfigMockBuilder,
+            oracle_mock::TEST_ORACLE,
         },
         transaction::TransactionUtil,
     };
@@ -1017,6 +1085,7 @@ mod tests_token {
         },
         pod::PodMint,
     };
+    use std::sync::Arc;
 
     use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 
@@ -1688,10 +1757,11 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_payment_lamport_totals_validates_token2022_when_both_sides_match_expected_owner(
     ) {
-        let _lock = ConfigMockBuilder::new()
-            .with_cache_enabled(false)
-            .with_blocked_token2022_mint_extensions(vec!["transfer_fee_config".to_string()])
-            .build_and_setup();
+        let mut config = get_config().unwrap();
+        config.kora.cache.enabled = false;
+        config.validation.token_2022.blocked_mint_extensions =
+            vec!["transfer_fee_config".to_string()];
+        let _ = config.validation.token_2022.initialize();
 
         let expected_destination_owner = Pubkey::new_unique();
         let source_address = Pubkey::new_unique();
@@ -1736,7 +1806,6 @@ mod tests_token {
             &source_account,
         ]);
 
-        let config = get_config().unwrap();
         let result = TokenUtil::calculate_payment_lamport_totals(
             &config,
             &mut transaction_resolved,
@@ -2096,5 +2165,112 @@ mod tests_token {
 
         let err = decimal_scale(255).unwrap_err();
         assert!(err.to_string().contains("exceeds maximum supported value"));
+    }
+
+    #[tokio::test]
+    async fn test_calculate_payment_lamport_totals_batches_duplicate_mints() {
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+
+        let expected_destination_owner = Pubkey::new_unique();
+        let source_address = Pubkey::new_unique();
+        let destination_address = Pubkey::new_unique();
+        let mint = Pubkey::from_str(USDC_DEVNET_MINT).unwrap();
+
+        let source_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&Pubkey::new_unique())
+            .build();
+        let destination_account = TokenAccountMockBuilder::new()
+            .with_mint(&mint)
+            .with_owner(&expected_destination_owner)
+            .build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let instruction1 = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::id(),
+            &source_address,
+            &mint,
+            &destination_address,
+            &expected_destination_owner,
+            &[],
+            1_000_000,
+            6,
+        )
+        .unwrap();
+
+        let instruction2 = spl_token_interface::instruction::transfer_checked(
+            &spl_token_interface::id(),
+            &source_address,
+            &mint,
+            &destination_address,
+            &expected_destination_owner,
+            &[],
+            2_000_000,
+            6,
+        )
+        .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(
+            &[instruction1, instruction2],
+            Some(&expected_destination_owner),
+        ));
+        let mut transaction_resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &source_account,
+            &destination_account,
+            &source_account,
+            &destination_account,
+            &mint_account,
+        ]);
+
+        let mut mock_oracle = crate::oracle::MockPriceOracle::new();
+        mock_oracle.expect_get_prices().times(1).returning(|_, mint_addresses| {
+            let mut result = HashMap::new();
+            for mint in mint_addresses {
+                result.insert(
+                    mint.clone(),
+                    TokenPrice {
+                        price: Decimal::from(1),
+                        confidence: 1.0,
+                        source: PriceSource::Mock,
+                        block_id: None,
+                    },
+                );
+            }
+            Ok(result)
+        });
+
+        let shared_mock_oracle = Arc::new(mock_oracle);
+        TEST_ORACLE.with(|o| {
+            *o.borrow_mut() = Some(shared_mock_oracle.clone());
+        });
+
+        struct OracleGuard;
+        impl Drop for OracleGuard {
+            fn drop(&mut self) {
+                TEST_ORACLE.with(|o| {
+                    *o.borrow_mut() = None;
+                });
+            }
+        }
+        let _guard = OracleGuard;
+
+        let mut config = get_config().unwrap();
+        config.kora.cache.enabled = false;
+        let result = TokenUtil::calculate_payment_lamport_totals(
+            &config,
+            &mut transaction_resolved,
+            &rpc_client,
+            &expected_destination_owner,
+            None,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let totals = result.unwrap();
+        assert_eq!(totals.inflow, 3_000_000_000);
+        assert_eq!(totals.outflow, 0);
     }
 }
