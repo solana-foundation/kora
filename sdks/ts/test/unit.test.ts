@@ -317,6 +317,25 @@ describe('KoraClient Unit Tests', () => {
                 request,
             );
         });
+
+        it('should pass the confirmation mode through to the RPC request', async () => {
+            const request: SignAndSendTransactionRequest = {
+                transaction: 'base64_encoded_transaction',
+                confirmation: 'none',
+            };
+            const mockResponse: SignAndSendTransactionResponse = {
+                signature: 'transaction_signature',
+                signed_transaction: 'base64_signed_transaction',
+                signer_pubkey: 'test_signer_pubkey',
+            };
+
+            await testSuccessfulRpcMethod(
+                'signAndSendTransaction',
+                () => client.signAndSendTransaction(request),
+                mockResponse,
+                request,
+            );
+        });
     });
 
     describe('signBundle', () => {

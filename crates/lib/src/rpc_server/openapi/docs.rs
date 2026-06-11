@@ -7,6 +7,7 @@ use crate::{
     },
     fee::price::{PriceConfig, PriceModel},
     oracle::oracle::{PriceSource, TokenPrice},
+    transaction::ConfirmationMode,
 };
 use std::path::PathBuf;
 use utoipa::{
@@ -68,6 +69,7 @@ const JSON_CONTENT_TYPE: &str = "application/json";
         GetPayerSignerResponse,
         GetSupportedTokensResponse,
         GetVersionResponse,
+        ConfirmationMode,
         SignAndSendTransactionRequest,
         SignAndSendTransactionResponse,
         SignTransactionRequest,

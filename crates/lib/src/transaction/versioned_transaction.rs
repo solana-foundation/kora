@@ -1,17 +1,25 @@
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcSimulateTransactionConfig};
+use serde::Deserialize;
+use solana_client::{
+    nonblocking::rpc_client::RpcClient,
+    rpc_config::{RpcSendTransactionConfig, RpcSimulateTransactionConfig},
+};
 use solana_commitment_config::CommitmentConfig;
 use solana_keychain::{Signer, SolanaSigner};
 use solana_message::{
     compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup, VersionedMessage,
 };
-use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
+use solana_sdk::{
+    instruction::Instruction, pubkey::Pubkey, signature::Signature,
+    transaction::VersionedTransaction,
+};
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
     time::Duration,
 };
+use utoipa::ToSchema;
 
 use solana_transaction_status_client_types::UiTransactionEncoding;
 
@@ -83,6 +91,22 @@ impl Deref for VersionedTransactionResolved {
     }
 }
 
+/// How long `signAndSendTransaction` waits on the broadcast before responding.
+///
+/// All modes share the immediate sign-and-send validation flow (`will_send = true`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfirmationMode {
+    /// Wait for on-chain confirmation at `confirmed` commitment (default).
+    #[default]
+    Confirmed,
+    /// Wait only until the RPC node accepts the transaction; no confirmation wait.
+    Sent,
+    /// Broadcast in the background and return as soon as signing completes. Broadcast
+    /// failures are logged server-side, not returned to the caller.
+    None,
+}
+
 #[async_trait]
 pub trait VersionedTransactionOps {
     fn encode_b64_transaction(&self) -> Result<String, KoraError>;
@@ -101,7 +125,8 @@ pub trait VersionedTransactionOps {
         &mut self,
         config: &Config,
         signer: &std::sync::Arc<Signer>,
-        rpc_client: &RpcClient,
+        rpc_client: &std::sync::Arc<RpcClient>,
+        confirmation: ConfirmationMode,
     ) -> Result<(String, String), KoraError>;
 }
 
@@ -523,19 +548,78 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         &mut self,
         config: &Config,
         signer: &std::sync::Arc<Signer>,
-        rpc_client: &RpcClient,
+        rpc_client: &std::sync::Arc<RpcClient>,
+        confirmation: ConfirmationMode,
     ) -> Result<(String, String), KoraError> {
         // Payment validation is handled in sign_transaction
         let (transaction, encoded) =
             self.sign_transaction(config, signer, rpc_client, true).await?;
 
-        // Send and confirm transaction
-        let signature = rpc_client
-            .send_and_confirm_transaction(&transaction)
-            .await
-            .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
+        // Validation already simulated the transaction, so the fast modes skip
+        // preflight: a second simulation only delays landing and can fail
+        // transiently even though the transaction is valid.
+        let send_config = RpcSendTransactionConfig { skip_preflight: true, ..Default::default() };
 
-        Ok((signature.to_string(), encoded))
+        match confirmation {
+            ConfirmationMode::Confirmed => {
+                let signature = rpc_client
+                    .send_and_confirm_transaction(&transaction)
+                    .await
+                    .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
+
+                Ok((signature.to_string(), encoded))
+            }
+            ConfirmationMode::Sent => {
+                let signature = rpc_client
+                    .send_transaction_with_config(&transaction, send_config)
+                    .await
+                    .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
+
+                Ok((signature.to_string(), encoded))
+            }
+            ConfirmationMode::None => {
+                // The response is built before the broadcast runs, so a transaction
+                // that can never land (missing co-signer signature when sig_verify is
+                // off) must be rejected here instead of failing silently in the
+                // background.
+                if transaction.signatures.iter().any(|s| *s == Signature::default()) {
+                    return Err(KoraError::InvalidTransaction(
+                        "Transaction is missing required signatures".to_string(),
+                    ));
+                }
+
+                // A Solana transaction is identified by its first signature, which is
+                // already present once signing completes — so the caller gets it
+                // without waiting for the broadcast.
+                let signature = transaction
+                    .signatures
+                    .first()
+                    .ok_or_else(|| {
+                        KoraError::InvalidTransaction(
+                            "Signed transaction has no signatures".to_string(),
+                        )
+                    })?
+                    .to_string();
+
+                // Broadcast in the background so the response returns instantly. The
+                // send is fire-and-forget: failures are logged rather than returned to
+                // the caller, who can rebroadcast the returned signed transaction.
+                let rpc_client = std::sync::Arc::clone(rpc_client);
+                let log_signature = signature.clone();
+                tokio::spawn(async move {
+                    if let Err(e) =
+                        rpc_client.send_transaction_with_config(&transaction, send_config).await
+                    {
+                        log::error!(
+                            "Background broadcast failed for transaction {log_signature}: {}",
+                            sanitize_error!(e)
+                        );
+                    }
+                });
+
+                Ok((signature, encoded))
+            }
+        }
     }
 }
 

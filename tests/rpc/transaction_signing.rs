@@ -148,6 +148,96 @@ async fn test_sign_and_send_transaction_legacy() {
 }
 
 #[tokio::test]
+async fn test_sign_and_send_transaction_confirmation_sent() {
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let test_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create signed test transaction");
+
+    // Positional params: [transaction, signer_key, sig_verify, user_id, confirmation]
+    let result: Result<serde_json::Value, _> = ctx
+        .rpc_call(
+            "signAndSendTransaction",
+            rpc_params![test_tx, None::<String>, false, None::<String>, "sent"],
+        )
+        .await;
+
+    assert!(result.is_ok(), "Expected signAndSendTransaction with confirmation=sent to succeed");
+    let response = result.unwrap();
+
+    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+    assert!(
+        response["signed_transaction"].as_str().is_some(),
+        "Expected signed_transaction in response"
+    );
+}
+
+#[tokio::test]
+async fn test_sign_and_send_transaction_confirmation_none() {
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let test_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create signed test transaction");
+
+    let result: Result<serde_json::Value, _> = ctx
+        .rpc_call(
+            "signAndSendTransaction",
+            rpc_params![test_tx, None::<String>, false, None::<String>, "none"],
+        )
+        .await;
+
+    assert!(result.is_ok(), "Expected signAndSendTransaction with confirmation=none to succeed");
+    let response = result.unwrap();
+
+    // The signature is derived from the signed transaction before the background
+    // broadcast runs, so it must match the transaction's first signature.
+    let signature = response["signature"].as_str().expect("Expected signature in response");
+    let signed_transaction =
+        response["signed_transaction"].as_str().expect("Expected signed_transaction in response");
+    let decoded = TransactionUtil::decode_b64_transaction(signed_transaction)
+        .expect("Returned signed transaction should decode");
+    assert_eq!(
+        signature,
+        decoded.signatures[0].to_string(),
+        "Returned signature should be the transaction's first signature"
+    );
+}
+
+#[tokio::test]
 async fn test_sign_and_send_transaction_v0() {
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
