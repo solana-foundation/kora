@@ -22,7 +22,7 @@ async fn test_system_create_account_instruction_limit() {
                 &new_account.pubkey(),
                 1000000,
                 0,
-                &sender.pubkey(),
+                &solana_system_interface::program::ID,
             )
             .with_signer(&sender)
             .with_signer(&new_account)
@@ -51,7 +51,7 @@ async fn test_system_create_account_instruction_limit() {
             &new_account.pubkey(),
             1000000,
             0,
-            &sender.pubkey(),
+            &solana_system_interface::program::ID,
         )
         .with_signer(&sender)
         .with_signer(&new_account)
@@ -90,14 +90,14 @@ async fn test_multiple_create_account_instructions_in_one_tx() {
             &new_account1.pubkey(),
             1000000,
             0,
-            &sender.pubkey(),
+            &solana_system_interface::program::ID,
         )
         .with_system_create_account(
             &FeePayerTestHelper::get_fee_payer_pubkey(),
             &new_account2.pubkey(),
             1000000,
             0,
-            &sender.pubkey(),
+            &solana_system_interface::program::ID,
         )
         .with_signer(&sender)
         .with_signer(&new_account1)
@@ -129,14 +129,14 @@ async fn test_multiple_create_account_instructions_in_one_tx() {
             &new_account3.pubkey(),
             1000000,
             0,
-            &sender.pubkey(),
+            &solana_system_interface::program::ID,
         )
         .with_system_create_account(
             &FeePayerTestHelper::get_fee_payer_pubkey(),
             &new_account4.pubkey(),
             1000000,
             0,
-            &sender.pubkey(),
+            &solana_system_interface::program::ID,
         )
         .with_signer(&sender)
         .with_signer(&new_account3)
@@ -230,7 +230,7 @@ async fn test_instruction_limit_independent_from_transaction_limit() {
                 &new_account.pubkey(),
                 1000000,
                 0,
-                &sender.pubkey(),
+                &solana_system_interface::program::ID,
             )
             .with_signer(&sender)
             .with_signer(&new_account)
@@ -259,7 +259,7 @@ async fn test_instruction_limit_independent_from_transaction_limit() {
             &new_account.pubkey(),
             1000000,
             0,
-            &sender.pubkey(),
+            &solana_system_interface::program::ID,
         )
         .with_signer(&sender)
         .with_signer(&new_account)

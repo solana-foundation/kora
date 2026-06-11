@@ -15,8 +15,8 @@ account_ttl = 60
 enabled = true
 
 [kora.bundle.jito]
-block_engine_url = "https://mainnet.block-engine.jito.wtf"
-simulate_bundle_url = "https://mainnet.rpc.jito.wtf"
+block_engine_url = "mock"
+simulate_bundle_url = "mock"
 
 [kora.enabled_methods]
 liveness = true

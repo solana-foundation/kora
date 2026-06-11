@@ -84,7 +84,7 @@ async fn test_bundle_instruction_limit_enforcement() {
                 &new_account.pubkey(),
                 1000000,
                 0,
-                &sender.pubkey(),
+                &solana_system_interface::program::ID,
             )
             .with_signer(&sender)
             .with_signer(&new_account)
@@ -113,7 +113,7 @@ async fn test_bundle_instruction_limit_enforcement() {
             &new_account.pubkey(),
             1000000,
             0,
-            &sender.pubkey(),
+            &solana_system_interface::program::ID,
         )
         .with_signer(&sender)
         .with_signer(&new_account)
@@ -158,7 +158,7 @@ async fn test_bundle_mixed_rules_enforcement() {
                 &new_account.pubkey(),
                 1000000,
                 0,
-                &sender.pubkey(),
+                &solana_system_interface::program::ID,
             )
             .with_signer(&sender)
             .with_signer(&new_account)
@@ -200,7 +200,7 @@ async fn test_bundle_mixed_rules_enforcement() {
                 &new_account.pubkey(),
                 1000000,
                 0,
-                &sender.pubkey(),
+                &solana_system_interface::program::ID,
             )
             .with_signer(&sender)
             .with_signer(&new_account)

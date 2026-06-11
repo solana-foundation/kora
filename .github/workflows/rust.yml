@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # usage_limit excluded: currently failing on main; external excluded: hits live Jupiter API
+        # external excluded: hits live Jupiter API
         test-group:
           [
             regular,
@@ -57,6 +57,7 @@ jobs:
             free_signing,
             lighthouse,
             loader_v3_deploy,
+            usage_limit,
           ]
     steps:
       - uses: actions/checkout@v6

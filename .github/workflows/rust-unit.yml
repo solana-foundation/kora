@@ -80,7 +80,8 @@ jobs:
           cargo build -p tests --bin test_runner
           cargo run -p tests --bin test_runner -- --backend agave \
             --filter regular --filter auth --filter payment_address --filter multi_signer \
-            --filter fee_payer_policy --filter free_signing --filter lighthouse --filter loader_v3_deploy
+            --filter fee_payer_policy --filter free_signing --filter lighthouse \
+            --filter loader_v3_deploy --filter usage_limit
 
       - name: Generate coverage reports
         run: |
