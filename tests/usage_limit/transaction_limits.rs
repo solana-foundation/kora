@@ -13,6 +13,8 @@ async fn test_transaction_limit_enforcement() {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let user_id = "test-user-tx-limit";
 
+    let window_start = std::time::Instant::now();
+
     // First 4 transactions should succeed (windowed limit is 4 per 30s)
     for i in 1..=4 {
         let tx_b64 = ctx
@@ -60,8 +62,20 @@ async fn test_transaction_limit_enforcement() {
         )
         .await;
 
-    let err = result.expect_err("Expected error for 5th transaction exceeding windowed limit");
-    err.assert_contains_message("Usage limit exceeded");
+    match result {
+        Err(err) => err.assert_contains_message("Usage limit exceeded"),
+        // On a slow machine the first send can fall out of the 30s window before
+        // the 5th is submitted, making acceptance correct rather than a bug
+        Ok(_) if window_start.elapsed().as_secs() >= 30 => {
+            eprintln!(
+                "skipping windowed-limit assertion: sends took {:?}, window slid",
+                window_start.elapsed()
+            );
+        }
+        Ok(response) => {
+            panic!("Expected 5th transaction to exceed windowed limit, got: {response}")
+        }
+    }
 }
 
 /// Test transaction lifetime limit - allow N transactions, deny N+1
@@ -153,6 +167,8 @@ async fn test_transaction_time_windowed_limit() {
     let user_id = sender.pubkey().to_string();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
 
+    let window_start = std::time::Instant::now();
+
     // First 4 transactions should succeed (windowed limit is 4 per 30s)
     for i in 1..=4 {
         let tx_b64 = ctx
@@ -192,8 +208,22 @@ async fn test_transaction_time_windowed_limit() {
         )
         .await;
 
-    let err = result.expect_err("Expected error for 5th transaction exceeding windowed limit");
-    err.assert_contains_message("Usage limit exceeded");
+    match result {
+        Err(err) => err.assert_contains_message("Usage limit exceeded"),
+        // On a slow machine the first send can fall out of the 30s window before
+        // the 5th is submitted; the rest of the test assumes lifetime usage of 4,
+        // which no longer holds, so bail out entirely
+        Ok(_) if window_start.elapsed().as_secs() >= 30 => {
+            eprintln!(
+                "skipping windowed-reset assertions: sends took {:?}, window slid",
+                window_start.elapsed()
+            );
+            return;
+        }
+        Ok(response) => {
+            panic!("Expected 5th transaction to exceed windowed limit, got: {response}")
+        }
+    }
 
     // Wait 31 seconds for window to reset
     tokio::time::sleep(tokio::time::Duration::from_secs(31)).await;
