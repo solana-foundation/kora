@@ -624,10 +624,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                 let rpc_client = std::sync::Arc::clone(rpc_client);
                 let log_signature = signature.clone();
                 get_background_tasks().spawn(async move {
-                    if let Err(e) =
-                        rpc_client
-                            .send_transaction_with_config(&transaction, skip_preflight_config)
-                            .await
+                    if let Err(e) = rpc_client
+                        .send_transaction_with_config(&transaction, skip_preflight_config)
+                        .await
                     {
                         log::error!(
                             "Background broadcast failed for transaction {log_signature}: {}",
