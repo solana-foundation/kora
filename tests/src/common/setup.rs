@@ -17,11 +17,12 @@ use spl_token_2022_interface::{
     state::Mint as Token2022Mint,
 };
 use spl_token_interface::instruction as token_instruction;
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use crate::common::{
     FeePayerPolicyMintTestHelper, FeePayerTestHelper, LookupTableHelper, RecipientTestHelper,
     SenderTestHelper, USDCMint2022TestHelper, USDCMintTestHelper, DEFAULT_RPC_URL,
+    TS_AUTH_WALLET_PUBKEY, TS_FREE_WALLET_PUBKEY,
 };
 
 /// Test account information for outputting to the user
@@ -109,75 +110,79 @@ impl TestAccountSetup {
         }
     }
 
-    pub async fn setup_all_accounts(&mut self) -> Result<TestAccountInfo> {
-        let mut account_infos = TestAccountInfo::default();
-
+    pub async fn setup_all_accounts(
+        &mut self,
+        cached_lookup_tables: Option<(Pubkey, Pubkey, Pubkey)>,
+    ) -> Result<TestAccountInfo> {
         let (sender_pubkey, recipient_pubkey, fee_payer_pubkey) = self.fund_sol_accounts().await?;
-        account_infos.sender_pubkey = sender_pubkey;
-        account_infos.recipient_pubkey = recipient_pubkey;
-        account_infos.fee_payer_pubkey = fee_payer_pubkey;
 
-        let usdc_mint_pubkey = self.create_usdc_mint().await?;
-        account_infos.usdc_mint_pubkey = usdc_mint_pubkey;
+        let usdc_branch = async {
+            tokio::try_join!(self.create_usdc_mint(), self.create_usdc_mint_2022())?;
+            self.setup_token_accounts().await
+        };
 
-        let usdc_mint_2022_pubkey = self.create_usdc_mint_2022().await?;
-        account_infos.usdc_mint_2022_pubkey = usdc_mint_2022_pubkey;
-
-        let fee_payer_policy_mint_pubkey = self.create_fee_payer_policy_mint().await?;
-        account_infos.fee_payer_policy_mint_pubkey = fee_payer_policy_mint_pubkey;
-
-        let fee_payer_policy_mint_2022_pubkey = self.create_fee_payer_policy_mint_2022().await?;
-        account_infos.fee_payer_policy_mint_2022_pubkey = fee_payer_policy_mint_2022_pubkey;
-
-        let (allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table) =
-            self.create_lookup_tables().await?;
-        account_infos.allowed_lookup_table = allowed_lookup_table;
-        account_infos.disallowed_lookup_table = disallowed_lookup_table;
-        account_infos.transaction_lookup_table = transaction_lookup_table;
+        let policy_branch = async {
+            tokio::try_join!(
+                self.create_fee_payer_policy_mint(),
+                self.create_fee_payer_policy_mint_2022()
+            )?;
+            self.setup_fee_payer_policy_token_accounts().await
+        };
 
         let (
+            (
+                sender_token_account,
+                recipient_token_account,
+                fee_payer_token_account,
+                sender_token_2022_account,
+                recipient_token_2022_account,
+                fee_payer_token_2022_account,
+            ),
+            (
+                fee_payer_policy_sender_token_account,
+                fee_payer_policy_recipient_token_account,
+                fee_payer_policy_fee_payer_token_account,
+                fee_payer_policy_sender_token_2022_account,
+                fee_payer_policy_recipient_token_2022_account,
+                fee_payer_policy_fee_payer_token_2022_account,
+            ),
+            (allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table),
+        ) = tokio::try_join!(usdc_branch, policy_branch, async {
+            match cached_lookup_tables {
+                Some(tables) => Ok(tables),
+                None => self.create_lookup_tables().await,
+            }
+        })?;
+
+        Ok(TestAccountInfo {
+            fee_payer_pubkey,
+            sender_pubkey,
+            recipient_pubkey,
+            usdc_mint_pubkey: self.usdc_mint.pubkey(),
             sender_token_account,
             recipient_token_account,
             fee_payer_token_account,
+            usdc_mint_2022_pubkey: self.usdc_mint_2022.pubkey(),
             sender_token_2022_account,
             recipient_token_2022_account,
             fee_payer_token_2022_account,
-        ) = self.setup_token_accounts().await?;
-        account_infos.sender_token_account = sender_token_account;
-        account_infos.recipient_token_account = recipient_token_account;
-        account_infos.fee_payer_token_account = fee_payer_token_account;
-        account_infos.sender_token_2022_account = sender_token_2022_account;
-        account_infos.recipient_token_2022_account = recipient_token_2022_account;
-        account_infos.fee_payer_token_2022_account = fee_payer_token_2022_account;
-
-        let (
+            fee_payer_policy_mint_pubkey: self.fee_payer_policy_mint.pubkey(),
             fee_payer_policy_sender_token_account,
             fee_payer_policy_recipient_token_account,
             fee_payer_policy_fee_payer_token_account,
+            fee_payer_policy_mint_2022_pubkey: self.fee_payer_policy_mint_2022.pubkey(),
             fee_payer_policy_sender_token_2022_account,
             fee_payer_policy_recipient_token_2022_account,
             fee_payer_policy_fee_payer_token_2022_account,
-        ) = self.setup_fee_payer_policy_token_accounts().await?;
-        account_infos.fee_payer_policy_sender_token_account = fee_payer_policy_sender_token_account;
-        account_infos.fee_payer_policy_recipient_token_account =
-            fee_payer_policy_recipient_token_account;
-        account_infos.fee_payer_policy_fee_payer_token_account =
-            fee_payer_policy_fee_payer_token_account;
-        account_infos.fee_payer_policy_sender_token_2022_account =
-            fee_payer_policy_sender_token_2022_account;
-        account_infos.fee_payer_policy_recipient_token_2022_account =
-            fee_payer_policy_recipient_token_2022_account;
-        account_infos.fee_payer_policy_fee_payer_token_2022_account =
-            fee_payer_policy_fee_payer_token_2022_account;
+            allowed_lookup_table,
+            disallowed_lookup_table,
+            transaction_lookup_table,
+        })
+    }
 
-        // Wait for the accounts to be fully initialized (lookup tables, etc.)
-        let await_for_slot = self.rpc_client.get_slot().await? + 30;
-
-        while self.rpc_client.get_slot().await? < await_for_slot {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
-
-        Ok(account_infos)
+    async fn all_token_accounts_exist(&self, accounts: &[Pubkey]) -> Result<bool> {
+        let fetched = self.rpc_client.get_multiple_accounts(accounts).await?;
+        Ok(fetched.iter().all(Option::is_some))
     }
 
     pub async fn airdrop_if_required_sol(&self, receiver: &Pubkey, amount: u64) -> Result<()> {
@@ -208,11 +213,15 @@ impl TestAccountSetup {
 
         let sender_pubkey = self.sender_keypair.pubkey();
         let fee_payer_pubkey = self.fee_payer_keypair.pubkey();
+        let ts_auth_wallet = ts_auth_wallet();
+        let ts_free_wallet = ts_free_wallet();
 
         tokio::try_join!(
             self.airdrop_if_required_sol(&sender_pubkey, sol_to_fund),
             self.airdrop_if_required_sol(&self.recipient_pubkey, sol_to_fund),
-            self.airdrop_if_required_sol(&fee_payer_pubkey, sol_to_fund)
+            self.airdrop_if_required_sol(&fee_payer_pubkey, sol_to_fund),
+            self.airdrop_if_required_sol(&ts_auth_wallet, sol_to_fund),
+            self.airdrop_if_required_sol(&ts_free_wallet, sol_to_fund)
         )?;
 
         Ok((self.sender_keypair.pubkey(), self.recipient_pubkey, self.fee_payer_keypair.pubkey()))
@@ -345,6 +354,35 @@ impl TestAccountSetup {
             &spl_token_2022_interface::id(),
         );
 
+        let ts_auth_wallet_token_account =
+            get_associated_token_address(&ts_auth_wallet(), &self.usdc_mint.pubkey());
+        let ts_free_wallet_token_account =
+            get_associated_token_address(&ts_free_wallet(), &self.usdc_mint.pubkey());
+
+        let all_accounts = (
+            sender_token_account,
+            recipient_token_account,
+            fee_payer_token_account,
+            sender_token_2022_account,
+            recipient_token_2022_account,
+            fee_payer_token_2022_account,
+        );
+        if self
+            .all_token_accounts_exist(&[
+                sender_token_account,
+                recipient_token_account,
+                fee_payer_token_account,
+                sender_token_2022_account,
+                recipient_token_2022_account,
+                fee_payer_token_2022_account,
+                ts_auth_wallet_token_account,
+                ts_free_wallet_token_account,
+            ])
+            .await?
+        {
+            return Ok(all_accounts);
+        }
+
         // Create regular SPL Token accounts
         let create_associated_token_account_instruction =
             spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
@@ -395,9 +433,9 @@ impl TestAccountSetup {
                 &spl_token_2022_interface::id(),
             );
 
-        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let mint_amount =
+            1_000_000 * 10_u64.pow(USDCMintTestHelper::get_test_usdc_mint_decimals() as u32);
 
-        // Combine all instructions
         let all_instructions = vec![
             create_associated_token_account_instruction,
             create_associated_token_account_instruction_recipient,
@@ -405,7 +443,53 @@ impl TestAccountSetup {
             create_token_2022_account_instruction_sender,
             create_token_2022_account_instruction_recipient,
             create_token_2022_account_instruction_fee_payer,
+            token_instruction::mint_to(
+                &spl_token_interface::id(),
+                &self.usdc_mint.pubkey(),
+                &sender_token_account,
+                &self.sender_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
+            token_2022_instruction::mint_to(
+                &spl_token_2022_interface::id(),
+                &self.usdc_mint_2022.pubkey(),
+                &sender_token_2022_account,
+                &self.sender_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &self.sender_keypair.pubkey(),
+                &ts_auth_wallet(),
+                &self.usdc_mint.pubkey(),
+                &spl_token_interface::id(),
+            ),
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &self.sender_keypair.pubkey(),
+                &ts_free_wallet(),
+                &self.usdc_mint.pubkey(),
+                &spl_token_interface::id(),
+            ),
+            token_instruction::mint_to(
+                &spl_token_interface::id(),
+                &self.usdc_mint.pubkey(),
+                &ts_auth_wallet_token_account,
+                &self.sender_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
+            token_instruction::mint_to(
+                &spl_token_interface::id(),
+                &self.usdc_mint.pubkey(),
+                &ts_free_wallet_token_account,
+                &self.sender_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
         ];
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
 
         let transaction = Transaction::new_signed_with_payer(
             &all_instructions,
@@ -415,15 +499,6 @@ impl TestAccountSetup {
         );
 
         self.rpc_client.send_and_confirm_transaction(&transaction).await?;
-
-        let mint_amount =
-            1_000_000 * 10_u64.pow(USDCMintTestHelper::get_test_usdc_mint_decimals() as u32);
-
-        // Mint regular SPL tokens
-        self.mint_tokens_to_account(&sender_token_account, mint_amount).await?;
-
-        // Mint Token 2022 tokens
-        self.mint_tokens_2022_to_account(&sender_token_2022_account, mint_amount).await?;
 
         Ok((
             sender_token_account,
@@ -483,7 +558,7 @@ impl TestAccountSetup {
         Ok(())
     }
 
-    async fn create_lookup_tables(&mut self) -> Result<(Pubkey, Pubkey, Pubkey)> {
+    async fn create_lookup_tables(&self) -> Result<(Pubkey, Pubkey, Pubkey)> {
         let (allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table) =
             LookupTableHelper::setup_and_save_lookup_tables(self.rpc_client.clone()).await?;
 
@@ -607,6 +682,28 @@ impl TestAccountSetup {
             &spl_token_2022_interface::id(),
         );
 
+        let all_accounts = (
+            sender_token_account,
+            recipient_token_account,
+            fee_payer_token_account,
+            sender_token_2022_account,
+            recipient_token_2022_account,
+            fee_payer_token_2022_account,
+        );
+        if self
+            .all_token_accounts_exist(&[
+                sender_token_account,
+                recipient_token_account,
+                fee_payer_token_account,
+                sender_token_2022_account,
+                recipient_token_2022_account,
+                fee_payer_token_2022_account,
+            ])
+            .await?
+        {
+            return Ok(all_accounts);
+        }
+
         // Create regular SPL Token accounts
         let create_associated_token_account_instruction =
             spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
@@ -657,7 +754,8 @@ impl TestAccountSetup {
                 &spl_token_2022_interface::id(),
             );
 
-        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let mint_amount =
+            1_000_000 * 10_u64.pow(USDCMintTestHelper::get_test_usdc_mint_decimals() as u32);
 
         let all_instructions = vec![
             create_associated_token_account_instruction,
@@ -666,7 +764,25 @@ impl TestAccountSetup {
             create_token_2022_account_instruction_sender,
             create_token_2022_account_instruction_recipient,
             create_token_2022_account_instruction_fee_payer,
+            token_instruction::mint_to(
+                &spl_token_interface::id(),
+                &self.fee_payer_policy_mint.pubkey(),
+                &sender_token_account,
+                &self.fee_payer_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
+            token_2022_instruction::mint_to(
+                &spl_token_2022_interface::id(),
+                &self.fee_payer_policy_mint_2022.pubkey(),
+                &sender_token_2022_account,
+                &self.fee_payer_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
         ];
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
 
         let transaction = Transaction::new_signed_with_payer(
             &all_instructions,
@@ -676,16 +792,6 @@ impl TestAccountSetup {
         );
 
         self.rpc_client.send_and_confirm_transaction(&transaction).await?;
-
-        let mint_amount =
-            1_000_000 * 10_u64.pow(USDCMintTestHelper::get_test_usdc_mint_decimals() as u32);
-
-        // Mint regular SPL tokens
-        self.mint_fee_payer_policy_tokens_to_account(&sender_token_account, mint_amount).await?;
-
-        // Mint Token 2022 tokens
-        self.mint_fee_payer_policy_tokens_2022_to_account(&sender_token_2022_account, mint_amount)
-            .await?;
 
         Ok((
             sender_token_account,
@@ -820,4 +926,12 @@ impl TestAccountSetup {
         self.rpc_client.send_and_confirm_transaction(&transaction).await?;
         Ok(token_account)
     }
+}
+
+pub fn ts_auth_wallet() -> Pubkey {
+    Pubkey::from_str(TS_AUTH_WALLET_PUBKEY).expect("Invalid TS auth wallet pubkey")
+}
+
+pub fn ts_free_wallet() -> Pubkey {
+    Pubkey::from_str(TS_FREE_WALLET_PUBKEY).expect("Invalid TS free wallet pubkey")
 }

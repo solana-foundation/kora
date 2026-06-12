@@ -46,6 +46,19 @@ impl TestCommandHelper {
         cmd.args(["test", "-p", "tests", "--test", test_name, "--", "--nocapture"])
             .env(TEST_SERVER_URL_ENV, &server_url);
 
+        // The runner itself is launched via `cargo run`, which injects CARGO_* vars.
+        // If they leak into this child `cargo test`, build-script fingerprints record
+        // them and every alternation with a plain `cargo` invocation rebuilds the world.
+        for (key, _) in std::env::vars() {
+            if key == "CARGO"
+                || key == "CARGO_MANIFEST_DIR"
+                || key == "CARGO_MANIFEST_PATH"
+                || key.starts_with("CARGO_PKG_")
+            {
+                cmd.env_remove(&key);
+            }
+        }
+
         for account_file in AccountFile::required_test_accounts_env_vars() {
             let (env_var, value) = account_file.get_as_env_var();
             cmd.env(env_var, value);

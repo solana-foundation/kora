@@ -88,8 +88,8 @@ just integration-test
 
 **What happens automatically:**
 1. **Solana Validator**: Starts local test validator with reset
-2. **Test Environment Setup**: Creates test accounts, tokens, and ATAs
-3. **Sequential Test Phases**: Runs 3 test suites with different configurations
+2. **Test Environment Setup**: Creates test accounts, tokens, ATAs, lookup tables, and test programs
+3. **Concurrent Test Phases**: Runs all phases in parallel, one Kora server per phase
 
 **Test Phases (Configured in `tests/src/test_runner/test_cases.toml`):**
 

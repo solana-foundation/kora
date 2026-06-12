@@ -1,25 +1,38 @@
 use crate::common::*;
 use jsonrpsee::rpc_params;
-use solana_sdk::signature::Signer;
+use solana_sdk::signature::{Keypair, Signer};
 
-/// Test transaction limit enforcement - 4 succeed (windowed limit), 5th fails
-/// Config: windowed=4/30s, lifetime=5
-/// The windowed limit kicks in before lifetime limit
-#[tokio::test]
-async fn test_transaction_limit_enforcement() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
+const WINDOW_SECS: u64 = 30;
+const WINDOW_ATTEMPTS: u32 = 3;
 
-    let sender = create_funded_wallet(&ctx).await;
+/// Windowed limits count per fixed time bucket (`unix_time / window_seconds`),
+/// so the counter resets at every multiple of the window.
+fn current_window_bucket() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before unix epoch")
+        .as_secs()
+        / WINDOW_SECS
+}
+
+/// Sends four transfers (filling the 4-per-30s windowed limit) and a fifth
+/// expected to exceed it. Returns None when the sends straddled a window
+/// boundary — the counter legitimately reset mid-test, so the caller must
+/// retry with a fresh wallet instead of asserting anything.
+async fn attempt_windowed_overflow(
+    ctx: &TestContext,
+    sender: &Keypair,
+    user_id: &str,
+) -> Option<anyhow::Result<serde_json::Value>> {
     let recipient = RecipientTestHelper::get_recipient_pubkey();
-    let user_id = "test-user-tx-limit";
+    let start_bucket = current_window_bucket();
 
-    // First 4 transactions should succeed (windowed limit is 4 per 30s)
     for i in 1..=4 {
         let tx_b64 = ctx
             .transaction_builder()
             .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
             .with_transfer(&sender.pubkey(), &recipient, 1000)
-            .with_signer(&sender)
+            .with_signer(sender)
             .build()
             .await
             .expect("Failed to build transaction");
@@ -27,13 +40,10 @@ async fn test_transaction_limit_enforcement() {
         let response: serde_json::Value = ctx
             .rpc_call(
                 "signAndSendTransaction",
-                rpc_params![tx_b64.clone(), None::<String>, false, user_id.to_string()],
+                rpc_params![tx_b64, None::<String>, false, user_id.to_string()],
             )
             .await
-            .unwrap_or_else(|e| {
-                eprintln!("RPC error for transaction #{i}: {:?}", e);
-                panic!("Failed to sign transaction #{i}: {}", e);
-            });
+            .unwrap_or_else(|e| panic!("Failed to sign transaction #{i}: {e}"));
 
         response.assert_success();
         assert!(
@@ -42,13 +52,11 @@ async fn test_transaction_limit_enforcement() {
         );
     }
 
-    print!("Sending 5th transaction");
-    // 5th transaction should fail (exceeds windowed limit of 4 per 30s)
     let tx_b64 = ctx
         .transaction_builder()
         .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
         .with_transfer(&sender.pubkey(), &recipient, 1000)
-        .with_signer(&sender)
+        .with_signer(sender)
         .build()
         .await
         .expect("Failed to build transaction");
@@ -56,12 +64,43 @@ async fn test_transaction_limit_enforcement() {
     let result = ctx
         .rpc_call::<serde_json::Value, _>(
             "signAndSendTransaction",
-            rpc_params![tx_b64.clone(), None::<String>, false, user_id.to_string()],
+            rpc_params![tx_b64, None::<String>, false, user_id.to_string()],
         )
         .await;
 
-    let err = result.expect_err("Expected error for 5th transaction exceeding windowed limit");
-    err.assert_contains_message("Usage limit exceeded");
+    if current_window_bucket() != start_bucket {
+        return None;
+    }
+    Some(result)
+}
+
+/// Test transaction limit enforcement - 4 succeed (windowed limit), 5th fails
+/// Config: windowed=4/30s, lifetime=5
+/// The windowed limit kicks in before lifetime limit
+#[tokio::test]
+async fn test_transaction_limit_enforcement() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    for attempt in 0..WINDOW_ATTEMPTS {
+        let sender = create_funded_wallet(&ctx).await;
+        let user_id = format!("test-user-tx-limit-{attempt}");
+
+        match attempt_windowed_overflow(&ctx, &sender, &user_id).await {
+            None => continue,
+            Some(Err(err)) => {
+                err.assert_contains_message("Usage limit exceeded");
+                return;
+            }
+            Some(Ok(response)) => {
+                panic!("Expected 5th transaction to exceed windowed limit, got: {response}")
+            }
+        }
+    }
+
+    panic!(
+        "five sends never completed inside the {WINDOW_SECS}s window across \
+        {WINDOW_ATTEMPTS} attempts; environment too slow to verify windowed limits"
+    );
 }
 
 /// Test transaction lifetime limit - allow N transactions, deny N+1
@@ -148,52 +187,32 @@ async fn test_transaction_lifetime_limit() {
 #[tokio::test]
 async fn test_transaction_time_windowed_limit() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
-
-    let sender = create_funded_wallet(&ctx).await;
-    let user_id = sender.pubkey().to_string();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
 
-    // First 4 transactions should succeed (windowed limit is 4 per 30s)
-    for i in 1..=4 {
-        let tx_b64 = ctx
-            .transaction_builder()
-            .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-            .with_transfer(&sender.pubkey(), &recipient, 1000)
-            .with_signer(&sender)
-            .build()
-            .await
-            .expect("Failed to build transaction");
+    let mut verified = None;
+    for _ in 0..WINDOW_ATTEMPTS {
+        let sender = create_funded_wallet(&ctx).await;
+        let user_id = sender.pubkey().to_string();
 
-        let response: serde_json::Value = ctx
-            .rpc_call(
-                "signAndSendTransaction",
-                rpc_params![tx_b64, None::<String>, false, user_id.clone()],
-            )
-            .await
-            .unwrap_or_else(|_| panic!("Failed to sign transaction #{i}"));
-
-        response.assert_success();
+        match attempt_windowed_overflow(&ctx, &sender, &user_id).await {
+            None => continue,
+            Some(Err(err)) => {
+                err.assert_contains_message("Usage limit exceeded");
+                verified = Some((sender, user_id));
+                break;
+            }
+            Some(Ok(response)) => {
+                panic!("Expected 5th transaction to exceed windowed limit, got: {response}")
+            }
+        }
     }
 
-    // 5th transaction should fail (exceeds windowed limit of 4)
-    let tx_b64 = ctx
-        .transaction_builder()
-        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-        .with_transfer(&sender.pubkey(), &recipient, 1000)
-        .with_signer(&sender)
-        .build()
-        .await
-        .expect("Failed to build transaction");
-
-    let result = ctx
-        .rpc_call::<serde_json::Value, _>(
-            "signAndSendTransaction",
-            rpc_params![tx_b64, None::<String>, false, user_id.clone()],
-        )
-        .await;
-
-    let err = result.expect_err("Expected error for 5th transaction exceeding windowed limit");
-    err.assert_contains_message("Usage limit exceeded");
+    let Some((sender, user_id)) = verified else {
+        panic!(
+            "five sends never completed inside the {WINDOW_SECS}s window across \
+            {WINDOW_ATTEMPTS} attempts; environment too slow to verify windowed limits"
+        );
+    };
 
     // Wait 31 seconds for window to reset
     tokio::time::sleep(tokio::time::Duration::from_secs(31)).await;
@@ -240,80 +259,63 @@ async fn test_transaction_time_windowed_limit() {
     err.assert_contains_message("Usage limit exceeded");
 }
 
-/// Test independent wallet limits - each wallet has separate counter
-/// Config: windowed=4/30s - each wallet gets its own 4-tx limit
+/// Test independent wallet limits - each user_id has its own windowed counter
+/// Config: windowed=4/30s
 #[tokio::test]
 async fn test_independent_wallet_limits() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
-
-    let sender1 = create_funded_wallet(&ctx).await;
-    let sender2 = create_funded_wallet(&ctx).await;
-    let user_id1 = sender1.pubkey().to_string();
-    let user_id2 = sender2.pubkey().to_string();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
 
-    // Use up wallet1's windowed limit (4 transactions per 30s)
-    for _ in 1..=4 {
-        let tx1_b64 = ctx
-            .transaction_builder()
-            .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-            .with_transfer(&sender1.pubkey(), &recipient, 1000)
-            .with_signer(&sender1)
-            .build()
-            .await
-            .expect("Failed to build transaction for sender1");
+    for _ in 0..WINDOW_ATTEMPTS {
+        let start_bucket = current_window_bucket();
+        let sender1 = create_funded_wallet(&ctx).await;
+        let sender2 = create_funded_wallet(&ctx).await;
+        let user_id1 = sender1.pubkey().to_string();
+        let user_id2 = sender2.pubkey().to_string();
 
-        let response: serde_json::Value = ctx
-            .rpc_call(
-                "signAndSendTransaction",
-                rpc_params![tx1_b64, None::<String>, false, user_id1.clone()],
-            )
-            .await
-            .expect("Failed to sign transaction for sender1");
+        // Exhaust wallet1's windowed limit and capture the over-limit outcome
+        let Some(result1) = attempt_windowed_overflow(&ctx, &sender1, &user_id1).await else {
+            continue;
+        };
 
-        response.assert_success();
+        // Wallet2 must still be allowed: counters are independent per user
+        let mut responses2 = Vec::new();
+        for i in 1..=4 {
+            let tx2_b64 = ctx
+                .transaction_builder()
+                .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
+                .with_transfer(&sender2.pubkey(), &recipient, 1000)
+                .with_signer(&sender2)
+                .build()
+                .await
+                .expect("Failed to build transaction for sender2");
+
+            let response: serde_json::Value = ctx
+                .rpc_call(
+                    "signAndSendTransaction",
+                    rpc_params![tx2_b64, None::<String>, false, user_id2.clone()],
+                )
+                .await
+                .unwrap_or_else(|e| panic!("Failed to sign transaction #{i} for sender2: {e}"));
+            responses2.push(response);
+        }
+
+        // Only meaningful if everything stayed in one window bucket: otherwise
+        // wallet2 would have been allowed even with a shared counter
+        if current_window_bucket() != start_bucket {
+            continue;
+        }
+
+        let err = result1.expect_err("Expected error for sender1 exceeding limit");
+        err.assert_contains_message("Usage limit exceeded");
+        for response in responses2 {
+            response.assert_success();
+        }
+        return;
     }
 
-    // Wallet1 should now be denied (hit windowed limit)
-    let tx1_b64 = ctx
-        .transaction_builder()
-        .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-        .with_transfer(&sender1.pubkey(), &recipient, 1000)
-        .with_signer(&sender1)
-        .build()
-        .await
-        .expect("Failed to build transaction for sender1");
-
-    let result1 = ctx
-        .rpc_call::<serde_json::Value, _>(
-            "signAndSendTransaction",
-            rpc_params![tx1_b64, None::<String>, false, user_id1.clone()],
-        )
-        .await;
-
-    let err = result1.expect_err("Expected error for sender1 exceeding limit");
-    err.assert_contains_message("Usage limit exceeded");
-
-    // Wallet2 should still be able to make transactions (independent limit)
-    // Each wallet has its own windowed counter
-    for _ in 1..=4 {
-        let tx2_b64 = ctx
-            .transaction_builder()
-            .with_fee_payer(FeePayerTestHelper::get_fee_payer_pubkey())
-            .with_transfer(&sender2.pubkey(), &recipient, 1000)
-            .with_signer(&sender2)
-            .build()
-            .await
-            .expect("Failed to build transaction for sender2");
-
-        let response: serde_json::Value = ctx
-            .rpc_call(
-                "signAndSendTransaction",
-                rpc_params![tx2_b64, None::<String>, false, user_id2.clone()],
-            )
-            .await
-            .expect("Failed to sign transaction for sender2");
-
-        response.assert_success();
-    }
+    panic!(
+        "both wallets never completed inside one {WINDOW_SECS}s window across \
+        {WINDOW_ATTEMPTS} attempts; environment too slow to verify windowed limits"
+    );
 }

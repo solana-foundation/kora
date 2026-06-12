@@ -1,17 +1,13 @@
 use crate::{
-    common::constants::DEFAULT_RPC_URL,
+    common::constants::{
+        DEFAULT_RPC_URL, LIGHTHOUSE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_PATH, TRANSFER_HOOK_PROGRAM_ID,
+        TRANSFER_HOOK_PROGRAM_PATH,
+    },
     test_runner::accounts::{get_account_address_from_file, AccountFile},
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::path::Path;
 use tokio::process::Child;
-
-const TRANSFER_HOOK_PROGRAM_ID: &str = "Bcdikjss8HWzKEuj6gEQoFq9TCnGnk6v3kUnRU1gb6hA";
-const TRANSFER_HOOK_PROGRAM_PATH: &str =
-    "tests/src/common/transfer-hook-example/transfer_hook_example.so";
-const LIGHTHOUSE_PROGRAM_ID: &str = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
-
-const LIGHTHOUSE_PROGRAM_PATH: &str = "tests/src/common/fixtures/test-programs/lighthouse.so";
 
 pub async fn check_test_validator(rpc_url: &str) -> bool {
     let client = RpcClient::new_with_commitment(
@@ -24,6 +20,15 @@ pub async fn check_test_validator(rpc_url: &str) -> bool {
 pub async fn start_test_validator(
     load_accounts: bool,
 ) -> Result<Child, Box<dyn std::error::Error + Send + Sync>> {
+    if check_test_validator(DEFAULT_RPC_URL).await {
+        return Err(format!(
+            "A validator is already running on {DEFAULT_RPC_URL}; the new one would fail to \
+            bind and tests would silently run against stale state. Stop it first \
+            (pkill -f solana-test-validator)."
+        )
+        .into());
+    }
+
     let mut cmd = tokio::process::Command::new("solana-test-validator");
     cmd.arg("--reset").arg("--quiet");
 
@@ -76,6 +81,17 @@ pub async fn start_test_validator(
 
         tokio::time::sleep(delay).await;
         delay = std::cmp::min(delay * 2, max_delay);
+    }
+
+    // Programs deployed at genesis (--bpf-program, SPL programs) are not
+    // executable until the slot after their deployment slot; health alone can
+    // pass at slot 0 before any transaction would succeed
+    let client = RpcClient::new_with_commitment(
+        DEFAULT_RPC_URL.to_string(),
+        solana_commitment_config::CommitmentConfig::confirmed(),
+    );
+    while client.get_slot().await.unwrap_or(0) < 2 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
     println!("Solana test validator started successfully");

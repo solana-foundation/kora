@@ -1,6 +1,7 @@
 use crate::common::{
-    ExtensionHelpers, FeePayerTestHelper, RecipientTestHelper, SenderTestHelper, TestContext,
-    TransactionBuilder, USDCMint2022TestHelper, USDCMintTestHelper, TRANSFER_HOOK_PROGRAM_ID,
+    send_and_confirm_allow_duplicate, ExtensionHelpers, FeePayerTestHelper, RecipientTestHelper,
+    SenderTestHelper, TestContext, TransactionBuilder, USDCMint2022TestHelper, USDCMintTestHelper,
+    TRANSFER_HOOK_PROGRAM_ID,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use jsonrpsee::rpc_params;
@@ -67,8 +68,7 @@ async fn test_blocked_memo_transfer_extension() {
         recent_blockhash,
     );
 
-    ctx.rpc_client()
-        .send_and_confirm_transaction(&create_atas_transaction)
+    send_and_confirm_allow_duplicate(ctx.rpc_client(), &create_atas_transaction)
         .await
         .expect("Failed to create ATAs");
 
@@ -175,8 +175,7 @@ async fn test_blocked_interest_bearing_config_extension() {
         recent_blockhash,
     );
 
-    ctx.rpc_client()
-        .send_and_confirm_transaction(&create_atas_transaction)
+    send_and_confirm_allow_duplicate(ctx.rpc_client(), &create_atas_transaction)
         .await
         .expect("Failed to create ATAs");
 
@@ -274,8 +273,7 @@ async fn test_transfer_fee_insufficient_payment() {
         recent_blockhash,
     );
 
-    ctx.rpc_client()
-        .send_and_confirm_transaction(&create_atas_transaction)
+    send_and_confirm_allow_duplicate(ctx.rpc_client(), &create_atas_transaction)
         .await
         .expect("Failed to create ATAs");
 
@@ -378,8 +376,7 @@ async fn test_transfer_fee_sufficient_payment() {
         recent_blockhash,
     );
 
-    ctx.rpc_client()
-        .send_and_confirm_transaction(&create_atas_transaction)
+    send_and_confirm_allow_duplicate(ctx.rpc_client(), &create_atas_transaction)
         .await
         .expect("Failed to create ATAs");
 
@@ -498,7 +495,9 @@ async fn test_transfer_hook_allows_transfer() {
         recent_blockhash,
     );
 
-    rpc_client.send_and_confirm_transaction(&create_atas_tx).await.expect("Failed to create ATAs");
+    send_and_confirm_allow_duplicate(rpc_client, &create_atas_tx)
+        .await
+        .expect("Failed to create ATAs");
 
     ExtensionHelpers::mint_tokens_to_account(
         rpc_client,
@@ -651,7 +650,9 @@ async fn test_transfer_hook_blocks_transfer() {
         recent_blockhash,
     );
 
-    rpc_client.send_and_confirm_transaction(&create_atas_tx).await.expect("Failed to create ATAs");
+    send_and_confirm_allow_duplicate(rpc_client, &create_atas_tx)
+        .await
+        .expect("Failed to create ATAs");
 
     // Mint tokens to sender (more than the hook limit of 1M)
     ExtensionHelpers::mint_tokens_to_account(

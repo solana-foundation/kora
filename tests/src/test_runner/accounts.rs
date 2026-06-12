@@ -37,6 +37,10 @@ pub enum AccountFile {
     AllowedLookupTable,
     DisallowedLookupTable,
     TransactionLookupTable,
+    TsAuthWallet,
+    TsAuthWalletTokenAccount,
+    TsFreeWallet,
+    TsFreeWalletTokenAccount,
     Signer2,
     InterestBearingMint,
     TransferHookMint,
@@ -77,6 +81,10 @@ impl AccountFile {
             Self::FeePayerPolicyFeePayerToken2022Account => {
                 "fee-payer-policy-fee-payer-token-2022-account-local.json"
             }
+            Self::TsAuthWallet => "ts-auth-wallet-local.json",
+            Self::TsAuthWalletTokenAccount => "ts-auth-wallet-token-account-local.json",
+            Self::TsFreeWallet => "ts-free-wallet-local.json",
+            Self::TsFreeWalletTokenAccount => "ts-free-wallet-token-account-local.json",
             Self::AllowedLookupTable => "allowed-lookup-table-local.json",
             Self::DisallowedLookupTable => "disallowed-lookup-table-local.json",
             Self::TransactionLookupTable => "transaction-lookup-table-local.json",
@@ -115,6 +123,10 @@ impl AccountFile {
         Path::new(TEST_ACCOUNTS_DIR).join(self.filename())
     }
 
+    /// Accounts created during setup and cached as fixtures for `--account`
+    /// genesis preloading. Accounts created lazily at test time (extension
+    /// mints, payment address) must not be listed: they don't exist when the
+    /// cache is written, so listing them keeps the cache permanently cold.
     pub fn required_test_accounts() -> &'static [AccountFile] {
         &[
             Self::FeePayer,
@@ -139,10 +151,10 @@ impl AccountFile {
             Self::AllowedLookupTable,
             Self::DisallowedLookupTable,
             Self::TransactionLookupTable,
-            Self::Signer2,
-            Self::InterestBearingMint,
-            Self::TransferHookMint,
-            Self::Payment,
+            Self::TsAuthWallet,
+            Self::TsAuthWalletTokenAccount,
+            Self::TsFreeWallet,
+            Self::TsFreeWalletTokenAccount,
         ]
     }
 
@@ -297,15 +309,72 @@ pub async fn download_accounts(
     AccountFile::FeePayerPolicyFeePayerToken2022Account
         .save_account_for_file(client, &test_accounts.fee_payer_policy_fee_payer_token_2022_account)
         .await?;
-    AccountFile::AllowedLookupTable
-        .save_account_for_file(client, &test_accounts.allowed_lookup_table)
-        .await?;
-    AccountFile::DisallowedLookupTable
-        .save_account_for_file(client, &test_accounts.disallowed_lookup_table)
-        .await?;
-    AccountFile::TransactionLookupTable
-        .save_account_for_file(client, &test_accounts.transaction_lookup_table)
-        .await?;
+    let ts_auth_wallet = crate::common::setup::ts_auth_wallet();
+    let ts_free_wallet = crate::common::setup::ts_free_wallet();
+    let usdc_mint = test_accounts.usdc_mint_pubkey;
+    for (account_file, address) in [
+        (AccountFile::TsAuthWallet, ts_auth_wallet),
+        (
+            AccountFile::TsAuthWalletTokenAccount,
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &ts_auth_wallet,
+                &usdc_mint,
+            ),
+        ),
+        (AccountFile::TsFreeWallet, ts_free_wallet),
+        (
+            AccountFile::TsFreeWalletTokenAccount,
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &ts_free_wallet,
+                &usdc_mint,
+            ),
+        ),
+    ] {
+        account_file.save_account_for_file(client, &address).await?;
+    }
+
+    for (account_file, address) in [
+        (AccountFile::AllowedLookupTable, &test_accounts.allowed_lookup_table),
+        (AccountFile::DisallowedLookupTable, &test_accounts.disallowed_lookup_table),
+        (AccountFile::TransactionLookupTable, &test_accounts.transaction_lookup_table),
+    ] {
+        save_lookup_table_account(client, address, account_file.test_account_path()).await?;
+    }
+    Ok(())
+}
+
+/// Lookup table addresses only activate once the chain passes the table's
+/// `last_extended_slot`; a freshly reset validator starts at slot 0, so the
+/// cached fixture is rewritten as if created at genesis to be usable
+/// immediately when preloaded.
+async fn save_lookup_table_account(
+    client: &RpcClient,
+    address: &Pubkey,
+    path: std::path::PathBuf,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use solana_address_lookup_table_interface::state::{AddressLookupTable, LookupTableMeta};
+
+    let account = client.get_account(address).await?;
+    let table = AddressLookupTable::deserialize(&account.data)?;
+    let genesis_table = AddressLookupTable {
+        meta: LookupTableMeta { authority: table.meta.authority, ..Default::default() },
+        addresses: table.addresses.clone(),
+    };
+    let data = genesis_table.serialize_for_tests()?;
+
+    let account_data = serde_json::json!({
+        "pubkey": address.to_string(),
+        "account": {
+            "lamports": account.lamports,
+            "data": [STANDARD.encode(&data), "base64"],
+            "owner": account.owner.to_string(),
+            "executable": account.executable,
+            "rentEpoch": 0
+        }
+    });
+
+    std::fs::write(path, serde_json::to_string_pretty(&account_data)?)?;
+
     Ok(())
 }
 

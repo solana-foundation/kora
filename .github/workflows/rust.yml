@@ -46,7 +46,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-group: [regular, auth, payment_address, multi_signer]
+        # external excluded: hits live Jupiter API
+        test-group:
+          [
+            regular,
+            auth,
+            payment_address,
+            multi_signer,
+            fee_payer_policy,
+            free_signing,
+            lighthouse,
+            loader_v3_deploy,
+            usage_limit,
+          ]
     steps:
       - uses: actions/checkout@v6
 

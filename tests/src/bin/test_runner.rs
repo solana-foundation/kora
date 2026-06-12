@@ -1,18 +1,20 @@
 use clap::Parser;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use solana_sdk::pubkey::Pubkey;
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Instant};
 use tests::{
     common::{constants::DEFAULT_RPC_URL, setup::TestAccountSetup, TestAccountInfo},
     test_runner::{
         accounts::{
-            download_accounts, set_environment_variables, set_lookup_table_environment_variables,
-            AccountFile,
+            download_accounts, get_account_address_from_file, set_environment_variables,
+            set_lookup_table_environment_variables, AccountFile,
         },
         commands::{TestCommandHelper, TestLanguage},
         config::{TestPhaseConfig, TestRunnerConfig},
         kora::{
             get_kora_binary_path, is_kora_running_with_client, release_port, start_kora_rpc_server,
+            stop_kora_gracefully,
         },
         output::{
             filter_command_output, limit_output_size, OutputFilter, PhaseOutput, TestPhaseColor,
@@ -114,6 +116,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut test_runner = TestRunner::new(args.rpc_url.clone()).await?;
     let custom_rpc_url = args.rpc_url != DEFAULT_RPC_URL;
 
+    std::env::set_var(tests::common::RPC_URL_ENV, &args.rpc_url);
+
     let (result, completed_phases) = async {
         setup_test_env(&mut test_runner, args.force_refresh, custom_rpc_url).await?;
         let phases =
@@ -141,11 +145,26 @@ Setting up test environment
 */
 
 pub async fn setup_test_env_from_scratch(
+    cached_lookup_tables: Option<(Pubkey, Pubkey, Pubkey)>,
 ) -> Result<TestAccountInfo, Box<dyn std::error::Error + Send + Sync>> {
     let mut setup = TestAccountSetup::new().await;
-    let test_accounts = setup.setup_all_accounts().await?;
+    let test_accounts = setup.setup_all_accounts(cached_lookup_tables).await?;
 
     Ok(test_accounts)
+}
+
+async fn cached_lookup_table_addresses(
+) -> Result<(Pubkey, Pubkey, Pubkey), Box<dyn std::error::Error + Send + Sync>> {
+    let mut addresses = Vec::with_capacity(3);
+    for account_file in [
+        AccountFile::AllowedLookupTable,
+        AccountFile::DisallowedLookupTable,
+        AccountFile::TransactionLookupTable,
+    ] {
+        let address = get_account_address_from_file(&account_file.test_account_path()).await?;
+        addresses.push(Pubkey::from_str(&address)?);
+    }
+    Ok((addresses[0], addresses[1], addresses[2]))
 }
 
 async fn setup_test_env(
@@ -155,7 +174,7 @@ async fn setup_test_env(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut found_all_accounts = !force_refresh;
 
-    if !force_refresh {
+    if found_all_accounts {
         for account_file in AccountFile::required_test_accounts() {
             if !account_file.test_account_path().exists() {
                 found_all_accounts = false;
@@ -174,7 +193,9 @@ async fn setup_test_env(
 
     set_environment_variables(&test_runner.cached_keys)?;
 
-    test_runner.test_accounts = setup_test_env_from_scratch().await?;
+    let cached_lookup_tables =
+        if found_all_accounts { Some(cached_lookup_table_addresses().await?) } else { None };
+    test_runner.test_accounts = setup_test_env_from_scratch(cached_lookup_tables).await?;
 
     if !found_all_accounts {
         download_accounts(&test_runner.rpc_client.clone(), &test_runner.test_accounts).await?;
@@ -412,7 +433,7 @@ pub async fn run_test_phase(
     }
     .await;
 
-    kora_pid.kill().await.ok();
+    stop_kora_gracefully(&mut kora_pid).await;
     release_port(actual_port);
 
     let success = result.is_ok();
@@ -496,11 +517,8 @@ pub async fn clean_up(
 
     // Kill tracked Kora processes (though they're managed locally in each test phase)
     for kora_pid in &mut test_runner.kora_pids {
-        if let Err(e) = kora_pid.kill().await {
-            println!("Failed to stop Kora process: {e}");
-        } else {
-            println!("Stopped Kora process");
-        }
+        stop_kora_gracefully(kora_pid).await;
+        println!("Stopped Kora process");
     }
 
     println!("=== Cleanup complete ===");

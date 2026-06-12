@@ -1,4 +1,4 @@
-use crate::common::USDCMintTestHelper;
+use crate::common::{send_and_confirm_allow_duplicate, USDCMintTestHelper};
 use anyhow::Result;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -95,7 +95,7 @@ impl ExtensionHelpers {
             recent_blockhash,
         );
 
-        rpc_client.send_and_confirm_transaction(&transaction).await?;
+        send_and_confirm_allow_duplicate(rpc_client, &transaction).await?;
         Ok(())
     }
 
@@ -156,7 +156,7 @@ impl ExtensionHelpers {
             recent_blockhash,
         );
 
-        rpc_client.send_and_confirm_transaction(&transaction).await?;
+        send_and_confirm_allow_duplicate(rpc_client, &transaction).await?;
         Ok(())
     }
 
@@ -189,7 +189,7 @@ impl ExtensionHelpers {
             recent_blockhash,
         );
 
-        rpc_client.send_and_confirm_transaction(&transaction).await?;
+        send_and_confirm_allow_duplicate(rpc_client, &transaction).await?;
         Ok(())
     }
 
