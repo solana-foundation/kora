@@ -134,9 +134,7 @@ async fn spawn_agave(
     load_accounts: bool,
 ) -> Result<Child, Box<dyn std::error::Error + Send + Sync>> {
     let mut cmd = tokio::process::Command::new("solana-test-validator");
-    // 32 ticks/slot = ~200ms slots: halves confirmation latency while keeping
-    // blockhash wall-clock expiry (~30s) safe for concurrent test phases
-    cmd.arg("--reset").arg("--quiet").arg("--ticks-per-slot").arg("32");
+    cmd.arg("--reset").arg("--quiet");
 
     if Path::new(TRANSFER_HOOK_PROGRAM_PATH).exists() {
         cmd.arg("--bpf-program").arg(TRANSFER_HOOK_PROGRAM_ID).arg(TRANSFER_HOOK_PROGRAM_PATH);
