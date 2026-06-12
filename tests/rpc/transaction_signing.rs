@@ -276,6 +276,27 @@ async fn test_sign_and_send_transaction_respond_after_signed() {
         decoded.signatures[0].to_string(),
         "Returned signature should be the transaction's first signature"
     );
+
+    // The response returns before the broadcast runs, so the transaction lands
+    // asynchronously. Poll its signature status to confirm the background broadcast
+    // actually submitted it to the network rather than dropping it silently.
+    let signature = solana_sdk::signature::Signature::from_str(signature)
+        .expect("Returned signature should parse");
+    let rpc_client = ctx.rpc_client();
+
+    let mut landed = false;
+    for _ in 0..20 {
+        let statuses = rpc_client
+            .get_signature_statuses(&[signature])
+            .await
+            .expect("getSignatureStatuses should succeed");
+        if statuses.value.first().and_then(|status| status.as_ref()).is_some() {
+            landed = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    assert!(landed, "Background broadcast should have submitted the transaction to the network");
 }
 
 #[tokio::test]
