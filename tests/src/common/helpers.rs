@@ -1,8 +1,10 @@
 use anyhow::Result;
 use kora_lib::signer::KeypairUtil;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
+    transaction::{Transaction, TransactionError},
 };
 use std::str::FromStr;
 
@@ -211,22 +213,16 @@ impl FeePayerPolicyMintTestHelper {
 }
 
 /// Concurrent tests sharing static keypairs can submit byte-identical setup
-/// transactions within one blockhash window; the duplicate is rejected with
-/// "already been processed" even though the intended state change landed.
+/// transactions within one blockhash window; the duplicate is rejected as
+/// already processed even though the intended state change landed.
 pub async fn send_and_confirm_allow_duplicate(
-    rpc_client: &solana_client::nonblocking::rpc_client::RpcClient,
-    transaction: &solana_sdk::transaction::Transaction,
-) -> anyhow::Result<()> {
-    use solana_client::client_error::ClientErrorKind;
-    use solana_sdk::transaction::TransactionError;
-
+    rpc_client: &RpcClient,
+    transaction: &Transaction,
+) -> Result<()> {
     match rpc_client.send_and_confirm_transaction(transaction).await {
         Ok(_) => Ok(()),
-        Err(e) => match e.kind() {
-            ClientErrorKind::TransactionError(TransactionError::AlreadyProcessed) => Ok(()),
-            _ if e.to_string().contains("already been processed") => Ok(()),
-            _ => Err(e.into()),
-        },
+        Err(e) if e.get_transaction_error() == Some(TransactionError::AlreadyProcessed) => Ok(()),
+        Err(e) => Err(e.into()),
     }
 }
 
