@@ -1,13 +1,14 @@
 use clap::Parser;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
+use solana_sdk::pubkey::Pubkey;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tests::{
     common::{constants::DEFAULT_RPC_URL, setup::TestAccountSetup, TestAccountInfo},
     test_runner::{
         accounts::{
-            download_accounts, set_environment_variables, set_lookup_table_environment_variables,
-            AccountFile,
+            download_accounts, get_account_address_from_file, set_environment_variables,
+            set_lookup_table_environment_variables, AccountFile,
         },
         commands::{TestCommandHelper, TestLanguage},
         config::{TestPhaseConfig, TestRunnerConfig},
@@ -144,11 +145,27 @@ Setting up test environment
 */
 
 pub async fn setup_test_env_from_scratch(
+    cached_lookup_tables: Option<(Pubkey, Pubkey, Pubkey)>,
 ) -> Result<TestAccountInfo, Box<dyn std::error::Error + Send + Sync>> {
     let mut setup = TestAccountSetup::new().await;
-    let test_accounts = setup.setup_all_accounts().await?;
+    let test_accounts = setup.setup_all_accounts(cached_lookup_tables).await?;
 
     Ok(test_accounts)
+}
+
+async fn cached_lookup_table_addresses(
+) -> Result<(Pubkey, Pubkey, Pubkey), Box<dyn std::error::Error + Send + Sync>> {
+    use std::str::FromStr;
+    let mut addresses = Vec::with_capacity(3);
+    for account_file in [
+        AccountFile::AllowedLookupTable,
+        AccountFile::DisallowedLookupTable,
+        AccountFile::TransactionLookupTable,
+    ] {
+        let address = get_account_address_from_file(&account_file.test_account_path()).await?;
+        addresses.push(Pubkey::from_str(&address)?);
+    }
+    Ok((addresses[0], addresses[1], addresses[2]))
 }
 
 async fn setup_test_env(
@@ -177,7 +194,9 @@ async fn setup_test_env(
 
     set_environment_variables(&test_runner.cached_keys)?;
 
-    test_runner.test_accounts = setup_test_env_from_scratch().await?;
+    let cached_lookup_tables =
+        if found_all_accounts { Some(cached_lookup_table_addresses().await?) } else { None };
+    test_runner.test_accounts = setup_test_env_from_scratch(cached_lookup_tables).await?;
 
     if !found_all_accounts {
         download_accounts(&test_runner.rpc_client.clone(), &test_runner.test_accounts).await?;

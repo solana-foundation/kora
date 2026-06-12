@@ -109,7 +109,10 @@ impl TestAccountSetup {
         }
     }
 
-    pub async fn setup_all_accounts(&mut self) -> Result<TestAccountInfo> {
+    pub async fn setup_all_accounts(
+        &mut self,
+        cached_lookup_tables: Option<(Pubkey, Pubkey, Pubkey)>,
+    ) -> Result<TestAccountInfo> {
         let (sender_pubkey, recipient_pubkey, fee_payer_pubkey) = self.fund_sol_accounts().await?;
 
         let usdc_branch = async {
@@ -143,7 +146,12 @@ impl TestAccountSetup {
                 fee_payer_policy_fee_payer_token_2022_account,
             ),
             (allowed_lookup_table, disallowed_lookup_table, transaction_lookup_table),
-        ) = tokio::try_join!(usdc_branch, policy_branch, self.create_lookup_tables())?;
+        ) = tokio::try_join!(usdc_branch, policy_branch, async {
+            match cached_lookup_tables {
+                Some(tables) => Ok(tables),
+                None => self.create_lookup_tables().await,
+            }
+        })?;
 
         Ok(TestAccountInfo {
             fee_payer_pubkey,

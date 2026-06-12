@@ -83,6 +83,17 @@ pub async fn start_test_validator(
         delay = std::cmp::min(delay * 2, max_delay);
     }
 
+    // Programs deployed at genesis (--bpf-program, SPL programs) are not
+    // executable until the slot after their deployment slot; health alone can
+    // pass at slot 0 before any transaction would succeed
+    let client = RpcClient::new_with_commitment(
+        DEFAULT_RPC_URL.to_string(),
+        solana_commitment_config::CommitmentConfig::confirmed(),
+    );
+    while client.get_slot().await.unwrap_or(0) < 2 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
     println!("Solana test validator started successfully");
     Ok(validator_pid)
 }
