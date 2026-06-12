@@ -560,6 +560,17 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         // transiently even though the transaction is valid.
         let send_config = RpcSendTransactionConfig { skip_preflight: true, ..Default::default() };
 
+        // Skipping preflight also skips the RPC node's signature verification, so a
+        // transaction with an unfilled co-signer slot (possible when validation ran
+        // with sig_verify off) would be accepted by the RPC but dropped silently by
+        // validators. Reject it here so the caller gets an error instead of a
+        // signature for a transaction that can never land.
+        if transaction.signatures.iter().any(|s| *s == Signature::default()) {
+            return Err(KoraError::InvalidTransaction(
+                "Transaction is missing required signatures".to_string(),
+            ));
+        }
+
         match confirmation {
             ConfirmationMode::Confirmed => {
                 let signature = rpc_client
@@ -578,16 +589,6 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                 Ok((signature.to_string(), encoded))
             }
             ConfirmationMode::None => {
-                // The response is built before the broadcast runs, so a transaction
-                // that can never land (missing co-signer signature when sig_verify is
-                // off) must be rejected here instead of failing silently in the
-                // background.
-                if transaction.signatures.iter().any(|s| *s == Signature::default()) {
-                    return Err(KoraError::InvalidTransaction(
-                        "Transaction is missing required signatures".to_string(),
-                    ));
-                }
-
                 // A Solana transaction is identified by its first signature, which is
                 // already present once signing completes — so the caller gets it
                 // without waiting for the broadcast.

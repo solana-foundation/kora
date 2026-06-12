@@ -190,6 +190,47 @@ async fn test_sign_and_send_transaction_confirmation_sent() {
 }
 
 #[tokio::test]
+async fn test_sign_and_send_transaction_confirmation_sent_rejects_missing_signature() {
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    // The sender is a required signer but never signs, leaving a default
+    // signature slot. With sig_verify=false nothing upstream catches it, and
+    // confirmation=sent skips preflight — so the server must reject it instead
+    // of returning a signature for a transaction validators will drop.
+    let test_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create unsigned test transaction");
+
+    let result: Result<serde_json::Value, _> = ctx
+        .rpc_call(
+            "signAndSendTransaction",
+            rpc_params![test_tx, None::<String>, false, None::<String>, "sent"],
+        )
+        .await;
+
+    let error = result.expect_err("Expected rejection for transaction with missing signature");
+    assert!(
+        error.to_string().contains("missing required signatures"),
+        "Expected missing-signatures error, got: {error}"
+    );
+}
+
+#[tokio::test]
 async fn test_sign_and_send_transaction_confirmation_none() {
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
