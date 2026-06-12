@@ -559,7 +559,12 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         // Validation already simulated the transaction, so the fast modes skip
         // preflight: a second simulation only delays landing and can fail
         // transiently even though the transaction is valid.
-        let send_config = RpcSendTransactionConfig { skip_preflight: true, ..Default::default() };
+        //
+        // That simulation ran before Kora signed and used the caller's sig_verify
+        // (default false), so it does not cover signature validity — only the
+        // explicit guard below does.
+        let skip_preflight_config =
+            RpcSendTransactionConfig { skip_preflight: true, ..Default::default() };
 
         // Skipping preflight also skips the RPC node's signature verification, so a
         // transaction with an unfilled co-signer slot (possible when validation ran
@@ -583,7 +588,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             }
             RespondAfter::Sent => {
                 let signature = rpc_client
-                    .send_transaction_with_config(&transaction, send_config)
+                    .send_transaction_with_config(&transaction, skip_preflight_config)
                     .await
                     .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
 
@@ -603,9 +608,15 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                     })?
                     .to_string();
 
-                // Broadcast in the background so the response returns instantly. The
-                // send is fire-and-forget: failures are logged rather than returned to
-                // the caller, who can rebroadcast the returned signed transaction.
+                // Broadcast in the background so the response returns instantly. This
+                // mode carries ZERO delivery guarantee: the response (signature +
+                // signed transaction) is returned before the send is even attempted,
+                // so any failure — a transient RPC error, the node dropping the
+                // transaction, or the broadcast never landing on-chain — happens after
+                // the caller already has a "successful" response. Failures are only
+                // logged server-side, never returned. Callers who need delivery
+                // assurance must use Sent or Confirmed, or rebroadcast the returned
+                // signed transaction themselves and verify it landed.
                 //
                 // The task is registered with the global tracker so a graceful
                 // shutdown drains in-flight broadcasts instead of cancelling them
@@ -614,7 +625,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                 let log_signature = signature.clone();
                 get_background_tasks().spawn(async move {
                     if let Err(e) =
-                        rpc_client.send_transaction_with_config(&transaction, send_config).await
+                        rpc_client
+                            .send_transaction_with_config(&transaction, skip_preflight_config)
+                            .await
                     {
                         log::error!(
                             "Background broadcast failed for transaction {log_signature}: {}",
