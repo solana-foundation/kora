@@ -19,19 +19,20 @@ export interface SignTransactionRequest {
 }
 
 /**
- * How long the server waits on the broadcast before responding:
+ * The transaction lifecycle milestone the server waits for before responding,
+ * ordered by increasing assurance: `signed` < `sent` < `confirmed`:
  * - `confirmed`: wait for on-chain confirmation (default)
  * - `sent`: return once the RPC node accepts the transaction
- * - `none`: broadcast in the background and return as soon as signing completes
+ * - `signed`: return as soon as signing completes and broadcast in the background
  */
-export type ConfirmationMode = 'confirmed' | 'none' | 'sent';
+export type RespondAfter = 'confirmed' | 'sent' | 'signed';
 
 /**
  * Parameters for signing and sending a transaction.
  */
 export interface SignAndSendTransactionRequest {
-    /** Optional broadcast wait mode (defaults to "confirmed") */
-    confirmation?: ConfirmationMode;
+    /** Optional milestone to wait for before responding (defaults to "confirmed") */
+    respond_after?: RespondAfter;
     /** Optional signer verification during transaction simulation (defaults to false) */
     sig_verify?: boolean;
     /** Optional signer address for the transaction */

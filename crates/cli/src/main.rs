@@ -211,7 +211,7 @@ async fn main() -> Result<(), KoraError> {
                     }
                     rpc_handle.stopped().await;
 
-                    // Drain fire-and-forget broadcasts (ConfirmationMode::None) so they
+                    // Drain fire-and-forget broadcasts (RespondAfter::Signed) so they
                     // reach an RPC node before the runtime exits and cancels them.
                     let drain_timeout = Duration::from_secs(30);
                     if !drain_background_tasks(drain_timeout).await {

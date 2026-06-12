@@ -318,10 +318,10 @@ describe('KoraClient Unit Tests', () => {
             );
         });
 
-        it('should pass the confirmation mode through to the RPC request', async () => {
+        it('should pass the respond_after milestone through to the RPC request', async () => {
             const request: SignAndSendTransactionRequest = {
                 transaction: 'base64_encoded_transaction',
-                confirmation: 'none',
+                respond_after: 'signed',
             };
             const mockResponse: SignAndSendTransactionResponse = {
                 signature: 'transaction_signature',

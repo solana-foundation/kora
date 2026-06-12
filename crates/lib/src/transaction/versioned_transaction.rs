@@ -91,20 +91,21 @@ impl Deref for VersionedTransactionResolved {
     }
 }
 
-/// How long `signAndSendTransaction` waits on the broadcast before responding.
+/// The transaction lifecycle milestone `signAndSendTransaction` waits for before
+/// responding, ordered by increasing assurance: `Signed` < `Sent` < `Confirmed`.
 ///
 /// All modes share the immediate sign-and-send validation flow (`will_send = true`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum ConfirmationMode {
+pub enum RespondAfter {
     /// Wait for on-chain confirmation at `confirmed` commitment (default).
     #[default]
     Confirmed,
     /// Wait only until the RPC node accepts the transaction; no confirmation wait.
     Sent,
-    /// Broadcast in the background and return as soon as signing completes. Broadcast
+    /// Return as soon as signing completes and broadcast in the background. Broadcast
     /// failures are logged server-side, not returned to the caller.
-    None,
+    Signed,
 }
 
 #[async_trait]
@@ -126,7 +127,7 @@ pub trait VersionedTransactionOps {
         config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &std::sync::Arc<RpcClient>,
-        confirmation: ConfirmationMode,
+        respond_after: RespondAfter,
     ) -> Result<(String, String), KoraError>;
 }
 
@@ -549,7 +550,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         config: &Config,
         signer: &std::sync::Arc<Signer>,
         rpc_client: &std::sync::Arc<RpcClient>,
-        confirmation: ConfirmationMode,
+        respond_after: RespondAfter,
     ) -> Result<(String, String), KoraError> {
         // Payment validation is handled in sign_transaction
         let (transaction, encoded) =
@@ -571,8 +572,8 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             ));
         }
 
-        match confirmation {
-            ConfirmationMode::Confirmed => {
+        match respond_after {
+            RespondAfter::Confirmed => {
                 let signature = rpc_client
                     .send_and_confirm_transaction(&transaction)
                     .await
@@ -580,7 +581,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
                 Ok((signature.to_string(), encoded))
             }
-            ConfirmationMode::Sent => {
+            RespondAfter::Sent => {
                 let signature = rpc_client
                     .send_transaction_with_config(&transaction, send_config)
                     .await
@@ -588,7 +589,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
                 Ok((signature.to_string(), encoded))
             }
-            ConfirmationMode::None => {
+            RespondAfter::Signed => {
                 // A Solana transaction is identified by its first signature, which is
                 // already present once signing completes — so the caller gets it
                 // without waiting for the broadcast.

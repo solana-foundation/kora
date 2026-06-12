@@ -18,7 +18,7 @@ static GLOBAL_SIGNER_POOL: Lazy<RwLock<Option<Arc<SignerPool>>>> = Lazy::new(|| 
 static GLOBAL_CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
 
 // Tracks detached background tasks (currently the fire-and-forget broadcasts of
-// `ConfirmationMode::None`) so a graceful shutdown can wait for in-flight sends
+// `RespondAfter::Signed`) so a graceful shutdown can wait for in-flight sends
 // to reach an RPC node instead of cancelling them when the runtime exits.
 static BACKGROUND_TASKS: Lazy<TaskTracker> = Lazy::new(TaskTracker::new);
 

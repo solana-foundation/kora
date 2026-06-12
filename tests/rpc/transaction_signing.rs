@@ -148,7 +148,7 @@ async fn test_sign_and_send_transaction_legacy() {
 }
 
 #[tokio::test]
-async fn test_sign_and_send_transaction_confirmation_sent() {
+async fn test_sign_and_send_transaction_respond_after_sent() {
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
@@ -171,7 +171,7 @@ async fn test_sign_and_send_transaction_confirmation_sent() {
         .await
         .expect("Failed to create signed test transaction");
 
-    // Positional params: [transaction, signer_key, sig_verify, user_id, confirmation]
+    // Positional params: [transaction, signer_key, sig_verify, user_id, respond_after]
     let result: Result<serde_json::Value, _> = ctx
         .rpc_call(
             "signAndSendTransaction",
@@ -179,7 +179,7 @@ async fn test_sign_and_send_transaction_confirmation_sent() {
         )
         .await;
 
-    assert!(result.is_ok(), "Expected signAndSendTransaction with confirmation=sent to succeed");
+    assert!(result.is_ok(), "Expected signAndSendTransaction with respond_after=sent to succeed");
     let response = result.unwrap();
 
     assert!(response["signature"].as_str().is_some(), "Expected signature in response");
@@ -190,7 +190,7 @@ async fn test_sign_and_send_transaction_confirmation_sent() {
 }
 
 #[tokio::test]
-async fn test_sign_and_send_transaction_confirmation_sent_rejects_missing_signature() {
+async fn test_sign_and_send_transaction_respond_after_sent_rejects_missing_signature() {
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
@@ -200,7 +200,7 @@ async fn test_sign_and_send_transaction_confirmation_sent_rejects_missing_signat
 
     // The sender is a required signer but never signs, leaving a default
     // signature slot. With sig_verify=false nothing upstream catches it, and
-    // confirmation=sent skips preflight — so the server must reject it instead
+    // respond_after=sent skips preflight — so the server must reject it instead
     // of returning a signature for a transaction validators will drop.
     let test_tx = ctx
         .transaction_builder()
@@ -231,7 +231,7 @@ async fn test_sign_and_send_transaction_confirmation_sent_rejects_missing_signat
 }
 
 #[tokio::test]
-async fn test_sign_and_send_transaction_confirmation_none() {
+async fn test_sign_and_send_transaction_respond_after_signed() {
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
@@ -257,11 +257,11 @@ async fn test_sign_and_send_transaction_confirmation_none() {
     let result: Result<serde_json::Value, _> = ctx
         .rpc_call(
             "signAndSendTransaction",
-            rpc_params![test_tx, None::<String>, false, None::<String>, "none"],
+            rpc_params![test_tx, None::<String>, false, None::<String>, "signed"],
         )
         .await;
 
-    assert!(result.is_ok(), "Expected signAndSendTransaction with confirmation=none to succeed");
+    assert!(result.is_ok(), "Expected signAndSendTransaction with respond_after=signed to succeed");
     let response = result.unwrap();
 
     // The signature is derived from the signed transaction before the background
