@@ -115,7 +115,7 @@ pub async fn start_kora_rpc_server(
     ])
     .env("KORA_PRIVATE_KEY", fee_payer_key.trim())
     .env("KORA_PRIVATE_KEY_2", signer_2.trim())
-    // Overrides the fixture's cache_url (usage_limit store); CI injects it via Doppler
+    // Overrides the fixture's cache_url (usage_limit store) when set
     .env_remove("KORA_REDIS_URL")
     .stdout(std_out)
     .stderr(std_err);
