@@ -13,7 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -48,82 +47,9 @@ jobs:
         working-directory: sdks/ts
         run: pnpm build
 
-      - name: Run TypeScript unit tests with coverage
+      - name: Run TypeScript unit tests
         working-directory: sdks/ts
-        run: |
-          echo "🧪 Running TypeScript SDK unit tests with coverage..."
-          pnpm test:coverage -- test/unit.test.ts
-
-      - name: Upload TypeScript coverage artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: typescript-coverage-report
-          path: sdks/ts/coverage/
-          retention-days: 30
-
-      - name: Post TypeScript coverage to PR
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const fs = require('fs');
-            let coverage = '0';
-
-            try {
-              // Read coverage from Jest output in previous step
-              const testOutput = `${{ steps.test.outputs.coverage || '0' }}`;
-              coverage = testOutput || '0';
-
-              // If we couldn't get it from output, try to parse lcov.info
-              if (coverage === '0') {
-                const lcov = fs.readFileSync('sdks/ts/coverage/lcov.info', 'utf8');
-                const linesFound = lcov.match(/^LF:(\d+)$/gm)?.reduce((sum, line) => sum + parseInt(line.split(':')[1]), 0) || 0;
-                const linesHit = lcov.match(/^LH:(\d+)$/gm)?.reduce((sum, line) => sum + parseInt(line.split(':')[1]), 0) || 0;
-                coverage = linesFound > 0 ? ((linesHit / linesFound) * 100).toFixed(1) : '0';
-              }
-            } catch (error) {
-              console.log('Error reading coverage:', error);
-            }
-
-            const comment = `## 📊 TypeScript Coverage Report
-
-            **Coverage:** ${coverage}%
-
-            <details>
-            <summary>View detailed report</summary>
-
-            Coverage artifacts have been uploaded to this workflow run.
-            [View Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-            </details>`;
-
-            // Find existing comment
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const botComment = comments.find(comment =>
-              comment.user.type === 'Bot' &&
-              comment.body.includes('## 📊 TypeScript Coverage Report')
-            );
-
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: comment
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: comment
-              });
-            }
+        run: pnpm test unit.test.ts
 
       - name: Cleanup test environment
         uses: ./.github/actions/cleanup-test-env
