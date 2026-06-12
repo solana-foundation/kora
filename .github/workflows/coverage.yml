@@ -2,7 +2,7 @@ name: Update Coverage Badge
 
 on:
   workflow_run:
-    workflows: ["Rust CI"]
+    workflows: ["Test Coverage"]
     types:
       - completed
 

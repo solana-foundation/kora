@@ -1,0 +1,147 @@
+name: Test Coverage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "tests/**"
+      - "Cargo.*"
+      - "justfile"
+      - ".github/workflows/test-coverage.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "tests/**"
+      - "Cargo.*"
+      - "justfile"
+      - ".github/workflows/test-coverage.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_LOG: info
+  CI: true
+
+jobs:
+  coverage:
+    name: Test Coverage (unit + integration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "test-coverage"
+      - name: Install just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: "1.50.0"
+
+      - name: Setup Solana CLI
+        uses: ./.github/actions/setup-solana
+
+      - name: Fetch Doppler secrets
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: dopplerhq/secrets-fetch-action@v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: ${{ vars.DOPPLER_PROJECT || 'kora' }}
+          doppler-config: ${{ vars.DOPPLER_CONFIG_CI || 'stg_github' }}
+          inject-env-vars: true
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
+
+      - name: Run unit tests with coverage
+        run: |
+          echo "🧪 Running unit tests with coverage instrumentation..."
+          source <(cargo llvm-cov show-env --sh)
+          cargo llvm-cov clean --workspace
+          cargo test --workspace --lib
+
+      - name: Run integration tests with coverage
+        run: |
+          echo "🧪 Running integration tests with instrumented Kora servers..."
+          source <(cargo llvm-cov show-env --sh)
+          cargo build -p kora-cli --bin kora
+          cargo build -p tests --bin test_runner
+          cargo run -p tests --bin test_runner -- \
+            --filter regular --filter auth --filter payment_address --filter multi_signer \
+            --filter fee_payer_policy --filter free_signing --filter lighthouse \
+            --filter loader_v3_deploy
+          # usage_limit runs alone: its 30s-window assertions are timing-sensitive and
+          # fail when instrumented phases share the runner's CPU
+          cargo run -p tests --bin test_runner -- --filter usage_limit --verbose
+
+      - name: Generate coverage report
+        run: |
+          echo "📊 Generating coverage report..."
+          source <(cargo llvm-cov show-env --sh)
+          mkdir -p coverage
+          cargo llvm-cov report --lcov --output-path coverage/lcov.info
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-coverage-report
+          path: coverage/
+          retention-days: 30
+
+      - name: Update PR description with coverage badge
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v9
+        with:
+          script: |
+            // Extract coverage percentage from lcov.info
+            const fs = require('fs');
+            let coverage = '0';
+
+            try {
+              const lcov = fs.readFileSync('coverage/lcov.info', 'utf8');
+              const linesFound = lcov.match(/^LF:(\d+)$/gm)?.reduce((sum, line) => sum + parseInt(line.split(':')[1]), 0) || 0;
+              const linesHit = lcov.match(/^LH:(\d+)$/gm)?.reduce((sum, line) => sum + parseInt(line.split(':')[1]), 0) || 0;
+              coverage = linesFound > 0 ? ((linesHit / linesFound) * 100).toFixed(1) : '0';
+            } catch (error) {
+              console.log('Error reading coverage:', error);
+            }
+
+            // Determine badge color
+            let color = 'red';
+            if (parseFloat(coverage) >= 80) color = 'green';
+            else if (parseFloat(coverage) >= 60) color = 'yellow';
+
+            // Get current PR
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            // Create coverage badge section
+            const coverageBadge = `![Coverage](https://img.shields.io/badge/coverage-${coverage}%25-${color})`;
+            const coverageSection = `\n\n## 📊 Test Coverage (unit + integration)\n${coverageBadge}\n\n**Test Coverage (unit + integration): ${coverage}%**\n\n[View Detailed Coverage Report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+
+            // Update PR body
+            let newBody = pr.body || '';
+
+            // Remove existing coverage section if present
+            newBody = newBody.replace(/\n## 📊 Test Coverage \(unit \+ integration\)[\s\S]*?(?=\n## |\n$|$)/g, '');
+
+            // Add new coverage section
+            newBody += coverageSection;
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body: newBody
+            });
