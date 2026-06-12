@@ -37,6 +37,10 @@ pub enum AccountFile {
     AllowedLookupTable,
     DisallowedLookupTable,
     TransactionLookupTable,
+    TsAuthWallet,
+    TsAuthWalletTokenAccount,
+    TsFreeWallet,
+    TsFreeWalletTokenAccount,
     Signer2,
     InterestBearingMint,
     TransferHookMint,
@@ -77,6 +81,10 @@ impl AccountFile {
             Self::FeePayerPolicyFeePayerToken2022Account => {
                 "fee-payer-policy-fee-payer-token-2022-account-local.json"
             }
+            Self::TsAuthWallet => "ts-auth-wallet-local.json",
+            Self::TsAuthWalletTokenAccount => "ts-auth-wallet-token-account-local.json",
+            Self::TsFreeWallet => "ts-free-wallet-local.json",
+            Self::TsFreeWalletTokenAccount => "ts-free-wallet-token-account-local.json",
             Self::AllowedLookupTable => "allowed-lookup-table-local.json",
             Self::DisallowedLookupTable => "disallowed-lookup-table-local.json",
             Self::TransactionLookupTable => "transaction-lookup-table-local.json",
@@ -143,6 +151,10 @@ impl AccountFile {
             Self::AllowedLookupTable,
             Self::DisallowedLookupTable,
             Self::TransactionLookupTable,
+            Self::TsAuthWallet,
+            Self::TsAuthWalletTokenAccount,
+            Self::TsFreeWallet,
+            Self::TsFreeWalletTokenAccount,
         ]
     }
 
@@ -297,6 +309,30 @@ pub async fn download_accounts(
     AccountFile::FeePayerPolicyFeePayerToken2022Account
         .save_account_for_file(client, &test_accounts.fee_payer_policy_fee_payer_token_2022_account)
         .await?;
+    let ts_auth_wallet = crate::common::setup::ts_auth_wallet();
+    let ts_free_wallet = crate::common::setup::ts_free_wallet();
+    let usdc_mint = test_accounts.usdc_mint_pubkey;
+    for (account_file, address) in [
+        (AccountFile::TsAuthWallet, ts_auth_wallet),
+        (
+            AccountFile::TsAuthWalletTokenAccount,
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &ts_auth_wallet,
+                &usdc_mint,
+            ),
+        ),
+        (AccountFile::TsFreeWallet, ts_free_wallet),
+        (
+            AccountFile::TsFreeWalletTokenAccount,
+            spl_associated_token_account_interface::address::get_associated_token_address(
+                &ts_free_wallet,
+                &usdc_mint,
+            ),
+        ),
+    ] {
+        account_file.save_account_for_file(client, &address).await?;
+    }
+
     for (account_file, address) in [
         (AccountFile::AllowedLookupTable, &test_accounts.allowed_lookup_table),
         (AccountFile::DisallowedLookupTable, &test_accounts.disallowed_lookup_table),

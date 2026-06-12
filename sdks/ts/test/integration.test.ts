@@ -111,9 +111,6 @@ async function buildTokenTransferTransaction(params: {
 
 const AUTH_ENABLED = process.env.ENABLE_AUTH === 'true';
 const FREE_PRICING = process.env.FREE_PRICING === 'true';
-// Distinct transfer amounts per suite flavor so concurrent phases never submit
-// byte-identical transactions (deduplicated by the validator)
-const AMOUNT_OFFSET = AUTH_ENABLED ? 100n : FREE_PRICING ? 200n : 0n;
 const KORA_SIGNER_TYPE = process.env.KORA_SIGNER_TYPE || 'memory';
 describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without auth'} | signer type: ${KORA_SIGNER_TYPE})`, () => {
     let client: KoraClient;
@@ -235,7 +232,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
     describe('Transaction Operations', () => {
         it('should estimate transaction fee', async () => {
             const { transaction } = await buildTokenTransferTransaction({
-                amount: 1000001n + AMOUNT_OFFSET,
+                amount: 1000000n,
                 client,
                 destinationWallet: koraAddress,
                 mint: usdcMint,
@@ -256,7 +253,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
         it('should sign transaction', async () => {
             const { transaction } = await buildTokenTransferTransaction({
-                amount: 1000002n + AMOUNT_OFFSET,
+                amount: 1000000n,
                 client,
                 destinationWallet: koraAddress,
                 mint: usdcMint,
@@ -273,7 +270,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
         it('should sign and send transaction', async () => {
             const { transaction: transactionString } = await buildTokenTransferTransaction({
-                amount: 1000003n + AMOUNT_OFFSET,
+                amount: 1000000n,
                 client,
                 destinationWallet: koraAddress,
                 mint: usdcMint,
@@ -296,7 +293,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
         it('should get payment instruction', async () => {
             const { transaction } = await buildTokenTransferTransaction({
-                amount: 1000004n + AMOUNT_OFFSET,
+                amount: 1000000n,
                 client,
                 destinationWallet: koraAddress,
                 mint: usdcMint,
@@ -345,14 +342,14 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         it('should sign bundle of transactions', async () => {
             // Create two transfer transactions for the bundle
             const { transaction: tx1String } = await buildTokenTransferTransaction({
-                amount: 1000005n + AMOUNT_OFFSET,
+                amount: 1000000n,
                 client,
                 destinationWallet: koraAddress,
                 mint: usdcMint,
                 sourceWallet: testWallet,
             });
             const { transaction: tx2String } = await buildTokenTransferTransaction({
-                amount: 500001n + AMOUNT_OFFSET,
+                amount: 500000n,
                 client,
                 destinationWallet: koraAddress,
                 mint: usdcMint,
@@ -381,14 +378,14 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
         it('should sign and send bundle of transactions', async () => {
             // Create two transfer transactions for the bundle
             const { transaction: tx1String } = await buildTokenTransferTransaction({
-                amount: 1000006n + AMOUNT_OFFSET,
+                amount: 1000000n,
                 client,
                 destinationWallet: koraAddress,
                 mint: usdcMint,
                 sourceWallet: testWallet,
             });
             const { transaction: tx2String } = await buildTokenTransferTransaction({
-                amount: 500002n + AMOUNT_OFFSET,
+                amount: 500000n,
                 client,
                 destinationWallet: koraAddress,
                 mint: usdcMint,
@@ -518,7 +515,7 @@ describe(`KoraClient Integration Tests (${AUTH_ENABLED ? 'with auth' : 'without 
 
             const result = await paidClient.token.instructions
                 .transfer({
-                    amount: 1000007n + AMOUNT_OFFSET,
+                    amount: 1000000n,
                     authority: testWallet,
                     destination: destinationAta,
                     source: sourceAta,

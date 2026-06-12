@@ -17,6 +17,23 @@ import { KoraClient } from '../src/index.js';
 
 config({ path: path.resolve(process.cwd(), '.env') });
 
+// Each suite flavor (basic / auth / free) runs concurrently against the same
+// validator. Flavors use distinct wallets (funded by the rust test setup) so
+// they never submit byte-identical transactions, which the validator
+// deduplicates by signature.
+// DO NOT USE THESE KEYPAIRS IN PRODUCTION, TESTING KEYPAIRS ONLY
+const FLAVOR_WALLET_SECRETS = {
+    // 7kBPazc3KfccwopUa9dALgeBSXoYjdqtK5UEpXKCAYYH
+    auth: '5mDdF4AakwdsEMVKxQ566CNa4bxdqZCEfpWLz9HYWYt1ZjL48HAL8Q3p7ba4nJNUe8QpWrWh5n9kwLKegZm2J7vy',
+    // HhA5j2rRiPbMrpF2ZD36r69FyZf3zWmEHRNSZbbNdVjf
+    basic: 'tzgfgSWTE3KUA6qfRoFYLaSfJm59uUeZRDy4ybMrLn1JV2drA1mftiaEcVFvq1Lok6h6EX2C4Y9kSKLvQWyMpS5',
+    // HrQpAeuWRcajWzJ3FSe5UApiSX2Pp2nNdBDj7eZx4yCo
+    free: '4y8NiNNW9fLaaVVDAVxvUCobTXMTpKcZDSdwUidiYXVS8SPVTRg9hGbgUK4Tsp7vrQTK8kw4fJ1LUeHFFnthaFzB',
+} as const;
+
+const SUITE_FLAVOR =
+    process.env.ENABLE_AUTH === 'true' ? 'auth' : process.env.FREE_PRICING === 'true' ? 'free' : 'basic';
+
 const DEFAULTS = {
     DECIMALS: 6,
 
@@ -30,12 +47,9 @@ const DEFAULTS = {
 
     KORA_SIGNER_TYPE: 'memory',
 
-    // Make sure this matches the kora-rpc signer address on launch (root .env)
-    SENDER_SECRET: 'tzgfgSWTE3KUA6qfRoFYLaSfJm59uUeZRDy4ybMrLn1JV2drA1mftiaEcVFvq1Lok6h6EX2C4Y9kSKLvQWyMpS5',
-
     SOL_DROP_AMOUNT: 1_000_000_000,
 
-    // HhA5j2rRiPbMrpF2ZD36r69FyZf3zWmEHRNSZbbNdVjf
+    // 9BgeTKqmFsPVnfYscfM6NvsgmZxei7XfdciShQ6D3bxJ
     TEST_USDC_MINT_SECRET: '59kKmXphL5UJANqpFFjtH17emEq3oRNmYsx6a3P3vSGJRmhMgVdzH77bkNEi9bArRViT45e8L2TsuPxKNFoc3Qfg',
 
     TOKEN_DROP_AMOUNT: 100_000, // Default signer type
@@ -92,7 +106,7 @@ export function loadEnvironmentVariables() {
     const tokenDecimals = Number(process.env.TOKEN_DECIMALS || DEFAULTS.DECIMALS);
     const tokenDropAmount = Number(process.env.TOKEN_DROP_AMOUNT || DEFAULTS.TOKEN_DROP_AMOUNT);
     const solDropAmount = BigInt(process.env.SOL_DROP_AMOUNT || DEFAULTS.SOL_DROP_AMOUNT);
-    const testWalletSecret = process.env.SENDER_SECRET || DEFAULTS.SENDER_SECRET;
+    const testWalletSecret = process.env.SENDER_SECRET || FLAVOR_WALLET_SECRETS[SUITE_FLAVOR];
     const testUsdcMintSecret = process.env.TEST_USDC_MINT_SECRET || DEFAULTS.TEST_USDC_MINT_SECRET;
     const destinationAddress = process.env.DESTINATION_ADDRESS || DEFAULTS.DESTINATION_ADDRESS;
     assertIsAddress(destinationAddress);

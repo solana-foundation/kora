@@ -22,7 +22,9 @@ use std::sync::Arc;
 use crate::common::{
     FeePayerPolicyMintTestHelper, FeePayerTestHelper, LookupTableHelper, RecipientTestHelper,
     SenderTestHelper, USDCMint2022TestHelper, USDCMintTestHelper, DEFAULT_RPC_URL,
+    TS_AUTH_WALLET_PUBKEY, TS_FREE_WALLET_PUBKEY,
 };
+use std::str::FromStr;
 
 /// Test account information for outputting to the user
 #[derive(Debug, Default, Clone)]
@@ -212,11 +214,15 @@ impl TestAccountSetup {
 
         let sender_pubkey = self.sender_keypair.pubkey();
         let fee_payer_pubkey = self.fee_payer_keypair.pubkey();
+        let ts_auth_wallet = ts_auth_wallet();
+        let ts_free_wallet = ts_free_wallet();
 
         tokio::try_join!(
             self.airdrop_if_required_sol(&sender_pubkey, sol_to_fund),
             self.airdrop_if_required_sol(&self.recipient_pubkey, sol_to_fund),
-            self.airdrop_if_required_sol(&fee_payer_pubkey, sol_to_fund)
+            self.airdrop_if_required_sol(&fee_payer_pubkey, sol_to_fund),
+            self.airdrop_if_required_sol(&ts_auth_wallet, sol_to_fund),
+            self.airdrop_if_required_sol(&ts_free_wallet, sol_to_fund)
         )?;
 
         Ok((self.sender_keypair.pubkey(), self.recipient_pubkey, self.fee_payer_keypair.pubkey()))
@@ -349,6 +355,11 @@ impl TestAccountSetup {
             &spl_token_2022_interface::id(),
         );
 
+        let ts_auth_wallet_token_account =
+            get_associated_token_address(&ts_auth_wallet(), &self.usdc_mint.pubkey());
+        let ts_free_wallet_token_account =
+            get_associated_token_address(&ts_free_wallet(), &self.usdc_mint.pubkey());
+
         let all_accounts = (
             sender_token_account,
             recipient_token_account,
@@ -365,6 +376,8 @@ impl TestAccountSetup {
                 sender_token_2022_account,
                 recipient_token_2022_account,
                 fee_payer_token_2022_account,
+                ts_auth_wallet_token_account,
+                ts_free_wallet_token_account,
             ])
             .await?
         {
@@ -443,6 +456,34 @@ impl TestAccountSetup {
                 &spl_token_2022_interface::id(),
                 &self.usdc_mint_2022.pubkey(),
                 &sender_token_2022_account,
+                &self.sender_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &self.sender_keypair.pubkey(),
+                &ts_auth_wallet(),
+                &self.usdc_mint.pubkey(),
+                &spl_token_interface::id(),
+            ),
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &self.sender_keypair.pubkey(),
+                &ts_free_wallet(),
+                &self.usdc_mint.pubkey(),
+                &spl_token_interface::id(),
+            ),
+            token_instruction::mint_to(
+                &spl_token_interface::id(),
+                &self.usdc_mint.pubkey(),
+                &ts_auth_wallet_token_account,
+                &self.sender_keypair.pubkey(),
+                &[],
+                mint_amount,
+            )?,
+            token_instruction::mint_to(
+                &spl_token_interface::id(),
+                &self.usdc_mint.pubkey(),
+                &ts_free_wallet_token_account,
                 &self.sender_keypair.pubkey(),
                 &[],
                 mint_amount,
@@ -886,4 +927,12 @@ impl TestAccountSetup {
         self.rpc_client.send_and_confirm_transaction(&transaction).await?;
         Ok(token_account)
     }
+}
+
+pub fn ts_auth_wallet() -> Pubkey {
+    Pubkey::from_str(TS_AUTH_WALLET_PUBKEY).expect("Invalid TS auth wallet pubkey")
+}
+
+pub fn ts_free_wallet() -> Pubkey {
+    Pubkey::from_str(TS_FREE_WALLET_PUBKEY).expect("Invalid TS free wallet pubkey")
 }
