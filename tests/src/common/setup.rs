@@ -17,14 +17,13 @@ use spl_token_2022_interface::{
     state::Mint as Token2022Mint,
 };
 use spl_token_interface::instruction as token_instruction;
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use crate::common::{
     FeePayerPolicyMintTestHelper, FeePayerTestHelper, LookupTableHelper, RecipientTestHelper,
     SenderTestHelper, USDCMint2022TestHelper, USDCMintTestHelper, DEFAULT_RPC_URL,
     TS_AUTH_WALLET_PUBKEY, TS_FREE_WALLET_PUBKEY,
 };
-use std::str::FromStr;
 
 /// Test account information for outputting to the user
 #[derive(Debug, Default, Clone)]

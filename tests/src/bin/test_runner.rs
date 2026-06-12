@@ -2,7 +2,7 @@ use clap::Parser;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Instant};
 use tests::{
     common::{constants::DEFAULT_RPC_URL, setup::TestAccountSetup, TestAccountInfo},
     test_runner::{
@@ -155,7 +155,6 @@ pub async fn setup_test_env_from_scratch(
 
 async fn cached_lookup_table_addresses(
 ) -> Result<(Pubkey, Pubkey, Pubkey), Box<dyn std::error::Error + Send + Sync>> {
-    use std::str::FromStr;
     let mut addresses = Vec::with_capacity(3);
     for account_file in [
         AccountFile::AllowedLookupTable,
