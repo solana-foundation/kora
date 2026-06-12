@@ -61,8 +61,12 @@ pub async fn start_test_validator(
     while !check_test_validator(DEFAULT_RPC_URL).await {
         attempts += 1;
         if attempts > max_attempts {
+            let log_tail = match backend {
+                ValidatorBackend::Surfpool => surfpool_log_tail().await,
+                ValidatorBackend::Agave => String::new(),
+            };
             return Err(format!(
-                "{backend:?} test validator failed to start within {max_attempts} attempts"
+                "{backend:?} test validator failed to start within {max_attempts} attempts{log_tail}"
             )
             .into());
         }
@@ -75,9 +79,30 @@ pub async fn start_test_validator(
     Ok(validator_pid)
 }
 
+fn surfpool_workdir() -> std::path::PathBuf {
+    std::env::temp_dir().join("kora-surfpool")
+}
+
+fn surfpool_log_path() -> std::path::PathBuf {
+    surfpool_workdir().join("surfpool.log")
+}
+
+async fn surfpool_log_tail() -> String {
+    match tokio::fs::read_to_string(surfpool_log_path()).await {
+        Ok(log) if !log.trim().is_empty() => {
+            let tail: Vec<&str> = log.lines().rev().take(10).collect();
+            let tail: Vec<&str> = tail.into_iter().rev().collect();
+            format!(". Last surfpool output:\n{}", tail.join("\n"))
+        }
+        _ => String::new(),
+    }
+}
+
 async fn spawn_surfpool() -> Result<Child, Box<dyn std::error::Error + Send + Sync>> {
-    let workdir = std::env::temp_dir().join("kora-surfpool");
+    let workdir = surfpool_workdir();
     tokio::fs::create_dir_all(&workdir).await?;
+
+    let log_file = std::fs::File::create(surfpool_log_path())?;
 
     let mut cmd = tokio::process::Command::new("surfpool");
     cmd.args([
@@ -93,8 +118,8 @@ async fn spawn_surfpool() -> Result<Child, Box<dyn std::error::Error + Send + Sy
         "100",
     ])
     .current_dir(&workdir)
-    .stdout(std::process::Stdio::null())
-    .stderr(std::process::Stdio::null());
+    .stdout(log_file.try_clone()?)
+    .stderr(log_file);
 
     cmd.spawn().map_err(|e| {
         format!(

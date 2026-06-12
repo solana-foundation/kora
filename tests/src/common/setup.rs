@@ -361,6 +361,11 @@ impl TestAccountSetup {
             (TRANSFER_HOOK_PROGRAM_ID, TRANSFER_HOOK_PROGRAM_PATH),
             (LIGHTHOUSE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_PATH),
         ] {
+            if !std::path::Path::new(program_path).exists() {
+                println!("⚠️  Test program not found at: {program_path}");
+                println!("   Continuing without it; dependent tests will fail");
+                continue;
+            }
             let elf = tokio::fs::read(program_path).await?;
             surfnet::load_upgradeable_program(rpc, &Pubkey::from_str(program_id)?, &elf).await?;
         }

@@ -217,10 +217,17 @@ pub async fn send_and_confirm_allow_duplicate(
     rpc_client: &solana_client::nonblocking::rpc_client::RpcClient,
     transaction: &solana_sdk::transaction::Transaction,
 ) -> anyhow::Result<()> {
+    use solana_client::client_error::ClientErrorKind;
+    use solana_sdk::transaction::TransactionError;
+
     match rpc_client.send_and_confirm_transaction(transaction).await {
         Ok(_) => Ok(()),
-        Err(e) if e.to_string().contains("already been processed") => Ok(()),
-        Err(e) => Err(e.into()),
+        Err(e) => match e.kind() {
+            ClientErrorKind::TransactionError(TransactionError::AlreadyProcessed) => Ok(()),
+            // surfpool wraps the rejection in a preflight RPC error string
+            _ if e.to_string().contains("already been processed") => Ok(()),
+            _ => Err(e.into()),
+        },
     }
 }
 
