@@ -9,7 +9,6 @@
   <br />
   
 [![Rust Tests](https://github.com/solana-foundation/kora/actions/workflows/rust.yml/badge.svg)](https://github.com/solana-foundation/kora/actions/workflows/rust.yml)
-![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/solana-foundation/kora/main/.github/badges/coverage.json)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/solana-foundation/kora)
 [![Crates.io](https://img.shields.io/crates/v/kora-cli.svg)](https://crates.io/crates/kora-cli)
 [![npm](https://img.shields.io/npm/v/@solana/kora)](https://www.npmjs.com/package/@solana/kora)
