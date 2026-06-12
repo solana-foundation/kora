@@ -30,7 +30,7 @@ use crate::{
     lighthouse::LighthouseUtil,
     plugin::{PluginExecutionContext, TransactionPluginRunner},
     sanitize_error,
-    state::{get_signer_pool, reserve_request_signer_by_pubkey},
+    state::{get_background_tasks, get_signer_pool, reserve_request_signer_by_pubkey},
     token::token::TransferHookValidationFlow,
     transaction::{
         instruction_util::IxUtils, ParsedALTInstructionData, ParsedALTInstructionType,
@@ -605,9 +605,13 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                 // Broadcast in the background so the response returns instantly. The
                 // send is fire-and-forget: failures are logged rather than returned to
                 // the caller, who can rebroadcast the returned signed transaction.
+                //
+                // The task is registered with the global tracker so a graceful
+                // shutdown drains in-flight broadcasts instead of cancelling them
+                // when the runtime exits.
                 let rpc_client = std::sync::Arc::clone(rpc_client);
                 let log_signature = signature.clone();
-                tokio::spawn(async move {
+                get_background_tasks().spawn(async move {
                     if let Err(e) =
                         rpc_client.send_transaction_with_config(&transaction, send_config).await
                     {

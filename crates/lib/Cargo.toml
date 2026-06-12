@@ -40,6 +40,7 @@ bincode = { workspace = true }
 borsh = { workspace = true }
 base64 = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 async-trait = { workspace = true }
 reqwest = { workspace = true }
 spl-token-interface = { workspace = true }

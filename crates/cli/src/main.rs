@@ -2,6 +2,8 @@ mod args;
 
 use args::GlobalArgs;
 use clap::{Parser, Subcommand};
+use std::time::Duration;
+
 use kora_lib::{
     admin::token_util::initialize_atas,
     error::KoraError,
@@ -9,7 +11,7 @@ use kora_lib::{
     rpc::get_rpc_client,
     rpc_server::{run_rpc_server, server::ServerHandles, KoraRpc, RpcArgs},
     signer::init::init_signers,
-    state::init_config,
+    state::{drain_background_tasks, init_config},
     validator::config_validator::ConfigValidator,
     CacheUtil, Config,
 };
@@ -201,9 +203,23 @@ async fn main() -> Result<(), KoraError> {
                         handle.abort();
                     }
 
-                    // Stop the RPC server
+                    // Stop the RPC server and wait until it finishes handling
+                    // in-flight requests, so no new background broadcasts are
+                    // spawned while we drain the existing ones.
                     if let Err(e) = rpc_handle.stop() {
                         panic!("Error stopping RPC server: {e:?}");
+                    }
+                    rpc_handle.stopped().await;
+
+                    // Drain fire-and-forget broadcasts (ConfirmationMode::None) so they
+                    // reach an RPC node before the runtime exits and cancels them.
+                    let drain_timeout = Duration::from_secs(30);
+                    if !drain_background_tasks(drain_timeout).await {
+                        log::warn!(
+                            "Timed out after {}s waiting for background broadcasts to finish; \
+                             some transactions may not have been forwarded",
+                            drain_timeout.as_secs()
+                        );
                     }
 
                     // Stop the metrics server if running
