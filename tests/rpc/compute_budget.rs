@@ -4,10 +4,6 @@ use solana_sdk::signer::Signer;
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
-    if is_surfpool_backend() {
-        eprintln!("skipped on surfpool: getFeeForMessage does not include priority fees");
-        return;
-    }
     let ctx = TestContext::new().await.expect("Failed to create test context");
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();
@@ -39,10 +35,6 @@ async fn test_estimate_transaction_fee_with_compute_budget_legacy() {
 
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_compute_budget_v0() {
-    if is_surfpool_backend() {
-        eprintln!("skipped on surfpool: getFeeForMessage does not include priority fees");
-        return;
-    }
     let ctx = TestContext::new().await.expect("Failed to create test context");
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -75,10 +67,6 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
 // NOTE: Lookup table is properly tested via mint address (not in transaction accounts, only ATAs)
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_compute_budget_v0_with_lookup() {
-    if is_surfpool_backend() {
-        eprintln!("skipped on surfpool: getFeeForMessage does not include priority fees");
-        return;
-    }
     let ctx = TestContext::new().await.expect("Failed to create test context");
     let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
     let sender = SenderTestHelper::get_test_sender_keypair();

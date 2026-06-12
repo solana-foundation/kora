@@ -18,7 +18,7 @@ use tests::{
         output::{
             filter_command_output, limit_output_size, OutputFilter, PhaseOutput, TestPhaseColor,
         },
-        validator::{start_test_validator, ValidatorBackend},
+        validator::start_test_validator,
     },
 };
 use tokio::{process::Child, task::JoinSet};
@@ -103,14 +103,6 @@ pub struct Args {
         help = "Run only specific test phases (e.g., --filter regular --filter auth)"
     )]
     pub filters: Vec<String>,
-
-    /// Validator backend: surfpool (fast, default for local runs) or agave (full fidelity)
-    #[arg(
-        long,
-        value_enum,
-        help = "Validator backend (defaults: surfpool locally, agave with --rpc-url)"
-    )]
-    pub backend: Option<ValidatorBackend>,
 }
 
 #[tokio::main]
@@ -123,17 +115,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut test_runner = TestRunner::new(args.rpc_url.clone()).await?;
     let custom_rpc_url = args.rpc_url != DEFAULT_RPC_URL;
 
-    let backend = args.backend.unwrap_or(if custom_rpc_url {
-        ValidatorBackend::Agave
-    } else {
-        ValidatorBackend::Surfpool
-    });
-    println!("Validator backend: {backend:?}");
     std::env::set_var(tests::common::RPC_URL_ENV, &args.rpc_url);
-    std::env::set_var(tests::common::surfnet::VALIDATOR_BACKEND_ENV, backend.env_value());
 
     let (result, completed_phases) = async {
-        setup_test_env(&mut test_runner, args.force_refresh, custom_rpc_url, backend).await?;
+        setup_test_env(&mut test_runner, args.force_refresh, custom_rpc_url).await?;
         let phases =
             run_all_test_phases(&test_runner, args.verbose, &args.config, &args.filters).await?;
         Ok::<usize, Box<dyn std::error::Error + Send + Sync>>(phases)
@@ -170,10 +155,8 @@ async fn setup_test_env(
     test_runner: &mut TestRunner,
     force_refresh: bool,
     custom_rpc_url: bool,
-    backend: ValidatorBackend,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let use_account_cache = backend == ValidatorBackend::Agave;
-    let mut found_all_accounts = use_account_cache && !force_refresh;
+    let mut found_all_accounts = !force_refresh;
 
     if found_all_accounts {
         for account_file in AccountFile::required_test_accounts() {
@@ -187,7 +170,7 @@ async fn setup_test_env(
     // Only start local validator if using default RPC URL
     if !custom_rpc_url {
         test_runner.solana_test_validator_pid =
-            Some(start_test_validator(backend, found_all_accounts).await?);
+            Some(start_test_validator(found_all_accounts).await?);
     } else {
         println!("Using external RPC, skipping local validator startup");
     }
@@ -196,7 +179,7 @@ async fn setup_test_env(
 
     test_runner.test_accounts = setup_test_env_from_scratch().await?;
 
-    if use_account_cache && !found_all_accounts {
+    if !found_all_accounts {
         download_accounts(&test_runner.rpc_client.clone(), &test_runner.test_accounts).await?;
     }
     set_lookup_table_environment_variables(&test_runner.test_accounts).await?;
@@ -226,17 +209,10 @@ pub async fn run_all_test_phases(
 
     let mut join_set = JoinSet::new();
 
-    let surfpool_active = tests::common::surfnet::is_surfpool_backend();
-
     // Spawn test phases from config (filtered if specified)
     for (phase_name, phase_config) in config.get_all_phases() {
         // Apply filter if specified
         if !filters.is_empty() && !filters.contains(&phase_name) {
-            continue;
-        }
-
-        if surfpool_active && phase_config.agave_only {
-            println!("⏭️  Skipping {} (agave-only, run with --backend agave)", phase_config.name);
             continue;
         }
 

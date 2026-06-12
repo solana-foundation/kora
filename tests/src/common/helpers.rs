@@ -224,7 +224,6 @@ pub async fn send_and_confirm_allow_duplicate(
         Ok(_) => Ok(()),
         Err(e) => match e.kind() {
             ClientErrorKind::TransactionError(TransactionError::AlreadyProcessed) => Ok(()),
-            // surfpool wraps the rejection in a preflight RPC error string
             _ if e.to_string().contains("already been processed") => Ok(()),
             _ => Err(e.into()),
         },

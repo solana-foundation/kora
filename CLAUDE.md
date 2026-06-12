@@ -86,14 +86,9 @@ Integration tests are fully automated using a Rust test runner binary that handl
 just integration-test
 ```
 
-**Validator backends:**
-- **surfpool** (default for local runs): spawns `surfpool` (install: https://docs.surfpool.run), writes test state directly via `surfnet_setAccount` cheatcodes — sub-second setup, full healthy-phase suite in seconds
-- **agave** (`--backend agave`, default in CI and with `--rpc-url`): real `solana-test-validator`, tx-based setup — the fidelity gate
-- Phases marked `agave_only` in `test_cases.toml` (e.g. lighthouse, which asserts exact fee deltas) are skipped on surfpool; individual tests can skip via `is_surfpool_backend()`
-
 **What happens automatically:**
-1. **Validator**: Starts the selected backend with reset
-2. **Test Environment Setup**: Creates test accounts, tokens, ATAs, lookup tables, and test programs (cheatcodes on surfpool, transactions on agave)
+1. **Solana Validator**: Starts local test validator with reset
+2. **Test Environment Setup**: Creates test accounts, tokens, ATAs, lookup tables, and test programs
 3. **Concurrent Test Phases**: Runs all phases in parallel, one Kora server per phase
 
 **Test Phases (Configured in `tests/src/test_runner/test_cases.toml`):**
@@ -155,9 +150,6 @@ just integration-test
 
 # Run with verbose output
 just integration-test --verbose
-
-# Run against a real solana-test-validator (full fidelity, used by CI)
-just integration-test --backend agave
 
 # Force refresh test accounts (ignore cached)
 just integration-test --force-refresh
