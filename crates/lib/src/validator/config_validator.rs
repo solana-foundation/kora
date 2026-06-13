@@ -1136,7 +1136,7 @@ mod tests {
             validation: validation_config_with_auth(),
             kora: KoraConfig {
                 auth: AuthConfig {
-                    api_key: Some("rotated-config-key".to_string()),
+                    api_keys: Some(vec!["rotated-config-key".to_string()]),
                     ..Default::default()
                 },
                 ..KoraConfig::default()
@@ -1157,7 +1157,7 @@ mod tests {
         assert!(
             warnings
                 .iter()
-                .any(|w| w.contains("KORA_API_KEY") && w.contains("[kora.auth].api_key")),
+                .any(|w| w.contains("KORA_API_KEY") && w.contains("[kora.auth].api_keys")),
             "expected an env-override warning naming the field, got: {warnings:?}"
         );
         // Auth is in effect, so the no-auth warning must not appear.
@@ -1409,6 +1409,7 @@ mod tests {
             },
             kora: KoraConfig {
                 rate_limit: 0, // Should warn
+                cors_allow_origins: vec!["*".to_string()],
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods {
                     liveness: false,
