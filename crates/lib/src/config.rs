@@ -1431,7 +1431,7 @@ api_keys = ["valid-key", ""]
         "#;
         let config: AuthConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.api_keys, Some(vec!["valid-key".to_string()]));
-        assert!(config.has_auth());
+        assert!(config.has_resolved_auth());
     }
 
     #[test]
@@ -1441,7 +1441,7 @@ api_keys = ["", "  "]
         "#;
         let config: AuthConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.api_keys, None);
-        assert!(!config.has_auth());
+        assert!(!config.has_resolved_auth());
     }
 
     #[test]
