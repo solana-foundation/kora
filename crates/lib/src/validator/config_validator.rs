@@ -533,7 +533,7 @@ impl ConfigValidator {
 
         // Validate rate limit (warn if 0)
         if config.kora.rate_limit == 0 {
-            warnings.push("Rate limit is set to 0 - this will block all requests".to_string());
+            warnings.push("Rate limit is set to 0 - per-identity rate limiting is disabled; all requests will be allowed without throttling".to_string());
         }
 
         // Validate CORS origins
