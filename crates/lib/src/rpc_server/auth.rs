@@ -97,10 +97,8 @@ where
                 // Constant-time comparison prevents timing attacks
                 let mut matched = false;
                 for key in &api_keys {
-                    if provided_key.as_bytes().ct_eq(key.as_bytes()).into() {
-                        matched = true;
-                        break;
-                    }
+                    let is_match: bool = provided_key.as_bytes().ct_eq(key.as_bytes()).into();
+                    matched |= is_match;
                 }
 
                 if matched {
