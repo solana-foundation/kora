@@ -427,6 +427,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_empty_api_key_string_disables_auth() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        // Parse TOML with empty api_key string
+        let toml_str = r#"
+api_key = ""
+        "#;
+        let auth_config: crate::config::AuthConfig = toml::from_str(toml_str).unwrap();
+
+        // Assertions for config parsing
+        assert_eq!(auth_config.api_keys, None);
+        assert!(!auth_config.has_auth());
+
+        // We need to set rate_limit explicitly for the mock builder if we want it to be 0 or bypass
+        // but we'll just pass the parsed KoraConfig directly.
+        let kora_config = KoraConfigBuilder::new().with_auth(auth_config).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let _handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Failed to start server");
+
+        let client = Client::new();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // Request without X-API-Key should succeed (auth disabled)
+        let res = client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(res.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn test_empty_cors_origins_does_not_panic() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();

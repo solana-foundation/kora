@@ -774,10 +774,22 @@ where
     let opt = Option::<StringOrVec>::deserialize(deserializer)?;
     Ok(match opt {
         Some(StringOrVec::String(s)) => {
-            log::warn!("DEPRECATION WARNING: 'api_key' as a single string is deprecated. Please migrate to using 'api_keys' as an array in your configuration.");
-            Some(vec![s])
+            let s = s.trim();
+            if s.is_empty() {
+                None
+            } else {
+                log::warn!("DEPRECATION WARNING: 'api_key' as a single string is deprecated. Please migrate to using 'api_keys' as an array in your configuration.");
+                Some(vec![s.to_string()])
+            }
         }
-        Some(StringOrVec::Vec(v)) => Some(v),
+        Some(StringOrVec::Vec(v)) => {
+            let filtered: Vec<String> = v.into_iter().filter(|s| !s.trim().is_empty()).collect();
+            if filtered.is_empty() {
+                None
+            } else {
+                Some(filtered)
+            }
+        }
         None => None,
     })
 }
@@ -1337,6 +1349,26 @@ allow_create = true
         scoped_redis_env(Some("redis://from-env:6379"), || {
             assert_eq!(cfg.resolved_url(), Some("redis://from-env:6379".into()));
         });
+    }
+
+    #[test]
+    fn test_api_keys_with_empty_strings_filtered() {
+        let toml_str = r#"
+api_keys = ["valid-key", ""]
+        "#;
+        let config: AuthConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.api_keys, Some(vec!["valid-key".to_string()]));
+        assert!(config.has_auth());
+    }
+
+    #[test]
+    fn test_api_keys_all_empty_strings_filtered() {
+        let toml_str = r#"
+api_keys = ["", "  "]
+        "#;
+        let config: AuthConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.api_keys, None);
+        assert!(!config.has_auth());
     }
 
     #[test]
