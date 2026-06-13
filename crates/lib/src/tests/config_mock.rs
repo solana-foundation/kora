@@ -426,6 +426,11 @@ impl KoraConfigBuilder {
         self.config.cache = cache;
         self
     }
+
+    pub fn with_cors_allow_origins(mut self, origins: Vec<String>) -> Self {
+        self.config.cors_allow_origins = origins;
+        self
+    }
 }
 
 pub struct CacheConfigBuilder {

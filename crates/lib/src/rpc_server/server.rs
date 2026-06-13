@@ -64,6 +64,13 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
                     .ok()
             })
             .collect::<Vec<_>>();
+
+        if origins.is_empty() {
+            log::warn!(
+                "No valid CORS origins configured. All cross-origin requests will be blocked."
+            );
+        }
+
         tower_http::cors::AllowOrigin::list(origins)
     };
 
@@ -99,8 +106,7 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
                 )
             });
 
-    let api_keys_config = std::env::var("KORA_API_KEY")
-        .ok()
+    let api_keys_config = AuthConfig::normalize_optional_secret(std::env::var("KORA_API_KEY").ok())
         .map(|k| vec![k])
         .or_else(|| config.kora.auth.api_keys.clone());
 
@@ -381,6 +387,61 @@ mod tests {
                 .expect("Failed to send request");
             assert_eq!(res.status(), reqwest::StatusCode::OK);
         }
+    }
+
+    #[tokio::test]
+    async fn test_empty_kora_api_key_disables_auth() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        // No api_keys in config
+        let auth_config = AuthConfigBuilder::new().build();
+        let kora_config = KoraConfigBuilder::new().with_auth(auth_config).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        // Set env var to empty string
+        env::set_var("KORA_API_KEY", "");
+
+        let _handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Failed to start server");
+
+        let client = Client::new();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // Request without X-API-Key should succeed (auth disabled)
+        let res = client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(res.status(), reqwest::StatusCode::OK);
+
+        env::remove_var("KORA_API_KEY");
+    }
+
+    #[tokio::test]
+    async fn test_empty_cors_origins_does_not_panic() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        // cors_allow_origins = []
+        let kora_config = KoraConfigBuilder::new().with_cors_allow_origins(vec![]).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        // This should not panic and should start successfully
+        let result = run_rpc_server(KoraRpc::new(rpc_client), port).await;
+        assert!(result.is_ok(), "Server failed to start with empty cors_allow_origins");
     }
 
     #[test]

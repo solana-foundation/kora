@@ -70,6 +70,7 @@ impl<S> Layer<S> for IdentityRateLimitLayer {
 pub struct IdentityRateLimitService<S> {
     inner: S,
     rate_limit: u64,
+    // Bounded by configured identities (API keys + hmac + unauthenticated), no eviction needed
     state: Arc<RwLock<HashMap<String, TokenBucket>>>,
 }
 
