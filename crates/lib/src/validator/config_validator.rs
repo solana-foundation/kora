@@ -1310,6 +1310,7 @@ mod tests {
             },
             kora: KoraConfig {
                 rate_limit: 0, // Should warn
+                cors_allow_origins: vec!["*".to_string()],
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods {
                     liveness: false,

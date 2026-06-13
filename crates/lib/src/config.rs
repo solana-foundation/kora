@@ -689,6 +689,7 @@ pub struct PluginsConfig {
 #[serde(default)]
 pub struct KoraConfig {
     pub rate_limit: u64,
+    pub cors_allow_origins: Vec<String>,
     pub max_request_body_size: usize,
     pub enabled_methods: EnabledMethods,
     pub auth: AuthConfig,
@@ -715,6 +716,7 @@ impl Default for KoraConfig {
     fn default() -> Self {
         Self {
             rate_limit: 100,
+            cors_allow_origins: vec!["*".to_string()],
             max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
             enabled_methods: EnabledMethods::default(),
             auth: AuthConfig::default(),
@@ -758,10 +760,33 @@ impl Default for LighthouseConfig {
     }
 }
 
+fn deserialize_api_keys<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        String(String),
+        Vec(Vec<String>),
+    }
+
+    let opt = Option::<StringOrVec>::deserialize(deserializer)?;
+    Ok(match opt {
+        Some(StringOrVec::String(s)) => {
+            log::warn!("DEPRECATION WARNING: 'api_key' as a single string is deprecated. Please migrate to using 'api_keys' as an array in your configuration.");
+            Some(vec![s])
+        }
+        Some(StringOrVec::Vec(v)) => Some(v),
+        None => None,
+    })
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct AuthConfig {
-    pub api_key: Option<String>,
+    #[serde(alias = "api_key", deserialize_with = "deserialize_api_keys")]
+    pub api_keys: Option<Vec<String>>,
     pub hmac_secret: Option<String>,
     pub recaptcha_secret: Option<String>,
     pub recaptcha_score_threshold: f64,
@@ -772,7 +797,7 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            api_key: None,
+            api_keys: None,
             hmac_secret: None,
             recaptcha_secret: None,
             recaptcha_score_threshold: DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
@@ -788,7 +813,7 @@ impl AuthConfig {
     }
 
     pub(crate) fn has_auth(&self) -> bool {
-        self.api_key.as_deref().is_some_and(|key| !key.is_empty())
+        self.api_keys.as_ref().is_some_and(|keys| !keys.is_empty())
             || self.hmac_secret.as_deref().is_some_and(|key| !key.is_empty())
     }
 }
@@ -843,6 +868,23 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn test_legacy_api_key_backward_compatibility() {
+        // Test that the old `api_key = "single-key"` format is successfully deserialized
+        // into `api_keys = ["single-key"]`.
+        let toml_str = r#"
+            rate_limit = 100
+            max_request_body_size = 1024
+            
+            [auth]
+            api_key = "legacy-single-key"
+        "#;
+
+        let config: KoraConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.auth.api_keys, Some(vec!["legacy-single-key".to_string()]));
+        assert!(config.auth.has_auth());
+    }
 
     #[test]
     fn test_load_valid_config() {
