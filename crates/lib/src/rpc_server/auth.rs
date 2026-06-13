@@ -10,8 +10,17 @@ use jsonrpsee::server::logger::Body;
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ClientIdentity(pub String);
+
+impl std::fmt::Debug for ClientIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.split_once(':') {
+            Some((prefix, _)) => write!(f, "ClientIdentity({prefix}:***)"),
+            None => write!(f, "ClientIdentity(***)"),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RejectionReason {

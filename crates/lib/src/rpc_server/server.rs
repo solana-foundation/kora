@@ -106,9 +106,18 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
                 )
             });
 
-    let api_keys_config = AuthConfig::normalize_optional_secret(std::env::var("KORA_API_KEY").ok())
-        .map(|k| vec![k])
-        .or_else(|| config.kora.auth.api_keys.clone());
+    let env_api_key = AuthConfig::normalize_optional_secret(std::env::var("KORA_API_KEY").ok());
+    let api_keys_config = match (env_api_key, &config.kora.auth.api_keys) {
+        (Some(env_key), Some(toml_keys)) if !toml_keys.is_empty() => {
+            log::warn!(
+                "KORA_API_KEY environment variable is set and takes precedence over {} API key(s) configured via 'api_keys' in TOML - those keys will be ignored.",
+                toml_keys.len()
+            );
+            Some(vec![env_key])
+        }
+        (Some(env_key), _) => Some(vec![env_key]),
+        (None, toml_keys) => toml_keys.clone(),
+    };
 
     let middleware = tower::ServiceBuilder::new()
         // Add metrics handler first (before other layers) so it can intercept /metrics
@@ -427,6 +436,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_empty_api_key_string_disables_auth() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -466,6 +476,61 @@ api_key = ""
             .expect("Failed to send request");
 
         assert_eq!(res.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_api_keys_env_var_takes_precedence_over_toml() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        // Parse TOML with some api_keys
+        let toml_str = r#"
+api_keys = ["toml-key-1", "toml-key-2"]
+        "#;
+        let auth_config: crate::config::AuthConfig = toml::from_str(toml_str).unwrap();
+
+        let kora_config = KoraConfigBuilder::new().with_auth(auth_config).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        // Set KORA_API_KEY env var
+        env::set_var("KORA_API_KEY", "env-key");
+
+        let _handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Failed to start server");
+
+        let client = Client::new();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // The request should only succeed with "env-key"
+        let res = client
+            .post(&url)
+            .header(X_API_KEY, "env-key")
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(res.status(), reqwest::StatusCode::OK);
+
+        // The request with "toml-key-1" should be rejected
+        let res_rejected = client
+            .post(&url)
+            .header(X_API_KEY, "toml-key-1")
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(res_rejected.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        env::remove_var("KORA_API_KEY");
     }
 
     #[tokio::test]
