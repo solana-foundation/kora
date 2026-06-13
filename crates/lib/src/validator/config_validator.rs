@@ -536,6 +536,19 @@ impl ConfigValidator {
             warnings.push("Rate limit is set to 0 - this will block all requests".to_string());
         }
 
+        // Validate CORS origins
+        let cors_empty_or_invalid = if config.kora.cors_allow_origins.is_empty() {
+            true
+        } else if !config.kora.cors_allow_origins.iter().any(|o| o == "*") {
+            !config.kora.cors_allow_origins.iter().any(|o| o.parse::<http::HeaderValue>().is_ok())
+        } else {
+            false
+        };
+
+        if cors_empty_or_invalid {
+            warnings.push("cors_allow_origins is empty or contains no valid origins - all cross-origin requests will be blocked".to_string());
+        }
+
         // Validate payment address
         if let Some(payment_address) = &config.kora.payment_address {
             if let Err(e) = Pubkey::from_str(payment_address) {
@@ -1309,8 +1322,8 @@ mod tests {
                 cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig {
-                rate_limit: 0, // Should warn
-                cors_allow_origins: vec!["*".to_string()],
+                rate_limit: 0,              // Should warn
+                cors_allow_origins: vec![], // Should warn
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods {
                     liveness: false,
@@ -1354,6 +1367,9 @@ mod tests {
 
         assert!(!warnings.is_empty());
         assert!(warnings.iter().any(|w| w.contains("Rate limit is set to 0")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("cors_allow_origins is empty or contains no valid origins")));
         assert!(warnings.iter().any(|w| w.contains("All rpc methods are disabled")));
         assert!(warnings.iter().any(|w| w.contains("Max allowed lamports is 0")));
         assert!(warnings.iter().any(|w| w.contains("Max signatures is 0")));
