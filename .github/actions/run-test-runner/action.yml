@@ -41,5 +41,5 @@ runs:
         # Add filters
         ARGS="$ARGS ${{ inputs.filters }}"
 
-        # Run the test runner
-        cargo run -p tests --bin test_runner -- $ARGS
+        # Run the prebuilt binary; `cargo run` would recompile it
+        ./target/debug/test_runner $ARGS

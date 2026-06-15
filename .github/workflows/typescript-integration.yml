@@ -54,12 +54,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "typescript-integration-${{ matrix.test-group }}"
-
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
