@@ -1,0 +1,297 @@
+{
+  "datasets": [
+    {
+      "name": "balance_latest",
+      "displayName": "Latest balance",
+      "queryLines": [
+        "SELECT sol, snapshot_at\n",
+        "FROM balance_snapshots\n",
+        "ORDER BY snapshot_at DESC LIMIT 1"
+      ]
+    },
+    {
+      "name": "tx_totals",
+      "displayName": "Transaction totals",
+      "queryLines": [
+        "SELECT\n",
+        "  count(*) AS total_tx,\n",
+        "  round(100.0 * sum(CASE WHEN success THEN 1 ELSE 0 END) / count(*), 1) AS success_pct,\n",
+        "  sum(fee_lamports) / 1e9 AS fees_sol\n",
+        "FROM transactions"
+      ]
+    },
+    {
+      "name": "balance_series",
+      "displayName": "Balance over time",
+      "queryLines": [
+        "SELECT snapshot_at, sol\n",
+        "FROM balance_snapshots\n",
+        "ORDER BY snapshot_at"
+      ]
+    },
+    {
+      "name": "tx_daily",
+      "displayName": "Transactions per day",
+      "queryLines": [
+        "SELECT date(block_time) AS day, count(*) AS txns\n",
+        "FROM transactions\n",
+        "GROUP BY 1 ORDER BY 1"
+      ]
+    },
+    {
+      "name": "ix_breakdown",
+      "displayName": "Instruction types",
+      "queryLines": [
+        "SELECT\n",
+        "  concat(coalesce(program, program_id), ' / ', coalesce(ix_type, '(unparsed)')) AS instruction,\n",
+        "  count(*) AS calls\n",
+        "FROM instructions\n",
+        "WHERE NOT is_inner\n",
+        "GROUP BY 1 ORDER BY calls DESC"
+      ]
+    },
+    {
+      "name": "recent_tx",
+      "displayName": "Recent transactions",
+      "queryLines": [
+        "SELECT signature, block_time, slot, success, fee_lamports, num_instructions\n",
+        "FROM transactions\n",
+        "ORDER BY block_time DESC LIMIT 50"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "hdr_title",
+            "textbox_spec": "# Kora devnet deploy paymaster\n\nFee-payer activity on Solana devnet. Source: devnet RPC, refreshed by the `kora-devnet-ingest` job."
+          },
+          "position": { "x": 0, "y": 0, "width": 6, "height": 1 }
+        },
+        {
+          "widget": {
+            "name": "counter_balance",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "balance_latest",
+                  "fields": [{ "name": "sol", "expression": "`sol`" }],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": { "value": { "fieldName": "sol", "displayName": "Balance (SOL)" } },
+              "frame": { "title": "Balance (SOL)", "showTitle": true }
+            }
+          },
+          "position": { "x": 0, "y": 1, "width": 3, "height": 3 }
+        },
+        {
+          "widget": {
+            "name": "counter_total_tx",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "tx_totals",
+                  "fields": [{ "name": "total_tx", "expression": "`total_tx`" }],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": { "value": { "fieldName": "total_tx", "displayName": "Transactions" } },
+              "frame": { "title": "Transactions (times called)", "showTitle": true }
+            }
+          },
+          "position": { "x": 3, "y": 1, "width": 3, "height": 3 }
+        },
+        {
+          "widget": {
+            "name": "counter_success",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "tx_totals",
+                  "fields": [{ "name": "success_pct", "expression": "`success_pct`" }],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": { "value": { "fieldName": "success_pct", "displayName": "Success %" } },
+              "frame": { "title": "Success rate (%)", "showTitle": true }
+            }
+          },
+          "position": { "x": 0, "y": 4, "width": 3, "height": 3 }
+        },
+        {
+          "widget": {
+            "name": "counter_fees",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "tx_totals",
+                  "fields": [{ "name": "fees_sol", "expression": "`fees_sol`" }],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": { "value": { "fieldName": "fees_sol", "displayName": "Fees paid (SOL)" } },
+              "frame": { "title": "Fees paid by payer (SOL)", "showTitle": true }
+            }
+          },
+          "position": { "x": 3, "y": 4, "width": 3, "height": 3 }
+        },
+        {
+          "widget": { "name": "hdr_activity", "textbox_spec": "# Activity" },
+          "position": { "x": 0, "y": 7, "width": 6, "height": 1 }
+        },
+        {
+          "widget": {
+            "name": "line_balance",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "balance_series",
+                  "fields": [
+                    { "name": "snapshot_at", "expression": "`snapshot_at`" },
+                    { "name": "sol", "expression": "`sol`" }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": { "fieldName": "snapshot_at", "scale": { "type": "temporal" }, "displayName": "Time" },
+                "y": { "fieldName": "sol", "scale": { "type": "quantitative" }, "displayName": "Balance (SOL)" }
+              },
+              "frame": { "title": "Balance over time", "showTitle": true }
+            }
+          },
+          "position": { "x": 0, "y": 8, "width": 6, "height": 6 }
+        },
+        {
+          "widget": {
+            "name": "line_tx_daily",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "tx_daily",
+                  "fields": [
+                    { "name": "day", "expression": "`day`" },
+                    { "name": "txns", "expression": "`txns`" }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": { "fieldName": "day", "scale": { "type": "temporal" }, "displayName": "Day" },
+                "y": { "fieldName": "txns", "scale": { "type": "quantitative" }, "displayName": "Transactions" }
+              },
+              "frame": { "title": "Transactions per day", "showTitle": true }
+            }
+          },
+          "position": { "x": 0, "y": 14, "width": 6, "height": 6 }
+        },
+        {
+          "widget": { "name": "hdr_instructions", "textbox_spec": "# Instructions" },
+          "position": { "x": 0, "y": 20, "width": 6, "height": 1 }
+        },
+        {
+          "widget": {
+            "name": "bar_ix_breakdown",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ix_breakdown",
+                  "fields": [
+                    { "name": "instruction", "expression": "`instruction`" },
+                    { "name": "calls", "expression": "`calls`" }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": { "fieldName": "calls", "scale": { "type": "quantitative" }, "displayName": "Calls" },
+                "y": { "fieldName": "instruction", "scale": { "type": "categorical" }, "displayName": "Instruction" }
+              },
+              "frame": { "title": "Instruction types (top-level)", "showTitle": true }
+            }
+          },
+          "position": { "x": 0, "y": 21, "width": 6, "height": 7 }
+        },
+        {
+          "widget": {
+            "name": "table_recent_tx",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "recent_tx",
+                  "fields": [
+                    { "name": "signature", "expression": "`signature`" },
+                    { "name": "block_time", "expression": "`block_time`" },
+                    { "name": "slot", "expression": "`slot`" },
+                    { "name": "success", "expression": "`success`" },
+                    { "name": "fee_lamports", "expression": "`fee_lamports`" },
+                    { "name": "num_instructions", "expression": "`num_instructions`" }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "signature", "displayName": "Signature" },
+                  { "fieldName": "block_time", "displayName": "Block time" },
+                  { "fieldName": "slot", "displayName": "Slot" },
+                  { "fieldName": "success", "displayName": "OK" },
+                  { "fieldName": "fee_lamports", "displayName": "Fee (lamports)" },
+                  { "fieldName": "num_instructions", "displayName": "Instructions" }
+                ]
+              },
+              "frame": { "title": "Recent transactions", "showTitle": true }
+            }
+          },
+          "position": { "x": 0, "y": 28, "width": 6, "height": 8 }
+        }
+      ]
+    }
+  ],
+  "uiSettings": { "theme": { "widgetHeaderAlignment": "ALIGN_LEFT" } }
+}

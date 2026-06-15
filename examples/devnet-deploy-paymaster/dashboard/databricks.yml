@@ -1,0 +1,54 @@
+bundle:
+  name: kora-devnet-dashboard
+
+include:
+  - prod.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog holding the Kora tables.
+  schema:
+    description: Schema inside the catalog.
+  address:
+    description: Paymaster fee-payer pubkey to track.
+  warehouse_id:
+    description: SQL warehouse id backing the dashboard datasets.
+  rpc_url:
+    description: Solana devnet RPC endpoint.
+    default: https://api.devnet.solana.com
+  max_signatures:
+    description: Max signatures to pull on a cold backfill.
+    default: "5000"
+
+targets:
+  prod:
+    mode: production
+    default: true
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+
+resources:
+  jobs:
+    kora_devnet_ingest:
+      name: kora-devnet-ingest
+      description: "Poll devnet RPC for the paymaster fee payer; append new transactions, instructions, and a balance snapshot."
+      tasks:
+        - task_key: ingest
+          notebook_task:
+            notebook_path: ./ingest.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              address: ${var.address}
+              rpc_url: ${var.rpc_url}
+              max_signatures: ${var.max_signatures}
+      schedule:
+        quartz_cron_expression: "0 0 9 * * ?"
+        timezone_id: UTC
+        pause_status: UNPAUSED
+
+  dashboards:
+    kora_devnet_dashboard:
+      display_name: Kora devnet paymaster
+      file_path: ./kora_devnet.lvdash.json
+      warehouse_id: ${var.warehouse_id}
