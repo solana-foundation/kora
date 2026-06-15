@@ -62,6 +62,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      # test_runner shells out to `cargo test` per phase, so the integration
+      # jobs need the toolchain and the incremental build cache even though
+      # they download prebuilt kora/test_runner binaries
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-integration"
+
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
