@@ -78,11 +78,16 @@ impl ServerHandles {
 
 /// Stop the RPC server and wait until it finishes handling in-flight requests.
 ///
-/// jsonrpsee 0.16 only re-checks its stop signal when the accept loop is woken
+/// This whole helper only exists to work around the jsonrpsee version we are
+/// pinned to (0.16): its accept loop re-checks the stop signal only when woken
 /// by a new connection, so on a server that has been idle since startup
-/// `stopped()` would block until the next request arrives. Open a throwaway
+/// `stopped()` would block until the next request arrives. We open a throwaway
 /// connection to wake the loop immediately, and cap the wait so shutdown can
 /// never hang.
+///
+/// Newer jsonrpsee releases reworked graceful shutdown and `stopped()` returns
+/// on its own, so this function (the TcpStream wake and the timeout) can be
+/// dropped once we upgrade.
 async fn wait_for_rpc_stop(rpc_handle: ServerHandle, port: u16) {
     if let Err(e) = rpc_handle.stop() {
         log::warn!("RPC server was already stopping: {e:?}");
