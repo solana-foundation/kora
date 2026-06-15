@@ -1,0 +1,8 @@
+targets:
+  prod:
+    variables:
+      catalog: <unity_catalog>        # e.g. prod
+      schema: <schema>                # e.g. kora_devnet
+      address: <paymaster_pubkey>     # devnet fee-payer to track
+      warehouse_id: <sql_warehouse_id>
+      rpc_url: <devnet_rpc_url>       # optional; defaults to https://api.devnet.solana.com
