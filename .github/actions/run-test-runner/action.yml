@@ -41,6 +41,5 @@ runs:
         # Add filters
         ARGS="$ARGS ${{ inputs.filters }}"
 
-        # Run the prebuilt binary directly; `cargo run` would recompile
-        # test_runner (~3.5 min) whenever the incremental cache does not match
+        # Run the prebuilt binary; `cargo run` would recompile it (~3.5 min)
         ./target/debug/test_runner $ARGS
