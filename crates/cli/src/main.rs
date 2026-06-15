@@ -2,16 +2,15 @@ mod args;
 
 use args::GlobalArgs;
 use clap::{Parser, Subcommand};
-use std::time::Duration;
 
 use kora_lib::{
     admin::token_util::initialize_atas,
     error::KoraError,
     log::LoggingFormat,
     rpc::get_rpc_client,
-    rpc_server::{run_rpc_server, server::ServerHandles, KoraRpc, RpcArgs},
+    rpc_server::{run_rpc_server, KoraRpc, RpcArgs},
     signer::init::init_signers,
-    state::{drain_background_tasks, init_config},
+    state::init_config,
     validator::config_validator::ConfigValidator,
     CacheUtil, Config,
 };
@@ -189,45 +188,14 @@ async fn main() -> Result<(), KoraError> {
 
                     let kora_rpc = KoraRpc::new(rpc_client);
 
-                    let ServerHandles { rpc_handle, metrics_handle, balance_tracker_handle } =
-                        run_rpc_server(kora_rpc, rpc_args.port).await?;
+                    let handles = run_rpc_server(kora_rpc, rpc_args.port).await?;
 
                     if let Err(e) = tokio::signal::ctrl_c().await {
                         panic!("Error waiting for Ctrl+C signal: {e:?}");
                     }
                     println!("Shutting down server...");
 
-                    // Stop the balance tracker task
-                    if let Some(handle) = balance_tracker_handle {
-                        log::info!("Stopping balance tracker background task...");
-                        handle.abort();
-                    }
-
-                    // Stop the RPC server and wait until it finishes handling
-                    // in-flight requests, so no new background broadcasts are
-                    // spawned while we drain the existing ones.
-                    if let Err(e) = rpc_handle.stop() {
-                        panic!("Error stopping RPC server: {e:?}");
-                    }
-                    rpc_handle.stopped().await;
-
-                    // Drain fire-and-forget broadcasts (RespondAfter::Signed) so they
-                    // reach an RPC node before the runtime exits and cancels them.
-                    let drain_timeout = Duration::from_secs(30);
-                    if !drain_background_tasks(drain_timeout).await {
-                        log::warn!(
-                            "Timed out after {}s waiting for background broadcasts to finish; \
-                             some transactions may not have been forwarded",
-                            drain_timeout.as_secs()
-                        );
-                    }
-
-                    // Stop the metrics server if running
-                    if let Some(handle) = metrics_handle {
-                        if let Err(e) = handle.stop() {
-                            panic!("Error stopping metrics server: {e:?}");
-                        }
-                    }
+                    handles.shutdown(rpc_args.port).await;
                 }
                 RpcCommands::InitializeAtas {
                     rpc_args,
