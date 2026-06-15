@@ -69,7 +69,7 @@ jobs:
       # they download prebuilt kora/test_runner binaries
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-integration"
+          shared-key: "rust-integration-build"
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
