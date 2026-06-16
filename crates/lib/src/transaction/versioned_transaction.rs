@@ -550,18 +550,20 @@ impl LookupTableUtil {
     ) -> Result<Vec<Pubkey>, KoraError> {
         let mut resolved_addresses = Vec::new();
 
-        // Maybe we can use caching here, there's a chance the lookup tables get updated though, so tbd
-        for lookup in lookup_table_lookups {
-            let lookup_table_account =
-                CacheUtil::get_account(config, rpc_client, &lookup.account_key, false)
-                    .await
-                    .map_err(|e| {
-                        KoraError::RpcError(format!(
-                            "Failed to fetch lookup table: {}",
-                            sanitize_error!(e)
-                        ))
-                    })?;
+        if lookup_table_lookups.is_empty() {
+            return Ok(resolved_addresses);
+        }
 
+        let pubkeys: Vec<Pubkey> = lookup_table_lookups.iter().map(|l| l.account_key).collect();
+
+        let lookup_table_accounts =
+            CacheUtil::get_multiple_accounts(config, rpc_client, &pubkeys).await.map_err(|e| {
+                KoraError::RpcError(format!("Failed to fetch lookup table: {}", sanitize_error!(e)))
+            })?;
+
+        for (lookup, lookup_table_account) in
+            lookup_table_lookups.iter().zip(lookup_table_accounts.iter())
+        {
             // Parse the lookup table account data to get the actual addresses
             let address_lookup_table = AddressLookupTable::deserialize(&lookup_table_account.data)
                 .map_err(|e| {
@@ -1046,16 +1048,18 @@ mod tests {
         let encoded_data = base64::engine::general_purpose::STANDARD.encode(&serialized_data);
 
         mocks.insert(
-            RpcRequest::GetAccountInfo,
+            RpcRequest::GetMultipleAccounts,
             json!({
                 "context": { "slot": 1 },
-                "value": {
-                    "data": [encoded_data, "base64"],
-                    "executable": false,
-                    "lamports": 0,
-                    "owner": "AddressLookupTab1e1111111111111111111111111".to_string(),
-                    "rentEpoch": 0
-                }
+                "value": [
+                    {
+                        "data": [encoded_data, "base64"],
+                        "executable": false,
+                        "lamports": 0,
+                        "owner": "AddressLookupTab1e1111111111111111111111111".to_string(),
+                        "rentEpoch": 0
+                    }
+                ]
             }),
         );
 
@@ -1312,13 +1316,13 @@ mod tests {
         let serialized_data = lookup_table.serialize_for_tests().unwrap();
 
         let rpc_client = RpcMockBuilder::new()
-            .with_account_info(&Account {
+            .with_multiple_accounts_info(vec![Some(Account {
                 data: serialized_data,
                 executable: false,
                 lamports: 0,
                 owner: Pubkey::new_unique(),
                 rent_epoch: 0,
-            })
+            })])
             .build();
 
         let lookups = vec![solana_message::v0::MessageAddressTableLookup {
@@ -1343,7 +1347,7 @@ mod tests {
         let config = setup_test_config();
         let _m = setup_config_mock(config.clone());
 
-        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let rpc_client = RpcMockBuilder::new().with_multiple_accounts_info(vec![]).build();
         let lookups = vec![];
 
         let resolved_addresses =
@@ -1359,7 +1363,7 @@ mod tests {
         let config = setup_test_config();
         let _m = setup_config_mock(config.clone());
 
-        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let rpc_client = RpcMockBuilder::new().with_multiple_accounts_info(vec![None]).build();
         let lookups = vec![solana_message::v0::MessageAddressTableLookup {
             account_key: Pubkey::new_unique(),
             writable_indexes: vec![0],
@@ -1396,13 +1400,13 @@ mod tests {
 
         let serialized_data = lookup_table.serialize_for_tests().unwrap();
         let rpc_client = RpcMockBuilder::new()
-            .with_account_info(&Account {
+            .with_multiple_accounts_info(vec![Some(Account {
                 data: serialized_data,
                 executable: false,
                 lamports: 0,
                 owner: Pubkey::new_unique(),
                 rent_epoch: 0,
-            })
+            })])
             .build();
 
         // Try to access index 1 which doesn't exist
@@ -1443,13 +1447,13 @@ mod tests {
 
         let serialized_data = lookup_table.serialize_for_tests().unwrap();
         let rpc_client = RpcMockBuilder::new()
-            .with_account_info(&Account {
+            .with_multiple_accounts_info(vec![Some(Account {
                 data: serialized_data,
                 executable: false,
                 lamports: 0,
                 owner: Pubkey::new_unique(),
                 rent_epoch: 0,
-            })
+            })])
             .build();
 
         let lookups = vec![solana_message::v0::MessageAddressTableLookup {
