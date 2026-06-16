@@ -1197,7 +1197,7 @@ mod tests_token {
 
     #[tokio::test]
     async fn test_get_mint_account_not_found() {
-        let _lock = ConfigMockBuilder::new().build_and_setup();
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
 
@@ -1208,7 +1208,7 @@ mod tests_token {
 
     #[tokio::test]
     async fn test_get_mint_decimals_valid() {
-        let _lock = ConfigMockBuilder::new().build_and_setup();
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_mint_account(6).build();
 
@@ -1248,7 +1248,7 @@ mod tests_token {
 
     #[tokio::test]
     async fn test_get_token_price_and_decimals_account_not_found() {
-        let _lock = ConfigMockBuilder::new().build_and_setup();
+        let _lock = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
         let config = get_config().unwrap();
         let mint = Pubkey::from_str(WSOL_DEVNET_MINT).unwrap();
         let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
