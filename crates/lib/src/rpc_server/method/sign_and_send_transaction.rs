@@ -58,6 +58,7 @@ pub async fn sign_and_send_transaction(
         config,
         rpc_client,
         sig_verify,
+        None,
     )
     .await?;
 
