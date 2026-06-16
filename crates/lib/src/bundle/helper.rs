@@ -108,6 +108,8 @@ impl BundleProcessor {
         let mut all_bundle_instructions: Vec<Instruction> = Vec::new();
         let mut txs_missing_payment_count = 0u64;
 
+        let mut alt_cache: HashMap<Pubkey, Vec<Pubkey>> = HashMap::new();
+
         // Phase 1: Decode, resolve, validate, calc fees, collect instructions
         for encoded in encoded_txs {
             let transaction = TransactionUtil::decode_b64_transaction(encoded)?;
@@ -117,6 +119,7 @@ impl BundleProcessor {
                 config,
                 rpc_client,
                 sig_verify,
+                Some(&mut alt_cache),
             )
             .await?;
 

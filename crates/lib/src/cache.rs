@@ -735,7 +735,7 @@ impl CacheUtil {
         let mut results: Vec<Option<Account>> = vec![None; pubkeys.len()];
         let mut misses: Vec<(usize, Pubkey)> = Vec::new();
 
-        for (i, (pubkey, cached_str_opt)) in pubkeys.iter().zip(raw.into_iter()).enumerate() {
+        for (i, (pubkey, cached_str_opt)) in pubkeys.iter().zip(raw).enumerate() {
             let mut hit = false;
             if let Some(cached_str) = cached_str_opt {
                 match serde_json::from_str::<CachedAccount>(&cached_str) {
