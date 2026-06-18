@@ -263,6 +263,11 @@ export class KoraClient {
      * Signs a transaction and immediately broadcasts it to the Solana network.
      * @param request - Sign and send request parameters
      * @param request.transaction - Base64-encoded transaction to sign and send
+     * @param request.respond_after - The lifecycle milestone to wait for before
+     * responding (defaults to `'confirmed'`): `'confirmed'` waits for on-chain confirmation,
+     * `'sent'` returns once the RPC node accepts the transaction, `'signed'` returns as soon
+     * as signing completes and broadcasts in the background (broadcast failures are logged
+     * server-side; rebroadcast the returned signed transaction if it never lands)
      * @returns Signature and the signed transaction
      * @throws {Error} When the RPC call fails, validation fails, or broadcast fails
      *
@@ -272,6 +277,12 @@ export class KoraClient {
      *   transaction: 'base64EncodedTransaction'
      * });
      * console.log('Transaction signature:', result.signature);
+     *
+     * // Lowest latency: return as soon as signing completes
+     * const fast = await client.signAndSendTransaction({
+     *   transaction: 'base64EncodedTransaction',
+     *   respond_after: 'signed'
+     * });
      * ```
      */
     async signAndSendTransaction(request: SignAndSendTransactionRequest): Promise<SignAndSendTransactionResponse> {

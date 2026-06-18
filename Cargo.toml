@@ -67,6 +67,7 @@ tower = { version = "0.4.13", features = ["full"] }
 tower-http = { version = "0.3.5", features = ["full", "cors"] }
 clap = { version = "4.6", features = ["derive", "env"] }
 tokio = { version = "1.50.0", features = ["full"] }
+tokio-util = { version = "0.7.16", features = ["rt"] }
 prettyplease = "0.2.25"
 syn = "2.0.89"
 parking_lot = "0.12"

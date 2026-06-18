@@ -1,17 +1,25 @@
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcSimulateTransactionConfig};
+use serde::Deserialize;
+use solana_client::{
+    nonblocking::rpc_client::RpcClient,
+    rpc_config::{RpcSendTransactionConfig, RpcSimulateTransactionConfig},
+};
 use solana_commitment_config::CommitmentConfig;
 use solana_keychain::{Signer, SolanaSigner};
 use solana_message::{
     compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup, VersionedMessage,
 };
-use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
+use solana_sdk::{
+    instruction::Instruction, pubkey::Pubkey, signature::Signature,
+    transaction::VersionedTransaction,
+};
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
     time::Duration,
 };
+use utoipa::ToSchema;
 
 use solana_transaction_status_client_types::UiTransactionEncoding;
 
@@ -22,7 +30,7 @@ use crate::{
     lighthouse::LighthouseUtil,
     plugin::{PluginExecutionContext, TransactionPluginRunner},
     sanitize_error,
-    state::{get_signer_pool, reserve_request_signer_by_pubkey},
+    state::{get_background_tasks, get_signer_pool, reserve_request_signer_by_pubkey},
     token::token::TransferHookValidationFlow,
     transaction::{
         instruction_util::IxUtils, ParsedALTInstructionData, ParsedALTInstructionType,
@@ -83,6 +91,23 @@ impl Deref for VersionedTransactionResolved {
     }
 }
 
+/// The transaction lifecycle milestone `signAndSendTransaction` waits for before
+/// responding, ordered by increasing assurance: `Signed` < `Sent` < `Confirmed`.
+///
+/// All modes share the immediate sign-and-send validation flow (`will_send = true`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RespondAfter {
+    /// Wait for on-chain confirmation at `confirmed` commitment (default).
+    #[default]
+    Confirmed,
+    /// Wait only until the RPC node accepts the transaction; no confirmation wait.
+    Sent,
+    /// Return as soon as signing completes and broadcast in the background. Broadcast
+    /// failures are logged server-side, not returned to the caller.
+    Signed,
+}
+
 #[async_trait]
 pub trait VersionedTransactionOps {
     fn encode_b64_transaction(&self) -> Result<String, KoraError>;
@@ -101,7 +126,8 @@ pub trait VersionedTransactionOps {
         &mut self,
         config: &Config,
         signer: &std::sync::Arc<Signer>,
-        rpc_client: &RpcClient,
+        rpc_client: &std::sync::Arc<RpcClient>,
+        respond_after: RespondAfter,
     ) -> Result<(String, String), KoraError>;
 }
 
@@ -523,19 +549,95 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         &mut self,
         config: &Config,
         signer: &std::sync::Arc<Signer>,
-        rpc_client: &RpcClient,
+        rpc_client: &std::sync::Arc<RpcClient>,
+        respond_after: RespondAfter,
     ) -> Result<(String, String), KoraError> {
         // Payment validation is handled in sign_transaction
         let (transaction, encoded) =
             self.sign_transaction(config, signer, rpc_client, true).await?;
 
-        // Send and confirm transaction
-        let signature = rpc_client
-            .send_and_confirm_transaction(&transaction)
-            .await
-            .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
+        // Validation already simulated the transaction, so the fast modes skip
+        // preflight: a second simulation only delays landing and can fail
+        // transiently even though the transaction is valid.
+        //
+        // That simulation ran before Kora signed and used the caller's sig_verify
+        // (default false), so it does not cover signature validity — only the
+        // explicit guard below does.
+        let skip_preflight_config =
+            RpcSendTransactionConfig { skip_preflight: true, ..Default::default() };
 
-        Ok((signature.to_string(), encoded))
+        // Skipping preflight also skips the RPC node's signature verification, so a
+        // transaction with an unfilled co-signer slot (possible when validation ran
+        // with sig_verify off) would be accepted by the RPC but dropped silently by
+        // validators. Reject it here so the caller gets an error instead of a
+        // signature for a transaction that can never land.
+        if transaction.signatures.iter().any(|s| *s == Signature::default()) {
+            return Err(KoraError::InvalidTransaction(
+                "Transaction is missing required signatures".to_string(),
+            ));
+        }
+
+        match respond_after {
+            RespondAfter::Confirmed => {
+                let signature = rpc_client
+                    .send_and_confirm_transaction(&transaction)
+                    .await
+                    .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
+
+                Ok((signature.to_string(), encoded))
+            }
+            RespondAfter::Sent => {
+                let signature = rpc_client
+                    .send_transaction_with_config(&transaction, skip_preflight_config)
+                    .await
+                    .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
+
+                Ok((signature.to_string(), encoded))
+            }
+            RespondAfter::Signed => {
+                // A Solana transaction is identified by its first signature, which is
+                // already present once signing completes — so the caller gets it
+                // without waiting for the broadcast.
+                let signature = transaction
+                    .signatures
+                    .first()
+                    .ok_or_else(|| {
+                        KoraError::InvalidTransaction(
+                            "Signed transaction has no signatures".to_string(),
+                        )
+                    })?
+                    .to_string();
+
+                // Broadcast in the background so the response returns instantly. This
+                // mode carries ZERO delivery guarantee: the response (signature +
+                // signed transaction) is returned before the send is even attempted,
+                // so any failure — a transient RPC error, the node dropping the
+                // transaction, or the broadcast never landing on-chain — happens after
+                // the caller already has a "successful" response. Failures are only
+                // logged server-side, never returned. Callers who need delivery
+                // assurance must use Sent or Confirmed, or rebroadcast the returned
+                // signed transaction themselves and verify it landed.
+                //
+                // The task is registered with the global tracker so a graceful
+                // shutdown drains in-flight broadcasts instead of cancelling them
+                // when the runtime exits.
+                let rpc_client = std::sync::Arc::clone(rpc_client);
+                let log_signature = signature.clone();
+                get_background_tasks().spawn(async move {
+                    if let Err(e) = rpc_client
+                        .send_transaction_with_config(&transaction, skip_preflight_config)
+                        .await
+                    {
+                        log::error!(
+                            "Background broadcast failed for transaction {log_signature}: {}",
+                            sanitize_error!(e)
+                        );
+                    }
+                });
+
+                Ok((signature, encoded))
+            }
+        }
     }
 }
 

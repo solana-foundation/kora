@@ -2,12 +2,13 @@ mod args;
 
 use args::GlobalArgs;
 use clap::{Parser, Subcommand};
+
 use kora_lib::{
     admin::token_util::initialize_atas,
     error::KoraError,
     log::LoggingFormat,
     rpc::get_rpc_client,
-    rpc_server::{run_rpc_server, server::ServerHandles, KoraRpc, RpcArgs},
+    rpc_server::{run_rpc_server, KoraRpc, RpcArgs},
     signer::init::init_signers,
     state::init_config,
     validator::config_validator::ConfigValidator,
@@ -187,29 +188,12 @@ async fn main() -> Result<(), KoraError> {
 
                     let kora_rpc = KoraRpc::new(rpc_client);
 
-                    let ServerHandles { rpc_handle, metrics_handle, balance_tracker_handle } =
-                        run_rpc_server(kora_rpc, rpc_args.port).await?;
+                    let handles = run_rpc_server(kora_rpc, rpc_args.port).await?;
 
                     wait_for_shutdown_signal().await;
                     println!("Shutting down server...");
 
-                    // Stop the balance tracker task
-                    if let Some(handle) = balance_tracker_handle {
-                        log::info!("Stopping balance tracker background task...");
-                        handle.abort();
-                    }
-
-                    // Stop the RPC server
-                    if let Err(e) = rpc_handle.stop() {
-                        panic!("Error stopping RPC server: {e:?}");
-                    }
-
-                    // Stop the metrics server if running
-                    if let Some(handle) = metrics_handle {
-                        if let Err(e) = handle.stop() {
-                            panic!("Error stopping metrics server: {e:?}");
-                        }
-                    }
+                    handles.shutdown(rpc_args.port).await;
                 }
                 RpcCommands::InitializeAtas {
                     rpc_args,

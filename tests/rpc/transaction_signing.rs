@@ -148,6 +148,158 @@ async fn test_sign_and_send_transaction_legacy() {
 }
 
 #[tokio::test]
+async fn test_sign_and_send_transaction_respond_after_sent() {
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let test_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create signed test transaction");
+
+    // Positional params: [transaction, signer_key, sig_verify, user_id, respond_after]
+    let result: Result<serde_json::Value, _> = ctx
+        .rpc_call(
+            "signAndSendTransaction",
+            rpc_params![test_tx, None::<String>, false, None::<String>, "sent"],
+        )
+        .await;
+
+    assert!(result.is_ok(), "Expected signAndSendTransaction with respond_after=sent to succeed");
+    let response = result.unwrap();
+
+    assert!(response["signature"].as_str().is_some(), "Expected signature in response");
+    assert!(
+        response["signed_transaction"].as_str().is_some(),
+        "Expected signed_transaction in response"
+    );
+}
+
+#[tokio::test]
+async fn test_sign_and_send_transaction_respond_after_sent_rejects_missing_signature() {
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    // The sender is a required signer but never signs, leaving a default
+    // signature slot. With sig_verify=false nothing upstream catches it, and
+    // respond_after=sent skips preflight — so the server must reject it instead
+    // of returning a signature for a transaction validators will drop.
+    let test_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create unsigned test transaction");
+
+    let result: Result<serde_json::Value, _> = ctx
+        .rpc_call(
+            "signAndSendTransaction",
+            rpc_params![test_tx, None::<String>, false, None::<String>, "sent"],
+        )
+        .await;
+
+    let error = result.expect_err("Expected rejection for transaction with missing signature");
+    assert!(
+        error.to_string().contains("missing required signatures"),
+        "Expected missing-signatures error, got: {error}"
+    );
+}
+
+#[tokio::test]
+async fn test_sign_and_send_transaction_respond_after_signed() {
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let test_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_signer(&sender)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc(),
+        )
+        .with_transfer(&sender.pubkey(), &recipient, 10)
+        .build()
+        .await
+        .expect("Failed to create signed test transaction");
+
+    let result: Result<serde_json::Value, _> = ctx
+        .rpc_call(
+            "signAndSendTransaction",
+            rpc_params![test_tx, None::<String>, false, None::<String>, "signed"],
+        )
+        .await;
+
+    assert!(result.is_ok(), "Expected signAndSendTransaction with respond_after=signed to succeed");
+    let response = result.unwrap();
+
+    // The signature is derived from the signed transaction before the background
+    // broadcast runs, so it must match the transaction's first signature.
+    let signature = response["signature"].as_str().expect("Expected signature in response");
+    let signed_transaction =
+        response["signed_transaction"].as_str().expect("Expected signed_transaction in response");
+    let decoded = TransactionUtil::decode_b64_transaction(signed_transaction)
+        .expect("Returned signed transaction should decode");
+    assert_eq!(
+        signature,
+        decoded.signatures[0].to_string(),
+        "Returned signature should be the transaction's first signature"
+    );
+
+    // The response returns before the broadcast runs, so the transaction lands
+    // asynchronously. Poll its signature status to confirm the background broadcast
+    // actually submitted it to the network rather than dropping it silently.
+    let signature = solana_sdk::signature::Signature::from_str(signature)
+        .expect("Returned signature should parse");
+    let rpc_client = ctx.rpc_client();
+
+    let mut landed = false;
+    for _ in 0..20 {
+        let statuses = rpc_client
+            .get_signature_statuses(&[signature])
+            .await
+            .expect("getSignatureStatuses should succeed");
+        if statuses.value.first().and_then(|status| status.as_ref()).is_some() {
+            landed = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    assert!(landed, "Background broadcast should have submitted the transaction to the network");
+}
+
+#[tokio::test]
 async fn test_sign_and_send_transaction_v0() {
     let sender = SenderTestHelper::get_test_sender_keypair();
     let recipient = RecipientTestHelper::get_recipient_pubkey();

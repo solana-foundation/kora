@@ -34,17 +34,25 @@ impl RecaptchaConfig {
         self.protected_methods.iter().any(|m| m == method)
     }
 
-    pub async fn validate(&self, token: Option<&str>) -> Result<(), Response<Body>> {
+    pub async fn validate(&self, token: Option<&str>) -> Result<(), Box<Response<Body>>> {
         let token = match token {
             Some(t) if !t.is_empty() => t,
             _ => {
-                return Err(build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, ""))
+                return Err(Box::new(build_response_with_graceful_error(
+                    None,
+                    StatusCode::UNAUTHORIZED,
+                    "",
+                )))
             }
         };
 
         if let Err(e) = self.verify_token(token).await {
             log::error!("reCAPTCHA verification error: {}", sanitize_error!(e));
-            return Err(build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, ""));
+            return Err(Box::new(build_response_with_graceful_error(
+                None,
+                StatusCode::UNAUTHORIZED,
+                "",
+            )));
         }
 
         Ok(())

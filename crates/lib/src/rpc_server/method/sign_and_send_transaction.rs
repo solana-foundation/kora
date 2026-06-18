@@ -1,6 +1,8 @@
 use crate::{
     rpc_server::middleware_utils::default_sig_verify,
-    transaction::{TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved},
+    transaction::{
+        RespondAfter, TransactionUtil, VersionedTransactionOps, VersionedTransactionResolved,
+    },
     usage_limit::UsageTracker,
     KoraError,
 };
@@ -30,6 +32,12 @@ pub struct SignAndSendTransactionRequest {
     /// Optional user ID for usage tracking (required when pricing is free and usage tracking is enabled)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
+    /// The lifecycle milestone to wait for before responding (defaults to "confirmed"):
+    /// "confirmed" waits for on-chain confirmation, "sent" returns once the RPC node
+    /// accepts the transaction, "signed" returns as soon as signing completes and
+    /// broadcasts in the background.
+    #[serde(default)]
+    pub respond_after: RespondAfter,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -71,8 +79,9 @@ pub async fn sign_and_send_transaction(
     )
     .await?;
 
-    let (signature, signed_transaction) =
-        resolved_transaction.sign_and_send_transaction(config, &signer, rpc_client).await?;
+    let (signature, signed_transaction) = resolved_transaction
+        .sign_and_send_transaction(config, &signer, rpc_client, request.respond_after)
+        .await?;
 
     Ok(SignAndSendTransactionResponse {
         signed_transaction,
@@ -104,6 +113,7 @@ mod tests {
             signer_key: None,
             sig_verify: true,
             user_id: None,
+            respond_after: RespondAfter::Confirmed,
         };
 
         let result = sign_and_send_transaction(&rpc_client, request).await;
@@ -125,6 +135,7 @@ mod tests {
             signer_key: Some("invalid_pubkey".to_string()),
             sig_verify: true,
             user_id: None,
+            respond_after: RespondAfter::Confirmed,
         };
 
         let result = sign_and_send_transaction(&rpc_client, request).await;
@@ -132,5 +143,71 @@ mod tests {
         assert!(result.is_err(), "Should fail with invalid signer key");
         let error = result.unwrap_err();
         assert!(matches!(error, KoraError::ValidationError(_)), "Should return ValidationError");
+    }
+
+    #[tokio::test]
+    async fn test_sign_and_send_transaction_respond_after_signed_decode_error() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+
+        let request = SignAndSendTransactionRequest {
+            transaction: "invalid_base64!@#$".to_string(),
+            signer_key: None,
+            sig_verify: true,
+            user_id: None,
+            respond_after: RespondAfter::Signed,
+        };
+
+        let result = sign_and_send_transaction(&rpc_client, request).await;
+
+        assert!(result.is_err(), "Should fail with decode error");
+    }
+
+    #[tokio::test]
+    async fn test_sign_and_send_transaction_respond_after_signed_invalid_signer_key() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let _ = setup_or_get_test_usage_limiter().await;
+
+        let rpc_client = Arc::new(RpcMockBuilder::new().build());
+
+        let request = SignAndSendTransactionRequest {
+            transaction: create_mock_encoded_transaction(),
+            signer_key: Some("invalid_pubkey".to_string()),
+            sig_verify: true,
+            user_id: None,
+            respond_after: RespondAfter::Signed,
+        };
+
+        let result = sign_and_send_transaction(&rpc_client, request).await;
+
+        assert!(result.is_err(), "Should fail with invalid signer key");
+        let error = result.unwrap_err();
+        assert!(matches!(error, KoraError::ValidationError(_)), "Should return ValidationError");
+    }
+
+    #[test]
+    fn test_respond_after_deserialization() {
+        let request: SignAndSendTransactionRequest =
+            serde_json::from_str(r#"{"transaction": "abc"}"#).unwrap();
+        assert_eq!(request.respond_after, RespondAfter::Confirmed);
+
+        let request: SignAndSendTransactionRequest =
+            serde_json::from_str(r#"{"transaction": "abc", "respond_after": "sent"}"#).unwrap();
+        assert_eq!(request.respond_after, RespondAfter::Sent);
+
+        let request: SignAndSendTransactionRequest =
+            serde_json::from_str(r#"{"transaction": "abc", "respond_after": "signed"}"#).unwrap();
+        assert_eq!(request.respond_after, RespondAfter::Signed);
+
+        let result = serde_json::from_str::<SignAndSendTransactionRequest>(
+            r#"{"transaction": "abc", "respond_after": "finalized"}"#,
+        );
+        assert!(result.is_err(), "Unknown respond_after milestone should be rejected");
     }
 }

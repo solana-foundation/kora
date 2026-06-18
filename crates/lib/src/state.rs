@@ -4,6 +4,7 @@ use std::sync::{
     atomic::{AtomicPtr, Ordering},
     Arc,
 };
+use tokio_util::task::TaskTracker;
 
 use crate::{
     config::Config, error::KoraError, signer::SignerPool, transaction::signing_retry_window,
@@ -15,6 +16,37 @@ static GLOBAL_SIGNER_POOL: Lazy<RwLock<Option<Arc<SignerPool>>>> = Lazy::new(|| 
 
 // Global config with zero-cost reads and hot-reload capability
 static GLOBAL_CONFIG: AtomicPtr<Config> = AtomicPtr::new(std::ptr::null_mut());
+
+// Tracks detached background tasks (currently the fire-and-forget broadcasts of
+// `RespondAfter::Signed`) so a graceful shutdown can wait for in-flight sends
+// to reach an RPC node instead of cancelling them when the runtime exits.
+static BACKGROUND_TASKS: Lazy<TaskTracker> = Lazy::new(TaskTracker::new);
+
+/// Returns the global tracker for detached background tasks.
+///
+/// Spawn fire-and-forget work through this tracker (`get_background_tasks().spawn(..)`)
+/// so shutdown can drain it via [`drain_background_tasks`].
+pub fn get_background_tasks() -> &'static TaskTracker {
+    &BACKGROUND_TASKS
+}
+
+/// Waits for all tracked background tasks to finish, up to `timeout`.
+///
+/// Closes the tracker so no new spawns keep the wait alive, then awaits
+/// completion. Returns `false` if the timeout elapsed with tasks still running.
+pub async fn drain_background_tasks(timeout: Duration) -> bool {
+    drain_tracker(get_background_tasks(), timeout).await
+}
+
+async fn drain_tracker(tracker: &TaskTracker, timeout: Duration) -> bool {
+    tracker.close();
+
+    if tracker.is_empty() {
+        return true;
+    }
+
+    tokio::time::timeout(timeout, tracker.wait()).await.is_ok()
+}
 
 fn sync_probe_lease_from_config(pool: &SignerPool, config: &Config) {
     let sign_timeout = Duration::from_secs(config.kora.sign_timeout_seconds);
@@ -173,5 +205,39 @@ mod tests {
 
         let pool = get_signer_pool().unwrap();
         assert_eq!(pool.probe_lease(), signing_retry_window(Duration::from_secs(15), 5));
+    }
+
+    #[tokio::test]
+    async fn test_drain_tracker_waits_for_in_flight_task() {
+        let tracker = TaskTracker::new();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tracker.spawn(async move {
+            let _ = rx.await;
+        });
+
+        // Release the task shortly after the drain starts so it completes within
+        // the timeout window.
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let _ = tx.send(());
+        });
+
+        assert!(drain_tracker(&tracker, Duration::from_secs(5)).await);
+    }
+
+    #[tokio::test]
+    async fn test_drain_tracker_times_out_when_task_outlives_timeout() {
+        let tracker = TaskTracker::new();
+        tracker.spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+
+        assert!(!drain_tracker(&tracker, Duration::from_millis(50)).await);
+    }
+
+    #[tokio::test]
+    async fn test_drain_tracker_returns_immediately_when_empty() {
+        let tracker = TaskTracker::new();
+        assert!(drain_tracker(&tracker, Duration::from_secs(5)).await);
     }
 }
