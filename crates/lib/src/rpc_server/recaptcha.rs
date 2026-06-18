@@ -70,7 +70,7 @@ where
                 new_request.headers().get(X_RECAPTCHA_TOKEN).and_then(|v| v.to_str().ok());
 
             if let Err(resp) = config.validate(recaptcha_token).await {
-                return Ok(resp);
+                return Ok(*resp);
             }
 
             inner.call(new_request).await
