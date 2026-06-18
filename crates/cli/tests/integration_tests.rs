@@ -8,10 +8,18 @@ fn test_config_validate_invalid_config_file() {
     // Load default config and inject invalid pubkey to trigger validation error
     let base_config_path =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../kora.toml");
-    let base_config = std::fs::read_to_string(base_config_path).unwrap();
+
+    let base_config = std::fs::read_to_string(&base_config_path)
+        .expect("kora.toml must exist at repo root to run this test");
+
     let config_content = base_config.replace(
         "allowed_programs = [",
         "allowed_programs = [\n    \"invalid_pubkey_format_that_will_fail\",",
+    );
+
+    assert!(
+        config_content.contains("invalid_pubkey_format_that_will_fail"),
+        "Injection guard failed: The string 'allowed_programs = [' was not found in kora.toml."
     );
 
     let mut file = File::create(&config_path).unwrap();
