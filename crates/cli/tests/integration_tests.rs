@@ -29,7 +29,5 @@ fn test_config_validate_invalid_config_file() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Configuration validation failed"));
-
-    // Expected current behavior (bug): process exits with 0 despite validation failure
-    assert!(output.status.success());
+    assert!(!output.status.success());
 }
