@@ -29,6 +29,12 @@ pub trait UsageStore: Send + Sync {
         expiry: Option<u64>,
     ) -> Result<bool, KoraError>;
 
+    /// `entries` must contain distinct keys; duplicate keys produce undefined increment behaviour.
+    async fn check_and_increment_many(
+        &self,
+        entries: &[(String, u64, u64, Option<u64>)],
+    ) -> Result<bool, KoraError>;
+
     /// Clear all usage data (mainly for testing)
     async fn clear(&self) -> Result<(), KoraError>;
 }
@@ -44,6 +50,31 @@ static CHECK_AND_INCREMENT_SCRIPT: Lazy<redis::Script> = Lazy::new(|| {
             redis.call('INCRBY', KEYS[1], ARGV[1])
             if ARGV[3] ~= '0' and redis.call('TTL', KEYS[1]) < 0 then
                 redis.call('EXPIREAT', KEYS[1], ARGV[3])
+            end
+            return 1
+            ",
+    )
+});
+
+/// Atomically checks limits for multiple rules and increments only if all pass.
+static CHECK_AND_INCREMENT_MANY_SCRIPT: Lazy<redis::Script> = Lazy::new(|| {
+    redis::Script::new(
+        r"
+            local num_keys = #KEYS
+            for i = 1, num_keys do
+                local current = redis.call('GET', KEYS[i])
+                local count = current and tonumber(current) or 0
+                local delta = tonumber(ARGV[(i - 1) * 3 + 1])
+                local max = tonumber(ARGV[(i - 1) * 3 + 2])
+                if count + delta > max then return 0 end
+            end
+            for i = 1, num_keys do
+                local delta = tonumber(ARGV[(i - 1) * 3 + 1])
+                local expiry = ARGV[(i - 1) * 3 + 3]
+                redis.call('INCRBY', KEYS[i], delta)
+                if expiry ~= '0' and redis.call('TTL', KEYS[i]) < 0 then
+                    redis.call('EXPIREAT', KEYS[i], expiry)
+                end
             end
             return 1
             ",
@@ -140,6 +171,35 @@ impl UsageStore for RedisUsageStore {
                     e
                 )))
             })?;
+
+        Ok(allowed == 1)
+    }
+
+    async fn check_and_increment_many(
+        &self,
+        entries: &[(String, u64, u64, Option<u64>)],
+    ) -> Result<bool, KoraError> {
+        if entries.is_empty() {
+            return Ok(true);
+        }
+
+        let mut conn = self.get_connection().await?;
+        let mut inv = CHECK_AND_INCREMENT_MANY_SCRIPT.key(&entries[0].0);
+
+        for (key, _, _, _) in entries.iter().skip(1) {
+            inv.key(key);
+        }
+
+        for (_, delta, max, expiry) in entries {
+            inv.arg(*delta).arg(*max).arg(expiry.unwrap_or(0));
+        }
+
+        let allowed: i32 = inv.invoke_async(&mut conn).await.map_err(|e| {
+            KoraError::InternalServerError(sanitize_error!(format!(
+                "Failed to execute check_and_increment_many script: {}",
+                e
+            )))
+        })?;
 
         Ok(allowed == 1)
     }
@@ -281,6 +341,60 @@ impl UsageStore for InMemoryUsageStore {
         Ok(true)
     }
 
+    async fn check_and_increment_many(
+        &self,
+        entries: &[(String, u64, u64, Option<u64>)],
+    ) -> Result<bool, KoraError> {
+        let mut data = self.data.lock().map_err(|e| {
+            KoraError::InternalServerError(sanitize_error!(format!(
+                "Failed to lock usage store: {}",
+                e
+            )))
+        })?;
+
+        let now = Self::current_timestamp();
+
+        for (key, delta, max, _expiry) in entries {
+            let current_count = if let Some(entry) = data.get(key) {
+                if let Some(e) = entry.expiry {
+                    if now >= e {
+                        0
+                    } else {
+                        entry.count
+                    }
+                } else {
+                    entry.count
+                }
+            } else {
+                0
+            };
+
+            let new_count = current_count as u64 + delta;
+            if new_count > *max || new_count > u32::MAX as u64 {
+                return Ok(false);
+            }
+        }
+
+        for (key, delta, _max, expiry) in entries {
+            let entry =
+                data.entry(key.to_string()).or_insert(UsageEntry { count: 0, expiry: None });
+            if let Some(e) = entry.expiry {
+                if now >= e {
+                    entry.count = 0;
+                    entry.expiry = None;
+                }
+            }
+            entry.count += *delta as u32;
+            if let Some(e) = expiry {
+                if entry.expiry.is_none() {
+                    entry.expiry = Some(*e);
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
     async fn clear(&self) -> Result<(), KoraError> {
         let mut data = self.data.lock().map_err(|e| {
             KoraError::InternalServerError(sanitize_error!(format!(
@@ -340,6 +454,17 @@ impl UsageStore for ErrorUsageStore {
         _delta: u64,
         _max: u64,
         _expiry: Option<u64>,
+    ) -> Result<bool, KoraError> {
+        if self.should_error_increment {
+            Err(KoraError::InternalServerError("Redis connection failed".to_string()))
+        } else {
+            Ok(true)
+        }
+    }
+
+    async fn check_and_increment_many(
+        &self,
+        _entries: &[(String, u64, u64, Option<u64>)],
     ) -> Result<bool, KoraError> {
         if self.should_error_increment {
             Err(KoraError::InternalServerError("Redis connection failed".to_string()))

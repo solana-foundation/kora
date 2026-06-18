@@ -242,8 +242,7 @@ impl UsageTracker {
     }
 
     /// Check and record usage for a transaction.
-    /// Pre-checks all rules before incrementing; denied requests may still
-    /// consume quota from earlier rules under concurrent load.
+    /// Uses batch checking for all-or-nothing increments across multiple rules.
     async fn check_and_record(
         &self,
         ctx: &mut LimiterContext<'_>,
@@ -314,10 +313,13 @@ impl UsageTracker {
             pending_increments.push((key, increment_count, max, expiry, description));
         }
 
-        for (key, increment_count, max, expiry, description) in pending_increments {
-            if !self.store.check_and_increment(&key, increment_count, max, expiry).await? {
+        if !pending_increments.is_empty() {
+            let entries: Vec<_> =
+                pending_increments.iter().map(|(k, d, m, e, _)| (k.clone(), *d, *m, *e)).collect();
+
+            if !self.store.check_and_increment_many(&entries).await? {
                 return Ok(LimiterResult::Denied {
-                    reason: format!("User {} exceeded {} limit", ctx.user_id, description),
+                    reason: format!("User {} exceeded usage limit", ctx.user_id),
                 });
             }
         }
@@ -532,6 +534,14 @@ mod tests {
         ) -> Result<bool, KoraError> {
             tokio::task::yield_now().await;
             self.inner.check_and_increment(key, delta, max, expiry).await
+        }
+
+        async fn check_and_increment_many(
+            &self,
+            entries: &[(String, u64, u64, Option<u64>)],
+        ) -> Result<bool, KoraError> {
+            tokio::task::yield_now().await;
+            self.inner.check_and_increment_many(entries).await
         }
     }
 
@@ -1147,8 +1157,28 @@ mod tests {
 
         let lifetime_key = "kora:tx:multi-rule-concurrent-user";
         let lifetime_count = store.get(lifetime_key).await.unwrap();
-        // denied requests may have consumed quota from earlier rules
-        assert!(lifetime_count <= 10);
-        assert!(lifetime_count >= allowed_count as u32);
+        assert_eq!(lifetime_count, allowed_count as u32);
+    }
+
+    #[tokio::test]
+    async fn test_check_and_increment_many_all_or_nothing() {
+        let store = InMemoryUsageStore::new();
+
+        let entries = vec![("key1".to_string(), 1, 5, None), ("key2".to_string(), 1, 1, None)];
+
+        // First call should succeed
+        let result1 = store.check_and_increment_many(&entries).await.unwrap();
+        assert!(result1);
+
+        assert_eq!(store.get("key1").await.unwrap(), 1);
+        assert_eq!(store.get("key2").await.unwrap(), 1);
+
+        // Second call should fail because key2 would exceed its max of 1
+        let result2 = store.check_and_increment_many(&entries).await.unwrap();
+        assert!(!result2);
+
+        // All-or-nothing: key1 should not be incremented
+        assert_eq!(store.get("key1").await.unwrap(), 1);
+        assert_eq!(store.get("key2").await.unwrap(), 1);
     }
 }
