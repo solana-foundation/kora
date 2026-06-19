@@ -1,1 +1,5 @@
-* @dev-jodee @amilz
+* @dev-jodee
+
+# TypeScript SDKs
+/sdks/ @amilz
+*.ts @amilz
