@@ -124,25 +124,28 @@ async fn main() -> Result<(), KoraError> {
 
     match cli.command {
         Some(Commands::Config { config_command }) => {
-            match config_command {
+            let validation_result = match config_command {
                 ConfigCommands::Validate { signers_config } => {
-                    let _ = ConfigValidator::validate_with_result_and_signers(
+                    ConfigValidator::validate_with_result_and_signers(
                         rpc_client.as_ref(),
                         true,
                         signers_config.as_ref(),
                     )
-                    .await;
+                    .await
                 }
                 ConfigCommands::ValidateWithRpc { signers_config } => {
-                    let _ = ConfigValidator::validate_with_result_and_signers(
+                    ConfigValidator::validate_with_result_and_signers(
                         rpc_client.as_ref(),
                         false,
                         signers_config.as_ref(),
                     )
-                    .await;
+                    .await
                 }
+            };
+            match validation_result {
+                Ok(_) => std::process::exit(0),
+                Err(_) => std::process::exit(1),
             }
-            std::process::exit(0);
         }
         Some(Commands::Rpc { rpc_command }) => {
             match rpc_command {
