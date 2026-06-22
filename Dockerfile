@@ -1,6 +1,6 @@
 # cargo-chef splits dependency compilation into a layer keyed only on the dependency manifest
 # (recipe.json), so app-source changes reuse the cached dep build instead of recompiling everything.
-FROM rust:1.88 AS chef
+FROM rust:1.89 AS chef
 RUN cargo install cargo-chef --locked
 WORKDIR /usr/src/app
 
