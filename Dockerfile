@@ -1,6 +1,9 @@
 # cargo-chef splits dependency compilation into a layer keyed only on the dependency manifest
 # (recipe.json), so app-source changes reuse the cached dep build instead of recompiling everything.
-FROM rust:1.91 AS chef
+# Pin the builder distro to bookworm to match the runtime base below: the unsuffixed rust:1.91 image
+# now tracks Debian trixie (glibc 2.41), producing a binary that links GLIBC_2.38/2.39 — symbols the
+# debian:bookworm-slim runtime (glibc 2.36) lacks, so the container exits with a libc version error.
+FROM rust:1.91-bookworm AS chef
 RUN cargo install cargo-chef --locked
 WORKDIR /usr/src/app
 
