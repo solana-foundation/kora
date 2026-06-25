@@ -316,6 +316,26 @@ impl TransactionValidator {
             }
         });
 
+        // CreateAccountAllowPrefund can target a prefunded account, so the fee payer can be the
+        // account being created (and bricked by the allocate+assign) without being the funder
+        // that validate_system! checks above. Gate that vector under the same policy.
+        for instruction in system_instructions
+            .get(&ParsedSystemInstructionType::SystemCreateAccount)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedSystemInstructionData::SystemCreateAccount { new_account, .. } =
+                instruction
+            {
+                if *new_account == self.fee_payer_pubkey
+                    && !self.fee_payer_policy.system.allow_create_account
+                {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be used for 'System Create Account'".to_string(),
+                    ));
+                }
+            }
+        }
+
         validate_system!(self, system_instructions, SystemInitializeNonceAccount,
             ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_authority, .. } => nonce_authority,
             self.fee_payer_policy.system.nonce.allow_initialize, "System Initialize Nonce Account");
@@ -2984,6 +3004,61 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_create_account_allow_prefund() {
+        use solana_sdk::instruction::{AccountMeta, Instruction};
+
+        let fee_payer = Pubkey::new_unique();
+        let other = Pubkey::new_unique();
+        let owner = SYSTEM_PROGRAM_ID;
+
+        let build_ix = |new_account: Pubkey, funder: Pubkey, lamports: u64| -> Instruction {
+            let mut accounts = vec![AccountMeta::new(new_account, true)];
+            if lamports > 0 {
+                accounts.push(AccountMeta::new(funder, true));
+            }
+            Instruction {
+                program_id: SYSTEM_PROGRAM_ID,
+                accounts,
+                data: bincode::serialize(&(13u32, lamports, 100u64, owner)).unwrap(),
+            }
+        };
+
+        // (label, instruction, allow_create_account, expect_ok)
+        let cases = [
+            // Fee payer is the funder — caught by the reused create-account gate.
+            ("funder vector, disallowed", build_ix(other, fee_payer, 1000), false, false),
+            ("funder vector, allowed", build_ix(other, fee_payer, 1000), true, true),
+            // Fee payer is the prefunded account being created — the brick vector.
+            ("brick vector, disallowed", build_ix(fee_payer, other, 1000), false, false),
+            ("brick vector, allowed", build_ix(fee_payer, other, 1000), true, true),
+            // lamports == 0 omits the funder; fee payer as new account must still be gated.
+            (
+                "brick vector no funding, disallowed",
+                build_ix(fee_payer, fee_payer, 0),
+                false,
+                false,
+            ),
+        ];
+
+        for (label, instruction, allow, expect_ok) in cases {
+            let rpc_client = RpcMockBuilder::new().build();
+            let mut policy = FeePayerPolicy::default();
+            policy.system.allow_create_account = allow;
+            setup_config_with_policy(policy);
+
+            let config = get_config().unwrap();
+            let validator = TransactionValidator::new(config, fee_payer).unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+            let result =
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+            assert_eq!(result.is_ok(), expect_ok, "case failed: {}", label);
+        }
     }
 
     #[tokio::test]

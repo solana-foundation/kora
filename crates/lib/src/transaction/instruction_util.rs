@@ -1976,11 +1976,47 @@ impl IxUtils {
                     Ok(SystemInstruction::UpgradeNonceAccount) => {
                         // Skip parsing
                     }
-                    _ => {}
+                    _ => {
+                        if let Some((lamports, owner)) =
+                            Self::parse_create_account_allow_prefund(&instruction.data)
+                        {
+                            let min_accounts = if lamports > 0 {
+                                instruction_indexes::system_create_account_allow_prefund::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_FUNDING
+                            } else {
+                                instruction_indexes::system_create_account_allow_prefund::MIN_REQUIRED_NUMBER_OF_ACCOUNTS
+                            };
+                            validate_number_accounts!(instruction, min_accounts);
+                            let new_account = instruction.accounts[instruction_indexes::system_create_account_allow_prefund::NEW_ACCOUNT_INDEX].pubkey;
+                            let payer = if lamports > 0 {
+                                instruction.accounts[instruction_indexes::system_create_account_allow_prefund::FUNDING_INDEX].pubkey
+                            } else {
+                                new_account
+                            };
+                            parsed_instructions
+                                .entry(ParsedSystemInstructionType::SystemCreateAccount)
+                                .or_default()
+                                .push(ParsedSystemInstructionData::SystemCreateAccount {
+                                    lamports,
+                                    payer,
+                                    new_account,
+                                    owner,
+                                });
+                        }
+                    }
                 }
             }
         }
         Ok(parsed_instructions)
+    }
+
+    // CreateAccountAllowPrefund is absent from solana-system-interface 2.0.0, so it fails the
+    // SystemInstruction match above. Decode its bincode wire layout directly: variant tag,
+    // lamports, space, owner. Returns lamports and owner; space is not needed downstream.
+    fn parse_create_account_allow_prefund(data: &[u8]) -> Option<(u64, Pubkey)> {
+        const CREATE_ACCOUNT_ALLOW_PREFUND_TAG: u32 = 13;
+        let (tag, lamports, _space, owner) =
+            bincode::deserialize::<(u32, u64, u64, Pubkey)>(data).ok()?;
+        (tag == CREATE_ACCOUNT_ALLOW_PREFUND_TAG).then_some((lamports, owner))
     }
 
     pub fn parse_alt_instructions(
@@ -4289,6 +4325,144 @@ mod tests {
                 assert_eq!(*parsed_payer, payer.pubkey());
                 assert_eq!(*parsed_new_account, new_account);
                 assert_eq!(*parsed_owner, owner);
+            }
+            _ => panic!("Expected SystemCreateAccount variant"),
+        }
+    }
+
+    #[test]
+    fn test_create_account_allow_prefund_bincode_tag() {
+        use solana_system_interface::instruction::SystemInstruction;
+
+        // CreateAccountAllowPrefund (tag 13) is absent from solana-system-interface 2.0.0.
+        // It is declared immediately after UpgradeNonceAccount, and bincode encodes the
+        // variant index as a u32 LE tag — so confirming UpgradeNonceAccount == 12 anchors
+        // the tag 13 the manual decoder relies on. This breaks loudly if upstream reorders.
+        let upgrade = bincode::serialize(&SystemInstruction::UpgradeNonceAccount).unwrap();
+        assert_eq!(&upgrade[0..4], &12u32.to_le_bytes());
+    }
+
+    fn build_create_account_allow_prefund_ix(
+        new_account: &Pubkey,
+        funder: &Pubkey,
+        lamports: u64,
+        space: u64,
+        owner: &Pubkey,
+    ) -> solana_sdk::instruction::Instruction {
+        use solana_sdk::instruction::{AccountMeta, Instruction};
+        use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
+
+        let mut accounts = vec![AccountMeta::new(*new_account, true)];
+        if lamports > 0 {
+            accounts.push(AccountMeta::new(*funder, true));
+        }
+        Instruction {
+            program_id: SYSTEM_PROGRAM_ID,
+            accounts,
+            data: bincode::serialize(&(13u32, lamports, space, *owner)).unwrap(),
+        }
+    }
+
+    #[test]
+    fn test_parse_system_instructions_create_account_allow_prefund() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let funder = Keypair::new();
+        let new_account = Keypair::new();
+        let owner = Pubkey::new_unique();
+        let lamports = 2_000_000u64;
+
+        let instruction = build_create_account_allow_prefund_ix(
+            &new_account.pubkey(),
+            &funder.pubkey(),
+            lamports,
+            165,
+            &owner,
+        );
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&funder.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&funder, &new_account]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_system_instructions(&resolved_tx)
+            .expect("Failed to parse system instructions");
+
+        let creates = parsed_instructions
+            .get(&ParsedSystemInstructionType::SystemCreateAccount)
+            .expect("Expected SystemCreateAccount instructions");
+
+        assert_eq!(creates.len(), 1);
+        match &creates[0] {
+            ParsedSystemInstructionData::SystemCreateAccount {
+                lamports: parsed_lamports,
+                payer: parsed_payer,
+                new_account: parsed_new_account,
+                owner: parsed_owner,
+            } => {
+                assert_eq!(*parsed_lamports, lamports);
+                assert_eq!(*parsed_payer, funder.pubkey());
+                assert_eq!(*parsed_new_account, new_account.pubkey());
+                assert_eq!(*parsed_owner, owner);
+            }
+            _ => panic!("Expected SystemCreateAccount variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_system_instructions_create_account_allow_prefund_no_funding() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        // lamports == 0 omits the funding account; the new account is the only signer and
+        // is recorded as the payer so policy and outflow accounting treat it consistently.
+        let new_account = Keypair::new();
+        let owner = Pubkey::new_unique();
+
+        let instruction = build_create_account_allow_prefund_ix(
+            &new_account.pubkey(),
+            &new_account.pubkey(),
+            0,
+            165,
+            &owner,
+        );
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&new_account.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&new_account]).unwrap();
+
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx)
+            .expect("Failed to create resolved transaction");
+
+        let parsed_instructions = IxUtils::parse_system_instructions(&resolved_tx)
+            .expect("Failed to parse system instructions");
+
+        let creates = parsed_instructions
+            .get(&ParsedSystemInstructionType::SystemCreateAccount)
+            .expect("Expected SystemCreateAccount instructions");
+
+        assert_eq!(creates.len(), 1);
+        match &creates[0] {
+            ParsedSystemInstructionData::SystemCreateAccount {
+                lamports: parsed_lamports,
+                payer: parsed_payer,
+                new_account: parsed_new_account,
+                ..
+            } => {
+                assert_eq!(*parsed_lamports, 0);
+                assert_eq!(*parsed_payer, new_account.pubkey());
+                assert_eq!(*parsed_new_account, new_account.pubkey());
             }
             _ => panic!("Expected SystemCreateAccount variant"),
         }

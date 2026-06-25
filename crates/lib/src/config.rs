@@ -258,7 +258,8 @@ pub struct SystemInstructionPolicy {
     pub allow_transfer: bool,
     /// Allow fee payer to be the authority in System Assign/AssignWithSeed instructions
     pub allow_assign: bool,
-    /// Allow fee payer to be the payer in System CreateAccount/CreateAccountWithSeed instructions
+    /// Allow fee payer to be the funder, or the account being created, in System
+    /// CreateAccount/CreateAccountWithSeed/CreateAccountAllowPrefund instructions
     pub allow_create_account: bool,
     /// Allow fee payer to be the account in System Allocate/AllocateWithSeed instructions
     pub allow_allocate: bool,
