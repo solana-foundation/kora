@@ -52,7 +52,7 @@ jobs:
       matrix:
         test-group: [typescript_basic, typescript_auth, typescript_free]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
