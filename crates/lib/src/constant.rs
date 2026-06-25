@@ -67,8 +67,7 @@ pub mod instruction_indexes {
         pub const NEW_ACCOUNT_INDEX: usize = 1;
     }
 
-    // CreateAccountAllowPrefund orders accounts [new, funding] and omits the funding
-    // account entirely when lamports == 0 — the reverse of system_create_account.
+    // Reverse of system_create_account: [new, funding], funding omitted when lamports == 0.
     pub mod system_create_account_allow_prefund {
         pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 1;
         pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_FUNDING: usize = 2;

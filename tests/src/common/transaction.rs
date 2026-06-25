@@ -132,9 +132,8 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add a CreateAccountAllowPrefund (SIMD-0312) instruction. Encoded by hand because
-    /// solana-system-interface 2.0.0 has no constructor for variant tag 13; the funding
-    /// account is omitted when lamports == 0.
+    /// Add a CreateAccountAllowPrefund instruction (tag 13, hand-encoded — no constructor in
+    /// system-interface 2.0.0; funding account omitted when lamports == 0).
     pub fn with_create_account_allow_prefund(
         mut self,
         new_account: &Pubkey,

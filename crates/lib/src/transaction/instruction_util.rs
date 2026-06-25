@@ -2009,9 +2009,7 @@ impl IxUtils {
         Ok(parsed_instructions)
     }
 
-    // CreateAccountAllowPrefund is absent from solana-system-interface 2.0.0, so it fails the
-    // SystemInstruction match above. Decode its bincode wire layout directly: variant tag,
-    // lamports, space, owner. Returns lamports and owner; space is not needed downstream.
+    // Absent from system-interface 2.0.0; decode tag 13 (tag, lamports, space, owner) by hand.
     fn parse_create_account_allow_prefund(data: &[u8]) -> Option<(u64, Pubkey)> {
         const CREATE_ACCOUNT_ALLOW_PREFUND_TAG: u32 = 13;
         let (tag, lamports, _space, owner) =
@@ -4338,10 +4336,8 @@ mod tests {
 
     #[test]
     fn test_create_account_allow_prefund_bincode_tag() {
-        // CreateAccountAllowPrefund (tag 13) is absent from solana-system-interface 2.0.0.
-        // It is declared immediately after UpgradeNonceAccount, and bincode encodes the
-        // variant index as a u32 LE tag — so confirming UpgradeNonceAccount == 12 anchors
-        // the tag 13 the manual decoder relies on. This breaks loudly if upstream reorders.
+        // Anchors the hand-coded tag 13: prefund follows UpgradeNonceAccount, so tag 12 here
+        // proves it. Fails loud if upstream reorders the enum.
         let upgrade = bincode::serialize(&SystemInstruction::UpgradeNonceAccount).unwrap();
         assert_eq!(&upgrade[0..4], &12u32.to_le_bytes());
     }

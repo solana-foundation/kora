@@ -316,9 +316,8 @@ impl TransactionValidator {
             }
         });
 
-        // CreateAccountAllowPrefund can target a prefunded account, so the fee payer can be the
-        // account being created (and bricked by the allocate+assign) rather than the funder the
-        // check above keys on. Re-run the same gate keyed on new_account to cover that vector.
+        // Prefund lets the fee payer be the account created (bricked), not just the funder above.
+        // Re-run the same gate keyed on new_account.
         validate_system!(self, system_instructions, SystemCreateAccount,
         ParsedSystemInstructionData::SystemCreateAccount { new_account, owner, .. } => new_account,
         self.fee_payer_policy.system.allow_create_account, "System Create Account", {

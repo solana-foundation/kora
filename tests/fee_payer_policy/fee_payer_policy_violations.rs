@@ -1409,9 +1409,8 @@ async fn test_create_account_allow_prefund_brick_vector_policy_violation() {
     let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
     let owner = Pubkey::new_unique();
 
-    // Fee payer is the account being created (allocate+assign brick), not the funder. lamports=0
-    // omits the funding account so simulation can succeed against the prefunded fee payer, letting
-    // the policy gate be the layer that rejects it.
+    // Fee payer is the account created (brick), not the funder. lamports=0 lets simulation pass
+    // so the policy gate is what rejects it.
     let malicious_tx = ctx
         .transaction_builder()
         .with_fee_payer(fee_payer_pubkey)
