@@ -981,7 +981,7 @@ mod tests {
     use solana_compute_budget_interface::ComputeBudgetInstruction;
     use solana_message::{Message, VersionedMessage};
     use solana_sdk::{
-        instruction::Instruction,
+        instruction::{AccountMeta, Instruction},
         signature::{Keypair, Signer},
     };
     use solana_system_interface::{
@@ -3009,8 +3009,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_fee_payer_policy_create_account_allow_prefund() {
-        use solana_sdk::instruction::{AccountMeta, Instruction};
-
         let fee_payer = Pubkey::new_unique();
         let other = Pubkey::new_unique();
         let allowed_owner = SYSTEM_PROGRAM_ID;

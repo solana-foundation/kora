@@ -3432,7 +3432,13 @@ impl IxUtils {
 mod tests {
 
     use super::*;
-    use solana_sdk::message::{AccountKeys, Message};
+    use solana_sdk::{
+        instruction::{AccountMeta, Instruction},
+        message::{AccountKeys, Message},
+    };
+    use solana_system_interface::{
+        instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID,
+    };
     use solana_transaction_status::parse_instruction;
 
     fn create_parsed_system_transfer(
@@ -4332,8 +4338,6 @@ mod tests {
 
     #[test]
     fn test_create_account_allow_prefund_bincode_tag() {
-        use solana_system_interface::instruction::SystemInstruction;
-
         // CreateAccountAllowPrefund (tag 13) is absent from solana-system-interface 2.0.0.
         // It is declared immediately after UpgradeNonceAccount, and bincode encodes the
         // variant index as a u32 LE tag — so confirming UpgradeNonceAccount == 12 anchors
@@ -4348,10 +4352,7 @@ mod tests {
         lamports: u64,
         space: u64,
         owner: &Pubkey,
-    ) -> solana_sdk::instruction::Instruction {
-        use solana_sdk::instruction::{AccountMeta, Instruction};
-        use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
-
+    ) -> Instruction {
         let mut accounts = vec![AccountMeta::new(*new_account, true)];
         if lamports > 0 {
             accounts.push(AccountMeta::new(*funder, true));
