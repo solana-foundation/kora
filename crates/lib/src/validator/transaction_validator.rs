@@ -3079,6 +3079,44 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_fee_payer_policy_create_account_allow_prefund_via_cpi() {
+        // A CreateAccountAllowPrefund surfaced as a CPI inner instruction (appended to
+        // all_instructions, absent from the outer message) must still hit the policy gate.
+        let fee_payer = Pubkey::new_unique();
+        let new_account = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = false;
+        setup_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Outer message: a transfer not involving the fee payer — policy-neutral, keeps the tx valid.
+        let outer = transfer(&new_account, &Pubkey::new_unique(), 1);
+        let message = VersionedMessage::Legacy(Message::new(&[outer], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        // Fee payer funds the prefund create as a CPI inner instruction.
+        transaction.all_instructions.push(Instruction {
+            program_id: SYSTEM_PROGRAM_ID,
+            accounts: vec![AccountMeta::new(new_account, true), AccountMeta::new(fee_payer, true)],
+            data: bincode::serialize(&(13u32, 1_000u64, 0u64, SYSTEM_PROGRAM_ID)).unwrap(),
+        });
+
+        let err = validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .expect_err("CPI prefund with fee payer as funder must be rejected");
+        assert!(
+            err.to_string().contains("Fee payer cannot be used for 'System Create Account'"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_fee_payer_policy_create_account_rejects_disallowed_owner() {
         use solana_system_interface::instruction::create_account;
 
