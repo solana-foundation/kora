@@ -323,15 +323,27 @@ impl TransactionValidator {
             .get(&ParsedSystemInstructionType::SystemCreateAccount)
             .unwrap_or(&vec![])
         {
-            if let ParsedSystemInstructionData::SystemCreateAccount { new_account, .. } =
+            if let ParsedSystemInstructionData::SystemCreateAccount { new_account, owner, .. } =
                 instruction
             {
-                if *new_account == self.fee_payer_pubkey
-                    && !self.fee_payer_policy.system.allow_create_account
-                {
-                    return Err(KoraError::InvalidTransaction(
-                        "Fee payer cannot be used for 'System Create Account'".to_string(),
-                    ));
+                if *new_account == self.fee_payer_pubkey {
+                    if !self.fee_payer_policy.system.allow_create_account {
+                        return Err(KoraError::InvalidTransaction(
+                            "Fee payer cannot be used for 'System Create Account'".to_string(),
+                        ));
+                    }
+                    if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "CreateAccount owner program {} is not in the allowed programs list",
+                            owner
+                        )));
+                    }
+                    if self.disallowed_accounts.contains(owner) {
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "CreateAccount owner program {} is in the disallowed accounts list",
+                            owner
+                        )));
+                    }
                 }
             }
         }
@@ -3013,33 +3025,52 @@ mod tests {
 
         let fee_payer = Pubkey::new_unique();
         let other = Pubkey::new_unique();
-        let owner = SYSTEM_PROGRAM_ID;
+        let allowed_owner = SYSTEM_PROGRAM_ID;
+        let disallowed_owner = Pubkey::new_unique();
 
-        let build_ix = |new_account: Pubkey, funder: Pubkey, lamports: u64| -> Instruction {
-            let mut accounts = vec![AccountMeta::new(new_account, true)];
-            if lamports > 0 {
-                accounts.push(AccountMeta::new(funder, true));
-            }
-            Instruction {
-                program_id: SYSTEM_PROGRAM_ID,
-                accounts,
-                data: bincode::serialize(&(13u32, lamports, 100u64, owner)).unwrap(),
-            }
-        };
+        let build_ix =
+            |new_account: Pubkey, funder: Pubkey, lamports: u64, owner: Pubkey| -> Instruction {
+                let mut accounts = vec![AccountMeta::new(new_account, true)];
+                if lamports > 0 {
+                    accounts.push(AccountMeta::new(funder, true));
+                }
+                Instruction {
+                    program_id: SYSTEM_PROGRAM_ID,
+                    accounts,
+                    data: bincode::serialize(&(13u32, lamports, 100u64, owner)).unwrap(),
+                }
+            };
 
         // (label, instruction, allow_create_account, expect_ok)
         let cases = [
             // Fee payer is the funder — caught by the reused create-account gate.
-            ("funder vector, disallowed", build_ix(other, fee_payer, 1000), false, false),
-            ("funder vector, allowed", build_ix(other, fee_payer, 1000), true, true),
+            (
+                "funder vector, disallowed",
+                build_ix(other, fee_payer, 1000, allowed_owner),
+                false,
+                false,
+            ),
+            ("funder vector, allowed", build_ix(other, fee_payer, 1000, allowed_owner), true, true),
             // Fee payer is the prefunded account being created — the brick vector.
-            ("brick vector, disallowed", build_ix(fee_payer, other, 1000), false, false),
-            ("brick vector, allowed", build_ix(fee_payer, other, 1000), true, true),
+            (
+                "brick vector, disallowed",
+                build_ix(fee_payer, other, 1000, allowed_owner),
+                false,
+                false,
+            ),
+            ("brick vector, allowed", build_ix(fee_payer, other, 1000, allowed_owner), true, true),
             // lamports == 0 omits the funder; fee payer as new account must still be gated.
             (
                 "brick vector no funding, disallowed",
-                build_ix(fee_payer, fee_payer, 0),
+                build_ix(fee_payer, fee_payer, 0, allowed_owner),
                 false,
+                false,
+            ),
+            // Even when allowed, the brick path must still enforce the owner allowlist.
+            (
+                "brick vector, owner not allowlisted",
+                build_ix(fee_payer, other, 1000, disallowed_owner),
+                true,
                 false,
             ),
         ];
