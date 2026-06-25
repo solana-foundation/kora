@@ -1,17 +1,10 @@
 use crate::common::{assertions::RpcErrorAssertions, *};
 use jsonrpsee::rpc_params;
 use solana_sdk::{
-    instruction::{AccountMeta, Instruction},
-    program_pack::Pack,
-    pubkey::Pubkey,
-    signature::Keypair,
-    signer::Signer,
+    program_pack::Pack, pubkey::Pubkey, signature::Keypair, signer::Signer,
     transaction::Transaction,
 };
-use solana_system_interface::{
-    instruction::{create_account, transfer},
-    program::ID as SYSTEM_PROGRAM_ID,
-};
+use solana_system_interface::instruction::{create_account, transfer};
 use spl_associated_token_account_interface::address::{
     get_associated_token_address, get_associated_token_address_with_program_id,
 };
@@ -1382,24 +1375,6 @@ async fn test_reallocate_multisig_bypass() {
     }
 }
 
-fn build_create_account_allow_prefund_ix(
-    new_account: &Pubkey,
-    funder: &Pubkey,
-    lamports: u64,
-    space: u64,
-    owner: &Pubkey,
-) -> Instruction {
-    let mut accounts = vec![AccountMeta::new(*new_account, true)];
-    if lamports > 0 {
-        accounts.push(AccountMeta::new(*funder, true));
-    }
-    Instruction {
-        program_id: SYSTEM_PROGRAM_ID,
-        accounts,
-        data: bincode::serialize(&(13u32, lamports, space, *owner)).unwrap(),
-    }
-}
-
 #[tokio::test]
 async fn test_create_account_allow_prefund_funder_policy_violation() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
@@ -1408,18 +1383,10 @@ async fn test_create_account_allow_prefund_funder_policy_violation() {
     let new_account = Pubkey::new_unique();
     let owner = Pubkey::new_unique();
 
-    let prefund_ix = build_create_account_allow_prefund_ix(
-        &new_account,
-        &fee_payer_pubkey,
-        1_000_000,
-        0,
-        &owner,
-    );
-
     let malicious_tx = ctx
         .transaction_builder()
         .with_fee_payer(fee_payer_pubkey)
-        .with_instruction(prefund_ix)
+        .with_create_account_allow_prefund(&new_account, &fee_payer_pubkey, 1_000_000, 0, &owner)
         .build()
         .await
         .expect("Failed to create transaction with create_account_allow_prefund");
@@ -1445,13 +1412,10 @@ async fn test_create_account_allow_prefund_brick_vector_policy_violation() {
     // Fee payer is the account being created (allocate+assign brick), not the funder. lamports=0
     // omits the funding account so simulation can succeed against the prefunded fee payer, letting
     // the policy gate be the layer that rejects it.
-    let prefund_ix =
-        build_create_account_allow_prefund_ix(&fee_payer_pubkey, &fee_payer_pubkey, 0, 0, &owner);
-
     let malicious_tx = ctx
         .transaction_builder()
         .with_fee_payer(fee_payer_pubkey)
-        .with_instruction(prefund_ix)
+        .with_create_account_allow_prefund(&fee_payer_pubkey, &fee_payer_pubkey, 0, 0, &owner)
         .build()
         .await
         .expect("Failed to create transaction with create_account_allow_prefund");

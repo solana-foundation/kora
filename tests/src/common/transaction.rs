@@ -13,13 +13,16 @@ use solana_message::{
 };
 use solana_program_pack::Pack;
 use solana_sdk::{
-    instruction::Instruction,
+    instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
     transaction::VersionedTransaction,
 };
-use solana_system_interface::instruction::{create_account, transfer};
+use solana_system_interface::{
+    instruction::{create_account, transfer},
+    program::ID as SYSTEM_PROGRAM_ID,
+};
 use spl_associated_token_account_interface::address::{
     get_associated_token_address, get_associated_token_address_with_program_id,
 };
@@ -126,6 +129,29 @@ impl TransactionBuilder {
     pub fn with_system_allocate(mut self, account: &Pubkey, space: u64) -> Self {
         let instruction = solana_system_interface::instruction::allocate(account, space);
         self.instructions.push(instruction);
+        self
+    }
+
+    /// Add a CreateAccountAllowPrefund (SIMD-0312) instruction. Encoded by hand because
+    /// solana-system-interface 2.0.0 has no constructor for variant tag 13; the funding
+    /// account is omitted when lamports == 0.
+    pub fn with_create_account_allow_prefund(
+        mut self,
+        new_account: &Pubkey,
+        funder: &Pubkey,
+        lamports: u64,
+        space: u64,
+        owner: &Pubkey,
+    ) -> Self {
+        let mut accounts = vec![AccountMeta::new(*new_account, true)];
+        if lamports > 0 {
+            accounts.push(AccountMeta::new(*funder, true));
+        }
+        self.instructions.push(Instruction {
+            program_id: SYSTEM_PROGRAM_ID,
+            accounts,
+            data: bincode::serialize(&(13u32, lamports, space, *owner)).unwrap(),
+        });
         self
     }
 
