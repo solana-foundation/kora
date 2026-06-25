@@ -3430,9 +3430,12 @@ impl IxUtils {
 mod tests {
 
     use super::*;
+    use crate::transaction::versioned_transaction::VersionedTransactionResolved;
     use solana_sdk::{
         instruction::{AccountMeta, Instruction},
-        message::{AccountKeys, Message},
+        message::{AccountKeys, Message, VersionedMessage},
+        signature::{Keypair, Signer},
+        transaction::VersionedTransaction,
     };
     use solana_system_interface::{
         instruction::SystemInstruction, program::ID as SYSTEM_PROGRAM_ID,
@@ -4362,13 +4365,6 @@ mod tests {
 
     #[test]
     fn test_parse_system_instructions_create_account_allow_prefund() {
-        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-        use solana_message::{Message, VersionedMessage};
-        use solana_sdk::{
-            signature::{Keypair, Signer},
-            transaction::VersionedTransaction,
-        };
-
         let funder = Keypair::new();
         let new_account = Keypair::new();
         let owner = Pubkey::new_unique();
@@ -4415,13 +4411,6 @@ mod tests {
 
     #[test]
     fn test_parse_system_instructions_create_account_allow_prefund_no_funding() {
-        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
-        use solana_message::{Message, VersionedMessage};
-        use solana_sdk::{
-            signature::{Keypair, Signer},
-            transaction::VersionedTransaction,
-        };
-
         // lamports == 0 omits the funding account; the new account is the only signer and
         // is recorded as the payer so policy and outflow accounting treat it consistently.
         let new_account = Keypair::new();
