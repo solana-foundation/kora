@@ -356,12 +356,8 @@ impl UsageStore for InMemoryUsageStore {
 
         for (key, delta, max, _expiry) in entries {
             let current_count = if let Some(entry) = data.get(key) {
-                if let Some(e) = entry.expiry {
-                    if now >= e {
-                        0
-                    } else {
-                        entry.count
-                    }
+                if entry.expiry.is_some_and(|e| now >= e) {
+                    0
                 } else {
                     entry.count
                 }
