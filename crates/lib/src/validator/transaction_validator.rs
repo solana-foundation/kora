@@ -317,36 +317,24 @@ impl TransactionValidator {
         });
 
         // CreateAccountAllowPrefund can target a prefunded account, so the fee payer can be the
-        // account being created (and bricked by the allocate+assign) without being the funder
-        // that validate_system! checks above. Gate that vector under the same policy.
-        for instruction in system_instructions
-            .get(&ParsedSystemInstructionType::SystemCreateAccount)
-            .unwrap_or(&vec![])
-        {
-            if let ParsedSystemInstructionData::SystemCreateAccount { new_account, owner, .. } =
-                instruction
-            {
-                if *new_account == self.fee_payer_pubkey {
-                    if !self.fee_payer_policy.system.allow_create_account {
-                        return Err(KoraError::InvalidTransaction(
-                            "Fee payer cannot be used for 'System Create Account'".to_string(),
-                        ));
-                    }
-                    if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "CreateAccount owner program {} is not in the allowed programs list",
-                            owner
-                        )));
-                    }
-                    if self.disallowed_accounts.contains(owner) {
-                        return Err(KoraError::InvalidTransaction(format!(
-                            "CreateAccount owner program {} is in the disallowed accounts list",
-                            owner
-                        )));
-                    }
-                }
+        // account being created (and bricked by the allocate+assign) rather than the funder the
+        // check above keys on. Re-run the same gate keyed on new_account to cover that vector.
+        validate_system!(self, system_instructions, SystemCreateAccount,
+        ParsedSystemInstructionData::SystemCreateAccount { new_account, owner, .. } => new_account,
+        self.fee_payer_policy.system.allow_create_account, "System Create Account", {
+            if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "CreateAccount owner program {} is not in the allowed programs list",
+                    owner
+                )));
             }
-        }
+            if self.disallowed_accounts.contains(owner) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "CreateAccount owner program {} is in the disallowed accounts list",
+                    owner
+                )));
+            }
+        });
 
         validate_system!(self, system_instructions, SystemInitializeNonceAccount,
             ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_authority, .. } => nonce_authority,
