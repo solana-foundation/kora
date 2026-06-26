@@ -2009,12 +2009,12 @@ impl IxUtils {
         Ok(parsed_instructions)
     }
 
-    // Absent from system-interface 2.0.0; decode tag 13 (tag, lamports, space, owner) by hand.
+    // Absent from system-interface 2.0.0; decode (tag, lamports, space, owner) by hand.
     fn parse_create_account_allow_prefund(data: &[u8]) -> Option<(u64, Pubkey)> {
-        const CREATE_ACCOUNT_ALLOW_PREFUND_TAG: u32 = 13;
         let (tag, lamports, _space, owner) =
             bincode::deserialize::<(u32, u64, u64, Pubkey)>(data).ok()?;
-        (tag == CREATE_ACCOUNT_ALLOW_PREFUND_TAG).then_some((lamports, owner))
+        (tag == instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR)
+            .then_some((lamports, owner))
     }
 
     pub fn parse_alt_instructions(
@@ -3430,7 +3430,10 @@ impl IxUtils {
 mod tests {
 
     use super::*;
-    use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+    use crate::{
+        constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR,
+        transaction::versioned_transaction::VersionedTransactionResolved,
+    };
     use solana_sdk::{
         instruction::{AccountMeta, Instruction},
         message::{AccountKeys, Message, VersionedMessage},
@@ -4359,7 +4362,7 @@ mod tests {
         Instruction {
             program_id: SYSTEM_PROGRAM_ID,
             accounts,
-            data: bincode::serialize(&(13u32, lamports, space, *owner)).unwrap(),
+            data: bincode::serialize(&(DISCRIMINATOR, lamports, space, *owner)).unwrap(),
         }
     }
 

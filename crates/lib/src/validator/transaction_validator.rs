@@ -966,6 +966,7 @@ mod tests {
     use serial_test::serial;
 
     use super::*;
+    use crate::constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR;
     use solana_address_lookup_table_interface::{
         instruction as alt_instruction, program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
     };
@@ -3014,7 +3015,7 @@ mod tests {
                 Instruction {
                     program_id: SYSTEM_PROGRAM_ID,
                     accounts,
-                    data: bincode::serialize(&(13u32, lamports, 100u64, owner)).unwrap(),
+                    data: bincode::serialize(&(DISCRIMINATOR, lamports, 100u64, owner)).unwrap(),
                 }
             };
 
@@ -3094,7 +3095,7 @@ mod tests {
         transaction.all_instructions.push(Instruction {
             program_id: SYSTEM_PROGRAM_ID,
             accounts: vec![AccountMeta::new(new_account, true), AccountMeta::new(fee_payer, true)],
-            data: bincode::serialize(&(13u32, 1_000u64, 0u64, SYSTEM_PROGRAM_ID)).unwrap(),
+            data: bincode::serialize(&(DISCRIMINATOR, 1_000u64, 0u64, SYSTEM_PROGRAM_ID)).unwrap(),
         });
 
         let err = validator

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use kora_lib::{
+    constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR,
     token::{spl_token::TokenProgram, spl_token_2022::Token2022Program, TokenInterface},
     transaction::TransactionUtil,
 };
@@ -149,7 +150,7 @@ impl TransactionBuilder {
         self.instructions.push(Instruction {
             program_id: SYSTEM_PROGRAM_ID,
             accounts,
-            data: bincode::serialize(&(13u32, lamports, space, *owner)).unwrap(),
+            data: bincode::serialize(&(DISCRIMINATOR, lamports, space, *owner)).unwrap(),
         });
         self
     }
