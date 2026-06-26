@@ -1,6 +1,7 @@
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use kora_lib::{
+    constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR,
     token::{spl_token::TokenProgram, spl_token_2022::Token2022Program, TokenInterface},
     transaction::TransactionUtil,
 };
@@ -13,13 +14,16 @@ use solana_message::{
 };
 use solana_program_pack::Pack;
 use solana_sdk::{
-    instruction::Instruction,
+    instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
     transaction::VersionedTransaction,
 };
-use solana_system_interface::instruction::{create_account, transfer};
+use solana_system_interface::{
+    instruction::{create_account, transfer},
+    program::ID as SYSTEM_PROGRAM_ID,
+};
 use spl_associated_token_account_interface::address::{
     get_associated_token_address, get_associated_token_address_with_program_id,
 };
@@ -126,6 +130,28 @@ impl TransactionBuilder {
     pub fn with_system_allocate(mut self, account: &Pubkey, space: u64) -> Self {
         let instruction = solana_system_interface::instruction::allocate(account, space);
         self.instructions.push(instruction);
+        self
+    }
+
+    /// Add a CreateAccountAllowPrefund instruction (tag 13, hand-encoded — no constructor in
+    /// system-interface 2.0.0; funding account omitted when lamports == 0).
+    pub fn with_create_account_allow_prefund(
+        mut self,
+        new_account: &Pubkey,
+        funder: &Pubkey,
+        lamports: u64,
+        space: u64,
+        owner: &Pubkey,
+    ) -> Self {
+        let mut accounts = vec![AccountMeta::new(*new_account, true)];
+        if lamports > 0 {
+            accounts.push(AccountMeta::new(*funder, true));
+        }
+        self.instructions.push(Instruction {
+            program_id: SYSTEM_PROGRAM_ID,
+            accounts,
+            data: bincode::serialize(&(DISCRIMINATOR, lamports, space, *owner)).unwrap(),
+        });
         self
     }
 

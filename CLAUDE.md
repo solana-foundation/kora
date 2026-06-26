@@ -436,7 +436,7 @@ disallowed_accounts = []  # Blocked account addresses
 [validation.fee_payer_policy.system]
 allow_transfer = false           # System Transfer/TransferWithSeed
 allow_assign = false             # System Assign/AssignWithSeed
-allow_create_account = false     # System CreateAccount/CreateAccountWithSeed
+allow_create_account = false     # System CreateAccount/CreateAccountWithSeed/CreateAccountAllowPrefund
 allow_allocate = false           # System Allocate/AllocateWithSeed
 
 [validation.fee_payer_policy.system.nonce]
@@ -516,7 +516,7 @@ The fee payer policy is configured via nested sections in `kora.toml`:
 **System Program (8 controls)**:
 1. **Transfer** - Transfer and TransferWithSeed instructions (fee payer as sender)
 2. **Assign** - Assign and AssignWithSeed instructions (fee payer as authority)
-3. **CreateAccount** - CreateAccount and CreateAccountWithSeed instructions (fee payer as funding source)
+3. **CreateAccount** - CreateAccount, CreateAccountWithSeed, and CreateAccountAllowPrefund instructions (fee payer as funding source or as the account being created)
 4. **Allocate** - Allocate and AllocateWithSeed instructions (fee payer as account owner)
 5. **Nonce Initialize** - InitializeNonceAccount instruction (fee payer set as authority)
 6. **Nonce Advance** - AdvanceNonceAccount instruction (fee payer as authority)

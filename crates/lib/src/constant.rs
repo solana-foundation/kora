@@ -67,6 +67,16 @@ pub mod instruction_indexes {
         pub const NEW_ACCOUNT_INDEX: usize = 1;
     }
 
+    // Reverse of system_create_account: [new, funding], funding omitted when lamports == 0.
+    pub mod system_create_account_allow_prefund {
+        // bincode variant tag; absent from solana-system-interface 2.0.0.
+        pub const DISCRIMINATOR: u32 = 13;
+        pub const MIN_REQUIRED_NUMBER_OF_ACCOUNTS: usize = 1;
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS_WITH_FUNDING: usize = 2;
+        pub const NEW_ACCOUNT_INDEX: usize = 0;
+        pub const FUNDING_INDEX: usize = 1;
+    }
+
     pub mod system_transfer {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 2;
         pub const SENDER_INDEX: usize = 0;

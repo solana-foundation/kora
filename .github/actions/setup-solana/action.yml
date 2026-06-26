@@ -13,22 +13,20 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.local/share/solana
-        key: solana-cli-stable-${{ runner.os }}-${{ steps.week.outputs.week }}
+        key: solana-cli-v4.0.3-${{ runner.os }}-${{ steps.week.outputs.week }}
         restore-keys: |
-          solana-cli-stable-${{ runner.os }}-
+          solana-cli-v4.0.3-${{ runner.os }}-
 
     - name: Install Solana CLI
       shell: bash
       run: |
-        # Check if already installed
-        if command -v solana &> /dev/null; then
+        if command -v solana &> /dev/null && solana --version | grep -q ' 4\.'; then
           echo "Solana CLI already installed"
           solana --version
           exit 0
         fi
-        
-        # Install Solana CLI (stable version)
-        sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+
+        sh -c "$(curl -sSfL https://release.anza.xyz/v4.0.3/install)"
         echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
         export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
 

@@ -1374,3 +1374,60 @@ async fn test_reallocate_multisig_bypass() {
         Ok(_) => panic!("Expected error for reallocate multisig bypass policy violation"),
     }
 }
+
+#[tokio::test]
+async fn test_create_account_allow_prefund_funder_policy_violation() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
+    let new_account = Pubkey::new_unique();
+    let owner = Pubkey::new_unique();
+
+    let malicious_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer_pubkey)
+        .with_create_account_allow_prefund(&new_account, &fee_payer_pubkey, 1_000_000, 0, &owner)
+        .build()
+        .await
+        .expect("Failed to create transaction with create_account_allow_prefund");
+
+    let result =
+        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![malicious_tx]).await;
+
+    match result {
+        Err(error) => {
+            error.assert_contains_message("Fee payer cannot be used for 'System Create Account'");
+        }
+        Ok(_) => panic!("Expected error for create_account_allow_prefund funder policy violation"),
+    }
+}
+
+#[tokio::test]
+async fn test_create_account_allow_prefund_brick_vector_policy_violation() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
+    let owner = Pubkey::new_unique();
+
+    // Fee payer is the account created (brick), not the funder. lamports=0 lets simulation pass
+    // so the policy gate is what rejects it.
+    let malicious_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer_pubkey)
+        .with_create_account_allow_prefund(&fee_payer_pubkey, &fee_payer_pubkey, 0, 0, &owner)
+        .build()
+        .await
+        .expect("Failed to create transaction with create_account_allow_prefund");
+
+    let result =
+        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![malicious_tx]).await;
+
+    match result {
+        Err(error) => {
+            error.assert_contains_message("Fee payer cannot be used for 'System Create Account'");
+        }
+        Ok(_) => {
+            panic!("Expected error for create_account_allow_prefund brick-vector policy violation")
+        }
+    }
+}
