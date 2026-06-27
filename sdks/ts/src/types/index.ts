@@ -305,10 +305,12 @@ export interface Token2022Config {
  * @remarks
  * - `margin`: Adds a percentage margin to base fees
  * - `fixed`: Charges a fixed amount in a specific token
+ * - `fixed_stable`: Charges a fixed fee payable in any of the listed mints, anchored to the first
  * - `free`: No additional fees charged
  */
 export type PriceModel =
     | { amount: number; token: string; type: 'fixed' }
+    | { amount: number; tokens: string[]; strict: boolean; type: 'fixed_stable' }
     | { margin: number; type: 'margin' }
     | { type: 'free' };
 

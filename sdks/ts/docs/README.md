@@ -698,6 +698,12 @@ type PriceModel =
   type: "fixed";
 }
   | {
+  amount: number;
+  tokens: string[];
+  strict: boolean;
+  type: "fixed_stable";
+}
+  | {
   type: "free";
 };
 ```

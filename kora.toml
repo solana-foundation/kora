@@ -132,8 +132,16 @@ allow_deactivate = false        # Allow fee payer to be authority in ALT Deactiv
 allow_close = false             # Allow fee payer to be authority in ALT CloseLookupTable
 
 [validation.price]
-type = "margin" # free / margin / fixed
+type = "margin" # free / margin / fixed / fixed_stable
 margin = 0.1  # 10% margin (0.1 = 10%, 1.0 = 100%)
+
+# fixed_stable: one fee payable in any of several stablecoins. `amount` is in base units of the
+# first listed mint (which anchors the fee); other mints are accepted at the equivalent oracle value.
+# [validation.price]
+# type = "fixed_stable"
+# amount = 100000              # 0.10 of a 6-decimal stablecoin
+# tokens = ["<usdc-mint>", "<usdt-mint>"]  # must also appear in allowed_spl_paid_tokens
+# strict = false              # true rejects transactions whose real cost exceeds the fixed fee
 
 [validation.token_2022]
 transfer_hook_policy = "deny_mutable_for_delayed_signing"

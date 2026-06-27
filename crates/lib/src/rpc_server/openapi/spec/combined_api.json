@@ -1902,14 +1902,14 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0,
-                "description": "Fixed fee in token base units, applied identically to every token in the stable group."
+                "description": "Fixed fee in base units of the first listed mint, which anchors the fee. Payers using any other listed mint are charged the equivalent value at current oracle prices."
               },
               "tokens": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 },
-                "description": "Stablecoin mint addresses accepted at this fixed price. All tokens are treated as equivalent."
+                "description": "Stablecoin mint addresses accepted for this fixed fee. The first mint anchors the price; others are converted at oracle rates."
               },
               "strict": {
                 "type": "boolean"
