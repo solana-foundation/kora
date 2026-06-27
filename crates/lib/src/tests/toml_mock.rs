@@ -124,6 +124,14 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn with_fixed_stable_price(mut self, amount: u64, tokens: &[&str]) -> Self {
+        let tokens_list = tokens.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(", ");
+        self.validation.price_config = Some(format!(
+            "[validation.price]\ntype = \"fixed_stable\"\namount = {amount}\ntokens = [{tokens_list}]\nstrict = false\n"
+        ));
+        self
+    }
+
     pub fn with_free_price(mut self) -> Self {
         self.validation.price_config = Some("[validation.price]\ntype = \"free\"\n".to_string());
         self

@@ -1003,6 +1003,25 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_fixed_stable_price_config() {
+        let usdc = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+        let usdt = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+        let config = ConfigBuilder::new()
+            .with_fixed_stable_price(100_000, &[usdc, usdt])
+            .build_config()
+            .unwrap();
+
+        match &config.validation.price.model {
+            PriceModel::FixedStable { amount, tokens, strict } => {
+                assert_eq!(*amount, 100_000);
+                assert_eq!(tokens, &[usdc, usdt]);
+                assert!(!strict);
+            }
+            _ => panic!("Expected FixedStable price model"),
+        }
+    }
+
+    #[test]
     fn test_parse_missing_price_config() {
         let config = ConfigBuilder::new().build_config().unwrap();
 

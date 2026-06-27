@@ -318,6 +318,35 @@ impl FeeConfigUtil {
                     Ok(TotalFeeCalculation::new_fixed(fixed_fee_lamports))
                 }
             }
+            PriceModel::FixedStable { strict, .. } => {
+                let fixed_fee_lamports = config
+                    .validation
+                    .price
+                    .get_required_lamports_with_fixed_stable(rpc_client, config)
+                    .await?;
+
+                if *strict {
+                    let fee_calculation = Self::estimate_transaction_fee(
+                        transaction,
+                        fee_payer,
+                        is_payment_required,
+                        rpc_client,
+                        config,
+                    )
+                    .await?;
+
+                    Ok(TotalFeeCalculation::new(
+                        fixed_fee_lamports,
+                        fee_calculation.base_fee,
+                        fee_calculation.kora_signature_fee,
+                        fee_calculation.fee_payer_outflow,
+                        fee_calculation.payment_instruction_fee,
+                        fee_calculation.transfer_fee_amount,
+                    ))
+                } else {
+                    Ok(TotalFeeCalculation::new_fixed(fixed_fee_lamports))
+                }
+            }
             PriceModel::Margin { .. } => {
                 // Get the raw transaction
                 let fee_calculation = Self::estimate_transaction_fee(
@@ -347,7 +376,9 @@ impl FeeConfigUtil {
         }
     }
 
-    /// Calculate the fee in a specific token if provided
+    /// Calculate the fee in a specific token if provided.
+    /// For `FixedStable` pricing, returns the configured fixed amount directly
+    /// for any token in the stable group, bypassing the oracle conversion.
     pub async fn calculate_fee_in_token(
         fee_in_lamports: u64,
         fee_token: Option<&str>,
@@ -365,6 +396,13 @@ impl FeeConfigUtil {
                 return Err(KoraError::InvalidRequest(format!(
                     "Token {fee_token} is not supported"
                 )));
+            }
+
+            // For FixedStable pricing, return the fixed amount directly for tokens in the group.
+            if let Some(fixed_amount) =
+                config.validation.price.get_fixed_stable_fee_for_token(fee_token)
+            {
+                return Ok(Some(fixed_amount));
             }
 
             let fee_value_in_token = TokenUtil::calculate_lamports_value_in_token(

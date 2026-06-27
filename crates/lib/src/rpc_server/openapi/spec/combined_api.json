@@ -1892,6 +1892,39 @@
           {
             "type": "object",
             "required": [
+              "amount",
+              "tokens",
+              "strict",
+              "type"
+            ],
+            "properties": {
+              "amount": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "Fixed fee in token base units, applied identically to every token in the stable group."
+              },
+              "tokens": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Stablecoin mint addresses accepted at this fixed price. All tokens are treated as equivalent."
+              },
+              "strict": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "fixed_stable"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
               "type"
             ],
             "properties": {

@@ -10,10 +10,15 @@ use std::str::FromStr;
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum PriceModel {
     Margin { margin: f64 },
     Fixed { amount: u64, token: String, strict: bool },
+    /// Charge a fixed amount in any of the listed stablecoin mints.
+    /// All tokens in the group are treated as equivalent (same amount, no per-token oracle call).
+    /// The `amount` is in base units and applies identically to every token in `tokens`.
+    /// Use this when you accept USDC, USDT, PYUSD, etc. at the same flat fee.
+    FixedStable { amount: u64, tokens: Vec<String>, strict: bool },
     Free,
 }
 
@@ -55,6 +60,47 @@ impl PriceConfig {
         Err(KoraError::ConfigError(
             "Price model is not 'Fixed': cannot compute fixed fee".to_string(),
         ))
+    }
+
+    pub async fn get_required_lamports_with_fixed_stable(
+        &self,
+        rpc_client: &RpcClient,
+        config: &Config,
+    ) -> Result<u64, KoraError> {
+        if let PriceModel::FixedStable { amount, tokens, .. } = &self.model {
+            let reference_token = tokens.first().ok_or_else(|| {
+                KoraError::ConfigError(
+                    "FixedStable price model requires at least one token".to_string(),
+                )
+            })?;
+            return TokenUtil::calculate_token_value_in_lamports(
+                *amount,
+                &Pubkey::from_str(reference_token).map_err(|e| {
+                    log::error!("Invalid Pubkey for fixed stable price {e}");
+                    KoraError::ConfigError(
+                        "Invalid token address in fee config: failed to parse as Solana pubkey"
+                            .to_string(),
+                    )
+                })?,
+                rpc_client,
+                config,
+            )
+            .await;
+        }
+
+        Err(KoraError::ConfigError(
+            "Price model is not 'FixedStable': cannot compute fixed stable fee".to_string(),
+        ))
+    }
+
+    /// Returns the fixed stable fee amount if the given token is in the stable group, or None otherwise.
+    pub fn get_fixed_stable_fee_for_token(&self, fee_token: &str) -> Option<u64> {
+        if let PriceModel::FixedStable { amount, tokens, .. } = &self.model {
+            if tokens.iter().any(|t| t == fee_token) {
+                return Some(*amount);
+            }
+        }
+        None
     }
 
     pub async fn get_required_lamports_with_margin(
@@ -228,5 +274,91 @@ mod tests {
             PriceModel::Margin { margin } => assert_eq!(margin, 0.0),
             _ => panic!("Default should be Margin with 0.0 margin"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_fixed_stable_model_get_required_lamports_uses_first_token() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
+        let rpc_client = create_mock_rpc_client_with_mint(6);
+
+        let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+        let other_stable = "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3"; // some other stable mint
+        let price_config = PriceConfig {
+            model: PriceModel::FixedStable {
+                amount: 1_000_000, // 1 USDC
+                tokens: vec![usdc_mint.to_string(), other_stable.to_string()],
+                strict: false,
+            },
+        };
+
+        let result = price_config
+            .get_required_lamports_with_fixed_stable(&rpc_client, &config)
+            .await
+            .unwrap();
+
+        // First token (USDC) is used as reference: 1 USDC * 0.0075 SOL/USDC * 1e9 = 7,500,000 lamports
+        assert_eq!(result, 7_500_000);
+    }
+
+    #[tokio::test]
+    async fn test_fixed_stable_model_empty_tokens_returns_error() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let config = get_config().unwrap();
+        let rpc_client = create_mock_rpc_client_with_mint(6);
+
+        let price_config = PriceConfig {
+            model: PriceModel::FixedStable {
+                amount: 1_000_000,
+                tokens: vec![],
+                strict: false,
+            },
+        };
+
+        let result =
+            price_config.get_required_lamports_with_fixed_stable(&rpc_client, &config).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("at least one token"), "Expected 'at least one token' in error: {err}");
+    }
+
+    #[test]
+    fn test_get_fixed_stable_fee_for_token_in_group() {
+        let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+        let usdt_mint = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+        let price_config = PriceConfig {
+            model: PriceModel::FixedStable {
+                amount: 100_000,
+                tokens: vec![usdc_mint.to_string(), usdt_mint.to_string()],
+                strict: false,
+            },
+        };
+
+        assert_eq!(price_config.get_fixed_stable_fee_for_token(usdc_mint), Some(100_000));
+        assert_eq!(price_config.get_fixed_stable_fee_for_token(usdt_mint), Some(100_000));
+    }
+
+    #[test]
+    fn test_get_fixed_stable_fee_for_token_not_in_group() {
+        let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+        let other_mint = "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3";
+        let price_config = PriceConfig {
+            model: PriceModel::FixedStable {
+                amount: 100_000,
+                tokens: vec![usdc_mint.to_string()],
+                strict: false,
+            },
+        };
+
+        assert_eq!(price_config.get_fixed_stable_fee_for_token(other_mint), None);
+    }
+
+    #[test]
+    fn test_get_fixed_stable_fee_for_token_wrong_model() {
+        let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+        let price_config = PriceConfig {
+            model: PriceModel::Margin { margin: 0.1 },
+        };
+        assert_eq!(price_config.get_fixed_stable_fee_for_token(usdc_mint), None);
     }
 }
