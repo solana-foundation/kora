@@ -855,7 +855,18 @@ impl ConfigValidator {
                     );
                 }
             }
-            PriceModel::FixedStable { tokens, strict, .. } => {
+            PriceModel::FixedStable { amount, tokens, strict } => {
+                if tokens.is_empty() {
+                    errors.push(
+                        "FixedStable price model requires at least one token in 'tokens'"
+                            .to_string(),
+                    );
+                }
+                if *amount == 0 {
+                    errors.push(
+                        "FixedStable price model 'amount' must be greater than zero".to_string(),
+                    );
+                }
                 for token in tokens {
                     if Pubkey::from_str(token).is_err() {
                         errors
@@ -1874,6 +1885,107 @@ mod tests {
 
         assert!(errors.iter().any(|e| e
             .contains("Token address for fixed_stable price is not in allowed spl paid tokens")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_fixed_stable_price_zero_amount_errors() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig {
+                    model: PriceModel::FixedStable {
+                        amount: 0, // Should error
+                        tokens: vec![
+                            "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(), // allowed
+                        ],
+                        strict: false,
+                    },
+                },
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
+            },
+            metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("FixedStable price model 'amount' must be greater than zero")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_with_result_fixed_stable_price_empty_tokens_errors() {
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig {
+                    model: PriceModel::FixedStable {
+                        amount: 1000,
+                        tokens: vec![], // Should error
+                        strict: false,
+                    },
+                },
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
+            },
+            metrics: MetricsConfig::default(),
+            kora: KoraConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+
+        assert!(
+            errors
+                .iter()
+                .any(|e| e
+                    .contains("FixedStable price model requires at least one token in 'tokens'"))
+        );
     }
 
     #[tokio::test]
