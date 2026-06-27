@@ -3726,6 +3726,33 @@ mod tests {
         assert!(result.is_ok(), "FixedStable strict=false must not enforce cap");
     }
 
+    #[test]
+    #[serial]
+    fn test_strict_pricing_fixed_stable_passes_within_cap() {
+        use crate::{
+            fee::price::PriceModel, state::update_config, tests::config_mock::ConfigMockBuilder,
+        };
+
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = PriceModel::FixedStable {
+            amount: 10000,
+            tokens: vec!["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string()],
+            strict: true,
+        };
+        let _ = update_config(config);
+
+        // Fixed price = 10000, total = 3000 + 2000 = 5000 <= 10000
+        let fee_calc = TotalFeeCalculation::new(10000, 3000, 2000, 0, 0, 0);
+
+        let config = get_config().unwrap();
+        let result = TransactionValidator::validate_strict_pricing_with_fee(config, &fee_calc);
+
+        assert!(
+            result.is_ok(),
+            "FixedStable strict=true must pass when total is within the fixed price"
+        );
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_durable_transaction_rejected_by_default() {

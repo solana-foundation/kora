@@ -20,10 +20,10 @@ pub enum PriceModel {
         token: String,
         strict: bool,
     },
-    /// Charge a fixed amount in any of the listed stablecoin mints.
-    /// All tokens in the group are treated as equivalent (same amount, no per-token oracle call).
-    /// The `amount` is in base units and applies identically to every token in `tokens`.
-    /// Use this when you accept USDC, USDT, PYUSD, etc. at the same flat fee.
+    /// Charge a fixed fee payable in any of the listed stablecoin mints.
+    /// `amount` is in base units of the first listed mint, which anchors the fee; a payer
+    /// using any other listed mint is charged the equivalent value at current oracle prices.
+    /// Use this when you accept several stablecoins (USDC, USDT, PYUSD, …) for one fee.
     FixedStable {
         amount: u64,
         tokens: Vec<String>,
@@ -45,26 +45,28 @@ pub struct PriceConfig {
 }
 
 impl PriceConfig {
+    async fn token_amount_to_lamports(
+        amount: u64,
+        token: &str,
+        rpc_client: &RpcClient,
+        config: &Config,
+    ) -> Result<u64, KoraError> {
+        let mint = Pubkey::from_str(token).map_err(|e| {
+            log::error!("Invalid Pubkey for price {e}");
+            KoraError::ConfigError(
+                "Invalid token address in fee config: failed to parse as Solana pubkey".to_string(),
+            )
+        })?;
+        TokenUtil::calculate_token_value_in_lamports(amount, &mint, rpc_client, config).await
+    }
+
     pub async fn get_required_lamports_with_fixed(
         &self,
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<u64, KoraError> {
         if let PriceModel::Fixed { amount, token, .. } = &self.model {
-            return TokenUtil::calculate_token_value_in_lamports(
-                *amount,
-                &Pubkey::from_str(token).map_err(|e| {
-                    log::error!("Invalid Pubkey for price {e}");
-
-                    KoraError::ConfigError(
-                        "Invalid token address in fee config: failed to parse as Solana pubkey"
-                            .to_string(),
-                    )
-                })?,
-                rpc_client,
-                config,
-            )
-            .await;
+            return Self::token_amount_to_lamports(*amount, token, rpc_client, config).await;
         }
 
         Err(KoraError::ConfigError(
@@ -72,65 +74,28 @@ impl PriceConfig {
         ))
     }
 
+    /// Lamport equivalent of the fixed fee, anchored to the first listed mint.
+    /// This is the reference value used for `max_allowed_lamports` and strict-pricing
+    /// enforcement; the actual token a payer uses is converted at oracle rates in
+    /// [`FeeConfigUtil::calculate_fee_in_token`].
     pub async fn get_required_lamports_with_fixed_stable(
         &self,
         rpc_client: &RpcClient,
         config: &Config,
     ) -> Result<u64, KoraError> {
         if let PriceModel::FixedStable { amount, tokens, .. } = &self.model {
-            if tokens.is_empty() {
-                return Err(KoraError::ConfigError(
+            let reference_token = tokens.first().ok_or_else(|| {
+                KoraError::ConfigError(
                     "FixedStable price model requires at least one token".to_string(),
-                ));
-            }
-
-            let mut last_err = KoraError::ConfigError(
-                "FixedStable price model requires at least one token".to_string(),
-            );
-
-            for token in tokens {
-                let mint = match Pubkey::from_str(token) {
-                    Ok(pk) => pk,
-                    Err(e) => {
-                        log::warn!("Skipping invalid Pubkey in FixedStable tokens: {e}");
-                        last_err = KoraError::ConfigError(
-                            "Invalid token address in fee config: failed to parse as Solana pubkey"
-                                .to_string(),
-                        );
-                        continue;
-                    }
-                };
-                match TokenUtil::calculate_token_value_in_lamports(
-                    *amount, &mint, rpc_client, config,
                 )
-                .await
-                {
-                    Ok(lamports) => return Ok(lamports),
-                    Err(e) => {
-                        log::warn!(
-                            "Oracle lookup failed for FixedStable reference token {token}: {e}; trying next"
-                        );
-                        last_err = e;
-                    }
-                }
-            }
-
-            return Err(last_err);
+            })?;
+            return Self::token_amount_to_lamports(*amount, reference_token, rpc_client, config)
+                .await;
         }
 
         Err(KoraError::ConfigError(
             "Price model is not 'FixedStable': cannot compute fixed stable fee".to_string(),
         ))
-    }
-
-    /// Returns the fixed stable fee amount if the given token is in the stable group, or None otherwise.
-    pub fn get_fixed_stable_fee_for_token(&self, fee_token: &str) -> Option<u64> {
-        if let PriceModel::FixedStable { amount, tokens, .. } = &self.model {
-            if tokens.iter().any(|t| t == fee_token) {
-                return Some(*amount);
-            }
-        }
-        None
     }
 
     pub async fn get_required_lamports_with_margin(
@@ -349,43 +314,5 @@ mod tests {
             err.contains("at least one token"),
             "Expected 'at least one token' in error: {err}"
         );
-    }
-
-    #[test]
-    fn test_get_fixed_stable_fee_for_token_in_group() {
-        let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
-        let usdt_mint = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
-        let price_config = PriceConfig {
-            model: PriceModel::FixedStable {
-                amount: 100_000,
-                tokens: vec![usdc_mint.to_string(), usdt_mint.to_string()],
-                strict: false,
-            },
-        };
-
-        assert_eq!(price_config.get_fixed_stable_fee_for_token(usdc_mint), Some(100_000));
-        assert_eq!(price_config.get_fixed_stable_fee_for_token(usdt_mint), Some(100_000));
-    }
-
-    #[test]
-    fn test_get_fixed_stable_fee_for_token_not_in_group() {
-        let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
-        let other_mint = "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3";
-        let price_config = PriceConfig {
-            model: PriceModel::FixedStable {
-                amount: 100_000,
-                tokens: vec![usdc_mint.to_string()],
-                strict: false,
-            },
-        };
-
-        assert_eq!(price_config.get_fixed_stable_fee_for_token(other_mint), None);
-    }
-
-    #[test]
-    fn test_get_fixed_stable_fee_for_token_wrong_model() {
-        let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
-        let price_config = PriceConfig { model: PriceModel::Margin { margin: 0.1 } };
-        assert_eq!(price_config.get_fixed_stable_fee_for_token(usdc_mint), None);
     }
 }
