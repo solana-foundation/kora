@@ -927,7 +927,11 @@ impl TransactionValidator {
         config: &Config,
         fee_calculation: &TotalFeeCalculation,
     ) -> Result<(), KoraError> {
-        if !matches!(&config.validation.price.model, PriceModel::Fixed { strict: true, .. }) {
+        let is_strict = matches!(
+            &config.validation.price.model,
+            PriceModel::Fixed { strict: true, .. } | PriceModel::FixedStable { strict: true, .. }
+        );
+        if !is_strict {
             return Ok(());
         }
 
@@ -3668,6 +3672,58 @@ mod tests {
         } else {
             panic!("Expected ValidationError");
         }
+    }
+
+    #[test]
+    #[serial]
+    fn test_strict_pricing_fixed_stable_enforced() {
+        use crate::{
+            fee::price::PriceModel, state::update_config, tests::config_mock::ConfigMockBuilder,
+        };
+
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = PriceModel::FixedStable {
+            amount: 5000,
+            tokens: vec!["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string()],
+            strict: true,
+        };
+        let _ = update_config(config);
+
+        // Fixed price = 5000, but total = 3000 + 2000 + 5000 = 10000 > 5000
+        let fee_calc = TotalFeeCalculation::new(5000, 3000, 2000, 5000, 0, 0);
+
+        let config = get_config().unwrap();
+        let result = TransactionValidator::validate_strict_pricing_with_fee(config, &fee_calc);
+
+        assert!(result.is_err(), "FixedStable strict=true must reject when total exceeds fixed");
+        if let Err(KoraError::ValidationError(msg)) = result {
+            assert!(msg.contains("Strict pricing violation"));
+        } else {
+            panic!("Expected ValidationError");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_strict_pricing_fixed_stable_not_strict_passes() {
+        use crate::{
+            fee::price::PriceModel, state::update_config, tests::config_mock::ConfigMockBuilder,
+        };
+
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.price.model = PriceModel::FixedStable {
+            amount: 5000,
+            tokens: vec!["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string()],
+            strict: false,
+        };
+        let _ = update_config(config);
+
+        let fee_calc = TotalFeeCalculation::new(5000, 10000, 0, 0, 0, 0);
+
+        let config = get_config().unwrap();
+        let result = TransactionValidator::validate_strict_pricing_with_fee(config, &fee_calc);
+
+        assert!(result.is_ok(), "FixedStable strict=false must not enforce cap");
     }
 
     #[tokio::test]

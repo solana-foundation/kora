@@ -12,13 +12,23 @@ use utoipa::ToSchema;
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PriceModel {
-    Margin { margin: f64 },
-    Fixed { amount: u64, token: String, strict: bool },
+    Margin {
+        margin: f64,
+    },
+    Fixed {
+        amount: u64,
+        token: String,
+        strict: bool,
+    },
     /// Charge a fixed amount in any of the listed stablecoin mints.
     /// All tokens in the group are treated as equivalent (same amount, no per-token oracle call).
     /// The `amount` is in base units and applies identically to every token in `tokens`.
     /// Use this when you accept USDC, USDT, PYUSD, etc. at the same flat fee.
-    FixedStable { amount: u64, tokens: Vec<String>, strict: bool },
+    FixedStable {
+        amount: u64,
+        tokens: Vec<String>,
+        strict: bool,
+    },
     Free,
 }
 
@@ -68,24 +78,44 @@ impl PriceConfig {
         config: &Config,
     ) -> Result<u64, KoraError> {
         if let PriceModel::FixedStable { amount, tokens, .. } = &self.model {
-            let reference_token = tokens.first().ok_or_else(|| {
-                KoraError::ConfigError(
+            if tokens.is_empty() {
+                return Err(KoraError::ConfigError(
                     "FixedStable price model requires at least one token".to_string(),
+                ));
+            }
+
+            let mut last_err = KoraError::ConfigError(
+                "FixedStable price model requires at least one token".to_string(),
+            );
+
+            for token in tokens {
+                let mint = match Pubkey::from_str(token) {
+                    Ok(pk) => pk,
+                    Err(e) => {
+                        log::warn!("Skipping invalid Pubkey in FixedStable tokens: {e}");
+                        last_err = KoraError::ConfigError(
+                            "Invalid token address in fee config: failed to parse as Solana pubkey"
+                                .to_string(),
+                        );
+                        continue;
+                    }
+                };
+                match TokenUtil::calculate_token_value_in_lamports(
+                    *amount, &mint, rpc_client, config,
                 )
-            })?;
-            return TokenUtil::calculate_token_value_in_lamports(
-                *amount,
-                &Pubkey::from_str(reference_token).map_err(|e| {
-                    log::error!("Invalid Pubkey for fixed stable price {e}");
-                    KoraError::ConfigError(
-                        "Invalid token address in fee config: failed to parse as Solana pubkey"
-                            .to_string(),
-                    )
-                })?,
-                rpc_client,
-                config,
-            )
-            .await;
+                .await
+                {
+                    Ok(lamports) => return Ok(lamports),
+                    Err(e) => {
+                        log::warn!(
+                            "Oracle lookup failed for FixedStable reference token {token}: {e}; trying next"
+                        );
+                        last_err = e;
+                    }
+                }
+            }
+
+            return Err(last_err);
         }
 
         Err(KoraError::ConfigError(
@@ -308,18 +338,17 @@ mod tests {
         let rpc_client = create_mock_rpc_client_with_mint(6);
 
         let price_config = PriceConfig {
-            model: PriceModel::FixedStable {
-                amount: 1_000_000,
-                tokens: vec![],
-                strict: false,
-            },
+            model: PriceModel::FixedStable { amount: 1_000_000, tokens: vec![], strict: false },
         };
 
         let result =
             price_config.get_required_lamports_with_fixed_stable(&rpc_client, &config).await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("at least one token"), "Expected 'at least one token' in error: {err}");
+        assert!(
+            err.contains("at least one token"),
+            "Expected 'at least one token' in error: {err}"
+        );
     }
 
     #[test]
@@ -356,9 +385,7 @@ mod tests {
     #[test]
     fn test_get_fixed_stable_fee_for_token_wrong_model() {
         let usdc_mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
-        let price_config = PriceConfig {
-            model: PriceModel::Margin { margin: 0.1 },
-        };
+        let price_config = PriceConfig { model: PriceModel::Margin { margin: 0.1 } };
         assert_eq!(price_config.get_fixed_stable_fee_for_token(usdc_mint), None);
     }
 }

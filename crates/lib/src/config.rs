@@ -818,6 +818,27 @@ impl Config {
             ))
         })?;
 
+        // Validate FixedStable price model configuration
+        if let PriceModel::FixedStable { amount, tokens, .. } = &config.validation.price.model {
+            if tokens.is_empty() {
+                return Err(KoraError::ConfigError(
+                    "FixedStable price model requires at least one token in 'tokens'".to_string(),
+                ));
+            }
+            if *amount == 0 {
+                return Err(KoraError::ConfigError(
+                    "FixedStable price model 'amount' must be greater than zero".to_string(),
+                ));
+            }
+            for token in tokens {
+                Pubkey::from_str(token).map_err(|_| {
+                    KoraError::ConfigError(format!(
+                        "FixedStable price model contains invalid token mint address: '{token}'"
+                    ))
+                })?;
+            }
+        }
+
         Ok(config)
     }
 }
@@ -1018,6 +1039,99 @@ mod tests {
                 assert!(!strict);
             }
             _ => panic!("Expected FixedStable price model"),
+        }
+    }
+
+    #[test]
+    fn test_fixed_stable_empty_tokens_rejected() {
+        let result = crate::tests::toml_mock::create_invalid_config(
+            r#"
+[validation]
+max_allowed_lamports = 1000000000
+max_signatures = 10
+allowed_programs = ["program1"]
+allowed_tokens = ["token1"]
+allowed_spl_paid_tokens = ["token2"]
+disallowed_accounts = []
+price_source = "Mock"
+
+[validation.price]
+type = "fixed_stable"
+amount = 100000
+tokens = []
+strict = false
+
+[kora]
+rate_limit = 100
+"#,
+        );
+        assert!(result.is_err());
+        if let Err(KoraError::ConfigError(msg)) = result {
+            assert!(msg.contains("requires at least one token"), "Unexpected error: {msg}");
+        } else {
+            panic!("Expected ConfigError");
+        }
+    }
+
+    #[test]
+    fn test_fixed_stable_zero_amount_rejected() {
+        let result = crate::tests::toml_mock::create_invalid_config(
+            r#"
+[validation]
+max_allowed_lamports = 1000000000
+max_signatures = 10
+allowed_programs = ["program1"]
+allowed_tokens = ["token1"]
+allowed_spl_paid_tokens = ["token2"]
+disallowed_accounts = []
+price_source = "Mock"
+
+[validation.price]
+type = "fixed_stable"
+amount = 0
+tokens = ["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"]
+strict = false
+
+[kora]
+rate_limit = 100
+"#,
+        );
+        assert!(result.is_err());
+        if let Err(KoraError::ConfigError(msg)) = result {
+            assert!(msg.contains("amount"), "Unexpected error: {msg}");
+        } else {
+            panic!("Expected ConfigError");
+        }
+    }
+
+    #[test]
+    fn test_fixed_stable_invalid_mint_rejected() {
+        let result = crate::tests::toml_mock::create_invalid_config(
+            r#"
+[validation]
+max_allowed_lamports = 1000000000
+max_signatures = 10
+allowed_programs = ["program1"]
+allowed_tokens = ["token1"]
+allowed_spl_paid_tokens = ["token2"]
+disallowed_accounts = []
+price_source = "Mock"
+
+[validation.price]
+type = "fixed_stable"
+amount = 100000
+tokens = ["not-a-valid-pubkey"]
+strict = false
+
+[kora]
+rate_limit = 100
+"#,
+        );
+        assert!(result.is_err());
+        if let Err(KoraError::ConfigError(msg)) = result {
+            assert!(msg.contains("invalid token mint address"), "Unexpected error: {msg}");
+        } else {
+            panic!("Expected ConfigError");
         }
     }
 
