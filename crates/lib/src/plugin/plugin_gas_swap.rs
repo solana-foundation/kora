@@ -145,7 +145,10 @@ impl TransactionPlugin for GasSwapPlugin {
         }
 
         let mut warnings = Vec::new();
-        if matches!(config.validation.price.model, PriceModel::Fixed { .. }) {
+        if matches!(
+            config.validation.price.model,
+            PriceModel::Fixed { .. } | PriceModel::FixedStable { .. }
+        ) {
             warnings.push(
                 "GasSwap plugin with Fixed pricing: ensure the fixed token fee is worth at least \
                  max_allowed_lamports in SOL to avoid a drain condition."
