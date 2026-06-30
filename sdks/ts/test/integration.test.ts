@@ -28,7 +28,8 @@ import {
     tokenProgram,
 } from '@solana-program/token';
 
-import { KoraClient, kora } from '../src/index.js';
+import { kora } from '../src/kit/index.js';
+import { KoraClient } from '../src/index.js';
 import { runAuthenticationTests } from './auth-setup.js';
 import setupTestSuite from './setup.js';
 
