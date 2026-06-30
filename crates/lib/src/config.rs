@@ -690,6 +690,7 @@ pub struct PluginsConfig {
 #[serde(default)]
 pub struct KoraConfig {
     pub rate_limit: u64,
+    pub cors_allow_origins: Vec<String>,
     pub max_request_body_size: usize,
     pub enabled_methods: EnabledMethods,
     pub auth: AuthConfig,
@@ -716,6 +717,7 @@ impl Default for KoraConfig {
     fn default() -> Self {
         Self {
             rate_limit: 100,
+            cors_allow_origins: vec!["*".to_string()],
             max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
             enabled_methods: EnabledMethods::default(),
             auth: AuthConfig::default(),
@@ -759,10 +761,45 @@ impl Default for LighthouseConfig {
     }
 }
 
+fn deserialize_api_keys<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        String(String),
+        Vec(Vec<String>),
+    }
+
+    let opt = Option::<StringOrVec>::deserialize(deserializer)?;
+    Ok(match opt {
+        Some(StringOrVec::String(s)) => {
+            let s = s.trim();
+            if s.is_empty() {
+                None
+            } else {
+                log::warn!("DEPRECATION WARNING: 'api_key' as a single string is deprecated. Please migrate to using 'api_keys' as an array in your configuration.");
+                Some(vec![s.to_string()])
+            }
+        }
+        Some(StringOrVec::Vec(v)) => {
+            let filtered: Vec<String> = v.into_iter().filter(|s| !s.trim().is_empty()).collect();
+            if filtered.is_empty() {
+                None
+            } else {
+                Some(filtered)
+            }
+        }
+        None => None,
+    })
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct AuthConfig {
-    pub api_key: Option<String>,
+    #[serde(alias = "api_key", deserialize_with = "deserialize_api_keys")]
+    pub api_keys: Option<Vec<String>>,
     pub hmac_secret: Option<String>,
     pub recaptcha_secret: Option<String>,
     pub recaptcha_score_threshold: f64,
@@ -773,7 +810,7 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            api_key: None,
+            api_keys: None,
             hmac_secret: None,
             recaptcha_secret: None,
             recaptcha_score_threshold: DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
@@ -789,7 +826,7 @@ impl AuthConfig {
     }
 
     pub(crate) fn has_auth(&self) -> bool {
-        self.api_key.as_deref().is_some_and(|key| !key.is_empty())
+        self.api_keys.as_ref().is_some_and(|keys| !keys.is_empty())
             || self.hmac_secret.as_deref().is_some_and(|key| !key.is_empty())
     }
 }
@@ -844,6 +881,23 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn test_legacy_api_key_backward_compatibility() {
+        // Test that the old `api_key = "single-key"` format is successfully deserialized
+        // into `api_keys = ["single-key"]`.
+        let toml_str = r#"
+            rate_limit = 100
+            max_request_body_size = 1024
+            
+            [auth]
+            api_key = "legacy-single-key"
+        "#;
+
+        let config: KoraConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.auth.api_keys, Some(vec!["legacy-single-key".to_string()]));
+        assert!(config.auth.has_auth());
+    }
 
     #[test]
     fn test_load_valid_config() {
@@ -1296,6 +1350,26 @@ allow_create = true
         scoped_redis_env(Some("redis://from-env:6379"), || {
             assert_eq!(cfg.resolved_url(), Some("redis://from-env:6379".into()));
         });
+    }
+
+    #[test]
+    fn test_api_keys_with_empty_strings_filtered() {
+        let toml_str = r#"
+api_keys = ["valid-key", ""]
+        "#;
+        let config: AuthConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.api_keys, Some(vec!["valid-key".to_string()]));
+        assert!(config.has_auth());
+    }
+
+    #[test]
+    fn test_api_keys_all_empty_strings_filtered() {
+        let toml_str = r#"
+api_keys = ["", "  "]
+        "#;
+        let config: AuthConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.api_keys, None);
+        assert!(!config.has_auth());
     }
 
     #[test]

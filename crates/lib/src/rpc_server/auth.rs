@@ -10,27 +10,54 @@ use jsonrpsee::server::logger::Body;
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct ClientIdentity(pub String);
+
+impl std::fmt::Debug for ClientIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.split_once(':') {
+            Some((prefix, _)) => write!(f, "ClientIdentity({prefix}:***)"),
+            None => write!(f, "ClientIdentity(***)"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RejectionReason {
+    AuthFailure,
+    RateLimit,
+}
+
+impl RejectionReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RejectionReason::AuthFailure => "auth_failure",
+            RejectionReason::RateLimit => "rate_limit",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ApiKeyAuthLayer {
-    api_key: String,
+    api_keys: Vec<String>,
 }
 
 impl ApiKeyAuthLayer {
-    pub fn new(api_key: String) -> Self {
-        Self { api_key }
+    pub fn new(api_keys: Vec<String>) -> Self {
+        Self { api_keys }
     }
 }
 
 #[derive(Clone)]
 pub struct ApiKeyAuthService<S> {
     inner: S,
-    api_key: String,
+    api_keys: Vec<String>,
 }
 
 impl<S> tower::Layer<S> for ApiKeyAuthLayer {
     type Service = ApiKeyAuthService<S>;
     fn layer(&self, inner: S) -> Self::Service {
-        ApiKeyAuthService { inner, api_key: self.api_key.clone() }
+        ApiKeyAuthService { inner, api_keys: self.api_keys.clone() }
     }
 }
 
@@ -53,12 +80,13 @@ where
     }
 
     fn call(&mut self, request: Request<Body>) -> Self::Future {
-        let api_key = self.api_key.clone();
+        let api_keys = self.api_keys.clone();
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let unauthorized_response =
+            let mut unauthorized_response =
                 build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
+            unauthorized_response.extensions_mut().insert(RejectionReason::AuthFailure);
 
             let (parts, body_bytes) = extract_parts_and_body_bytes(request).await;
 
@@ -72,10 +100,20 @@ where
             }
 
             // Check for API key header
-            let req = Request::from_parts(parts, Body::from(body_bytes));
-            if let Some(provided_key) = req.headers().get(X_API_KEY) {
+            let mut req = Request::from_parts(parts, Body::from(body_bytes));
+            let provided_key = req.headers().get(X_API_KEY).cloned();
+            if let Some(provided_key) = provided_key {
                 // Constant-time comparison prevents timing attacks
-                if provided_key.as_bytes().ct_eq(api_key.as_bytes()).into() {
+                let mut matched = false;
+                for key in &api_keys {
+                    let is_match: bool = provided_key.as_bytes().ct_eq(key.as_bytes()).into();
+                    matched |= is_match;
+                }
+
+                if matched {
+                    if let Ok(key_str) = provided_key.to_str() {
+                        req.extensions_mut().insert(ClientIdentity(format!("apikey:{}", key_str)));
+                    }
                     return inner.call(req).await;
                 }
             }
@@ -140,8 +178,9 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            let unauthorized_response =
+            let mut unauthorized_response =
                 build_response_with_graceful_error(None, StatusCode::UNAUTHORIZED, "");
+            unauthorized_response.extensions_mut().insert(RejectionReason::AuthFailure);
 
             let signature_header = request.headers().get(X_HMAC_SIGNATURE).cloned();
             let timestamp_header = request.headers().get(X_TIMESTAMP).cloned();
@@ -157,14 +196,20 @@ where
                 }
             }
 
-            let (signature, timestamp) =
-                match (signature_header.as_ref(), timestamp_header.as_ref()) {
-                    (Some(sig), Some(ts)) => (sig, ts),
-                    _ => return Ok(unauthorized_response),
-                };
-
-            let signature = signature.to_str().unwrap_or("");
-            let timestamp = timestamp.to_str().unwrap_or("");
+            let (signature, timestamp) = match (signature_header, timestamp_header) {
+                (Some(sig), Some(ts)) => {
+                    let sig_str = match sig.to_str() {
+                        Ok(s) => s.to_string(),
+                        Err(_) => return Ok(unauthorized_response),
+                    };
+                    let ts_str = match ts.to_str() {
+                        Ok(s) => s.to_string(),
+                        Err(_) => return Ok(unauthorized_response),
+                    };
+                    (sig_str, ts_str)
+                }
+                _ => return Ok(unauthorized_response),
+            };
 
             // Verify timestamp is within allowed age
             let ts = match timestamp.parse::<i64>() {
@@ -219,7 +264,9 @@ where
 
             // Reconstruct the request with the consumed body
             let new_body = Body::from(body_bytes);
-            let new_request = Request::from_parts(parts, new_body);
+            let mut new_request = Request::from_parts(parts, new_body);
+            // HMAC currently uses a single global shared secret, so all HMAC clients share one rate-limit bucket
+            new_request.extensions_mut().insert(ClientIdentity("hmac:global".to_string()));
 
             inner.call(new_request).await
         })
@@ -235,6 +282,7 @@ mod tests {
     use jsonrpsee::server::logger::Body;
     use sha2::Sha256;
     use std::{
+        convert::Infallible,
         future::Ready,
         task::{Context, Poll},
     };
@@ -244,23 +292,27 @@ mod tests {
     #[derive(Clone)]
     struct MockService;
 
-    impl tower::Service<Request<Body>> for MockService {
+    impl Service<Request<Body>> for MockService {
         type Response = Response<Body>;
-        type Error = std::convert::Infallible;
+        type Error = Infallible;
         type Future = Ready<Result<Self::Response, Self::Error>>;
 
-        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
 
-        fn call(&mut self, _: Request<Body>) -> Self::Future {
-            std::future::ready(Ok(Response::builder().status(200).body(Body::empty()).unwrap()))
+        fn call(&mut self, req: Request<Body>) -> Self::Future {
+            let mut res = Response::builder().status(200).body(Body::empty()).unwrap();
+            if let Some(identity) = req.extensions().get::<ClientIdentity>() {
+                res.extensions_mut().insert(identity.clone());
+            }
+            std::future::ready(Ok(res))
         }
     }
 
     #[tokio::test]
     async fn test_api_key_auth_valid_key() {
-        let layer = ApiKeyAuthLayer::new("test-key".to_string());
+        let layer = ApiKeyAuthLayer::new(vec!["test-key".to_string()]);
         let mut service = layer.layer(MockService);
         let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let request = Request::builder()
@@ -271,11 +323,12 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.extensions().get::<ClientIdentity>().unwrap().0, "apikey:test-key");
     }
 
     #[tokio::test]
     async fn test_api_key_auth_invalid_key() {
-        let layer = ApiKeyAuthLayer::new("test-key".to_string());
+        let layer = ApiKeyAuthLayer::new(vec!["test-key".to_string()]);
         let mut service = layer.layer(MockService);
         let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let request = Request::builder()
@@ -290,7 +343,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_api_key_auth_missing_header() {
-        let layer = ApiKeyAuthLayer::new("test-key".to_string());
+        let layer = ApiKeyAuthLayer::new(vec!["test-key".to_string()]);
         let mut service = layer.layer(MockService);
         let body = r#"{"jsonrpc":"2.0","method":"getConfig","id":1}"#;
         let request = Request::builder().uri("/test").body(Body::from(body)).unwrap();
@@ -301,7 +354,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_api_key_auth_liveness_bypass() {
-        let layer = ApiKeyAuthLayer::new("test-key".to_string());
+        let layer = ApiKeyAuthLayer::new(vec!["test-key".to_string()]);
         let mut service = layer.layer(MockService);
         let liveness_body = r#"{"jsonrpc":"2.0","method":"liveness","params":[],"id":1}"#;
         let request = Request::builder()
@@ -343,6 +396,7 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.extensions().get::<ClientIdentity>().unwrap().0, "hmac:global");
     }
 
     #[tokio::test]
@@ -369,6 +423,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
@@ -383,6 +441,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
@@ -414,6 +476,10 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.extensions().get::<RejectionReason>(),
+            Some(&RejectionReason::AuthFailure)
+        );
     }
 
     #[tokio::test]
