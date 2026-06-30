@@ -42,6 +42,36 @@ impl RpcMockBuilder {
         self
     }
 
+    pub fn with_multiple_accounts_info(mut self, accounts: Vec<Option<Account>>) -> Self {
+        let mut values = Vec::new();
+        for account_opt in accounts {
+            match account_opt {
+                Some(account) => {
+                    let encoded_data = STANDARD.encode(&account.data);
+                    values.push(json!({
+                        "data": [encoded_data, "base64"],
+                        "executable": account.executable,
+                        "lamports": account.lamports,
+                        "owner": account.owner.to_string(),
+                        "rentEpoch": account.rent_epoch
+                    }));
+                }
+                None => {
+                    values.push(json!(null));
+                }
+            }
+        }
+
+        self.mocks.insert(
+            RpcRequest::GetMultipleAccounts,
+            json!({
+                "context": { "slot": 1 },
+                "value": values
+            }),
+        );
+        self
+    }
+
     pub fn with_account_not_found(mut self) -> Self {
         self.mocks.insert(
             RpcRequest::GetAccountInfo,

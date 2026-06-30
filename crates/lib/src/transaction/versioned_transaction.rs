@@ -137,6 +137,7 @@ impl VersionedTransactionResolved {
         config: &Config,
         rpc_client: &RpcClient,
         sig_verify: bool,
+        alt_cache: Option<&mut HashMap<Pubkey, Vec<Pubkey>>>,
     ) -> Result<Self, KoraError> {
         let mut resolved = Self {
             transaction: transaction.clone(),
@@ -162,6 +163,7 @@ impl VersionedTransactionResolved {
                     config,
                     rpc_client,
                     &v0_message.address_table_lookups,
+                    alt_cache,
                 )
                 .await?
             }
@@ -649,33 +651,108 @@ impl LookupTableUtil {
         config: &Config,
         rpc_client: &RpcClient,
         lookup_table_lookups: &[MessageAddressTableLookup],
+        alt_cache: Option<&mut HashMap<Pubkey, Vec<Pubkey>>>,
     ) -> Result<Vec<Pubkey>, KoraError> {
         let mut resolved_addresses = Vec::new();
 
-        // Maybe we can use caching here, there's a chance the lookup tables get updated though, so tbd
-        for lookup in lookup_table_lookups {
-            let lookup_table_account =
-                CacheUtil::get_account(config, rpc_client, &lookup.account_key, false)
-                    .await
-                    .map_err(|e| {
-                        KoraError::RpcError(format!(
-                            "Failed to fetch lookup table: {}",
+        if lookup_table_lookups.is_empty() {
+            return Ok(resolved_addresses);
+        }
+
+        let mut full_address_lists: Vec<Vec<Pubkey>> =
+            Vec::with_capacity(lookup_table_lookups.len());
+
+        if let Some(cache) = alt_cache {
+            let mut misses_set = HashSet::new();
+            for lookup in lookup_table_lookups {
+                if !cache.contains_key(&lookup.account_key) {
+                    misses_set.insert(lookup.account_key);
+                }
+            }
+            let misses: Vec<Pubkey> = misses_set.into_iter().collect();
+
+            if !misses.is_empty() {
+                let lookup_table_accounts =
+                    CacheUtil::get_multiple_accounts(config, rpc_client, &misses).await.map_err(
+                        |e| {
+                            KoraError::RpcError(format!(
+                                "Failed to fetch lookup table: {}",
+                                sanitize_error!(e)
+                            ))
+                        },
+                    )?;
+
+                for (miss_pubkey, account) in misses.into_iter().zip(lookup_table_accounts) {
+                    let address_lookup_table = AddressLookupTable::deserialize(&account.data)
+                        .map_err(|e| {
+                            KoraError::InvalidTransaction(format!(
+                                "Failed to deserialize lookup table: {}",
+                                sanitize_error!(e)
+                            ))
+                        })?;
+                    cache.insert(miss_pubkey, address_lookup_table.addresses.into_owned());
+                }
+            }
+
+            for lookup in lookup_table_lookups {
+                full_address_lists.push(
+                    cache
+                        .get(&lookup.account_key)
+                        .ok_or_else(|| {
+                            KoraError::RpcError(format!(
+                                "Failed to fetch lookup table: {}",
+                                lookup.account_key
+                            ))
+                        })?
+                        .clone(),
+                );
+            }
+        } else {
+            let mut pubkeys_set = HashSet::new();
+            for lookup in lookup_table_lookups {
+                pubkeys_set.insert(lookup.account_key);
+            }
+            let pubkeys: Vec<Pubkey> = pubkeys_set.into_iter().collect();
+
+            let lookup_table_accounts = CacheUtil::get_multiple_accounts(
+                config, rpc_client, &pubkeys,
+            )
+            .await
+            .map_err(|e| {
+                KoraError::RpcError(format!("Failed to fetch lookup table: {}", sanitize_error!(e)))
+            })?;
+
+            let mut fetched_cache = HashMap::new();
+            for (pubkey, account) in pubkeys.into_iter().zip(lookup_table_accounts) {
+                let address_lookup_table =
+                    AddressLookupTable::deserialize(&account.data).map_err(|e| {
+                        KoraError::InvalidTransaction(format!(
+                            "Failed to deserialize lookup table: {}",
                             sanitize_error!(e)
                         ))
                     })?;
+                fetched_cache.insert(pubkey, address_lookup_table.addresses.into_owned());
+            }
 
-            // Parse the lookup table account data to get the actual addresses
-            let address_lookup_table = AddressLookupTable::deserialize(&lookup_table_account.data)
-                .map_err(|e| {
-                    KoraError::InvalidTransaction(format!(
-                        "Failed to deserialize lookup table: {}",
-                        sanitize_error!(e)
-                    ))
-                })?;
+            for lookup in lookup_table_lookups {
+                full_address_lists.push(
+                    fetched_cache
+                        .get(&lookup.account_key)
+                        .ok_or_else(|| {
+                            KoraError::RpcError(format!(
+                                "Failed to fetch lookup table: {}",
+                                lookup.account_key
+                            ))
+                        })?
+                        .clone(),
+                );
+            }
+        }
 
+        for (lookup, addresses) in lookup_table_lookups.iter().zip(full_address_lists.iter()) {
             // Resolve writable addresses
             for &index in &lookup.writable_indexes {
-                if let Some(address) = address_lookup_table.addresses.get(index as usize) {
+                if let Some(address) = addresses.get(index as usize) {
                     resolved_addresses.push(*address);
                 } else {
                     return Err(KoraError::InvalidTransaction(format!(
@@ -686,7 +763,7 @@ impl LookupTableUtil {
 
             // Resolve readonly addresses
             for &index in &lookup.readonly_indexes {
-                if let Some(address) = address_lookup_table.addresses.get(index as usize) {
+                if let Some(address) = addresses.get(index as usize) {
                     resolved_addresses.push(*address);
                 } else {
                     return Err(KoraError::InvalidTransaction(format!(
@@ -1076,6 +1153,7 @@ mod tests {
             &config,
             &rpc_client,
             true,
+            None,
         )
         .await
         .unwrap();
@@ -1148,16 +1226,18 @@ mod tests {
         let encoded_data = base64::engine::general_purpose::STANDARD.encode(&serialized_data);
 
         mocks.insert(
-            RpcRequest::GetAccountInfo,
+            RpcRequest::GetMultipleAccounts,
             json!({
                 "context": { "slot": 1 },
-                "value": {
-                    "data": [encoded_data, "base64"],
-                    "executable": false,
-                    "lamports": 0,
-                    "owner": "AddressLookupTab1e1111111111111111111111111".to_string(),
-                    "rentEpoch": 0
-                }
+                "value": [
+                    {
+                        "data": [encoded_data, "base64"],
+                        "executable": false,
+                        "lamports": 0,
+                        "owner": "AddressLookupTab1e1111111111111111111111111".to_string(),
+                        "rentEpoch": 0
+                    }
+                ]
             }),
         );
 
@@ -1182,6 +1262,7 @@ mod tests {
             &config,
             &rpc_client,
             true,
+            None,
         )
         .await
         .unwrap();
@@ -1231,6 +1312,7 @@ mod tests {
             &config,
             &rpc_client,
             true,
+            None,
         )
         .await;
 
@@ -1414,13 +1496,13 @@ mod tests {
         let serialized_data = lookup_table.serialize_for_tests().unwrap();
 
         let rpc_client = RpcMockBuilder::new()
-            .with_account_info(&Account {
+            .with_multiple_accounts_info(vec![Some(Account {
                 data: serialized_data,
                 executable: false,
                 lamports: 0,
                 owner: Pubkey::new_unique(),
                 rent_epoch: 0,
-            })
+            })])
             .build();
 
         let lookups = vec![solana_message::v0::MessageAddressTableLookup {
@@ -1430,7 +1512,7 @@ mod tests {
         }];
 
         let resolved_addresses =
-            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups)
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups, None)
                 .await
                 .unwrap();
 
@@ -1445,11 +1527,11 @@ mod tests {
         let config = setup_test_config();
         let _m = setup_config_mock(config.clone());
 
-        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let rpc_client = RpcMockBuilder::new().with_multiple_accounts_info(vec![]).build();
         let lookups = vec![];
 
         let resolved_addresses =
-            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups)
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups, None)
                 .await
                 .unwrap();
 
@@ -1461,7 +1543,7 @@ mod tests {
         let config = setup_test_config();
         let _m = setup_config_mock(config.clone());
 
-        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let rpc_client = RpcMockBuilder::new().with_multiple_accounts_info(vec![None]).build();
         let lookups = vec![solana_message::v0::MessageAddressTableLookup {
             account_key: Pubkey::new_unique(),
             writable_indexes: vec![0],
@@ -1469,7 +1551,8 @@ mod tests {
         }];
 
         let result =
-            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups, None)
+                .await;
         assert!(matches!(result, Err(KoraError::RpcError(_))));
 
         if let Err(KoraError::RpcError(msg)) = result {
@@ -1498,13 +1581,13 @@ mod tests {
 
         let serialized_data = lookup_table.serialize_for_tests().unwrap();
         let rpc_client = RpcMockBuilder::new()
-            .with_account_info(&Account {
+            .with_multiple_accounts_info(vec![Some(Account {
                 data: serialized_data,
                 executable: false,
                 lamports: 0,
                 owner: Pubkey::new_unique(),
                 rent_epoch: 0,
-            })
+            })])
             .build();
 
         // Try to access index 1 which doesn't exist
@@ -1515,7 +1598,8 @@ mod tests {
         }];
 
         let result =
-            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups, None)
+                .await;
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
 
         if let Err(KoraError::InvalidTransaction(msg)) = result {
@@ -1545,13 +1629,13 @@ mod tests {
 
         let serialized_data = lookup_table.serialize_for_tests().unwrap();
         let rpc_client = RpcMockBuilder::new()
-            .with_account_info(&Account {
+            .with_multiple_accounts_info(vec![Some(Account {
                 data: serialized_data,
                 executable: false,
                 lamports: 0,
                 owner: Pubkey::new_unique(),
                 rent_epoch: 0,
-            })
+            })])
             .build();
 
         let lookups = vec![solana_message::v0::MessageAddressTableLookup {
@@ -1561,12 +1645,55 @@ mod tests {
         }];
 
         let result =
-            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups).await;
+            LookupTableUtil::resolve_lookup_table_addresses(&config, &rpc_client, &lookups, None)
+                .await;
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
 
         if let Err(KoraError::InvalidTransaction(msg)) = result {
             assert!(msg.contains("index 5 out of bounds"));
             assert!(msg.contains("readonly addresses"));
         }
+    }
+
+    #[tokio::test]
+    async fn test_resolve_lookup_table_addresses_reuses_cache() {
+        let config = setup_test_config();
+        let _m = setup_config_mock(config.clone());
+
+        let lookup_account_key = Pubkey::new_unique();
+        let address1 = Pubkey::new_unique();
+        let address2 = Pubkey::new_unique();
+
+        let mut alt_cache: HashMap<Pubkey, Vec<Pubkey>> = HashMap::new();
+        alt_cache.insert(lookup_account_key, vec![address1, address2]);
+
+        // Mock builder with no get_multiple_accounts mocked. If it hits RPC, it will fail/panic.
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let lookups = vec![
+            solana_message::v0::MessageAddressTableLookup {
+                account_key: lookup_account_key,
+                writable_indexes: vec![0],
+                readonly_indexes: vec![],
+            },
+            solana_message::v0::MessageAddressTableLookup {
+                account_key: lookup_account_key,
+                writable_indexes: vec![],
+                readonly_indexes: vec![1],
+            },
+        ];
+
+        let resolved_addresses = LookupTableUtil::resolve_lookup_table_addresses(
+            &config,
+            &rpc_client,
+            &lookups,
+            Some(&mut alt_cache),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resolved_addresses.len(), 2);
+        assert_eq!(resolved_addresses[0], address1);
+        assert_eq!(resolved_addresses[1], address2);
     }
 }
