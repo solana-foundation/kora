@@ -1590,7 +1590,16 @@ impl IxUtils {
                 })
             }
             PARSED_DATA_FIELD_SET_AUTHORITY => {
-                let account = Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_ACCOUNT)?;
+                // The parser names the target field by authority level: `account` for
+                // AccountOwner/CloseAccount, `mint` for all mint-level authority types
+                // (MintTokens, FreezeAccount, and the Token-2022 extension authorities).
+                // See agave's parse_token.rs `TokenInstruction::SetAuthority` arm.
+                let target_field = if info.get(PARSED_DATA_FIELD_ACCOUNT).is_some() {
+                    PARSED_DATA_FIELD_ACCOUNT
+                } else {
+                    PARSED_DATA_FIELD_MINT
+                };
+                let account = Self::get_field_as_pubkey(info, target_field)?;
                 let current_authority =
                     Self::get_field_as_pubkey(info, PARSED_DATA_FIELD_AUTHORITY)?;
 
@@ -3803,6 +3812,37 @@ mod tests {
         Ok(parsed)
     }
 
+    fn create_parsed_spl_token_set_authority(
+        owned: &Pubkey,
+        authority_type: spl_token_interface::instruction::AuthorityType,
+        new_authority: &Pubkey,
+        authority: &Pubkey,
+    ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
+    {
+        let solana_instruction = spl_token_interface::instruction::set_authority(
+            &spl_token_interface::ID,
+            owned,
+            Some(new_authority),
+            authority_type,
+            authority,
+            &[],
+        )?;
+
+        let message = Message::new(&[solana_instruction], None);
+        let compiled_instruction = &message.instructions[0];
+
+        let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
+
+        let parsed = parse_instruction::parse(
+            &spl_token_interface::ID,
+            compiled_instruction,
+            &account_keys_for_parsing,
+            None,
+        )?;
+
+        Ok(parsed)
+    }
+
     fn create_parsed_spl_token_sync_native(
         account: &Pubkey,
     ) -> Result<solana_transaction_status_client_types::ParsedInstruction, Box<dyn std::error::Error>>
@@ -5656,6 +5696,67 @@ mod tests {
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // account, destination, authority indices
         assert_eq!(compiled.data, instruction.data);
+    }
+
+    #[test]
+    fn test_reconstruct_spl_token_set_authority_on_token_account() {
+        let token_account = Pubkey::new_unique();
+        let new_authority = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let token_program_id = spl_token_interface::ID;
+        let account_keys = vec![token_program_id, token_account, authority];
+
+        // AccountOwner is account-level, so the parser emits the target under `account`.
+        let solana_parsed = create_parsed_spl_token_set_authority(
+            &token_account,
+            spl_token_interface::instruction::AuthorityType::AccountOwner,
+            &new_authority,
+            &authority,
+        )
+        .expect("Failed to create parsed instruction");
+
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
+
+        assert!(
+            result.is_ok(),
+            "account-level setAuthority should reconstruct: {:?}",
+            result.err()
+        );
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1, 2]); // target account, current authority indices
+    }
+
+    #[test]
+    fn test_reconstruct_spl_token_set_authority_on_mint() {
+        let mint = Pubkey::new_unique();
+        let new_authority = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let token_program_id = spl_token_interface::ID;
+        let account_keys = vec![token_program_id, mint, authority];
+
+        // FreezeAccount is mint-level, so the parser emits the target under `mint`
+        // instead of `account` (agave parse_token.rs, TokenInstruction::SetAuthority).
+        let solana_parsed = create_parsed_spl_token_set_authority(
+            &mint,
+            spl_token_interface::instruction::AuthorityType::FreezeAccount,
+            &new_authority,
+            &authority,
+        )
+        .expect("Failed to create parsed instruction");
+
+        let result = IxUtils::reconstruct_spl_token_instruction(
+            &solana_parsed,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        );
+
+        assert!(result.is_ok(), "mint-level setAuthority should reconstruct: {:?}", result.err());
+        let compiled = result.unwrap();
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1, 2]); // mint, current authority indices
     }
 
     #[test]
