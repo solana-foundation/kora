@@ -12,6 +12,8 @@ use spl_token_2022_interface::{
     },
     instruction::{decode_instruction_data, decode_instruction_type, TokenInstruction},
 };
+use spl_token_group_interface::instruction::TokenGroupInstruction;
+use spl_token_metadata_interface::instruction::TokenMetadataInstruction;
 
 use crate::{error::KoraError, sanitize_error};
 
@@ -74,12 +76,26 @@ impl Token2022SecurityParser {
                 continue;
             }
 
-            let token_instruction = TokenInstruction::unpack(&instruction.data).map_err(|e| {
-                KoraError::InvalidTransaction(format!(
-                    "Failed to parse Token-2022 instruction for security validation: {}",
-                    sanitize_error!(e)
-                ))
-            })?;
+            let token_instruction = match TokenInstruction::unpack(&instruction.data) {
+                Ok(token_instruction) => token_instruction,
+                Err(e) => {
+                    // Token-2022 also processes the token-metadata and token-group
+                    // interface instructions, which are not TokenInstruction variants.
+                    // Mirror the on-chain program's dispatch fallback so their accounts
+                    // and planted authorities are still policy-validated.
+                    if let Some(parsed_instruction) =
+                        Self::parse_token_2022_interface_instruction(instruction)
+                    {
+                        parsed.push(parsed_instruction);
+                        continue;
+                    }
+
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Failed to parse Token-2022 instruction for security validation: {}",
+                        sanitize_error!(e)
+                    )));
+                }
+            };
 
             match token_instruction {
                 TokenInstruction::InitializeMintCloseAuthority { close_authority } => {
@@ -167,6 +183,111 @@ impl Token2022SecurityParser {
         }
 
         Ok(parsed)
+    }
+
+    /// Recognizes token-metadata / token-group interface instructions that are
+    /// routed to the Token-2022 program but are not `TokenInstruction` variants.
+    /// Returns `None` for anything that is neither, so callers fail closed.
+    pub(crate) fn parse_token_2022_interface_instruction(
+        instruction: &Instruction,
+    ) -> Option<Token2022SecurityInstruction> {
+        if let Ok(metadata_instruction) = TokenMetadataInstruction::unpack(&instruction.data) {
+            return Some(Self::parse_token_metadata_interface_instruction(
+                instruction,
+                metadata_instruction,
+            ));
+        }
+
+        if let Ok(group_instruction) = TokenGroupInstruction::unpack(&instruction.data) {
+            return Some(Self::parse_token_group_interface_instruction(
+                instruction,
+                group_instruction,
+            ));
+        }
+
+        None
+    }
+
+    fn parse_token_metadata_interface_instruction(
+        instruction: &Instruction,
+        metadata_instruction: TokenMetadataInstruction,
+    ) -> Token2022SecurityInstruction {
+        let (instruction_name, data_pubkeys) = match metadata_instruction {
+            TokenMetadataInstruction::Initialize(_) => {
+                ("Token2022 TokenMetadataInitialize", vec![])
+            }
+            TokenMetadataInstruction::UpdateField(_) => {
+                ("Token2022 TokenMetadataUpdateField", vec![])
+            }
+            TokenMetadataInstruction::RemoveKey(_) => ("Token2022 TokenMetadataRemoveKey", vec![]),
+            TokenMetadataInstruction::UpdateAuthority(data) => (
+                "Token2022 TokenMetadataUpdateAuthority",
+                Self::optional_field(
+                    data.new_authority.into(),
+                    "Token2022 TokenMetadataUpdateAuthority newAuthority",
+                    Token2022FieldRole::PlantedAuthority,
+                )
+                .into_iter()
+                .collect(),
+            ),
+            TokenMetadataInstruction::Emit(_) => ("Token2022 TokenMetadataEmit", vec![]),
+        };
+
+        Token2022SecurityInstruction {
+            instruction_name,
+            extension_type: Some(ExtensionType::TokenMetadata),
+            accounts: Self::instruction_accounts(instruction),
+            account_usage_policy: Token2022AccountUsagePolicy::RejectIfFeePayerPresent,
+            update_authority: None,
+            multisig_signers: vec![],
+            data_pubkeys,
+        }
+    }
+
+    fn parse_token_group_interface_instruction(
+        instruction: &Instruction,
+        group_instruction: TokenGroupInstruction,
+    ) -> Token2022SecurityInstruction {
+        let (instruction_name, extension_type, data_pubkeys) = match group_instruction {
+            TokenGroupInstruction::InitializeGroup(data) => (
+                "Token2022 TokenGroupInitializeGroup",
+                ExtensionType::TokenGroup,
+                Self::optional_field(
+                    data.update_authority.into(),
+                    "Token2022 TokenGroupInitializeGroup updateAuthority",
+                    Token2022FieldRole::PlantedAuthority,
+                )
+                .into_iter()
+                .collect(),
+            ),
+            TokenGroupInstruction::UpdateGroupMaxSize(_) => {
+                ("Token2022 TokenGroupUpdateGroupMaxSize", ExtensionType::TokenGroup, vec![])
+            }
+            TokenGroupInstruction::UpdateGroupAuthority(data) => (
+                "Token2022 TokenGroupUpdateGroupAuthority",
+                ExtensionType::TokenGroup,
+                Self::optional_field(
+                    data.new_authority.into(),
+                    "Token2022 TokenGroupUpdateGroupAuthority newAuthority",
+                    Token2022FieldRole::PlantedAuthority,
+                )
+                .into_iter()
+                .collect(),
+            ),
+            TokenGroupInstruction::InitializeMember(_) => {
+                ("Token2022 TokenGroupInitializeMember", ExtensionType::TokenGroupMember, vec![])
+            }
+        };
+
+        Token2022SecurityInstruction {
+            instruction_name,
+            extension_type: Some(extension_type),
+            accounts: Self::instruction_accounts(instruction),
+            account_usage_policy: Token2022AccountUsagePolicy::RejectIfFeePayerPresent,
+            update_authority: None,
+            multisig_signers: vec![],
+            data_pubkeys,
+        }
     }
 
     fn parse_transfer_fee_extension(
@@ -806,6 +927,7 @@ impl Token2022SecurityParser {
 mod tests {
     use super::*;
     use solana_sdk::instruction::AccountMeta;
+    use spl_pod::optional_keys::OptionalNonZeroPubkey;
 
     #[test]
     fn test_parse_metadata_pointer_initialize_security_fields() {
@@ -871,5 +993,137 @@ mod tests {
             vec![signer],
             "source accounts should not be treated as multisig signers"
         );
+    }
+
+    #[test]
+    fn test_parse_metadata_initialize_is_recognized_and_reject_if_fee_payer_present() {
+        let mint = Pubkey::new_unique();
+        let update_authority = Pubkey::new_unique();
+        let mint_authority = Pubkey::new_unique();
+
+        let instruction = spl_token_metadata_interface::instruction::initialize(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &update_authority,
+            &mint,
+            &mint_authority,
+            "USDP".to_string(),
+            "USDP".to_string(),
+            "https://example.com/usdp.json".to_string(),
+        );
+
+        let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].instruction_name, "Token2022 TokenMetadataInitialize");
+        assert_eq!(parsed[0].extension_type, Some(ExtensionType::TokenMetadata));
+        assert_eq!(
+            parsed[0].account_usage_policy,
+            Token2022AccountUsagePolicy::RejectIfFeePayerPresent
+        );
+        // Initialize's authority is an account, not instruction data.
+        assert!(parsed[0].data_pubkeys.is_empty());
+        assert!(parsed[0].accounts.contains(&update_authority));
+    }
+
+    #[test]
+    fn test_parse_metadata_update_authority_plants_new_authority_from_data() {
+        let metadata = Pubkey::new_unique();
+        let current_authority = Pubkey::new_unique();
+        let new_authority = Pubkey::new_unique();
+
+        let instruction = spl_token_metadata_interface::instruction::update_authority(
+            &spl_token_2022_interface::id(),
+            &metadata,
+            &current_authority,
+            OptionalNonZeroPubkey::try_from(Some(new_authority)).unwrap(),
+        );
+
+        let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].instruction_name, "Token2022 TokenMetadataUpdateAuthority");
+        // The new authority rides in instruction data, so it must be surfaced as a
+        // planted authority so the validator can catch a planted fee payer.
+        assert_eq!(
+            parsed[0].find_planted_fee_payer_authority(&new_authority).map(|field| field.context),
+            Some("Token2022 TokenMetadataUpdateAuthority newAuthority")
+        );
+    }
+
+    #[test]
+    fn test_parse_group_initialize_plants_update_authority_from_data() {
+        let group = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let mint_authority = Pubkey::new_unique();
+        let update_authority = Pubkey::new_unique();
+
+        let instruction = spl_token_group_interface::instruction::initialize_group(
+            &spl_token_2022_interface::id(),
+            &group,
+            &mint,
+            &mint_authority,
+            Some(update_authority),
+            100,
+        );
+
+        let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].instruction_name, "Token2022 TokenGroupInitializeGroup");
+        assert_eq!(parsed[0].extension_type, Some(ExtensionType::TokenGroup));
+        assert!(parsed[0].find_planted_fee_payer_authority(&update_authority).is_some());
+    }
+
+    #[test]
+    fn test_parse_group_update_authority_plants_new_authority_from_data() {
+        let group = Pubkey::new_unique();
+        let current_authority = Pubkey::new_unique();
+        let new_authority = Pubkey::new_unique();
+
+        let instruction = spl_token_group_interface::instruction::update_group_authority(
+            &spl_token_2022_interface::id(),
+            &group,
+            &current_authority,
+            Some(new_authority),
+        );
+
+        let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0].find_planted_fee_payer_authority(&new_authority).is_some());
+    }
+
+    #[test]
+    fn test_parse_group_initialize_member_has_no_planted_authority() {
+        let member = Pubkey::new_unique();
+        let member_mint = Pubkey::new_unique();
+        let member_mint_authority = Pubkey::new_unique();
+        let group = Pubkey::new_unique();
+        let group_update_authority = Pubkey::new_unique();
+
+        let instruction = spl_token_group_interface::instruction::initialize_member(
+            &spl_token_2022_interface::id(),
+            &member,
+            &member_mint,
+            &member_mint_authority,
+            &group,
+            &group_update_authority,
+        );
+
+        let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].instruction_name, "Token2022 TokenGroupInitializeMember");
+        assert_eq!(parsed[0].extension_type, Some(ExtensionType::TokenGroupMember));
+        assert!(parsed[0].data_pubkeys.is_empty());
+    }
+
+    #[test]
+    fn test_unrecognized_token2022_instruction_fails_closed() {
+        // Bytes that are neither a TokenInstruction nor a metadata/group interface
+        // instruction must be rejected, not silently accepted.
+        let instruction = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![],
+            data: vec![0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        };
+
+        assert!(Token2022SecurityParser::parse(&[instruction]).is_err());
     }
 }

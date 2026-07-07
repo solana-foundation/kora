@@ -21,7 +21,7 @@ use crate::{
     constant::{instruction_indexes, BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LOADER_V4_PROGRAM_ID},
     error::KoraError,
     sanitize_error,
-    transaction::VersionedTransactionResolved,
+    transaction::{token2022_security::Token2022SecurityParser, VersionedTransactionResolved},
 };
 
 // Instruction type that we support to parse from the transaction
@@ -2890,15 +2890,29 @@ impl IxUtils {
                     };
                 }
             } else if program_id == spl_token_2022_interface::ID {
-                let spl_ix = spl_token_2022_interface::instruction::TokenInstruction::unpack(
+                let spl_ix = match spl_token_2022_interface::instruction::TokenInstruction::unpack(
                     &instruction.data,
-                )
-                .map_err(|e| {
-                    KoraError::InvalidTransaction(format!(
-                        "Failed to parse Token-2022 instruction: {}",
-                        sanitize_error!(e)
-                    ))
-                })?;
+                ) {
+                    Ok(spl_ix) => spl_ix,
+                    Err(e) => {
+                        // Token-2022 also processes token-metadata and token-group interface
+                        // instructions, which are not TokenInstruction variants. Skip them in
+                        // this typed SPL parser; their accounts and authority fields are
+                        // validated by the Token2022SecurityParser.
+                        if Token2022SecurityParser::parse_token_2022_interface_instruction(
+                            instruction,
+                        )
+                        .is_some()
+                        {
+                            continue;
+                        }
+
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "Failed to parse Token-2022 instruction: {}",
+                            sanitize_error!(e)
+                        )));
+                    }
+                };
                 match spl_ix {
                         #[allow(deprecated)]
                         spl_token_2022_interface::instruction::TokenInstruction::Transfer { amount } => {
