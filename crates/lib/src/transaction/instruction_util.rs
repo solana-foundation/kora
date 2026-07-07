@@ -914,6 +914,13 @@ impl IxUtils {
             });
         }
 
+        if account_cursor != batch.accounts.len() {
+            return Err(KoraError::InvalidTransaction(
+                "Malformed p-token batch: unused accounts remain after decoding sub-instructions"
+                    .to_string(),
+            ));
+        }
+
         Ok(())
     }
 
@@ -5193,6 +5200,41 @@ mod tests {
                 .unwrap();
 
         let message = VersionedMessage::Legacy(Message::new(&[outer_batch], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        assert!(IxUtils::parse_token_instructions(&resolved_tx).is_err());
+    }
+
+    #[test]
+    fn test_parse_spl_token_batch_rejects_trailing_accounts() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            instruction::AccountMeta,
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let payer = Keypair::new();
+        let source = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+
+        let transfer_ix = spl_token_interface::instruction::transfer(
+            &spl_token_interface::id(),
+            &source,
+            &destination,
+            &payer.pubkey(),
+            &[],
+            1,
+        )
+        .unwrap();
+        let mut batch_ix =
+            spl_token_interface::instruction::batch(&spl_token_interface::id(), &[transfer_ix])
+                .unwrap();
+        batch_ix.accounts.push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
+
+        let message = VersionedMessage::Legacy(Message::new(&[batch_ix], Some(&payer.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
         let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
