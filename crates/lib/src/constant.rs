@@ -243,6 +243,18 @@ pub mod instruction_indexes {
         pub const OWNER_INDEX: usize = 3;
     }
 
+    pub mod spl_token_withdraw_excess_lamports {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const AUTHORITY_INDEX: usize = 2;
+        pub const MULTISIG_SIGNERS_START_INDEX: usize = 3;
+    }
+
+    pub mod spl_token_unwrap_lamports {
+        pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const AUTHORITY_INDEX: usize = 2;
+        pub const MULTISIG_SIGNERS_START_INDEX: usize = 3;
+    }
+
     // ATA Create/CreateIdempotent account layout:
     // https://github.com/solana-program/associated-token-account/blob/7af39d84438199e7e488adc379baa8ee0b8085c0/interface/src/instruction.rs#L19-L38
     pub mod ata_instruction_indexes {

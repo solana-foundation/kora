@@ -306,6 +306,12 @@ pub struct SplTokenInstructionPolicy {
     pub allow_freeze_account: bool,
     /// Allow fee payer to be the freeze authority in SPL Token ThawAccount instructions
     pub allow_thaw_account: bool,
+    /// Allow fee payer to be the authority in SPL Token WithdrawExcessLamports instructions
+    #[serde(default)]
+    pub allow_withdraw_excess_lamports: bool,
+    /// Allow fee payer to be the authority in SPL Token UnwrapLamports instructions
+    #[serde(default)]
+    pub allow_unwrap_lamports: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
@@ -341,6 +347,12 @@ pub struct Token2022InstructionPolicy {
     pub allow_freeze_account: bool,
     /// Allow fee payer to be the freeze authority in Token2022 ThawAccount instructions
     pub allow_thaw_account: bool,
+    /// Allow fee payer to be the authority in Token2022 WithdrawExcessLamports instructions
+    #[serde(default)]
+    pub allow_withdraw_excess_lamports: bool,
+    /// Allow fee payer to be the authority in Token2022 UnwrapLamports instructions
+    #[serde(default)]
+    pub allow_unwrap_lamports: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
