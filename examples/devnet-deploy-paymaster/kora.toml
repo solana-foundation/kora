@@ -26,8 +26,6 @@ sign_bundle = false
 sign_and_send_bundle = false
 
 [kora.plugins]
-# deploy_authority gates loader mutations; registry gating activates because the deploy
-# registry is in allowed_programs below.
 enabled = ["deploy_authority"]
 
 [validation]
