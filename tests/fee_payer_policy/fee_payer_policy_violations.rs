@@ -501,43 +501,6 @@ async fn test_withdraw_excess_lamports_token2022_policy_violation() {
 }
 
 #[tokio::test]
-async fn test_unwrap_lamports_policy_violation() {
-    let ctx = TestContext::new().await.expect("Failed to create test context");
-    let setup = TestAccountSetup::new().await;
-
-    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
-    let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
-    let fee_payer_token_account = setup
-        .create_fee_payer_token_account_spl(&setup.fee_payer_policy_mint.pubkey())
-        .await
-        .expect("Failed to create token account");
-
-    let malicious_tx = ctx
-        .transaction_builder()
-        .with_fee_payer(fee_payer_pubkey)
-        .with_spl_unwrap_lamports(
-            &fee_payer_token_account.pubkey(),
-            &recipient_pubkey,
-            &fee_payer_pubkey,
-            Some(1_000),
-        )
-        .build()
-        .await
-        .expect("Failed to create transaction with unwrap_lamports");
-
-    let result =
-        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![malicious_tx]).await;
-
-    match result {
-        Err(error) => {
-            error
-                .assert_contains_message("Fee payer cannot be used for 'SPL Token UnwrapLamports'");
-        }
-        Ok(_) => panic!("Expected error for UnwrapLamports policy violation"),
-    }
-}
-
-#[tokio::test]
 async fn test_batch_wrapped_transfer_does_not_bypass_policy() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
     let setup = TestAccountSetup::new().await;

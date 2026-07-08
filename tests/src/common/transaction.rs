@@ -465,27 +465,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Add SPL token unwrap_lamports instruction
-    pub fn with_spl_unwrap_lamports(
-        mut self,
-        account: &Pubkey,
-        destination: &Pubkey,
-        authority: &Pubkey,
-        amount: Option<u64>,
-    ) -> Self {
-        let instruction = spl_token_interface::instruction::unwrap_lamports(
-            &spl_token_interface::id(),
-            account,
-            destination,
-            authority,
-            &[],
-            amount,
-        )
-        .expect("Failed to create unwrap_lamports instruction");
-        self.instructions.push(instruction);
-        self
-    }
-
     /// Wrap the given SPL token instructions in a single p-token `Batch` instruction
     pub fn with_spl_batch(mut self, inner: Vec<Instruction>) -> Self {
         let instruction =
