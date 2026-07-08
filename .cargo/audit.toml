@@ -8,4 +8,7 @@ ignore = [
     "RUSTSEC-2026-0098",
     # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
     "RUSTSEC-2026-0099",
+    # crossbeam-epoch is transitive via rayon; the fmt::Pointer bug is unreachable
+    # from Kora and 0.9.18 is the latest release with no patched version.
+    "RUSTSEC-2026-0204",
 ]
