@@ -30,6 +30,11 @@ build-lib:
 build-cli:
     cargo build -p kora-cli
 
+# Build the deploy-registry program (examples/devnet-deploy-paymaster)
+[group('build')]
+build-deploy-registry:
+    cd examples/devnet-deploy-paymaster/registry-program && cargo build-sbf --manifest-path Cargo.toml
+
 # Build specific binary
 [group('build')]
 build-bin bin='kora':
