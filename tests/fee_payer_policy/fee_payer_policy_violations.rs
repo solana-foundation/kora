@@ -427,6 +427,167 @@ async fn test_revoke_token2022_policy_violation() {
 }
 
 #[tokio::test]
+async fn test_withdraw_excess_lamports_policy_violation() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let setup = TestAccountSetup::new().await;
+
+    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
+    let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer_token_account = setup
+        .create_fee_payer_token_account_spl(&setup.fee_payer_policy_mint.pubkey())
+        .await
+        .expect("Failed to create token account");
+
+    let malicious_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer_pubkey)
+        .with_spl_withdraw_excess_lamports(
+            &fee_payer_token_account.pubkey(),
+            &recipient_pubkey,
+            &fee_payer_pubkey,
+        )
+        .build()
+        .await
+        .expect("Failed to create transaction with withdraw_excess_lamports");
+
+    let result =
+        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![malicious_tx]).await;
+
+    match result {
+        Err(error) => {
+            error.assert_contains_message(
+                "Fee payer cannot be used for 'SPL Token WithdrawExcessLamports'",
+            );
+        }
+        Ok(_) => panic!("Expected error for WithdrawExcessLamports policy violation"),
+    }
+}
+
+#[tokio::test]
+async fn test_withdraw_excess_lamports_token2022_policy_violation() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let setup = TestAccountSetup::new().await;
+
+    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
+    let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer_token_2022_account = setup
+        .create_fee_payer_token_account_2022(&setup.fee_payer_policy_mint_2022.pubkey())
+        .await
+        .expect("Failed to create token account");
+
+    let malicious_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer_pubkey)
+        .with_token2022_withdraw_excess_lamports(
+            &fee_payer_token_2022_account.pubkey(),
+            &recipient_pubkey,
+            &fee_payer_pubkey,
+        )
+        .build()
+        .await
+        .expect("Failed to create transaction with Token2022 withdraw_excess_lamports");
+
+    let result =
+        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![malicious_tx]).await;
+
+    match result {
+        Err(error) => {
+            error.assert_contains_message(
+                "Fee payer cannot be used for 'Token2022 Token WithdrawExcessLamports'",
+            );
+        }
+        Ok(_) => panic!("Expected error for Token2022 WithdrawExcessLamports policy violation"),
+    }
+}
+
+#[tokio::test]
+async fn test_unwrap_lamports_policy_violation() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let setup = TestAccountSetup::new().await;
+
+    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
+    let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer_token_account = setup
+        .create_fee_payer_token_account_spl(&setup.fee_payer_policy_mint.pubkey())
+        .await
+        .expect("Failed to create token account");
+
+    let malicious_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer_pubkey)
+        .with_spl_unwrap_lamports(
+            &fee_payer_token_account.pubkey(),
+            &recipient_pubkey,
+            &fee_payer_pubkey,
+            Some(1_000),
+        )
+        .build()
+        .await
+        .expect("Failed to create transaction with unwrap_lamports");
+
+    let result =
+        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![malicious_tx]).await;
+
+    match result {
+        Err(error) => {
+            error
+                .assert_contains_message("Fee payer cannot be used for 'SPL Token UnwrapLamports'");
+        }
+        Ok(_) => panic!("Expected error for UnwrapLamports policy violation"),
+    }
+}
+
+#[tokio::test]
+async fn test_batch_wrapped_transfer_does_not_bypass_policy() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let setup = TestAccountSetup::new().await;
+
+    let fee_payer_pubkey = FeePayerTestHelper::get_fee_payer_pubkey();
+    let recipient_pubkey = RecipientTestHelper::get_recipient_pubkey();
+    let fee_payer_token_account = setup
+        .create_fee_payer_token_account_spl(&setup.fee_payer_policy_mint.pubkey())
+        .await
+        .expect("Failed to create token account");
+    let recipient_token_account =
+        get_associated_token_address(&recipient_pubkey, &setup.fee_payer_policy_mint.pubkey());
+
+    setup
+        .mint_fee_payer_policy_tokens_to_account(&fee_payer_token_account.pubkey(), 100_000)
+        .await
+        .expect("Failed to mint tokens");
+
+    let transfer_ix = token_instruction::transfer(
+        &spl_token_interface::id(),
+        &fee_payer_token_account.pubkey(),
+        &recipient_token_account,
+        &fee_payer_pubkey,
+        &[],
+        1_000,
+    )
+    .expect("Failed to create SPL transfer instruction");
+
+    let malicious_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer_pubkey)
+        .with_spl_batch(vec![transfer_ix])
+        .build()
+        .await
+        .expect("Failed to create batch transaction");
+
+    let result =
+        ctx.rpc_call::<serde_json::Value, _>("signTransaction", rpc_params![malicious_tx]).await;
+
+    match result {
+        Err(error) => {
+            error.assert_contains_message("Fee payer cannot be used for 'SPL Token Transfer'");
+        }
+        Ok(_) => {
+            panic!("Expected batch-wrapped transfer to be rejected by fee payer policy")
+        }
+    }
+}
+
+#[tokio::test]
 async fn test_set_authority_policy_violation() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
     let setup = TestAccountSetup::new().await;
