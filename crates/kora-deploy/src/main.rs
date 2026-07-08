@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use kora_deploy::{deploy, program_is_live, upgrade, DeployConfig, UpgradeConfig};
 use solana_sdk::{
@@ -8,8 +8,6 @@ use solana_sdk::{
     signature::{read_keypair_file, Keypair},
     signer::Signer,
 };
-
-const MANIFEST_FILE: &str = "kora-deploy.json";
 
 #[derive(Parser)]
 #[command(
@@ -35,8 +33,7 @@ struct Args {
     /// as immutable through the paymaster.
     #[arg(long)]
     wallet: Option<PathBuf>,
-    /// Program to upgrade. Defaults to the id recorded in kora-deploy.json when present;
-    /// a fresh deploy otherwise.
+    /// Existing program to upgrade. Omit to deploy a fresh program.
     #[arg(long)]
     program_id: Option<Pubkey>,
 }
@@ -50,14 +47,18 @@ async fn main() -> Result<()> {
         args.user_id.clone().unwrap_or_else(|| format!("kora-deploy-{}", Pubkey::new_unique()));
     let wallet = load_wallet(args.wallet.as_deref())?;
 
-    let target = args.program_id.or(read_manifest()?);
-    if let Some(program) = target {
-        if program_is_live(&args.rpc_url, &program).await? {
-            return run_upgrade(&args, program, wallet.as_ref(), user_id).await;
+    match args.program_id {
+        Some(program) => {
+            if !program_is_live(&args.rpc_url, &program).await? {
+                bail!(
+                    "program {program} is not live on-chain (never deployed or reaped); \
+                     omit --program-id to deploy fresh"
+                );
+            }
+            run_upgrade(&args, program, wallet.as_ref(), user_id).await
         }
-        log::warn!("program {program} is not live on-chain (reaped?); deploying fresh");
+        None => run_deploy(&args, wallet.as_ref(), user_id).await,
     }
-    run_deploy(&args, wallet.as_ref(), user_id).await
 }
 
 async fn run_deploy(args: &Args, wallet: Option<&Keypair>, user_id: String) -> Result<()> {
@@ -77,8 +78,6 @@ async fn run_deploy(args: &Args, wallet: Option<&Keypair>, user_id: String) -> R
     })
     .await?;
 
-    write_manifest(&result.program)?;
-
     println!();
     println!("Deployed via {}", args.kora_url);
     println!("  paymaster:    {}", result.kora_pubkey);
@@ -87,8 +86,9 @@ async fn run_deploy(args: &Args, wallet: Option<&Keypair>, user_id: String) -> R
     println!();
     match wallet {
         Some(w) => println!(
-            "Upgradeable by {} — rerun kora-deploy in this directory to upgrade.",
-            w.pubkey()
+            "Upgradeable by {}. To upgrade, rerun with --program-id {}.",
+            w.pubkey(),
+            result.program
         ),
         None => println!("Deployed without a wallet: not upgradeable."),
     }
@@ -139,30 +139,6 @@ fn load_wallet(path: Option<&Path>) -> Result<Option<Keypair>> {
             }
         }
     }
-}
-
-fn read_manifest() -> Result<Option<Pubkey>> {
-    let raw = match std::fs::read_to_string(MANIFEST_FILE) {
-        Ok(raw) => raw,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e).context(format!("reading {MANIFEST_FILE}")),
-    };
-    let value: serde_json::Value =
-        serde_json::from_str(&raw).with_context(|| format!("parsing {MANIFEST_FILE}"))?;
-    let program = value["program_id"]
-        .as_str()
-        .ok_or_else(|| anyhow!("{MANIFEST_FILE} is missing program_id"))?
-        .parse()
-        .with_context(|| format!("parsing program_id in {MANIFEST_FILE}"))?;
-    Ok(Some(program))
-}
-
-fn write_manifest(program: &Pubkey) -> Result<()> {
-    let value = serde_json::json!({ "program_id": program.to_string() });
-    std::fs::write(MANIFEST_FILE, format!("{}\n", serde_json::to_string_pretty(&value)?))
-        .with_context(|| format!("writing {MANIFEST_FILE}"))?;
-    log::info!("recorded program id in {MANIFEST_FILE}");
-    Ok(())
 }
 
 fn init_logging() {

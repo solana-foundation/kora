@@ -22,9 +22,9 @@ kora-deploy --program-so ./my-program.so
 
 Defaults to `https://deployer.devnet.solana.com`. Override with `--kora-url`.
 
-The program id is recorded in `kora-deploy.json`. Rerunning in the same
-directory upgrades the program in place, signed by your wallet. If the program
-was reaped, the rerun deploys fresh.
+The deploy prints the new program id. To upgrade later, pass it back with
+`--program-id`, signed by the same wallet you deployed with. Omitting
+`--program-id` always deploys a fresh program.
 
 Flags:
 
@@ -35,7 +35,7 @@ Flags:
 | `--program-so` | _required_ | Path to your `.so` |
 | `--user-id` | random per run | Tag the paymaster buckets by for usage limits |
 | `--wallet` | `~/.config/solana/id.json` | Owner wallet registered for upgrades; without one the program is immutable |
-| `--program-id` | from `kora-deploy.json` | Existing program to upgrade |
+| `--program-id` | _(none)_ | Existing program to upgrade; omit to deploy fresh |
 
 ## Trade-offs
 
