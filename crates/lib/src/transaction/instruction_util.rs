@@ -24,6 +24,9 @@ use crate::{
     transaction::VersionedTransactionResolved,
 };
 
+/// Discriminator of the p-token `Batch` instruction (`spl_token_interface` variant `Batch = 255`).
+const BATCH_DISCRIMINATOR: u8 = 255;
+
 // Instruction type that we support to parse from the transaction
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ParsedSystemInstructionType {
@@ -845,11 +848,9 @@ impl IxUtils {
         );
     }
 
-    const BATCH_DISCRIMINATOR: u8 = 255;
-
     fn is_spl_token_batch(instruction: &Instruction) -> bool {
         instruction.program_id == spl_token_interface::ID
-            && instruction.data.first() == Some(&Self::BATCH_DISCRIMINATOR)
+            && instruction.data.first() == Some(&BATCH_DISCRIMINATOR)
     }
 
     fn expand_spl_token_batches(
@@ -901,7 +902,7 @@ impl IxUtils {
                 batch.accounts[account_cursor..account_cursor + account_count].to_vec();
             account_cursor += account_count;
 
-            if sub_data.first() == Some(&Self::BATCH_DISCRIMINATOR) {
+            if sub_data.first() == Some(&BATCH_DISCRIMINATOR) {
                 return Err(KoraError::InvalidTransaction(
                     "Nested p-token batch instructions are not allowed".to_string(),
                 ));
