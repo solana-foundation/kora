@@ -27,7 +27,6 @@ pub const DEFAULT_REGISTRY_PROGRAM: Pubkey =
 const REGISTRY_IX_REGISTER: u8 = 0;
 const REGISTRY_IX_CLOSE_ENTRY: u8 = 1;
 const REGISTRY_ENTRY_LEN: usize = 65;
-pub const REGISTRY_ENTRY_PAYER_OFFSET: usize = 32;
 
 pub struct DeployConfig<'a> {
     pub kora_url: &'a str,

@@ -62,9 +62,9 @@ pub async fn close_program(
 }
 
 /// Registry entries only exist for programs deployed with a wallet; the close is appended to
-/// the same transaction so it runs after the programdata drain it requires. Skipped (with a
-/// warning) when the stored payer isn't this reaper's fee payer, since the on-chain program
-/// refunds rent only to the payer recorded at registration.
+/// the same transaction so it runs after the programdata drain it requires. Returns None when
+/// there is no entry (deployed without a wallet), so the program close isn't bundled with an
+/// instruction that would revert.
 async fn registry_entry_close(
     rpc: &Arc<RpcClient>,
     fee_payer: &Pubkey,
@@ -74,15 +74,6 @@ async fn registry_entry_close(
     let entry_address = kora_deploy::registry_entry_address(&registry, program);
     let entry = rpc.get_account(&entry_address).await.ok()?;
     if entry.owner != registry {
-        return None;
-    }
-    let stored_payer =
-        Pubkey::try_from(&entry.data[kora_deploy::REGISTRY_ENTRY_PAYER_OFFSET..][..32]).ok()?;
-    if stored_payer != *fee_payer {
-        log::warn!(
-            "registry entry {entry_address} for {program} has payer {stored_payer}, not the \
-             reaper fee payer; leaving it for the payer to reclaim"
-        );
         return None;
     }
     Some(kora_deploy::close_entry_ix(&registry, program, fee_payer))
