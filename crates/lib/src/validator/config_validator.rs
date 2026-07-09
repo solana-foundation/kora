@@ -2419,6 +2419,8 @@ mod tests {
                         allow_initialize_multisig: true,
                         allow_freeze_account: true,
                         allow_thaw_account: true,
+                        allow_withdraw_excess_lamports: true,
+                        allow_unwrap_lamports: true,
                     },
                     token_2022: Token2022InstructionPolicy {
                         allow_transfer: true,
@@ -2435,6 +2437,8 @@ mod tests {
                         allow_update_extension_authority: true,
                         allow_freeze_account: true,
                         allow_thaw_account: true,
+                        allow_withdraw_excess_lamports: true,
+                        allow_unwrap_lamports: true,
                     },
                     alt: crate::config::AltInstructionPolicy {
                         allow_create: true,

@@ -25,10 +25,13 @@ pub async fn close_program(
         .await
         .with_context(|| format!("reading lamports for {}", program.program))?;
 
-    let instructions = match program.loader {
+    let mut instructions = match program.loader {
         Loader::V3 => build_v3_close(fee_payer, program)?,
         Loader::V4 => build_v4_close(fee_payer, program),
     };
+    if let Some(entry_close) = registry_entry_close(rpc, fee_payer, &program.program).await {
+        instructions.push(entry_close);
+    }
 
     let blockhash =
         rpc.get_latest_blockhash().await.map_err(|e| anyhow!("getLatestBlockhash: {e}"))?;
@@ -56,6 +59,24 @@ pub async fn close_program(
         signature: sig.to_string(),
         reclaimed_lamports,
     })
+}
+
+/// Registry entries only exist for programs deployed with a wallet; the close is appended to
+/// the same transaction so it runs after the programdata drain it requires. Returns None when
+/// there is no entry (deployed without a wallet), so the program close isn't bundled with an
+/// instruction that would revert.
+async fn registry_entry_close(
+    rpc: &Arc<RpcClient>,
+    fee_payer: &Pubkey,
+    program: &Pubkey,
+) -> Option<Instruction> {
+    let registry = kora_deploy::DEFAULT_REGISTRY_PROGRAM;
+    let entry_address = kora_deploy::registry_entry_address(&registry, program);
+    let entry = rpc.get_account(&entry_address).await.ok()?;
+    if entry.owner != registry {
+        return None;
+    }
+    Some(kora_deploy::close_entry_ix(&registry, program, fee_payer))
 }
 
 fn build_v3_close(fee_payer: &Pubkey, program: &OwnedProgram) -> Result<Vec<Instruction>> {

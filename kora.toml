@@ -109,6 +109,8 @@ allow_initialize_account = true # Allow fee payer to initialize SPL token accoun
 allow_initialize_multisig = true # Allow fee payer to be signer in SPL token multisig initialization
 allow_freeze_account = true     # Allow fee payer to freeze SPL token accounts
 allow_thaw_account = true       # Allow fee payer to thaw SPL token accounts
+allow_withdraw_excess_lamports = true # Allow fee payer to be authority in SPL WithdrawExcessLamports
+allow_unwrap_lamports = true    # Allow fee payer to be authority in SPL UnwrapLamports
 
 [validation.fee_payer_policy.token_2022]
 allow_transfer = true           # Allow fee payer to be source in Token2022 transfers
@@ -123,6 +125,8 @@ allow_initialize_account = true # Allow fee payer to initialize Token2022 accoun
 allow_initialize_multisig = true # Allow fee payer to be signer in Token2022 multisig initialization
 allow_freeze_account = true     # Allow fee payer to freeze Token2022 accounts
 allow_thaw_account = true       # Allow fee payer to thaw Token2022 accounts
+allow_withdraw_excess_lamports = true # Allow fee payer to be authority in Token2022 WithdrawExcessLamports
+allow_unwrap_lamports = true    # Allow fee payer to be authority in Token2022 UnwrapLamports
 
 [validation.fee_payer_policy.alt]
 allow_create = false            # Allow fee payer to be authority/payer in ALT CreateLookupTable

@@ -1757,6 +1757,7 @@ mod tests_token {
     #[tokio::test]
     async fn test_calculate_payment_lamport_totals_validates_token2022_when_both_sides_match_expected_owner(
     ) {
+        let _lock = ConfigMockBuilder::new().build_and_setup();
         let mut config = get_config().unwrap();
         config.kora.cache.enabled = false;
         config.validation.token_2022.blocked_mint_extensions =
