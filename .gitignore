@@ -7,6 +7,9 @@
 generated/
 
 /tests/src/common/transfer-hook-example/target
+/examples/devnet-deploy-paymaster/registry-program/target
+/examples/devnet-deploy-paymaster/registry-program/*.so
+/examples/devnet-deploy-paymaster/registry-program/*keypair*.json
 
 # SDK
 node_modules/

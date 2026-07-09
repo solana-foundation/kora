@@ -700,6 +700,8 @@ impl FeePayerPolicyBuilder {
                     allow_initialize_mint: false,
                     allow_initialize_account: false,
                     allow_initialize_multisig: false,
+                    allow_withdraw_excess_lamports: false,
+                    allow_unwrap_lamports: false,
                 },
                 token_2022: Token2022InstructionPolicy {
                     allow_transfer: false,
@@ -716,6 +718,8 @@ impl FeePayerPolicyBuilder {
                     allow_initialize_mint: false,
                     allow_initialize_account: false,
                     allow_initialize_multisig: false,
+                    allow_withdraw_excess_lamports: false,
+                    allow_unwrap_lamports: false,
                 },
                 alt: crate::config::AltInstructionPolicy {
                     allow_create: false,

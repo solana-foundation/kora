@@ -86,6 +86,8 @@ allow_initialize_account = false
 allow_initialize_multisig = false
 allow_freeze_account = false
 allow_thaw_account = false
+allow_withdraw_excess_lamports = false
+allow_unwrap_lamports = false
 
 [validation.fee_payer_policy.token_2022]
 allow_transfer = false
@@ -100,6 +102,8 @@ allow_initialize_account = false
 allow_initialize_multisig = false
 allow_freeze_account = false
 allow_thaw_account = false
+allow_withdraw_excess_lamports = false
+allow_unwrap_lamports = false
 
 [validation.fee_payer_policy.alt]
 allow_create = false
