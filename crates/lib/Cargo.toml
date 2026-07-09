@@ -62,7 +62,7 @@ clap = { workspace = true }
 rand = "0.10.1"
 utoipa = { workspace = true }
 dirs = "6.0.0"
-mockall = "0.14.0"
+mockall = "0.15.0"
 spl-pod = "0.7.3"
 p256 = { version = "0.13", features = ["ecdsa"] }
 chrono = { workspace = true }
