@@ -372,6 +372,7 @@ pub enum ParsedBpfLoaderUpgradeableInstructionData {
         target: Pubkey,
         recipient: Pubkey,
         authority: Option<Pubkey>,
+        program: Option<Pubkey>,
     },
     ExtendProgram {
         program_data: Pubkey,
@@ -2501,6 +2502,11 @@ impl IxUtils {
                     } else {
                         None
                     };
+                    let program = if n >= ix::REQUIRED_NUMBER_OF_ACCOUNTS_WITH_PROGRAM {
+                        Some(instruction.accounts[ix::OPTIONAL_PROGRAM_INDEX].pubkey)
+                    } else {
+                        None
+                    };
                     parsed_instructions
                         .entry(ParsedBpfLoaderUpgradeableInstructionType::Close)
                         .or_default()
@@ -2508,6 +2514,7 @@ impl IxUtils {
                             target: instruction.accounts[ix::TARGET_INDEX].pubkey,
                             recipient: instruction.accounts[ix::RECIPIENT_INDEX].pubkey,
                             authority,
+                            program,
                         });
                 }
                 UpgradeableLoaderInstruction::ExtendProgram { additional_bytes } => {

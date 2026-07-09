@@ -9,7 +9,7 @@ use solana_commitment_config::CommitmentConfig;
 use solana_loader_v3_interface::{instruction as v3, state::UpgradeableLoaderState};
 use solana_sdk::{
     hash::Hash,
-    instruction::Instruction,
+    instruction::{AccountMeta, Instruction},
     message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
@@ -135,7 +135,11 @@ impl Harness {
         Ok(buffer)
     }
 
-    pub async fn deploy_program(&self, bytes: &[u8]) -> Result<(Pubkey, Pubkey)> {
+    pub async fn deploy_program(
+        &self,
+        bytes: &[u8],
+        owner: Option<&Keypair>,
+    ) -> Result<(Pubkey, Pubkey)> {
         let buffer = self.create_buffer_with_program(bytes).await?;
         let program = Keypair::new();
         let program_data =
@@ -144,7 +148,7 @@ impl Harness {
             .rpc
             .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_program())
             .await?;
-        let ixs = v3::deploy_with_max_program_len(
+        let mut ixs = v3::deploy_with_max_program_len(
             &self.payer,
             &program.pubkey(),
             &buffer.pubkey(),
@@ -152,13 +156,31 @@ impl Harness {
             program_lamports,
             bytes.len(),
         )?;
-        self.send(&ixs, &[&program]).await?;
+        let mut signers: Vec<&Keypair> = vec![&program];
+        if let Some(owner) = owner {
+            ixs.push(kora_deploy::register_ix(
+                &kora_deploy::DEFAULT_REGISTRY_PROGRAM,
+                &self.payer,
+                &program.pubkey(),
+                &owner.pubkey(),
+            ));
+            signers.push(owner);
+        }
+        self.send(&ixs, &signers).await?;
         Ok((program.pubkey(), program_data))
     }
 
-    pub async fn close_account(&self, close_addr: &Pubkey, program: Option<&Pubkey>) -> Result<()> {
-        let ix = v3::close_any(close_addr, &self.payer, Some(&self.payer), program);
-        self.send(&[ix], &[]).await?;
+    pub async fn close_account(
+        &self,
+        close_addr: &Pubkey,
+        program: Option<&Pubkey>,
+        signers: &[&Keypair],
+    ) -> Result<()> {
+        let mut ix = v3::close_any(close_addr, &self.payer, Some(&self.payer), program);
+        for signer in signers {
+            ix.accounts.push(AccountMeta::new_readonly(signer.pubkey(), true));
+        }
+        self.send(&[ix], signers).await?;
         Ok(())
     }
 

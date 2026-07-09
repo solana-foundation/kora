@@ -41,6 +41,12 @@ pub const BPF_LOADER_UPGRADEABLE_PROGRAM_ID: Pubkey =
 // in Kora; policy enforcement lives in `LoaderV4InstructionPolicy`.
 pub const LOADER_V4_PROGRAM_ID: Pubkey = pubkey!("LoaderV411111111111111111111111111111111111");
 
+// Deploy registry (examples/devnet-deploy-paymaster/registry-program). The DeployAuthority
+// plugin gates loader mutations against this program's owner PDAs; gating is active only when
+// this id is in allowed_programs.
+pub const DEPLOY_REGISTRY_PROGRAM_ID: Pubkey =
+    pubkey!("CPoBCCbvawmR2S6joHjXgfFkh9pGqzSixBe2BaBwbVkx");
+
 // Metrics
 pub const DEFAULT_METRICS_ENDPOINT: &str = "/metrics";
 pub const DEFAULT_METRICS_PORT: u16 = 8080;

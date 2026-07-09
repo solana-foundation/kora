@@ -1,18 +1,88 @@
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 
 use crate::{
     config::Config,
-    constant::{BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LOADER_V4_PROGRAM_ID},
+    constant::{
+        BPF_LOADER_UPGRADEABLE_PROGRAM_ID, DEPLOY_REGISTRY_PROGRAM_ID, LOADER_V4_PROGRAM_ID,
+    },
     error::KoraError,
     transaction::{
         ParsedBpfLoaderUpgradeableInstructionData, ParsedLoaderV4InstructionData,
-        ParsedSystemInstructionData, ParsedSystemInstructionType, VersionedTransactionResolved,
+        ParsedSystemInstructionData, ParsedSystemInstructionType, VersionedTransactionOps,
+        VersionedTransactionResolved,
     },
 };
 
 use super::{PluginExecutionContext, TransactionPlugin};
+
+/// Registry entry layout: owner wallet (32) | rent payer (32) | bump (1).
+const REGISTRY_ENTRY_LEN: usize = 65;
+
+fn registry_entry_address(program: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[program.as_ref()], &DEPLOY_REGISTRY_PROGRAM_ID).0
+}
+
+/// Registry gating is active only when the registry program is allowlisted — otherwise no
+/// register instruction could ever be signed, so gating every upgrade would be pointless.
+fn registry_gating_enabled(config: &Config) -> bool {
+    config.validation.allowed_programs.contains(&DEPLOY_REGISTRY_PROGRAM_ID.to_string())
+}
+
+async fn require_registered_owner_signature(
+    rpc_client: &RpcClient,
+    program: &Pubkey,
+    verified_signers: &HashSet<Pubkey>,
+    action: &str,
+    context: PluginExecutionContext,
+) -> Result<(), KoraError> {
+    let entry_address = registry_entry_address(program);
+    let entry = rpc_client
+        .get_account_with_commitment(&entry_address, rpc_client.commitment())
+        .await
+        .map_err(|e| {
+            KoraError::RpcError(format!(
+                "DeployAuthority plugin: failed to fetch registry entry for {program}: {e}"
+            ))
+        })?
+        .value;
+
+    let Some(entry) = entry else {
+        return Err(KoraError::InvalidTransaction(format!(
+            "DeployAuthority plugin: {action} on {program} rejected: program is not \
+             registered in the deploy registry, so it is immutable through this paymaster \
+             (context: {})",
+            context.method_name()
+        )));
+    };
+
+    if entry.owner != DEPLOY_REGISTRY_PROGRAM_ID || entry.data.len() != REGISTRY_ENTRY_LEN {
+        return Err(KoraError::InvalidTransaction(format!(
+            "DeployAuthority plugin: {action} on {program} rejected: registry entry \
+             {entry_address} is malformed (context: {})",
+            context.method_name()
+        )));
+    }
+
+    let owner = Pubkey::try_from(&entry.data[..32]).map_err(|_| {
+        KoraError::InvalidTransaction(format!(
+            "DeployAuthority plugin: registry entry {entry_address} has an invalid owner"
+        ))
+    })?;
+
+    if !verified_signers.contains(&owner) {
+        return Err(KoraError::InvalidTransaction(format!(
+            "DeployAuthority plugin: {action} on {program} rejected: registered owner \
+             {owner} has not signed the transaction (context: {})",
+            context.method_name()
+        )));
+    }
+
+    Ok(())
+}
 
 /// Enforces that the fee payer is the authority on every program-loader instruction we sign,
 /// covering both BPF Loader Upgradeable (loader-v3) and Loader-v4. The core fee-payer policies
@@ -23,6 +93,12 @@ use super::{PluginExecutionContext, TransactionPlugin};
 /// The plugin is inert for whichever loader has all `allow_*` flags off — operators flip the
 /// flags for the loader(s) they want to subsidize.
 ///
+/// When the deploy registry is allowlisted, mutations on already-deployed programs (upgrade,
+/// close, retract, redeploy) additionally require a deploy-registry entry for the program and
+/// the registered owner's verified signature on the transaction. Unregistered programs are
+/// immutable through the paymaster. Registration happens atomically in the deploy transaction,
+/// gated by the program keypair's signature, so ownership cannot be forged or front-run.
+///
 /// Use case: a devnet paymaster that sponsors program deploys and needs to keep control of
 /// every deployed program.
 pub(super) struct DeployAuthorityPlugin;
@@ -32,11 +108,13 @@ impl TransactionPlugin for DeployAuthorityPlugin {
     async fn validate(
         &self,
         transaction: &mut VersionedTransactionResolved,
-        _config: &Config,
-        _rpc_client: &RpcClient,
+        config: &Config,
+        rpc_client: &RpcClient,
         fee_payer: &Pubkey,
         context: PluginExecutionContext,
     ) -> Result<(), KoraError> {
+        let registry_gating = registry_gating_enabled(config);
+
         // ---- Loader-v4 ----
         let loader_v4 = transaction.get_or_parse_loader_v4_instructions()?.clone();
         for data in loader_v4.values().flatten() {
@@ -251,6 +329,24 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                 ParsedLoaderV4InstructionData::Finalize { .. } => {}
             }
         }
+        // Registry entry PDAs funded by the fee payer are legitimate only when created for a
+        // program being deployed in this same transaction (the register instruction).
+        let expected_registry_entries: HashSet<Pubkey> = if registry_gating {
+            bpf_v3
+                .values()
+                .flatten()
+                .filter_map(|d| match d {
+                    ParsedBpfLoaderUpgradeableInstructionData::DeployWithMaxDataLen {
+                        program,
+                        ..
+                    } => Some(registry_entry_address(program)),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            HashSet::new()
+        };
+
         let system = transaction.get_or_parse_system_instructions()?.clone();
         for data in
             system.get(&ParsedSystemInstructionType::SystemCreateAccount).into_iter().flatten()
@@ -263,6 +359,11 @@ impl TransactionPlugin for DeployAuthorityPlugin {
             } = data
             {
                 if payer != fee_payer {
+                    continue;
+                }
+                if *owner == DEPLOY_REGISTRY_PROGRAM_ID
+                    && expected_registry_entries.contains(new_account)
+                {
                     continue;
                 }
                 if *owner != BPF_LOADER_UPGRADEABLE_PROGRAM_ID && *owner != LOADER_V4_PROGRAM_ID {
@@ -285,6 +386,77 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                          same transaction in {}",
                         context.method_name()
                     )));
+                }
+            }
+        }
+
+        // Mutations on already-deployed programs require a registry entry and the registered
+        // owner's signature. Programs created in this same transaction are fresh deploys.
+        if registry_gating {
+            let mut gated: Vec<(Pubkey, &str)> = Vec::new();
+
+            for data in bpf_v3.values().flatten() {
+                match data {
+                    ParsedBpfLoaderUpgradeableInstructionData::Upgrade { program, .. } => {
+                        gated.push((*program, "Upgrade"));
+                    }
+                    ParsedBpfLoaderUpgradeableInstructionData::Close {
+                        program: Some(program),
+                        ..
+                    } => {
+                        gated.push((*program, "Close"));
+                    }
+                    _ => {}
+                }
+            }
+
+            let v4_created: HashSet<Pubkey> = system
+                .get(&ParsedSystemInstructionType::SystemCreateAccount)
+                .into_iter()
+                .flatten()
+                .filter_map(|d| match d {
+                    ParsedSystemInstructionData::SystemCreateAccount {
+                        owner, new_account, ..
+                    } if *owner == LOADER_V4_PROGRAM_ID => Some(*new_account),
+                    _ => None,
+                })
+                .collect();
+
+            for data in loader_v4.values().flatten() {
+                let (program, action) = match data {
+                    ParsedLoaderV4InstructionData::Write { program, .. } => (program, "Write"),
+                    ParsedLoaderV4InstructionData::Copy { destination_program, .. } => {
+                        (destination_program, "Copy")
+                    }
+                    ParsedLoaderV4InstructionData::SetProgramLength { program, .. } => {
+                        (program, "SetProgramLength")
+                    }
+                    ParsedLoaderV4InstructionData::Deploy { program, .. } => (program, "Deploy"),
+                    ParsedLoaderV4InstructionData::Retract { program, .. } => (program, "Retract"),
+                    ParsedLoaderV4InstructionData::TransferAuthority { program, .. } => {
+                        (program, "TransferAuthority")
+                    }
+                    ParsedLoaderV4InstructionData::Finalize { .. } => continue,
+                };
+                if !v4_created.contains(program) {
+                    gated.push((*program, action));
+                }
+            }
+
+            if !gated.is_empty() {
+                let verified_signers = transaction.verified_signers();
+                let mut checked = HashSet::new();
+                for (program, action) in gated {
+                    if checked.insert(program) {
+                        require_registered_owner_signature(
+                            rpc_client,
+                            &program,
+                            &verified_signers,
+                            action,
+                            context,
+                        )
+                        .await?;
+                    }
                 }
             }
         }
@@ -992,5 +1164,264 @@ mod tests {
             assert!(errors.is_empty(), "{label}: got errors: {errors:?}");
             assert!(warnings.is_empty(), "{label}: expected no warnings, got: {warnings:?}");
         }
+    }
+
+    // ----------------------------------------------------------------------------
+    // Deploy-registry gating
+    // ----------------------------------------------------------------------------
+
+    use solana_sdk::{
+        account::Account,
+        instruction::AccountMeta,
+        signature::Keypair,
+        signer::Signer,
+        transaction::{Transaction, VersionedTransaction},
+    };
+
+    fn registry_test_config() -> Config {
+        let mut config = ConfigMockBuilder::new()
+            .with_allowed_programs(vec![
+                BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string(),
+                DEPLOY_REGISTRY_PROGRAM_ID.to_string(),
+            ])
+            .build();
+        enable_deploy_authority_plugin(&mut config);
+        config
+    }
+
+    fn registry_entry_account(owner: &Pubkey, payer: &Pubkey) -> Account {
+        let mut data = vec![0u8; REGISTRY_ENTRY_LEN];
+        data[..32].copy_from_slice(owner.as_ref());
+        data[32..64].copy_from_slice(payer.as_ref());
+        Account {
+            lamports: 1_000_000,
+            data,
+            owner: DEPLOY_REGISTRY_PROGRAM_ID,
+            executable: false,
+            rent_epoch: 0,
+        }
+    }
+
+    async fn run_plugin_ixs_signed(
+        config: &Config,
+        rpc_client: &Arc<RpcClient>,
+        fee_payer: &Pubkey,
+        ixs: &[solana_sdk::instruction::Instruction],
+        signers: &[&Keypair],
+    ) -> Result<(), KoraError> {
+        let message = Message::new(ixs, Some(fee_payer));
+        let mut tx = Transaction::new_unsigned(message);
+        if !signers.is_empty() {
+            let blockhash = tx.message.recent_blockhash;
+            tx.partial_sign(signers, blockhash);
+        }
+        let tx = VersionedTransaction::from(tx);
+        let mut resolved = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+        let runner = TransactionPluginRunner::from_config(config);
+        runner
+            .run(
+                &mut resolved,
+                config,
+                rpc_client.as_ref(),
+                fee_payer,
+                PluginExecutionContext::SignTransaction,
+            )
+            .await
+    }
+
+    fn upgrade_ix_with_owner_signer(
+        program: &Pubkey,
+        fee_payer: &Pubkey,
+        owner: &Pubkey,
+    ) -> solana_sdk::instruction::Instruction {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let buffer = Pubkey::new_unique();
+        let mut ix = loader_v3::upgrade(program, &buffer, fee_payer, fee_payer);
+        ix.accounts.push(AccountMeta::new_readonly(*owner, true));
+        ix
+    }
+
+    #[tokio::test]
+    async fn registry_rejects_upgrade_of_unregistered_program() {
+        let config = registry_test_config();
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let ix = loader_v3::upgrade(&program, &Pubkey::new_unique(), &fee_payer, &fee_payer);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("not registered")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_rejects_upgrade_without_owner_signature() {
+        let config = registry_test_config();
+        let owner = Keypair::new();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let entry = registry_entry_account(&owner.pubkey(), &fee_payer);
+        let rpc_client = RpcMockBuilder::new().with_account_info(&entry).build();
+
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let ix = loader_v3::upgrade(&program, &Pubkey::new_unique(), &fee_payer, &fee_payer);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("has not signed")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_rejects_upgrade_with_wrong_wallet_signature() {
+        let config = registry_test_config();
+        let owner = Keypair::new();
+        let attacker = Keypair::new();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let entry = registry_entry_account(&owner.pubkey(), &fee_payer);
+        let rpc_client = RpcMockBuilder::new().with_account_info(&entry).build();
+
+        let ix = upgrade_ix_with_owner_signer(&program, &fee_payer, &attacker.pubkey());
+        let err = run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&attacker])
+            .await
+            .expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("has not signed")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_accepts_upgrade_with_owner_signature() {
+        let config = registry_test_config();
+        let owner = Keypair::new();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let entry = registry_entry_account(&owner.pubkey(), &fee_payer);
+        let rpc_client = RpcMockBuilder::new().with_account_info(&entry).build();
+
+        let ix = upgrade_ix_with_owner_signer(&program, &fee_payer, &owner.pubkey());
+        assert!(run_plugin_ixs_signed(&config, &rpc_client, &fee_payer, &[ix], &[&owner])
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn registry_rejects_programdata_close_of_unregistered_program() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let config = registry_test_config();
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let program_data = Pubkey::new_unique();
+
+        let ix = loader_v3::close_any(&program_data, &fee_payer, Some(&fee_payer), Some(&program));
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("not registered")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_leaves_buffer_close_ungated() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let config = registry_test_config();
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let fee_payer = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+
+        let ix = loader_v3::close(&buffer, &fee_payer, &fee_payer);
+        assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn registry_rejects_v4_write_on_existing_program() {
+        let config = registry_test_config();
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v4::write(&program, &fee_payer, 0, vec![1]);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("not registered")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_allows_v4_fresh_deploy_created_in_same_tx() {
+        let config = registry_test_config();
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let ixs = vec![
+            system_create_account(&fee_payer, &program, 1_000_000, 36, &LOADER_V4_PROGRAM_ID),
+            loader_v4::set_program_length(&program, &fee_payer, 1024, &fee_payer),
+        ];
+        assert!(run_plugin_ixs(&config, &rpc_client, &fee_payer, &ixs).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn registry_entry_create_allowed_when_paired_with_deploy() {
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let config = registry_test_config();
+        let rpc_client = RpcMockBuilder::new().build();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let buffer = Pubkey::new_unique();
+        let entry = registry_entry_address(&program);
+
+        let mut ixs = loader_v3::deploy_with_max_program_len(
+            &fee_payer, &program, &buffer, &fee_payer, 1_000_000, 0,
+        )
+        .unwrap();
+        ixs.push(system_create_account(
+            &fee_payer,
+            &entry,
+            1_000_000,
+            65,
+            &DEPLOY_REGISTRY_PROGRAM_ID,
+        ));
+        assert!(run_plugin_ixs(&config, &rpc_client, &fee_payer, &ixs).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn registry_entry_create_rejected_without_matching_deploy() {
+        let config = registry_test_config();
+        let rpc_client = RpcMockBuilder::new().build();
+        let fee_payer = Pubkey::new_unique();
+        let entry = registry_entry_address(&Pubkey::new_unique());
+
+        let ix =
+            system_create_account(&fee_payer, &entry, 1_000_000, 65, &DEPLOY_REGISTRY_PROGRAM_ID);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("loader-owned")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_gating_off_when_not_allowlisted() {
+        // Registry not in allowed_programs → gating inert; an unregistered upgrade passes the
+        // plugin (Kora is still the authority, which the core checks cover).
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let mut config = ConfigMockBuilder::new()
+            .with_allowed_programs(vec![BPF_LOADER_UPGRADEABLE_PROGRAM_ID.to_string()])
+            .build();
+        enable_deploy_authority_plugin(&mut config);
+        let rpc_client = RpcMockBuilder::new().with_account_not_found().build();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let ix = loader_v3::upgrade(&program, &Pubkey::new_unique(), &fee_payer, &fee_payer);
+        assert!(run_plugin(&config, &rpc_client, &fee_payer, ix).await.is_ok());
     }
 }

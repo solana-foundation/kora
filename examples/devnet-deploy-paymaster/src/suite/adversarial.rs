@@ -26,11 +26,12 @@ pub async fn run(h: &Harness, bytes: &[u8]) -> Result<Report> {
     let payer = h.payer();
     let attacker = Keypair::new();
     let attacker2 = Keypair::new();
+    let owner = Keypair::new();
 
     println!("  attacker: {}", attacker.pubkey());
     println!("  provisioning real accounts ...");
     let probe_buffer = h.create_buffer().await?;
-    let (program, program_data) = h.deploy_program(bytes).await?;
+    let (program, program_data) = h.deploy_program(bytes, Some(&owner)).await?;
     let big_buffer = h.create_buffer_with_program(bytes).await?;
     let big_program = Keypair::new();
     let program_lamports = h
@@ -129,6 +130,30 @@ pub async fn run(h: &Harness, bytes: &[u8]) -> Result<Report> {
         &[]
     );
     case!(
+        "upgrade without registered owner signature",
+        1,
+        Kind::Theft,
+        &[v3::upgrade(&program, &big_buffer.pubkey(), &payer, &payer)],
+        &[]
+    );
+    case!(
+        "upgrade signed by non-owner wallet",
+        1,
+        Kind::Theft,
+        &[with_extra_signer(
+            v3::upgrade(&program, &big_buffer.pubkey(), &payer, &payer),
+            &attacker.pubkey()
+        )],
+        &[&attacker]
+    );
+    case!(
+        "close programdata without owner signature",
+        1,
+        Kind::Theft,
+        &[v3::close_any(&program_data, &payer, Some(&payer), Some(&program))],
+        &[]
+    );
+    case!(
         "allocate fee-payer account",
         3,
         Kind::Regression,
@@ -170,11 +195,16 @@ pub async fn run(h: &Harness, bytes: &[u8]) -> Result<Report> {
     }
 
     println!("  cleaning up ...");
-    h.close_account(&probe_buffer.pubkey(), None).await.ok();
-    h.close_account(&program_data, Some(&program)).await.ok();
-    h.close_account(&big_buffer.pubkey(), None).await.ok();
+    h.close_account(&probe_buffer.pubkey(), None, &[]).await.ok();
+    h.close_account(&program_data, Some(&program), &[&owner]).await.ok();
+    h.close_account(&big_buffer.pubkey(), None, &[]).await.ok();
 
     Ok(Report { signed, total: rows.len() })
+}
+
+fn with_extra_signer(mut ix: Instruction, signer: &Pubkey) -> Instruction {
+    ix.accounts.push(solana_sdk::instruction::AccountMeta::new_readonly(*signer, true));
+    ix
 }
 
 fn create_account(from: &Pubkey, to: &Pubkey, lamports: u64) -> Instruction {
