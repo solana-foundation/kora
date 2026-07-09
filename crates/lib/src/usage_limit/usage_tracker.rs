@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc, time::SystemTime};
+use std::{cmp::min, collections::HashSet, sync::Arc, time::SystemTime};
 
 use super::{
     limiter::{LimiterContext, LimiterResult},
@@ -314,10 +314,37 @@ impl UsageTracker {
         }
 
         if !pending_increments.is_empty() {
+            let mut unique_pending = Vec::new();
+            for (key, delta, max, expiry, desc) in pending_increments {
+                if let Some(existing) = unique_pending.iter_mut().find(
+                    |(k, _, _, _, _): &&mut (String, u64, u64, Option<u64>, String)| *k == key,
+                ) {
+                    existing.1 += delta;
+                    existing.2 = min(existing.2, max);
+                } else {
+                    unique_pending.push((key, delta, max, expiry, desc));
+                }
+            }
+            let pending_increments = unique_pending;
+
             let entries: Vec<_> =
                 pending_increments.iter().map(|(k, d, m, e, _)| (k.clone(), *d, *m, *e)).collect();
 
             if !self.store.check_and_increment_many(&entries).await? {
+                for (key, delta, max, _expiry, description) in &pending_increments {
+                    let current = self.store.get(key).await?;
+                    if current as u64 + delta > *max {
+                        return Ok(LimiterResult::Denied {
+                            reason: format!(
+                                "User {} exceeded {} limit: {}/{}",
+                                ctx.user_id,
+                                description,
+                                current as u64 + delta,
+                                max
+                            ),
+                        });
+                    }
+                }
                 return Ok(LimiterResult::Denied {
                     reason: format!("User {} exceeded usage limit", ctx.user_id),
                 });

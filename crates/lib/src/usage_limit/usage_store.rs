@@ -33,7 +33,14 @@ pub trait UsageStore: Send + Sync {
     async fn check_and_increment_many(
         &self,
         entries: &[(String, u64, u64, Option<u64>)],
-    ) -> Result<bool, KoraError>;
+    ) -> Result<bool, KoraError> {
+        for (key, delta, max, expiry) in entries {
+            if !self.check_and_increment(key, *delta, *max, *expiry).await? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
 
     /// Clear all usage data (mainly for testing)
     async fn clear(&self) -> Result<(), KoraError>;
@@ -477,6 +484,8 @@ impl UsageStore for ErrorUsageStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deadpool_redis::{Config, Runtime};
+    use std::env;
 
     #[tokio::test]
     async fn test_in_memory_usage_store() {
@@ -502,5 +511,47 @@ mod tests {
         store.clear().await.unwrap();
         assert_eq!(store.get("wallet1").await.unwrap(), 0);
         assert_eq!(store.get("wallet2").await.unwrap(), 0);
+    }
+
+    // Run with: KORA_REDIS_URL="redis://127.0.0.1:6379" cargo test -p kora-lib test_redis -- --include-ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_redis_check_and_increment() {
+        let redis_url = env::var("KORA_REDIS_URL")
+            .expect("KORA_REDIS_URL must be set to run Redis integration tests");
+
+        let cfg = Config::from_url(redis_url);
+        let pool = cfg.create_pool(Some(Runtime::Tokio1)).unwrap();
+        let store = RedisUsageStore::new(pool);
+        store.clear().await.unwrap();
+
+        assert!(store.check_and_increment("key", 1, 2, None).await.unwrap());
+        assert!(store.check_and_increment("key", 1, 2, None).await.unwrap());
+
+        assert!(!store.check_and_increment("key", 1, 2, None).await.unwrap());
+        assert_eq!(store.get("key").await.unwrap(), 2);
+    }
+
+    // Run with: KORA_REDIS_URL="redis://127.0.0.1:6379" cargo test -p kora-lib test_redis -- --include-ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_redis_check_and_increment_many_all_or_nothing() {
+        let redis_url = env::var("KORA_REDIS_URL")
+            .expect("KORA_REDIS_URL must be set to run Redis integration tests");
+
+        let cfg = Config::from_url(redis_url);
+        let pool = cfg.create_pool(Some(Runtime::Tokio1)).unwrap();
+        let store = RedisUsageStore::new(pool);
+        store.clear().await.unwrap();
+
+        let entries = vec![("rkey1".to_string(), 1, 5, None), ("rkey2".to_string(), 1, 1, None)];
+
+        assert!(store.check_and_increment_many(&entries).await.unwrap());
+        assert_eq!(store.get("rkey1").await.unwrap(), 1);
+        assert_eq!(store.get("rkey2").await.unwrap(), 1);
+
+        assert!(!store.check_and_increment_many(&entries).await.unwrap());
+        assert_eq!(store.get("rkey1").await.unwrap(), 1);
+        assert_eq!(store.get("rkey2").await.unwrap(), 1);
     }
 }
