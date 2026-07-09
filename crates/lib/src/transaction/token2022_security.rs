@@ -84,7 +84,7 @@ impl Token2022SecurityParser {
                     // Mirror the on-chain program's dispatch fallback so their accounts
                     // and planted authorities are still policy-validated.
                     if let Some(parsed_instruction) =
-                        Self::parse_token_2022_interface_instruction(instruction)
+                        Self::parse_token_2022_interface_instruction(instruction)?
                     {
                         parsed.push(parsed_instruction);
                         continue;
@@ -190,38 +190,68 @@ impl Token2022SecurityParser {
     /// Returns `None` for anything that is neither, so callers fail closed.
     pub(crate) fn parse_token_2022_interface_instruction(
         instruction: &Instruction,
-    ) -> Option<Token2022SecurityInstruction> {
+    ) -> Result<Option<Token2022SecurityInstruction>, KoraError> {
         if let Ok(metadata_instruction) = TokenMetadataInstruction::unpack(&instruction.data) {
-            return Some(Self::parse_token_metadata_interface_instruction(
+            return Ok(Some(Self::parse_token_metadata_interface_instruction(
                 instruction,
                 metadata_instruction,
-            ));
+            )?));
         }
 
         if let Ok(group_instruction) = TokenGroupInstruction::unpack(&instruction.data) {
-            return Some(Self::parse_token_group_interface_instruction(
+            return Ok(Some(Self::parse_token_group_interface_instruction(
                 instruction,
                 group_instruction,
-            ));
+            )?));
         }
 
-        None
+        Ok(None)
     }
 
     fn parse_token_metadata_interface_instruction(
         instruction: &Instruction,
         metadata_instruction: TokenMetadataInstruction,
-    ) -> Token2022SecurityInstruction {
-        let (instruction_name, data_pubkeys) = match metadata_instruction {
-            TokenMetadataInstruction::Initialize(_) => {
-                ("Token2022 TokenMetadataInitialize", vec![])
-            }
-            TokenMetadataInstruction::UpdateField(_) => {
-                ("Token2022 TokenMetadataUpdateField", vec![])
-            }
-            TokenMetadataInstruction::RemoveKey(_) => ("Token2022 TokenMetadataRemoveKey", vec![]),
+    ) -> Result<Token2022SecurityInstruction, KoraError> {
+        let (instruction_name, update_authority, data_pubkeys) = match metadata_instruction {
+            TokenMetadataInstruction::Initialize(_) => (
+                "Token2022 TokenMetadataInitialize",
+                Some(Self::required_account(
+                    instruction,
+                    3,
+                    "Token2022 TokenMetadataInitialize mintAuthority",
+                )?),
+                vec![Self::required_account_field(
+                    instruction,
+                    1,
+                    "Token2022 TokenMetadataInitialize updateAuthority",
+                    Token2022FieldRole::PlantedAuthority,
+                )?],
+            ),
+            TokenMetadataInstruction::UpdateField(_) => (
+                "Token2022 TokenMetadataUpdateField",
+                Some(Self::required_account(
+                    instruction,
+                    1,
+                    "Token2022 TokenMetadataUpdateField updateAuthority",
+                )?),
+                vec![],
+            ),
+            TokenMetadataInstruction::RemoveKey(_) => (
+                "Token2022 TokenMetadataRemoveKey",
+                Some(Self::required_account(
+                    instruction,
+                    1,
+                    "Token2022 TokenMetadataRemoveKey updateAuthority",
+                )?),
+                vec![],
+            ),
             TokenMetadataInstruction::UpdateAuthority(data) => (
                 "Token2022 TokenMetadataUpdateAuthority",
+                Some(Self::required_account(
+                    instruction,
+                    1,
+                    "Token2022 TokenMetadataUpdateAuthority currentAuthority",
+                )?),
                 Self::optional_field(
                     data.new_authority.into(),
                     "Token2022 TokenMetadataUpdateAuthority newAuthority",
@@ -230,64 +260,97 @@ impl Token2022SecurityParser {
                 .into_iter()
                 .collect(),
             ),
-            TokenMetadataInstruction::Emit(_) => ("Token2022 TokenMetadataEmit", vec![]),
+            TokenMetadataInstruction::Emit(_) => ("Token2022 TokenMetadataEmit", None, vec![]),
         };
 
-        Token2022SecurityInstruction {
+        Ok(Token2022SecurityInstruction {
             instruction_name,
             extension_type: Some(ExtensionType::TokenMetadata),
             accounts: Self::instruction_accounts(instruction),
-            account_usage_policy: Token2022AccountUsagePolicy::RejectIfFeePayerPresent,
-            update_authority: None,
+            account_usage_policy: Token2022AccountUsagePolicy::Ignore,
+            update_authority,
             multisig_signers: vec![],
             data_pubkeys,
-        }
+        })
     }
 
     fn parse_token_group_interface_instruction(
         instruction: &Instruction,
         group_instruction: TokenGroupInstruction,
-    ) -> Token2022SecurityInstruction {
-        let (instruction_name, extension_type, data_pubkeys) = match group_instruction {
-            TokenGroupInstruction::InitializeGroup(data) => (
-                "Token2022 TokenGroupInitializeGroup",
-                ExtensionType::TokenGroup,
-                Self::optional_field(
-                    data.update_authority.into(),
-                    "Token2022 TokenGroupInitializeGroup updateAuthority",
-                    Token2022FieldRole::PlantedAuthority,
-                )
-                .into_iter()
-                .collect(),
-            ),
-            TokenGroupInstruction::UpdateGroupMaxSize(_) => {
-                ("Token2022 TokenGroupUpdateGroupMaxSize", ExtensionType::TokenGroup, vec![])
-            }
-            TokenGroupInstruction::UpdateGroupAuthority(data) => (
-                "Token2022 TokenGroupUpdateGroupAuthority",
-                ExtensionType::TokenGroup,
-                Self::optional_field(
-                    data.new_authority.into(),
-                    "Token2022 TokenGroupUpdateGroupAuthority newAuthority",
-                    Token2022FieldRole::PlantedAuthority,
-                )
-                .into_iter()
-                .collect(),
-            ),
-            TokenGroupInstruction::InitializeMember(_) => {
-                ("Token2022 TokenGroupInitializeMember", ExtensionType::TokenGroupMember, vec![])
-            }
-        };
+    ) -> Result<Token2022SecurityInstruction, KoraError> {
+        let (instruction_name, extension_type, update_authority, multisig_signers, data_pubkeys) =
+            match group_instruction {
+                TokenGroupInstruction::InitializeGroup(data) => (
+                    "Token2022 TokenGroupInitializeGroup",
+                    ExtensionType::TokenGroup,
+                    Some(Self::required_account(
+                        instruction,
+                        2,
+                        "Token2022 TokenGroupInitializeGroup mintAuthority",
+                    )?),
+                    vec![],
+                    Self::optional_field(
+                        data.update_authority.into(),
+                        "Token2022 TokenGroupInitializeGroup updateAuthority",
+                        Token2022FieldRole::PlantedAuthority,
+                    )
+                    .into_iter()
+                    .collect(),
+                ),
+                TokenGroupInstruction::UpdateGroupMaxSize(_) => (
+                    "Token2022 TokenGroupUpdateGroupMaxSize",
+                    ExtensionType::TokenGroup,
+                    Some(Self::required_account(
+                        instruction,
+                        1,
+                        "Token2022 TokenGroupUpdateGroupMaxSize updateAuthority",
+                    )?),
+                    vec![],
+                    vec![],
+                ),
+                TokenGroupInstruction::UpdateGroupAuthority(data) => (
+                    "Token2022 TokenGroupUpdateGroupAuthority",
+                    ExtensionType::TokenGroup,
+                    Some(Self::required_account(
+                        instruction,
+                        1,
+                        "Token2022 TokenGroupUpdateGroupAuthority currentAuthority",
+                    )?),
+                    vec![],
+                    Self::optional_field(
+                        data.new_authority.into(),
+                        "Token2022 TokenGroupUpdateGroupAuthority newAuthority",
+                        Token2022FieldRole::PlantedAuthority,
+                    )
+                    .into_iter()
+                    .collect(),
+                ),
+                TokenGroupInstruction::InitializeMember(_) => (
+                    "Token2022 TokenGroupInitializeMember",
+                    ExtensionType::TokenGroupMember,
+                    Some(Self::required_account(
+                        instruction,
+                        2,
+                        "Token2022 TokenGroupInitializeMember memberMintAuthority",
+                    )?),
+                    vec![Self::required_account(
+                        instruction,
+                        4,
+                        "Token2022 TokenGroupInitializeMember groupUpdateAuthority",
+                    )?],
+                    vec![],
+                ),
+            };
 
-        Token2022SecurityInstruction {
+        Ok(Token2022SecurityInstruction {
             instruction_name,
             extension_type: Some(extension_type),
             accounts: Self::instruction_accounts(instruction),
-            account_usage_policy: Token2022AccountUsagePolicy::RejectIfFeePayerPresent,
-            update_authority: None,
-            multisig_signers: vec![],
+            account_usage_policy: Token2022AccountUsagePolicy::Ignore,
+            update_authority,
+            multisig_signers,
             data_pubkeys,
-        }
+        })
     }
 
     fn parse_transfer_fee_extension(
@@ -888,6 +951,19 @@ impl Token2022SecurityParser {
         })
     }
 
+    fn required_account_field(
+        instruction: &Instruction,
+        index: usize,
+        context: &'static str,
+        role: Token2022FieldRole,
+    ) -> Result<Token2022SecurityField, KoraError> {
+        Ok(Token2022SecurityField {
+            context,
+            pubkey: Self::required_account(instruction, index, context)?,
+            role,
+        })
+    }
+
     fn extract_multisig_signers(
         instruction: &Instruction,
         start: usize,
@@ -996,7 +1072,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_metadata_initialize_is_recognized_and_reject_if_fee_payer_present() {
+    fn test_parse_metadata_initialize_records_current_and_planted_authorities() {
         let mint = Pubkey::new_unique();
         let update_authority = Pubkey::new_unique();
         let mint_authority = Pubkey::new_unique();
@@ -1016,13 +1092,14 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].instruction_name, "Token2022 TokenMetadataInitialize");
         assert_eq!(parsed[0].extension_type, Some(ExtensionType::TokenMetadata));
+        assert_eq!(parsed[0].account_usage_policy, Token2022AccountUsagePolicy::Ignore);
+        assert_eq!(parsed[0].update_authority, Some(mint_authority));
         assert_eq!(
-            parsed[0].account_usage_policy,
-            Token2022AccountUsagePolicy::RejectIfFeePayerPresent
+            parsed[0]
+                .find_planted_fee_payer_authority(&update_authority)
+                .map(|field| field.context),
+            Some("Token2022 TokenMetadataInitialize updateAuthority")
         );
-        // Initialize's authority is an account, not instruction data.
-        assert!(parsed[0].data_pubkeys.is_empty());
-        assert!(parsed[0].accounts.contains(&update_authority));
     }
 
     #[test]
@@ -1041,6 +1118,8 @@ mod tests {
         let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].instruction_name, "Token2022 TokenMetadataUpdateAuthority");
+        assert_eq!(parsed[0].account_usage_policy, Token2022AccountUsagePolicy::Ignore);
+        assert_eq!(parsed[0].update_authority, Some(current_authority));
         // The new authority rides in instruction data, so it must be surfaced as a
         // planted authority so the validator can catch a planted fee payer.
         assert_eq!(
@@ -1069,6 +1148,8 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].instruction_name, "Token2022 TokenGroupInitializeGroup");
         assert_eq!(parsed[0].extension_type, Some(ExtensionType::TokenGroup));
+        assert_eq!(parsed[0].account_usage_policy, Token2022AccountUsagePolicy::Ignore);
+        assert_eq!(parsed[0].update_authority, Some(mint_authority));
         assert!(parsed[0].find_planted_fee_payer_authority(&update_authority).is_some());
     }
 
@@ -1087,6 +1168,7 @@ mod tests {
 
         let parsed = Token2022SecurityParser::parse(&[instruction]).unwrap();
         assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].update_authority, Some(current_authority));
         assert!(parsed[0].find_planted_fee_payer_authority(&new_authority).is_some());
     }
 
@@ -1111,6 +1193,8 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].instruction_name, "Token2022 TokenGroupInitializeMember");
         assert_eq!(parsed[0].extension_type, Some(ExtensionType::TokenGroupMember));
+        assert_eq!(parsed[0].update_authority, Some(member_mint_authority));
+        assert_eq!(parsed[0].multisig_signers, vec![group_update_authority]);
         assert!(parsed[0].data_pubkeys.is_empty());
     }
 

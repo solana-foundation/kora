@@ -2901,7 +2901,7 @@ impl IxUtils {
                         // validated by the Token2022SecurityParser.
                         if Token2022SecurityParser::parse_token_2022_interface_instruction(
                             instruction,
-                        )
+                        )?
                         .is_some()
                         {
                             continue;

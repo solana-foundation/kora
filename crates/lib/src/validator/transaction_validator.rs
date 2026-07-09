@@ -5918,10 +5918,44 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("current Token2022 extension authority")),
+            "Expected rejection via the extension-authority policy check, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_remove_key_allowed_when_update_extension_authority_policy_enabled() {
+        let fee_payer = Pubkey::new_unique();
+        let metadata = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_update_extension_authority = true;
+        setup_token2022_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Same instruction as the rejection test above, but the operator has
+        // explicitly opted in to the fee payer acting as an extension authority.
+        let instruction = spl_token_metadata_interface::instruction::remove_key(
+            &spl_token_2022_interface::id(),
+            &metadata,
+            &fee_payer,
+            "some-key".to_string(),
+            false,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "allow_update_extension_authority opt-in should allow metadata authority use: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -5986,10 +6020,44 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("planted as a Token2022 extension authority")),
+            "Expected rejection via the planted-authority policy check, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_update_authority_allows_planted_fee_payer_when_policy_enabled() {
+        use spl_pod::optional_keys::OptionalNonZeroPubkey;
+
+        let fee_payer = Pubkey::new_unique();
+        let metadata = Pubkey::new_unique();
+        let current_authority = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_initialize_extension_authority = true;
+        setup_token2022_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_metadata_interface::instruction::update_authority(
+            &spl_token_2022_interface::id(),
+            &metadata,
+            &current_authority,
+            OptionalNonZeroPubkey::try_from(Some(fee_payer)).unwrap(),
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "allow_initialize_extension_authority opt-in should allow assigning the fee payer: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -6014,9 +6082,40 @@ mod tests {
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
 
-        assert!(validator
-            .validate_transaction(config, &mut transaction, &rpc_client)
-            .await
-            .is_err());
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("planted as a Token2022 extension authority")),
+            "Expected rejection via the planted-authority policy check, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_group_update_max_size_allowed_when_update_extension_authority_policy_enabled() {
+        let fee_payer = Pubkey::new_unique();
+        let group = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_update_extension_authority = true;
+        setup_token2022_config_with_policy(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_group_interface::instruction::update_group_max_size(
+            &spl_token_2022_interface::id(),
+            &group,
+            &fee_payer,
+            32,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "allow_update_extension_authority opt-in should allow group authority use: {result:?}"
+        );
     }
 }
