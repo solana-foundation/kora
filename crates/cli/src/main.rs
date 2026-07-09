@@ -150,6 +150,11 @@ async fn main() -> Result<(), KoraError> {
         Some(Commands::Rpc { rpc_command }) => {
             match rpc_command {
                 RpcCommands::Start { rpc_args } => {
+                    // Apply CLI auth flags before validation and startup so the auth resolver and
+                    // the no-auth warning reflect them; otherwise a flag-only launch would expose
+                    // signing methods unauthenticated.
+                    rpc_args.auth_args.apply_to_env();
+
                     // Validate config and signers before starting server
                     match ConfigValidator::validate_with_result_and_signers(
                         rpc_client.as_ref(),
