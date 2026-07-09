@@ -8,4 +8,7 @@ ignore = [
     "RUSTSEC-2026-0098",
     # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
     "RUSTSEC-2026-0099",
+    # crossbeam-epoch reached via solana-client -> rayon -> crossbeam-deque; no fix without
+    # a solana-client bump. fmt::Pointer edge case on an already-invalid pointer.
+    "RUSTSEC-2026-0204",
 ]
