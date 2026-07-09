@@ -856,6 +856,19 @@ impl IxUtils {
     fn expand_spl_token_batches(
         instructions: &[Instruction],
     ) -> Result<Vec<Instruction>, KoraError> {
+        if instructions.iter().any(|ix| {
+            ix.program_id == spl_token_2022_interface::ID
+                && ix.data.first() == Some(&BATCH_DISCRIMINATOR)
+        }) {
+            return Err(KoraError::InvalidTransaction(
+                "Token-2022 batch instructions are not supported".to_string(),
+            ));
+        }
+
+        if !instructions.iter().any(Self::is_spl_token_batch) {
+            return Ok(instructions.to_vec());
+        }
+
         let mut expanded = Vec::with_capacity(instructions.len());
         for instruction in instructions {
             if Self::is_spl_token_batch(instruction) {
@@ -905,6 +918,12 @@ impl IxUtils {
             if sub_data.first() == Some(&BATCH_DISCRIMINATOR) {
                 return Err(KoraError::InvalidTransaction(
                     "Nested p-token batch instructions are not allowed".to_string(),
+                ));
+            }
+
+            if spl_token_interface::instruction::TokenInstruction::unpack(&sub_data).is_err() {
+                return Err(KoraError::InvalidTransaction(
+                    "Malformed p-token batch: unrecognized sub-instruction".to_string(),
                 ));
             }
 
@@ -5236,6 +5255,55 @@ mod tests {
         batch_ix.accounts.push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
 
         let message = VersionedMessage::Legacy(Message::new(&[batch_ix], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        assert!(IxUtils::parse_token_instructions(&resolved_tx).is_err());
+    }
+
+    #[test]
+    fn test_parse_spl_token_batch_rejects_unrecognized_sub_instruction() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            instruction::Instruction,
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let payer = Keypair::new();
+        let junk_ix =
+            Instruction { program_id: spl_token_interface::id(), accounts: vec![], data: vec![99] };
+        let batch_ix =
+            spl_token_interface::instruction::batch(&spl_token_interface::id(), &[junk_ix])
+                .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[batch_ix], Some(&payer.pubkey())));
+        let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
+        let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
+
+        assert!(IxUtils::parse_token_instructions(&resolved_tx).is_err());
+    }
+
+    #[test]
+    fn test_parse_rejects_token_2022_batch() {
+        use crate::transaction::versioned_transaction::VersionedTransactionResolved;
+        use solana_message::{Message, VersionedMessage};
+        use solana_sdk::{
+            instruction::Instruction,
+            signature::{Keypair, Signer},
+            transaction::VersionedTransaction,
+        };
+
+        let payer = Keypair::new();
+        let fake_t22_batch = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![],
+            data: vec![BATCH_DISCRIMINATOR],
+        };
+
+        let message =
+            VersionedMessage::Legacy(Message::new(&[fake_t22_batch], Some(&payer.pubkey())));
         let tx = VersionedTransaction::try_new(message, &[&payer]).unwrap();
         let resolved_tx = VersionedTransactionResolved::from_kora_built_transaction(&tx).unwrap();
 
