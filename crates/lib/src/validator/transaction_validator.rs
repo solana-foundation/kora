@@ -420,6 +420,18 @@ impl TransactionValidator {
                 self.fee_payer_policy.spl_token.allow_thaw_account,
                 self.fee_payer_policy.token_2022.allow_thaw_account,
                 "SPL Token ThawAccount", "Token2022 Token ThawAccount");
+
+            validate_spl!(self, spl_instructions, SplTokenWithdrawExcessLamports,
+                ParsedSPLInstructionData::SplTokenWithdrawExcessLamports { owner, multisig_signers, is_2022 } => { owner, multisig_signers, is_2022 },
+                self.fee_payer_policy.spl_token.allow_withdraw_excess_lamports,
+                self.fee_payer_policy.token_2022.allow_withdraw_excess_lamports,
+                "SPL Token WithdrawExcessLamports", "Token2022 Token WithdrawExcessLamports");
+
+            validate_spl!(self, spl_instructions, SplTokenUnwrapLamports,
+                ParsedSPLInstructionData::SplTokenUnwrapLamports { owner, multisig_signers, is_2022 } => { owner, multisig_signers, is_2022 },
+                self.fee_payer_policy.spl_token.allow_unwrap_lamports,
+                self.fee_payer_policy.token_2022.allow_unwrap_lamports,
+                "SPL Token UnwrapLamports", "Token2022 Token UnwrapLamports");
         }
 
         // Validate ALT instructions
@@ -1887,6 +1899,120 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_spl_transfer_wrapped_in_batch_is_enforced() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let recipient_token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let source_token_account =
+            TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let build_batched_transfer = || {
+            let transfer_ix = spl_token_interface::instruction::transfer(
+                &spl_token_interface::id(),
+                &fee_payer_token_account,
+                &recipient_token_account,
+                &fee_payer,
+                &[],
+                1000,
+            )
+            .unwrap();
+            let batch_ix =
+                spl_token_interface::instruction::batch(&spl_token_interface::id(), &[transfer_ix])
+                    .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[batch_ix], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        // Batch-wrapped transfer by the fee payer must be rejected when transfers are disallowed;
+        // otherwise a batch is a trivial bypass of the fee-payer policy.
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_transfer = false;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_batched_transfer();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Same batch is allowed when the policy permits fee-payer transfers.
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_transfer = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_batched_transfer();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_spl_unwrap_lamports_is_enforced() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let source_token_account =
+            TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let build_unwrap = || {
+            let ix = spl_token_interface::instruction::unwrap_lamports(
+                &spl_token_interface::id(),
+                &token_account,
+                &destination,
+                &fee_payer,
+                &[],
+                Some(1000),
+            )
+            .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        // Fee payer as the unwrap authority must be rejected when the policy disallows it.
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_unwrap_lamports = false;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Allowed when the policy permits it.
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_unwrap_lamports = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_unwrap();
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await

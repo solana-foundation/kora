@@ -26,20 +26,26 @@ impl BalanceTracker {
             return Ok(());
         }
 
-        let gauge_vec = register_gauge_vec!(
-            "signer_balance_lamports",
-            "Current SOL balance of each signer in lamports",
-            &["signer_name", "signer_pubkey"]
-        )
-        .map_err(|e| {
-            KoraError::InternalServerError(format!("Failed to register balance gauge vector: {e}"))
-        })?;
+        // Register exactly once per process. The Prometheus default registry and the OnceCell are
+        // process-global, so a plain register + set would error on any second call (e.g. across
+        // tests); get_or_try_init keeps init idempotent and safe under concurrent callers.
+        SIGNER_BALANCE_GAUGES
+            .get_or_try_init(|| async {
+                let gauge_vec = register_gauge_vec!(
+                    "signer_balance_lamports",
+                    "Current SOL balance of each signer in lamports",
+                    &["signer_name", "signer_pubkey"]
+                )
+                .map_err(|e| {
+                    KoraError::InternalServerError(format!(
+                        "Failed to register balance gauge vector: {e}"
+                    ))
+                })?;
+                log::info!("Multi-signer balance tracking metrics initialized");
+                Ok::<_, KoraError>(gauge_vec)
+            })
+            .await?;
 
-        SIGNER_BALANCE_GAUGES.set(gauge_vec).map_err(|_| {
-            KoraError::InternalServerError("Balance gauge vector already initialized".to_string())
-        })?;
-
-        log::info!("Multi-signer balance tracking metrics initialized");
         Ok(())
     }
 
