@@ -587,11 +587,14 @@ impl SignerPool {
 mod tests {
     use solana_sdk::signature::Keypair;
 
+    use serial_test::serial;
+
     use super::*;
     use crate::signer::config::{MemorySignerConfig, SignerPoolSettings, SignerTypeConfig};
     use std::collections::HashMap;
 
     #[tokio::test]
+    #[serial]
     async fn test_from_config_rejects_duplicate_signer_pubkeys() {
         let keypair = Keypair::new();
         std::env::set_var("KORA_TEST_DUP_PUBKEY_KEY", keypair.to_base58_string());

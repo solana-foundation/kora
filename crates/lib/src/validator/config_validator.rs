@@ -2,7 +2,9 @@ use std::{collections::HashSet, path::Path, str::FromStr};
 
 use crate::{
     admin::token_util::find_missing_atas,
-    config::{FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy},
+    config::{
+        FeePayerPolicy, SplTokenConfig, Token2022Config, TransferHookPolicy, ValidationConfig,
+    },
     constant::{
         BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LIGHTHOUSE_PROGRAM_ID, LOADER_V4_PROGRAM_ID,
         MAX_RECAPTCHA_SCORE, MIN_RECAPTCHA_SCORE, STAKE_PROGRAM_ID, VOTE_PROGRAM_ID,
@@ -485,13 +487,11 @@ impl ConfigValidator {
     }
 
     fn warn_mutable_transfer_hook_payment_risk(
-        validation: &crate::config::ValidationConfig,
+        validation: &ValidationConfig,
         warnings: &mut Vec<String>,
     ) {
-        let allows_immediate_mutable_hook = !matches!(
-            validation.token_2022.transfer_hook_policy,
-            crate::config::TransferHookPolicy::DenyAll
-        );
+        let allows_immediate_mutable_hook =
+            !matches!(validation.token_2022.transfer_hook_policy, TransferHookPolicy::DenyAll);
         if allows_immediate_mutable_hook && validation.is_payment_required() {
             warnings.push(
                 "⚠️  SECURITY: transfer_hook_policy allows mutable Token-2022 transfer hooks on \
