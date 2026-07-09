@@ -38,6 +38,7 @@ allowed_programs = [
     "ComputeBudget111111111111111111111111111111",  # Compute Budget Program
     "BPFLoaderUpgradeab1e11111111111111111111111",  # BPF Loader Upgradeable (loader-v3)
     "LoaderV411111111111111111111111111111111111",  # Loader-v4 (currently feature-gated)
+    "CPoBCCbvawmR2S6joHjXgfFkh9pGqzSixBe2BaBwbVkx",  # Deploy registry (registry-program/)
 ]
 allowed_tokens = []
 allowed_spl_paid_tokens = []
@@ -74,7 +75,7 @@ allow_extend_program = true
 allow_set_authority = true
 allow_set_authority_checked = true
 allow_close = true
-allow_migrate = true
+allow_migrate = false
 
 [validation.fee_payer_policy.loader_v4]
 allow_write = true
