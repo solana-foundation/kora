@@ -901,8 +901,6 @@ impl ConfigValidator {
         // Validate usage limit configuration
         let usage_config = &config.kora.usage_limit;
         if usage_config.enabled {
-            // enabled with no rules is a no-op at runtime (the limiter disables itself), so quotas
-            // silently disappear. Fail at startup instead of pretending limits are enforced.
             if usage_config.rules.is_empty() {
                 errors.push(
                     "usage_limit.enabled is true but no rules are configured; add at least one \

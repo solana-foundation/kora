@@ -38,9 +38,7 @@ pub struct AuthArgs {
 }
 
 impl AuthArgs {
-    /// Apply CLI auth flags to the environment the server's auth resolver reads. Without this a
-    /// flag-only launch (`--api-key`/`--hmac-secret` with nothing in env or `kora.toml`) would
-    /// build no auth middleware and expose signing methods unauthenticated.
+    /// Maps CLI auth flags to the env vars the auth resolver reads; must run before validation.
     pub fn apply_to_env(&self) {
         if let Some(api_key) = &self.api_key {
             std::env::set_var("KORA_API_KEY", api_key);
