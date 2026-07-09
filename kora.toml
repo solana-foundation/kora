@@ -126,6 +126,7 @@ allow_initialize_multisig = true # Allow fee payer to be signer in Token2022 mul
 allow_freeze_account = true     # Allow fee payer to freeze Token2022 accounts
 allow_thaw_account = true       # Allow fee payer to thaw Token2022 accounts
 allow_withdraw_excess_lamports = true # Allow fee payer to be authority in Token2022 WithdrawExcessLamports
+allow_unwrap_lamports = true    # Allow fee payer to be authority in Token2022 UnwrapLamports
 
 [validation.fee_payer_policy.alt]
 allow_create = false            # Allow fee payer to be authority/payer in ALT CreateLookupTable

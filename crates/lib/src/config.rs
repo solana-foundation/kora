@@ -350,6 +350,9 @@ pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be the authority in Token2022 WithdrawExcessLamports instructions
     #[serde(default)]
     pub allow_withdraw_excess_lamports: bool,
+    /// Allow fee payer to be the authority in Token2022 UnwrapLamports instructions
+    #[serde(default)]
+    pub allow_unwrap_lamports: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]

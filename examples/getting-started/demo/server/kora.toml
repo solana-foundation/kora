@@ -107,6 +107,7 @@ allow_initialize_multisig = true
 allow_freeze_account = true
 allow_thaw_account = true
 allow_withdraw_excess_lamports = true
+allow_unwrap_lamports = true
 
 [validation.fee_payer_policy.alt]
 allow_create = false

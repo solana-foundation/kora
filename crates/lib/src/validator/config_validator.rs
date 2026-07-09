@@ -2438,6 +2438,7 @@ mod tests {
                         allow_freeze_account: true,
                         allow_thaw_account: true,
                         allow_withdraw_excess_lamports: true,
+                        allow_unwrap_lamports: true,
                     },
                     alt: crate::config::AltInstructionPolicy {
                         allow_create: true,

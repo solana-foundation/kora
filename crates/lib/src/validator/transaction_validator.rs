@@ -430,8 +430,8 @@ impl TransactionValidator {
             validate_spl!(self, spl_instructions, SplTokenUnwrapLamports,
                 ParsedSPLInstructionData::SplTokenUnwrapLamports { owner, multisig_signers, is_2022 } => { owner, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_unwrap_lamports,
-                self.fee_payer_policy.spl_token.allow_unwrap_lamports,
-                "SPL Token UnwrapLamports", "SPL Token UnwrapLamports");
+                self.fee_payer_policy.token_2022.allow_unwrap_lamports,
+                "SPL Token UnwrapLamports", "Token2022 Token UnwrapLamports");
         }
 
         // Validate ALT instructions
