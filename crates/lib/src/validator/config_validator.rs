@@ -484,6 +484,26 @@ impl ConfigValidator {
         }
     }
 
+    fn warn_mutable_transfer_hook_payment_risk(
+        validation: &crate::config::ValidationConfig,
+        warnings: &mut Vec<String>,
+    ) {
+        let allows_immediate_mutable_hook = !matches!(
+            validation.token_2022.transfer_hook_policy,
+            crate::config::TransferHookPolicy::DenyAll
+        );
+        if allows_immediate_mutable_hook && validation.is_payment_required() {
+            warnings.push(
+                "⚠️  SECURITY: transfer_hook_policy allows mutable Token-2022 transfer hooks on \
+                immediate signAndSend. A payment mint with a mutable transfer hook can refund \
+                Kora's payment after validation but before execution, leaving zero net payment. \
+                Use transfer_hook_policy = \"deny_all\", or only accept payment mints with \
+                immutable transfer hooks."
+                    .to_string(),
+            );
+        }
+    }
+
     pub async fn validate(_rpc_client: &RpcClient) -> Result<(), KoraError> {
         let config = &get_config()?;
 
@@ -818,6 +838,8 @@ impl ConfigValidator {
 
         // Validate fee payer policy - warn about enabled risky operations
         Self::validate_fee_payer_policy(&config.validation.fee_payer_policy, &mut warnings);
+
+        Self::warn_mutable_transfer_hook_payment_risk(&config.validation, &mut warnings);
 
         // Validate margin (error if negative)
         match &config.validation.price.model {
@@ -3080,6 +3102,39 @@ mod tests {
         let mut warnings = Vec::new();
         ConfigValidator::warn_unvalidated_programs(&allowed, &mut warnings);
         assert!(warnings.is_empty(), "Expected no warnings for known programs, got: {warnings:?}");
+    }
+
+    #[test]
+    fn test_warn_mutable_transfer_hook_payment_risk() {
+        use crate::{fee::price::PriceModel, tests::config_mock::ConfigMockBuilder};
+
+        let build = |policy: TransferHookPolicy, model: PriceModel| {
+            let mut config = ConfigMockBuilder::new().build();
+            config.validation.token_2022.transfer_hook_policy = policy;
+            config.validation.price.model = model;
+            config
+        };
+
+        // Paid pricing + policy that allows immediate-send mutable hooks -> warning.
+        let config = build(
+            TransferHookPolicy::DenyMutableForDelayedSigning,
+            PriceModel::Margin { margin: 0.0 },
+        );
+        let mut warnings = Vec::new();
+        ConfigValidator::warn_mutable_transfer_hook_payment_risk(&config.validation, &mut warnings);
+        assert!(warnings.iter().any(|w| w.contains("mutable Token-2022 transfer hooks")));
+
+        // DenyAll -> no warning.
+        let config = build(TransferHookPolicy::DenyAll, PriceModel::Margin { margin: 0.0 });
+        let mut warnings = Vec::new();
+        ConfigValidator::warn_mutable_transfer_hook_payment_risk(&config.validation, &mut warnings);
+        assert!(warnings.is_empty());
+
+        // Free pricing -> no warning even if the policy would allow mutable hooks.
+        let config = build(TransferHookPolicy::AllowAll, PriceModel::Free);
+        let mut warnings = Vec::new();
+        ConfigValidator::warn_mutable_transfer_hook_payment_risk(&config.validation, &mut warnings);
+        assert!(warnings.is_empty());
     }
 
     #[test]
