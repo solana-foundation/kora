@@ -901,6 +901,16 @@ impl ConfigValidator {
         // Validate usage limit configuration
         let usage_config = &config.kora.usage_limit;
         if usage_config.enabled {
+            // enabled with no rules is a no-op at runtime (the limiter disables itself), so quotas
+            // silently disappear. Fail at startup instead of pretending limits are enforced.
+            if usage_config.rules.is_empty() {
+                errors.push(
+                    "usage_limit.enabled is true but no rules are configured; add at least one \
+                     [[kora.usage_limit.rules]] or set enabled = false"
+                        .to_string(),
+                );
+            }
+
             let (usage_errors, usage_warnings) = CacheValidator::validate(usage_config).await;
             errors.extend(usage_errors);
             warnings.extend(usage_warnings);
@@ -1212,6 +1222,106 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert!(!warnings.iter().any(|w| w.contains("PermanentDelegate")));
         assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_rejects_usage_limit_enabled_without_rules() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: ProgramsConfig::Allowlist(vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ]),
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
+            },
+            kora: KoraConfig {
+                usage_limit: UsageLimitConfig {
+                    enabled: true,
+                    cache_url: None,
+                    fallback_if_unavailable: true,
+                    rules: vec![],
+                },
+                ..KoraConfig::default()
+            },
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let errors = result.expect_err("enabled usage_limit with no rules must fail validation");
+        assert!(errors.iter().any(|e| e.contains("no rules are configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_allows_usage_limit_disabled_without_rules() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        let config = Config {
+            validation: ValidationConfig {
+                max_allowed_lamports: 1_000_000,
+                max_signatures: 10,
+                allowed_programs: ProgramsConfig::Allowlist(vec![
+                    SYSTEM_PROGRAM_ID.to_string(),
+                    SPL_TOKEN_PROGRAM_ID.to_string(),
+                ]),
+                allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+                allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+                ]),
+                disallowed_accounts: vec![],
+                price_source: PriceSource::Jupiter,
+                fee_payer_policy: FeePayerPolicy::default(),
+                price: PriceConfig::default(),
+                token_2022: Token2022Config::default(),
+                allow_durable_transactions: false,
+                max_price_staleness_slots: 0,
+                require_one_of_programs: vec![],
+                cross_cluster_check: false,
+                cross_cluster_endpoints: vec![],
+            },
+            kora: KoraConfig {
+                usage_limit: UsageLimitConfig {
+                    enabled: false,
+                    cache_url: None,
+                    fallback_if_unavailable: true,
+                    rules: vec![],
+                },
+                ..KoraConfig::default()
+            },
+            metrics: MetricsConfig::default(),
+        };
+
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let warnings = result.expect("disabled usage_limit with no rules must pass validation");
+        assert!(!warnings.iter().any(|w| w.contains("no rules are configured")));
     }
 
     #[tokio::test]
