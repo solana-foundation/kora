@@ -11,7 +11,6 @@ use crate::{
     token::{
         spl_token_2022::Token2022Mint,
         token::{AtaCreationInstructionInfo, TokenType, TokenUtil, TransferHookValidationFlow},
-        TokenState,
     },
     transaction::{
         ParsedALTInstructionData, ParsedALTInstructionType, ParsedSPLInstructionData,
@@ -97,36 +96,6 @@ impl FeeConfigUtil {
 
     /// Helper function to check if a token transfer instruction is a payment to Kora
     /// Returns Some(token_account_data) if it's a payment, None otherwise
-    async fn get_payment_instruction_info(
-        config: &Config,
-        rpc_client: &RpcClient,
-        destination_address: &Pubkey,
-        payment_destination: &Pubkey,
-        skip_missing_accounts: bool,
-    ) -> Result<Option<Box<dyn TokenState + Send + Sync>>, KoraError> {
-        // Get destination account - handle missing accounts based on skip_missing_accounts
-        let destination_account =
-            match CacheUtil::get_account(config, rpc_client, destination_address, false).await {
-                Ok(account) => account,
-                Err(_) if skip_missing_accounts => {
-                    return Ok(None);
-                }
-                Err(e) => {
-                    return Err(e);
-                }
-            };
-
-        let token_program = TokenType::get_token_program_from_owner(&destination_account.owner)?;
-        let token_account = token_program.unpack_token_account(&destination_account.data)?;
-
-        // Check if this is a payment to Kora
-        if token_account.owner() == *payment_destination {
-            Ok(Some(token_account))
-        } else {
-            Ok(None)
-        }
-    }
-
     /// Analyze payment instructions in transaction
     /// Returns (has_payment, total_transfer_fees)
     async fn analyze_payment_instructions(
@@ -139,6 +108,7 @@ impl FeeConfigUtil {
         let mut has_payment = false;
         let mut total_transfer_fees = 0u64;
 
+        let all_instructions = resolved_transaction.all_instructions.clone();
         let parsed_spl_instructions = resolved_transaction.get_or_parse_spl_instructions()?;
 
         for instruction in parsed_spl_instructions
@@ -153,17 +123,30 @@ impl FeeConfigUtil {
                 ..
             } = instruction
             {
-                // Check if this is a payment to Kora
-                let payment_info = Self::get_payment_instruction_info(
-                    config,
-                    rpc_client,
-                    destination_address,
-                    &payment_destination,
-                    true, // Skip missing accounts
-                )
-                .await?;
+                // Resolve the destination owner ATA-aware: when the payment ATA is created in this
+                // same transaction or bundle it has no pre-state, so fall back to the ATA-creation
+                // instruction (the same helper payment validation uses) instead of treating the
+                // transfer as a non-payment.
+                let destination_owner =
+                    match CacheUtil::get_account(config, rpc_client, destination_address, true)
+                        .await
+                    {
+                        Ok(account) => {
+                            let token_program =
+                                TokenType::get_token_program_from_owner(&account.owner)?;
+                            Some(token_program.unpack_token_account(&account.data)?.owner())
+                        }
+                        Err(KoraError::AccountNotFound(_)) => {
+                            TokenUtil::find_ata_creation_for_destination(
+                                &all_instructions,
+                                destination_address,
+                            )
+                            .map(|(wallet_owner, _)| wallet_owner)
+                        }
+                        Err(e) => return Err(e),
+                    };
 
-                if payment_info.is_some() {
+                if destination_owner == Some(payment_destination) {
                     has_payment = true;
 
                     // Calculate Token2022 transfer fees if applicable
@@ -724,7 +707,9 @@ mod tests {
             config_mock::{mock_state::get_config, ConfigMockBuilder},
             rpc_mock::RpcMockBuilder,
         },
-        token::{interface::TokenInterface, spl_token::TokenProgram},
+        token::{
+            interface::TokenInterface, spl_token::TokenProgram, spl_token_2022::Token2022Program,
+        },
         transaction::TransactionUtil,
     };
     use solana_address_lookup_table_interface::{
@@ -1782,6 +1767,79 @@ mod tests {
 
         assert!(has_payment, "Should detect payment instruction");
         assert_eq!(transfer_fees, 0, "Should have no transfer fees for SPL token");
+    }
+
+    #[tokio::test]
+    async fn test_analyze_payment_instructions_recognizes_in_transaction_payment_ata() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+        let signer = setup_or_get_test_signer();
+        let mint = Pubkey::new_unique();
+        let sender = Keypair::new();
+        let token2022_id = spl_token_2022_interface::id();
+
+        let payment_ata =
+            spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+                &signer,
+                &mint,
+                &token2022_id,
+            );
+        let sender_ata =
+            spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+                &sender.pubkey(),
+                &mint,
+                &token2022_id,
+            );
+
+        let mint_account = crate::tests::account_mock::create_mock_token2022_mint_with_extensions(
+            6,
+            vec![ExtensionType::TransferFeeConfig],
+        );
+
+        // The payment ATA does not yet exist on-chain (created in this same transaction); the mint
+        // exists. The estimator must still recognize the payment.
+        cache_ctx.expect().returning(move |_, _, addr: &Pubkey, _| {
+            if *addr == payment_ata {
+                Err(KoraError::AccountNotFound(payment_ata.to_string()))
+            } else if *addr == mint {
+                Ok(mint_account.clone())
+            } else {
+                Err(KoraError::AccountNotFound(addr.to_string()))
+            }
+        });
+
+        let rpc_client = RpcMockBuilder::new().with_epoch_info_mock().build();
+
+        let ata_create_ix =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &sender.pubkey(),
+                &signer,
+                &mint,
+                &token2022_id,
+            );
+        let transfer_ix = Token2022Program::new()
+            .create_transfer_instruction(&sender_ata, &payment_ata, &sender.pubkey(), 1_000_000)
+            .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ata_create_ix, transfer_ix], None));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let config = get_config().unwrap();
+        let (has_payment, _transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
+            &mut resolved_transaction,
+            &rpc_client,
+            &signer,
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            has_payment,
+            "A payment ATA created in the same transaction must be recognized as a payment"
+        );
     }
 
     #[tokio::test]
