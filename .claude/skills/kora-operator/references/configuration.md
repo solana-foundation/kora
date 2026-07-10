@@ -106,6 +106,8 @@ window_seconds = 3600                    # 10 token transfers per hour
 
 Requires `user_id` parameter in signing requests when enabled with `free` pricing.
 
+> **Security:** `user_id` is trusted app-supplied input — Kora keys quota by it directly and does not verify it. Require authentication (API key or HMAC) before exposing usage-limited signing to untrusted callers; otherwise a caller can rotate `user_id` to reset its own quota. In paid pricing, requests that omit `user_id` are keyed to the payment source-account owner.
+
 ---
 
 ## Enabled Methods
