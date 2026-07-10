@@ -284,6 +284,12 @@ impl UsageTracker {
 
         let mut pending_increments = Vec::with_capacity(self.rules.len());
 
+        // Refresh the timestamp just before touching the store. The value captured when the
+        // LimiterContext was created can be seconds stale after validation and RPC, which would
+        // push the window expiry into the past and let the store immediately expire the bucket,
+        // bypassing the limit.
+        ctx.timestamp = Self::current_timestamp();
+
         for (idx, rule) in self.rules.iter().enumerate() {
             let increment_count = rule_increments[idx];
             if increment_count == 0 {
@@ -594,6 +600,56 @@ mod tests {
         // Third transaction should fail (over limit)
         assert!(matches!(
             tracker.check_and_record(&mut ctx3).await.unwrap(),
+            LimiterResult::Denied { .. }
+        ));
+    }
+
+    fn create_windowed_test_tracker(max: u64, window_seconds: u64) -> UsageTracker {
+        let store = Arc::new(InMemoryUsageStore::new());
+        let config = UsageLimitConfig {
+            enabled: true,
+            cache_url: None,
+            fallback_if_unavailable: false,
+            rules: vec![UsageLimitRuleConfig::Transaction {
+                max,
+                window_seconds: Some(window_seconds),
+            }],
+        };
+        let rules = config.build_rules().unwrap();
+        UsageTracker::new(true, store, rules, HashSet::new(), false)
+    }
+
+    #[tokio::test]
+    async fn test_windowed_limit_not_bypassed_by_stale_timestamp() {
+        let window_seconds = 3600u64;
+        let tracker = create_windowed_test_tracker(1, window_seconds);
+        let user_id = "stale-window-user".to_string();
+
+        // A timestamp from two windows ago derives an already-past expiry; the tracker must
+        // refresh it at store time so the bucket stays live and the limit is still enforced.
+        let stale_timestamp = UsageTracker::current_timestamp().saturating_sub(window_seconds * 2);
+
+        let mut tx1 = create_mock_resolved_transaction();
+        let mut ctx1 = LimiterContext {
+            transaction: &mut tx1,
+            user_id: user_id.clone(),
+            kora_signer: None,
+            timestamp: stale_timestamp,
+        };
+        assert!(matches!(
+            tracker.check_and_record(&mut ctx1).await.unwrap(),
+            LimiterResult::Allowed
+        ));
+
+        let mut tx2 = create_mock_resolved_transaction();
+        let mut ctx2 = LimiterContext {
+            transaction: &mut tx2,
+            user_id: user_id.clone(),
+            kora_signer: None,
+            timestamp: stale_timestamp,
+        };
+        assert!(matches!(
+            tracker.check_and_record(&mut ctx2).await.unwrap(),
             LimiterResult::Denied { .. }
         ));
     }
