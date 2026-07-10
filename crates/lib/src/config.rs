@@ -796,13 +796,58 @@ impl Default for AuthConfig {
 }
 
 impl AuthConfig {
+    pub(crate) const API_KEY_ENV: &'static str = "KORA_API_KEY";
+    pub(crate) const HMAC_SECRET_ENV: &'static str = "KORA_HMAC_SECRET";
+    pub(crate) const RECAPTCHA_SECRET_ENV: &'static str = "KORA_RECAPTCHA_SECRET";
+
     pub(crate) fn normalize_optional_secret(value: Option<String>) -> Option<String> {
         value.filter(|value| !value.is_empty())
     }
 
-    pub(crate) fn has_auth(&self) -> bool {
-        self.api_key.as_deref().is_some_and(|key| !key.is_empty())
-            || self.hmac_secret.as_deref().is_some_and(|key| !key.is_empty())
+    /// Resolve a secret env-first: a non-empty environment variable overrides the config value.
+    /// This is the same precedence the running server applies, so validation and runtime agree.
+    pub(crate) fn resolve_secret(env_var: &str, config_value: Option<&str>) -> Option<String> {
+        Self::normalize_optional_secret(std::env::var(env_var).ok())
+            .or_else(|| Self::normalize_optional_secret(config_value.map(str::to_string)))
+    }
+
+    pub(crate) fn resolved_api_key(&self) -> Option<String> {
+        Self::resolve_secret(Self::API_KEY_ENV, self.api_key.as_deref())
+    }
+
+    pub(crate) fn resolved_hmac_secret(&self) -> Option<String> {
+        Self::resolve_secret(Self::HMAC_SECRET_ENV, self.hmac_secret.as_deref())
+    }
+
+    pub(crate) fn resolved_recaptcha_secret(&self) -> Option<String> {
+        Self::resolve_secret(Self::RECAPTCHA_SECRET_ENV, self.recaptcha_secret.as_deref())
+    }
+
+    /// Whether API-key or HMAC auth is in effect after env-first resolution (what the server enforces).
+    pub(crate) fn has_resolved_auth(&self) -> bool {
+        self.resolved_api_key().is_some() || self.resolved_hmac_secret().is_some()
+    }
+
+    /// Auth fields where a non-empty environment variable overrides a *different* non-empty
+    /// kora.toml value. Returns `(env_var, config_field_label)`; never returns secret contents.
+    pub(crate) fn env_overridden_fields(&self) -> Vec<(&'static str, &'static str)> {
+        [
+            (Self::API_KEY_ENV, "[kora.auth].api_key", self.api_key.as_deref()),
+            (Self::HMAC_SECRET_ENV, "[kora.auth].hmac_secret", self.hmac_secret.as_deref()),
+            (
+                Self::RECAPTCHA_SECRET_ENV,
+                "[kora.auth].recaptcha_secret",
+                self.recaptcha_secret.as_deref(),
+            ),
+        ]
+        .into_iter()
+        .filter(|(env_var, _, config_value)| {
+            let env_value = Self::normalize_optional_secret(std::env::var(env_var).ok());
+            let config_value = Self::normalize_optional_secret(config_value.map(str::to_string));
+            matches!((env_value, config_value), (Some(env), Some(cfg)) if env != cfg)
+        })
+        .map(|(env_var, label, _)| (env_var, label))
+        .collect()
     }
 }
 

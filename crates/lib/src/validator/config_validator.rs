@@ -858,7 +858,7 @@ impl ConfigValidator {
                 }
 
                 // Warn about dangerous configurations with fixed pricing
-                let has_auth = config.kora.auth.has_auth();
+                let has_auth = config.kora.auth.has_resolved_auth();
                 if !has_auth {
                     warnings.push(
                         "⚠️  SECURITY: Fixed pricing with NO authentication enabled. \
@@ -888,7 +888,7 @@ impl ConfigValidator {
         };
 
         // General authentication warning
-        let has_auth = config.kora.auth.has_auth();
+        let has_auth = config.kora.auth.has_resolved_auth();
         if !has_auth {
             warnings.push(
                 "⚠️  SECURITY: No authentication configured (neither api_key nor hmac_secret). \
@@ -896,6 +896,16 @@ impl ConfigValidator {
                 Consider enabling api_key or hmac_secret in [kora.auth]."
                     .to_string(),
             );
+        }
+
+        // The running server resolves auth env-first, so a stale KORA_* environment variable
+        // silently overrides a rotated kora.toml secret and keeps the retired credential valid.
+        for (env_var, field) in config.kora.auth.env_overridden_fields() {
+            warnings.push(format!(
+                "⚠️  SECURITY: environment variable {env_var} overrides {field}. The environment \
+                 value takes precedence at runtime; if you rotated the secret in kora.toml, the \
+                 stale environment value is still in effect. Unset {env_var} or align it with the config."
+            ));
         }
 
         // Validate usage limit configuration
@@ -1220,6 +1230,93 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert!(!warnings.iter().any(|w| w.contains("PermanentDelegate")));
         assert!(warnings.iter().any(|w| w.contains("No authentication configured")));
+    }
+
+    fn validation_config_with_auth() -> ValidationConfig {
+        ValidationConfig {
+            max_allowed_lamports: 1_000_000,
+            max_signatures: 10,
+            allowed_programs: ProgramsConfig::Allowlist(vec![
+                SYSTEM_PROGRAM_ID.to_string(),
+                SPL_TOKEN_PROGRAM_ID.to_string(),
+            ]),
+            allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
+            allowed_spl_paid_tokens: SplTokenConfig::Allowlist(vec![
+                "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string(),
+            ]),
+            disallowed_accounts: vec![],
+            price_source: PriceSource::Jupiter,
+            fee_payer_policy: FeePayerPolicy::default(),
+            price: PriceConfig::default(),
+            token_2022: Token2022Config::default(),
+            allow_durable_transactions: false,
+            max_price_staleness_slots: 0,
+            require_one_of_programs: vec![],
+            cross_cluster_check: false,
+            cross_cluster_endpoints: vec![],
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_warns_when_env_overrides_config_auth_secret() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        std::env::set_var(AuthConfig::API_KEY_ENV, "stale-env-key");
+        let config = Config {
+            validation: validation_config_with_auth(),
+            kora: KoraConfig {
+                auth: AuthConfig {
+                    api_key: Some("rotated-config-key".to_string()),
+                    ..Default::default()
+                },
+                ..KoraConfig::default()
+            },
+            metrics: MetricsConfig::default(),
+        };
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        std::env::remove_var(AuthConfig::API_KEY_ENV);
+
+        let warnings = result.expect("validation should succeed with warnings");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("KORA_API_KEY") && w.contains("[kora.auth].api_key")),
+            "expected an env-override warning naming the field, got: {warnings:?}"
+        );
+        // Auth is in effect, so the no-auth warning must not appear.
+        assert!(!warnings.iter().any(|w| w.contains("No authentication configured")));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_validate_no_false_no_auth_warning_when_env_provides_auth() {
+        std::env::set_var("JUPITER_API_KEY", "test-api-key");
+        std::env::set_var(AuthConfig::API_KEY_ENV, "env-only-key");
+        let config = Config {
+            validation: validation_config_with_auth(),
+            kora: KoraConfig::default(),
+            metrics: MetricsConfig::default(),
+        };
+        let _ = update_config(config);
+
+        let rpc_client = RpcClient::new_with_commitment(
+            "http://localhost:8899".to_string(),
+            CommitmentConfig::confirmed(),
+        );
+        let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        std::env::remove_var(AuthConfig::API_KEY_ENV);
+
+        let warnings = result.expect("validation should succeed");
+        assert!(
+            !warnings.iter().any(|w| w.contains("No authentication configured")),
+            "env-provided auth must suppress the no-auth warning, got: {warnings:?}"
+        );
     }
 
     #[tokio::test]
