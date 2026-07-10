@@ -1281,6 +1281,7 @@ mod tests {
         );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         std::env::remove_var(AuthConfig::API_KEY_ENV);
+        std::env::remove_var("JUPITER_API_KEY");
 
         let warnings = result.expect("validation should succeed with warnings");
         assert!(
@@ -1311,6 +1312,7 @@ mod tests {
         );
         let result = ConfigValidator::validate_with_result(&rpc_client, true).await;
         std::env::remove_var(AuthConfig::API_KEY_ENV);
+        std::env::remove_var("JUPITER_API_KEY");
 
         let warnings = result.expect("validation should succeed");
         assert!(

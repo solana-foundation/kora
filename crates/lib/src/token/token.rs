@@ -771,7 +771,7 @@ impl TokenUtil {
         Ok(())
     }
 
-    async fn resolve_token_account_owner_and_mint(
+    pub(crate) async fn resolve_token_account_owner_and_mint(
         config: &Config,
         rpc_client: &RpcClient,
         token_program: &dyn TokenInterface,

@@ -9,7 +9,9 @@ use crate::{
     error::KoraError,
     fee::price::PriceModel,
     token::{
-        spl_token_2022::Token2022Mint,
+        interface::TokenInterface,
+        spl_token::TokenProgram,
+        spl_token_2022::{Token2022Mint, Token2022Program},
         token::{AtaCreationInstructionInfo, TokenType, TokenUtil, TransferHookValidationFlow},
     },
     transaction::{
@@ -121,28 +123,23 @@ impl FeeConfigUtil {
                 ..
             } = instruction
             {
-                // Resolve the destination owner ATA-aware: when the payment ATA is created in this
-                // same transaction or bundle it has no pre-state, so fall back to the ATA-creation
-                // instruction (the same helper payment validation uses) instead of treating the
-                // transfer as a non-payment.
-                let destination_owner =
-                    match CacheUtil::get_account(config, rpc_client, destination_address, true)
-                        .await
-                    {
-                        Ok(account) => {
-                            let token_program =
-                                TokenType::get_token_program_from_owner(&account.owner)?;
-                            Some(token_program.unpack_token_account(&account.data)?.owner())
-                        }
-                        Err(KoraError::AccountNotFound(_)) => {
-                            TokenUtil::find_ata_creation_for_destination(
-                                &all_instructions,
-                                destination_address,
-                            )
-                            .map(|(wallet_owner, _)| wallet_owner)
-                        }
-                        Err(e) => return Err(e),
-                    };
+                // Resolve the destination owner via the same helper payment validation uses, so an
+                // ATA created in this transaction (no pre-state) is recognized instead of treated
+                // as a non-payment.
+                let token_program: Box<dyn TokenInterface> = if *is_2022 {
+                    Box::new(Token2022Program::new())
+                } else {
+                    Box::new(TokenProgram::new())
+                };
+                let destination_owner = TokenUtil::resolve_token_account_owner_and_mint(
+                    config,
+                    rpc_client,
+                    token_program.as_ref(),
+                    destination_address,
+                    &all_instructions,
+                )
+                .await?
+                .map(|(owner, _, _)| owner);
 
                 if destination_owner == Some(payment_destination) {
                     has_payment = true;
@@ -1731,9 +1728,6 @@ mod tests {
         let mocked_account = create_mock_token_account(&signer, &mint);
         let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
 
-        // Set up cache expectation for token account lookup
-        cache_ctx.expect().times(1).returning(move |_, _, _, _| Ok(mocked_account.clone()));
-
         let sender = Keypair::new();
 
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
@@ -1882,9 +1876,6 @@ mod tests {
 
         let mocked_account = create_mock_token_account(&sender.pubkey(), &mint);
         let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
-
-        // Set up cache expectation for token account lookup
-        cache_ctx.expect().times(1).returning(move |_, _, _, _| Ok(mocked_account.clone()));
 
         // Create token accounts
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
@@ -2038,8 +2029,6 @@ mod tests {
 
         let mocked_account = create_mock_token_account(&signer, &mint);
         let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
-
-        cache_ctx.expect().times(2).returning(move |_, _, _, _| Ok(mocked_account.clone()));
 
         let sender = Keypair::new();
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
