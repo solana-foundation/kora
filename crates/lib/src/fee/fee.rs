@@ -94,8 +94,6 @@ impl FeeConfigUtil {
         Ok(transaction.signer_pubkeys().contains(fee_payer))
     }
 
-    /// Helper function to check if a token transfer instruction is a payment to Kora
-    /// Returns Some(token_account_data) if it's a payment, None otherwise
     /// Analyze payment instructions in transaction
     /// Returns (has_payment, total_transfer_fees)
     async fn analyze_payment_instructions(
