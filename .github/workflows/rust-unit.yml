@@ -28,6 +28,16 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -40,3 +50,7 @@ jobs:
           cargo clippy -- -D warnings
       - name: Run unit tests
         run: cargo test --workspace --lib
+      - name: Run Redis integration tests
+        env:
+          KORA_REDIS_URL: redis://localhost:6379
+        run: cargo test --workspace --lib -- --include-ignored test_redis
