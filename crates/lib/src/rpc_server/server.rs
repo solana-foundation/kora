@@ -10,8 +10,13 @@ use crate::{
         recaptcha_util::RecaptchaConfig,
         rpc::KoraRpc,
     },
-    usage_limit::UsageTracker,
 };
+
+#[cfg(not(test))]
+use crate::usage_limit::UsageTracker;
+
+#[cfg(test)]
+use crate::tests::usage_limiter_mock::MockUsageTracker as UsageTracker;
 
 use crate::state::drain_background_tasks;
 
@@ -109,6 +114,29 @@ fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<
     AuthConfig::resolve_secret(env_var, config_value.as_deref())
 }
 
+fn build_allow_origin(origins: &[String]) -> tower_http::cors::AllowOrigin {
+    if origins.iter().any(|o| o == "*") {
+        tower_http::cors::AllowOrigin::any()
+    } else {
+        let parsed_origins: Vec<_> = origins
+            .iter()
+            .filter_map(|o| {
+                o.parse::<http::HeaderValue>()
+                    .map_err(|e| log::warn!("Invalid CORS origin '{}': {}", o, e))
+                    .ok()
+            })
+            .collect();
+
+        if parsed_origins.is_empty() {
+            log::warn!(
+                "No valid CORS origins configured. All cross-origin requests will be blocked."
+            );
+        }
+
+        tower_http::cors::AllowOrigin::list(parsed_origins)
+    }
+}
+
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log::info!("RPC server started on {addr}, port {port}");
@@ -121,28 +149,7 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
 
     let config = get_config()?;
 
-    let allow_origins = if config.kora.cors_allow_origins.iter().any(|o| o == "*") {
-        tower_http::cors::AllowOrigin::any()
-    } else {
-        let origins = config
-            .kora
-            .cors_allow_origins
-            .iter()
-            .filter_map(|o| {
-                o.parse::<http::HeaderValue>()
-                    .map_err(|e| log::warn!("Invalid CORS origin '{}': {}", o, e))
-                    .ok()
-            })
-            .collect::<Vec<_>>();
-
-        if origins.is_empty() {
-            log::warn!(
-                "No valid CORS origins configured. All cross-origin requests will be blocked."
-            );
-        }
-
-        tower_http::cors::AllowOrigin::list(origins)
-    };
+    let allow_origins = build_allow_origin(&config.kora.cors_allow_origins);
 
     // Build middleware stack with tracing and CORS
     let cors = CorsLayer::new()
@@ -187,6 +194,8 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
         // cors
         .layer(cors)
+        // Global pre-auth rate limit (using IdentityRateLimitLayer, which uses 'unauthenticated' identity before auth layers)
+        .layer(IdentityRateLimitLayer::new(config.kora.global_rate_limit))
         // Method validation layer - to fail fast
         .layer(MethodValidationLayer::new(allowed_methods.clone()))
         // Add authentication layer for API key if configured
@@ -363,7 +372,7 @@ mod tests {
             .build();
         // Set limit to 1 request per second
         let kora_config =
-            KoraConfigBuilder::new().with_rate_limit(1).with_auth(auth_config).build();
+            KoraConfigBuilder::new().with_rate_limit(Some(1)).with_auth(auth_config).build();
         let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
         let _ = setup_or_get_test_signer();
 
@@ -430,7 +439,7 @@ mod tests {
             AuthConfigBuilder::new().with_api_keys(vec!["key-zero".to_string()]).build();
         // Set limit to 0 (disabled)
         let kora_config =
-            KoraConfigBuilder::new().with_rate_limit(0).with_auth(auth_config).build();
+            KoraConfigBuilder::new().with_rate_limit(None).with_auth(auth_config).build();
         let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
         let _ = setup_or_get_test_signer();
 
@@ -453,6 +462,45 @@ mod tests {
                 .expect("Failed to send request");
             assert_eq!(res.status(), reqwest::StatusCode::OK);
         }
+    }
+
+    #[tokio::test]
+    async fn test_global_rate_limit() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        // Global rate limit: 1 per second
+        let kora_config = KoraConfigBuilder::new().with_global_rate_limit(Some(1)).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let _handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Failed to start server");
+
+        let client = Client::new();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // Request 1: Should pass
+        let res1 = client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+        assert_eq!(res1.status(), reqwest::StatusCode::OK);
+
+        // Request 2: Immediately after, should be throttled by global limiter
+        let res2 = client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":2}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+        assert_eq!(res2.status(), reqwest::StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]

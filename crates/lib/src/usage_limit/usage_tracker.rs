@@ -365,18 +365,9 @@ impl UsageTracker {
         let usage_config = &config.kora.usage_limit;
 
         let set_limiter = |limiter| {
-            if USAGE_LIMITER.set(limiter).is_err() {
-                #[cfg(test)]
-                {
-                    log::debug!("Usage limiter already initialized (ignored in tests)");
-                    return Ok(());
-                }
-                #[cfg(not(test))]
-                return Err(KoraError::InternalServerError(
-                    "Usage limiter already initialized".to_string(),
-                ));
-            }
-            Ok(())
+            USAGE_LIMITER.set(limiter).map_err(|_| {
+                KoraError::InternalServerError("Usage limiter already initialized".to_string())
+            })
         };
 
         if !usage_config.enabled {

@@ -707,7 +707,8 @@ pub struct PluginsConfig {
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct KoraConfig {
-    pub rate_limit: u64,
+    pub rate_limit: Option<u64>,
+    pub global_rate_limit: Option<u64>,
     pub cors_allow_origins: Vec<String>,
     pub max_request_body_size: usize,
     pub enabled_methods: EnabledMethods,
@@ -734,7 +735,8 @@ pub struct KoraConfig {
 impl Default for KoraConfig {
     fn default() -> Self {
         Self {
-            rate_limit: 100,
+            rate_limit: Some(100),
+            global_rate_limit: None,
             cors_allow_origins: vec!["*".to_string()],
             max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
             enabled_methods: EnabledMethods::default(),
@@ -994,7 +996,7 @@ mod tests {
         );
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
         assert_eq!(config.validation.price_source, PriceSource::Jupiter);
-        assert_eq!(config.kora.rate_limit, 100);
+        assert_eq!(config.kora.rate_limit, Some(100));
         assert!(config.kora.enabled_methods.estimate_transaction_fee);
         assert!(config.kora.enabled_methods.sign_and_send_transaction);
     }
@@ -1021,7 +1023,7 @@ mod tests {
             .build_config()
             .unwrap();
 
-        assert_eq!(config.kora.rate_limit, 100);
+        assert_eq!(config.kora.rate_limit, Some(100));
         assert!(config.kora.enabled_methods.liveness);
         assert!(!config.kora.enabled_methods.estimate_transaction_fee);
         assert!(config.kora.enabled_methods.get_supported_tokens);

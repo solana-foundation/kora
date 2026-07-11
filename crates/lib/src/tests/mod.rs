@@ -21,3 +21,6 @@ pub mod transaction_mock;
 
 #[cfg(test)]
 pub mod oracle_mock;
+
+#[cfg(test)]
+pub mod usage_limiter_mock;

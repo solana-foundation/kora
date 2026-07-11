@@ -102,7 +102,8 @@ impl ConfigMockBuilder {
                     cross_cluster_endpoints: vec![],
                 },
                 kora: KoraConfig {
-                    rate_limit: 100,
+                    rate_limit: Some(100),
+                    global_rate_limit: None,
                     cors_allow_origins: vec!["*".to_string()],
                     max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                     enabled_methods: EnabledMethods::default(),
@@ -163,8 +164,13 @@ impl ConfigMockBuilder {
         self
     }
 
-    pub fn with_rate_limit(mut self, rate_limit: u64) -> Self {
+    pub fn with_rate_limit(mut self, rate_limit: Option<u64>) -> Self {
         self.config.kora.rate_limit = rate_limit;
+        self
+    }
+
+    pub fn with_global_rate_limit(mut self, global_rate_limit: Option<u64>) -> Self {
+        self.config.kora.global_rate_limit = global_rate_limit;
         self
     }
 
@@ -389,7 +395,8 @@ impl KoraConfigBuilder {
     pub fn new() -> Self {
         Self {
             config: KoraConfig {
-                rate_limit: 100,
+                rate_limit: Some(100),
+                global_rate_limit: None,
                 cors_allow_origins: vec!["*".to_string()],
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods::default(),
@@ -417,8 +424,13 @@ impl KoraConfigBuilder {
         self.config
     }
 
-    pub fn with_rate_limit(mut self, rate_limit: u64) -> Self {
+    pub fn with_rate_limit(mut self, rate_limit: Option<u64>) -> Self {
         self.config.rate_limit = rate_limit;
+        self
+    }
+
+    pub fn with_global_rate_limit(mut self, global_rate_limit: Option<u64>) -> Self {
+        self.config.global_rate_limit = global_rate_limit;
         self
     }
 

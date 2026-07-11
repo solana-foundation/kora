@@ -421,9 +421,14 @@ impl ConfigValidator {
             }
         };
 
-        // Validate rate limit (warn if 0)
-        if config.kora.rate_limit == 0 {
-            warnings.push("Rate limit is set to 0 - per-identity rate limiting is disabled; all requests will be allowed without throttling".to_string());
+        // Validate rate limit (warn if None)
+        if config.kora.rate_limit.is_none() {
+            warnings.push("Rate limit is disabled (set to None) - per-identity rate limiting is disabled; all requests will be allowed without throttling".to_string());
+        }
+
+        // Validate global rate limit (warn if Some(0))
+        if config.kora.global_rate_limit == Some(0) {
+            warnings.push("Global rate limit is set to 0 - all requests will be throttled and rejected immediately".to_string());
         }
 
         // Validate CORS origins
@@ -1095,7 +1100,7 @@ mod tests {
                 cross_cluster_check: false,
                 cross_cluster_endpoints: vec![],
             },
-            kora: KoraConfig::default(),
+            kora: KoraConfig { rate_limit: Some(100), ..KoraConfig::default() },
             metrics: MetricsConfig::default(),
         };
 
@@ -1421,7 +1426,8 @@ mod tests {
                 cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig {
-                rate_limit: 0,              // Should warn
+                rate_limit: None, // Should warn
+                global_rate_limit: None,
                 cors_allow_origins: vec![], // Should warn
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods {
@@ -1465,7 +1471,7 @@ mod tests {
         let warnings = result.unwrap();
 
         assert!(!warnings.is_empty());
-        assert!(warnings.iter().any(|w| w.contains("Rate limit is set to 0")));
+        assert!(warnings.iter().any(|w| w.contains("Rate limit is disabled (set to None)")));
         assert!(warnings
             .iter()
             .any(|w| w.contains("cors_allow_origins is empty or contains no valid origins")));

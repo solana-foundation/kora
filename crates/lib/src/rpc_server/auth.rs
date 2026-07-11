@@ -104,16 +104,16 @@ where
             let provided_key = req.headers().get(X_API_KEY).cloned();
             if let Some(provided_key) = provided_key {
                 // Constant-time comparison prevents timing attacks
-                let mut matched = false;
-                for key in &api_keys {
+                let mut matched_index = None;
+                for (index, key) in api_keys.iter().enumerate() {
                     let is_match: bool = provided_key.as_bytes().ct_eq(key.as_bytes()).into();
-                    matched |= is_match;
+                    if is_match {
+                        matched_index = Some(index);
+                    }
                 }
 
-                if matched {
-                    if let Ok(key_str) = provided_key.to_str() {
-                        req.extensions_mut().insert(ClientIdentity(format!("apikey:{}", key_str)));
-                    }
+                if let Some(index) = matched_index {
+                    req.extensions_mut().insert(ClientIdentity(format!("apikey:{}", index)));
                     return inner.call(req).await;
                 }
             }
@@ -266,7 +266,9 @@ where
             let new_body = Body::from(body_bytes);
             let mut new_request = Request::from_parts(parts, new_body);
             // HMAC currently uses a single global shared secret, so all HMAC clients share one rate-limit bucket
-            new_request.extensions_mut().insert(ClientIdentity("hmac:global".to_string()));
+            if new_request.extensions().get::<ClientIdentity>().is_none() {
+                new_request.extensions_mut().insert(ClientIdentity("hmac:global".to_string()));
+            }
 
             inner.call(new_request).await
         })
@@ -323,7 +325,7 @@ mod tests {
 
         let response = service.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.extensions().get::<ClientIdentity>().unwrap().0, "apikey:test-key");
+        assert_eq!(response.extensions().get::<ClientIdentity>().unwrap().0, "apikey:0");
     }
 
     #[tokio::test]

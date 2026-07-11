@@ -48,12 +48,12 @@ impl TokenBucket {
 
 #[derive(Clone)]
 pub struct IdentityRateLimitLayer {
-    rate_limit: u64,
+    rate_limit: Option<u64>,
     state: Arc<RwLock<HashMap<String, TokenBucket>>>,
 }
 
 impl IdentityRateLimitLayer {
-    pub fn new(rate_limit: u64) -> Self {
+    pub fn new(rate_limit: Option<u64>) -> Self {
         Self { rate_limit, state: Arc::new(RwLock::new(HashMap::new())) }
     }
 }
@@ -69,7 +69,7 @@ impl<S> Layer<S> for IdentityRateLimitLayer {
 #[derive(Clone)]
 pub struct IdentityRateLimitService<S> {
     inner: S,
-    rate_limit: u64,
+    rate_limit: Option<u64>,
     // Bounded by configured identities (API keys + hmac + unauthenticated), no eviction needed
     state: Arc<RwLock<HashMap<String, TokenBucket>>>,
 }
@@ -90,10 +90,11 @@ where
     }
 
     fn call(&mut self, request: Request<Body>) -> Self::Future {
-        // rate_limit=0 disables per-identity limiting
-        if self.rate_limit == 0 {
-            return Box::pin(self.inner.call(request));
-        }
+        // rate_limit=None disables per-identity limiting
+        let limit = match self.rate_limit {
+            Some(l) => l,
+            None => return Box::pin(self.inner.call(request)),
+        };
 
         let identity = match request.extensions().get::<ClientIdentity>() {
             Some(id) => id.0.clone(),
@@ -102,9 +103,8 @@ where
 
         let allowed = {
             let mut map = self.state.write();
-            let bucket = map.entry(identity).or_insert_with(|| {
-                TokenBucket::new(self.rate_limit as f64, self.rate_limit as f64)
-            });
+            let bucket =
+                map.entry(identity).or_insert_with(|| TokenBucket::new(limit as f64, limit as f64));
             bucket.consume(1.0)
         };
 
@@ -146,7 +146,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_identity_rate_limit_exceed_quota() {
-        let layer = IdentityRateLimitLayer::new(2); // 2 requests per second
+        let layer = IdentityRateLimitLayer::new(Some(2)); // 2 requests per second
         let mut service = layer.layer(MockService);
 
         let mut req1 = Request::builder().body(Body::empty()).unwrap();
@@ -169,7 +169,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_independent_identities() {
-        let layer = IdentityRateLimitLayer::new(1); // 1 request per second
+        let layer = IdentityRateLimitLayer::new(Some(1)); // 1 request per second
         let mut service = layer.layer(MockService);
 
         // ClientA uses their 1 quota
