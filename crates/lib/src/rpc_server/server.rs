@@ -32,7 +32,7 @@ use jsonrpsee::{
 };
 use std::{net::SocketAddr, time::Duration};
 use tokio::task::JoinHandle;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 pub struct ServerHandles {
     pub rpc_handle: ServerHandle,
@@ -114,9 +114,12 @@ fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<
     AuthConfig::resolve_secret(env_var, config_value.as_deref())
 }
 
-fn build_allow_origin(origins: &[String]) -> tower_http::cors::AllowOrigin {
+fn build_allow_origin(origins: &[String]) -> AllowOrigin {
     if origins.iter().any(|o| o == "*") {
-        tower_http::cors::AllowOrigin::any()
+        if origins.len() > 1 {
+            log::warn!("CORS allow origins contains '*' alongside specific origins. The specific origins are redundant and will be silently ignored.");
+        }
+        AllowOrigin::any()
     } else {
         let parsed_origins: Vec<_> = origins
             .iter()
@@ -133,7 +136,7 @@ fn build_allow_origin(origins: &[String]) -> tower_http::cors::AllowOrigin {
             );
         }
 
-        tower_http::cors::AllowOrigin::list(parsed_origins)
+        AllowOrigin::list(parsed_origins)
     }
 }
 

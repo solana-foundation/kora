@@ -1,8 +1,11 @@
-use crate::rpc_server::middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method};
+use crate::rpc_server::{
+    auth::RejectionReason,
+    middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method},
+};
 use http::{Request, Response};
 use jsonrpsee::server::logger::Body;
 use prometheus::{CounterVec, HistogramVec, Opts};
-use std::{sync::OnceLock, time::Instant};
+use std::{future::Future, pin::Pin, sync::OnceLock, time::Instant};
 use tower::Layer;
 
 static HTTP_METRICS: OnceLock<HttpMetrics> = OnceLock::new();
@@ -107,9 +110,7 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
-    >;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(
         &mut self,
@@ -146,9 +147,7 @@ where
                         .with_label_values(&[&method])
                         .observe(duration.as_secs_f64());
 
-                    if let Some(reason) =
-                        response.extensions().get::<crate::rpc_server::auth::RejectionReason>()
-                    {
+                    if let Some(reason) = response.extensions().get::<RejectionReason>() {
                         metrics
                             .http_rejections_total
                             .with_label_values(&[&method, reason.as_str()])

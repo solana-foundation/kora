@@ -7,6 +7,8 @@ use jsonrpsee::server::logger::Body;
 use parking_lot::RwLock;
 use std::{
     collections::HashMap,
+    future::Future,
+    pin::Pin,
     sync::Arc,
     task::{Context, Poll},
     time::Instant,
@@ -62,13 +64,19 @@ impl<S> Layer<S> for IdentityRateLimitLayer {
     type Service = IdentityRateLimitService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        IdentityRateLimitService { inner, rate_limit: self.rate_limit, state: self.state.clone() }
+        IdentityRateLimitService {
+            inner,
+            inner_ready: None,
+            rate_limit: self.rate_limit,
+            state: self.state.clone(),
+        }
     }
 }
 
 #[derive(Clone)]
 pub struct IdentityRateLimitService<S> {
     inner: S,
+    inner_ready: Option<S>,
     rate_limit: Option<u64>,
     // Bounded by configured identities (API keys + hmac + unauthenticated), no eviction needed
     state: Arc<RwLock<HashMap<String, TokenBucket>>>,
@@ -81,19 +89,27 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
-    >;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
+        match self.inner.poll_ready(cx) {
+            Poll::Ready(Ok(())) => {
+                self.inner_ready = Some(self.inner.clone());
+                Poll::Ready(Ok(()))
+            }
+            other => other,
+        }
     }
 
     fn call(&mut self, request: Request<Body>) -> Self::Future {
+        // Take the readied service, falling back to cloning `inner` if `poll_ready` was bypassed.
+        // Tower contract expects `poll_ready` to be called first.
+        let mut inner = self.inner_ready.take().unwrap_or_else(|| self.inner.clone());
+
         // rate_limit=None disables per-identity limiting
         let limit = match self.rate_limit {
             Some(l) => l,
-            None => return Box::pin(self.inner.call(request)),
+            None => return Box::pin(inner.call(request)),
         };
 
         let identity = match request.extensions().get::<ClientIdentity>() {
@@ -117,7 +133,6 @@ where
             return Box::pin(async move { Ok(response) });
         }
 
-        let mut inner = self.inner.clone();
         Box::pin(async move { inner.call(request).await })
     }
 }
@@ -126,7 +141,7 @@ where
 mod tests {
     use super::*;
     use http::StatusCode;
-    use std::future::Ready;
+    use std::future::{ready, Ready};
     use tower::{Service, ServiceExt};
 
     #[derive(Clone)]
@@ -142,7 +157,7 @@ mod tests {
         }
 
         fn call(&mut self, _req: Request<Body>) -> Self::Future {
-            std::future::ready(Ok(Response::new(Body::empty())))
+            ready(Ok(Response::new(Body::empty())))
         }
     }
 

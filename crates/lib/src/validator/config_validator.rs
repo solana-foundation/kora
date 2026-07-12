@@ -453,6 +453,8 @@ impl ConfigValidator {
             } else if invalid_count > 0 {
                 warnings.push(format!("cors_allow_origins contains {} invalid origin(s) that will be silently filtered out at runtime", invalid_count));
             }
+        } else if config.kora.cors_allow_origins.len() > 1 {
+            warnings.push("cors_allow_origins contains '*' alongside specific origins. The specific origins are redundant and will be silently ignored.".to_string());
         }
 
         // Validate payment address
@@ -1507,6 +1509,18 @@ mod tests {
         assert!(warnings_cors.iter().any(|w| w.contains(
             "cors_allow_origins contains 1 invalid origin(s) that will be silently filtered out"
         )));
+
+        // Test wildcard with redundant specific origins
+        let mut config_cors_wildcard = config.clone();
+        config_cors_wildcard.kora.cors_allow_origins =
+            vec!["*".to_string(), "https://redundant.com".to_string()];
+        let _ = update_config(config_cors_wildcard);
+
+        let result_cors_wildcard = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let warnings_cors_wildcard = result_cors_wildcard.unwrap();
+        assert!(warnings_cors_wildcard
+            .iter()
+            .any(|w| w.contains("cors_allow_origins contains '*' alongside specific origins")));
 
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
     }

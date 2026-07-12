@@ -8,6 +8,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use http::{Request, Response, StatusCode};
 use jsonrpsee::server::logger::Body;
 use sha2::Sha256;
+use std::{future::Future, pin::Pin};
 use subtle::ConstantTimeEq;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -68,9 +69,7 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
-    >;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(
         &mut self,
@@ -161,9 +160,7 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
-    >;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(
         &mut self,
@@ -285,7 +282,7 @@ mod tests {
     use sha2::Sha256;
     use std::{
         convert::Infallible,
-        future::Ready,
+        future::{ready, Ready},
         task::{Context, Poll},
     };
     use tower::{Layer, Service, ServiceExt};
@@ -308,7 +305,7 @@ mod tests {
             if let Some(identity) = req.extensions().get::<ClientIdentity>() {
                 res.extensions_mut().insert(identity.clone());
             }
-            std::future::ready(Ok(res))
+            ready(Ok(res))
         }
     }
 
