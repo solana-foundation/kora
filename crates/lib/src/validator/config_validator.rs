@@ -422,6 +422,8 @@ impl ConfigValidator {
         };
 
         // Validate rate limit (warn if None)
+        // Note: None is not reachable from TOML (no null type); this warning applies
+        // to programmatic config construction only.
         if config.kora.rate_limit.is_none() {
             warnings.push("Rate limit is disabled (set to None) - per-identity rate limiting is disabled; all requests will be allowed without throttling".to_string());
         }

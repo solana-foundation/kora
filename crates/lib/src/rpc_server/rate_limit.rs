@@ -103,6 +103,8 @@ where
 
         let allowed = {
             let mut map = self.state.write();
+            // Some(0) creates a zero-capacity bucket; consume() always returns false,
+            // blocking all requests — validator warns operators about this case.
             let bucket =
                 map.entry(identity).or_insert_with(|| TokenBucket::new(limit as f64, limit as f64));
             bucket.consume(1.0)
