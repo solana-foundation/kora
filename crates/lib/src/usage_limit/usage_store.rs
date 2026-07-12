@@ -30,6 +30,7 @@ pub trait UsageStore: Send + Sync {
     ) -> Result<bool, KoraError>;
 
     /// `entries` must contain distinct keys; duplicate keys produce undefined increment behaviour.
+    /// Note: this default impl is intentionally non-atomic — override for atomic guarantees.
     async fn check_and_increment_many(
         &self,
         entries: &[(String, u64, u64, Option<u64>)],
