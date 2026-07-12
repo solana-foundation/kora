@@ -46,6 +46,8 @@ use solana_address_lookup_table_interface::state::AddressLookupTable;
 
 use super::retry_util::sign_with_retry;
 
+type AltCache<'a> = Option<&'a mut HashMap<Pubkey, Vec<Pubkey>>>;
+
 /// A fully resolved transaction with lookup tables and inner instructions resolved
 pub struct VersionedTransactionResolved {
     pub transaction: VersionedTransaction,
@@ -137,7 +139,7 @@ impl VersionedTransactionResolved {
         config: &Config,
         rpc_client: &RpcClient,
         sig_verify: bool,
-        alt_cache: Option<&mut HashMap<Pubkey, Vec<Pubkey>>>,
+        alt_cache: AltCache<'_>,
     ) -> Result<Self, KoraError> {
         let mut resolved = Self {
             transaction: transaction.clone(),
@@ -651,7 +653,7 @@ impl LookupTableUtil {
         config: &Config,
         rpc_client: &RpcClient,
         lookup_table_lookups: &[MessageAddressTableLookup],
-        alt_cache: Option<&mut HashMap<Pubkey, Vec<Pubkey>>>,
+        alt_cache: AltCache<'_>,
     ) -> Result<Vec<Pubkey>, KoraError> {
         let mut resolved_addresses = Vec::new();
 
@@ -662,68 +664,27 @@ impl LookupTableUtil {
         let mut full_address_lists: Vec<Vec<Pubkey>> =
             Vec::with_capacity(lookup_table_lookups.len());
 
-        if let Some(cache) = alt_cache {
-            let mut misses_set = HashSet::new();
-            for lookup in lookup_table_lookups {
-                if !cache.contains_key(&lookup.account_key) {
-                    misses_set.insert(lookup.account_key);
-                }
-            }
-            let misses: Vec<Pubkey> = misses_set.into_iter().collect();
+        let mut local = HashMap::new();
+        let cache = alt_cache.unwrap_or(&mut local);
 
-            if !misses.is_empty() {
-                let lookup_table_accounts =
-                    CacheUtil::get_multiple_accounts(config, rpc_client, &misses).await.map_err(
-                        |e| {
-                            KoraError::RpcError(format!(
-                                "Failed to fetch lookup table: {}",
-                                sanitize_error!(e)
-                            ))
-                        },
-                    )?;
-
-                for (miss_pubkey, account) in misses.into_iter().zip(lookup_table_accounts) {
-                    let address_lookup_table = AddressLookupTable::deserialize(&account.data)
-                        .map_err(|e| {
-                            KoraError::InvalidTransaction(format!(
-                                "Failed to deserialize lookup table: {}",
-                                sanitize_error!(e)
-                            ))
-                        })?;
-                    cache.insert(miss_pubkey, address_lookup_table.addresses.into_owned());
-                }
+        let mut misses_set = HashSet::new();
+        for lookup in lookup_table_lookups {
+            if !cache.contains_key(&lookup.account_key) {
+                misses_set.insert(lookup.account_key);
             }
+        }
+        let misses: Vec<Pubkey> = misses_set.into_iter().collect();
 
-            for lookup in lookup_table_lookups {
-                full_address_lists.push(
-                    cache
-                        .get(&lookup.account_key)
-                        .ok_or_else(|| {
-                            KoraError::RpcError(format!(
-                                "Failed to fetch lookup table: {}",
-                                lookup.account_key
-                            ))
-                        })?
-                        .clone(),
-                );
-            }
-        } else {
-            let mut pubkeys_set = HashSet::new();
-            for lookup in lookup_table_lookups {
-                pubkeys_set.insert(lookup.account_key);
-            }
-            let pubkeys: Vec<Pubkey> = pubkeys_set.into_iter().collect();
-
+        if !misses.is_empty() {
             let lookup_table_accounts = CacheUtil::get_multiple_accounts(
-                config, rpc_client, &pubkeys,
+                config, rpc_client, &misses,
             )
             .await
             .map_err(|e| {
                 KoraError::RpcError(format!("Failed to fetch lookup table: {}", sanitize_error!(e)))
             })?;
 
-            let mut fetched_cache = HashMap::new();
-            for (pubkey, account) in pubkeys.into_iter().zip(lookup_table_accounts) {
+            for (miss_pubkey, account) in misses.into_iter().zip(lookup_table_accounts) {
                 let address_lookup_table =
                     AddressLookupTable::deserialize(&account.data).map_err(|e| {
                         KoraError::InvalidTransaction(format!(
@@ -731,22 +692,22 @@ impl LookupTableUtil {
                             sanitize_error!(e)
                         ))
                     })?;
-                fetched_cache.insert(pubkey, address_lookup_table.addresses.into_owned());
+                cache.insert(miss_pubkey, address_lookup_table.addresses.into_owned());
             }
+        }
 
-            for lookup in lookup_table_lookups {
-                full_address_lists.push(
-                    fetched_cache
-                        .get(&lookup.account_key)
-                        .ok_or_else(|| {
-                            KoraError::RpcError(format!(
-                                "Failed to fetch lookup table: {}",
-                                lookup.account_key
-                            ))
-                        })?
-                        .clone(),
-                );
-            }
+        for lookup in lookup_table_lookups {
+            full_address_lists.push(
+                cache
+                    .get(&lookup.account_key)
+                    .ok_or_else(|| {
+                        KoraError::RpcError(format!(
+                            "Failed to fetch lookup table: {}",
+                            lookup.account_key
+                        ))
+                    })?
+                    .clone(),
+            );
         }
 
         for (lookup, addresses) in lookup_table_lookups.iter().zip(full_address_lists.iter()) {

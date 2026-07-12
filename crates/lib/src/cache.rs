@@ -769,6 +769,7 @@ impl CacheUtil {
 
             let mut pipe = redis::pipe();
             let mut has_pipe_ops = false;
+            let mut pending_error = None;
 
             for (miss_idx, acc_opt) in accounts_opt.into_iter().enumerate() {
                 let (orig_idx, pubkey) = misses[miss_idx];
@@ -795,7 +796,11 @@ impl CacheUtil {
                             }
                         }
                     }
-                    None => return Err(KoraError::AccountNotFound(pubkey.to_string())),
+                    None => {
+                        if pending_error.is_none() {
+                            pending_error = Some(KoraError::AccountNotFound(pubkey.to_string()));
+                        }
+                    }
                 }
             }
 
@@ -804,9 +809,17 @@ impl CacheUtil {
                     log::warn!("Failed to cache accounts in batch: {}", sanitize_error!(e));
                 }
             }
+
+            if let Some(err) = pending_error {
+                return Err(err);
+            }
         }
 
-        Ok(results.into_iter().flatten().collect())
+        results
+            .into_iter()
+            .enumerate()
+            .map(|(i, opt)| opt.ok_or_else(|| KoraError::AccountNotFound(pubkeys[i].to_string())))
+            .collect()
     }
 }
 
@@ -817,6 +830,9 @@ mod tests {
         common::{create_mock_token_account, RpcMockBuilder},
         config_mock::ConfigMockBuilder,
     };
+    use chrono::Utc;
+    use redis::cmd;
+    use std::env;
 
     #[tokio::test]
     async fn test_is_cache_enabled_disabled() {
@@ -1051,5 +1067,118 @@ mod tests {
         assert!(result.is_ok(), "Should successfully fetch blockhash from RPC");
         let hash = result.unwrap();
         assert_ne!(hash, Hash::default(), "Blockhash should not be the default hash");
+    }
+
+    // Run with: KORA_REDIS_URL="redis://127.0.0.1:6379" cargo test -p kora-lib test_redis -- --include-ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_redis_get_multiple_accounts_all_cache_hits() {
+        let redis_url = env::var("KORA_REDIS_URL")
+            .expect("KORA_REDIS_URL must be set to run Redis integration tests");
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(true)
+            .with_cache_url(Some(redis_url))
+            .build_and_setup();
+
+        let _ = CacheUtil::init().await;
+        let config = get_config().unwrap();
+
+        let pool = CACHE_POOL.get().unwrap().as_ref().unwrap();
+        let pubkey1 = Pubkey::new_unique();
+        let pubkey2 = Pubkey::new_unique();
+
+        let acc1 = create_mock_token_account(&pubkey1, &Pubkey::new_unique());
+        let acc2 = create_mock_token_account(&pubkey2, &Pubkey::new_unique());
+
+        let cached1 = CachedAccount { account: acc1.clone(), cached_at: Utc::now().timestamp() };
+        let cached2 = CachedAccount { account: acc2.clone(), cached_at: Utc::now().timestamp() };
+
+        CacheUtil::set_in_cache(pool, &CacheUtil::get_account_key(&pubkey1), &cached1, 60)
+            .await
+            .unwrap();
+        CacheUtil::set_in_cache(pool, &CacheUtil::get_account_key(&pubkey2), &cached2, 60)
+            .await
+            .unwrap();
+
+        // NO GetMultipleAccounts mock registered, so if it hits RPC it will panic/fail
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let result = CacheUtil::get_multiple_accounts(&config, &rpc_client, &[pubkey1, pubkey2])
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].lamports, acc1.lamports);
+        assert_eq!(result[1].lamports, acc2.lamports);
+
+        let mut conn = CacheUtil::get_connection(pool).await.unwrap();
+        let _: () = cmd("DEL")
+            .arg(CacheUtil::get_account_key(&pubkey1))
+            .query_async(&mut conn)
+            .await
+            .unwrap();
+        let _: () = cmd("DEL")
+            .arg(CacheUtil::get_account_key(&pubkey2))
+            .query_async(&mut conn)
+            .await
+            .unwrap();
+    }
+
+    // Run with: KORA_REDIS_URL="redis://127.0.0.1:6379" cargo test -p kora-lib test_redis -- --include-ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_redis_get_multiple_accounts_partial_cache_miss() {
+        let redis_url = env::var("KORA_REDIS_URL")
+            .expect("KORA_REDIS_URL must be set to run Redis integration tests");
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(true)
+            .with_cache_url(Some(redis_url))
+            .build_and_setup();
+
+        let _ = CacheUtil::init().await;
+        let config = get_config().unwrap();
+
+        let pool = CACHE_POOL.get().unwrap().as_ref().unwrap();
+        let pubkey1 = Pubkey::new_unique(); // cached
+        let pubkey2 = Pubkey::new_unique(); // miss
+
+        let acc1 = create_mock_token_account(&pubkey1, &Pubkey::new_unique());
+        let acc2 = create_mock_token_account(&pubkey2, &Pubkey::new_unique());
+
+        let cached1 = CachedAccount { account: acc1.clone(), cached_at: Utc::now().timestamp() };
+
+        CacheUtil::set_in_cache(pool, &CacheUtil::get_account_key(&pubkey1), &cached1, 60)
+            .await
+            .unwrap();
+
+        let mut conn = CacheUtil::get_connection(pool).await.unwrap();
+        let _: () = cmd("DEL")
+            .arg(CacheUtil::get_account_key(&pubkey2))
+            .query_async(&mut conn)
+            .await
+            .unwrap();
+
+        let rpc_client =
+            RpcMockBuilder::new().with_multiple_accounts_info(vec![Some(acc2.clone())]).build();
+
+        let result = CacheUtil::get_multiple_accounts(&config, &rpc_client, &[pubkey1, pubkey2])
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].lamports, acc1.lamports);
+        assert_eq!(result[1].lamports, acc2.lamports);
+
+        let mut conn = CacheUtil::get_connection(pool).await.unwrap();
+        let _: () = cmd("DEL")
+            .arg(CacheUtil::get_account_key(&pubkey1))
+            .query_async(&mut conn)
+            .await
+            .unwrap();
+        let _: () = cmd("DEL")
+            .arg(CacheUtil::get_account_key(&pubkey2))
+            .query_async(&mut conn)
+            .await
+            .unwrap();
     }
 }
