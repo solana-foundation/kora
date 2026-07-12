@@ -430,14 +430,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_identity_rate_limit_zero_bypasses_limiter() {
+    async fn test_identity_rate_limit_none_disables_limiter() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         drop(listener);
 
         let auth_config =
             AuthConfigBuilder::new().with_api_keys(vec!["key-zero".to_string()]).build();
-        // Set limit to 0 (disabled)
+        // rate_limit = None disables the limiter entirely
         let kora_config =
             KoraConfigBuilder::new().with_rate_limit(None).with_auth(auth_config).build();
         let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();

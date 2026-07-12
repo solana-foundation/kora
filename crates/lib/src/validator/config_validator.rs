@@ -427,7 +427,7 @@ impl ConfigValidator {
         }
 
         if config.kora.rate_limit == Some(0) {
-            warnings.push("Per-identity rate limit is set to 0 - all authenticated requests will be rejected immediately with 429".to_string());
+            warnings.push("Per-identity rate limit is set to 0 - all requests for each identity will be rejected immediately with 429".to_string());
         }
 
         // Validate global rate limit (warn if Some(0))
