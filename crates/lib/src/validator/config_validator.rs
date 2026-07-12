@@ -436,16 +436,21 @@ impl ConfigValidator {
         }
 
         // Validate CORS origins
-        let cors_empty_or_invalid = if config.kora.cors_allow_origins.is_empty() {
-            true
-        } else if !config.kora.cors_allow_origins.iter().any(|o| o == "*") {
-            !config.kora.cors_allow_origins.iter().any(|o| o.parse::<http::HeaderValue>().is_ok())
-        } else {
-            false
-        };
-
-        if cors_empty_or_invalid {
+        if config.kora.cors_allow_origins.is_empty() {
             warnings.push("cors_allow_origins is empty or contains no valid origins - all cross-origin requests will be blocked".to_string());
+        } else if !config.kora.cors_allow_origins.iter().any(|o| o == "*") {
+            let invalid_count = config
+                .kora
+                .cors_allow_origins
+                .iter()
+                .filter(|o| o.parse::<http::HeaderValue>().is_err())
+                .count();
+
+            if invalid_count == config.kora.cors_allow_origins.len() {
+                warnings.push("cors_allow_origins is empty or contains no valid origins - all cross-origin requests will be blocked".to_string());
+            } else if invalid_count > 0 {
+                warnings.push(format!("cors_allow_origins contains {} invalid origin(s) that will be silently filtered out at runtime", invalid_count));
+            }
         }
 
         // Validate payment address
@@ -792,12 +797,8 @@ impl ConfigValidator {
 
         // The running server resolves auth env-first, so a stale KORA_* environment variable
         // silently overrides a rotated kora.toml secret and keeps the retired credential valid.
-        for (env_var, field) in config.kora.auth.env_overridden_fields() {
-            warnings.push(format!(
-                "⚠️  SECURITY: environment variable {env_var} overrides {field}. The environment \
-                 value takes precedence at runtime; if you rotated the secret in kora.toml, the \
-                 stale environment value is still in effect. Unset {env_var} or align it with the config."
-            ));
+        for msg in config.kora.auth.env_overridden_fields() {
+            warnings.push(format!("⚠️  SECURITY: {msg}"));
         }
 
         // Validate usage limit configuration
@@ -1492,6 +1493,18 @@ mod tests {
         let result_some_0 = ConfigValidator::validate_with_result(&rpc_client, true).await;
         let warnings_some_0 = result_some_0.unwrap();
         assert!(warnings_some_0.iter().any(|w| w.contains("Per-identity rate limit is set to 0")));
+
+        // Test partially invalid CORS origins
+        let mut config_cors = config.clone();
+        config_cors.kora.cors_allow_origins =
+            vec!["https://valid.com".to_string(), "invalid\norigin".to_string()];
+        let _ = update_config(config_cors);
+
+        let result_cors = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let warnings_cors = result_cors.unwrap();
+        assert!(warnings_cors.iter().any(|w| w.contains(
+            "cors_allow_origins contains 1 invalid origin(s) that will be silently filtered out"
+        )));
 
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
     }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use spl_token_2022_interface::extension::ExtensionType;
-use std::{fs, path::Path, str::FromStr};
+use std::{env, fs, path::Path, str::FromStr};
 use toml;
 use utoipa::ToSchema;
 
@@ -686,7 +686,7 @@ impl CacheConfig {
     /// Resolve the Redis URL to use. Priority: `KORA_REDIS_URL` env var over the `url`
     /// field from the TOML config. Returns `None` when neither is set.
     pub fn resolved_url(&self) -> Option<String> {
-        std::env::var("KORA_REDIS_URL").ok().or_else(|| self.url.clone())
+        env::var("KORA_REDIS_URL").ok().or_else(|| self.url.clone())
     }
 }
 
@@ -852,12 +852,12 @@ impl AuthConfig {
     /// Resolve a secret env-first: a non-empty environment variable overrides the config value.
     /// This is the same precedence the running server applies, so validation and runtime agree.
     pub(crate) fn resolve_secret(env_var: &str, config_value: Option<&str>) -> Option<String> {
-        Self::normalize_optional_secret(std::env::var(env_var).ok())
+        Self::normalize_optional_secret(env::var(env_var).ok())
             .or_else(|| Self::normalize_optional_secret(config_value.map(str::to_string)))
     }
 
     pub(crate) fn resolved_api_keys(&self) -> Option<Vec<String>> {
-        let env_value = Self::normalize_optional_secret(std::env::var(Self::API_KEY_ENV).ok());
+        let env_value = Self::normalize_optional_secret(env::var(Self::API_KEY_ENV).ok());
         if let Some(env_key) = env_value {
             Some(vec![env_key])
         } else {
@@ -880,28 +880,46 @@ impl AuthConfig {
 
     /// Auth fields where a non-empty environment variable overrides a *different* non-empty
     /// kora.toml value. Returns `(env_var, config_field_label)`; never returns secret contents.
-    pub(crate) fn env_overridden_fields(&self) -> Vec<(&'static str, &'static str)> {
-        [
-            (
-                Self::API_KEY_ENV,
-                "[kora.auth].api_keys",
-                self.api_keys.as_ref().and_then(|keys| keys.first().map(|s| s.as_str())),
-            ),
-            (Self::HMAC_SECRET_ENV, "[kora.auth].hmac_secret", self.hmac_secret.as_deref()),
-            (
-                Self::RECAPTCHA_SECRET_ENV,
-                "[kora.auth].recaptcha_secret",
-                self.recaptcha_secret.as_deref(),
-            ),
-        ]
-        .into_iter()
-        .filter(|(env_var, _, config_value)| {
-            let env_value = Self::normalize_optional_secret(std::env::var(env_var).ok());
-            let config_value = Self::normalize_optional_secret(config_value.map(str::to_string));
-            matches!((env_value, config_value), (Some(env), Some(cfg)) if env != cfg)
-        })
-        .map(|(env_var, label, _)| (env_var, label))
-        .collect()
+    pub(crate) fn env_overridden_fields(&self) -> Vec<String> {
+        let mut overridden = Vec::new();
+
+        let env_api_key = Self::normalize_optional_secret(env::var(Self::API_KEY_ENV).ok());
+        if let Some(env_key) = env_api_key {
+            if let Some(keys) = &self.api_keys {
+                let valid_keys: Vec<_> = keys.iter().filter(|k| !k.is_empty()).collect();
+                if valid_keys.len() > 1 {
+                    overridden.push(format!("{} is set and overrides all api_keys configured in TOML ({} keys) — only the environment variable key is active", Self::API_KEY_ENV, valid_keys.len()));
+                } else if valid_keys.len() == 1 && valid_keys[0] != &env_key {
+                    overridden.push(format!("environment variable {} overrides [kora.auth].api_keys. The environment value takes precedence at runtime; if you rotated the secret in kora.toml, the stale environment value is still in effect. Unset {} or align it with the config.", Self::API_KEY_ENV, Self::API_KEY_ENV));
+                }
+            }
+        }
+
+        let check_override = |env_var: &'static str,
+                              config_label: &'static str,
+                              config_val: Option<&String>| {
+            let env_val = Self::normalize_optional_secret(env::var(env_var).ok());
+            let cfg_val = Self::normalize_optional_secret(config_val.cloned());
+            matches!((env_val, cfg_val), (Some(env), Some(cfg)) if env != cfg)
+                .then_some(format!("environment variable {} overrides {}. The environment value takes precedence at runtime; if you rotated the secret in kora.toml, the stale environment value is still in effect. Unset {} or align it with the config.", env_var, config_label, env_var))
+        };
+
+        if let Some(msg) = check_override(
+            Self::HMAC_SECRET_ENV,
+            "[kora.auth].hmac_secret",
+            self.hmac_secret.as_ref(),
+        ) {
+            overridden.push(msg);
+        }
+        if let Some(msg) = check_override(
+            Self::RECAPTCHA_SECRET_ENV,
+            "[kora.auth].recaptcha_secret",
+            self.recaptcha_secret.as_ref(),
+        ) {
+            overridden.push(msg);
+        }
+
+        overridden
     }
 }
 
@@ -1405,15 +1423,15 @@ allow_create = true
     }
 
     fn scoped_redis_env<F: FnOnce()>(value: Option<&str>, f: F) {
-        let previous = std::env::var("KORA_REDIS_URL").ok();
+        let previous = env::var("KORA_REDIS_URL").ok();
         match value {
-            Some(v) => std::env::set_var("KORA_REDIS_URL", v),
-            None => std::env::remove_var("KORA_REDIS_URL"),
+            Some(v) => env::set_var("KORA_REDIS_URL", v),
+            None => env::remove_var("KORA_REDIS_URL"),
         }
         f();
         match previous {
-            Some(v) => std::env::set_var("KORA_REDIS_URL", v),
-            None => std::env::remove_var("KORA_REDIS_URL"),
+            Some(v) => env::set_var("KORA_REDIS_URL", v),
+            None => env::remove_var("KORA_REDIS_URL"),
         }
     }
 
@@ -1532,5 +1550,28 @@ api_keys = ["", "  "]
             )
             .build_config();
         assert_unknown_field_error(result, "unknown_rule_field");
+    #[test]
+    #[serial_test::serial]
+    fn test_env_overridden_fields_multiple_keys_backup_dropped() {
+        let auth_config = AuthConfig {
+            api_keys: Some(vec!["key1".to_string(), "key2".to_string()]),
+            ..Default::default()
+        };
+
+        let previous = env::var("KORA_API_KEY").ok();
+        env::set_var("KORA_API_KEY", "key1");
+
+        let warnings = auth_config.env_overridden_fields();
+
+        if let Some(v) = previous {
+            env::set_var("KORA_API_KEY", v);
+        } else {
+            env::remove_var("KORA_API_KEY");
+        }
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains(
+            "KORA_API_KEY is set and overrides all api_keys configured in TOML (2 keys)"
+        ));
     }
 }
