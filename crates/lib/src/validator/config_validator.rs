@@ -426,6 +426,10 @@ impl ConfigValidator {
             warnings.push("Rate limit is disabled (set to None) - per-identity rate limiting is disabled; all requests will be allowed without throttling".to_string());
         }
 
+        if config.kora.rate_limit == Some(0) {
+            warnings.push("Per-identity rate limit is set to 0 - all authenticated requests will be rejected immediately with 429".to_string());
+        }
+
         // Validate global rate limit (warn if Some(0))
         if config.kora.global_rate_limit == Some(0) {
             warnings.push("Global rate limit is set to 0 - all requests will be throttled and rejected immediately".to_string());
@@ -1460,7 +1464,7 @@ mod tests {
         };
 
         // Initialize global config
-        let _ = update_config(config);
+        let _ = update_config(config.clone());
 
         let rpc_client = RpcClient::new_with_commitment(
             "http://localhost:8899".to_string(),
@@ -1479,6 +1483,16 @@ mod tests {
         assert!(warnings.iter().any(|w| w.contains("Max allowed lamports is 0")));
         assert!(warnings.iter().any(|w| w.contains("Max signatures is 0")));
         assert!(warnings.iter().any(|w| w.contains("Using Mock price source")));
+
+        // Test rate_limit == Some(0)
+        let mut config_some_0 = config.clone();
+        config_some_0.kora.rate_limit = Some(0);
+        let _ = update_config(config_some_0);
+
+        let result_some_0 = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let warnings_some_0 = result_some_0.unwrap();
+        assert!(warnings_some_0.iter().any(|w| w.contains("Per-identity rate limit is set to 0")));
+
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
     }
 
