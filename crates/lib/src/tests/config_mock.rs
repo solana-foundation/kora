@@ -172,6 +172,11 @@ impl ConfigMockBuilder {
         self
     }
 
+    pub fn with_price_model(mut self, price_model: crate::fee::price::PriceModel) -> Self {
+        self.config.validation.price.model = price_model;
+        self
+    }
+
     pub fn with_allowed_programs(mut self, programs: Vec<String>) -> Self {
         self.config.validation.allowed_programs = ProgramsConfig::Allowlist(programs);
         self

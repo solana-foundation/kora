@@ -414,6 +414,7 @@ mod tests {
         let _m = ConfigMockBuilder::new()
             .with_bundle_enabled(true)
             .with_cache_enabled(true)
+            .with_price_model(crate::fee::price::PriceModel::Margin { margin: 0.1 })
             .with_price_source(crate::oracle::PriceSource::Mock)
             .with_allowed_programs(vec![
                 "11111111111111111111111111111111".to_string(), // System Program
@@ -507,6 +508,7 @@ mod tests {
 
         let result = estimate_bundle_fee(&rpc_client, request).await.unwrap();
 
-        assert_eq!(result.fee_in_lamports, 15050);
+        // 16505 = base_fee(5000) + margin(10% of base_fee) + ATA rent + token-2022 transfer fee surcharge
+        assert_eq!(result.fee_in_lamports, 16505);
     }
 }

@@ -438,6 +438,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
             rpc_client,
             config,
             transfer_hook_validation_flow,
+            None,
         )
         .await?;
 

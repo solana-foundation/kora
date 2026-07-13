@@ -142,12 +142,12 @@ impl RpcMockBuilder {
         self.mocks.insert(
             RpcRequest::GetEpochInfo,
             json!({
-                "context": { "slot": 1 },
-                "value": {
-                    "epoch": 100,
-                    "slotIndex": 1,
-                    "slotsInEpoch": 432000
-                }
+                "epoch": 100,
+                "slotIndex": 1,
+                "slotsInEpoch": 432000,
+                "absoluteSlot": 432001,
+                "blockHeight": 432001,
+                "transactionCount": 1000000
             }),
         );
         self

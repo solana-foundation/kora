@@ -20,6 +20,7 @@ use crate::{
         VersionedTransactionOps, VersionedTransactionResolved,
     },
 };
+use solana_sdk::instruction::Instruction;
 
 #[cfg(not(test))]
 use crate::cache::CacheUtil;
@@ -103,12 +104,15 @@ impl FeeConfigUtil {
         resolved_transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,
+        bundle_instructions: Option<&[Instruction]>,
     ) -> Result<(bool, u64), KoraError> {
         let payment_destination = config.kora.get_payment_address(fee_payer)?;
         let mut has_payment = false;
         let mut total_transfer_fees = 0u64;
 
-        let all_instructions = resolved_transaction.all_instructions.clone();
+        let all_instructions = bundle_instructions
+            .map(|instrs| instrs.to_vec())
+            .unwrap_or_else(|| resolved_transaction.all_instructions.clone());
         let parsed_spl_instructions = resolved_transaction.get_or_parse_spl_instructions()?;
 
         for instruction in parsed_spl_instructions
@@ -193,6 +197,7 @@ impl FeeConfigUtil {
         is_payment_required: bool,
         rpc_client: &RpcClient,
         config: &Config,
+        bundle_instructions: Option<&[Instruction]>,
     ) -> Result<TotalFeeCalculation, KoraError> {
         // Get base transaction fee using resolved transaction to handle lookup tables
         let base_fee =
@@ -214,8 +219,14 @@ impl FeeConfigUtil {
 
         // Analyze payment instructions (checks if payment exists + calculates Token2022 fees)
         let (has_payment, transfer_fee_config_amount) =
-            FeeConfigUtil::analyze_payment_instructions(config, transaction, rpc_client, fee_payer)
-                .await?;
+            FeeConfigUtil::analyze_payment_instructions(
+                config,
+                transaction,
+                rpc_client,
+                fee_payer,
+                bundle_instructions,
+            )
+            .await?;
 
         // If payment is required but not found, add estimated payment instruction fee
         let fee_for_payment_instruction = if is_payment_required && !has_payment {
@@ -254,6 +265,7 @@ impl FeeConfigUtil {
         rpc_client: &RpcClient,
         config: &Config,
         transfer_hook_validation_flow: TransferHookValidationFlow,
+        bundle_instructions: Option<&[Instruction]>,
     ) -> Result<TotalFeeCalculation, KoraError> {
         // Always validate Token2022 transfer-hook mutability before pricing logic so
         // both free and paid modes enforce the same transfer-hook security guard.
@@ -281,6 +293,7 @@ impl FeeConfigUtil {
                         is_payment_required,
                         rpc_client,
                         config,
+                        bundle_instructions,
                     )
                     .await?;
 
@@ -304,6 +317,7 @@ impl FeeConfigUtil {
                     is_payment_required,
                     rpc_client,
                     config,
+                    bundle_instructions,
                 )
                 .await?;
 
@@ -839,6 +853,7 @@ mod tests {
             &rpc_client,
             &config,
             transfer_hook_validation_flow,
+            None,
         )
         .await
     }
@@ -945,6 +960,7 @@ mod tests {
             &rpc_client,
             &config,
             TransferHookValidationFlow::DelayedSigning,
+            None,
         )
         .await;
 
@@ -1453,6 +1469,7 @@ mod tests {
             &mocked_rpc_client,
             &config,
             TransferHookValidationFlow::DelayedSigning,
+            None,
         )
         .await
         .unwrap();
@@ -1753,6 +1770,7 @@ mod tests {
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
+            None,
         )
         .await
         .unwrap();
@@ -1824,6 +1842,7 @@ mod tests {
             &mut resolved_transaction,
             &rpc_client,
             &signer,
+            None,
         )
         .await
         .unwrap();
@@ -1857,6 +1876,7 @@ mod tests {
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
+            None,
         )
         .await
         .unwrap();
@@ -1902,6 +1922,7 @@ mod tests {
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
+            None,
         )
         .await
         .unwrap();
@@ -1936,6 +1957,7 @@ mod tests {
             false,
             &mocked_rpc_client,
             &config,
+            None,
         )
         .await
         .unwrap();
@@ -1968,6 +1990,7 @@ mod tests {
             false,
             &mocked_rpc_client,
             &config,
+            None,
         )
         .await
         .unwrap();
@@ -2007,6 +2030,7 @@ mod tests {
             true, // payment required
             &mocked_rpc_client,
             &config,
+            None,
         )
         .await
         .unwrap();
@@ -2062,6 +2086,7 @@ mod tests {
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
+            None,
         )
         .await
         .unwrap();
