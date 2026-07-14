@@ -357,6 +357,16 @@ impl ValidationConfigBuilder {
         self.config.fee_payer_policy = policy;
         self
     }
+
+    pub fn with_cross_cluster_check(mut self, enabled: bool) -> Self {
+        self.config.cross_cluster_check = enabled;
+        self
+    }
+
+    pub fn with_cross_cluster_endpoints(mut self, endpoints: Vec<String>) -> Self {
+        self.config.cross_cluster_endpoints = endpoints;
+        self
+    }
 }
 
 pub struct KoraConfigBuilder {
