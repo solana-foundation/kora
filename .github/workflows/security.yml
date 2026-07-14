@@ -46,14 +46,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-07-13
           components: miri
       - uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cache/org.rust-lang.miri
           key: miri-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-      - run: cargo +nightly miri setup
-      - run: cargo +nightly miri test -p kora-lib --lib bundle::helper::tests
-      - run: cargo +nightly miri test -p kora-lib --lib error::tests
+      - run: cargo +nightly-2026-07-13 miri setup
+      - run: cargo +nightly-2026-07-13 miri test -p kora-lib --lib bundle::helper::tests
+      - run: cargo +nightly-2026-07-13 miri test -p kora-lib --lib error::tests
