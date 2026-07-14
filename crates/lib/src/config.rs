@@ -1380,6 +1380,9 @@ allow_create = true
         });
     }
 
+    /// Asserts load failed with `InternalServerError` and that the offending key name appears
+    /// in the message. Does not assert on serde/toml phrasing (e.g. "unknown field"), which
+    /// can change across crate versions — only that parse failed and the key is named.
     fn assert_unknown_field_error(result: Result<Config, KoraError>, field: &str) {
         match result {
             Err(KoraError::InternalServerError(msg)) => {
@@ -1388,8 +1391,8 @@ allow_create = true
                     "expected parse failure wrapper, got: {msg}"
                 );
                 assert!(
-                    msg.contains("unknown field") && msg.contains(field),
-                    "expected unknown field `{field}` in error, got: {msg}"
+                    msg.contains(field),
+                    "expected offending key `{field}` named in error, got: {msg}"
                 );
             }
             Err(e) => panic!("expected InternalServerError for unknown field `{field}`, got: {e}"),
