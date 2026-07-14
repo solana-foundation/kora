@@ -10,7 +10,7 @@ use std::str::FromStr;
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub enum PriceModel {
     Margin { margin: f64 },
     Fixed { amount: u64, token: String, strict: bool },

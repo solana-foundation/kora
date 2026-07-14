@@ -5,6 +5,7 @@ use crate::bundle::jito::constant::JITO_DEFAULT_BLOCK_ENGINE_URL;
 
 /// Jito-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct JitoConfig {
     /// Jito block engine URL for sendBundle / getBundleStatuses
     #[serde(default = "default_jito_block_engine_url")]

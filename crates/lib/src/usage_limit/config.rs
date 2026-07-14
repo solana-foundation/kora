@@ -9,6 +9,7 @@ use super::rules::{InstructionRule, TransactionRule, UsageRule};
 
 /// Unified usage limit configuration
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UsageLimitConfig {
     /// Enable per-wallet usage limiting
     pub enabled: bool,
@@ -66,7 +67,7 @@ impl UsageLimitConfig {
 /// max = 10
 /// ```
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub enum UsageLimitRuleConfig {
     /// Transaction-level limit - counts all transactions for a wallet
     Transaction {
