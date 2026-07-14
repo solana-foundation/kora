@@ -661,9 +661,6 @@ impl LookupTableUtil {
             return Ok(resolved_addresses);
         }
 
-        let mut full_address_lists: Vec<Vec<Pubkey>> =
-            Vec::with_capacity(lookup_table_lookups.len());
-
         let mut local = HashMap::new();
         let cache = alt_cache.unwrap_or(&mut local);
 
@@ -697,21 +694,10 @@ impl LookupTableUtil {
         }
 
         for lookup in lookup_table_lookups {
-            full_address_lists.push(
-                cache
-                    .get(&lookup.account_key)
-                    .ok_or_else(|| {
-                        KoraError::RpcError(format!(
-                            "Failed to fetch lookup table: {}",
-                            lookup.account_key
-                        ))
-                    })?
-                    .clone(),
-            );
-        }
+            let addresses = cache.get(&lookup.account_key).ok_or_else(|| {
+                KoraError::RpcError(format!("Failed to fetch lookup table: {}", lookup.account_key))
+            })?;
 
-        for (lookup, addresses) in lookup_table_lookups.iter().zip(full_address_lists.iter()) {
-            // Resolve writable addresses
             for &index in &lookup.writable_indexes {
                 if let Some(address) = addresses.get(index as usize) {
                     resolved_addresses.push(*address);
@@ -722,7 +708,6 @@ impl LookupTableUtil {
                 }
             }
 
-            // Resolve readonly addresses
             for &index in &lookup.readonly_indexes {
                 if let Some(address) = addresses.get(index as usize) {
                     resolved_addresses.push(*address);
