@@ -4,7 +4,7 @@ use crate::{
     state::{get_request_signer_with_signer_key, get_signer_pool},
     token::token::TokenType,
     transaction::TransactionUtil,
-    validator::cross_cluster::check_cross_cluster_mints,
+    validator::cross_cluster::probe_missing_mints,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
@@ -287,8 +287,7 @@ pub async fn find_missing_atas(
                     format!("Failed to fetch mint account for {mint}: account not found");
                 if config.validation.cross_cluster_check {
                     let mut warnings = Vec::new();
-                    check_cross_cluster_mints(
-                        rpc_client,
+                    probe_missing_mints(
                         &[mint.to_string()],
                         &config.validation.cross_cluster_endpoints,
                         &mut warnings,

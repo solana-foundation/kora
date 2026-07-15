@@ -43,14 +43,23 @@ pub(crate) async fn check_cross_cluster_mints(
         .filter_map(|((addr, _), acct)| acct.is_none().then_some(addr.clone()))
         .collect();
 
-    if missing.is_empty() {
+    probe_missing_mints(&missing, endpoints, warnings).await;
+}
+
+pub(crate) async fn probe_missing_mints(
+    missing: &[String],
+    endpoints: &[String],
+    warnings: &mut Vec<String>,
+) {
+    // No probes can be performed without configured endpoints.
+    if missing.is_empty() || endpoints.is_empty() {
         return;
     }
 
     let probe_futures: Vec<_> = endpoints
         .iter()
         .map(|rpc_url| {
-            let missing = missing.clone();
+            let missing = missing.to_vec();
             let url = rpc_url.clone();
             async move {
                 let client = RpcClient::new(url.clone());
@@ -84,7 +93,7 @@ pub(crate) async fn check_cross_cluster_mints(
         .collect();
 
     let probe_results = futures::future::join_all(probe_futures).await;
-    emit_cluster_warnings(&missing, &probe_results, warnings);
+    emit_cluster_warnings(missing, &probe_results, warnings);
 }
 
 pub(crate) fn emit_cluster_warnings(
@@ -137,6 +146,7 @@ pub(crate) fn emit_cluster_warnings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::slice::from_ref;
 
     #[test]
     fn test_missing_mint_triggers_warning() {
@@ -146,7 +156,7 @@ mod tests {
             ("testnet".into(), ProbeOutcome::Failed),
         ];
         let mut warnings = Vec::new();
-        emit_cluster_warnings(&[mint.clone()], &probe_results, &mut warnings);
+        emit_cluster_warnings(from_ref(&mint), &probe_results, &mut warnings);
 
         assert_eq!(warnings.len(), 1);
         assert!(
@@ -163,7 +173,7 @@ mod tests {
         let probe_results: Vec<(String, ProbeOutcome)> =
             vec![("devnet".into(), ProbeOutcome::Failed), ("testnet".into(), ProbeOutcome::Failed)];
         let mut warnings = Vec::new();
-        emit_cluster_warnings(&[mint.clone()], &probe_results, &mut warnings);
+        emit_cluster_warnings(from_ref(&mint), &probe_results, &mut warnings);
 
         assert_eq!(warnings.len(), 1);
         assert!(
@@ -190,7 +200,7 @@ mod tests {
             ("testnet".into(), ProbeOutcome::NotFound),
         ];
         let mut warnings = Vec::new();
-        emit_cluster_warnings(&[mint.clone()], &probe_results, &mut warnings);
+        emit_cluster_warnings(from_ref(&mint), &probe_results, &mut warnings);
 
         assert_eq!(warnings.len(), 1);
         let w = &warnings[0];
