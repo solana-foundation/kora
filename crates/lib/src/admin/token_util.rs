@@ -490,7 +490,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_find_missing_atas_cross_cluster_probe_success() {
+    async fn test_find_missing_atas_cross_cluster_probe_finds_mint() {
         let mint = Pubkey::new_unique();
 
         let mut server = mockito::Server::new_async().await;

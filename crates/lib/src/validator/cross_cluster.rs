@@ -51,8 +51,12 @@ pub(crate) async fn probe_missing_mints(
     endpoints: &[String],
     warnings: &mut Vec<String>,
 ) {
-    // No probes can be performed without configured endpoints.
-    if missing.is_empty() || endpoints.is_empty() {
+    if missing.is_empty() {
+        return;
+    }
+
+    if endpoints.is_empty() {
+        warnings.push("cross-cluster check enabled but no endpoints configured".to_string());
         return;
     }
 
