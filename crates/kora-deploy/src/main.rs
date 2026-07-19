@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
@@ -36,6 +39,15 @@ struct Args {
     /// Existing program to upgrade. Omit to deploy a fresh program.
     #[arg(long)]
     program_id: Option<Pubkey>,
+    #[arg(long, help = "Resume a previous deployment from the local state file")]
+    resume: bool,
+    #[arg(
+        long,
+        default_value_t = true,
+        action = clap::ArgAction::Set,
+        help = "Close the buffer back to the fee payer on failure. Defaults to true. Usually skipped if --resume is intended."
+    )]
+    cleanup_on_failure: bool,
 }
 
 #[tokio::main]
@@ -49,6 +61,12 @@ async fn main() -> Result<()> {
 
     match args.program_id {
         Some(program) => {
+            if args.resume {
+                bail!("--resume is currently only supported for fresh deployments, not upgrades.");
+            }
+            if !args.cleanup_on_failure {
+                log::warn!("--cleanup-on-failure=false is not supported during program upgrades and will be ignored.");
+            }
             if !program_is_live(&args.rpc_url, &program).await? {
                 bail!(
                     "program {program} is not live on-chain (never deployed or reaped); \
@@ -69,12 +87,16 @@ async fn run_deploy(args: &Args, wallet: Option<&Keypair>, user_id: String) -> R
         }
     }
 
+    let state_path = env::current_dir()?.join(".kora-deploy-state.json");
     let result = deploy(&DeployConfig {
         kora_url: &args.kora_url,
         rpc_url: &args.rpc_url,
         program_so: &args.program_so,
         user_id,
         wallet,
+        resume: args.resume,
+        cleanup_on_failure: args.cleanup_on_failure,
+        state_path,
     })
     .await?;
 

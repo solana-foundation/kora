@@ -1,6 +1,14 @@
 #![allow(deprecated)]
 
-use std::{path::Path, str::FromStr, sync::Arc, time::Duration};
+pub mod state;
+
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -9,6 +17,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_loader_v3_interface::{instruction as loader_v3, state::UpgradeableLoaderState};
 use solana_sdk::{
+    hash::hash,
     instruction::{AccountMeta, Instruction},
     message::Message,
     pubkey::Pubkey,
@@ -16,6 +25,8 @@ use solana_sdk::{
     signer::Signer,
     transaction::Transaction,
 };
+
+use crate::state::DeployState;
 
 const WRITE_CHUNK_SIZE: usize = 900;
 const BPF_LOADER_UPGRADEABLE: Pubkey =
@@ -37,6 +48,9 @@ pub struct DeployConfig<'a> {
     /// deploy registry, allowing future upgrades signed by it. Without a wallet the program
     /// is immutable through the paymaster.
     pub wallet: Option<&'a Keypair>,
+    pub resume: bool,
+    pub cleanup_on_failure: bool,
+    pub state_path: PathBuf,
 }
 
 pub struct UpgradeConfig<'a> {
@@ -62,32 +76,204 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
         CommitmentConfig::confirmed(),
     ));
 
-    let kora_pubkey = fetch_kora_pubkey(&http, cfg.kora_url).await?;
-    let program = Keypair::new();
-    let buffer = Keypair::new();
-    let bytes = std::fs::read(cfg.program_so)
+    let state_path = cfg.state_path.as_path();
+
+    macro_rules! cleanup_buffer {
+        ($msg:expr, $cfg:expr, $buffer:expr, $kora_pubkey:expr, $http:expr, $rpc:expr, $state_path:expr) => {
+            if $cfg.cleanup_on_failure {
+                log::warn!("{}, attempting to close buffer for cleanup...", $msg);
+                let close_ix = loader_v3::close_any(
+                    &$buffer.pubkey(),
+                    &$kora_pubkey,
+                    Some(&$kora_pubkey),
+                    None,
+                );
+                match submit_returning_signature(
+                    &$http,
+                    $cfg.kora_url,
+                    &$cfg.user_id,
+                    &$rpc,
+                    &$kora_pubkey,
+                    &[close_ix],
+                    &[],
+                )
+                .await
+                {
+                    Ok(_) => {
+                        if let Err(err) = fs::remove_file(&$state_path) {
+                            log::warn!(
+                                "Buffer closed successfully, but failed to delete state file: {}. Please manually delete {} to start a fresh deployment.",
+                                err,
+                                $state_path.display()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "failed to close buffer: {}; keeping state file for manual recovery",
+                            e
+                        );
+                    }
+                }
+            }
+        };
+    }
+
+    let mut state = if cfg.resume {
+        Some(DeployState::load(state_path)?.ok_or_else(|| {
+            anyhow::anyhow!(
+                "--resume was requested, but no state file was found at {}. Cannot resume.",
+                state_path.display()
+            )
+        })?)
+    } else {
+        if state_path.exists() {
+            anyhow::bail!(
+                "State file exists at {}. A previous deploy failed.\n\
+                Run with `--resume` to continue, or delete the file to start over (WARNING: deleting it orphans the on-chain buffer and leaks SOL).",
+                state_path.display()
+            );
+        }
+        None
+    };
+
+    let bytes = fs::read(cfg.program_so)
         .with_context(|| format!("reading {}", cfg.program_so.display()))?;
-    let program_data = derive_program_data_address(&program.pubkey());
-
-    let buffer_lamports = rpc
-        .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_buffer(bytes.len()))
-        .await?;
-    let create_buf = loader_v3::create_buffer(
-        &kora_pubkey,
-        &buffer.pubkey(),
-        &kora_pubkey,
-        buffer_lamports,
-        bytes.len(),
-    )?;
-    submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &create_buf, &[&buffer]).await?;
-
     let chunk_count = bytes.len().div_ceil(WRITE_CHUNK_SIZE);
-    for (i, chunk) in bytes.chunks(WRITE_CHUNK_SIZE).enumerate() {
+    let current_program_hash = hash(&bytes).to_string();
+
+    let (program, buffer, program_data, kora_pubkey, mut written_chunks) = if let Some(ref st) =
+        state
+    {
+        let program = Keypair::try_from(st.program_keypair.as_slice())
+            .context("invalid program keypair in state")?;
+        let buffer = Keypair::try_from(st.buffer_keypair.as_slice())
+            .context("invalid buffer keypair in state")?;
+        let program_data =
+            Pubkey::from_str(&st.program_data).context("invalid program data pubkey in state")?;
+        let kora_pubkey =
+            Pubkey::from_str(&st.kora_pubkey).context("invalid kora pubkey in state")?;
+        log::info!("resuming deployment from state file, skipping {} chunks", st.written_chunks);
+        (program, buffer, program_data, kora_pubkey, st.written_chunks)
+    } else {
+        let kora_pubkey = fetch_kora_pubkey(&http, cfg.kora_url).await?;
+        let program = Keypair::new();
+        let buffer = Keypair::new();
+
+        let buffer_lamports = rpc
+            .get_minimum_balance_for_rent_exemption(UpgradeableLoaderState::size_of_buffer(
+                bytes.len(),
+            ))
+            .await?;
+        let create_buf = loader_v3::create_buffer(
+            &kora_pubkey,
+            &buffer.pubkey(),
+            &kora_pubkey,
+            buffer_lamports,
+            bytes.len(),
+        )?;
+        submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &create_buf, &[&buffer])
+            .await?;
+
+        let program_data = derive_program_data_address(&program.pubkey());
+        let new_state = DeployState {
+            program_keypair: program.to_bytes().to_vec(),
+            buffer_keypair: buffer.to_bytes().to_vec(),
+            program_data: program_data.to_string(),
+            written_chunks: 0,
+            kora_pubkey: kora_pubkey.to_string(),
+            program_hash: current_program_hash.clone(),
+        };
+        if let Err(e) = new_state.save(state_path) {
+            cleanup_buffer!(
+                "failed to save initial state",
+                cfg,
+                buffer,
+                kora_pubkey,
+                http,
+                rpc,
+                state_path
+            );
+            return Err(e.context("failed to save initial deploy state"));
+        }
+        state = Some(new_state);
+
+        (program, buffer, program_data, kora_pubkey, 0)
+    };
+
+    if let Some(ref st) = state {
+        if st.written_chunks > chunk_count {
+            cleanup_buffer!(
+                "written_chunks exceeds chunk_count (corrupted state or smaller .so file)",
+                cfg,
+                buffer,
+                kora_pubkey,
+                http,
+                rpc,
+                state_path
+            );
+            if cfg.cleanup_on_failure {
+                anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup was attempted.", st.written_chunks, chunk_count);
+            } else {
+                anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup skipped (--cleanup-on-failure=false).", st.written_chunks, chunk_count);
+            }
+        }
+        if st.program_hash != current_program_hash {
+            cleanup_buffer!(
+                "hash mismatch detected during resume",
+                cfg,
+                buffer,
+                kora_pubkey,
+                http,
+                rpc,
+                state_path
+            );
+            if cfg.cleanup_on_failure {
+                anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup was attempted.");
+            } else {
+                anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup skipped (--cleanup-on-failure=false).");
+            }
+        }
+    }
+
+    for (i, chunk) in bytes.chunks(WRITE_CHUNK_SIZE).enumerate().skip(written_chunks) {
         let offset = (i * WRITE_CHUNK_SIZE) as u32;
         let ix = loader_v3::write(&buffer.pubkey(), &kora_pubkey, offset, chunk.to_vec());
-        submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &[ix], &[]).await?;
-        if (i + 1) % 25 == 0 || i + 1 == chunk_count {
-            log::info!("wrote chunk {}/{}", i + 1, chunk_count);
+
+        match submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &[ix], &[]).await {
+            Ok(_) => {
+                written_chunks += 1;
+                if let Some(ref mut st) = state {
+                    st.written_chunks = written_chunks;
+                    if let Err(e) = st.save(state_path) {
+                        cleanup_buffer!(
+                            "failed to save chunk state",
+                            cfg,
+                            buffer,
+                            kora_pubkey,
+                            http,
+                            rpc,
+                            state_path
+                        );
+                        return Err(e.context("failed to save deploy state after chunk write"));
+                    }
+                }
+                if (i + 1) % 25 == 0 || i + 1 == chunk_count {
+                    log::info!("wrote chunk {}/{}", i + 1, chunk_count);
+                }
+            }
+            Err(e) => {
+                cleanup_buffer!(
+                    "chunk write failed",
+                    cfg,
+                    buffer,
+                    kora_pubkey,
+                    http,
+                    rpc,
+                    state_path
+                );
+                return Err(e.context("failed to write chunk"));
+            }
         }
     }
 
@@ -112,8 +298,53 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
         ));
         deploy_signers.push(wallet);
     }
-    submit(&http, cfg.kora_url, &cfg.user_id, &rpc, &kora_pubkey, &deploy_ixs, &deploy_signers)
-        .await?;
+
+    // Check if the program is live (programdata exists) to handle the timeout-but-success scenario.
+    // NOTE: the 36-byte program stub survives forever even after reaping; only programdata
+    // disappearing means the program is gone, so we must check programdata, not the stub.
+    if rpc
+        .get_account_with_commitment(&program_data, CommitmentConfig::confirmed())
+        .await?
+        .value
+        .is_some()
+    {
+        log::info!("Program {} is already live, skipping deployment.", program.pubkey());
+        fs::remove_file(state_path).ok();
+    } else {
+        match submit(
+            &http,
+            cfg.kora_url,
+            &cfg.user_id,
+            &rpc,
+            &kora_pubkey,
+            &deploy_ixs,
+            &deploy_signers,
+        )
+        .await
+        {
+            Ok(_) => {
+                fs::remove_file(state_path).ok();
+            }
+            Err(e) => {
+                cleanup_buffer!(
+                    "deploy transaction failed",
+                    cfg,
+                    buffer,
+                    kora_pubkey,
+                    http,
+                    rpc,
+                    state_path
+                );
+                return Err(anyhow::anyhow!(
+                    "Failed to submit deploy transaction for {}: {}. \n\
+                    Verify status: `solana program show {}`",
+                    program.pubkey(),
+                    e,
+                    program.pubkey()
+                ));
+            }
+        }
+    }
 
     Ok(DeployResult {
         kora_pubkey,
@@ -133,7 +364,7 @@ pub async fn upgrade(cfg: &UpgradeConfig<'_>) -> Result<Signature> {
     let kora_pubkey = fetch_kora_pubkey(&http, cfg.kora_url).await?;
     assert_registered_owner(&rpc, &DEFAULT_REGISTRY_PROGRAM, &cfg.program, &cfg.wallet.pubkey())
         .await?;
-    let bytes = std::fs::read(cfg.program_so)
+    let bytes = fs::read(cfg.program_so)
         .with_context(|| format!("reading {}", cfg.program_so.display()))?;
 
     let buffer = Keypair::new();
