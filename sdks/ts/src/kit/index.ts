@@ -4,7 +4,7 @@ import {
     transactionPlanExecutor as transactionPlanExecutorPlugin,
     transactionPlanner as transactionPlannerPlugin,
 } from '@solana/kit-plugin-instruction-plan';
-import { solanaRpcConnection } from '@solana/kit-plugin-rpc';
+import { rpcGetMinimumBalance, solanaRpcConnection } from '@solana/kit-plugin-rpc';
 import { identity, payer } from '@solana/kit-plugin-signer';
 import {
     estimateAndUpdateProvisoryComputeUnitLimitFactory,
@@ -99,7 +99,8 @@ export function kora(config: KoraBundleConfig) {
         return pipe(
             client,
             payer(payerSigner),
-            solanaRpcConnection(config.rpcUrl),
+            solanaRpcConnection({ rpcUrl: config.rpcUrl }),
+            rpcGetMinimumBalance(),
             koraPlugin({
                 endpoint: config.endpoint,
                 koraClient,
