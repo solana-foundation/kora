@@ -6,6 +6,11 @@ export default [
         ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'docs/**', 'docs-html/**'],
     },
     {
+        rules: {
+            'typescript-sort-keys/interface': 'off',
+        },
+    },
+    {
         files: ['test/**/*.ts'],
         rules: {
             '@typescript-eslint/no-explicit-any': 'off',

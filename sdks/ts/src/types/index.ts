@@ -269,7 +269,7 @@ export type PriceSource = 'Jupiter' | 'Mock';
  */
 export interface ValidationConfig {
     /** List of allowed Solana program IDs, or "All" to allow any program. */
-    allowed_programs: 'All' | string[];
+    allowed_programs: string[] | 'All';
     /** List of SPL tokens accepted for paid transactions */
     allowed_spl_paid_tokens: string[];
     /** List of allowed token mint addresses for fee payment */
@@ -665,7 +665,7 @@ export interface KitSignAndSendBundleResponse {
 /** Plugin validation config with Kit Address types */
 export interface KitValidationConfig {
     /** List of allowed Solana program IDs, or "All" to allow any program. */
-    allowed_programs: 'All' | Address[];
+    allowed_programs: Address[] | 'All';
     /** List of SPL tokens accepted for paid transactions */
     allowed_spl_paid_tokens: Address[];
     /** List of allowed token mint addresses for fee payment */

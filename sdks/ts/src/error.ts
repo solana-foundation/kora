@@ -58,7 +58,7 @@ export class KoraError extends Error {
         const finalMessage = message ?? 'Unknown error';
         super(`Kora Error ${finalCode}: ${finalMessage}`);
         this.name = 'KoraError';
-        this.code = finalCode as KoraErrorCode;
+        this.code = finalCode;
         this.data = data;
 
         // Ensure proper stack trace in environments that support Error.captureStackTrace
