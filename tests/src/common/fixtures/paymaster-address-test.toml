@@ -1,6 +1,7 @@
 # Payment address test configuration file
 [kora]
 rate_limit = 100
+cors_allow_origins = ["*"]
 payment_address = "CWvWnVwqAb9HzqwCGkn4purGEUuu27aNsPQM252uLerV"
 
 # Cache configuration - disabled for testing

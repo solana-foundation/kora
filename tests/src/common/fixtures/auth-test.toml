@@ -1,9 +1,11 @@
 # Auth test configuration file
 [kora]
 rate_limit = 100
+cors_allow_origins = ["*"]
 
 [kora.auth]
-api_key = "test-api-key-123"
+# api_key = "test-api-key-123"  # Deprecated: use api_keys array instead
+api_keys = ["test-api-key-123"]  # Supports multiple API keys
 hmac_secret = "test-hmac-secret-456"
 
 # Cache configuration - disabled for testing

@@ -1550,6 +1550,8 @@ api_keys = ["", "  "]
             )
             .build_config();
         assert_unknown_field_error(result, "unknown_rule_field");
+    }
+
     #[test]
     #[serial_test::serial]
     fn test_env_overridden_fields_multiple_keys_backup_dropped() {
