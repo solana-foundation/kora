@@ -8,7 +8,7 @@ use crate::{
         Token2022InstructionPolicy, ValidationConfig,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
-    fee::price::PriceConfig,
+    fee::price::{PriceConfig, PriceModel},
     oracle::PriceSource,
     signer::config::{
         MemorySignerConfig, OpenfortSignerConfig, PrivySignerConfig, SelectionStrategy,
@@ -172,7 +172,7 @@ impl ConfigMockBuilder {
         self
     }
 
-    pub fn with_price_model(mut self, price_model: crate::fee::price::PriceModel) -> Self {
+    pub fn with_price_model(mut self, price_model: PriceModel) -> Self {
         self.config.validation.price.model = price_model;
         self
     }

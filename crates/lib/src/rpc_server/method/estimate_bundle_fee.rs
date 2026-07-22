@@ -125,6 +125,7 @@ mod tests {
     use crate::{
         config::TransactionPluginType,
         fee::price::{PriceConfig, PriceModel},
+        oracle::PriceSource,
         tests::{
             account_mock::{create_mock_token2022_mint_with_extensions, create_mock_token_account},
             cache_mock::MockCacheUtil,
@@ -139,6 +140,11 @@ mod tests {
     use solana_message::{Message, VersionedMessage};
     use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signer};
     use solana_system_interface::instruction::transfer;
+    use spl_associated_token_account_interface::{
+        address::get_associated_token_address_with_program_id,
+        instruction::create_associated_token_account_idempotent,
+    };
+    use spl_token_2022_interface::extension::ExtensionType;
 
     #[tokio::test]
     async fn test_estimate_bundle_fee_empty_bundle() {
@@ -414,8 +420,8 @@ mod tests {
         let _m = ConfigMockBuilder::new()
             .with_bundle_enabled(true)
             .with_cache_enabled(true)
-            .with_price_model(crate::fee::price::PriceModel::Margin { margin: 0.1 })
-            .with_price_source(crate::oracle::PriceSource::Mock)
+            .with_price_model(PriceModel::Margin { margin: 0.1 })
+            .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![
                 "11111111111111111111111111111111".to_string(), // System Program
                 "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(), // Token Program
@@ -429,21 +435,13 @@ mod tests {
         let sender = solana_sdk::signature::Keypair::new();
         let token2022_id = spl_token_2022_interface::id();
 
-        let payment_ata = spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
-            &fee_payer,
-            &mint,
-            &token2022_id,
-        );
-        let sender_ata = spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
-            &sender.pubkey(),
-            &mint,
-            &token2022_id,
-        );
+        let payment_ata =
+            get_associated_token_address_with_program_id(&fee_payer, &mint, &token2022_id);
+        let sender_ata =
+            get_associated_token_address_with_program_id(&sender.pubkey(), &mint, &token2022_id);
 
-        let mint_account = create_mock_token2022_mint_with_extensions(
-            6,
-            vec![spl_token_2022_interface::extension::ExtensionType::TransferFeeConfig],
-        );
+        let mint_account =
+            create_mock_token2022_mint_with_extensions(6, vec![ExtensionType::TransferFeeConfig]);
         let sender_ata_account = create_mock_token_account(&sender.pubkey(), &mint);
 
         // Mock CacheUtil for getting accounts
@@ -471,7 +469,7 @@ mod tests {
                 .build(),
         );
 
-        let ata_create_ix = spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+        let ata_create_ix = create_associated_token_account_idempotent(
             &sender.pubkey(),
             &fee_payer,
             &mint,

@@ -179,8 +179,10 @@ impl BundleProcessor {
         let overcount = if (txs_missing_payment_count as usize) == resolved_transactions.len()
             && txs_missing_payment_count > 0
         {
+            // If every transaction misses a payment we only charge the penalty once since a single payment covers the entire bundle
             (txs_missing_payment_count - 1) * ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION
         } else {
+            // If any transaction includes a valid payment we waive the penalty for the entire bundle
             txs_missing_payment_count * ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION
         };
 

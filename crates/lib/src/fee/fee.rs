@@ -110,15 +110,18 @@ impl FeeConfigUtil {
         let mut has_payment = false;
         let mut total_transfer_fees = 0u64;
 
-        let all_instructions = bundle_instructions
-            .map(|instrs| instrs.to_vec())
-            .unwrap_or_else(|| resolved_transaction.all_instructions.clone());
-        let parsed_spl_instructions = resolved_transaction.get_or_parse_spl_instructions()?;
-
-        for instruction in parsed_spl_instructions
+        let spl_transfers = resolved_transaction
+            .get_or_parse_spl_instructions()?
             .get(&ParsedSPLInstructionType::SplTokenTransfer)
-            .unwrap_or(&vec![])
-        {
+            .cloned()
+            .unwrap_or_default();
+
+        let all_instructions: &[Instruction] = match bundle_instructions {
+            Some(instrs) => instrs,
+            None => &resolved_transaction.all_instructions,
+        };
+
+        for instruction in &spl_transfers {
             if let ParsedSPLInstructionData::SplTokenTransfer {
                 mint,
                 amount,
@@ -140,7 +143,7 @@ impl FeeConfigUtil {
                     rpc_client,
                     token_program.as_ref(),
                     destination_address,
-                    &all_instructions,
+                    all_instructions,
                 )
                 .await?
                 .map(|(owner, _, _)| owner);
