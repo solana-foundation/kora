@@ -3578,10 +3578,20 @@ impl IxUtils {
                         spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferExtension
                         | spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferFeeExtension
                         | spl_token_2022_interface::instruction::TokenInstruction::ConfidentialMintBurnExtension => {
-                            return Err(KoraError::InvalidTransaction(
-                                "Confidential Token-2022 instructions are not supported"
-                                    .to_string(),
-                            ));
+                            let allowed = crate::state::get_config()
+                                .map(|c| c.validation.token_2022.allow_confidential_transfers)
+                                .unwrap_or(false);
+                            if allowed {
+                                Self::push_unhandled_token2022_extension(
+                                    &mut parsed_instructions,
+                                    instruction,
+                                );
+                            } else {
+                                return Err(KoraError::InvalidTransaction(
+                                    "Confidential Token-2022 instructions are not supported"
+                                        .to_string(),
+                                ));
+                            }
                         }
                         _ => {
                             Self::push_unhandled_token2022_extension(
