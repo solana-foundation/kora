@@ -430,6 +430,8 @@ pub struct Token2022Config {
     pub blocked_account_extensions: Vec<String>,
     #[serde(default)]
     pub transfer_hook_policy: TransferHookPolicy,
+    #[serde(default)]
+    pub allow_confidential_transfers: bool,
     #[serde(skip)]
     parsed_blocked_mint_extensions: Option<Vec<ExtensionType>>,
     #[serde(skip)]
