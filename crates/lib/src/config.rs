@@ -1403,9 +1403,7 @@ allow_create = true
     #[test]
     fn test_deny_unknown_fields_misspelled_fee_payer_policy_key() {
         let result = ConfigBuilder::new()
-            .with_custom_section(
-                "[validation.fee_payer_policy.system]\nalow_transfer = false\n",
-            )
+            .with_custom_section("[validation.fee_payer_policy.system]\nalow_transfer = false\n")
             .build_config();
         assert_unknown_field_error(result, "alow_transfer");
     }
@@ -1414,26 +1412,21 @@ allow_create = true
     fn test_deny_unknown_fields_key_under_wrong_table() {
         // allow_burn belongs under spl_token / token_2022, not system
         let result = ConfigBuilder::new()
-            .with_custom_section(
-                "[validation.fee_payer_policy.system]\nallow_burn = false\n",
-            )
+            .with_custom_section("[validation.fee_payer_policy.system]\nallow_burn = false\n")
             .build_config();
         assert_unknown_field_error(result, "allow_burn");
     }
 
     #[test]
     fn test_deny_unknown_fields_unknown_top_level_table() {
-        let result = ConfigBuilder::new()
-            .with_custom_section("[unknown_section]\nfoo = 1\n")
-            .build_config();
+        let result =
+            ConfigBuilder::new().with_custom_section("[unknown_section]\nfoo = 1\n").build_config();
         assert_unknown_field_error(result, "unknown_section");
     }
 
     #[test]
     fn test_deny_unknown_fields_unknown_kora_key() {
-        let result = ConfigBuilder::new()
-            .with_custom_section("typo_key = 1\n")
-            .build_config();
+        let result = ConfigBuilder::new().with_custom_section("typo_key = 1\n").build_config();
         // typo_key is appended after [kora], so it lands in KoraConfig
         assert_unknown_field_error(result, "typo_key");
     }
