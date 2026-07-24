@@ -1380,9 +1380,7 @@ allow_create = true
         });
     }
 
-    /// Asserts load failed with `InternalServerError` and that the offending key name appears
-    /// in the message. Does not assert on serde/toml phrasing (e.g. "unknown field"), which
-    /// can change across crate versions — only that parse failed and the key is named.
+    // Match on the key name, not serde/toml phrasing (unstable across versions).
     fn assert_unknown_field_error(result: Result<Config, KoraError>, field: &str) {
         match result {
             Err(KoraError::InternalServerError(msg)) => {
