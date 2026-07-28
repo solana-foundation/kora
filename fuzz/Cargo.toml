@@ -1,0 +1,30 @@
+[package]
+name = "kora-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bincode = "1.3.3"
+solana-sdk = "3.0.0"
+kora-lib = { path = "../crates/lib" }
+
+[[bin]]
+name = "parse_transaction"
+path = "fuzz_targets/parse_transaction.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_b64_transaction"
+path = "fuzz_targets/decode_b64_transaction.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

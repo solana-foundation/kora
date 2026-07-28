@@ -6018,3 +6018,114 @@ mod tests {
             .is_err());
     }
 }
+
+#[cfg(test)]
+mod fee_payer_policy_props {
+    use super::*;
+    use crate::{
+        config::FeePayerPolicy, tests::config_mock::ConfigMockBuilder, transaction::TransactionUtil,
+    };
+    use proptest::prelude::*;
+    use solana_message::{Message, VersionedMessage};
+    use solana_system_interface::{
+        instruction::{allocate, assign, create_account, transfer},
+        program::ID as SYSTEM_PROGRAM_ID,
+    };
+
+    #[derive(Debug, Clone, Copy)]
+    enum SystemRole {
+        Transfer,
+        Assign,
+        Allocate,
+        CreateAccount,
+    }
+
+    const SYSTEM_ROLES: [SystemRole; 4] =
+        [SystemRole::Transfer, SystemRole::Assign, SystemRole::Allocate, SystemRole::CreateAccount];
+
+    fn role_flag(role: SystemRole, policy: &FeePayerPolicy) -> bool {
+        match role {
+            SystemRole::Transfer => policy.system.allow_transfer,
+            SystemRole::Assign => policy.system.allow_assign,
+            SystemRole::Allocate => policy.system.allow_allocate,
+            SystemRole::CreateAccount => policy.system.allow_create_account,
+        }
+    }
+
+    fn instruction_for(role: SystemRole, actor: &Pubkey) -> solana_sdk::instruction::Instruction {
+        match role {
+            SystemRole::Transfer => transfer(actor, &Pubkey::new_unique(), 1_000),
+            SystemRole::Assign => assign(actor, &SYSTEM_PROGRAM_ID),
+            SystemRole::Allocate => allocate(actor, 8),
+            SystemRole::CreateAccount => {
+                create_account(actor, &Pubkey::new_unique(), 1_000, 8, &SYSTEM_PROGRAM_ID)
+            }
+        }
+    }
+
+    fn policy_from(transfer: bool, assign: bool, allocate: bool, create: bool) -> FeePayerPolicy {
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_transfer = transfer;
+        policy.system.allow_assign = assign;
+        policy.system.allow_allocate = allocate;
+        policy.system.allow_create_account = create;
+        policy
+    }
+
+    fn validate(
+        policy: FeePayerPolicy,
+        fee_payer: Pubkey,
+        ix: solana_sdk::instruction::Instruction,
+    ) -> Result<(), KoraError> {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        validator.validate_fee_payer_usage(&config, &mut resolved)
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+
+        #[test]
+        fn fee_payer_role_gated_iff_flag_off(
+            role_idx in 0usize..SYSTEM_ROLES.len(),
+            actor_is_fee_payer in any::<bool>(),
+            allow_transfer in any::<bool>(),
+            allow_assign in any::<bool>(),
+            allow_allocate in any::<bool>(),
+            allow_create in any::<bool>(),
+        ) {
+            let role = SYSTEM_ROLES[role_idx];
+            let policy = policy_from(allow_transfer, allow_assign, allow_allocate, allow_create);
+            let fee_payer = Pubkey::new_unique();
+            let actor = if actor_is_fee_payer { fee_payer } else { Pubkey::new_unique() };
+
+            let flag = role_flag(role, &policy);
+            let result = validate(policy, fee_payer, instruction_for(role, &actor));
+
+            if !actor_is_fee_payer {
+                prop_assert!(
+                    result.is_ok(),
+                    "{role:?} by a non-fee-payer must never be gated, got {result:?}"
+                );
+            } else if flag {
+                prop_assert!(
+                    result.is_ok(),
+                    "{role:?} by fee payer must pass when its flag is on, got {result:?}"
+                );
+            } else {
+                prop_assert!(
+                    result.is_err(),
+                    "{role:?} by fee payer must be rejected when its flag is off"
+                );
+            }
+        }
+    }
+}
