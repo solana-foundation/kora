@@ -368,7 +368,7 @@ impl TransactionValidator {
                 "SPL Token Burn", "Token2022 Token Burn");
 
             validate_spl!(self, spl_instructions, SplTokenCloseAccount,
-                ParsedSPLInstructionData::SplTokenCloseAccount { owner, multisig_signers, is_2022 } => { owner, multisig_signers, is_2022 },
+                ParsedSPLInstructionData::SplTokenCloseAccount { owner, multisig_signers, is_2022, .. } => { owner, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_close_account,
                 self.fee_payer_policy.token_2022.allow_close_account,
                 "SPL Token Close Account", "Token2022 Token Close Account");
@@ -2502,6 +2502,48 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_close_account_rent_above_max_allowed_lamports_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let closed_account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let rent_account = AccountMockBuilder::new().with_lamports(2_000_000).build();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_close_account = true;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+
+        let rpc_client = RpcMockBuilder::new().with_account_info(&rent_account).build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let close_ix = spl_token_2022_interface::instruction::close_account(
+            &spl_token_2022_interface::id(),
+            &closed_account,
+            &recipient,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_calculate_total_outflow() {
         let fee_payer = Pubkey::new_unique();
         let config = ConfigMockBuilder::new()
@@ -2768,7 +2810,8 @@ mod tests {
 
         // Test with allow_close_account = true
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let closed_account = AccountMockBuilder::new().with_lamports(5_000).build();
+        let rpc_client = RpcMockBuilder::new().with_account_info(&closed_account).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_close_account = true;
         setup_spl_config_with_policy(policy);
@@ -2788,7 +2831,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        // Should pass because allow_close_account is true by default
+        // Should pass because allow_close_account is true and the rent is within max_allowed_lamports
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await

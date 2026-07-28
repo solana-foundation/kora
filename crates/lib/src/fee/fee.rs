@@ -664,6 +664,45 @@ impl FeeConfigUtil {
             })?;
         }
 
+        // A fee-payer-authorized close to a third party moves the closed account's rent out.
+        let close_accounts = spl_instructions
+            .get(&ParsedSPLInstructionType::SplTokenCloseAccount)
+            .unwrap_or(&empty_vec);
+        for instruction in close_accounts {
+            if let ParsedSPLInstructionData::SplTokenCloseAccount {
+                owner,
+                account,
+                destination,
+                ..
+            } = instruction
+            {
+                let is_fee_payer_authority = *owner == *fee_payer_pubkey;
+                let is_fee_payer_recipient = *destination == *fee_payer_pubkey;
+
+                if !is_fee_payer_authority && !is_fee_payer_recipient {
+                    continue;
+                }
+
+                if is_fee_payer_authority && is_fee_payer_recipient {
+                    continue;
+                }
+
+                let lamports = rpc_client.get_account(account).await?.lamports;
+
+                if is_fee_payer_recipient {
+                    total = total.checked_sub(lamports as i128).ok_or_else(|| {
+                        log::error!("Inflow calculation overflow in SplTokenCloseAccount");
+                        KoraError::ValidationError("Inflow calculation overflow".to_string())
+                    })?;
+                } else {
+                    total = total.checked_add(lamports as i128).ok_or_else(|| {
+                        log::error!("Outflow calculation overflow in SplTokenCloseAccount");
+                        KoraError::ValidationError("Outflow calculation overflow".to_string())
+                    })?;
+                }
+            }
+        }
+
         Ok(total)
     }
 }
@@ -1439,6 +1478,118 @@ mod tests {
         assert_eq!(
             outflow, -2_000_000,
             "ALT close into the fee payer from an unrelated authority should be treated as inflow"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_close_account() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let closed_account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let other_authority = Pubkey::new_unique();
+        let rent_account = AccountMockBuilder::new().with_lamports(2_157_600).build();
+        let config = get_config().unwrap();
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &closed_account,
+            &recipient,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 2_157_600,
+            "Fee-payer-authorized close to a third party should count the closed-account rent as outflow"
+        );
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &closed_account,
+            &fee_payer,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 0, "Close back to the fee payer should be neutral");
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_2022_interface::instruction::close_account(
+            &spl_token_2022_interface::id(),
+            &closed_account,
+            &fee_payer,
+            &other_authority,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, -2_157_600,
+            "Close into the fee payer from an unrelated authority should be net inflow"
+        );
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &closed_account,
+            &recipient,
+            &other_authority,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 0,
+            "Close where the fee payer is neither authority nor recipient should be zero"
         );
     }
 

@@ -284,10 +284,12 @@ async fn test_close_account_policy_violation() {
         .await
         .expect("Failed to create token account");
 
+    // Close back to the fee payer (outflow-neutral) so this isolates the allow_close_account
+    // policy check; a close to a third party would trip max_allowed_lamports on the rent first.
     let close_account_instruction = token_instruction::close_account(
         &spl_token_interface::id(),
         &fee_payer_token_account.pubkey(),
-        &setup.recipient_pubkey,
+        &setup.fee_payer_keypair.pubkey(),
         &setup.fee_payer_keypair.pubkey(),
         &[&setup.fee_payer_keypair.pubkey()],
     )
