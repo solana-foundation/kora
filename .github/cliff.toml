@@ -18,9 +18,17 @@ body = """
 trim = true
 
 [git]
+tag_pattern = "^v[0-9]"
 conventional_commits = true
 filter_unconventional = true
+commit_preprocessors = [
+  # Strip issue IDs from changelog entries; they live in historical commit subjects only.
+  { pattern = "\\s*\\(KORA-[0-9/]+\\)", replace = "" },
+]
 commit_parsers = [
+  # Skip housekeeping and non-library scopes regardless of type: dependency bumps and CI/build
+  # tweaks land as fix(deps)/fix(ci), and kora-deploy/examples aren't kora-lib/kora-cli changes.
+  { message = "^\\w+\\((deps(-dev)?|ci|build|kora-deploy|devnet-deploy-paymaster|examples)\\)", skip = true },
   { message = "^feat", group = "Features" },
   { message = "^fix", group = "Bug Fixes" },
   { message = "^perf", group = "Performance" },
