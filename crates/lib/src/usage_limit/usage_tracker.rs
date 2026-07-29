@@ -185,6 +185,7 @@ impl UsageTracker {
             .unwrap_or(&vec![])
         {
             if let ParsedSPLInstructionData::SplTokenTransfer {
+                source_address,
                 destination_address,
                 owner,
                 multisig_signers,
@@ -220,7 +221,24 @@ impl UsageTracker {
                     )
                     .await?
                 {
-                    return Ok(Some(*owner));
+                    // Key usage by the funding wallet (the source token account's owner), not the
+                    // transfer authority, which can be a rotatable delegate or multisig member.
+                    let source_account = match CacheUtil::get_account(
+                        config,
+                        rpc_client,
+                        source_address,
+                        true,
+                    )
+                    .await
+                    {
+                        Ok(account) => account,
+                        Err(e) => return Err(e),
+                    };
+                    let source_token_program =
+                        TokenType::get_token_program_from_owner(&source_account.owner)?;
+                    let source_token_account =
+                        source_token_program.unpack_token_account(&source_account.data)?;
+                    return Ok(Some(source_token_account.owner()));
                 }
             }
         }
@@ -1048,7 +1066,9 @@ mod tests {
         let destination_ata = Pubkey::new_unique();
         let mint = Pubkey::new_unique();
         let destination_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
-        let rpc_client = RpcMockBuilder::new().with_account_info(&destination_account).build();
+        let source_account = create_mock_token_account(&owner.pubkey(), &mint);
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&destination_account, &source_account]);
         let config = ConfigMockBuilder::new().build();
 
         let mut tx = make_spl_transfer_transaction(
@@ -1073,6 +1093,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_extract_user_delegated_transfer_returns_source_owner_not_delegate() {
+        let store = Arc::new(InMemoryUsageStore::new());
+        let tracker = UsageTracker::new(true, store, vec![], HashSet::new(), false);
+
+        let fee_payer = Keypair::new();
+        let source_owner = Pubkey::new_unique();
+        let delegate = Keypair::new();
+        let destination_ata = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let destination_account = create_mock_token_account(&fee_payer.pubkey(), &mint);
+        let source_account = create_mock_token_account(&source_owner, &mint);
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&destination_account, &source_account]);
+        let config = ConfigMockBuilder::new().build();
+
+        // The transfer authority is a delegate (signed), but the source account is owned by
+        // source_owner. Usage identity must be the funding wallet, not the rotatable delegate.
+        let mut tx = make_spl_transfer_transaction(
+            &delegate.pubkey(),
+            &[],
+            &[&delegate],
+            destination_ata,
+            &fee_payer,
+        );
+
+        let result = tracker
+            .extract_user_from_payment_instruction(
+                &mut tx,
+                &config,
+                &fee_payer.pubkey(),
+                &rpc_client,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, Some(source_owner));
+        assert_ne!(result, Some(delegate.pubkey()));
+    }
+
+    #[tokio::test]
     async fn test_extract_user_multisig_owner_returns_owner_when_threshold_is_met() {
         let store = Arc::new(InMemoryUsageStore::new());
         let tracker = UsageTracker::new(true, store, vec![], HashSet::new(), false);
@@ -1089,8 +1149,12 @@ mod tests {
             2,
             &[signer_one.pubkey(), signer_two.pubkey(), signer_three.pubkey()],
         );
-        let rpc_client = RpcMockBuilder::new()
-            .build_with_sequential_accounts(vec![&destination_account, &multisig_account]);
+        let source_account = create_mock_token_account(&multisig_owner, &mint);
+        let rpc_client = RpcMockBuilder::new().build_with_sequential_accounts(vec![
+            &destination_account,
+            &multisig_account,
+            &source_account,
+        ]);
         let config = ConfigMockBuilder::new().build();
 
         let mut tx = make_spl_transfer_transaction(
