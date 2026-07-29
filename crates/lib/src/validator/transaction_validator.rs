@@ -327,18 +327,25 @@ impl TransactionValidator {
             self.fee_payer_policy.system.allow_allocate, "System Allocate");
 
         validate_system!(self, system_instructions, SystemCreateAccount,
-        ParsedSystemInstructionData::SystemCreateAccount { payer, owner, .. } => payer,
-        self.fee_payer_policy.system.allow_create_account, "System Create Account", {
-            self.validate_create_account_owner(owner)?;
-        });
+            ParsedSystemInstructionData::SystemCreateAccount { payer, .. } => payer,
+            self.fee_payer_policy.system.allow_create_account, "System Create Account");
 
         // Prefund lets the fee payer be the account created (bricked), not just the funder above.
-        // Re-run the same gate keyed on new_account.
+        // Re-run the same policy gate keyed on new_account.
         validate_system!(self, system_instructions, SystemCreateAccount,
-        ParsedSystemInstructionData::SystemCreateAccount { new_account, owner, .. } => new_account,
-        self.fee_payer_policy.system.allow_create_account, "System Create Account", {
-            self.validate_create_account_owner(owner)?;
-        });
+            ParsedSystemInstructionData::SystemCreateAccount { new_account, .. } => new_account,
+            self.fee_payer_policy.system.allow_create_account, "System Create Account");
+
+        // Owner allowlist/blocklist holds for every CreateAccount owner in a Kora-signed tx, not
+        // only when Kora is the funding payer or the created account.
+        for instruction in system_instructions
+            .get(&ParsedSystemInstructionType::SystemCreateAccount)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedSystemInstructionData::SystemCreateAccount { owner, .. } = instruction {
+                self.validate_create_account_owner(owner)?;
+            }
+        }
 
         validate_system!(self, system_instructions, SystemInitializeNonceAccount,
             ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_authority, .. } => nonce_authority,
@@ -3411,6 +3418,45 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_create_account_with_seed_owner_checked_when_kora_is_not_create_payer() {
+        use solana_system_interface::instruction::create_account_with_seed;
+
+        let fee_payer = Pubkey::new_unique(); // Kora, the sponsor / signer
+        let attacker = Pubkey::new_unique(); // the CreateAccountWithSeed `from`/payer, not Kora
+        let base = Pubkey::new_unique();
+        let new_account = Pubkey::new_unique();
+        let off_policy_owner = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = true;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Kora sponsors a CreateAccountWithSeed funded by the attacker. The owner must still be
+        // checked even though Kora is not the create payer.
+        let instruction = create_account_with_seed(
+            &attacker,
+            &new_account,
+            &base,
+            "seed",
+            1000,
+            100,
+            &off_policy_owner,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not in the allowed programs list"));
     }
 
     #[tokio::test]
