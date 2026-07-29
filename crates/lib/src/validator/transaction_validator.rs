@@ -326,23 +326,30 @@ impl TransactionValidator {
             ParsedSystemInstructionData::SystemAllocate { account } => account,
             self.fee_payer_policy.system.allow_allocate, "System Allocate");
 
-        validate_system!(self, system_instructions, SystemCreateAccount,
-            ParsedSystemInstructionData::SystemCreateAccount { payer, .. } => payer,
-            self.fee_payer_policy.system.allow_create_account, "System Create Account");
-
-        // Prefund lets the fee payer be the account created (bricked), not just the funder above.
-        // Re-run the same policy gate keyed on new_account.
-        validate_system!(self, system_instructions, SystemCreateAccount,
-            ParsedSystemInstructionData::SystemCreateAccount { new_account, .. } => new_account,
-            self.fee_payer_policy.system.allow_create_account, "System Create Account");
-
-        // Owner allowlist/blocklist holds for every CreateAccount owner in a Kora-signed tx, not
-        // only when Kora is the funding payer or the created account.
+        // allow_create_account gates Kora participating as the funder (payer), the seeded base
+        // signer, or the account being created (prefund brick). The owner allowlist/blocklist
+        // holds for every CreateAccount owner in a Kora-signed tx regardless of Kora's role.
         for instruction in system_instructions
             .get(&ParsedSystemInstructionType::SystemCreateAccount)
             .unwrap_or(&vec![])
         {
-            if let ParsedSystemInstructionData::SystemCreateAccount { owner, .. } = instruction {
+            if let ParsedSystemInstructionData::SystemCreateAccount {
+                payer,
+                owner,
+                base,
+                new_account,
+                ..
+            } = instruction
+            {
+                let fee_payer_participates = *payer == self.fee_payer_pubkey
+                    || *base == Some(self.fee_payer_pubkey)
+                    || *new_account == self.fee_payer_pubkey;
+                if fee_payer_participates && !self.fee_payer_policy.system.allow_create_account {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be used for 'System Create Account'".to_string(),
+                    ));
+                }
+
                 self.validate_create_account_owner(owner)?;
             }
         }
@@ -3457,6 +3464,132 @@ mod tests {
         let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not in the allowed programs list"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_create_account_with_seed_base_signer_gated_by_allow_create_account() {
+        use solana_system_interface::instruction::create_account_with_seed;
+
+        let fee_payer = Pubkey::new_unique(); // Kora, used only as the seeded base signer
+        let attacker = Pubkey::new_unique(); // the create payer / funder
+        let seed = "seed";
+        let new_account = Pubkey::create_with_seed(&fee_payer, seed, &SYSTEM_PROGRAM_ID).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = false;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Owner is System (allowed), so the rejection must come from the allow_create_account gate
+        // recognizing Kora as the seeded base signer, not from the owner allowlist.
+        let instruction = create_account_with_seed(
+            &attacker,
+            &new_account,
+            &fee_payer,
+            seed,
+            1000,
+            0,
+            &SYSTEM_PROGRAM_ID,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Fee payer cannot be used for 'System Create Account'"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_create_account_with_seed_base_read_from_instruction_data() {
+        let fee_payer = Pubkey::new_unique(); // Kora, the seeded base in the instruction data
+        let attacker = Pubkey::new_unique(); // the create payer / funder
+        let decoy = Pubkey::new_unique();
+        let seed = "seed";
+        let new_account = Pubkey::create_with_seed(&fee_payer, seed, &SYSTEM_PROGRAM_ID).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = false;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // The authoritative base lives in the instruction data. A decoy sits at the account slot
+        // a positional gate would read, with Kora referenced as a signer elsewhere — the runtime
+        // accepts this (base is a signer at any index), so the gate must key off the data base.
+        let instruction = Instruction::new_with_bincode(
+            SYSTEM_PROGRAM_ID,
+            &solana_system_interface::instruction::SystemInstruction::CreateAccountWithSeed {
+                base: fee_payer,
+                seed: seed.to_string(),
+                lamports: 1000,
+                space: 0,
+                owner: SYSTEM_PROGRAM_ID,
+            },
+            vec![
+                AccountMeta::new(attacker, true),
+                AccountMeta::new(new_account, false),
+                AccountMeta::new_readonly(decoy, false),
+                AccountMeta::new_readonly(fee_payer, true),
+            ],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Fee payer cannot be used for 'System Create Account'"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_create_account_with_seed_base_equals_from_two_accounts_allowed() {
+        let fee_payer = Pubkey::new_unique(); // Kora, does not participate
+        let from = Pubkey::new_unique();
+        let seed = "seed";
+        let new_account = Pubkey::create_with_seed(&from, seed, &SYSTEM_PROGRAM_ID).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = false;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // base == from, so the runtime accepts two accounts (no separate base meta). Kora is
+        // neither payer, base, nor the created account, so validation must pass.
+        let instruction = Instruction::new_with_bincode(
+            SYSTEM_PROGRAM_ID,
+            &solana_system_interface::instruction::SystemInstruction::CreateAccountWithSeed {
+                base: from,
+                seed: seed.to_string(),
+                lamports: 1000,
+                space: 0,
+                owner: SYSTEM_PROGRAM_ID,
+            },
+            vec![AccountMeta::new(from, true), AccountMeta::new(new_account, false)],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
     }
 
     #[tokio::test]
