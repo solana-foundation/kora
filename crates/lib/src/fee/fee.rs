@@ -15,9 +15,10 @@ use crate::{
         token::{AtaCreationInstructionInfo, TokenType, TokenUtil, TransferHookValidationFlow},
     },
     transaction::{
-        ParsedALTInstructionData, ParsedALTInstructionType, ParsedSPLInstructionData,
-        ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
-        VersionedTransactionOps, VersionedTransactionResolved,
+        ParsedALTInstructionData, ParsedALTInstructionType,
+        ParsedBpfLoaderUpgradeableInstructionData, ParsedBpfLoaderUpgradeableInstructionType,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
+        ParsedSystemInstructionType, VersionedTransactionOps, VersionedTransactionResolved,
     },
 };
 use solana_sdk::instruction::Instruction;
@@ -628,6 +629,52 @@ impl FeeConfigUtil {
             }
         }
 
+        // Loader-v3 ExtendProgram/ExtendProgramChecked grow a ProgramData account and top up its
+        // rent from the payer. When the fee payer funds the extension, count that rent so a large
+        // extension cannot bypass max_allowed_lamports.
+        let mut fee_payer_extension_byte_sizes: Vec<u32> = Vec::new();
+        {
+            let bpf_v3_instructions =
+                transaction.get_or_parse_bpf_loader_upgradeable_instructions()?;
+            for instruction in [
+                ParsedBpfLoaderUpgradeableInstructionType::ExtendProgram,
+                ParsedBpfLoaderUpgradeableInstructionType::ExtendProgramChecked,
+            ]
+            .iter()
+            .flat_map(|ty| bpf_v3_instructions.get(ty).map(Vec::as_slice).unwrap_or(&[]))
+            {
+                let (payer, additional_bytes) = match instruction {
+                    ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram {
+                        payer,
+                        additional_bytes,
+                        ..
+                    }
+                    | ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
+                        payer,
+                        additional_bytes,
+                        ..
+                    } => (payer, *additional_bytes),
+                    _ => continue,
+                };
+
+                if *payer == Some(*fee_payer_pubkey) {
+                    fee_payer_extension_byte_sizes.push(additional_bytes);
+                }
+            }
+        }
+
+        // Conservatively charge the rent-exempt minimum for the added bytes per extension
+        // (matching the ATA-creation accounting below).
+        for additional_bytes in fee_payer_extension_byte_sizes {
+            let extension_rent = rpc_client
+                .get_minimum_balance_for_rent_exemption(additional_bytes as usize)
+                .await?;
+            total = total.checked_add(extension_rent as i128).ok_or_else(|| {
+                log::error!("Outflow calculation overflow in ExtendProgram rent");
+                KoraError::ValidationError("Outflow calculation overflow".to_string())
+            })?;
+        }
+
         // ATA Create/CreateIdempotent can be no-ops during simulation depending on prestate.
         // Charge conservative rent for fee-payer-funded ATA creations whenever inner SystemCreateAccount
         // did not surface, preventing stale-state rent drain windows.
@@ -662,6 +709,45 @@ impl FeeConfigUtil {
                 log::error!("Fee payer outflow overflow: sol={}, spl={}", total, spl_outflow);
                 KoraError::ValidationError("Fee payer outflow calculation overflow".to_string())
             })?;
+        }
+
+        // A fee-payer-authorized close to a third party moves the closed account's rent out.
+        let close_accounts = spl_instructions
+            .get(&ParsedSPLInstructionType::SplTokenCloseAccount)
+            .unwrap_or(&empty_vec);
+        for instruction in close_accounts {
+            if let ParsedSPLInstructionData::SplTokenCloseAccount {
+                owner,
+                account,
+                destination,
+                ..
+            } = instruction
+            {
+                let is_fee_payer_authority = *owner == *fee_payer_pubkey;
+                let is_fee_payer_recipient = *destination == *fee_payer_pubkey;
+
+                if !is_fee_payer_authority && !is_fee_payer_recipient {
+                    continue;
+                }
+
+                if is_fee_payer_authority && is_fee_payer_recipient {
+                    continue;
+                }
+
+                let lamports = rpc_client.get_account(account).await?.lamports;
+
+                if is_fee_payer_recipient {
+                    total = total.checked_sub(lamports as i128).ok_or_else(|| {
+                        log::error!("Inflow calculation overflow in SplTokenCloseAccount");
+                        KoraError::ValidationError("Inflow calculation overflow".to_string())
+                    })?;
+                } else {
+                    total = total.checked_add(lamports as i128).ok_or_else(|| {
+                        log::error!("Outflow calculation overflow in SplTokenCloseAccount");
+                        KoraError::ValidationError("Outflow calculation overflow".to_string())
+                    })?;
+                }
+            }
         }
 
         Ok(total)
@@ -1232,6 +1318,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_extend_program() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let rent = 1_000_000u64;
+
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(rent),
+            )
+            .build();
+        let config = get_config().unwrap();
+
+        // Fee payer funds the extension: the extension rent counts toward outflow.
+        let ix = solana_loader_v3_interface::instruction::extend_program(
+            &program,
+            Some(&fee_payer),
+            4096,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, rent as i128,
+            "fee-payer-funded ExtendProgram rent should count as outflow"
+        );
+
+        // A different payer funds the extension: no outflow for the fee payer.
+        let other_payer = Pubkey::new_unique();
+        let ix = solana_loader_v3_interface::instruction::extend_program(
+            &program,
+            Some(&other_payer),
+            4096,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 0, "extension funded by another payer should not affect outflow");
+
+        // No payer funds the extension: nothing counts toward the fee payer's outflow.
+        let ix = solana_loader_v3_interface::instruction::extend_program(&program, None, 4096);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 0, "extension with no payer should not affect outflow");
+    }
+
+    #[tokio::test]
     async fn test_calculate_fee_payer_outflow_create_account_with_seed() {
         setup_or_get_test_config();
         let mocked_rpc_client = RpcMockBuilder::new().build();
@@ -1439,6 +1598,118 @@ mod tests {
         assert_eq!(
             outflow, -2_000_000,
             "ALT close into the fee payer from an unrelated authority should be treated as inflow"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_close_account() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let closed_account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let other_authority = Pubkey::new_unique();
+        let rent_account = AccountMockBuilder::new().with_lamports(2_157_600).build();
+        let config = get_config().unwrap();
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &closed_account,
+            &recipient,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 2_157_600,
+            "Fee-payer-authorized close to a third party should count the closed-account rent as outflow"
+        );
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &closed_account,
+            &fee_payer,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 0, "Close back to the fee payer should be neutral");
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_2022_interface::instruction::close_account(
+            &spl_token_2022_interface::id(),
+            &closed_account,
+            &fee_payer,
+            &other_authority,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, -2_157_600,
+            "Close into the fee payer from an unrelated authority should be net inflow"
+        );
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &closed_account,
+            &recipient,
+            &other_authority,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 0,
+            "Close where the fee payer is neither authority nor recipient should be zero"
         );
     }
 

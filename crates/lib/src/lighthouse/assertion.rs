@@ -131,6 +131,49 @@ impl LighthouseUtil {
         Ok(())
     }
 
+    /// In a V0 message, lookup-table-loaded accounts share one index space with the static
+    /// `account_keys` and are addressed at indices `>= account_keys.len()`. Inserting static keys
+    /// raises that boundary, so every existing compiled-instruction index pointing into the loaded
+    /// region must move up by the number of inserted keys to keep resolving the same account.
+    fn shift_loaded_account_indices(
+        instructions: &mut [CompiledInstruction],
+        static_boundary: usize,
+        inserted: usize,
+    ) -> Result<(), KoraError> {
+        for instruction in instructions {
+            Self::shift_index_if_loaded(
+                &mut instruction.program_id_index,
+                static_boundary,
+                inserted,
+            )?;
+            for index in &mut instruction.accounts {
+                Self::shift_index_if_loaded(index, static_boundary, inserted)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn shift_index_if_loaded(
+        index: &mut u8,
+        static_boundary: usize,
+        inserted: usize,
+    ) -> Result<(), KoraError> {
+        if (*index as usize) < static_boundary {
+            return Ok(());
+        }
+        let shifted = (*index as usize)
+            .checked_add(inserted)
+            .filter(|value| *value <= u8::MAX as usize)
+            .ok_or_else(|| {
+                KoraError::ValidationError(
+                    "Lighthouse assertion would overflow the transaction account index space"
+                        .to_string(),
+                )
+            })?;
+        *index = shifted as u8;
+        Ok(())
+    }
+
     /// Append an instruction to a versioned transaction
     fn append_instruction_to_transaction(
         transaction: &mut VersionedTransaction,
@@ -169,6 +212,8 @@ impl LighthouseUtil {
                 Ok(())
             }
             VersionedMessage::V0(message) => {
+                let static_keys_before = message.account_keys.len();
+
                 let (program_id_index, program_added) =
                     Self::find_or_add_account(&mut message.account_keys, &instruction.program_id)?;
                 if program_added {
@@ -189,6 +234,15 @@ impl LighthouseUtil {
                         Self::increment_readonly_unsigned_accounts(&mut message.header)?;
                     }
                     account_indices.push(index);
+                }
+
+                let inserted = message.account_keys.len() - static_keys_before;
+                if inserted > 0 && !message.address_table_lookups.is_empty() {
+                    Self::shift_loaded_account_indices(
+                        &mut message.instructions,
+                        static_keys_before,
+                        inserted,
+                    )?;
                 }
 
                 message.instructions.push(CompiledInstruction {
@@ -438,5 +492,178 @@ mod tests {
         } else {
             panic!("Expected ValidationError");
         }
+    }
+
+    fn v0_transaction_with_lookup(
+        account_keys: Vec<Pubkey>,
+        num_readonly_unsigned_accounts: u8,
+        instructions: Vec<CompiledInstruction>,
+        lookup_key: Pubkey,
+        writable_indexes: Vec<u8>,
+    ) -> VersionedTransaction {
+        let message = v0::Message {
+            header: MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts,
+            },
+            account_keys,
+            recent_blockhash: Hash::new_unique(),
+            instructions,
+            address_table_lookups: vec![v0::MessageAddressTableLookup {
+                account_key: lookup_key,
+                writable_indexes,
+                readonly_indexes: vec![],
+            }],
+        };
+
+        VersionedTransaction { signatures: vec![], message: VersionedMessage::V0(message) }
+    }
+
+    #[test]
+    fn test_append_v0_with_lookup_rebases_loaded_indices() {
+        let fee_payer = Keypair::new().pubkey();
+        let program = Pubkey::new_unique();
+        let lookup_key = Pubkey::new_unique();
+
+        let original =
+            CompiledInstruction { program_id_index: 1, accounts: vec![0, 2, 3], data: vec![9] };
+        let mut transaction = v0_transaction_with_lookup(
+            vec![fee_payer, program],
+            1,
+            vec![original],
+            lookup_key,
+            vec![0, 1],
+        );
+
+        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&fee_payer, 1_000_000);
+        LighthouseUtil::append_instruction_to_transaction(&mut transaction, assertion_ix).unwrap();
+
+        let VersionedMessage::V0(message) = &transaction.message else {
+            panic!("expected V0 message");
+        };
+
+        assert_eq!(message.account_keys, vec![fee_payer, program, LIGHTHOUSE_PROGRAM_ID]);
+        assert_eq!(message.header.num_readonly_unsigned_accounts, 2);
+
+        // Loaded indices 2 and 3 must move to 3 and 4 so they still resolve to the same
+        // lookup-loaded accounts now that the static boundary grew from 2 to 3.
+        assert_eq!(message.instructions[0].program_id_index, 1);
+        assert_eq!(message.instructions[0].accounts, vec![0, 3, 4]);
+
+        assert_eq!(message.instructions[1].program_id_index, 2);
+        assert_eq!(message.instructions[1].accounts, vec![0]);
+    }
+
+    #[test]
+    fn test_append_v0_with_lookup_rebases_multiple_instructions() {
+        let fee_payer = Keypair::new().pubkey();
+        let program = Pubkey::new_unique();
+        let lookup_key = Pubkey::new_unique();
+
+        // Two pre-existing instructions, each mixing static (0,1) and loaded (2,3) operands, to
+        // exercise the shift loop across more than one instruction.
+        let ix_a =
+            CompiledInstruction { program_id_index: 1, accounts: vec![0, 2, 3], data: vec![1] };
+        let ix_b =
+            CompiledInstruction { program_id_index: 1, accounts: vec![3, 0, 2], data: vec![2] };
+        let mut transaction = v0_transaction_with_lookup(
+            vec![fee_payer, program],
+            1,
+            vec![ix_a, ix_b],
+            lookup_key,
+            vec![0, 1],
+        );
+
+        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&fee_payer, 1_000_000);
+        LighthouseUtil::append_instruction_to_transaction(&mut transaction, assertion_ix).unwrap();
+
+        let VersionedMessage::V0(message) = &transaction.message else {
+            panic!("expected V0 message");
+        };
+
+        assert_eq!(message.account_keys, vec![fee_payer, program, LIGHTHOUSE_PROGRAM_ID]);
+        // Both instructions' loaded operands (2,3) shift to (3,4); static operands (0,1) stay.
+        assert_eq!(message.instructions[0].accounts, vec![0, 3, 4]);
+        assert_eq!(message.instructions[1].accounts, vec![4, 0, 3]);
+        // Appended assertion references the fee payer at static index 0.
+        assert_eq!(message.instructions[2].program_id_index, 2);
+        assert_eq!(message.instructions[2].accounts, vec![0]);
+    }
+
+    #[test]
+    fn test_append_v0_with_lookup_shifts_loaded_program_id_index() {
+        let fee_payer = Keypair::new().pubkey();
+        let static_account = Pubkey::new_unique();
+        let lookup_key = Pubkey::new_unique();
+
+        // The invoked program is loaded from the lookup table, so program_id_index sits in the
+        // loaded region and must shift along with the account operands.
+        let original =
+            CompiledInstruction { program_id_index: 2, accounts: vec![0, 3], data: vec![9] };
+        let mut transaction = v0_transaction_with_lookup(
+            vec![fee_payer, static_account],
+            1,
+            vec![original],
+            lookup_key,
+            vec![0, 1],
+        );
+
+        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&fee_payer, 1_000_000);
+        LighthouseUtil::append_instruction_to_transaction(&mut transaction, assertion_ix).unwrap();
+
+        let VersionedMessage::V0(message) = &transaction.message else {
+            panic!("expected V0 message");
+        };
+
+        // Lighthouse inserted at static index 2, growing the boundary from 2 to 3.
+        assert_eq!(message.account_keys, vec![fee_payer, static_account, LIGHTHOUSE_PROGRAM_ID]);
+        // Loaded program_id_index 2 -> 3 and loaded operand 3 -> 4.
+        assert_eq!(message.instructions[0].program_id_index, 3);
+        assert_eq!(message.instructions[0].accounts, vec![0, 4]);
+    }
+
+    #[test]
+    fn test_append_v0_with_lookup_no_shift_when_program_present() {
+        let fee_payer = Keypair::new().pubkey();
+        let lookup_key = Pubkey::new_unique();
+
+        // Lighthouse program already a static key; no new key is inserted, so nothing shifts.
+        let original =
+            CompiledInstruction { program_id_index: 1, accounts: vec![0, 2, 3], data: vec![9] };
+        let mut transaction = v0_transaction_with_lookup(
+            vec![fee_payer, LIGHTHOUSE_PROGRAM_ID],
+            1,
+            vec![original],
+            lookup_key,
+            vec![0, 1],
+        );
+
+        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&fee_payer, 1_000_000);
+        LighthouseUtil::append_instruction_to_transaction(&mut transaction, assertion_ix).unwrap();
+
+        let VersionedMessage::V0(message) = &transaction.message else {
+            panic!("expected V0 message");
+        };
+
+        assert_eq!(message.account_keys, vec![fee_payer, LIGHTHOUSE_PROGRAM_ID]);
+        assert_eq!(message.header.num_readonly_unsigned_accounts, 1);
+        assert_eq!(message.instructions[0].accounts, vec![0, 2, 3]);
+        assert_eq!(message.instructions[1].accounts, vec![0]);
+    }
+
+    #[test]
+    fn test_shift_index_if_loaded_bounds() {
+        let mut below = 10u8;
+        LighthouseUtil::shift_index_if_loaded(&mut below, 20, 5).unwrap();
+        assert_eq!(below, 10);
+
+        let mut at_boundary = 20u8;
+        LighthouseUtil::shift_index_if_loaded(&mut at_boundary, 20, 3).unwrap();
+        assert_eq!(at_boundary, 23);
+
+        let mut overflow = 255u8;
+        let err = LighthouseUtil::shift_index_if_loaded(&mut overflow, 0, 1).unwrap_err();
+        assert!(matches!(err, KoraError::ValidationError(_)));
     }
 }

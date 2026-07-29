@@ -163,6 +163,8 @@ pub mod instruction_indexes {
 
     pub mod spl_token_close_account {
         pub const REQUIRED_NUMBER_OF_ACCOUNTS: usize = 3;
+        pub const ACCOUNT_INDEX: usize = 0;
+        pub const DESTINATION_INDEX: usize = 1;
         pub const OWNER_INDEX: usize = 2;
     }
 
