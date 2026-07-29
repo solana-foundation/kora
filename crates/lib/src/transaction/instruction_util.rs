@@ -66,6 +66,7 @@ pub enum ParsedSystemInstructionData {
     // Includes assign and assign with seed
     SystemAssign {
         authority: Pubkey,
+        owner: Pubkey,
     },
     // Includes allocate and allocate with seed
     SystemAllocate {
@@ -2031,18 +2032,19 @@ impl IxUtils {
                             recipient: instruction_indexes::system_withdraw_nonce_account::RECIPIENT_INDEX
                         });
                     }
-                    Ok(SystemInstruction::Assign { .. }) => {
+                    Ok(SystemInstruction::Assign { owner }) => {
                         parse_system_instruction!(
                             parsed_instructions,
                             instruction,
                             system_assign,
                             SystemAssign,
                             SystemAssign {
+                                owner: owner;
                                 authority: instruction_indexes::system_assign::AUTHORITY_INDEX
                             }
                         );
                     }
-                    Ok(SystemInstruction::AssignWithSeed { .. }) => {
+                    Ok(SystemInstruction::AssignWithSeed { owner, .. }) => {
                         // Note: uses system_assign_with_seed for validation but maps to SystemAssign type
                         validate_number_accounts!(instruction, instruction_indexes::system_assign_with_seed::REQUIRED_NUMBER_OF_ACCOUNTS);
                         parsed_instructions
@@ -2052,6 +2054,7 @@ impl IxUtils {
                                 authority: instruction.accounts
                                     [instruction_indexes::system_assign_with_seed::AUTHORITY_INDEX]
                                     .pubkey,
+                                owner,
                             });
                     }
                     Ok(SystemInstruction::Allocate { .. }) => {

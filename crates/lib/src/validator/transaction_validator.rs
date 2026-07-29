@@ -306,8 +306,21 @@ impl TransactionValidator {
             self.fee_payer_policy.system.allow_transfer, "System Transfer");
 
         validate_system!(self, system_instructions, SystemAssign,
-            ParsedSystemInstructionData::SystemAssign { authority } => authority,
-            self.fee_payer_policy.system.allow_assign, "System Assign");
+        ParsedSystemInstructionData::SystemAssign { authority, owner } => authority,
+        self.fee_payer_policy.system.allow_assign, "System Assign", {
+            if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Assign owner program {} is not in the allowed programs list",
+                    owner
+                )));
+            }
+            if self.disallowed_accounts.contains(owner) {
+                return Err(KoraError::InvalidTransaction(format!(
+                    "Assign owner program {} is in the disallowed accounts list",
+                    owner
+                )));
+            }
+        });
 
         validate_system!(self, system_instructions, SystemAllocate,
             ParsedSystemInstructionData::SystemAllocate { account } => account,
@@ -1769,7 +1782,8 @@ mod tests {
     #[serial]
     async fn test_fee_payer_policy_assign() {
         let fee_payer = Pubkey::new_unique();
-        let new_owner = Pubkey::new_unique();
+        // Owner must be in the allowed programs list; the test config allows the System program.
+        let new_owner = SYSTEM_PROGRAM_ID;
 
         // Test with allow_assign = true
 
@@ -1803,6 +1817,69 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_assign_rejects_off_policy_owner() {
+        use solana_system_interface::instruction::assign_with_seed;
+
+        let fee_payer = Pubkey::new_unique();
+        let off_policy_owner = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_assign = true;
+
+        // allow_assign is true, but an owner outside the allowed programs list is still rejected.
+        setup_config_with_policy(policy.clone());
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = assign(&fee_payer, &off_policy_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        let instruction = assign_with_seed(&fee_payer, &fee_payer, "seed", &off_policy_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // An owner in disallowed_accounts is rejected even when present in allowed_programs.
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![SYSTEM_PROGRAM_ID.to_string(), off_policy_owner.to_string()],
+            vec![off_policy_owner.to_string()],
+        );
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = assign(&fee_payer, &off_policy_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        let instruction = assign_with_seed(&fee_payer, &fee_payer, "seed", &off_policy_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
