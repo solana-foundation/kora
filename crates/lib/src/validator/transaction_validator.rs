@@ -889,7 +889,9 @@ impl TransactionValidator {
             }
 
             if let Some(extension_type) = instruction.extension_type {
-                if config.validation.token_2022.is_mint_extension_blocked(extension_type) {
+                if config.validation.token_2022.is_mint_extension_blocked(extension_type)
+                    || config.validation.token_2022.is_account_extension_blocked(extension_type)
+                {
                     return Err(KoraError::InvalidTransaction(format!(
                         "Token2022 instruction '{}' is not allowed because extension '{extension_type:?}' is blocked",
                         instruction.instruction_name
@@ -5623,6 +5625,131 @@ mod tests {
             matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("extension 'MetadataPointer' is blocked")),
             "Expected blocked metadata pointer extension rejection, got: {result:?}"
         );
+    }
+
+    async fn assert_blocked_token2022_extension_rejected(
+        instruction: solana_sdk::instruction::Instruction,
+        block_account_extensions: Vec<String>,
+        block_mint_extensions: Vec<String>,
+        expected_extension: &str,
+    ) {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.allowed_programs =
+            ProgramsConfig::Allowlist(vec![spl_token_2022_interface::id().to_string()]);
+        config.validation.token_2022.blocked_account_extensions = block_account_extensions;
+        config.validation.token_2022.blocked_mint_extensions = block_mint_extensions;
+        config.validation.token_2022.initialize().unwrap();
+
+        let validator = TransactionValidator::new(&config, fee_payer.pubkey()).unwrap();
+
+        // Fee payer is deliberately not one of the instruction accounts, so the rejection must
+        // come from the blocked-extension check rather than the fee-payer-presence check.
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(&config, &mut transaction, &rpc_client).await;
+        let expected = format!("extension '{expected_extension}' is blocked");
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains(&expected)),
+            "Expected blocked {expected_extension} rejection, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_memo_transfer_rejects_blocked_account_extension() {
+        let instruction =
+            spl_token_2022_interface::extension::memo_transfer::instruction::enable_required_transfer_memos(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &[],
+            )
+            .unwrap();
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec!["memo_transfer".to_string()],
+            vec![],
+            "MemoTransfer",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_cpi_guard_rejects_blocked_account_extension() {
+        let instruction =
+            spl_token_2022_interface::extension::cpi_guard::instruction::enable_cpi_guard(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &[],
+            )
+            .unwrap();
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec!["cpi_guard".to_string()],
+            vec![],
+            "CpiGuard",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_immutable_owner_rejects_blocked_account_extension() {
+        let instruction = spl_token_2022_interface::instruction::initialize_immutable_owner(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+        )
+        .unwrap();
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec!["immutable_owner".to_string()],
+            vec![],
+            "ImmutableOwner",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_non_transferable_rejects_blocked_mint_extension() {
+        let instruction = spl_token_2022_interface::instruction::initialize_non_transferable_mint(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+        )
+        .unwrap();
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec![],
+            vec!["non_transferable".to_string()],
+            "NonTransferable",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_default_account_state_rejects_blocked_mint_extension() {
+        let instruction =
+            spl_token_2022_interface::extension::default_account_state::instruction::initialize_default_account_state(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &spl_token_2022_interface::state::AccountState::Frozen,
+            )
+            .unwrap();
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec!["default_account_state".to_string()],
+            vec![],
+            "DefaultAccountState",
+        )
+        .await;
     }
 
     #[tokio::test]
