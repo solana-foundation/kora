@@ -248,16 +248,15 @@ impl TransactionPlugin for DeployAuthorityPlugin {
                         )));
                     }
                 }
-                ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram { payer, .. } => {
-                    if let Some(p) = payer {
-                        if p != fee_payer {
-                            return Err(KoraError::InvalidTransaction(format!(
-                                "DeployAuthority plugin: ExtendProgram payer must be the fee \
-                                 payer ({fee_payer}), got {p} in {}",
-                                context.method_name()
-                            )));
-                        }
-                    }
+                ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram { .. } => {
+                    // The unchecked variant has no authority account, so the plugin cannot verify
+                    // Kora is the program's authority. Without that check it would fund rent growth
+                    // for a foreign program. Require ExtendProgramChecked instead.
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "DeployAuthority plugin: unchecked ExtendProgram is not allowed; use \
+                         ExtendProgramChecked so the authority can be verified (context: {})",
+                        context.method_name()
+                    )));
                 }
                 ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
                     authority,
@@ -913,6 +912,40 @@ mod tests {
         let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
         assert!(
             matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("ExtendProgramChecked")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn v3_rejects_extend_program_checked_with_kora_authority_attacker_payer() {
+        // Authority is Kora, so the authority check passes and execution reaches the payer
+        // branch. A non-Kora payer must still be rejected — Kora co-signs an extension of its
+        // own program only when itself (or no one) funds it.
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let attacker = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let ix = loader_v3::extend_program_checked(&program, &fee_payer, Some(&attacker), 64);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("payer must be")),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn v3_rejects_unchecked_extend_program() {
+        // The unchecked variant has no authority account, so the plugin cannot confirm Kora is the
+        // program's authority and would otherwise fund rent growth for a foreign program.
+        use solana_loader_v3_interface::instruction as loader_v3;
+        let (config, rpc_client) = build_runner_v3();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let ix = loader_v3::extend_program(&program, Some(&fee_payer), 64);
+        let err = run_plugin(&config, &rpc_client, &fee_payer, ix).await.expect_err("must reject");
+        assert!(
+            matches!(&err, KoraError::InvalidTransaction(msg) if msg.contains("unchecked ExtendProgram")),
             "{err:?}"
         );
     }
