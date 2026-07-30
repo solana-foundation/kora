@@ -6460,7 +6460,7 @@ mod tests {
         )
         .expect("Failed to create initialize_multisig instruction");
 
-        let message = Message::new(&[real_ix.clone()], None);
+        let message = Message::new(std::slice::from_ref(&real_ix), None);
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
         let parsed = parse_instruction::parse(
             &spl_token_interface::ID,
@@ -6508,7 +6508,7 @@ mod tests {
         )
         .expect("Failed to create initialize_multisig2 instruction");
 
-        let message = Message::new(&[real_ix.clone()], None);
+        let message = Message::new(std::slice::from_ref(&real_ix), None);
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
         let parsed = parse_instruction::parse(
             &spl_token_interface::ID,
@@ -6558,7 +6558,7 @@ mod tests {
         )
         .expect("Failed to create initialize_mint instruction");
 
-        let message = Message::new(&[real_ix.clone()], None);
+        let message = Message::new(std::slice::from_ref(&real_ix), None);
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
         let parsed = parse_instruction::parse(
             &spl_token_interface::ID,
@@ -6598,7 +6598,7 @@ mod tests {
         )
         .expect("Failed to create initialize_mint2 instruction");
 
-        let message = Message::new(&[real_ix.clone()], None);
+        let message = Message::new(std::slice::from_ref(&real_ix), None);
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
         let parsed = parse_instruction::parse(
             &spl_token_interface::ID,
@@ -6638,7 +6638,7 @@ mod tests {
         )
         .expect("Failed to create set_authority instruction");
 
-        let message = Message::new(&[real_ix.clone()], None);
+        let message = Message::new(std::slice::from_ref(&real_ix), None);
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
         let parsed = parse_instruction::parse(
             &spl_token_interface::ID,
@@ -6683,7 +6683,7 @@ mod tests {
         )
         .expect("Failed to create initialize_account2 instruction");
 
-        let message = Message::new(&[real_ix.clone()], None);
+        let message = Message::new(std::slice::from_ref(&real_ix), None);
         let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
         let parsed = parse_instruction::parse(
             &spl_token_interface::ID,
