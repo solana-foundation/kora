@@ -6040,18 +6040,26 @@ mod fee_payer_policy_props {
         Transfer,
         Assign,
         Allocate,
-        CreateAccount,
+        CreateAccountPayer,
+        CreateAccountNewAccount,
     }
 
-    const SYSTEM_ROLES: [SystemRole; 4] =
-        [SystemRole::Transfer, SystemRole::Assign, SystemRole::Allocate, SystemRole::CreateAccount];
+    const SYSTEM_ROLES: [SystemRole; 5] = [
+        SystemRole::Transfer,
+        SystemRole::Assign,
+        SystemRole::Allocate,
+        SystemRole::CreateAccountPayer,
+        SystemRole::CreateAccountNewAccount,
+    ];
 
     fn role_flag(role: SystemRole, policy: &FeePayerPolicy) -> bool {
         match role {
             SystemRole::Transfer => policy.system.allow_transfer,
             SystemRole::Assign => policy.system.allow_assign,
             SystemRole::Allocate => policy.system.allow_allocate,
-            SystemRole::CreateAccount => policy.system.allow_create_account,
+            SystemRole::CreateAccountPayer | SystemRole::CreateAccountNewAccount => {
+                policy.system.allow_create_account
+            }
         }
     }
 
@@ -6060,8 +6068,11 @@ mod fee_payer_policy_props {
             SystemRole::Transfer => transfer(actor, &Pubkey::new_unique(), 1_000),
             SystemRole::Assign => assign(actor, &SYSTEM_PROGRAM_ID),
             SystemRole::Allocate => allocate(actor, 8),
-            SystemRole::CreateAccount => {
+            SystemRole::CreateAccountPayer => {
                 create_account(actor, &Pubkey::new_unique(), 1_000, 8, &SYSTEM_PROGRAM_ID)
+            }
+            SystemRole::CreateAccountNewAccount => {
+                create_account(&Pubkey::new_unique(), actor, 1_000, 8, &SYSTEM_PROGRAM_ID)
             }
         }
     }
