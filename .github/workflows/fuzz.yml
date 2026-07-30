@@ -44,6 +44,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-07-13
+          targets: x86_64-unknown-linux-gnu
       - uses: taiki-e/install-action@v2.82.0
         with:
           tool: cargo-fuzz
@@ -51,12 +52,12 @@ jobs:
         with:
           workspaces: fuzz
       - name: Build fuzz targets
-        run: cargo fuzz build
+        run: cargo fuzz build --target x86_64-unknown-linux-gnu
       - name: Smoke each target
         run: |
           for target in parse_transaction decode_b64_transaction; do
             echo "::group::fuzz $target"
-            cargo fuzz run "$target" -- -max_total_time=60
+            cargo fuzz run "$target" --target x86_64-unknown-linux-gnu -- -max_total_time=60
             echo "::endgroup::"
           done
       - name: Upload crash artifacts
@@ -83,6 +84,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-07-13
+          targets: x86_64-unknown-linux-gnu
       - uses: taiki-e/install-action@v2.82.0
         with:
           tool: cargo-fuzz
@@ -90,7 +92,7 @@ jobs:
         with:
           workspaces: fuzz
       - name: Fuzz ${{ matrix.target }}
-        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=600
+        run: cargo fuzz run ${{ matrix.target }} --target x86_64-unknown-linux-gnu -- -max_total_time=600
       - name: Upload corpus and crashes
         if: always()
         uses: actions/upload-artifact@v7
