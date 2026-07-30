@@ -6019,6 +6019,9 @@ mod tests {
     }
 }
 
+// Fuzzes the fee-payer policy matrix: for each System-program role, asserts the
+// validator gates the fee payer exactly when the role's flag is off, and never
+// gates a non-fee-payer. Generalizes the one-flag-at-a-time tests in `mod tests`.
 #[cfg(test)]
 mod fee_payer_policy_props {
     use super::*;
