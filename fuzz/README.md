@@ -25,6 +25,13 @@ just fuzz-list
 
 A crash writes a reproducer to `fuzz/artifacts/<target>/`; re-run it with `cargo fuzz run <target> fuzz/artifacts/<target>/<crash-file>`.
 
+## CI
+
+`.github/workflows/fuzz.yml` runs two jobs:
+
+- **smoke** (every PR/push touching `crates/**` or `fuzz/**`): `cargo fuzz build` + a 60s run per target. Fails on a build break or a crash; uploads any reproducer as an artifact.
+- **deep** (nightly cron + manual `workflow_dispatch`): 10 min per target, uploads the corpus and any crashes as artifacts.
+
 ## Property tests
 
 Structural invariants (e.g. fee-payer drain safety across the policy matrix) live as `proptest` cases in the `kora-lib` unit tests, not here — see `crates/lib/src/validator/transaction_validator.rs` (`mod fee_payer_policy_props`). Run with `cargo test -p kora-lib --lib fee_payer_policy_props`.
