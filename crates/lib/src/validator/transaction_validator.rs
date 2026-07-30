@@ -6507,7 +6507,10 @@ mod fee_payer_policy_props {
     use proptest::prelude::*;
     use solana_message::{Message, VersionedMessage};
     use solana_system_interface::{
-        instruction::{allocate, assign, create_account, transfer},
+        instruction::{
+            advance_nonce_account, allocate, assign, authorize_nonce_account, create_account,
+            create_nonce_account, transfer, withdraw_nonce_account,
+        },
         program::ID as SYSTEM_PROGRAM_ID,
     };
 
@@ -6518,14 +6521,22 @@ mod fee_payer_policy_props {
         Allocate,
         CreateAccountPayer,
         CreateAccountNewAccount,
+        NonceInitialize,
+        NonceAdvance,
+        NonceAuthorize,
+        NonceWithdraw,
     }
 
-    const SYSTEM_ROLES: [SystemRole; 5] = [
+    const SYSTEM_ROLES: [SystemRole; 9] = [
         SystemRole::Transfer,
         SystemRole::Assign,
         SystemRole::Allocate,
         SystemRole::CreateAccountPayer,
         SystemRole::CreateAccountNewAccount,
+        SystemRole::NonceInitialize,
+        SystemRole::NonceAdvance,
+        SystemRole::NonceAuthorize,
+        SystemRole::NonceWithdraw,
     ];
 
     fn role_flag(role: SystemRole, policy: &FeePayerPolicy) -> bool {
@@ -6536,6 +6547,10 @@ mod fee_payer_policy_props {
             SystemRole::CreateAccountPayer | SystemRole::CreateAccountNewAccount => {
                 policy.system.allow_create_account
             }
+            SystemRole::NonceInitialize => policy.system.nonce.allow_initialize,
+            SystemRole::NonceAdvance => policy.system.nonce.allow_advance,
+            SystemRole::NonceAuthorize => policy.system.nonce.allow_authorize,
+            SystemRole::NonceWithdraw => policy.system.nonce.allow_withdraw,
         }
     }
 
@@ -6550,15 +6565,30 @@ mod fee_payer_policy_props {
             SystemRole::CreateAccountNewAccount => {
                 create_account(&Pubkey::new_unique(), actor, 1_000, 8, &SYSTEM_PROGRAM_ID)
             }
+            SystemRole::NonceInitialize => {
+                create_nonce_account(&Pubkey::new_unique(), &Pubkey::new_unique(), actor, 1_000_000)
+                    .swap_remove(1)
+            }
+            SystemRole::NonceAdvance => advance_nonce_account(&Pubkey::new_unique(), actor),
+            SystemRole::NonceAuthorize => {
+                authorize_nonce_account(&Pubkey::new_unique(), actor, &Pubkey::new_unique())
+            }
+            SystemRole::NonceWithdraw => {
+                withdraw_nonce_account(&Pubkey::new_unique(), actor, &Pubkey::new_unique(), 1_000)
+            }
         }
     }
 
-    fn policy_from(transfer: bool, assign: bool, allocate: bool, create: bool) -> FeePayerPolicy {
+    fn system_policy(flags: [bool; 8]) -> FeePayerPolicy {
         let mut policy = FeePayerPolicy::default();
-        policy.system.allow_transfer = transfer;
-        policy.system.allow_assign = assign;
-        policy.system.allow_allocate = allocate;
-        policy.system.allow_create_account = create;
+        policy.system.allow_transfer = flags[0];
+        policy.system.allow_assign = flags[1];
+        policy.system.allow_allocate = flags[2];
+        policy.system.allow_create_account = flags[3];
+        policy.system.nonce.allow_initialize = flags[4];
+        policy.system.nonce.allow_advance = flags[5];
+        policy.system.nonce.allow_authorize = flags[6];
+        policy.system.nonce.allow_withdraw = flags[7];
         policy
     }
 
@@ -6571,6 +6601,9 @@ mod fee_payer_policy_props {
             .with_price_source(PriceSource::Mock)
             .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
             .with_max_allowed_lamports(1_000_000)
+            // AdvanceNonceAccount is rejected before the policy gate unless durable txs are
+            // allowed; enable so the nonce policy flags are what's under test.
+            .with_allow_durable_transactions(true)
             .with_fee_payer_policy(policy)
             .build();
         let validator = TransactionValidator::new(&config, fee_payer).unwrap();
@@ -6587,13 +6620,10 @@ mod fee_payer_policy_props {
         fn fee_payer_role_gated_iff_flag_off(
             role_idx in 0usize..SYSTEM_ROLES.len(),
             actor_is_fee_payer in any::<bool>(),
-            allow_transfer in any::<bool>(),
-            allow_assign in any::<bool>(),
-            allow_allocate in any::<bool>(),
-            allow_create in any::<bool>(),
+            flags in any::<[bool; 8]>(),
         ) {
             let role = SYSTEM_ROLES[role_idx];
-            let policy = policy_from(allow_transfer, allow_assign, allow_allocate, allow_create);
+            let policy = system_policy(flags);
             let fee_payer = Pubkey::new_unique();
             let actor = if actor_is_fee_payer { fee_payer } else { Pubkey::new_unique() };
 
