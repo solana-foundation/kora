@@ -5,7 +5,7 @@ use libfuzzer_sys::fuzz_target;
 use solana_sdk::transaction::VersionedTransaction;
 
 fuzz_target!(|data: &[u8]| {
-    let Ok(transaction) = bincode::deserialize::<VersionedTransaction>(data) else {
+    let Ok(transaction) = wincode::deserialize::<VersionedTransaction>(data) else {
         return;
     };
 

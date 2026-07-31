@@ -113,6 +113,11 @@ async fn test_sign_transaction_invalid_transaction() {
 async fn test_sign_transaction_v1() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
 
+    if !tests::common::helpers::validator_supports_tx_v1(ctx.rpc_client()).await {
+        eprintln!("skipping test_sign_transaction_v1: test validator predates agave 4.2");
+        return;
+    }
+
     let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
     let sender = SenderTestHelper::get_test_sender_keypair();
@@ -175,6 +180,11 @@ async fn test_sign_and_send_transaction_v1() {
     let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
 
     let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    if !tests::common::helpers::validator_supports_tx_v1(ctx.rpc_client()).await {
+        eprintln!("skipping test_sign_and_send_transaction_v1: test validator predates agave 4.2");
+        return;
+    }
 
     let test_tx = ctx
         .v1_transaction_builder()

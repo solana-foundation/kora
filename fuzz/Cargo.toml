@@ -9,8 +9,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-bincode = "1.3.3"
-solana-sdk = "3.0.0"
+wincode = "0.5"
+solana-sdk = "4.0.1"
 kora-lib = { path = "../crates/lib" }
 
 [[bin]]
