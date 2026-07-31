@@ -122,4 +122,9 @@ impl TestContext {
     ) -> TransactionBuilder {
         TransactionBuilder::v0_with_lookup(lookup_tables).with_rpc_client(self.rpc_client().clone())
     }
+
+    /// Create a V1 transaction builder with the test RPC client
+    pub fn v1_transaction_builder(&self) -> TransactionBuilder {
+        TransactionBuilder::v1().with_rpc_client(self.rpc_client().clone())
+    }
 }

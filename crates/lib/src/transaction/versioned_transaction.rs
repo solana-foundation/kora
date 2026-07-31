@@ -649,7 +649,10 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                     let signature = send_transaction_wire(
                         rpc_client,
                         &transaction,
-                        RpcSendTransactionConfig::default(),
+                        RpcSendTransactionConfig {
+                            preflight_commitment: Some(rpc_client.commitment().commitment),
+                            ..Default::default()
+                        },
                     )
                     .await?;
                     confirm_signature(rpc_client, &signature).await?;
