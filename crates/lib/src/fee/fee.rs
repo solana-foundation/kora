@@ -28,7 +28,7 @@ use crate::cache::CacheUtil;
 
 #[cfg(test)]
 use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableMessage};
 use solana_message::VersionedMessage;
 use solana_program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
@@ -756,6 +756,16 @@ impl FeeConfigUtil {
 
 pub struct TransactionFeeUtil {}
 
+/// Adapter for `getFeeForMessage` until the rpc-client ships a `SerializableMessage`
+/// impl for `v1::Message`.
+struct V1FeeMessage<'a>(&'a solana_message::v1::Message);
+
+impl SerializableMessage for V1FeeMessage<'_> {
+    fn serialize(&self) -> Vec<u8> {
+        self.0.serialize()
+    }
+}
+
 impl TransactionFeeUtil {
     pub async fn get_estimate_fee(
         rpc_client: &RpcClient,
@@ -764,6 +774,9 @@ impl TransactionFeeUtil {
         match message {
             VersionedMessage::Legacy(message) => rpc_client.get_fee_for_message(message).await,
             VersionedMessage::V0(message) => rpc_client.get_fee_for_message(message).await,
+            VersionedMessage::V1(message) => {
+                rpc_client.get_fee_for_message(&V1FeeMessage(message)).await
+            }
         }
         .map_err(|e| KoraError::RpcError(e.to_string()))
     }
@@ -781,6 +794,9 @@ impl TransactionFeeUtil {
                 rpc_client.get_fee_for_message(message).await
             }
             VersionedMessage::V0(v0_message) => rpc_client.get_fee_for_message(v0_message).await,
+            VersionedMessage::V1(v1_message) => {
+                rpc_client.get_fee_for_message(&V1FeeMessage(v1_message)).await
+            }
         }
         .map_err(|e| KoraError::RpcError(e.to_string()))
     }
@@ -813,7 +829,7 @@ mod tests {
     use solana_address_lookup_table_interface::{
         instruction as alt_instruction, program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
     };
-    use solana_message::{v0, Message, VersionedMessage};
+    use solana_message::{v0, v1, Message, VersionedMessage};
     use solana_sdk::{
         account::Account,
         hash::Hash,
@@ -2410,5 +2426,26 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, 12500, "Should return mocked base fee for V0 message");
+    }
+
+    #[tokio::test]
+    async fn test_transaction_fee_util_get_estimate_fee_v1() {
+        let mocked_rpc_client = RpcMockBuilder::new().with_fee_estimate(9000).build();
+
+        let fee_payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+        let transfer_instruction = transfer(&fee_payer.pubkey(), &recipient, 50_000);
+
+        let v1_message =
+            v1::Message::try_compile(&fee_payer.pubkey(), &[transfer_instruction], Hash::default())
+                .expect("Failed to compile V1 message");
+
+        let versioned_message = VersionedMessage::V1(v1_message);
+
+        let result = TransactionFeeUtil::get_estimate_fee(&mocked_rpc_client, &versioned_message)
+            .await
+            .unwrap();
+
+        assert_eq!(result, 9000, "Should return mocked base fee for V1 message");
     }
 }
