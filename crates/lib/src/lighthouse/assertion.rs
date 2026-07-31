@@ -7,10 +7,8 @@ use solana_sdk::{
 };
 
 use crate::{
-    config::LighthouseConfig,
-    constant::{LIGHTHOUSE_PROGRAM_ID, MAX_TRANSACTION_SIZE},
-    error::KoraError,
-    sanitize_error,
+    config::LighthouseConfig, constant::LIGHTHOUSE_PROGRAM_ID, error::KoraError, sanitize_error,
+    transaction::TransactionUtil,
 };
 
 /// Lighthouse instruction discriminators
@@ -174,6 +172,41 @@ impl LighthouseUtil {
         Ok(())
     }
 
+    /// Compile an instruction against a message's account keys, appending any new
+    /// accounts as readonly unsigned. Returns the compiled instruction without
+    /// pushing it, so callers can adjust existing instructions first.
+    fn compile_appended_instruction(
+        account_keys: &mut Vec<Pubkey>,
+        header: &mut MessageHeader,
+        instruction: Instruction,
+    ) -> Result<CompiledInstruction, KoraError> {
+        let (program_id_index, program_added) =
+            Self::find_or_add_account(account_keys, &instruction.program_id)?;
+        if program_added {
+            Self::increment_readonly_unsigned_accounts(header)?;
+        }
+
+        let mut account_indices: Vec<u8> = Vec::with_capacity(instruction.accounts.len());
+        for meta in &instruction.accounts {
+            let (index, added) = Self::find_or_add_account(account_keys, &meta.pubkey)?;
+            if added {
+                if meta.is_signer || meta.is_writable {
+                    return Err(KoraError::ValidationError(
+                        "Appending new signer/writable accounts is not supported".to_string(),
+                    ));
+                }
+                Self::increment_readonly_unsigned_accounts(header)?;
+            }
+            account_indices.push(index);
+        }
+
+        Ok(CompiledInstruction {
+            program_id_index,
+            accounts: account_indices,
+            data: instruction.data,
+        })
+    }
+
     /// Append an instruction to a versioned transaction
     fn append_instruction_to_transaction(
         transaction: &mut VersionedTransaction,
@@ -181,60 +214,22 @@ impl LighthouseUtil {
     ) -> Result<(), KoraError> {
         match &mut transaction.message {
             VersionedMessage::Legacy(message) => {
-                let (program_id_index, program_added) =
-                    Self::find_or_add_account(&mut message.account_keys, &instruction.program_id)?;
-                if program_added {
-                    Self::increment_readonly_unsigned_accounts(&mut message.header)?;
-                }
-
-                let mut account_indices: Vec<u8> = Vec::with_capacity(instruction.accounts.len());
-                for meta in &instruction.accounts {
-                    let (index, added) =
-                        Self::find_or_add_account(&mut message.account_keys, &meta.pubkey)?;
-                    if added {
-                        if meta.is_signer || meta.is_writable {
-                            return Err(KoraError::ValidationError(
-                                "Appending new signer/writable accounts is not supported"
-                                    .to_string(),
-                            ));
-                        }
-                        Self::increment_readonly_unsigned_accounts(&mut message.header)?;
-                    }
-                    account_indices.push(index);
-                }
-
-                message.instructions.push(CompiledInstruction {
-                    program_id_index,
-                    accounts: account_indices,
-                    data: instruction.data,
-                });
-
+                let compiled = Self::compile_appended_instruction(
+                    &mut message.account_keys,
+                    &mut message.header,
+                    instruction,
+                )?;
+                message.instructions.push(compiled);
                 Ok(())
             }
             VersionedMessage::V0(message) => {
                 let static_keys_before = message.account_keys.len();
 
-                let (program_id_index, program_added) =
-                    Self::find_or_add_account(&mut message.account_keys, &instruction.program_id)?;
-                if program_added {
-                    Self::increment_readonly_unsigned_accounts(&mut message.header)?;
-                }
-
-                let mut account_indices: Vec<u8> = Vec::with_capacity(instruction.accounts.len());
-                for meta in &instruction.accounts {
-                    let (index, added) =
-                        Self::find_or_add_account(&mut message.account_keys, &meta.pubkey)?;
-                    if added {
-                        if meta.is_signer || meta.is_writable {
-                            return Err(KoraError::ValidationError(
-                                "Appending new signer/writable accounts is not supported"
-                                    .to_string(),
-                            ));
-                        }
-                        Self::increment_readonly_unsigned_accounts(&mut message.header)?;
-                    }
-                    account_indices.push(index);
-                }
+                let compiled = Self::compile_appended_instruction(
+                    &mut message.account_keys,
+                    &mut message.header,
+                    instruction,
+                )?;
 
                 let inserted = message.account_keys.len() - static_keys_before;
                 if inserted > 0 && !message.address_table_lookups.is_empty() {
@@ -245,12 +240,16 @@ impl LighthouseUtil {
                     )?;
                 }
 
-                message.instructions.push(CompiledInstruction {
-                    program_id_index,
-                    accounts: account_indices,
-                    data: instruction.data,
-                });
-
+                message.instructions.push(compiled);
+                Ok(())
+            }
+            VersionedMessage::V1(message) => {
+                let compiled = Self::compile_appended_instruction(
+                    &mut message.account_keys,
+                    &mut message.header,
+                    instruction,
+                )?;
+                message.instructions.push(compiled);
                 Ok(())
             }
         }
@@ -267,7 +266,7 @@ impl LighthouseUtil {
         let mut tx_with_assertion = transaction.clone();
         Self::append_instruction_to_transaction(&mut tx_with_assertion, assertion_ix)?;
 
-        let new_size = bincode::serialize(&tx_with_assertion)
+        let new_size = TransactionUtil::serialize_versioned_transaction(&tx_with_assertion)
             .map_err(|e| {
                 KoraError::SerializationError(sanitize_error!(format!(
                     "Failed to serialize transaction: {e}"
@@ -275,17 +274,15 @@ impl LighthouseUtil {
             })?
             .len();
 
-        if new_size > MAX_TRANSACTION_SIZE {
+        let max_size = TransactionUtil::max_transaction_size(&tx_with_assertion.message);
+        if new_size > max_size {
             if config.fail_if_transaction_size_overflow {
                 return Err(KoraError::ValidationError(format!(
-                    "Adding Lighthouse assertion would exceed transaction size limit ({} > {})",
-                    new_size, MAX_TRANSACTION_SIZE
+                    "Adding Lighthouse assertion would exceed transaction size limit ({new_size} > {max_size})"
                 )));
             } else {
                 log::warn!(
-                    "Lighthouse assertion would exceed transaction size limit ({} > {}). Skipping.",
-                    new_size,
-                    MAX_TRANSACTION_SIZE
+                    "Lighthouse assertion would exceed transaction size limit ({new_size} > {max_size}). Skipping."
                 );
                 return Ok(());
             }
@@ -300,7 +297,7 @@ impl LighthouseUtil {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solana_message::{v0, Message, VersionedMessage};
+    use solana_message::{v0, v1, Message, VersionedMessage};
     use solana_sdk::{hash::Hash, instruction::AccountMeta, signature::Keypair, signer::Signer};
 
     #[test]
@@ -405,6 +402,84 @@ mod tests {
             transaction.message.header().num_readonly_unsigned_accounts,
             original_readonly_unsigned + 1
         );
+        assert!(transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
+    }
+
+    #[test]
+    fn test_append_lighthouse_assertion_v1() {
+        let keypair = Keypair::new();
+        let program_id = Pubkey::new_unique();
+
+        let v1_message = v1::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 1,
+            },
+            config: v1::TransactionConfig::empty(),
+            lifetime_specifier: Hash::new_unique(),
+            account_keys: vec![keypair.pubkey(), program_id],
+            instructions: vec![solana_message::compiled_instruction::CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![0],
+                data: vec![1, 2, 3],
+            }],
+        };
+
+        let message = VersionedMessage::V1(v1_message);
+        let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        let original_ix_count = transaction.message.instructions().len();
+        let original_readonly_unsigned =
+            transaction.message.header().num_readonly_unsigned_accounts;
+
+        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
+        let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
+
+        let result =
+            LighthouseUtil::append_lighthouse_assertion(&mut transaction, assertion_ix, &config);
+        assert!(result.is_ok());
+
+        assert_eq!(transaction.message.instructions().len(), original_ix_count + 1);
+        assert_eq!(
+            transaction.message.header().num_readonly_unsigned_accounts,
+            original_readonly_unsigned + 1
+        );
+        assert!(transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
+    }
+
+    #[test]
+    fn test_append_lighthouse_assertion_v1_allows_sizes_above_legacy_limit() {
+        let keypair = Keypair::new();
+        let program_id = Pubkey::new_unique();
+
+        // Larger than the 1232-byte legacy limit but well within the 4096-byte
+        // v1 limit: appending the assertion must use the v1 limit.
+        let v1_message = v1::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 1,
+            },
+            config: v1::TransactionConfig::empty(),
+            lifetime_specifier: Hash::new_unique(),
+            account_keys: vec![keypair.pubkey(), program_id],
+            instructions: vec![solana_message::compiled_instruction::CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![0],
+                data: vec![0; 1500],
+            }],
+        };
+
+        let message = VersionedMessage::V1(v1_message);
+        let mut transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+
+        let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
+        let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
+
+        let result =
+            LighthouseUtil::append_lighthouse_assertion(&mut transaction, assertion_ix, &config);
+        assert!(result.is_ok());
         assert!(transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
     }
 

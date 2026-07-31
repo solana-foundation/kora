@@ -57,7 +57,7 @@ async fn discover_v3_buffers(
     ];
 
     let accounts = rpc
-        .get_program_accounts_with_config(
+        .get_program_ui_accounts_with_config(
             &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
@@ -91,7 +91,7 @@ async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
     ];
 
     let programdata_accounts = rpc
-        .get_program_accounts_with_config(
+        .get_program_ui_accounts_with_config(
             &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
@@ -105,7 +105,8 @@ async fn discover_v3(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
 
     let mut out = Vec::with_capacity(programdata_accounts.len());
     for (pdata_pubkey, pdata_account) in programdata_accounts {
-        let last_state_slot = parse_u64_le(&pdata_account.data).unwrap_or(0);
+        let last_state_slot =
+            pdata_account.data.decode().and_then(|data| parse_u64_le(&data)).unwrap_or(0);
         let Some(program) = find_v3_program_for_pdata(rpc, &pdata_pubkey).await? else {
             log::warn!("skipping orphan v3 ProgramData {pdata_pubkey}");
             continue;
@@ -132,7 +133,7 @@ async fn find_v3_program_for_pdata(rpc: &Arc<RpcClient>, pdata: &Pubkey) -> Resu
     ];
 
     let accounts = rpc
-        .get_program_accounts_with_config(
+        .get_program_ui_accounts_with_config(
             &BPF_LOADER_UPGRADEABLE_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
@@ -154,7 +155,7 @@ async fn discover_v4(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
     ))];
 
     let accounts = rpc
-        .get_program_accounts_with_config(
+        .get_program_ui_accounts_with_config(
             &LOADER_V4_PROGRAM_ID,
             RpcProgramAccountsConfig {
                 filters: Some(filters),
@@ -173,7 +174,11 @@ async fn discover_v4(rpc: &Arc<RpcClient>, fee_payer: &Pubkey) -> Result<Vec<Own
             kind: AccountKind::Program,
             program: program_pubkey,
             program_data: None,
-            last_state_slot: parse_u64_le(&account.data).unwrap_or(0),
+            last_state_slot: account
+                .data
+                .decode()
+                .and_then(|data| parse_u64_le(&data))
+                .unwrap_or(0),
         })
         .collect())
 }

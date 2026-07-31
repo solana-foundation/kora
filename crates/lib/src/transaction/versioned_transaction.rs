@@ -1,9 +1,10 @@
 use async_trait::async_trait;
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Deserialize;
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
     rpc_config::{RpcSendTransactionConfig, RpcSimulateTransactionConfig},
+    rpc_request::RpcRequest,
+    rpc_response::{Response, RpcSimulateTransactionResult},
 };
 use solana_commitment_config::CommitmentConfig;
 use solana_keychain::{Signer, SolanaSigner};
@@ -37,7 +38,7 @@ use crate::{
         ParsedBpfLoaderUpgradeableInstructionData, ParsedBpfLoaderUpgradeableInstructionType,
         ParsedLoaderV4InstructionData, ParsedLoaderV4InstructionType, ParsedSPLInstructionData,
         ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
-        Token2022SecurityInstruction, Token2022SecurityParser,
+        Token2022SecurityInstruction, Token2022SecurityParser, TransactionUtil,
     },
     validator::transaction_validator::TransactionValidator,
     CacheUtil,
@@ -47,6 +48,69 @@ use solana_address_lookup_table_interface::state::AddressLookupTable;
 use super::retry_util::sign_with_retry;
 
 type AltCache<'a> = Option<&'a mut HashMap<Pubkey, Vec<Pubkey>>>;
+
+// The rpc-client's typed send/simulate methods serialize transactions with serde
+// (bincode layout), which is invalid wire format for v1 transactions. These
+// helpers submit wincode-serialized bytes instead; for legacy/v0 the bytes are
+// byte-identical to what the typed methods send.
+async fn send_transaction_wire(
+    rpc_client: &RpcClient,
+    transaction: &VersionedTransaction,
+    config: RpcSendTransactionConfig,
+) -> Result<Signature, KoraError> {
+    let encoded = TransactionUtil::encode_versioned_transaction(transaction)?;
+    let config =
+        RpcSendTransactionConfig { encoding: Some(UiTransactionEncoding::Base64), ..config };
+    let signature: String = rpc_client
+        .send(RpcRequest::SendTransaction, serde_json::json!([encoded, config]))
+        .await
+        .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
+    signature
+        .parse()
+        .map_err(|e| KoraError::RpcError(format!("Invalid signature in RPC response: {e}")))
+}
+
+async fn simulate_transaction_wire(
+    rpc_client: &RpcClient,
+    transaction: &VersionedTransaction,
+    config: RpcSimulateTransactionConfig,
+) -> Result<Response<RpcSimulateTransactionResult>, KoraError> {
+    let encoded = TransactionUtil::encode_versioned_transaction(transaction)?;
+    let config = RpcSimulateTransactionConfig {
+        encoding: Some(UiTransactionEncoding::Base64),
+        commitment: Some(config.commitment.unwrap_or_default()),
+        ..config
+    };
+    rpc_client
+        .send(RpcRequest::SimulateTransaction, serde_json::json!([encoded, config]))
+        .await
+        .map_err(|e| KoraError::RpcError(sanitize_error!(e)))
+}
+
+async fn confirm_signature(rpc_client: &RpcClient, signature: &Signature) -> Result<(), KoraError> {
+    const MAX_POLLS: usize = 60;
+    const POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+    for _ in 0..MAX_POLLS {
+        let statuses = rpc_client
+            .get_signature_statuses(&[*signature])
+            .await
+            .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
+        if let Some(status) = statuses.value.first().and_then(|s| s.as_ref()) {
+            if let Some(err) = &status.err {
+                return Err(KoraError::RpcError(format!("Transaction {signature} failed: {err}")));
+            }
+            if status.satisfies_commitment(rpc_client.commitment()) {
+                return Ok(());
+            }
+        }
+        tokio::time::sleep(POLL_INTERVAL).await;
+    }
+    Err(KoraError::RpcError(format!(
+        "Transaction {signature} was not confirmed within {} seconds",
+        MAX_POLLS * POLL_INTERVAL.as_millis() as usize / 1000
+    )))
+}
 
 /// A fully resolved transaction with lookup tables and inner instructions resolved
 pub struct VersionedTransactionResolved {
@@ -169,6 +233,10 @@ impl VersionedTransactionResolved {
                 )
                 .await?
             }
+            VersionedMessage::V1(_) => {
+                // V1 transactions don't support lookup tables
+                vec![]
+            }
         };
 
         // Set all accout keys
@@ -214,26 +282,23 @@ impl VersionedTransactionResolved {
         rpc_client: &RpcClient,
         sig_verify: bool,
     ) -> Result<Vec<Instruction>, KoraError> {
-        let simulation_result = rpc_client
-            .simulate_transaction_with_config(
-                &self.transaction,
-                RpcSimulateTransactionConfig {
-                    commitment: Some(rpc_client.commitment()),
-                    sig_verify,
-                    inner_instructions: true,
-                    replace_recent_blockhash: false,
-                    encoding: Some(UiTransactionEncoding::Base64),
-                    accounts: None,
-                    min_context_slot: None,
-                },
-            )
-            .await
-            .map_err(|e| {
-                KoraError::RpcError(format!(
-                    "Failed to simulate transaction: {}",
-                    sanitize_error!(e)
-                ))
-            })?;
+        let simulation_result = simulate_transaction_wire(
+            rpc_client,
+            &self.transaction,
+            RpcSimulateTransactionConfig {
+                commitment: Some(rpc_client.commitment()),
+                sig_verify,
+                inner_instructions: true,
+                replace_recent_blockhash: false,
+                encoding: Some(UiTransactionEncoding::Base64),
+                accounts: None,
+                min_context_slot: None,
+            },
+        )
+        .await
+        .map_err(|e| {
+            KoraError::RpcError(format!("Failed to simulate transaction: {}", sanitize_error!(e)))
+        })?;
 
         if let Some(err) = simulation_result.value.err {
             return Err(KoraError::InvalidTransaction(format!(
@@ -362,13 +427,7 @@ impl VersionedTransactionResolved {
 #[async_trait]
 impl VersionedTransactionOps for VersionedTransactionResolved {
     fn encode_b64_transaction(&self) -> Result<String, KoraError> {
-        let serialized = bincode::serialize(&self.transaction).map_err(|e| {
-            KoraError::SerializationError(format!(
-                "Base64 serialization failed: {}",
-                sanitize_error!(e)
-            ))
-        })?;
-        Ok(STANDARD.encode(serialized))
+        TransactionUtil::encode_versioned_transaction(&self.transaction)
     }
 
     fn signer_pubkeys(&self) -> &[Pubkey] {
@@ -544,8 +603,7 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
         *signature_slot = signature;
 
         // Serialize signed transaction
-        let serialized = bincode::serialize(&transaction)?;
-        let encoded = STANDARD.encode(serialized);
+        let encoded = TransactionUtil::encode_versioned_transaction(&transaction)?;
 
         Ok((transaction, encoded))
     }
@@ -584,18 +642,30 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
 
         match respond_after {
             RespondAfter::Confirmed => {
-                let signature = rpc_client
-                    .send_and_confirm_transaction(&transaction)
-                    .await
-                    .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
+                // The typed send_and_confirm path serde-serializes the transaction,
+                // which is not valid v1 wire format, so v1 goes through the raw
+                // send + confirmation poll instead.
+                let signature = if matches!(transaction.message, VersionedMessage::V1(_)) {
+                    let signature = send_transaction_wire(
+                        rpc_client,
+                        &transaction,
+                        RpcSendTransactionConfig::default(),
+                    )
+                    .await?;
+                    confirm_signature(rpc_client, &signature).await?;
+                    signature
+                } else {
+                    rpc_client
+                        .send_and_confirm_transaction(&transaction)
+                        .await
+                        .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?
+                };
 
                 Ok((signature.to_string(), encoded))
             }
             RespondAfter::Sent => {
-                let signature = rpc_client
-                    .send_transaction_with_config(&transaction, skip_preflight_config)
-                    .await
-                    .map_err(|e| KoraError::RpcError(sanitize_error!(e)))?;
+                let signature =
+                    send_transaction_wire(rpc_client, &transaction, skip_preflight_config).await?;
 
                 Ok((signature.to_string(), encoded))
             }
@@ -629,9 +699,9 @@ impl VersionedTransactionOps for VersionedTransactionResolved {
                 let rpc_client = std::sync::Arc::clone(rpc_client);
                 let log_signature = signature.clone();
                 get_background_tasks().spawn(async move {
-                    if let Err(e) = rpc_client
-                        .send_transaction_with_config(&transaction, skip_preflight_config)
-                        .await
+                    if let Err(e) =
+                        send_transaction_wire(&rpc_client, &transaction, skip_preflight_config)
+                            .await
                     {
                         log::error!(
                             "Background broadcast failed for transaction {log_signature}: {}",
@@ -740,13 +810,13 @@ mod tests {
         transaction::TransactionUtil,
         Config,
     };
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
     use serde_json::json;
-    use solana_client::rpc_request::RpcRequest;
     use std::collections::HashMap;
 
     use super::*;
     use solana_address_lookup_table_interface::state::LookupTableMeta;
-    use solana_message::{compiled_instruction::CompiledInstruction, v0, Message};
+    use solana_message::{compiled_instruction::CompiledInstruction, v0, v1, Message};
     use solana_sdk::{
         account::Account,
         hash::Hash,
@@ -1066,6 +1136,41 @@ mod tests {
         assert_eq!(resolved.all_instructions[0].data, vec![1, 2, 3]);
     }
 
+    #[test]
+    fn test_from_kora_built_transaction_v1() {
+        let keypair = Keypair::new();
+        let program_id = Pubkey::new_unique();
+        let other_account = Pubkey::new_unique();
+
+        let v1_message = v1::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 2,
+            },
+            config: v1::TransactionConfig::empty(),
+            lifetime_specifier: Hash::new_unique(),
+            account_keys: vec![keypair.pubkey(), other_account, program_id],
+            instructions: vec![CompiledInstruction {
+                program_id_index: 2,
+                accounts: vec![0, 1],
+                data: vec![1, 2, 3],
+            }],
+        };
+        let message = VersionedMessage::V1(v1_message);
+        let transaction = VersionedTransaction::try_new(message.clone(), &[&keypair]).unwrap();
+
+        let resolved =
+            VersionedTransactionResolved::from_kora_built_transaction(&transaction).unwrap();
+
+        assert_eq!(resolved.transaction, transaction);
+        assert_eq!(resolved.all_account_keys, vec![keypair.pubkey(), other_account, program_id]);
+        assert_eq!(resolved.all_instructions.len(), 1);
+        assert_eq!(resolved.all_instructions[0].program_id, program_id);
+        assert_eq!(resolved.all_instructions[0].accounts.len(), 2);
+        assert_eq!(resolved.all_instructions[0].data, vec![1, 2, 3]);
+    }
+
     #[tokio::test]
     async fn test_from_transaction_legacy() {
         let config = setup_test_config();
@@ -1175,7 +1280,7 @@ mod tests {
         // Create mock RPC client with lookup table account and simulation
         let mut mocks = HashMap::new();
         let serialized_data = lookup_table.serialize_for_tests().unwrap();
-        let encoded_data = base64::engine::general_purpose::STANDARD.encode(&serialized_data);
+        let encoded_data = STANDARD.encode(&serialized_data);
 
         mocks.insert(
             RpcRequest::GetMultipleAccounts,

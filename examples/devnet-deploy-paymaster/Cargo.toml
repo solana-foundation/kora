@@ -30,7 +30,7 @@ log = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-solana-account-decoder-client-types = "3.0"
+solana-account-decoder-client-types = "4.1"
 solana-client = { workspace = true }
 solana-commitment-config = { workspace = true }
 solana-compute-budget-interface = { workspace = true }
