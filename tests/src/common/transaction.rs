@@ -10,7 +10,9 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::{
-    v0::Message as V0Message, AddressLookupTableAccount, Message, VersionedMessage,
+    v0::Message as V0Message,
+    v1::{Message as V1Message, TransactionConfig},
+    AddressLookupTableAccount, Message, VersionedMessage,
 };
 use solana_program_pack::Pack;
 use solana_sdk::{
@@ -35,6 +37,7 @@ pub enum TransactionVersion {
     Legacy,
     V0,
     V0WithLookup(Vec<Pubkey>),
+    V1,
 }
 
 /// Fluent transaction builder for tests
@@ -73,6 +76,17 @@ impl TransactionBuilder {
     pub fn v0_with_lookup(lookup_tables: Vec<Pubkey>) -> Self {
         Self {
             version: TransactionVersion::V0WithLookup(lookup_tables),
+            instructions: Vec::new(),
+            fee_payer: None,
+            signers: Vec::new(),
+            rpc_client: None,
+        }
+    }
+
+    /// Create a V1 transaction builder
+    pub fn v1() -> Self {
+        Self {
+            version: TransactionVersion::V1,
             instructions: Vec::new(),
             fee_payer: None,
             signers: Vec::new(),
@@ -678,6 +692,20 @@ impl TransactionBuilder {
                     )?;
                     VersionedMessage::V0(v0_message)
                 }
+                TransactionVersion::V1 => {
+                    // An empty config mask requests 0 compute units and a 0 (32KiB)
+                    // loaded-accounts-data cap, so real limits must be set explicitly.
+                    let config = TransactionConfig::empty()
+                        .with_compute_unit_limit(1_400_000)
+                        .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
+                    let v1_message = V1Message::try_compile_with_config(
+                        &fee_payer,
+                        &self.instructions,
+                        blockhash.0,
+                        config,
+                    )?;
+                    VersionedMessage::V1(v1_message)
+                }
             };
 
         let transaction = if self.signers.is_empty() {
@@ -703,8 +731,7 @@ impl TransactionBuilder {
             tx
         };
 
-        let serialized = bincode::serialize(&transaction)?;
-        Ok(STANDARD.encode(serialized))
+        Ok(TransactionUtil::encode_versioned_transaction(&transaction)?)
     }
 
     /// Build a durable transaction using a nonce account's stored blockhash.
