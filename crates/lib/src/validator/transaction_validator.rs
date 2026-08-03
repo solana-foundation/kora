@@ -1076,6 +1076,17 @@ mod tests {
         setup_both_configs(config);
     }
 
+    fn setup_token2022_config_confidential_allowed(policy: FeePayerPolicy) {
+        let mut config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        config.validation.token_2022.allow_confidential_transfers = true;
+        setup_both_configs(config);
+    }
+
     fn setup_config_with_policy_and_disallowed(
         policy: FeePayerPolicy,
         allowed_programs: Vec<String>,
@@ -5828,6 +5839,102 @@ mod tests {
             assert!(msg.contains("Confidential Token-2022 instructions are not supported"));
         } else {
             panic!("Expected InvalidTransaction error for confidential token2022 instruction");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_confidential_mint_burn_rejected_by_default() {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let confidential_ix = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![],
+            data: spl_token_2022_interface::instruction::TokenInstruction::ConfidentialMintBurnExtension
+                .pack(),
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Confidential Token-2022 instructions are not supported"));
+        } else {
+            panic!("Expected InvalidTransaction error for confidential mint/burn instruction");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_confidential_extensions_allowed_when_flag_enabled() {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_confidential_allowed(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let confidential_variants = [
+            spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferExtension,
+            spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferFeeExtension,
+            spl_token_2022_interface::instruction::TokenInstruction::ConfidentialMintBurnExtension,
+        ];
+
+        for variant in confidential_variants {
+            let confidential_ix = Instruction {
+                program_id: spl_token_2022_interface::id(),
+                accounts: vec![AccountMeta::new(Pubkey::new_unique(), false)],
+                data: variant.pack(),
+            };
+
+            let message =
+                VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+            assert!(
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await.is_ok(),
+                "Confidential {variant:?} should pass when allow_confidential_transfers is enabled"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_confidential_extension_rejects_fee_payer_account() {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_confidential_allowed(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let confidential_ix = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![AccountMeta::new(fee_payer, false)],
+            data: spl_token_2022_interface::instruction::TokenInstruction::ConfidentialMintBurnExtension
+                .pack(),
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(
+                msg.contains("Fee payer cannot be an account in"),
+                "Expected fee payer rejection, got: {msg}"
+            );
+        } else {
+            panic!("Expected InvalidTransaction error when fee payer is in confidential instruction");
         }
     }
 
