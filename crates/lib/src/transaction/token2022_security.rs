@@ -187,7 +187,10 @@ impl Token2022SecurityParser {
                         Some(ExtensionType::NonTransferable),
                     ));
                 }
-                TokenInstruction::WithdrawExcessLamports => {
+                TokenInstruction::WithdrawExcessLamports
+                | TokenInstruction::ConfidentialTransferExtension
+                | TokenInstruction::ConfidentialTransferFeeExtension
+                | TokenInstruction::ConfidentialMintBurnExtension => {
                     parsed.push(Self::unsupported_fee_payer_account_check(
                         instruction,
                         "unsupported Token-2022 extension instruction",
