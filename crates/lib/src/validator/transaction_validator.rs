@@ -5934,7 +5934,9 @@ mod tests {
                 "Expected fee payer rejection, got: {msg}"
             );
         } else {
-            panic!("Expected InvalidTransaction error when fee payer is in confidential instruction");
+            panic!(
+                "Expected InvalidTransaction error when fee payer is in confidential instruction"
+            );
         }
     }
 
