@@ -523,14 +523,18 @@ mod tests {
 
         let cfg = Config::from_url(redis_url);
         let pool = cfg.create_pool(Some(Runtime::Tokio1)).unwrap();
+        let key = "test_redis_check_and_increment:key";
+        let mut conn = pool.get().await.unwrap();
+        let _: () = conn.del(key).await.unwrap();
         let store = RedisUsageStore::new(pool);
-        store.clear().await.unwrap();
 
-        assert!(store.check_and_increment("key", 1, 2, None).await.unwrap());
-        assert!(store.check_and_increment("key", 1, 2, None).await.unwrap());
+        assert!(store.check_and_increment(key, 1, 2, None).await.unwrap());
+        assert!(store.check_and_increment(key, 1, 2, None).await.unwrap());
 
-        assert!(!store.check_and_increment("key", 1, 2, None).await.unwrap());
-        assert_eq!(store.get("key").await.unwrap(), 2);
+        assert!(!store.check_and_increment(key, 1, 2, None).await.unwrap());
+        assert_eq!(store.get(key).await.unwrap(), 2);
+
+        let _: () = conn.del(key).await.unwrap();
     }
 
     // Run with: KORA_REDIS_URL="redis://127.0.0.1:6379" cargo test -p kora-lib test_redis -- --include-ignored
@@ -542,17 +546,22 @@ mod tests {
 
         let cfg = Config::from_url(redis_url);
         let pool = cfg.create_pool(Some(Runtime::Tokio1)).unwrap();
+        let key1 = "test_redis_check_and_increment_many:rkey1";
+        let key2 = "test_redis_check_and_increment_many:rkey2";
+        let mut conn = pool.get().await.unwrap();
+        let _: () = conn.del(&[key1, key2]).await.unwrap();
         let store = RedisUsageStore::new(pool);
-        store.clear().await.unwrap();
 
-        let entries = vec![("rkey1".to_string(), 1, 5, None), ("rkey2".to_string(), 1, 1, None)];
+        let entries = vec![(key1.to_string(), 1, 5, None), (key2.to_string(), 1, 1, None)];
 
         assert!(store.check_and_increment_many(&entries).await.unwrap());
-        assert_eq!(store.get("rkey1").await.unwrap(), 1);
-        assert_eq!(store.get("rkey2").await.unwrap(), 1);
+        assert_eq!(store.get(key1).await.unwrap(), 1);
+        assert_eq!(store.get(key2).await.unwrap(), 1);
 
         assert!(!store.check_and_increment_many(&entries).await.unwrap());
-        assert_eq!(store.get("rkey1").await.unwrap(), 1);
-        assert_eq!(store.get("rkey2").await.unwrap(), 1);
+        assert_eq!(store.get(key1).await.unwrap(), 1);
+        assert_eq!(store.get(key2).await.unwrap(), 1);
+
+        let _: () = conn.del(&[key1, key2]).await.unwrap();
     }
 }
