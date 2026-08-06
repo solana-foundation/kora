@@ -1,3 +1,134 @@
+## 2.2.0-beta.8 - 2026-07-29
+
+
+### Bug Fixes
+
+- security hardening for transaction validation and fee-payer accounting (#620)
+
+- bundle-aware fee estimation for cross-leg ATA creation (#606)
+
+- make multi-rule limit enforcement all-or-nothing (#571)
+
+- align fee estimation and config validation with runtime behavior (#603)
+
+- startup and config hardening (auth flags, usage-limit rules, signer pool, transfer-hook warning) (#602)
+
+- support mint-level setAuthority in CPI inner instruction reconstruction (#589)
+
+- move @solana/kit integration to a /kit subpath so the main entry bundles (#581)
+
+- pin Docker builder to bookworm to match runtime glibc (#575)
+
+- exit with status 1 on config validation failure (#567)
+
+- atomic usage limit enforcement across concurrent requests (#463)
+
+- cache payment-side token prices and add oracle HTTP timeouts (#529)
+
+- redact http url path and query in error messages (#552)
+
+- count programdata in the loader CreateAccount pairing check (#543)
+
+- harden deploy_authority against further fee-payer drains (#542)
+
+- guard fee-payer-funded CreateAccount to loader-owned accounts (#541)
+
+- skip empty key vars (#469)
+
+- support SyncNative in CPI inner instruction reconstruction (#468)
+
+- enforce fee-payer policy for multisig co-signers (#456)
+
+- allow empty allowed_tokens under Free pricing + unblock devnet-deploy-paymaster example (#452)
+
+- validate extension security metadata (#447)
+
+- classify transfercheckedwithfee as transfer (#446)
+
+- harden Token-2022 extension catch-all and parse failures (#434)
+
+- account for alt close outflow (#445)
+
+- separate probe reservation from selection (#442)
+
+- enforce strict fixed pricing when token quote floors to zero (#444)
+
+- derive Token-2022 payment ATAs with correct program id (#443)
+
+- increase probe lease to 60s to cover worst-case signing (#441)
+
+- simulate bundle sequentially before signing when sig_verify=false (#439)
+
+- warn on unvalidated programs in allowed_programs (#433)
+
+- verify payment owner is a signer before quota attribution (#440)
+
+- track nonce withdrawal outflow when fee payer is authority (#435)
+
+- reject token decimals > 19 to prevent overflow in fee calculation (#432)
+
+- validate CreateAccount owner program against allowed list (#431)
+
+- harden fee payer protection against ATA rent drain and net-zero payment exploits (#428)
+
+- validate signed txs with sequential simulation (#425)
+
+- enforce transfer-hook checks in free pricing (#423)
+
+- correct token2022 permanent delegate warning scope (#420)
+
+- enforce fee payer policy for ALT instructions (#419)
+
+- bypass cache for payment-critical account reads (#418)
+
+
+### Features
+
+- reject unknown keys in kora.toml via deny_unknown_fields (#609)
+
+- batch-fetch and cache address lookup tables for V0 transactions (#565)
+
+- support p-token batch and lamport instructions (#591)
+
+- support CreateAccountAllowPrefund instruction (#578)
+
+- expose HTTP timeout configuration for remote signer providers (#530)
+
+- replace vec pubkey with hashset (#551)
+
+- extend CreateAccount pairing guard to loader-v4 (#549)
+
+- structured numeric RPC error codes (#424)
+
+- cross-cluster mint validation (#464)
+
+- add BPF Loader Upgradeable (loader-v3) policy + plugin coverage (#453)
+
+- add DeployAuthority plugin for devnet-deploy paymasters (#451)
+
+- add loader-v4 fee-payer policy for program deployment (#449)
+
+- add must_call_programs validation rule (#422)
+
+- block compute-only transactions (#421)
+
+- sync solana-keychain to 1.0.1 and add new signer adapters (#416)
+
+- implement graceful retry and timeout for remote signers (#412)
+
+- add health monitoring and automatic failover for signer pool (#399)
+
+- add docker compose for 1-click facilitator deploy (#414)
+
+
+### Testing
+
+- fix flaky unit tests (config-mock and metrics-registry races) (#600)
+
+- speed up integration runner, measure integration coverage, extend CI matrix (#557)
+
+- add loader-v3 deploy lifecycle integration test + open up plugin-guarded ops (#459)
+
 ## 2.2.0-beta.7 - 2026-03-27
 
 

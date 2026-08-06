@@ -36,3 +36,52 @@ pub struct AuthArgs {
     #[arg(long, env = "KORA_HMAC_SECRET", help_heading = "Authentication")]
     pub hmac_secret: Option<String>,
 }
+
+impl AuthArgs {
+    /// Maps CLI auth flags to the env vars the auth resolver reads; must run before validation.
+    pub fn apply_to_env(&self) {
+        if let Some(api_key) = &self.api_key {
+            std::env::set_var("KORA_API_KEY", api_key);
+        }
+        if let Some(hmac_secret) = &self.hmac_secret {
+            std::env::set_var("KORA_HMAC_SECRET", hmac_secret);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn test_apply_to_env_sets_flags() {
+        std::env::remove_var("KORA_API_KEY");
+        std::env::remove_var("KORA_HMAC_SECRET");
+
+        AuthArgs {
+            api_key: Some("flag-api-key".to_string()),
+            hmac_secret: Some("flag-hmac-secret".to_string()),
+        }
+        .apply_to_env();
+
+        assert_eq!(std::env::var("KORA_API_KEY").unwrap(), "flag-api-key");
+        assert_eq!(std::env::var("KORA_HMAC_SECRET").unwrap(), "flag-hmac-secret");
+
+        std::env::remove_var("KORA_API_KEY");
+        std::env::remove_var("KORA_HMAC_SECRET");
+    }
+
+    #[test]
+    #[serial]
+    fn test_apply_to_env_leaves_unset_flags_untouched() {
+        std::env::remove_var("KORA_API_KEY");
+        std::env::remove_var("KORA_HMAC_SECRET");
+
+        AuthArgs { api_key: None, hmac_secret: None }.apply_to_env();
+
+        assert!(std::env::var("KORA_API_KEY").is_err());
+        assert!(std::env::var("KORA_HMAC_SECRET").is_err());
+    }
+}

@@ -168,14 +168,49 @@ impl Token2022SecurityParser {
                         parsed.push(parsed_instruction);
                     }
                 }
-                TokenInstruction::DefaultAccountStateExtension
-                | TokenInstruction::MemoTransferExtension
-                | TokenInstruction::CpiGuardExtension
-                | TokenInstruction::InitializeNonTransferableMint
-                | TokenInstruction::WithdrawExcessLamports => {
+                TokenInstruction::DefaultAccountStateExtension => {
+                    parsed.push(Self::unsupported_fee_payer_account_check(
+                        instruction,
+                        "DefaultAccountState extension instruction",
+                        Some(ExtensionType::DefaultAccountState),
+                    ));
+                }
+                TokenInstruction::MemoTransferExtension => {
+                    parsed.push(Self::unsupported_fee_payer_account_check(
+                        instruction,
+                        "MemoTransfer extension instruction",
+                        Some(ExtensionType::MemoTransfer),
+                    ));
+                }
+                TokenInstruction::CpiGuardExtension => {
+                    parsed.push(Self::unsupported_fee_payer_account_check(
+                        instruction,
+                        "CpiGuard extension instruction",
+                        Some(ExtensionType::CpiGuard),
+                    ));
+                }
+                TokenInstruction::InitializeImmutableOwner => {
+                    parsed.push(Self::unsupported_fee_payer_account_check(
+                        instruction,
+                        "InitializeImmutableOwner instruction",
+                        Some(ExtensionType::ImmutableOwner),
+                    ));
+                }
+                TokenInstruction::InitializeNonTransferableMint => {
+                    parsed.push(Self::unsupported_fee_payer_account_check(
+                        instruction,
+                        "InitializeNonTransferableMint instruction",
+                        Some(ExtensionType::NonTransferable),
+                    ));
+                }
+                TokenInstruction::WithdrawExcessLamports
+                | TokenInstruction::ConfidentialTransferExtension
+                | TokenInstruction::ConfidentialTransferFeeExtension
+                | TokenInstruction::ConfidentialMintBurnExtension => {
                     parsed.push(Self::unsupported_fee_payer_account_check(
                         instruction,
                         "unsupported Token-2022 extension instruction",
+                        None,
                     ));
                 }
                 _ => {}
@@ -454,6 +489,7 @@ impl Token2022SecurityParser {
                 Ok(Some(Self::unsupported_fee_payer_account_check(
                     instruction,
                     "Token2022 HarvestWithheldTokensToMint",
+                    None,
                 )))
             }
         }
@@ -986,10 +1022,11 @@ impl Token2022SecurityParser {
     fn unsupported_fee_payer_account_check(
         instruction: &Instruction,
         instruction_name: &'static str,
+        extension_type: Option<ExtensionType>,
     ) -> Token2022SecurityInstruction {
         Token2022SecurityInstruction {
             instruction_name,
-            extension_type: None,
+            extension_type,
             accounts: Self::instruction_accounts(instruction),
             account_usage_policy: Token2022AccountUsagePolicy::RejectIfFeePayerPresent,
             update_authority: None,

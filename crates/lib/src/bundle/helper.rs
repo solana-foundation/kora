@@ -108,6 +108,8 @@ impl BundleProcessor {
         let mut all_bundle_instructions: Vec<Instruction> = Vec::new();
         let mut txs_missing_payment_count = 0u64;
 
+        let mut alt_cache: HashMap<Pubkey, Vec<Pubkey>> = HashMap::new();
+
         // Phase 1: Decode, resolve, validate, calc fees, collect instructions
         for encoded in encoded_txs {
             let transaction = TransactionUtil::decode_b64_transaction(encoded)?;
@@ -117,6 +119,7 @@ impl BundleProcessor {
                 config,
                 rpc_client,
                 sig_verify,
+                Some(&mut alt_cache),
             )
             .await?;
 
@@ -143,14 +146,20 @@ impl BundleProcessor {
                     .run(&mut resolved_tx, config, rpc_client, &fee_payer, context)
                     .await?;
             }
+            all_bundle_instructions.extend(resolved_tx.all_instructions.clone());
+            resolved_transactions.push(resolved_tx);
+        }
 
+        // Calculate the estimated fee for each transaction using the full bundle context
+        for resolved_tx in resolved_transactions.iter_mut() {
             let fee_calc = FeeConfigUtil::estimate_kora_fee(
-                &mut resolved_tx,
+                resolved_tx,
                 &fee_payer,
                 config.validation.is_payment_required(),
                 rpc_client,
                 config,
                 transfer_hook_validation_flow,
+                Some(&all_bundle_instructions),
             )
             .await?;
 
@@ -163,18 +172,21 @@ impl BundleProcessor {
             if fee_calc.payment_instruction_fee > 0 {
                 txs_missing_payment_count += 1;
             }
-
-            all_bundle_instructions.extend(resolved_tx.all_instructions.clone());
-            resolved_transactions.push(resolved_tx);
         }
 
-        // For bundles, only ONE payment instruction is needed across all transactions.
-        // If multiple transactions are missing payments, we've overcounted by
-        // (txs_missing_payment_count - 1) * ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION
-        if txs_missing_payment_count > 1 {
-            let overcount =
-                (txs_missing_payment_count - 1) * ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION;
+        // In a bundle, only one payment is required for the entire transaction sequence.
+        // We adjust the total fee to ensure we don't overcharge for missing payments.
+        let overcount = if (txs_missing_payment_count as usize) == resolved_transactions.len()
+            && txs_missing_payment_count > 0
+        {
+            // If every transaction misses a payment we only charge the penalty once since a single payment covers the entire bundle
+            (txs_missing_payment_count - 1) * ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION
+        } else {
+            // If any transaction includes a valid payment we waive the penalty for the entire bundle
+            txs_missing_payment_count * ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION
+        };
 
+        if overcount > 0 {
             total_required_lamports =
                 total_required_lamports.checked_sub(overcount).ok_or_else(|| {
                     KoraError::ValidationError("Bundle fee calculation overflow".to_string())

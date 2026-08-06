@@ -14,14 +14,14 @@ all = { level = "deny", priority = -1 }
 module_inception = { level = "allow", priority = 0 }
 
 [workspace.package]
-version = "2.2.0-beta.7"
+version = "2.2.0-beta.8"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/solana-foundation/kora"
 
 [workspace.dependencies]
-kora-lib = { path = "crates/lib", version = "2.2.0-beta.7" }
-kora-deploy = { path = "crates/kora-deploy", version = "0.1.0" }
+kora-lib = { path = "crates/lib", version = "2.2.0-beta.8" }
+kora-deploy = { path = "crates/kora-deploy", version = "0.2.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0.102"

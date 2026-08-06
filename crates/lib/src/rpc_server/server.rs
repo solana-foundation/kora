@@ -106,8 +106,7 @@ async fn wait_for_rpc_stop(rpc_handle: ServerHandle, port: u16) {
 
 // We'll always prioritize the environment variable over the config value
 fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<String> {
-    AuthConfig::normalize_optional_secret(std::env::var(env_var).ok())
-        .or_else(|| AuthConfig::normalize_optional_secret(config_value))
+    AuthConfig::resolve_secret(env_var, config_value.as_deref())
 }
 
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, anyhow::Error> {
@@ -144,15 +143,13 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
     // Build whitelist of allowed methods from enabled_methods config
     let allowed_methods = config.kora.enabled_methods.get_enabled_method_names();
 
-    let recaptcha_config =
-        get_value_by_priority("KORA_RECAPTCHA_SECRET", config.kora.auth.recaptcha_secret.clone())
-            .map(|secret| {
-                RecaptchaConfig::new(
-                    secret,
-                    config.kora.auth.recaptcha_score_threshold,
-                    config.kora.auth.protected_methods.clone(),
-                )
-            });
+    let recaptcha_config = config.kora.auth.resolved_recaptcha_secret().map(|secret| {
+        RecaptchaConfig::new(
+            secret,
+            config.kora.auth.recaptcha_score_threshold,
+            config.kora.auth.protected_methods.clone(),
+        )
+    });
 
     let middleware = tower::ServiceBuilder::new()
         // Add metrics handler first (before other layers) so it can intercept /metrics

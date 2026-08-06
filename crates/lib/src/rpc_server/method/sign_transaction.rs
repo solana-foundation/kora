@@ -65,6 +65,7 @@ pub async fn sign_transaction(
         config,
         rpc_client,
         sig_verify,
+        None,
     )
     .await?;
 

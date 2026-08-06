@@ -72,6 +72,7 @@ pub async fn estimate_transaction_fee(
         config,
         rpc_client,
         sig_verify,
+        None,
     )
     .await?;
 
@@ -82,6 +83,7 @@ pub async fn estimate_transaction_fee(
         rpc_client,
         config,
         TransferHookValidationFlow::ImmediateSignAndSend,
+        None,
     )
     .await?;
 

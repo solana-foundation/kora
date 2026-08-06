@@ -150,6 +150,8 @@ async fn main() -> Result<(), KoraError> {
         Some(Commands::Rpc { rpc_command }) => {
             match rpc_command {
                 RpcCommands::Start { rpc_args } => {
+                    rpc_args.auth_args.apply_to_env();
+
                     // Validate config and signers before starting server
                     match ConfigValidator::validate_with_result_and_signers(
                         rpc_client.as_ref(),

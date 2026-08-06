@@ -670,6 +670,157 @@ impl CacheUtil {
             ))
         })
     }
+
+    /// Get multiple accounts directly from RPC (bypassing cache)
+    async fn get_multiple_accounts_from_rpc(
+        rpc_client: &RpcClient,
+        pubkeys: &[Pubkey],
+    ) -> Result<Vec<Account>, KoraError> {
+        match rpc_client.get_multiple_accounts(pubkeys).await {
+            Ok(accounts_opt) => {
+                let mut result = Vec::with_capacity(pubkeys.len());
+                for (i, acc_opt) in accounts_opt.into_iter().enumerate() {
+                    match acc_opt {
+                        Some(acc) => result.push(acc),
+                        None => return Err(KoraError::AccountNotFound(pubkeys[i].to_string())),
+                    }
+                }
+                Ok(result)
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Get multiple accounts, using Redis cache when available.
+    pub async fn get_multiple_accounts(
+        config: &Config,
+        rpc_client: &RpcClient,
+        pubkeys: &[Pubkey],
+    ) -> Result<Vec<Account>, KoraError> {
+        if pubkeys.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // If cache is disabled, go directly to RPC
+        if !CacheUtil::is_cache_enabled(config) {
+            return Self::get_multiple_accounts_from_rpc(rpc_client, pubkeys).await;
+        }
+
+        let pool = match CACHE_POOL.get() {
+            Some(Some(pool)) => pool,
+            _ => return Self::get_multiple_accounts_from_rpc(rpc_client, pubkeys).await,
+        };
+
+        let mut conn = match Self::get_connection(pool).await {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!(
+                    "Failed to get cache connection, falling back to RPC: {}",
+                    sanitize_error!(e)
+                );
+                return Self::get_multiple_accounts_from_rpc(rpc_client, pubkeys).await;
+            }
+        };
+
+        let keys: Vec<String> = pubkeys.iter().map(Self::get_account_key).collect();
+        let raw: Vec<Option<String>> = match conn.mget(&keys).await {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("Failed to get multiple accounts from cache: {}", sanitize_error!(e));
+                vec![None; pubkeys.len()]
+            }
+        };
+
+        let current_time = chrono::Utc::now().timestamp();
+        let mut results: Vec<Option<Account>> = vec![None; pubkeys.len()];
+        let mut misses: Vec<(usize, Pubkey)> = Vec::new();
+
+        for (i, (pubkey, cached_str_opt)) in pubkeys.iter().zip(raw).enumerate() {
+            let mut hit = false;
+            if let Some(cached_str) = cached_str_opt {
+                match serde_json::from_str::<CachedAccount>(&cached_str) {
+                    Ok(cached_account) => {
+                        let cache_age = current_time - cached_account.cached_at;
+                        if cache_age < config.kora.cache.account_ttl as i64 {
+                            results[i] = Some(cached_account.account);
+                            hit = true;
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to deserialize cached account for {}: {}",
+                            pubkey,
+                            sanitize_error!(e)
+                        );
+                    }
+                }
+            }
+            if !hit {
+                misses.push((i, *pubkey));
+            }
+        }
+
+        if !misses.is_empty() {
+            let miss_pubkeys: Vec<Pubkey> = misses.iter().map(|(_, pk)| *pk).collect();
+            let accounts_opt = match rpc_client.get_multiple_accounts(&miss_pubkeys).await {
+                Ok(a) => a,
+                Err(e) => return Err(e.into()),
+            };
+
+            let mut pipe = redis::pipe();
+            let mut has_pipe_ops = false;
+            let mut pending_error = None;
+
+            for (miss_idx, acc_opt) in accounts_opt.into_iter().enumerate() {
+                let (orig_idx, pubkey) = misses[miss_idx];
+                match acc_opt {
+                    Some(acc) => {
+                        results[orig_idx] = Some(acc.clone());
+                        let cached_account =
+                            CachedAccount { account: acc, cached_at: current_time };
+                        match serde_json::to_string(&cached_account) {
+                            Ok(serialized) => {
+                                pipe.set_ex(
+                                    &keys[orig_idx],
+                                    serialized,
+                                    config.kora.cache.account_ttl,
+                                );
+                                has_pipe_ops = true;
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to serialize cache data for {}: {}",
+                                    pubkey,
+                                    sanitize_error!(e)
+                                );
+                            }
+                        }
+                    }
+                    None => {
+                        if pending_error.is_none() {
+                            pending_error = Some(KoraError::AccountNotFound(pubkey.to_string()));
+                        }
+                    }
+                }
+            }
+
+            if has_pipe_ops {
+                if let Err(e) = pipe.query_async::<()>(&mut conn).await {
+                    log::warn!("Failed to cache accounts in batch: {}", sanitize_error!(e));
+                }
+            }
+
+            if let Some(err) = pending_error {
+                return Err(err);
+            }
+        }
+
+        results
+            .into_iter()
+            .enumerate()
+            .map(|(i, opt)| opt.ok_or_else(|| KoraError::AccountNotFound(pubkeys[i].to_string())))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -679,6 +830,9 @@ mod tests {
         common::{create_mock_token_account, RpcMockBuilder},
         config_mock::ConfigMockBuilder,
     };
+    use chrono::Utc;
+    use redis::cmd;
+    use std::env;
 
     #[tokio::test]
     async fn test_is_cache_enabled_disabled() {
@@ -831,6 +985,7 @@ mod tests {
         let _m = ConfigMockBuilder::new()
             .with_cache_enabled(false) // Force RPC fallback for simplicity
             .build_and_setup();
+        let config = get_config().unwrap();
 
         let pubkey = Pubkey::new_unique();
         let expected_account = create_mock_token_account(&pubkey, &Pubkey::new_unique());
@@ -838,12 +993,55 @@ mod tests {
         let rpc_client = RpcMockBuilder::new().with_account_info(&expected_account).build();
 
         // force_refresh = true should always go to RPC
-        let config = get_config().unwrap();
         let result = CacheUtil::get_account(&config, &rpc_client, &pubkey, true).await;
 
         assert!(result.is_ok());
         let account = result.unwrap();
         assert_eq!(account.lamports, expected_account.lamports);
+    }
+
+    #[tokio::test]
+    async fn test_get_multiple_accounts_cache_disabled() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let config = get_config().unwrap();
+
+        let pubkey1 = Pubkey::new_unique();
+        let pubkey2 = Pubkey::new_unique();
+        let pubkeys = vec![pubkey1, pubkey2];
+
+        let acc1 = create_mock_token_account(&pubkey1, &Pubkey::new_unique());
+        let acc2 = create_mock_token_account(&pubkey2, &Pubkey::new_unique());
+
+        let rpc_client = RpcMockBuilder::new()
+            .with_multiple_accounts_info(vec![Some(acc1.clone()), Some(acc2.clone())])
+            .build();
+
+        let result =
+            CacheUtil::get_multiple_accounts(&config, &rpc_client, &pubkeys).await.unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].lamports, acc1.lamports);
+        assert_eq!(result[1].lamports, acc2.lamports);
+    }
+
+    #[tokio::test]
+    async fn test_get_multiple_accounts_rpc_returns_none() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let config = get_config().unwrap();
+
+        let pubkey1 = Pubkey::new_unique();
+        let pubkeys = vec![pubkey1];
+
+        // Rpc returns None for the missing account
+        let rpc_client = RpcMockBuilder::new().with_multiple_accounts_info(vec![None]).build();
+
+        let result = CacheUtil::get_multiple_accounts(&config, &rpc_client, &pubkeys).await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            KoraError::AccountNotFound(pk) => assert_eq!(pk, pubkey1.to_string()),
+            _ => panic!("Expected AccountNotFound error"),
+        }
     }
 
     #[tokio::test]
@@ -869,5 +1067,118 @@ mod tests {
         assert!(result.is_ok(), "Should successfully fetch blockhash from RPC");
         let hash = result.unwrap();
         assert_ne!(hash, Hash::default(), "Blockhash should not be the default hash");
+    }
+
+    // Run with: KORA_REDIS_URL="redis://127.0.0.1:6379" cargo test -p kora-lib test_redis -- --include-ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_redis_get_multiple_accounts_all_cache_hits() {
+        let redis_url = env::var("KORA_REDIS_URL")
+            .expect("KORA_REDIS_URL must be set to run Redis integration tests");
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(true)
+            .with_cache_url(Some(redis_url))
+            .build_and_setup();
+
+        let _ = CacheUtil::init().await;
+        let config = get_config().unwrap();
+
+        let pool = CACHE_POOL.get().unwrap().as_ref().unwrap();
+        let pubkey1 = Pubkey::new_unique();
+        let pubkey2 = Pubkey::new_unique();
+
+        let acc1 = create_mock_token_account(&pubkey1, &Pubkey::new_unique());
+        let acc2 = create_mock_token_account(&pubkey2, &Pubkey::new_unique());
+
+        let cached1 = CachedAccount { account: acc1.clone(), cached_at: Utc::now().timestamp() };
+        let cached2 = CachedAccount { account: acc2.clone(), cached_at: Utc::now().timestamp() };
+
+        CacheUtil::set_in_cache(pool, &CacheUtil::get_account_key(&pubkey1), &cached1, 60)
+            .await
+            .unwrap();
+        CacheUtil::set_in_cache(pool, &CacheUtil::get_account_key(&pubkey2), &cached2, 60)
+            .await
+            .unwrap();
+
+        // NO GetMultipleAccounts mock registered, so if it hits RPC it will panic/fail
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let result = CacheUtil::get_multiple_accounts(&config, &rpc_client, &[pubkey1, pubkey2])
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].lamports, acc1.lamports);
+        assert_eq!(result[1].lamports, acc2.lamports);
+
+        let mut conn = CacheUtil::get_connection(pool).await.unwrap();
+        let _: () = cmd("DEL")
+            .arg(CacheUtil::get_account_key(&pubkey1))
+            .query_async(&mut conn)
+            .await
+            .unwrap();
+        let _: () = cmd("DEL")
+            .arg(CacheUtil::get_account_key(&pubkey2))
+            .query_async(&mut conn)
+            .await
+            .unwrap();
+    }
+
+    // Run with: KORA_REDIS_URL="redis://127.0.0.1:6379" cargo test -p kora-lib test_redis -- --include-ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_redis_get_multiple_accounts_partial_cache_miss() {
+        let redis_url = env::var("KORA_REDIS_URL")
+            .expect("KORA_REDIS_URL must be set to run Redis integration tests");
+        let _m = ConfigMockBuilder::new()
+            .with_cache_enabled(true)
+            .with_cache_url(Some(redis_url))
+            .build_and_setup();
+
+        let _ = CacheUtil::init().await;
+        let config = get_config().unwrap();
+
+        let pool = CACHE_POOL.get().unwrap().as_ref().unwrap();
+        let pubkey1 = Pubkey::new_unique(); // cached
+        let pubkey2 = Pubkey::new_unique(); // miss
+
+        let acc1 = create_mock_token_account(&pubkey1, &Pubkey::new_unique());
+        let acc2 = create_mock_token_account(&pubkey2, &Pubkey::new_unique());
+
+        let cached1 = CachedAccount { account: acc1.clone(), cached_at: Utc::now().timestamp() };
+
+        CacheUtil::set_in_cache(pool, &CacheUtil::get_account_key(&pubkey1), &cached1, 60)
+            .await
+            .unwrap();
+
+        let mut conn = CacheUtil::get_connection(pool).await.unwrap();
+        let _: () = cmd("DEL")
+            .arg(CacheUtil::get_account_key(&pubkey2))
+            .query_async(&mut conn)
+            .await
+            .unwrap();
+
+        let rpc_client =
+            RpcMockBuilder::new().with_multiple_accounts_info(vec![Some(acc2.clone())]).build();
+
+        let result = CacheUtil::get_multiple_accounts(&config, &rpc_client, &[pubkey1, pubkey2])
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].lamports, acc1.lamports);
+        assert_eq!(result[1].lamports, acc2.lamports);
+
+        let mut conn = CacheUtil::get_connection(pool).await.unwrap();
+        let _: () = cmd("DEL")
+            .arg(CacheUtil::get_account_key(&pubkey1))
+            .query_async(&mut conn)
+            .await
+            .unwrap();
+        let _: () = cmd("DEL")
+            .arg(CacheUtil::get_account_key(&pubkey2))
+            .query_async(&mut conn)
+            .await
+            .unwrap();
     }
 }

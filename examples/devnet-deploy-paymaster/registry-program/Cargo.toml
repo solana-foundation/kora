@@ -1,0 +1,18 @@
+[workspace]
+
+[package]
+name = "deploy-registry"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "deploy_registry"
+
+[features]
+no-entrypoint = []
+default = []
+
+[dependencies]
+solana-program = "3.0"
+solana-system-interface = { version = "2", features = ["bincode"] }

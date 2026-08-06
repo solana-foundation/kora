@@ -74,7 +74,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6.0.7
         with:
-          version: 10.12.3
+          version: 11.13.0
           run_install: false
 
       - name: Get pnpm store directory

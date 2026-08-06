@@ -8,4 +8,7 @@ ignore = [
     "RUSTSEC-2026-0098",
     # rustls-webpki 0.101.x is pinned by the transitive rustls 0.21 TLS stack.
     "RUSTSEC-2026-0099",
+    # rkyv is an inactive optional dependency of rust_decimal; Kora does not enable its
+    # rkyv features.
+    "RUSTSEC-2026-0235",
 ]

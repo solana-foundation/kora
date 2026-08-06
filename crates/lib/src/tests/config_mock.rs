@@ -8,7 +8,7 @@ use crate::{
         Token2022InstructionPolicy, ValidationConfig,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
-    fee::price::PriceConfig,
+    fee::price::{PriceConfig, PriceModel},
     oracle::PriceSource,
     signer::config::{
         MemorySignerConfig, OpenfortSignerConfig, PrivySignerConfig, SelectionStrategy,
@@ -169,6 +169,11 @@ impl ConfigMockBuilder {
 
     pub fn with_price_source(mut self, price_source: PriceSource) -> Self {
         self.config.validation.price_source = price_source;
+        self
+    }
+
+    pub fn with_price_model(mut self, price_model: PriceModel) -> Self {
+        self.config.validation.price.model = price_model;
         self
     }
 
@@ -355,6 +360,16 @@ impl ValidationConfigBuilder {
 
     pub fn with_fee_payer_policy(mut self, policy: FeePayerPolicy) -> Self {
         self.config.fee_payer_policy = policy;
+        self
+    }
+
+    pub fn with_cross_cluster_check(mut self, enabled: bool) -> Self {
+        self.config.cross_cluster_check = enabled;
+        self
+    }
+
+    pub fn with_cross_cluster_endpoints(mut self, endpoints: Vec<String>) -> Self {
+        self.config.cross_cluster_endpoints = endpoints;
         self
     }
 }
@@ -700,6 +715,8 @@ impl FeePayerPolicyBuilder {
                     allow_initialize_mint: false,
                     allow_initialize_account: false,
                     allow_initialize_multisig: false,
+                    allow_withdraw_excess_lamports: false,
+                    allow_unwrap_lamports: false,
                 },
                 token_2022: Token2022InstructionPolicy {
                     allow_transfer: false,
@@ -716,6 +733,8 @@ impl FeePayerPolicyBuilder {
                     allow_initialize_mint: false,
                     allow_initialize_account: false,
                     allow_initialize_multisig: false,
+                    allow_withdraw_excess_lamports: false,
+                    allow_unwrap_lamports: false,
                 },
                 alt: crate::config::AltInstructionPolicy {
                     allow_create: false,

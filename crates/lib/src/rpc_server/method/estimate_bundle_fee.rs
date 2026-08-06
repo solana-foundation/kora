@@ -125,7 +125,10 @@ mod tests {
     use crate::{
         config::TransactionPluginType,
         fee::price::{PriceConfig, PriceModel},
+        oracle::PriceSource,
         tests::{
+            account_mock::{create_mock_token2022_mint_with_extensions, create_mock_token_account},
+            cache_mock::MockCacheUtil,
             common::{setup_or_get_test_signer, setup_or_get_test_usage_limiter, RpcMockBuilder},
             config_mock::{mock_state::setup_config_mock, ConfigMockBuilder},
             transaction_mock::create_mock_encoded_transaction,
@@ -135,8 +138,13 @@ mod tests {
     use mockito::{Matcher, Server};
     use serde_json::json;
     use solana_message::{Message, VersionedMessage};
-    use solana_sdk::pubkey::Pubkey;
+    use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signer};
     use solana_system_interface::instruction::transfer;
+    use spl_associated_token_account_interface::{
+        address::get_associated_token_address_with_program_id,
+        instruction::create_associated_token_account_idempotent,
+    };
+    use spl_token_2022_interface::extension::ExtensionType;
 
     #[tokio::test]
     async fn test_estimate_bundle_fee_empty_bundle() {
@@ -405,5 +413,100 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Total transfer amount"), "Unexpected error: {err}");
         assert!(err.contains("exceeds maximum allowed"), "Unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_estimate_bundle_fee_cross_leg_ata_payment() {
+        let _m = ConfigMockBuilder::new()
+            .with_bundle_enabled(true)
+            .with_cache_enabled(true)
+            .with_price_model(PriceModel::Margin { margin: 0.1 })
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![
+                "11111111111111111111111111111111".to_string(), // System Program
+                "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(), // Token Program
+                "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL".to_string(), // ATA Program
+                "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb".to_string(), // Token-2022 Program
+            ])
+            .build_and_setup();
+
+        let fee_payer = setup_or_get_test_signer();
+        let mint = Pubkey::new_unique();
+        let sender = solana_sdk::signature::Keypair::new();
+        let token2022_id = spl_token_2022_interface::id();
+
+        let payment_ata =
+            get_associated_token_address_with_program_id(&fee_payer, &mint, &token2022_id);
+        let sender_ata =
+            get_associated_token_address_with_program_id(&sender.pubkey(), &mint, &token2022_id);
+
+        let mint_account =
+            create_mock_token2022_mint_with_extensions(6, vec![ExtensionType::TransferFeeConfig]);
+        let sender_ata_account = create_mock_token_account(&sender.pubkey(), &mint);
+
+        // Mock CacheUtil for getting accounts
+        let mint_account_clone = mint_account.clone();
+        let cache_ctx = MockCacheUtil::get_account_context();
+        cache_ctx.expect().returning(move |_, _, addr: &Pubkey, _| {
+            if *addr == payment_ata {
+                Err(KoraError::AccountNotFound(payment_ata.to_string()))
+            } else if *addr == mint {
+                Ok(mint_account_clone.clone())
+            } else if *addr == sender_ata {
+                Ok(sender_ata_account.clone())
+            } else {
+                Ok(Account::default())
+            }
+        });
+
+        let rpc_client = Arc::new(
+            RpcMockBuilder::new()
+                .with_fee_estimate(5000)
+                .with_blockhash()
+                .with_simulation()
+                .with_epoch_info_mock()
+                .with_account_info(&mint_account)
+                .build(),
+        );
+
+        let ata_create_ix = create_associated_token_account_idempotent(
+            &sender.pubkey(),
+            &fee_payer,
+            &mint,
+            &token2022_id,
+        );
+        let msg1 = VersionedMessage::Legacy(Message::new(&[ata_create_ix], Some(&sender.pubkey())));
+        let tx1 = TransactionUtil::new_unsigned_versioned_transaction(msg1);
+        let encoded_tx1 = TransactionUtil::encode_versioned_transaction(&tx1).unwrap();
+
+        let transfer_amount = 100_000;
+        let transfer_ix = spl_token_2022_interface::extension::transfer_fee::instruction::transfer_checked_with_fee(
+            &token2022_id,
+            &sender_ata,
+            &mint,
+            &payment_ata,
+            &sender.pubkey(),
+            &[],
+            transfer_amount,
+            6,
+            0,
+        ).unwrap();
+
+        let msg2 = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&sender.pubkey())));
+        let tx2 = TransactionUtil::new_unsigned_versioned_transaction(msg2);
+        let encoded_tx2 = TransactionUtil::encode_versioned_transaction(&tx2).unwrap();
+
+        let request = EstimateBundleFeeRequest {
+            transactions: vec![encoded_tx1, encoded_tx2],
+            fee_token: None,
+            signer_key: Some(fee_payer.to_string()),
+            sig_verify: false,
+            sign_only_indices: None,
+        };
+
+        let result = estimate_bundle_fee(&rpc_client, request).await.unwrap();
+
+        // 16505 = base_fee(5000) + margin(10% of base_fee) + ATA rent + token-2022 transfer fee surcharge
+        assert_eq!(result.fee_in_lamports, 16505);
     }
 }

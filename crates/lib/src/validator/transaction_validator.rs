@@ -306,26 +306,59 @@ impl TransactionValidator {
             self.fee_payer_policy.system.allow_transfer, "System Transfer");
 
         validate_system!(self, system_instructions, SystemAssign,
-            ParsedSystemInstructionData::SystemAssign { authority } => authority,
+            ParsedSystemInstructionData::SystemAssign { authority, .. } => authority,
             self.fee_payer_policy.system.allow_assign, "System Assign");
+
+        // The owner allowlist/disallowed check holds for every Assign owner in a Kora-signed tx,
+        // not only when the fee payer is the reassigned account (parity with CreateAccount).
+        for instruction in
+            system_instructions.get(&ParsedSystemInstructionType::SystemAssign).unwrap_or(&vec![])
+        {
+            if let ParsedSystemInstructionData::SystemAssign { owner, .. } = instruction {
+                if !self.allow_all_programs && !self.allowed_programs.contains(owner) {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Assign owner program {owner} is not in the allowed programs list"
+                    )));
+                }
+                if self.disallowed_accounts.contains(owner) {
+                    return Err(KoraError::InvalidTransaction(format!(
+                        "Assign owner program {owner} is in the disallowed accounts list"
+                    )));
+                }
+            }
+        }
 
         validate_system!(self, system_instructions, SystemAllocate,
             ParsedSystemInstructionData::SystemAllocate { account } => account,
             self.fee_payer_policy.system.allow_allocate, "System Allocate");
 
-        validate_system!(self, system_instructions, SystemCreateAccount,
-        ParsedSystemInstructionData::SystemCreateAccount { payer, owner, .. } => payer,
-        self.fee_payer_policy.system.allow_create_account, "System Create Account", {
-            self.validate_create_account_owner(owner)?;
-        });
+        // allow_create_account gates Kora participating as the funder (payer), the seeded base
+        // signer, or the account being created (prefund brick). The owner allowlist/blocklist
+        // holds for every CreateAccount owner in a Kora-signed tx regardless of Kora's role.
+        for instruction in system_instructions
+            .get(&ParsedSystemInstructionType::SystemCreateAccount)
+            .unwrap_or(&vec![])
+        {
+            if let ParsedSystemInstructionData::SystemCreateAccount {
+                payer,
+                owner,
+                base,
+                new_account,
+                ..
+            } = instruction
+            {
+                let fee_payer_participates = *payer == self.fee_payer_pubkey
+                    || *base == Some(self.fee_payer_pubkey)
+                    || *new_account == self.fee_payer_pubkey;
+                if fee_payer_participates && !self.fee_payer_policy.system.allow_create_account {
+                    return Err(KoraError::InvalidTransaction(
+                        "Fee payer cannot be used for 'System Create Account'".to_string(),
+                    ));
+                }
 
-        // Prefund lets the fee payer be the account created (bricked), not just the funder above.
-        // Re-run the same gate keyed on new_account.
-        validate_system!(self, system_instructions, SystemCreateAccount,
-        ParsedSystemInstructionData::SystemCreateAccount { new_account, owner, .. } => new_account,
-        self.fee_payer_policy.system.allow_create_account, "System Create Account", {
-            self.validate_create_account_owner(owner)?;
-        });
+                self.validate_create_account_owner(owner)?;
+            }
+        }
 
         validate_system!(self, system_instructions, SystemInitializeNonceAccount,
             ParsedSystemInstructionData::SystemInitializeNonceAccount { nonce_authority, .. } => nonce_authority,
@@ -368,7 +401,7 @@ impl TransactionValidator {
                 "SPL Token Burn", "Token2022 Token Burn");
 
             validate_spl!(self, spl_instructions, SplTokenCloseAccount,
-                ParsedSPLInstructionData::SplTokenCloseAccount { owner, multisig_signers, is_2022 } => { owner, multisig_signers, is_2022 },
+                ParsedSPLInstructionData::SplTokenCloseAccount { owner, multisig_signers, is_2022, .. } => { owner, multisig_signers, is_2022 },
                 self.fee_payer_policy.spl_token.allow_close_account,
                 self.fee_payer_policy.token_2022.allow_close_account,
                 "SPL Token Close Account", "Token2022 Token Close Account");
@@ -420,6 +453,18 @@ impl TransactionValidator {
                 self.fee_payer_policy.spl_token.allow_thaw_account,
                 self.fee_payer_policy.token_2022.allow_thaw_account,
                 "SPL Token ThawAccount", "Token2022 Token ThawAccount");
+
+            validate_spl!(self, spl_instructions, SplTokenWithdrawExcessLamports,
+                ParsedSPLInstructionData::SplTokenWithdrawExcessLamports { owner, multisig_signers, is_2022 } => { owner, multisig_signers, is_2022 },
+                self.fee_payer_policy.spl_token.allow_withdraw_excess_lamports,
+                self.fee_payer_policy.token_2022.allow_withdraw_excess_lamports,
+                "SPL Token WithdrawExcessLamports", "Token2022 Token WithdrawExcessLamports");
+
+            validate_spl!(self, spl_instructions, SplTokenUnwrapLamports,
+                ParsedSPLInstructionData::SplTokenUnwrapLamports { owner, multisig_signers, is_2022 } => { owner, multisig_signers, is_2022 },
+                self.fee_payer_policy.spl_token.allow_unwrap_lamports,
+                self.fee_payer_policy.token_2022.allow_unwrap_lamports,
+                "SPL Token UnwrapLamports", "Token2022 Token UnwrapLamports");
         }
 
         // Validate ALT instructions
@@ -850,7 +895,9 @@ impl TransactionValidator {
             }
 
             if let Some(extension_type) = instruction.extension_type {
-                if config.validation.token_2022.is_mint_extension_blocked(extension_type) {
+                if config.validation.token_2022.is_mint_extension_blocked(extension_type)
+                    || config.validation.token_2022.is_account_extension_blocked(extension_type)
+                {
                     return Err(KoraError::InvalidTransaction(format!(
                         "Token2022 instruction '{}' is not allowed because extension '{extension_type:?}' is blocked",
                         instruction.instruction_name
@@ -1026,6 +1073,17 @@ mod tests {
             .with_max_allowed_lamports(1_000_000)
             .with_fee_payer_policy(policy)
             .build();
+        setup_both_configs(config);
+    }
+
+    fn setup_token2022_config_confidential_allowed(policy: FeePayerPolicy) {
+        let mut config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        config.validation.token_2022.allow_confidential_transfers = true;
         setup_both_configs(config);
     }
 
@@ -1757,7 +1815,8 @@ mod tests {
     #[serial]
     async fn test_fee_payer_policy_assign() {
         let fee_payer = Pubkey::new_unique();
-        let new_owner = Pubkey::new_unique();
+        // Owner must be in the allowed programs list; the test config allows the System program.
+        let new_owner = SYSTEM_PROGRAM_ID;
 
         // Test with allow_assign = true
 
@@ -1791,6 +1850,113 @@ mod tests {
         let validator = TransactionValidator::new(config, fee_payer).unwrap();
 
         let instruction = assign(&fee_payer, &new_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_assign_rejects_off_policy_owner() {
+        use solana_system_interface::instruction::assign_with_seed;
+
+        let fee_payer = Pubkey::new_unique();
+        let off_policy_owner = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_assign = true;
+
+        // allow_assign is true, but an owner outside the allowed programs list is still rejected.
+        setup_config_with_policy(policy.clone());
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = assign(&fee_payer, &off_policy_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        let instruction = assign_with_seed(&fee_payer, &fee_payer, "seed", &off_policy_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // An owner in disallowed_accounts is rejected even when present in allowed_programs.
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![SYSTEM_PROGRAM_ID.to_string(), off_policy_owner.to_string()],
+            vec![off_policy_owner.to_string()],
+        );
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = assign(&fee_payer, &off_policy_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        let instruction = assign_with_seed(&fee_payer, &fee_payer, "seed", &off_policy_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_assign_owner_checked_when_reassigned_account_is_not_fee_payer() {
+        let fee_payer = Pubkey::new_unique();
+        let other_account = Pubkey::new_unique(); // reassigned account, not Kora
+        let off_policy_owner = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+
+        // allow_assign is true and the fee payer is not the reassigned account, but the owner
+        // is outside the allowlist, so Kora must still refuse to sponsor the assignment.
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_assign = true;
+        setup_config_with_policy(policy.clone());
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = assign(&other_account, &off_policy_owner);
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Same for an owner in disallowed_accounts, even when it is allowlisted.
+        setup_config_with_policy_and_disallowed(
+            policy,
+            vec![SYSTEM_PROGRAM_ID.to_string(), off_policy_owner.to_string()],
+            vec![off_policy_owner.to_string()],
+        );
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = assign(&other_account, &off_policy_owner);
         let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
@@ -1887,6 +2053,120 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[transfer_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_spl_transfer_wrapped_in_batch_is_enforced() {
+        let fee_payer = Pubkey::new_unique();
+        let fee_payer_token_account = Pubkey::new_unique();
+        let recipient_token_account = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let source_token_account =
+            TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let build_batched_transfer = || {
+            let transfer_ix = spl_token_interface::instruction::transfer(
+                &spl_token_interface::id(),
+                &fee_payer_token_account,
+                &recipient_token_account,
+                &fee_payer,
+                &[],
+                1000,
+            )
+            .unwrap();
+            let batch_ix =
+                spl_token_interface::instruction::batch(&spl_token_interface::id(), &[transfer_ix])
+                    .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[batch_ix], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        // Batch-wrapped transfer by the fee payer must be rejected when transfers are disallowed;
+        // otherwise a batch is a trivial bypass of the fee-payer policy.
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_transfer = false;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_batched_transfer();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Same batch is allowed when the policy permits fee-payer transfers.
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_transfer = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_batched_transfer();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fee_payer_policy_spl_unwrap_lamports_is_enforced() {
+        let fee_payer = Pubkey::new_unique();
+        let token_account = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        let source_token_account =
+            TokenAccountMockBuilder::new().with_mint(&mint).with_owner(&fee_payer).build();
+        let mint_account = MintAccountMockBuilder::new().with_decimals(6).build();
+
+        let build_unwrap = || {
+            let ix = spl_token_interface::instruction::unwrap_lamports(
+                &spl_token_interface::id(),
+                &token_account,
+                &destination,
+                &fee_payer,
+                &[],
+                Some(1000),
+            )
+            .unwrap();
+            let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
+        };
+
+        // Fee payer as the unwrap authority must be rejected when the policy disallows it.
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_unwrap_lamports = false;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_unwrap();
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_err());
+
+        // Allowed when the policy permits it.
+        let rpc_client = RpcMockBuilder::new()
+            .build_with_sequential_accounts(vec![&source_token_account, &mint_account]);
+        let mut policy = FeePayerPolicy::default();
+        policy.spl_token.allow_unwrap_lamports = true;
+        setup_spl_config_with_policy(policy);
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+        let mut transaction = build_unwrap();
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -2376,6 +2656,48 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_close_account_rent_above_max_allowed_lamports_rejected() {
+        let fee_payer = Pubkey::new_unique();
+        let closed_account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let rent_account = AccountMockBuilder::new().with_lamports(2_000_000).build();
+
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_close_account = true;
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        setup_both_configs(config);
+
+        let rpc_client = RpcMockBuilder::new().with_account_info(&rent_account).build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let close_ix = spl_token_2022_interface::instruction::close_account(
+            &spl_token_2022_interface::id(),
+            &closed_account,
+            &recipient,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(matches!(
+            result,
+            Err(KoraError::InvalidTransaction(message))
+                if message.contains("Total transfer amount 2000000 exceeds maximum allowed 1000000")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_calculate_total_outflow() {
         let fee_payer = Pubkey::new_unique();
         let config = ConfigMockBuilder::new()
@@ -2642,7 +2964,8 @@ mod tests {
 
         // Test with allow_close_account = true
 
-        let rpc_client = RpcMockBuilder::new().build();
+        let closed_account = AccountMockBuilder::new().with_lamports(5_000).build();
+        let rpc_client = RpcMockBuilder::new().with_account_info(&closed_account).build();
         let mut policy = FeePayerPolicy::default();
         policy.spl_token.allow_close_account = true;
         setup_spl_config_with_policy(policy);
@@ -2662,7 +2985,7 @@ mod tests {
         let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
         let mut transaction =
             TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-        // Should pass because allow_close_account is true by default
+        // Should pass because allow_close_account is true and the rent is within max_allowed_lamports
         assert!(validator
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
@@ -3165,6 +3488,171 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_create_account_with_seed_owner_checked_when_kora_is_not_create_payer() {
+        use solana_system_interface::instruction::create_account_with_seed;
+
+        let fee_payer = Pubkey::new_unique(); // Kora, the sponsor / signer
+        let attacker = Pubkey::new_unique(); // the CreateAccountWithSeed `from`/payer, not Kora
+        let base = Pubkey::new_unique();
+        let new_account = Pubkey::new_unique();
+        let off_policy_owner = Pubkey::new_unique();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = true;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Kora sponsors a CreateAccountWithSeed funded by the attacker. The owner must still be
+        // checked even though Kora is not the create payer.
+        let instruction = create_account_with_seed(
+            &attacker,
+            &new_account,
+            &base,
+            "seed",
+            1000,
+            100,
+            &off_policy_owner,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not in the allowed programs list"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_create_account_with_seed_base_signer_gated_by_allow_create_account() {
+        use solana_system_interface::instruction::create_account_with_seed;
+
+        let fee_payer = Pubkey::new_unique(); // Kora, used only as the seeded base signer
+        let attacker = Pubkey::new_unique(); // the create payer / funder
+        let seed = "seed";
+        let new_account = Pubkey::create_with_seed(&fee_payer, seed, &SYSTEM_PROGRAM_ID).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = false;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Owner is System (allowed), so the rejection must come from the allow_create_account gate
+        // recognizing Kora as the seeded base signer, not from the owner allowlist.
+        let instruction = create_account_with_seed(
+            &attacker,
+            &new_account,
+            &fee_payer,
+            seed,
+            1000,
+            0,
+            &SYSTEM_PROGRAM_ID,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Fee payer cannot be used for 'System Create Account'"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_create_account_with_seed_base_read_from_instruction_data() {
+        let fee_payer = Pubkey::new_unique(); // Kora, the seeded base in the instruction data
+        let attacker = Pubkey::new_unique(); // the create payer / funder
+        let decoy = Pubkey::new_unique();
+        let seed = "seed";
+        let new_account = Pubkey::create_with_seed(&fee_payer, seed, &SYSTEM_PROGRAM_ID).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = false;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // The authoritative base lives in the instruction data. A decoy sits at the account slot
+        // a positional gate would read, with Kora referenced as a signer elsewhere — the runtime
+        // accepts this (base is a signer at any index), so the gate must key off the data base.
+        let instruction = Instruction::new_with_bincode(
+            SYSTEM_PROGRAM_ID,
+            &solana_system_interface::instruction::SystemInstruction::CreateAccountWithSeed {
+                base: fee_payer,
+                seed: seed.to_string(),
+                lamports: 1000,
+                space: 0,
+                owner: SYSTEM_PROGRAM_ID,
+            },
+            vec![
+                AccountMeta::new(attacker, true),
+                AccountMeta::new(new_account, false),
+                AccountMeta::new_readonly(decoy, false),
+                AccountMeta::new_readonly(fee_payer, true),
+            ],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Fee payer cannot be used for 'System Create Account'"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_create_account_with_seed_base_equals_from_two_accounts_allowed() {
+        let fee_payer = Pubkey::new_unique(); // Kora, does not participate
+        let from = Pubkey::new_unique();
+        let seed = "seed";
+        let new_account = Pubkey::create_with_seed(&from, seed, &SYSTEM_PROGRAM_ID).unwrap();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_create_account = false;
+        setup_config_with_policy(policy);
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // base == from, so the runtime accepts two accounts (no separate base meta). Kora is
+        // neither payer, base, nor the created account, so validation must pass.
+        let instruction = Instruction::new_with_bincode(
+            SYSTEM_PROGRAM_ID,
+            &solana_system_interface::instruction::SystemInstruction::CreateAccountWithSeed {
+                base: from,
+                seed: seed.to_string(),
+                lamports: 1000,
+                space: 0,
+                owner: SYSTEM_PROGRAM_ID,
+            },
+            vec![AccountMeta::new(from, true), AccountMeta::new(new_account, false)],
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
     }
 
     #[tokio::test]
@@ -5200,6 +5688,131 @@ mod tests {
         );
     }
 
+    async fn assert_blocked_token2022_extension_rejected(
+        instruction: solana_sdk::instruction::Instruction,
+        block_account_extensions: Vec<String>,
+        block_mint_extensions: Vec<String>,
+        expected_extension: &str,
+    ) {
+        let fee_payer = Keypair::new();
+        let rpc_client = RpcMockBuilder::new().build();
+        let mut config = ConfigMockBuilder::new().build();
+        config.validation.allowed_programs =
+            ProgramsConfig::Allowlist(vec![spl_token_2022_interface::id().to_string()]);
+        config.validation.token_2022.blocked_account_extensions = block_account_extensions;
+        config.validation.token_2022.blocked_mint_extensions = block_mint_extensions;
+        config.validation.token_2022.initialize().unwrap();
+
+        let validator = TransactionValidator::new(&config, fee_payer.pubkey()).unwrap();
+
+        // Fee payer is deliberately not one of the instruction accounts, so the rejection must
+        // come from the blocked-extension check rather than the fee-payer-presence check.
+        let message =
+            VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer.pubkey())));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(&config, &mut transaction, &rpc_client).await;
+        let expected = format!("extension '{expected_extension}' is blocked");
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains(&expected)),
+            "Expected blocked {expected_extension} rejection, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_memo_transfer_rejects_blocked_account_extension() {
+        let instruction =
+            spl_token_2022_interface::extension::memo_transfer::instruction::enable_required_transfer_memos(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &[],
+            )
+            .unwrap();
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec!["memo_transfer".to_string()],
+            vec![],
+            "MemoTransfer",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_cpi_guard_rejects_blocked_account_extension() {
+        let instruction =
+            spl_token_2022_interface::extension::cpi_guard::instruction::enable_cpi_guard(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                &[],
+            )
+            .unwrap();
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec!["cpi_guard".to_string()],
+            vec![],
+            "CpiGuard",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_immutable_owner_rejects_blocked_account_extension() {
+        let instruction = spl_token_2022_interface::instruction::initialize_immutable_owner(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+        )
+        .unwrap();
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec!["immutable_owner".to_string()],
+            vec![],
+            "ImmutableOwner",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_non_transferable_rejects_blocked_mint_extension() {
+        let instruction = spl_token_2022_interface::instruction::initialize_non_transferable_mint(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+        )
+        .unwrap();
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec![],
+            vec!["non_transferable".to_string()],
+            "NonTransferable",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_default_account_state_rejects_blocked_mint_extension() {
+        let instruction =
+            spl_token_2022_interface::extension::default_account_state::instruction::initialize_default_account_state(
+                &spl_token_2022_interface::id(),
+                &Pubkey::new_unique(),
+                &spl_token_2022_interface::state::AccountState::Frozen,
+            )
+            .unwrap();
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec!["default_account_state".to_string()],
+            vec![],
+            "DefaultAccountState",
+        )
+        .await;
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_token2022_confidential_extension_instructions_rejected() {
@@ -5226,6 +5839,104 @@ mod tests {
             assert!(msg.contains("Confidential Token-2022 instructions are not supported"));
         } else {
             panic!("Expected InvalidTransaction error for confidential token2022 instruction");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_confidential_mint_burn_rejected_by_default() {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let confidential_ix = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![],
+            data: spl_token_2022_interface::instruction::TokenInstruction::ConfidentialMintBurnExtension
+                .pack(),
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(msg.contains("Confidential Token-2022 instructions are not supported"));
+        } else {
+            panic!("Expected InvalidTransaction error for confidential mint/burn instruction");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_confidential_extensions_allowed_when_flag_enabled() {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_confidential_allowed(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let confidential_variants = [
+            spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferExtension,
+            spl_token_2022_interface::instruction::TokenInstruction::ConfidentialTransferFeeExtension,
+            spl_token_2022_interface::instruction::TokenInstruction::ConfidentialMintBurnExtension,
+        ];
+
+        for variant in confidential_variants {
+            let confidential_ix = Instruction {
+                program_id: spl_token_2022_interface::id(),
+                accounts: vec![AccountMeta::new(Pubkey::new_unique(), false)],
+                data: variant.pack(),
+            };
+
+            let message =
+                VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+            let mut transaction =
+                TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+            assert!(
+                validator.validate_transaction(config, &mut transaction, &rpc_client).await.is_ok(),
+                "Confidential {variant:?} should pass when allow_confidential_transfers is enabled"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_token2022_confidential_extension_rejects_fee_payer_account() {
+        let fee_payer = Pubkey::new_unique();
+        let rpc_client = RpcMockBuilder::new().build();
+        setup_token2022_config_confidential_allowed(FeePayerPolicy::default());
+
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let confidential_ix = Instruction {
+            program_id: spl_token_2022_interface::id(),
+            accounts: vec![AccountMeta::new(fee_payer, false)],
+            data: spl_token_2022_interface::instruction::TokenInstruction::ConfidentialMintBurnExtension
+                .pack(),
+        };
+
+        let message = VersionedMessage::Legacy(Message::new(&[confidential_ix], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        if let Err(KoraError::InvalidTransaction(msg)) = result {
+            assert!(
+                msg.contains("Fee payer cannot be an account in"),
+                "Expected fee payer rejection, got: {msg}"
+            );
+        } else {
+            panic!(
+                "Expected InvalidTransaction error when fee payer is in confidential instruction"
+            );
         }
     }
 
@@ -6117,5 +6828,160 @@ mod tests {
             result.is_ok(),
             "allow_update_extension_authority opt-in should allow group authority use: {result:?}"
         );
+    }
+}
+
+// Fuzzes the fee-payer policy matrix: for each System-program role, asserts the
+// validator gates the fee payer exactly when the role's flag is off, and never
+// gates a non-fee-payer. Generalizes the one-flag-at-a-time tests in `mod tests`.
+#[cfg(test)]
+mod fee_payer_policy_props {
+    use super::*;
+    use crate::{
+        config::FeePayerPolicy, tests::config_mock::ConfigMockBuilder, transaction::TransactionUtil,
+    };
+    use proptest::prelude::*;
+    use solana_message::{Message, VersionedMessage};
+    use solana_system_interface::{
+        instruction::{
+            advance_nonce_account, allocate, assign, authorize_nonce_account, create_account,
+            create_nonce_account, transfer, withdraw_nonce_account,
+        },
+        program::ID as SYSTEM_PROGRAM_ID,
+    };
+
+    #[derive(Debug, Clone, Copy)]
+    enum SystemRole {
+        Transfer,
+        Assign,
+        Allocate,
+        CreateAccountPayer,
+        CreateAccountNewAccount,
+        NonceInitialize,
+        NonceAdvance,
+        NonceAuthorize,
+        NonceWithdraw,
+    }
+
+    const SYSTEM_ROLES: [SystemRole; 9] = [
+        SystemRole::Transfer,
+        SystemRole::Assign,
+        SystemRole::Allocate,
+        SystemRole::CreateAccountPayer,
+        SystemRole::CreateAccountNewAccount,
+        SystemRole::NonceInitialize,
+        SystemRole::NonceAdvance,
+        SystemRole::NonceAuthorize,
+        SystemRole::NonceWithdraw,
+    ];
+
+    fn role_flag(role: SystemRole, policy: &FeePayerPolicy) -> bool {
+        match role {
+            SystemRole::Transfer => policy.system.allow_transfer,
+            SystemRole::Assign => policy.system.allow_assign,
+            SystemRole::Allocate => policy.system.allow_allocate,
+            SystemRole::CreateAccountPayer | SystemRole::CreateAccountNewAccount => {
+                policy.system.allow_create_account
+            }
+            SystemRole::NonceInitialize => policy.system.nonce.allow_initialize,
+            SystemRole::NonceAdvance => policy.system.nonce.allow_advance,
+            SystemRole::NonceAuthorize => policy.system.nonce.allow_authorize,
+            SystemRole::NonceWithdraw => policy.system.nonce.allow_withdraw,
+        }
+    }
+
+    fn instruction_for(role: SystemRole, actor: &Pubkey) -> solana_sdk::instruction::Instruction {
+        match role {
+            SystemRole::Transfer => transfer(actor, &Pubkey::new_unique(), 1_000),
+            SystemRole::Assign => assign(actor, &SYSTEM_PROGRAM_ID),
+            SystemRole::Allocate => allocate(actor, 8),
+            SystemRole::CreateAccountPayer => {
+                create_account(actor, &Pubkey::new_unique(), 1_000, 8, &SYSTEM_PROGRAM_ID)
+            }
+            SystemRole::CreateAccountNewAccount => {
+                create_account(&Pubkey::new_unique(), actor, 1_000, 8, &SYSTEM_PROGRAM_ID)
+            }
+            SystemRole::NonceInitialize => {
+                create_nonce_account(&Pubkey::new_unique(), &Pubkey::new_unique(), actor, 1_000_000)
+                    .swap_remove(1)
+            }
+            SystemRole::NonceAdvance => advance_nonce_account(&Pubkey::new_unique(), actor),
+            SystemRole::NonceAuthorize => {
+                authorize_nonce_account(&Pubkey::new_unique(), actor, &Pubkey::new_unique())
+            }
+            SystemRole::NonceWithdraw => {
+                withdraw_nonce_account(&Pubkey::new_unique(), actor, &Pubkey::new_unique(), 1_000)
+            }
+        }
+    }
+
+    fn system_policy(flags: [bool; 8]) -> FeePayerPolicy {
+        let mut policy = FeePayerPolicy::default();
+        policy.system.allow_transfer = flags[0];
+        policy.system.allow_assign = flags[1];
+        policy.system.allow_allocate = flags[2];
+        policy.system.allow_create_account = flags[3];
+        policy.system.nonce.allow_initialize = flags[4];
+        policy.system.nonce.allow_advance = flags[5];
+        policy.system.nonce.allow_authorize = flags[6];
+        policy.system.nonce.allow_withdraw = flags[7];
+        policy
+    }
+
+    fn validate(
+        policy: FeePayerPolicy,
+        fee_payer: Pubkey,
+        ix: solana_sdk::instruction::Instruction,
+    ) -> Result<(), KoraError> {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            // AdvanceNonceAccount is rejected before the policy gate unless durable txs are
+            // allowed; enable so the nonce policy flags are what's under test.
+            .with_allow_durable_transactions(true)
+            .with_fee_payer_policy(policy)
+            .build();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        validator.validate_fee_payer_usage(&config, &mut resolved)
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+
+        #[test]
+        fn fee_payer_role_gated_iff_flag_off(
+            role_idx in 0usize..SYSTEM_ROLES.len(),
+            actor_is_fee_payer in any::<bool>(),
+            flags in any::<[bool; 8]>(),
+        ) {
+            let role = SYSTEM_ROLES[role_idx];
+            let policy = system_policy(flags);
+            let fee_payer = Pubkey::new_unique();
+            let actor = if actor_is_fee_payer { fee_payer } else { Pubkey::new_unique() };
+
+            let flag = role_flag(role, &policy);
+            let result = validate(policy, fee_payer, instruction_for(role, &actor));
+
+            if !actor_is_fee_payer {
+                prop_assert!(
+                    result.is_ok(),
+                    "{role:?} by a non-fee-payer must never be gated, got {result:?}"
+                );
+            } else if flag {
+                prop_assert!(
+                    result.is_ok(),
+                    "{role:?} by fee payer must pass when its flag is on, got {result:?}"
+                );
+            } else {
+                prop_assert!(
+                    result.is_err(),
+                    "{role:?} by fee payer must be rejected when its flag is off"
+                );
+            }
+        }
     }
 }

@@ -9,16 +9,19 @@ use crate::{
     error::KoraError,
     fee::price::PriceModel,
     token::{
-        spl_token_2022::Token2022Mint,
+        interface::TokenInterface,
+        spl_token::TokenProgram,
+        spl_token_2022::{Token2022Mint, Token2022Program},
         token::{AtaCreationInstructionInfo, TokenType, TokenUtil, TransferHookValidationFlow},
-        TokenState,
     },
     transaction::{
-        ParsedALTInstructionData, ParsedALTInstructionType, ParsedSPLInstructionData,
-        ParsedSPLInstructionType, ParsedSystemInstructionData, ParsedSystemInstructionType,
-        VersionedTransactionOps, VersionedTransactionResolved,
+        ParsedALTInstructionData, ParsedALTInstructionType,
+        ParsedBpfLoaderUpgradeableInstructionData, ParsedBpfLoaderUpgradeableInstructionType,
+        ParsedSPLInstructionData, ParsedSPLInstructionType, ParsedSystemInstructionData,
+        ParsedSystemInstructionType, VersionedTransactionOps, VersionedTransactionResolved,
     },
 };
+use solana_sdk::instruction::Instruction;
 
 #[cfg(not(test))]
 use crate::cache::CacheUtil;
@@ -95,38 +98,6 @@ impl FeeConfigUtil {
         Ok(transaction.signer_pubkeys().contains(fee_payer))
     }
 
-    /// Helper function to check if a token transfer instruction is a payment to Kora
-    /// Returns Some(token_account_data) if it's a payment, None otherwise
-    async fn get_payment_instruction_info(
-        config: &Config,
-        rpc_client: &RpcClient,
-        destination_address: &Pubkey,
-        payment_destination: &Pubkey,
-        skip_missing_accounts: bool,
-    ) -> Result<Option<Box<dyn TokenState + Send + Sync>>, KoraError> {
-        // Get destination account - handle missing accounts based on skip_missing_accounts
-        let destination_account =
-            match CacheUtil::get_account(config, rpc_client, destination_address, false).await {
-                Ok(account) => account,
-                Err(_) if skip_missing_accounts => {
-                    return Ok(None);
-                }
-                Err(e) => {
-                    return Err(e);
-                }
-            };
-
-        let token_program = TokenType::get_token_program_from_owner(&destination_account.owner)?;
-        let token_account = token_program.unpack_token_account(&destination_account.data)?;
-
-        // Check if this is a payment to Kora
-        if token_account.owner() == *payment_destination {
-            Ok(Some(token_account))
-        } else {
-            Ok(None)
-        }
-    }
-
     /// Analyze payment instructions in transaction
     /// Returns (has_payment, total_transfer_fees)
     async fn analyze_payment_instructions(
@@ -134,17 +105,24 @@ impl FeeConfigUtil {
         resolved_transaction: &mut VersionedTransactionResolved,
         rpc_client: &RpcClient,
         fee_payer: &Pubkey,
+        bundle_instructions: Option<&[Instruction]>,
     ) -> Result<(bool, u64), KoraError> {
         let payment_destination = config.kora.get_payment_address(fee_payer)?;
         let mut has_payment = false;
         let mut total_transfer_fees = 0u64;
 
-        let parsed_spl_instructions = resolved_transaction.get_or_parse_spl_instructions()?;
-
-        for instruction in parsed_spl_instructions
+        let spl_transfers = resolved_transaction
+            .get_or_parse_spl_instructions()?
             .get(&ParsedSPLInstructionType::SplTokenTransfer)
-            .unwrap_or(&vec![])
-        {
+            .cloned()
+            .unwrap_or_default();
+
+        let all_instructions: &[Instruction] = match bundle_instructions {
+            Some(instrs) => instrs,
+            None => &resolved_transaction.all_instructions,
+        };
+
+        for instruction in &spl_transfers {
             if let ParsedSPLInstructionData::SplTokenTransfer {
                 mint,
                 amount,
@@ -153,17 +131,25 @@ impl FeeConfigUtil {
                 ..
             } = instruction
             {
-                // Check if this is a payment to Kora
-                let payment_info = Self::get_payment_instruction_info(
+                // Resolve the destination owner via the same helper payment validation uses, so an
+                // ATA created in this transaction (no pre-state) is recognized instead of treated
+                // as a non-payment.
+                let token_program: Box<dyn TokenInterface> = if *is_2022 {
+                    Box::new(Token2022Program::new())
+                } else {
+                    Box::new(TokenProgram::new())
+                };
+                let destination_owner = TokenUtil::resolve_token_account_owner_and_mint(
                     config,
                     rpc_client,
+                    token_program.as_ref(),
                     destination_address,
-                    &payment_destination,
-                    true, // Skip missing accounts
+                    all_instructions,
                 )
-                .await?;
+                .await?
+                .map(|(owner, _, _)| owner);
 
-                if payment_info.is_some() {
+                if destination_owner == Some(payment_destination) {
                     has_payment = true;
 
                     // Calculate Token2022 transfer fees if applicable
@@ -215,6 +201,7 @@ impl FeeConfigUtil {
         is_payment_required: bool,
         rpc_client: &RpcClient,
         config: &Config,
+        bundle_instructions: Option<&[Instruction]>,
     ) -> Result<TotalFeeCalculation, KoraError> {
         // Get base transaction fee using resolved transaction to handle lookup tables
         let base_fee =
@@ -236,8 +223,14 @@ impl FeeConfigUtil {
 
         // Analyze payment instructions (checks if payment exists + calculates Token2022 fees)
         let (has_payment, transfer_fee_config_amount) =
-            FeeConfigUtil::analyze_payment_instructions(config, transaction, rpc_client, fee_payer)
-                .await?;
+            FeeConfigUtil::analyze_payment_instructions(
+                config,
+                transaction,
+                rpc_client,
+                fee_payer,
+                bundle_instructions,
+            )
+            .await?;
 
         // If payment is required but not found, add estimated payment instruction fee
         let fee_for_payment_instruction = if is_payment_required && !has_payment {
@@ -276,6 +269,7 @@ impl FeeConfigUtil {
         rpc_client: &RpcClient,
         config: &Config,
         transfer_hook_validation_flow: TransferHookValidationFlow,
+        bundle_instructions: Option<&[Instruction]>,
     ) -> Result<TotalFeeCalculation, KoraError> {
         // Always validate Token2022 transfer-hook mutability before pricing logic so
         // both free and paid modes enforce the same transfer-hook security guard.
@@ -303,6 +297,7 @@ impl FeeConfigUtil {
                         is_payment_required,
                         rpc_client,
                         config,
+                        bundle_instructions,
                     )
                     .await?;
 
@@ -326,6 +321,7 @@ impl FeeConfigUtil {
                     is_payment_required,
                     rpc_client,
                     config,
+                    bundle_instructions,
                 )
                 .await?;
 
@@ -633,6 +629,52 @@ impl FeeConfigUtil {
             }
         }
 
+        // Loader-v3 ExtendProgram/ExtendProgramChecked grow a ProgramData account and top up its
+        // rent from the payer. When the fee payer funds the extension, count that rent so a large
+        // extension cannot bypass max_allowed_lamports.
+        let mut fee_payer_extension_byte_sizes: Vec<u32> = Vec::new();
+        {
+            let bpf_v3_instructions =
+                transaction.get_or_parse_bpf_loader_upgradeable_instructions()?;
+            for instruction in [
+                ParsedBpfLoaderUpgradeableInstructionType::ExtendProgram,
+                ParsedBpfLoaderUpgradeableInstructionType::ExtendProgramChecked,
+            ]
+            .iter()
+            .flat_map(|ty| bpf_v3_instructions.get(ty).map(Vec::as_slice).unwrap_or(&[]))
+            {
+                let (payer, additional_bytes) = match instruction {
+                    ParsedBpfLoaderUpgradeableInstructionData::ExtendProgram {
+                        payer,
+                        additional_bytes,
+                        ..
+                    }
+                    | ParsedBpfLoaderUpgradeableInstructionData::ExtendProgramChecked {
+                        payer,
+                        additional_bytes,
+                        ..
+                    } => (payer, *additional_bytes),
+                    _ => continue,
+                };
+
+                if *payer == Some(*fee_payer_pubkey) {
+                    fee_payer_extension_byte_sizes.push(additional_bytes);
+                }
+            }
+        }
+
+        // Conservatively charge the rent-exempt minimum for the added bytes per extension
+        // (matching the ATA-creation accounting below).
+        for additional_bytes in fee_payer_extension_byte_sizes {
+            let extension_rent = rpc_client
+                .get_minimum_balance_for_rent_exemption(additional_bytes as usize)
+                .await?;
+            total = total.checked_add(extension_rent as i128).ok_or_else(|| {
+                log::error!("Outflow calculation overflow in ExtendProgram rent");
+                KoraError::ValidationError("Outflow calculation overflow".to_string())
+            })?;
+        }
+
         // ATA Create/CreateIdempotent can be no-ops during simulation depending on prestate.
         // Charge conservative rent for fee-payer-funded ATA creations whenever inner SystemCreateAccount
         // did not surface, preventing stale-state rent drain windows.
@@ -667,6 +709,45 @@ impl FeeConfigUtil {
                 log::error!("Fee payer outflow overflow: sol={}, spl={}", total, spl_outflow);
                 KoraError::ValidationError("Fee payer outflow calculation overflow".to_string())
             })?;
+        }
+
+        // A fee-payer-authorized close to a third party moves the closed account's rent out.
+        let close_accounts = spl_instructions
+            .get(&ParsedSPLInstructionType::SplTokenCloseAccount)
+            .unwrap_or(&empty_vec);
+        for instruction in close_accounts {
+            if let ParsedSPLInstructionData::SplTokenCloseAccount {
+                owner,
+                account,
+                destination,
+                ..
+            } = instruction
+            {
+                let is_fee_payer_authority = *owner == *fee_payer_pubkey;
+                let is_fee_payer_recipient = *destination == *fee_payer_pubkey;
+
+                if !is_fee_payer_authority && !is_fee_payer_recipient {
+                    continue;
+                }
+
+                if is_fee_payer_authority && is_fee_payer_recipient {
+                    continue;
+                }
+
+                let lamports = rpc_client.get_account(account).await?.lamports;
+
+                if is_fee_payer_recipient {
+                    total = total.checked_sub(lamports as i128).ok_or_else(|| {
+                        log::error!("Inflow calculation overflow in SplTokenCloseAccount");
+                        KoraError::ValidationError("Inflow calculation overflow".to_string())
+                    })?;
+                } else {
+                    total = total.checked_add(lamports as i128).ok_or_else(|| {
+                        log::error!("Outflow calculation overflow in SplTokenCloseAccount");
+                        KoraError::ValidationError("Outflow calculation overflow".to_string())
+                    })?;
+                }
+            }
         }
 
         Ok(total)
@@ -724,7 +805,9 @@ mod tests {
             config_mock::{mock_state::get_config, ConfigMockBuilder},
             rpc_mock::RpcMockBuilder,
         },
-        token::{interface::TokenInterface, spl_token::TokenProgram},
+        token::{
+            interface::TokenInterface, spl_token::TokenProgram, spl_token_2022::Token2022Program,
+        },
         transaction::TransactionUtil,
     };
     use solana_address_lookup_table_interface::{
@@ -859,6 +942,7 @@ mod tests {
             &rpc_client,
             &config,
             transfer_hook_validation_flow,
+            None,
         )
         .await
     }
@@ -965,6 +1049,7 @@ mod tests {
             &rpc_client,
             &config,
             TransferHookValidationFlow::DelayedSigning,
+            None,
         )
         .await;
 
@@ -1233,6 +1318,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_extend_program() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let rent = 1_000_000u64;
+
+        let mocked_rpc_client = RpcMockBuilder::new()
+            .with_custom_mock(
+                solana_client::rpc_request::RpcRequest::GetMinimumBalanceForRentExemption,
+                serde_json::json!(rent),
+            )
+            .build();
+        let config = get_config().unwrap();
+
+        // Fee payer funds the extension: the extension rent counts toward outflow.
+        let ix = solana_loader_v3_interface::instruction::extend_program(
+            &program,
+            Some(&fee_payer),
+            4096,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, rent as i128,
+            "fee-payer-funded ExtendProgram rent should count as outflow"
+        );
+
+        // A different payer funds the extension: no outflow for the fee payer.
+        let other_payer = Pubkey::new_unique();
+        let ix = solana_loader_v3_interface::instruction::extend_program(
+            &program,
+            Some(&other_payer),
+            4096,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 0, "extension funded by another payer should not affect outflow");
+
+        // No payer funds the extension: nothing counts toward the fee payer's outflow.
+        let ix = solana_loader_v3_interface::instruction::extend_program(&program, None, 4096);
+        let message = VersionedMessage::Legacy(Message::new(&[ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 0, "extension with no payer should not affect outflow");
+    }
+
+    #[tokio::test]
     async fn test_calculate_fee_payer_outflow_create_account_with_seed() {
         setup_or_get_test_config();
         let mocked_rpc_client = RpcMockBuilder::new().build();
@@ -1444,6 +1602,118 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calculate_fee_payer_outflow_close_account() {
+        let _m = ConfigMockBuilder::new().with_cache_enabled(false).build_and_setup();
+        let fee_payer = Pubkey::new_unique();
+        let closed_account = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let other_authority = Pubkey::new_unique();
+        let rent_account = AccountMockBuilder::new().with_lamports(2_157_600).build();
+        let config = get_config().unwrap();
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &closed_account,
+            &recipient,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 2_157_600,
+            "Fee-payer-authorized close to a third party should count the closed-account rent as outflow"
+        );
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &closed_account,
+            &fee_payer,
+            &fee_payer,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outflow, 0, "Close back to the fee payer should be neutral");
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_2022_interface::instruction::close_account(
+            &spl_token_2022_interface::id(),
+            &closed_account,
+            &fee_payer,
+            &other_authority,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, -2_157_600,
+            "Close into the fee payer from an unrelated authority should be net inflow"
+        );
+
+        let mocked_rpc_client =
+            RpcMockBuilder::new().build_with_sequential_accounts(vec![&rent_account]);
+        let close_ix = spl_token_interface::instruction::close_account(
+            &spl_token_interface::id(),
+            &closed_account,
+            &recipient,
+            &other_authority,
+            &[],
+        )
+        .unwrap();
+        let message = VersionedMessage::Legacy(Message::new(&[close_ix], Some(&fee_payer)));
+        let mut resolved =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+        let outflow = FeeConfigUtil::calculate_fee_payer_outflow(
+            &fee_payer,
+            &mut resolved,
+            &mocked_rpc_client,
+            &config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            outflow, 0,
+            "Close where the fee payer is neither authority nor recipient should be zero"
+        );
+    }
+
+    #[tokio::test]
     async fn test_estimate_kora_fee_margin_includes_alt_close_outflow() {
         let mut config = ConfigMockBuilder::new().with_cache_enabled(false).build();
         config.validation.price = PriceConfig { model: PriceModel::Margin { margin: 0.0 } };
@@ -1473,6 +1743,7 @@ mod tests {
             &mocked_rpc_client,
             &config,
             TransferHookValidationFlow::DelayedSigning,
+            None,
         )
         .await
         .unwrap();
@@ -1748,9 +2019,6 @@ mod tests {
         let mocked_account = create_mock_token_account(&signer, &mint);
         let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
 
-        // Set up cache expectation for token account lookup
-        cache_ctx.expect().times(1).returning(move |_, _, _, _| Ok(mocked_account.clone()));
-
         let sender = Keypair::new();
 
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
@@ -1776,12 +2044,87 @@ mod tests {
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
+            None,
         )
         .await
         .unwrap();
 
         assert!(has_payment, "Should detect payment instruction");
         assert_eq!(transfer_fees, 0, "Should have no transfer fees for SPL token");
+    }
+
+    #[tokio::test]
+    async fn test_analyze_payment_instructions_recognizes_in_transaction_payment_ata() {
+        let _m = ConfigMockBuilder::new().build_and_setup();
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+        let signer = setup_or_get_test_signer();
+        let mint = Pubkey::new_unique();
+        let sender = Keypair::new();
+        let token2022_id = spl_token_2022_interface::id();
+
+        let payment_ata =
+            spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+                &signer,
+                &mint,
+                &token2022_id,
+            );
+        let sender_ata =
+            spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+                &sender.pubkey(),
+                &mint,
+                &token2022_id,
+            );
+
+        let mint_account = crate::tests::account_mock::create_mock_token2022_mint_with_extensions(
+            6,
+            vec![ExtensionType::TransferFeeConfig],
+        );
+
+        // The payment ATA does not yet exist on-chain (created in this same transaction); the mint
+        // exists. The estimator must still recognize the payment.
+        cache_ctx.expect().returning(move |_, _, addr: &Pubkey, _| {
+            if *addr == payment_ata {
+                Err(KoraError::AccountNotFound(payment_ata.to_string()))
+            } else if *addr == mint {
+                Ok(mint_account.clone())
+            } else {
+                Err(KoraError::AccountNotFound(addr.to_string()))
+            }
+        });
+
+        let rpc_client = RpcMockBuilder::new().with_epoch_info_mock().build();
+
+        let ata_create_ix =
+            spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                &sender.pubkey(),
+                &signer,
+                &mint,
+                &token2022_id,
+            );
+        let transfer_ix = Token2022Program::new()
+            .create_transfer_instruction(&sender_ata, &payment_ata, &sender.pubkey(), 1_000_000)
+            .unwrap();
+
+        let message = VersionedMessage::Legacy(Message::new(&[ata_create_ix, transfer_ix], None));
+        let mut resolved_transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let config = get_config().unwrap();
+        let (has_payment, _transfer_fees) = FeeConfigUtil::analyze_payment_instructions(
+            &config,
+            &mut resolved_transaction,
+            &rpc_client,
+            &signer,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            has_payment,
+            "A payment ATA created in the same transaction must be recognized as a payment"
+        );
     }
 
     #[tokio::test]
@@ -1807,6 +2150,7 @@ mod tests {
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
+            None,
         )
         .await
         .unwrap();
@@ -1826,9 +2170,6 @@ mod tests {
 
         let mocked_account = create_mock_token_account(&sender.pubkey(), &mint);
         let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
-
-        // Set up cache expectation for token account lookup
-        cache_ctx.expect().times(1).returning(move |_, _, _, _| Ok(mocked_account.clone()));
 
         // Create token accounts
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
@@ -1855,6 +2196,7 @@ mod tests {
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
+            None,
         )
         .await
         .unwrap();
@@ -1889,6 +2231,7 @@ mod tests {
             false,
             &mocked_rpc_client,
             &config,
+            None,
         )
         .await
         .unwrap();
@@ -1921,6 +2264,7 @@ mod tests {
             false,
             &mocked_rpc_client,
             &config,
+            None,
         )
         .await
         .unwrap();
@@ -1960,6 +2304,7 @@ mod tests {
             true, // payment required
             &mocked_rpc_client,
             &config,
+            None,
         )
         .await
         .unwrap();
@@ -1982,8 +2327,6 @@ mod tests {
 
         let mocked_account = create_mock_token_account(&signer, &mint);
         let mocked_rpc_client = create_mock_rpc_client_with_account(&mocked_account);
-
-        cache_ctx.expect().times(2).returning(move |_, _, _, _| Ok(mocked_account.clone()));
 
         let sender = Keypair::new();
         let sender_token_account = get_associated_token_address(&sender.pubkey(), &mint);
@@ -2017,6 +2360,7 @@ mod tests {
             &mut resolved_transaction,
             &mocked_rpc_client,
             &signer,
+            None,
         )
         .await
         .unwrap();

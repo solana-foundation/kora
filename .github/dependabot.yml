@@ -1,50 +1,43 @@
 version: 2
+
+multi-ecosystem-groups:
+  all-deps:
+    schedule:
+      interval: cron
+      cronjob: "0 9 1,15 * *"
+      timezone: UTC
+    open-pull-requests-limit: 10
+
 updates:
   - package-ecosystem: cargo
     directory: "/"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
+    multi-ecosystem-group: all-deps
+    patterns: ["*"]
     cooldown:
       default-days: 7
-    ignore:
+    allow:
       - dependency-name: "*"
         update-types:
           - version-update:semver-patch
-    groups:
-      cargo-non-major:
-        applies-to: version-updates
-        update-types:
-          - minor
 
   - package-ecosystem: npm
     directory: "/sdks"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
+    multi-ecosystem-group: all-deps
+    patterns: ["*"]
     cooldown:
       default-days: 7
-    ignore:
+    allow:
       - dependency-name: "*"
         update-types:
           - version-update:semver-patch
-    groups:
-      npm-non-major:
-        applies-to: version-updates
-        update-types:
-          - minor
 
   - package-ecosystem: github-actions
     directory: "/"
-    schedule:
-      interval: weekly
+    multi-ecosystem-group: all-deps
+    patterns: ["*"]
     cooldown:
       default-days: 7
-    ignore:
+    allow:
       - dependency-name: "*"
         update-types:
           - version-update:semver-patch
-    groups:
-      actions:
-        patterns:
-          - "*"

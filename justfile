@@ -30,6 +30,11 @@ build-lib:
 build-cli:
     cargo build -p kora-cli
 
+# Build the deploy-registry program (examples/devnet-deploy-paymaster)
+[group('build')]
+build-deploy-registry:
+    cd examples/devnet-deploy-paymaster/registry-program && cargo build-sbf --manifest-path Cargo.toml
+
 # Build specific binary
 [group('build')]
 build-bin bin='kora':
@@ -101,6 +106,25 @@ test-ts: build _ensure-transfer-hook
 # Run all tests (unit + TypeScript + integration)
 [group('test')]
 test: build unit-test unit-test-ts integration-test
+
+# ******************************************************************************
+# Fuzzing
+# ******************************************************************************
+
+# Run a fuzz target (requires cargo-fuzz): just fuzz parse_transaction
+[group('fuzz')]
+fuzz target='parse_transaction' *args='':
+    cd fuzz && cargo fuzz run {{target}} -- {{args}}
+
+# Build all fuzz targets
+[group('fuzz')]
+fuzz-build:
+    cd fuzz && cargo fuzz build
+
+# List available fuzz targets
+[group('fuzz')]
+fuzz-list:
+    cd fuzz && cargo fuzz list
 
 # Build transfer hook test program
 [group('test')]

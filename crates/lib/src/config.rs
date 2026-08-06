@@ -28,6 +28,7 @@ use crate::{
 pub use crate::usage_limit::{UsageLimitConfig, UsageLimitRuleConfig};
 
 #[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub validation: ValidationConfig,
     pub kora: KoraConfig,
@@ -36,7 +37,7 @@ pub struct Config {
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct MetricsConfig {
     pub enabled: bool,
     pub endpoint: String,
@@ -58,6 +59,7 @@ impl Default for MetricsConfig {
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct FeePayerBalanceMetricsConfig {
     pub enabled: bool,
     pub expiry_seconds: u64,
@@ -184,6 +186,7 @@ impl ProgramsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ValidationConfig {
     pub max_allowed_lamports: u64,
     pub max_signatures: u64,
@@ -241,7 +244,7 @@ impl ValidationConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct FeePayerPolicy {
     pub system: SystemInstructionPolicy,
     pub spl_token: SplTokenInstructionPolicy,
@@ -252,14 +255,14 @@ pub struct FeePayerPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct SystemInstructionPolicy {
     /// Allow fee payer to be the sender in System Transfer/TransferWithSeed instructions
     pub allow_transfer: bool,
     /// Allow fee payer to be the authority in System Assign/AssignWithSeed instructions
     pub allow_assign: bool,
-    /// Allow fee payer to be the funder, or the account being created, in System
-    /// CreateAccount/CreateAccountWithSeed/CreateAccountAllowPrefund instructions
+    /// Allow fee payer to be the funder, the seeded base signer, or the account being created, in
+    /// System CreateAccount/CreateAccountWithSeed/CreateAccountAllowPrefund instructions
     pub allow_create_account: bool,
     /// Allow fee payer to be the account in System Allocate/AllocateWithSeed instructions
     pub allow_allocate: bool,
@@ -268,6 +271,7 @@ pub struct SystemInstructionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct NonceInstructionPolicy {
     /// Allow fee payer to be set as the nonce authority in InitializeNonceAccount instructions
     pub allow_initialize: bool,
@@ -281,6 +285,7 @@ pub struct NonceInstructionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SplTokenInstructionPolicy {
     /// Allow fee payer to be the owner in SPL Token Transfer/TransferChecked instructions
     pub allow_transfer: bool,
@@ -306,10 +311,16 @@ pub struct SplTokenInstructionPolicy {
     pub allow_freeze_account: bool,
     /// Allow fee payer to be the freeze authority in SPL Token ThawAccount instructions
     pub allow_thaw_account: bool,
+    /// Allow fee payer to be the authority in SPL Token WithdrawExcessLamports instructions
+    #[serde(default)]
+    pub allow_withdraw_excess_lamports: bool,
+    /// Allow fee payer to be the authority in SPL Token UnwrapLamports instructions
+    #[serde(default)]
+    pub allow_unwrap_lamports: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Token2022InstructionPolicy {
     /// Allow fee payer to be the owner in Token2022 Transfer/TransferChecked instructions
     pub allow_transfer: bool,
@@ -341,10 +352,16 @@ pub struct Token2022InstructionPolicy {
     pub allow_freeze_account: bool,
     /// Allow fee payer to be the freeze authority in Token2022 ThawAccount instructions
     pub allow_thaw_account: bool,
+    /// Allow fee payer to be the authority in Token2022 WithdrawExcessLamports instructions
+    #[serde(default)]
+    pub allow_withdraw_excess_lamports: bool,
+    /// Allow fee payer to be the authority in Token2022 UnwrapLamports instructions
+    #[serde(default)]
+    pub allow_unwrap_lamports: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct AltInstructionPolicy {
     /// Allow fee payer to be authority/payer in ALT CreateLookupTable instructions
     pub allow_create: bool,
@@ -359,7 +376,7 @@ pub struct AltInstructionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct BpfLoaderUpgradeableInstructionPolicy {
     /// Allow fee payer to be the buffer authority in InitializeBuffer instructions
     pub allow_initialize_buffer: bool,
@@ -388,7 +405,7 @@ pub struct BpfLoaderUpgradeableInstructionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct LoaderV4InstructionPolicy {
     /// Allow fee payer to be the authority in Write instructions
     pub allow_write: bool,
@@ -407,12 +424,14 @@ pub struct LoaderV4InstructionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Token2022Config {
     pub blocked_mint_extensions: Vec<String>,
     pub blocked_account_extensions: Vec<String>,
     #[serde(default)]
     pub transfer_hook_policy: TransferHookPolicy,
+    #[serde(default)]
+    pub allow_confidential_transfers: bool,
     #[serde(skip)]
     parsed_blocked_mint_extensions: Option<Vec<ExtensionType>>,
     #[serde(skip)]
@@ -508,7 +527,7 @@ impl Token2022Config {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct EnabledMethods {
     pub liveness: bool,
     pub estimate_transaction_fee: bool,
@@ -638,6 +657,7 @@ impl Default for EnabledMethods {
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CacheConfig {
     /// Redis URL for caching (e.g., "redis://localhost:6379")
     pub url: Option<String>,
@@ -680,14 +700,14 @@ pub enum TransactionPluginType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct PluginsConfig {
     /// List of enabled transaction plugins, executed for sign/signAndSend flows
     pub enabled: Vec<TransactionPluginType>,
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct KoraConfig {
     pub rate_limit: u64,
     pub max_request_body_size: usize,
@@ -734,7 +754,7 @@ impl Default for KoraConfig {
 
 /// Configuration for bundle support (wraps provider-specific configs)
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct BundleConfig {
     /// Enable bundle support
     pub enabled: bool,
@@ -744,7 +764,7 @@ pub struct BundleConfig {
 
 /// Configuration for Lighthouse assertions to protect fee payer balance
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct LighthouseConfig {
     /// Enable Lighthouse assertions for fee payer protection
     pub enabled: bool,
@@ -760,7 +780,7 @@ impl Default for LighthouseConfig {
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct AuthConfig {
     pub api_key: Option<String>,
     pub hmac_secret: Option<String>,
@@ -784,13 +804,58 @@ impl Default for AuthConfig {
 }
 
 impl AuthConfig {
+    pub(crate) const API_KEY_ENV: &'static str = "KORA_API_KEY";
+    pub(crate) const HMAC_SECRET_ENV: &'static str = "KORA_HMAC_SECRET";
+    pub(crate) const RECAPTCHA_SECRET_ENV: &'static str = "KORA_RECAPTCHA_SECRET";
+
     pub(crate) fn normalize_optional_secret(value: Option<String>) -> Option<String> {
         value.filter(|value| !value.is_empty())
     }
 
-    pub(crate) fn has_auth(&self) -> bool {
-        self.api_key.as_deref().is_some_and(|key| !key.is_empty())
-            || self.hmac_secret.as_deref().is_some_and(|key| !key.is_empty())
+    /// Resolve a secret env-first: a non-empty environment variable overrides the config value.
+    /// This is the same precedence the running server applies, so validation and runtime agree.
+    pub(crate) fn resolve_secret(env_var: &str, config_value: Option<&str>) -> Option<String> {
+        Self::normalize_optional_secret(std::env::var(env_var).ok())
+            .or_else(|| Self::normalize_optional_secret(config_value.map(str::to_string)))
+    }
+
+    pub(crate) fn resolved_api_key(&self) -> Option<String> {
+        Self::resolve_secret(Self::API_KEY_ENV, self.api_key.as_deref())
+    }
+
+    pub(crate) fn resolved_hmac_secret(&self) -> Option<String> {
+        Self::resolve_secret(Self::HMAC_SECRET_ENV, self.hmac_secret.as_deref())
+    }
+
+    pub(crate) fn resolved_recaptcha_secret(&self) -> Option<String> {
+        Self::resolve_secret(Self::RECAPTCHA_SECRET_ENV, self.recaptcha_secret.as_deref())
+    }
+
+    /// Whether API-key or HMAC auth is in effect after env-first resolution (what the server enforces).
+    pub(crate) fn has_resolved_auth(&self) -> bool {
+        self.resolved_api_key().is_some() || self.resolved_hmac_secret().is_some()
+    }
+
+    /// Auth fields where a non-empty environment variable overrides a *different* non-empty
+    /// kora.toml value. Returns `(env_var, config_field_label)`; never returns secret contents.
+    pub(crate) fn env_overridden_fields(&self) -> Vec<(&'static str, &'static str)> {
+        [
+            (Self::API_KEY_ENV, "[kora.auth].api_key", self.api_key.as_deref()),
+            (Self::HMAC_SECRET_ENV, "[kora.auth].hmac_secret", self.hmac_secret.as_deref()),
+            (
+                Self::RECAPTCHA_SECRET_ENV,
+                "[kora.auth].recaptcha_secret",
+                self.recaptcha_secret.as_deref(),
+            ),
+        ]
+        .into_iter()
+        .filter(|(env_var, _, config_value)| {
+            let env_value = Self::normalize_optional_secret(std::env::var(env_var).ok());
+            let config_value = Self::normalize_optional_secret(config_value.map(str::to_string));
+            matches!((env_value, config_value), (Some(env), Some(cfg)) if env != cfg)
+        })
+        .map(|(env_var, label, _)| (env_var, label))
+        .collect()
     }
 }
 
@@ -1315,5 +1380,74 @@ allow_create = true
         scoped_redis_env(None, || {
             assert_eq!(cfg.resolved_url(), None);
         });
+    }
+
+    // Match on the key name, not serde/toml phrasing (unstable across versions).
+    fn assert_unknown_field_error(result: Result<Config, KoraError>, field: &str) {
+        match result {
+            Err(KoraError::InternalServerError(msg)) => {
+                assert!(
+                    msg.contains("Failed to parse config file"),
+                    "expected parse failure wrapper, got: {msg}"
+                );
+                assert!(
+                    msg.contains(field),
+                    "expected offending key `{field}` named in error, got: {msg}"
+                );
+            }
+            Err(e) => panic!("expected InternalServerError for unknown field `{field}`, got: {e}"),
+            Ok(_) => panic!("expected error for unknown field `{field}`, but config loaded"),
+        }
+    }
+
+    #[test]
+    fn test_deny_unknown_fields_misspelled_fee_payer_policy_key() {
+        let result = ConfigBuilder::new()
+            .with_custom_section("[validation.fee_payer_policy.system]\nalow_transfer = false\n")
+            .build_config();
+        assert_unknown_field_error(result, "alow_transfer");
+    }
+
+    #[test]
+    fn test_deny_unknown_fields_key_under_wrong_table() {
+        // allow_burn belongs under spl_token / token_2022, not system
+        let result = ConfigBuilder::new()
+            .with_custom_section("[validation.fee_payer_policy.system]\nallow_burn = false\n")
+            .build_config();
+        assert_unknown_field_error(result, "allow_burn");
+    }
+
+    #[test]
+    fn test_deny_unknown_fields_unknown_top_level_table() {
+        let result =
+            ConfigBuilder::new().with_custom_section("[unknown_section]\nfoo = 1\n").build_config();
+        assert_unknown_field_error(result, "unknown_section");
+    }
+
+    #[test]
+    fn test_deny_unknown_fields_unknown_kora_key() {
+        let result = ConfigBuilder::new().with_custom_section("typo_key = 1\n").build_config();
+        // typo_key is appended after [kora], so it lands in KoraConfig
+        assert_unknown_field_error(result, "typo_key");
+    }
+
+    #[test]
+    fn test_deny_unknown_fields_unknown_price_key() {
+        let result = ConfigBuilder::new()
+            .with_custom_section(
+                "[validation.price]\ntype = \"margin\"\nmargin = 0.1\nunknown_price_field = 1\n",
+            )
+            .build_config();
+        assert_unknown_field_error(result, "unknown_price_field");
+    }
+
+    #[test]
+    fn test_deny_unknown_fields_unknown_usage_limit_rule_key() {
+        let result = ConfigBuilder::new()
+            .with_custom_section(
+                "[kora.usage_limit]\nenabled = true\nfallback_if_unavailable = true\n\n[[kora.usage_limit.rules]]\ntype = \"transaction\"\nmax = 10\nunknown_rule_field = true\n",
+            )
+            .build_config();
+        assert_unknown_field_error(result, "unknown_rule_field");
     }
 }

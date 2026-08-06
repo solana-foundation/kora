@@ -1,6 +1,6 @@
 {
   "name": "@solana/kora",
-  "version": "0.3.0-beta.2",
+  "version": "0.3.0-beta.3",
   "description": "TypeScript SDK for Kora RPC",
   "main": "dist/src/index.js",
   "type": "module",
@@ -58,35 +58,35 @@
     "directory": "sdks/ts"
   },
   "peerDependencies": {
-    "@solana-program/compute-budget": "^0.15.0",
-    "@solana-program/token": "^0.13.0",
-    "@solana/kit": "^6.8.0",
-    "@solana/kit-plugin-instruction-plan": "^0.10.0",
-    "@solana/kit-plugin-rpc": "^0.10.0",
-    "@solana/kit-plugin-signer": "^0.10.0"
+    "@solana-program/compute-budget": "^0.17.0",
+    "@solana-program/token": "^0.15.0",
+    "@solana/kit": "^7.0.0",
+    "@solana/kit-plugin-instruction-plan": "^0.13.0",
+    "@solana/kit-plugin-rpc": "^0.15.0",
+    "@solana/kit-plugin-signer": "^0.13.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@solana-program/system": "^0.12.0",
+    "@solana-program/system": "^0.13.0",
     "@solana/eslint-config-solana": "6.0.0",
-    "@solana/kit-plugin-litesvm": "^0.10.0",
+    "@solana/kit-plugin-litesvm": "^0.15.0",
     "@solana/prettier-config-solana": "^0.0.6",
     "@types/jest": "^30.0.0",
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.1.0",
     "dotenv": "^17.4.2",
-    "eslint": "^10.4.0",
+    "eslint": "^10.6.0",
     "eslint-plugin-jest": "^29.15.2",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "eslint-plugin-sort-keys-fix": "^1.1.2",
     "eslint-plugin-typescript-sort-keys": "^3.3.0",
-    "globals": "^17.6.0",
+    "globals": "^17.7.0",
     "jest": "^30.4.2",
-    "prettier": "^3.8.3",
+    "prettier": "^3.9.4",
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.2",
     "typedoc": "^0.28.19",
     "typedoc-plugin-markdown": "^4.12.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.0"
+    "typescript-eslint": "^8.62.1"
   }
 }

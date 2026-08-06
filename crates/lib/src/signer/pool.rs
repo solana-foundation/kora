@@ -299,6 +299,16 @@ impl SignerPool {
             );
         }
 
+        let mut seen_pubkeys = std::collections::HashSet::new();
+        for signer in &signers {
+            let pubkey = signer.signer.pubkey();
+            if !seen_pubkeys.insert(pubkey) {
+                return Err(KoraError::ValidationError(format!(
+                    "Duplicate signer pubkey in pool: {pubkey}. Each signer backend must resolve to a unique pubkey so signer_key selection and health tracking stay bound to the chosen backend."
+                )));
+            }
+        }
+
         let total_weight: u32 = signers.iter().map(|s| s.weight).sum();
 
         if matches!(config.signer_pool.strategy, SelectionStrategy::Weighted) && total_weight == 0 {
@@ -577,8 +587,38 @@ impl SignerPool {
 mod tests {
     use solana_sdk::signature::Keypair;
 
+    use serial_test::serial;
+
     use super::*;
+    use crate::signer::config::{MemorySignerConfig, SignerPoolSettings, SignerTypeConfig};
     use std::collections::HashMap;
+
+    #[tokio::test]
+    #[serial]
+    async fn test_from_config_rejects_duplicate_signer_pubkeys() {
+        let keypair = Keypair::new();
+        std::env::set_var("KORA_TEST_DUP_PUBKEY_KEY", keypair.to_base58_string());
+
+        let memory = || SignerTypeConfig::Memory {
+            config: MemorySignerConfig { private_key_env: "KORA_TEST_DUP_PUBKEY_KEY".to_string() },
+        };
+        let config = SignerPoolConfig {
+            signer_pool: SignerPoolSettings { strategy: SelectionStrategy::RoundRobin },
+            signers: vec![
+                SignerConfig { name: "signer_a".to_string(), weight: Some(1), config: memory() },
+                SignerConfig { name: "signer_b".to_string(), weight: Some(1), config: memory() },
+            ],
+        };
+
+        let result = SignerPool::from_config(config).await;
+        std::env::remove_var("KORA_TEST_DUP_PUBKEY_KEY");
+
+        let err = match result {
+            Ok(_) => panic!("pool with duplicate signer pubkeys must be rejected"),
+            Err(e) => e,
+        };
+        assert!(err.to_string().contains("Duplicate signer pubkey"), "unexpected error: {err}");
+    }
 
     fn create_test_pool() -> SignerPool {
         // Create test signers using external signer library

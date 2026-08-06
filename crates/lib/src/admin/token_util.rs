@@ -4,6 +4,7 @@ use crate::{
     state::{get_request_signer_with_signer_key, get_signer_pool},
     token::token::TokenType,
     transaction::TransactionUtil,
+    validator::cross_cluster::probe_missing_mints,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
@@ -32,6 +33,7 @@ This funciton is tested via the makefile, as it's a CLI command and requires a v
 
 const DEFAULT_CHUNK_SIZE: usize = 10;
 
+#[derive(Debug)]
 pub struct ATAToCreate {
     pub mint: Pubkey,
     pub ata: Pubkey,
@@ -278,12 +280,47 @@ pub async fn find_missing_atas(
     // program id, and deriving with the legacy program id would yield a different PDA that
     // disagrees with execution.
     for mint in &token_mints {
-        let mint_account =
-            CacheUtil::get_account(config, rpc_client, mint, false).await.map_err(|e| {
-                KoraError::RpcError(format!("Failed to fetch mint account for {mint}: {e}"))
-            })?;
+        let mint_account = match CacheUtil::get_account(config, rpc_client, mint, false).await {
+            Ok(account) => account,
+            Err(KoraError::AccountNotFound(_)) => {
+                let mut error_msg =
+                    format!("Failed to fetch mint account for {mint}: account not found");
+                if config.validation.cross_cluster_check {
+                    let mut warnings = Vec::new();
+                    probe_missing_mints(
+                        &[mint.to_string()],
+                        &config.validation.cross_cluster_endpoints,
+                        &mut warnings,
+                    )
+                    .await;
+                    if !warnings.is_empty() {
+                        error_msg.push_str("\n\n");
+                        error_msg.push_str(&warnings.join("\n"));
+                    }
+                }
+                return Err(KoraError::RpcError(error_msg));
+            }
+            Err(e) => {
+                return Err(KoraError::RpcError(format!(
+                    "Failed to fetch mint account for {mint}: {e}"
+                )));
+            }
+        };
 
-        let token_program = TokenType::get_token_program_from_owner(&mint_account.owner)?;
+        let token_program = match TokenType::get_token_program_from_owner(&mint_account.owner) {
+            Ok(program) => program,
+            Err(KoraError::TokenOperationError(_)) => {
+                let owner_name = if mint_account.owner == solana_system_interface::program::ID {
+                    "System Program".to_string()
+                } else {
+                    mint_account.owner.to_string()
+                };
+                return Err(KoraError::RpcError(format!(
+                    "Invalid token program owner for mint {mint} (owner: {owner_name}): must be SPL Token or Token-2022",
+                )));
+            }
+            Err(e) => return Err(e),
+        };
         let token_program_id = token_program.program_id();
         let ata =
             get_associated_token_address_with_program_id(payment_address, mint, &token_program_id);
@@ -318,6 +355,9 @@ mod tests {
         },
         config_mock::{ConfigMockBuilder, ValidationConfigBuilder},
     };
+    use base64::Engine;
+    use solana_sdk::account::Account;
+    use solana_system_interface::program::ID as SYSTEM_PROGRAM_ID;
     use spl_associated_token_account_interface::address::{
         get_associated_token_address, get_associated_token_address_with_program_id,
     };
@@ -447,6 +487,177 @@ mod tests {
             "Existing Token-2022 ATA must be detected as present, got {} ATAs to create",
             result.len()
         );
+    }
+
+    #[tokio::test]
+    async fn test_find_missing_atas_cross_cluster_probe_finds_mint() {
+        let mint = Pubkey::new_unique();
+
+        let mut server = mockito::Server::new_async().await;
+        // Mock a successful JSON-RPC getMultipleAccounts response for the mint
+        let encoded_data = base64::engine::general_purpose::STANDARD.encode(vec![0; 82]); // Dummy mint data
+        let _m = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {
+                        "context": { "slot": 1 },
+                        "value": [
+                            {
+                                "data": [encoded_data, "base64"],
+                                "executable": false,
+                                "lamports": 1000,
+                                "owner": spl_token_interface::id().to_string(),
+                                "rentEpoch": 0
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let url = server.url();
+
+        let _m_config = ConfigMockBuilder::new()
+            .with_validation(
+                ValidationConfigBuilder::new()
+                    .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+                    .with_cross_cluster_check(true)
+                    .with_cross_cluster_endpoints(vec![url.clone()])
+                    .build(),
+            )
+            .build_and_setup();
+
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+
+        let payment_address = Pubkey::new_unique();
+        let rpc_client = create_mock_rpc_client_account_not_found();
+
+        let responses = Arc::new(Mutex::new(VecDeque::from([Err(KoraError::AccountNotFound(
+            mint.to_string(),
+        ))])));
+
+        let responses_clone = responses.clone();
+        cache_ctx
+            .expect()
+            .times(1)
+            .returning(move |_, _, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
+
+        let config = get_config().unwrap();
+        let result = find_missing_atas(&config, &rpc_client, &payment_address).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        if let KoraError::RpcError(msg) = err {
+            assert!(msg.contains("Failed to fetch mint account for"), "got: {}", msg);
+            assert!(msg.contains("found on:"), "got: {}", msg);
+            assert!(msg.contains("possible cluster mismatch"), "got: {}", msg);
+            assert!(msg.contains(&url), "got: {}", msg);
+        } else {
+            panic!("Expected RpcError, got {:?}", err);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_find_missing_atas_cross_cluster_probe() {
+        let mint = Pubkey::new_unique();
+
+        let _m = ConfigMockBuilder::new()
+            .with_validation(
+                ValidationConfigBuilder::new()
+                    .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+                    .with_cross_cluster_check(true)
+                    .with_cross_cluster_endpoints(vec!["http://localhost:12345".to_string()])
+                    .build(),
+            )
+            .build_and_setup();
+
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+
+        let payment_address = Pubkey::new_unique();
+        let rpc_client = create_mock_rpc_client_account_not_found();
+
+        let responses = Arc::new(Mutex::new(VecDeque::from([Err(KoraError::AccountNotFound(
+            mint.to_string(),
+        ))])));
+
+        let responses_clone = responses.clone();
+        cache_ctx
+            .expect()
+            .times(1)
+            .returning(move |_, _, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
+
+        let config = get_config().unwrap();
+        let result = find_missing_atas(&config, &rpc_client, &payment_address).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        if let KoraError::RpcError(msg) = err {
+            assert!(msg.contains("Failed to fetch mint account for"), "got: {}", msg);
+            assert!(
+                msg.contains("cross-cluster check skipped")
+                    || msg.contains("cross-cluster check inconclusive"),
+                "got: {}",
+                msg
+            );
+        } else {
+            panic!("Expected RpcError, got {:?}", err);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_find_missing_atas_wrong_owner() {
+        let mint = Pubkey::new_unique();
+
+        let _m = ConfigMockBuilder::new()
+            .with_validation(
+                ValidationConfigBuilder::new()
+                    .with_allowed_spl_paid_tokens(SplTokenConfig::Allowlist(vec![mint.to_string()]))
+                    .build(),
+            )
+            .build_and_setup();
+
+        let cache_ctx = CacheUtil::get_account_context();
+        cache_ctx.checkpoint();
+
+        let payment_address = Pubkey::new_unique();
+        let rpc_client = create_mock_rpc_client_account_not_found();
+
+        // Return a mock account that is owned by the wrong program.
+        let responses = Arc::new(Mutex::new(VecDeque::from([Ok(Account {
+            lamports: 1000,
+            data: vec![0; 82], // valid mint length
+            owner: SYSTEM_PROGRAM_ID,
+            executable: false,
+            rent_epoch: 0,
+        })])));
+
+        let responses_clone = responses.clone();
+        cache_ctx
+            .expect()
+            .times(1)
+            .returning(move |_, _, _, _| responses_clone.lock().unwrap().pop_front().unwrap());
+
+        let config = get_config().unwrap();
+        let result = find_missing_atas(&config, &rpc_client, &payment_address).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        if let KoraError::RpcError(msg) = err {
+            assert!(msg.contains("Invalid token program owner for mint"));
+            assert!(msg.contains("owner: System Program"));
+            assert!(msg.contains("must be SPL Token or Token-2022"));
+        } else {
+            panic!("Expected RpcError, got {:?}", err);
+        }
     }
 
     #[tokio::test]

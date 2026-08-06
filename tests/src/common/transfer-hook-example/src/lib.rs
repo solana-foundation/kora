@@ -2,8 +2,9 @@ use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint,
     entrypoint::ProgramResult,
+    instruction::{AccountMeta, Instruction},
     msg,
-    program::invoke_signed,
+    program::{invoke, invoke_signed},
     program_error::ProgramError,
     pubkey::Pubkey,
     rent::Rent,
@@ -26,20 +27,50 @@ pub fn process_instruction(
     accounts: &[AccountInfo],
     instruction_data: &[u8],
 ) -> ProgramResult {
-    match TransferHookInstruction::unpack(instruction_data)? {
-        TransferHookInstruction::Execute { amount } => {
-            msg!("Transfer hook execute: amount {}", amount);
-            execute_transfer_hook(program_id, accounts, amount)
-        }
-        TransferHookInstruction::InitializeExtraAccountMetaList { extra_account_metas } => {
-            msg!("Transfer hook initialize extra account meta list");
-            initialize_extra_account_meta_list(program_id, accounts, &extra_account_metas)
-        }
-        TransferHookInstruction::UpdateExtraAccountMetaList { extra_account_metas } => {
-            msg!("Transfer hook update extra account meta list");
-            update_extra_account_meta_list(program_id, accounts, &extra_account_metas)
-        }
+    if let Ok(hook_instruction) = TransferHookInstruction::unpack(instruction_data) {
+        return match hook_instruction {
+            TransferHookInstruction::Execute { amount } => {
+                msg!("Transfer hook execute: amount {}", amount);
+                execute_transfer_hook(program_id, accounts, amount)
+            }
+            TransferHookInstruction::InitializeExtraAccountMetaList { extra_account_metas } => {
+                msg!("Transfer hook initialize extra account meta list");
+                initialize_extra_account_meta_list(program_id, accounts, &extra_account_metas)
+            }
+            TransferHookInstruction::UpdateExtraAccountMetaList { extra_account_metas } => {
+                msg!("Transfer hook update extra account meta list");
+                update_extra_account_meta_list(program_id, accounts, &extra_account_metas)
+            }
+        };
     }
+
+    forward_cpi(accounts, instruction_data)
+}
+
+// Invokes instruction_data on the program in accounts[0] with accounts[1..], so tests can drive
+// instructions (e.g. p-token batches) into Kora's validator as inner CPI instructions.
+fn forward_cpi(accounts: &[AccountInfo], instruction_data: &[u8]) -> ProgramResult {
+    let target_program = &accounts[0];
+    let cpi_accounts = &accounts[1..];
+
+    let metas: Vec<AccountMeta> = cpi_accounts
+        .iter()
+        .map(|account| {
+            if account.is_writable {
+                AccountMeta::new(*account.key, account.is_signer)
+            } else {
+                AccountMeta::new_readonly(*account.key, account.is_signer)
+            }
+        })
+        .collect();
+
+    let instruction = Instruction {
+        program_id: *target_program.key,
+        accounts: metas,
+        data: instruction_data.to_vec(),
+    };
+
+    invoke(&instruction, accounts)
 }
 
 // Execute transfer hook logic

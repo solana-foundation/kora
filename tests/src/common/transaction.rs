@@ -427,6 +427,53 @@ impl TransactionBuilder {
         self
     }
 
+    /// Add SPL token withdraw_excess_lamports instruction
+    pub fn with_spl_withdraw_excess_lamports(
+        mut self,
+        account: &Pubkey,
+        destination: &Pubkey,
+        authority: &Pubkey,
+    ) -> Self {
+        let instruction = spl_token_interface::instruction::withdraw_excess_lamports(
+            &spl_token_interface::id(),
+            account,
+            destination,
+            authority,
+            &[],
+        )
+        .expect("Failed to create withdraw_excess_lamports instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Add Token2022 withdraw_excess_lamports instruction
+    pub fn with_token2022_withdraw_excess_lamports(
+        mut self,
+        account: &Pubkey,
+        destination: &Pubkey,
+        authority: &Pubkey,
+    ) -> Self {
+        let instruction = spl_token_2022_interface::instruction::withdraw_excess_lamports(
+            &spl_token_2022_interface::id(),
+            account,
+            destination,
+            authority,
+            &[],
+        )
+        .expect("Failed to create Token2022 withdraw_excess_lamports instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
+    /// Wrap the given SPL token instructions in a single p-token `Batch` instruction
+    pub fn with_spl_batch(mut self, inner: Vec<Instruction>) -> Self {
+        let instruction =
+            spl_token_interface::instruction::batch(&spl_token_interface::id(), &inner)
+                .expect("Failed to create batch instruction");
+        self.instructions.push(instruction);
+        self
+    }
+
     /// Add SPL token set_authority instruction
     pub fn with_spl_set_authority(
         mut self,
