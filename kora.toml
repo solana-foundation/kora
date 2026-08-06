@@ -151,6 +151,9 @@ blocked_mint_extensions = [
     # "permanent_delegate",             # Permanent delegate for the mint
     # "transfer_hook",                  # Block tokens with transfer hooks
     # "pausable",                       # Block pausable tokens
+    # "token_metadata",                 # Block embedded token-metadata (and its interface instructions)
+    # "token_group",                    # Block token-group configuration (and its interface instructions)
+    # "token_group_member",             # Block token-group membership
 ]
 blocked_account_extensions = [
     # "confidential_transfer_account", # Confidential transfer state for the account
