@@ -1,5 +1,19 @@
 import { createKitKoraClient, kora, type KoraKitClient } from '../src/kit/index.js';
-import { address, createClient, createNoopSigner, type Address, signature as kitSignature } from '@solana/kit';
+import {
+    AccountRole,
+    address,
+    createClient,
+    createNoopSigner,
+    getBase64Encoder,
+    getTransactionDecoder,
+    type Address,
+    type Base64EncodedWireTransaction,
+    type SignatureBytes,
+    type SignatureDictionary,
+    type Transaction,
+    type TransactionSigner,
+    signature as kitSignature,
+} from '@solana/kit';
 import { identity, signer } from '@solana/kit-plugin-signer';
 
 // Mock fetch globally
@@ -614,6 +628,137 @@ describe('kora() bundle plugin', () => {
         expect(typeof client.sendTransaction).toBe('function');
         expect(typeof client.planTransaction).toBe('function');
         expect(client.kora).toBeDefined();
+    });
+
+    describe('user signature collection', () => {
+        // A TransactionPartialSigner that produces real signature bytes and counts how many
+        // times the wallet would be asked to sign.
+        function createCountingSigner(addr: Address) {
+            const countingSigner = {
+                address: addr,
+                signCount: 0,
+                async signTransactions(transactions: readonly Transaction[]): Promise<SignatureDictionary[]> {
+                    countingSigner.signCount += 1;
+                    return transactions.map(() => ({ [addr]: new Uint8Array(64).fill(7) as SignatureBytes }));
+                },
+            };
+            return countingSigner;
+        }
+
+        function decodeWire(wire: string) {
+            return getTransactionDecoder().decode(getBase64Encoder().encode(wire as Base64EncodedWireTransaction));
+        }
+
+        function filledSignatures(tx: Transaction) {
+            return Object.entries(tx.signatures).filter(
+                ([, sig]) => sig != null && sig.some((byte: number) => byte !== 0),
+            );
+        }
+
+        function wireSentTo(method: string) {
+            const call = mockFetch.mock.calls.find(c => JSON.parse(c[1].body).method === method);
+            expect(call).toBeDefined();
+            return JSON.parse(call![1].body).params.transaction as string;
+        }
+
+        const DUMMY_IX = {
+            programAddress: address('11111111111111111111111111111111'),
+            accounts: [],
+            data: new Uint8Array(4),
+        };
+
+        it('signs exactly once on a paid send, with an unsigned estimation wire', async () => {
+            const countingSigner = createCountingSigner(MOCK_WALLET_ADDRESS);
+            mockRpcResponse({
+                signer_address: MOCK_PAYER_ADDRESS,
+                payment_address: MOCK_PAYMENT_ADDRESS,
+            });
+
+            const client = await createClient()
+                .use(identity(countingSigner as unknown as TransactionSigner))
+                .use(
+                    kora({
+                        endpoint: MOCK_ENDPOINT,
+                        rpcUrl: MOCK_RPC_URL,
+                        feeToken: MOCK_FEE_TOKEN,
+                    }),
+                );
+
+            mockFetch.mockClear();
+            mockRpcResponse({ blockhash: '4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi' });
+            mockSimulateResponse();
+            mockRpcResponse({
+                fee_in_lamports: 5000,
+                fee_in_token: 50000,
+                signer_pubkey: MOCK_PAYER_ADDRESS,
+                payment_address: MOCK_PAYMENT_ADDRESS,
+            });
+            mockRpcResponse({
+                signature: MOCK_SIGNATURE,
+                signed_transaction: 'base64signedtx',
+                signer_pubkey: MOCK_PAYER_ADDRESS,
+            });
+
+            const result = await client.sendTransaction([DUMMY_IX]);
+            expect(result.status).toBe('successful');
+
+            expect(countingSigner.signCount).toBe(1);
+
+            const estimationTx = decodeWire(wireSentTo('estimateTransactionFee'));
+            expect(filledSignatures(estimationTx)).toHaveLength(0);
+
+            const submittedTx = decodeWire(wireSentTo('signAndSendTransaction'));
+            const filled = filledSignatures(submittedTx);
+            expect(filled.map(([addr]) => addr)).toEqual([MOCK_WALLET_ADDRESS]);
+        });
+
+        it('submits a signed transaction on an unpaid send (no payment address)', async () => {
+            const countingSigner = createCountingSigner(MOCK_WALLET_ADDRESS);
+            mockRpcResponse({
+                signer_address: MOCK_PAYER_ADDRESS,
+                payment_address: null,
+            });
+
+            const client = await createClient()
+                .use(identity(countingSigner as unknown as TransactionSigner))
+                .use(
+                    kora({
+                        endpoint: MOCK_ENDPOINT,
+                        rpcUrl: MOCK_RPC_URL,
+                        feeToken: MOCK_FEE_TOKEN,
+                    }),
+                );
+
+            mockFetch.mockClear();
+            mockRpcResponse({ blockhash: '4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi' });
+            mockSimulateResponse();
+            mockRpcResponse({
+                signature: MOCK_SIGNATURE,
+                signed_transaction: 'base64signedtx',
+                signer_pubkey: MOCK_PAYER_ADDRESS,
+            });
+
+            const userSignedIx = {
+                ...DUMMY_IX,
+                accounts: [
+                    {
+                        address: MOCK_WALLET_ADDRESS,
+                        role: AccountRole.WRITABLE_SIGNER,
+                        signer: countingSigner as unknown as TransactionSigner,
+                    },
+                ],
+            };
+            const result = await client.sendTransaction([userSignedIx]);
+            expect(result.status).toBe('successful');
+
+            const calls = mockFetch.mock.calls.map(c => JSON.parse(c[1].body).method);
+            expect(calls).not.toContain('estimateTransactionFee');
+
+            expect(countingSigner.signCount).toBe(1);
+            const submittedTx = decodeWire(wireSentTo('signAndSendTransaction'));
+            const filled = filledSignatures(submittedTx);
+            expect(filled.map(([addr]) => addr)).toEqual([MOCK_WALLET_ADDRESS]);
+        });
     });
 
     // TODO: re-enable once @solana/kit supports overriding an already-set field on an
