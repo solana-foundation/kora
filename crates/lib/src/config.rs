@@ -432,10 +432,6 @@ pub struct Token2022Config {
     pub transfer_hook_policy: TransferHookPolicy,
     #[serde(default)]
     pub allow_confidential_transfers: bool,
-    #[serde(default)]
-    pub allow_token_metadata_instructions: bool,
-    #[serde(default)]
-    pub allow_token_group_instructions: bool,
     #[serde(skip)]
     parsed_blocked_mint_extensions: Option<Vec<ExtensionType>>,
     #[serde(skip)]
