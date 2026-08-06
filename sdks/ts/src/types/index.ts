@@ -296,6 +296,10 @@ export interface ValidationConfig {
 export interface Token2022Config {
     /** Allow confidential Token-2022 transfer instructions instead of rejecting them */
     allow_confidential_transfers?: boolean;
+    /** Allow Token-2022 token-metadata interface instructions instead of rejecting them */
+    allow_token_metadata_instructions?: boolean;
+    /** Allow Token-2022 token-group interface instructions instead of rejecting them */
+    allow_token_group_instructions?: boolean;
     /** List of blocked account extensions */
     blocked_account_extensions: string[];
     /** List of blocked mint extensions */
