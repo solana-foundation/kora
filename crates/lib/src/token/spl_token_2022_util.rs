@@ -108,7 +108,10 @@ define_extensions!(MintExtension, [
     GroupMemberPointer(GroupMemberPointer) => ExtensionType::GroupMemberPointer, "group_member_pointer",
     ScaledUiAmountConfig(ScaledUiAmountConfig) => ExtensionType::ScaledUiAmount, "scaled_ui_amount",
     PausableConfig(PausableConfig) => ExtensionType::Pausable, "pausable",
-    TokenMetadata(TokenMetadata) => ExtensionType::TokenMetadata, "token_metadata",
+    // Unit payload: the metadata content is never consumed, and borsh-parsing it
+    // (several String allocations) would run on every unpack_mint of a
+    // metadata-carrying mint. Presence is all the blocked-extension check needs.
+    TokenMetadata(()) => ExtensionType::TokenMetadata, "token_metadata",
     TokenGroup(TokenGroup) => ExtensionType::TokenGroup, "token_group",
     TokenGroupMember(TokenGroupMember) => ExtensionType::TokenGroupMember, "token_group_member",
 ]);
@@ -232,9 +235,9 @@ pub fn try_parse_mint_extension(
             .ok()
             .map(|ext| ParsedExtension::Mint(MintExtension::PausableConfig(*ext))),
         ExtensionType::TokenMetadata => mint
-            .get_variable_len_extension::<TokenMetadata>()
+            .get_extension_bytes::<TokenMetadata>()
             .ok()
-            .map(|ext| ParsedExtension::Mint(MintExtension::TokenMetadata(ext))),
+            .map(|_| ParsedExtension::Mint(MintExtension::TokenMetadata(()))),
         ExtensionType::TokenGroup => mint
             .get_extension::<TokenGroup>()
             .ok()

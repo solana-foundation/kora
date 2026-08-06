@@ -220,10 +220,19 @@ impl Token2022SecurityParser {
         Ok(parsed)
     }
 
+    /// Cheap recognizer for the token-metadata / token-group interface
+    /// instructions Token-2022 also processes. Lets the typed SPL parser
+    /// classify an instruction without building a security instruction it
+    /// would immediately discard.
+    pub(crate) fn is_token_2022_interface_instruction(data: &[u8]) -> bool {
+        TokenMetadataInstruction::unpack(data).is_ok()
+            || TokenGroupInstruction::unpack(data).is_ok()
+    }
+
     /// Recognizes token-metadata / token-group interface instructions that are
     /// routed to the Token-2022 program but are not `TokenInstruction` variants.
     /// Returns `None` for anything that is neither, so callers fail closed.
-    pub(crate) fn parse_token_2022_interface_instruction(
+    fn parse_token_2022_interface_instruction(
         instruction: &Instruction,
     ) -> Result<Option<Token2022SecurityInstruction>, KoraError> {
         if let Ok(metadata_instruction) = TokenMetadataInstruction::unpack(&instruction.data) {

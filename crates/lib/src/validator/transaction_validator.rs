@@ -1011,6 +1011,7 @@ mod tests {
         transaction::TransactionUtil,
     };
     use serial_test::serial;
+    use spl_pod::optional_keys::OptionalNonZeroPubkey;
 
     use super::*;
     use crate::constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR;
@@ -1084,17 +1085,6 @@ mod tests {
             .with_fee_payer_policy(policy)
             .build();
         config.validation.token_2022.allow_confidential_transfers = true;
-        setup_both_configs(config);
-    }
-
-    fn setup_token2022_config_with_blocked_extensions(blocked_mint_extensions: Vec<String>) {
-        let mut config = ConfigMockBuilder::new()
-            .with_price_source(PriceSource::Mock)
-            .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
-            .with_max_allowed_lamports(1_000_000)
-            .with_fee_payer_policy(FeePayerPolicy::default())
-            .build();
-        config.validation.token_2022.blocked_mint_extensions = blocked_mint_extensions;
         setup_both_configs(config);
     }
 
@@ -6619,62 +6609,38 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_metadata_instructions_rejected_when_token_metadata_blocked() {
-        let fee_payer = Pubkey::new_unique();
-        let metadata = Pubkey::new_unique();
-        let authority = Pubkey::new_unique();
-        setup_token2022_config_with_blocked_extensions(vec!["token_metadata".to_string()]);
-
-        let rpc_client = RpcMockBuilder::new().build();
-        let config = get_config().unwrap();
-        let validator = TransactionValidator::new(config, fee_payer).unwrap();
-
-        // The fee payer is not involved; the operator has denied the extension
-        // outright via blocked_mint_extensions.
         let instruction = spl_token_metadata_interface::instruction::remove_key(
             &spl_token_2022_interface::id(),
-            &metadata,
-            &authority,
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
             "some-key".to_string(),
             false,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-
-        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
-        assert!(
-            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("extension 'TokenMetadata' is blocked")),
-            "Expected rejection via blocked_mint_extensions, got: {result:?}"
-        );
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec![],
+            vec!["token_metadata".to_string()],
+            "TokenMetadata",
+        )
+        .await;
     }
 
     #[tokio::test]
     #[serial]
     async fn test_group_instructions_rejected_when_token_group_blocked() {
-        let fee_payer = Pubkey::new_unique();
-        let group = Pubkey::new_unique();
-        let authority = Pubkey::new_unique();
-        setup_token2022_config_with_blocked_extensions(vec!["token_group".to_string()]);
-
-        let rpc_client = RpcMockBuilder::new().build();
-        let config = get_config().unwrap();
-        let validator = TransactionValidator::new(config, fee_payer).unwrap();
-
         let instruction = spl_token_group_interface::instruction::update_group_max_size(
             &spl_token_2022_interface::id(),
-            &group,
-            &authority,
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
             32,
         );
-        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
-        let mut transaction =
-            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
-
-        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
-        assert!(
-            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("extension 'TokenGroup' is blocked")),
-            "Expected rejection via blocked_mint_extensions, got: {result:?}"
-        );
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec![],
+            vec!["token_group".to_string()],
+            "TokenGroup",
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -6780,8 +6746,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_metadata_update_authority_rejects_planting_fee_payer() {
-        use spl_pod::optional_keys::OptionalNonZeroPubkey;
-
         let fee_payer = Pubkey::new_unique();
         let metadata = Pubkey::new_unique();
         let current_authority = Pubkey::new_unique();
@@ -6813,8 +6777,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_metadata_update_authority_allows_planted_fee_payer_when_policy_enabled() {
-        use spl_pod::optional_keys::OptionalNonZeroPubkey;
-
         let fee_payer = Pubkey::new_unique();
         let metadata = Pubkey::new_unique();
         let current_authority = Pubkey::new_unique();

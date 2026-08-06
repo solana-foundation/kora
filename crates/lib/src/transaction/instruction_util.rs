@@ -3211,14 +3211,17 @@ impl IxUtils {
                     Ok(spl_ix) => spl_ix,
                     Err(e) => {
                         // Token-2022 also processes token-metadata and token-group interface
-                        // instructions, which are not TokenInstruction variants. Skip them in
-                        // this typed SPL parser; their accounts and authority fields are
+                        // instructions, which are not TokenInstruction variants. Record them
+                        // through the unknown-extension channel like other un-modelled
+                        // Token-2022 instructions; their accounts and authority fields are
                         // validated by the Token2022SecurityParser.
-                        if Token2022SecurityParser::parse_token_2022_interface_instruction(
-                            instruction,
-                        )?
-                        .is_some()
-                        {
+                        if Token2022SecurityParser::is_token_2022_interface_instruction(
+                            &instruction.data,
+                        ) {
+                            Self::push_unhandled_token2022_extension(
+                                &mut parsed_instructions,
+                                instruction,
+                            );
                             continue;
                         }
 
