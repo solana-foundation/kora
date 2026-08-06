@@ -1087,6 +1087,18 @@ mod tests {
         setup_both_configs(config);
     }
 
+    fn setup_token2022_config_interface_allowed(policy: FeePayerPolicy) {
+        let mut config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        config.validation.token_2022.allow_token_metadata_instructions = true;
+        config.validation.token_2022.allow_token_group_instructions = true;
+        setup_both_configs(config);
+    }
+
     fn setup_config_with_policy_and_disallowed(
         policy: FeePayerPolicy,
         allowed_programs: Vec<String>,
@@ -6607,10 +6619,73 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_metadata_instructions_rejected_by_default() {
+        let fee_payer = Pubkey::new_unique();
+        let metadata = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Without the allow_token_metadata_instructions opt-in, metadata interface
+        // instructions must be rejected even when the fee payer is not involved.
+        let instruction = spl_token_metadata_interface::instruction::remove_key(
+            &spl_token_2022_interface::id(),
+            &metadata,
+            &authority,
+            "some-key".to_string(),
+            false,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("token-metadata interface instructions are not supported")),
+            "Expected default-off rejection of metadata interface instructions, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_group_instructions_rejected_by_default() {
+        let fee_payer = Pubkey::new_unique();
+        let group = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Without the allow_token_group_instructions opt-in, group interface
+        // instructions must be rejected even when the fee payer is not involved.
+        let instruction = spl_token_group_interface::instruction::update_group_max_size(
+            &spl_token_2022_interface::id(),
+            &group,
+            &authority,
+            32,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("token-group interface instructions are not supported")),
+            "Expected default-off rejection of group interface instructions, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_metadata_remove_key_rejects_fee_payer_as_current_authority() {
         let fee_payer = Pubkey::new_unique();
         let metadata = Pubkey::new_unique();
-        setup_token2022_config_with_policy(FeePayerPolicy::default());
+        setup_token2022_config_interface_allowed(FeePayerPolicy::default());
 
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
@@ -6643,7 +6718,7 @@ mod tests {
         let metadata = Pubkey::new_unique();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_update_extension_authority = true;
-        setup_token2022_config_with_policy(policy);
+        setup_token2022_config_interface_allowed(policy);
 
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
@@ -6676,7 +6751,7 @@ mod tests {
         let mint = Pubkey::new_unique();
         let update_authority = Pubkey::new_unique();
         let mint_authority = Pubkey::new_unique();
-        setup_token2022_config_with_policy(FeePayerPolicy::default());
+        setup_token2022_config_interface_allowed(FeePayerPolicy::default());
 
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
@@ -6713,7 +6788,7 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let metadata = Pubkey::new_unique();
         let current_authority = Pubkey::new_unique();
-        setup_token2022_config_with_policy(FeePayerPolicy::default());
+        setup_token2022_config_interface_allowed(FeePayerPolicy::default());
 
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
@@ -6748,7 +6823,7 @@ mod tests {
         let current_authority = Pubkey::new_unique();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_initialize_extension_authority = true;
-        setup_token2022_config_with_policy(policy);
+        setup_token2022_config_interface_allowed(policy);
 
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
@@ -6777,7 +6852,7 @@ mod tests {
         let fee_payer = Pubkey::new_unique();
         let group = Pubkey::new_unique();
         let current_authority = Pubkey::new_unique();
-        setup_token2022_config_with_policy(FeePayerPolicy::default());
+        setup_token2022_config_interface_allowed(FeePayerPolicy::default());
 
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
@@ -6807,7 +6882,7 @@ mod tests {
         let group = Pubkey::new_unique();
         let mut policy = FeePayerPolicy::default();
         policy.token_2022.allow_update_extension_authority = true;
-        setup_token2022_config_with_policy(policy);
+        setup_token2022_config_interface_allowed(policy);
 
         let rpc_client = RpcMockBuilder::new().build();
         let config = get_config().unwrap();
