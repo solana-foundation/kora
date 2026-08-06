@@ -2158,14 +2158,6 @@
             "type": "boolean",
             "default": false
           },
-          "allow_token_group_instructions": {
-            "type": "boolean",
-            "default": false
-          },
-          "allow_token_metadata_instructions": {
-            "type": "boolean",
-            "default": false
-          },
           "blocked_account_extensions": {
             "type": "array",
             "items": {

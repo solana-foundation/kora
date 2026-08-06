@@ -3211,50 +3211,15 @@ impl IxUtils {
                     Ok(spl_ix) => spl_ix,
                     Err(e) => {
                         // Token-2022 also processes token-metadata and token-group interface
-                        // instructions, which are not TokenInstruction variants. They are
-                        // opt-in per interface family; when allowed, skip them in this typed
-                        // SPL parser — their accounts and authority fields are validated by
-                        // the Token2022SecurityParser.
-                        if let Some(interface_ix) =
-                            Token2022SecurityParser::parse_token_2022_interface_instruction(
-                                instruction,
-                            )?
+                        // instructions, which are not TokenInstruction variants. Skip them in
+                        // this typed SPL parser; their accounts and authority fields are
+                        // validated by the Token2022SecurityParser.
+                        if Token2022SecurityParser::parse_token_2022_interface_instruction(
+                            instruction,
+                        )?
+                        .is_some()
                         {
-                            let config = crate::state::get_config();
-                            let (allowed, interface_name) = match interface_ix.extension_type {
-                                Some(
-                                    spl_token_2022_interface::extension::ExtensionType::TokenMetadata,
-                                ) => (
-                                    config
-                                        .map(|c| {
-                                            c.validation
-                                                .token_2022
-                                                .allow_token_metadata_instructions
-                                        })
-                                        .unwrap_or(false),
-                                    "token-metadata",
-                                ),
-                                Some(
-                                    spl_token_2022_interface::extension::ExtensionType::TokenGroup
-                                    | spl_token_2022_interface::extension::ExtensionType::TokenGroupMember,
-                                ) => (
-                                    config
-                                        .map(|c| {
-                                            c.validation.token_2022.allow_token_group_instructions
-                                        })
-                                        .unwrap_or(false),
-                                    "token-group",
-                                ),
-                                _ => (false, "unknown"),
-                            };
-
-                            if allowed {
-                                continue;
-                            }
-
-                            return Err(KoraError::InvalidTransaction(format!(
-                                "Token-2022 {interface_name} interface instructions are not supported"
-                            )));
+                            continue;
                         }
 
                         return Err(KoraError::InvalidTransaction(format!(
