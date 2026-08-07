@@ -28,6 +28,19 @@ pub fn parse_private_key_string(private_key: &str) -> Result<Keypair, String> {
     KeypairUtil::from_private_key_string(private_key).map_err(|e| e.to_string())
 }
 
+/// V1 transactions (SIMD-0385) require an agave >= 4.2 test validator (final
+/// enable_tx_v1 gate key plus the >1232-byte support).
+pub async fn validator_supports_tx_v1(rpc_client: &RpcClient) -> bool {
+    let Ok(version) = rpc_client.get_version().await else {
+        return false;
+    };
+    let mut parts = version.solana_core.split(['.', '-']).filter_map(|s| s.parse::<u64>().ok());
+    let (Some(major), Some(minor)) = (parts.next(), parts.next()) else {
+        return false;
+    };
+    (major, minor) >= (4, 2)
+}
+
 pub struct FeePayerTestHelper;
 
 impl FeePayerTestHelper {

@@ -8,6 +8,7 @@ pub const ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION: u64 = 50;
 pub const MIN_BALANCE_FOR_RENT_EXEMPTION: u64 = 2_039_280;
 pub const DEFAULT_INTEREST_MULTIPLIER: u128 = 100 * 24 * 60 * 60 / 10000 / (365 * 24 * 60 * 60);
 pub const MAX_TRANSACTION_SIZE: usize = 1232;
+pub const MAX_V1_TRANSACTION_SIZE: usize = 4096;
 
 // HTTP Headers
 pub const X_RECAPTCHA_TOKEN: &str = "x-recaptcha-token";
