@@ -21,7 +21,10 @@ use crate::{
     constant::{instruction_indexes, BPF_LOADER_UPGRADEABLE_PROGRAM_ID, LOADER_V4_PROGRAM_ID},
     error::KoraError,
     sanitize_error,
-    transaction::VersionedTransactionResolved,
+    transaction::{
+        token2022_security::{Token2022InterfaceFamily, Token2022SecurityParser},
+        VersionedTransactionResolved,
+    },
 };
 
 /// Discriminator of the p-token `Batch` instruction (`spl_token_interface` variant `Batch = 255`).
@@ -3205,15 +3208,53 @@ impl IxUtils {
                     };
                 }
             } else if program_id == spl_token_2022_interface::ID {
-                let spl_ix = spl_token_2022_interface::instruction::TokenInstruction::unpack(
+                let spl_ix = match spl_token_2022_interface::instruction::TokenInstruction::unpack(
                     &instruction.data,
-                )
-                .map_err(|e| {
-                    KoraError::InvalidTransaction(format!(
-                        "Failed to parse Token-2022 instruction: {}",
-                        sanitize_error!(e)
-                    ))
-                })?;
+                ) {
+                    Ok(spl_ix) => spl_ix,
+                    Err(e) => {
+                        // Token-2022 also processes token-metadata and token-group interface
+                        // instructions, which are not TokenInstruction variants. Each family
+                        // is opt-in; when allowed, record it through the unknown-extension
+                        // channel like other un-modelled Token-2022 instructions; its
+                        // accounts and authority fields are validated by the
+                        // Token2022SecurityParser.
+                        if let Some(family) =
+                            Token2022SecurityParser::token_2022_interface_instruction_family(
+                                &instruction.data,
+                            )
+                        {
+                            let allowed = crate::state::get_config()
+                                .map(|c| match family {
+                                    Token2022InterfaceFamily::TokenMetadata => {
+                                        c.validation.token_2022.allow_token_metadata_instructions
+                                    }
+                                    Token2022InterfaceFamily::TokenGroup => {
+                                        c.validation.token_2022.allow_token_group_instructions
+                                    }
+                                })
+                                .unwrap_or(false);
+
+                            if allowed {
+                                Self::push_unhandled_token2022_extension(
+                                    &mut parsed_instructions,
+                                    instruction,
+                                );
+                                continue;
+                            }
+
+                            return Err(KoraError::InvalidTransaction(format!(
+                                "Token-2022 {} interface instructions are not supported",
+                                family.name()
+                            )));
+                        }
+
+                        return Err(KoraError::InvalidTransaction(format!(
+                            "Failed to parse Token-2022 instruction: {}",
+                            sanitize_error!(e)
+                        )));
+                    }
+                };
                 match spl_ix {
                         #[allow(deprecated)]
                         spl_token_2022_interface::instruction::TokenInstruction::Transfer { amount } => {

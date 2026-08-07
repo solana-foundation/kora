@@ -1011,6 +1011,7 @@ mod tests {
         transaction::TransactionUtil,
     };
     use serial_test::serial;
+    use spl_pod::optional_keys::OptionalNonZeroPubkey;
 
     use super::*;
     use crate::constant::instruction_indexes::system_create_account_allow_prefund::DISCRIMINATOR;
@@ -1084,6 +1085,18 @@ mod tests {
             .with_fee_payer_policy(policy)
             .build();
         config.validation.token_2022.allow_confidential_transfers = true;
+        setup_both_configs(config);
+    }
+
+    fn setup_token2022_config_interface_allowed(policy: FeePayerPolicy) {
+        let mut config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![spl_token_2022_interface::id().to_string()])
+            .with_max_allowed_lamports(1_000_000)
+            .with_fee_payer_policy(policy)
+            .build();
+        config.validation.token_2022.allow_token_metadata_instructions = true;
+        config.validation.token_2022.allow_token_group_instructions = true;
         setup_both_configs(config);
     }
 
@@ -5701,7 +5714,10 @@ mod tests {
             ProgramsConfig::Allowlist(vec![spl_token_2022_interface::id().to_string()]);
         config.validation.token_2022.blocked_account_extensions = block_account_extensions;
         config.validation.token_2022.blocked_mint_extensions = block_mint_extensions;
+        config.validation.token_2022.allow_token_metadata_instructions = true;
+        config.validation.token_2022.allow_token_group_instructions = true;
         config.validation.token_2022.initialize().unwrap();
+        setup_both_configs(config.clone());
 
         let validator = TransactionValidator::new(&config, fee_payer.pubkey()).unwrap();
 
@@ -6601,6 +6617,325 @@ mod tests {
             .validate_transaction(config, &mut transaction, &rpc_client)
             .await
             .is_err());
+    }
+
+    // Token-2022 token-metadata / token-group interface instructions (end-to-end).
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_instructions_rejected_by_default() {
+        let fee_payer = Pubkey::new_unique();
+        let metadata = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_metadata_interface::instruction::remove_key(
+            &spl_token_2022_interface::id(),
+            &metadata,
+            &authority,
+            "some-key".to_string(),
+            false,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("token-metadata interface instructions are not supported")),
+            "Expected default-off rejection of metadata interface instructions, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_group_instructions_rejected_by_default() {
+        let fee_payer = Pubkey::new_unique();
+        let group = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        setup_token2022_config_with_policy(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_group_interface::instruction::update_group_max_size(
+            &spl_token_2022_interface::id(),
+            &group,
+            &authority,
+            32,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("token-group interface instructions are not supported")),
+            "Expected default-off rejection of group interface instructions, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_instructions_rejected_when_token_metadata_blocked() {
+        let instruction = spl_token_metadata_interface::instruction::remove_key(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            "some-key".to_string(),
+            false,
+        );
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec![],
+            vec!["token_metadata".to_string()],
+            "TokenMetadata",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_group_instructions_rejected_when_token_group_blocked() {
+        let instruction = spl_token_group_interface::instruction::update_group_max_size(
+            &spl_token_2022_interface::id(),
+            &Pubkey::new_unique(),
+            &Pubkey::new_unique(),
+            32,
+        );
+        assert_blocked_token2022_extension_rejected(
+            instruction,
+            vec![],
+            vec!["token_group".to_string()],
+            "TokenGroup",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_remove_key_rejects_fee_payer_as_current_authority() {
+        let fee_payer = Pubkey::new_unique();
+        let metadata = Pubkey::new_unique();
+        setup_token2022_config_interface_allowed(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Attacker tries to borrow the fee payer's signature as the metadata update
+        // authority (fee payer occupies the authority account slot).
+        let instruction = spl_token_metadata_interface::instruction::remove_key(
+            &spl_token_2022_interface::id(),
+            &metadata,
+            &fee_payer,
+            "some-key".to_string(),
+            false,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("current Token2022 extension authority")),
+            "Expected rejection via the extension-authority policy check, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_remove_key_allowed_when_update_extension_authority_policy_enabled() {
+        let fee_payer = Pubkey::new_unique();
+        let metadata = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_update_extension_authority = true;
+        setup_token2022_config_interface_allowed(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Same instruction as the rejection test above, but the operator has
+        // explicitly opted in to the fee payer acting as an extension authority.
+        let instruction = spl_token_metadata_interface::instruction::remove_key(
+            &spl_token_2022_interface::id(),
+            &metadata,
+            &fee_payer,
+            "some-key".to_string(),
+            false,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "allow_update_extension_authority opt-in should allow metadata authority use: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_initialize_allowed_when_fee_payer_absent() {
+        let fee_payer = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let update_authority = Pubkey::new_unique();
+        let mint_authority = Pubkey::new_unique();
+        setup_token2022_config_interface_allowed(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // A legitimate token issuance: the fee payer only pays; it is not an
+        // account in the metadata instruction. Previously this was rejected at
+        // parse time (0xc); it must now be accepted.
+        let instruction = spl_token_metadata_interface::instruction::initialize(
+            &spl_token_2022_interface::id(),
+            &mint,
+            &update_authority,
+            &mint,
+            &mint_authority,
+            "USDP".to_string(),
+            "USDP".to_string(),
+            "https://example.com/usdp.json".to_string(),
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        assert!(validator
+            .validate_transaction(config, &mut transaction, &rpc_client)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_update_authority_rejects_planting_fee_payer() {
+        let fee_payer = Pubkey::new_unique();
+        let metadata = Pubkey::new_unique();
+        let current_authority = Pubkey::new_unique();
+        setup_token2022_config_interface_allowed(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        // Fee payer is NOT an account here; it is planted as the new authority
+        // via instruction data. Must be caught by the planted-authority check.
+        let instruction = spl_token_metadata_interface::instruction::update_authority(
+            &spl_token_2022_interface::id(),
+            &metadata,
+            &current_authority,
+            OptionalNonZeroPubkey::try_from(Some(fee_payer)).unwrap(),
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("planted as a Token2022 extension authority")),
+            "Expected rejection via the planted-authority policy check, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_metadata_update_authority_allows_planted_fee_payer_when_policy_enabled() {
+        let fee_payer = Pubkey::new_unique();
+        let metadata = Pubkey::new_unique();
+        let current_authority = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_initialize_extension_authority = true;
+        setup_token2022_config_interface_allowed(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_metadata_interface::instruction::update_authority(
+            &spl_token_2022_interface::id(),
+            &metadata,
+            &current_authority,
+            OptionalNonZeroPubkey::try_from(Some(fee_payer)).unwrap(),
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "allow_initialize_extension_authority opt-in should allow assigning the fee payer: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_group_update_authority_rejects_planting_fee_payer() {
+        let fee_payer = Pubkey::new_unique();
+        let group = Pubkey::new_unique();
+        let current_authority = Pubkey::new_unique();
+        setup_token2022_config_interface_allowed(FeePayerPolicy::default());
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_group_interface::instruction::update_group_authority(
+            &spl_token_2022_interface::id(),
+            &group,
+            &current_authority,
+            Some(fee_payer),
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            matches!(result, Err(KoraError::InvalidTransaction(ref msg)) if msg.contains("planted as a Token2022 extension authority")),
+            "Expected rejection via the planted-authority policy check, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_group_update_max_size_allowed_when_update_extension_authority_policy_enabled() {
+        let fee_payer = Pubkey::new_unique();
+        let group = Pubkey::new_unique();
+        let mut policy = FeePayerPolicy::default();
+        policy.token_2022.allow_update_extension_authority = true;
+        setup_token2022_config_interface_allowed(policy);
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let config = get_config().unwrap();
+        let validator = TransactionValidator::new(config, fee_payer).unwrap();
+
+        let instruction = spl_token_group_interface::instruction::update_group_max_size(
+            &spl_token_2022_interface::id(),
+            &group,
+            &fee_payer,
+            32,
+        );
+        let message = VersionedMessage::Legacy(Message::new(&[instruction], Some(&fee_payer)));
+        let mut transaction =
+            TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap();
+
+        let result = validator.validate_transaction(config, &mut transaction, &rpc_client).await;
+        assert!(
+            result.is_ok(),
+            "allow_update_extension_authority opt-in should allow group authority use: {result:?}"
+        );
     }
 }
 

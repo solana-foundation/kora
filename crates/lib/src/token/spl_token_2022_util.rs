@@ -58,6 +58,8 @@ use spl_token_2022_interface::{
     },
     state::{Account as Token2022AccountState, Mint as Token2022MintState},
 };
+use spl_token_group_interface::state::{TokenGroup, TokenGroupMember};
+use spl_token_metadata_interface::state::TokenMetadata;
 
 macro_rules! define_extensions {
     ($name:ident, [$($variant:ident($type:ty) => $ext_type:path, $str_name:literal),* $(,)?]) => {
@@ -106,6 +108,12 @@ define_extensions!(MintExtension, [
     GroupMemberPointer(GroupMemberPointer) => ExtensionType::GroupMemberPointer, "group_member_pointer",
     ScaledUiAmountConfig(ScaledUiAmountConfig) => ExtensionType::ScaledUiAmount, "scaled_ui_amount",
     PausableConfig(PausableConfig) => ExtensionType::Pausable, "pausable",
+    // Unit payload: the metadata content is never consumed, and borsh-parsing it
+    // (several String allocations) would run on every unpack_mint of a
+    // metadata-carrying mint. Presence is all the blocked-extension check needs.
+    TokenMetadata(()) => ExtensionType::TokenMetadata, "token_metadata",
+    TokenGroup(TokenGroup) => ExtensionType::TokenGroup, "token_group",
+    TokenGroupMember(TokenGroupMember) => ExtensionType::TokenGroupMember, "token_group_member",
 ]);
 
 define_extensions!(AccountExtension, [
@@ -226,6 +234,18 @@ pub fn try_parse_mint_extension(
             .get_extension::<PausableConfig>()
             .ok()
             .map(|ext| ParsedExtension::Mint(MintExtension::PausableConfig(*ext))),
+        ExtensionType::TokenMetadata => mint
+            .get_extension_bytes::<TokenMetadata>()
+            .ok()
+            .map(|_| ParsedExtension::Mint(MintExtension::TokenMetadata(()))),
+        ExtensionType::TokenGroup => mint
+            .get_extension::<TokenGroup>()
+            .ok()
+            .map(|ext| ParsedExtension::Mint(MintExtension::TokenGroup(*ext))),
+        ExtensionType::TokenGroupMember => mint
+            .get_extension::<TokenGroupMember>()
+            .ok()
+            .map(|ext| ParsedExtension::Mint(MintExtension::TokenGroupMember(*ext))),
         _ => None,
     }
 }
@@ -358,6 +378,9 @@ mod tests {
             "group_member_pointer",
             "scaled_ui_amount",
             "pausable",
+            "token_metadata",
+            "token_group",
+            "token_group_member",
         ];
 
         assert_eq!(names.len(), expected_names.len());
@@ -392,6 +415,9 @@ mod tests {
             ExtensionType::GroupMemberPointer,
             ExtensionType::ScaledUiAmount,
             ExtensionType::Pausable,
+            ExtensionType::TokenMetadata,
+            ExtensionType::TokenGroup,
+            ExtensionType::TokenGroupMember,
         ];
 
         assert_eq!(extensions.len(), expected_extensions.len());
@@ -563,6 +589,15 @@ mod tests {
             parse_mint_extension_string("non_transferable"),
             Some(ExtensionType::NonTransferable)
         );
+        assert_eq!(
+            parse_mint_extension_string("token_metadata"),
+            Some(ExtensionType::TokenMetadata)
+        );
+        assert_eq!(parse_mint_extension_string("token_group"), Some(ExtensionType::TokenGroup));
+        assert_eq!(
+            parse_mint_extension_string("token_group_member"),
+            Some(ExtensionType::TokenGroupMember)
+        );
 
         // Test invalid strings
         assert_eq!(parse_mint_extension_string("invalid_extension"), None);
@@ -642,6 +677,9 @@ mod tests {
             ExtensionType::ScaledUiAmount,
             ExtensionType::Pausable,
             ExtensionType::ConfidentialMintBurn,
+            ExtensionType::TokenMetadata,
+            ExtensionType::TokenGroup,
+            ExtensionType::TokenGroupMember,
         ];
 
         // Account extensions that should be supported
