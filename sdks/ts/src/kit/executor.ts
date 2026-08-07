@@ -3,6 +3,7 @@ import {
     appendTransactionMessageInstructions,
     type Base64EncodedWireTransaction,
     blockhash,
+    compileTransaction,
     createTransactionMessage,
     createTransactionPlanExecutor,
     getBase64EncodedWireTransaction,
@@ -55,17 +56,18 @@ export function createKoraTransactionPlanExecutor(
                 ? await resolveProvisoryComputeUnitLimit(msgWithLifetime)
                 : msgWithLifetime;
 
-            const prePaymentTx = getBase64EncodedWireTransaction(
-                await partiallySignTransactionMessageWithSigners(msgForEstimation),
-            );
-
             let finalTx: Base64EncodedWireTransaction;
 
             if (payment) {
+                // Fee estimation only reads the message and its signature count, so the
+                // estimation wire is compiled unsigned to avoid prompting the wallet for a
+                // signature that would be invalidated by the payment amount rewrite below.
+                const estimationTx = getBase64EncodedWireTransaction(compileTransaction(msgForEstimation));
+
                 const { sourceTokenAccount, destinationTokenAccount } = payment;
                 const { fee_in_token } = await koraClient.estimateTransactionFee({
                     fee_token: config.feeToken,
-                    transaction: prePaymentTx,
+                    transaction: estimationTx,
                 });
 
                 if (fee_in_token == null) {
@@ -131,7 +133,9 @@ export function createKoraTransactionPlanExecutor(
                     await partiallySignTransactionMessageWithSigners(resolvedMsg),
                 );
             } else {
-                finalTx = prePaymentTx;
+                finalTx = getBase64EncodedWireTransaction(
+                    await partiallySignTransactionMessageWithSigners(msgForEstimation),
+                );
             }
 
             const result = await koraClient.signAndSendTransaction({
