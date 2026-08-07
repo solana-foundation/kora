@@ -141,6 +141,8 @@ margin = 0.1  # 10% margin (0.1 = 10%, 1.0 = 100%)
 
 [validation.token_2022]
 transfer_hook_policy = "deny_mutable_for_delayed_signing"
+# allow_token_metadata_instructions = true  # Sponsor token-metadata interface instructions (default: false)
+# allow_token_group_instructions = true     # Sponsor token-group interface instructions (default: false)
 blocked_mint_extensions = [
     # "confidential_transfer_mint",     # Confidential transfer configuration for the mint
     # "confidential_mint_burn",         # Confidential mint and burn configuration

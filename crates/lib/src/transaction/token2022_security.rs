@@ -63,6 +63,21 @@ impl Token2022SecurityInstruction {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Token2022InterfaceFamily {
+    TokenMetadata,
+    TokenGroup,
+}
+
+impl Token2022InterfaceFamily {
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Self::TokenMetadata => "token-metadata",
+            Self::TokenGroup => "token-group",
+        }
+    }
+}
+
 pub(crate) struct Token2022SecurityParser;
 
 impl Token2022SecurityParser {
@@ -224,9 +239,16 @@ impl Token2022SecurityParser {
     /// instructions Token-2022 also processes. Lets the typed SPL parser
     /// classify an instruction without building a security instruction it
     /// would immediately discard.
-    pub(crate) fn is_token_2022_interface_instruction(data: &[u8]) -> bool {
-        TokenMetadataInstruction::unpack(data).is_ok()
-            || TokenGroupInstruction::unpack(data).is_ok()
+    pub(crate) fn token_2022_interface_instruction_family(
+        data: &[u8],
+    ) -> Option<Token2022InterfaceFamily> {
+        if TokenMetadataInstruction::unpack(data).is_ok() {
+            Some(Token2022InterfaceFamily::TokenMetadata)
+        } else if TokenGroupInstruction::unpack(data).is_ok() {
+            Some(Token2022InterfaceFamily::TokenGroup)
+        } else {
+            None
+        }
     }
 
     /// Recognizes token-metadata / token-group interface instructions that are
