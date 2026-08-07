@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use spl_token_2022_interface::extension::ExtensionType;
-use std::{fs, path::Path, str::FromStr};
+use std::{env, fs, path::Path, str::FromStr};
 use toml;
 use utoipa::ToSchema;
 
@@ -688,7 +688,7 @@ impl CacheConfig {
     /// Resolve the Redis URL to use. Priority: `KORA_REDIS_URL` env var over the `url`
     /// field from the TOML config. Returns `None` when neither is set.
     pub fn resolved_url(&self) -> Option<String> {
-        std::env::var("KORA_REDIS_URL").ok().or_else(|| self.url.clone())
+        env::var("KORA_REDIS_URL").ok().or_else(|| self.url.clone())
     }
 }
 
@@ -709,7 +709,9 @@ pub struct PluginsConfig {
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct KoraConfig {
-    pub rate_limit: u64,
+    pub rate_limit: Option<u64>,
+    pub global_rate_limit: Option<u64>,
+    pub cors_allow_origins: Vec<String>,
     pub max_request_body_size: usize,
     pub enabled_methods: EnabledMethods,
     pub auth: AuthConfig,
@@ -735,7 +737,9 @@ pub struct KoraConfig {
 impl Default for KoraConfig {
     fn default() -> Self {
         Self {
-            rate_limit: 100,
+            rate_limit: Some(100),
+            global_rate_limit: None,
+            cors_allow_origins: vec!["*".to_string()],
             max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
             enabled_methods: EnabledMethods::default(),
             auth: AuthConfig::default(),
@@ -779,10 +783,45 @@ impl Default for LighthouseConfig {
     }
 }
 
+fn deserialize_api_keys<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrVec {
+        String(String),
+        Vec(Vec<String>),
+    }
+
+    let opt = Option::<StringOrVec>::deserialize(deserializer)?;
+    Ok(match opt {
+        Some(StringOrVec::String(s)) => {
+            let s = s.trim();
+            if s.is_empty() {
+                None
+            } else {
+                log::warn!("DEPRECATION WARNING: 'api_key' as a single string is deprecated. Please migrate to using 'api_keys' as an array in your configuration.");
+                Some(vec![s.to_string()])
+            }
+        }
+        Some(StringOrVec::Vec(v)) => {
+            let filtered: Vec<String> = v.into_iter().filter(|s| !s.trim().is_empty()).collect();
+            if filtered.is_empty() {
+                None
+            } else {
+                Some(filtered)
+            }
+        }
+        None => None,
+    })
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct AuthConfig {
-    pub api_key: Option<String>,
+    #[serde(alias = "api_key", deserialize_with = "deserialize_api_keys")]
+    pub api_keys: Option<Vec<String>>,
     pub hmac_secret: Option<String>,
     pub recaptcha_secret: Option<String>,
     pub recaptcha_score_threshold: f64,
@@ -793,7 +832,7 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            api_key: None,
+            api_keys: None,
             hmac_secret: None,
             recaptcha_secret: None,
             recaptcha_score_threshold: DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
@@ -815,12 +854,17 @@ impl AuthConfig {
     /// Resolve a secret env-first: a non-empty environment variable overrides the config value.
     /// This is the same precedence the running server applies, so validation and runtime agree.
     pub(crate) fn resolve_secret(env_var: &str, config_value: Option<&str>) -> Option<String> {
-        Self::normalize_optional_secret(std::env::var(env_var).ok())
+        Self::normalize_optional_secret(env::var(env_var).ok())
             .or_else(|| Self::normalize_optional_secret(config_value.map(str::to_string)))
     }
 
-    pub(crate) fn resolved_api_key(&self) -> Option<String> {
-        Self::resolve_secret(Self::API_KEY_ENV, self.api_key.as_deref())
+    pub(crate) fn resolved_api_keys(&self) -> Option<Vec<String>> {
+        let env_value = Self::normalize_optional_secret(env::var(Self::API_KEY_ENV).ok());
+        if let Some(env_key) = env_value {
+            Some(vec![env_key])
+        } else {
+            self.api_keys.clone()
+        }
     }
 
     pub(crate) fn resolved_hmac_secret(&self) -> Option<String> {
@@ -833,29 +877,51 @@ impl AuthConfig {
 
     /// Whether API-key or HMAC auth is in effect after env-first resolution (what the server enforces).
     pub(crate) fn has_resolved_auth(&self) -> bool {
-        self.resolved_api_key().is_some() || self.resolved_hmac_secret().is_some()
+        self.resolved_api_keys().is_some() || self.resolved_hmac_secret().is_some()
     }
 
     /// Auth fields where a non-empty environment variable overrides a *different* non-empty
     /// kora.toml value. Returns `(env_var, config_field_label)`; never returns secret contents.
-    pub(crate) fn env_overridden_fields(&self) -> Vec<(&'static str, &'static str)> {
-        [
-            (Self::API_KEY_ENV, "[kora.auth].api_key", self.api_key.as_deref()),
-            (Self::HMAC_SECRET_ENV, "[kora.auth].hmac_secret", self.hmac_secret.as_deref()),
-            (
-                Self::RECAPTCHA_SECRET_ENV,
-                "[kora.auth].recaptcha_secret",
-                self.recaptcha_secret.as_deref(),
-            ),
-        ]
-        .into_iter()
-        .filter(|(env_var, _, config_value)| {
-            let env_value = Self::normalize_optional_secret(std::env::var(env_var).ok());
-            let config_value = Self::normalize_optional_secret(config_value.map(str::to_string));
-            matches!((env_value, config_value), (Some(env), Some(cfg)) if env != cfg)
-        })
-        .map(|(env_var, label, _)| (env_var, label))
-        .collect()
+    pub(crate) fn env_overridden_fields(&self) -> Vec<String> {
+        let mut overridden = Vec::new();
+
+        let env_api_key = Self::normalize_optional_secret(env::var(Self::API_KEY_ENV).ok());
+        if let Some(env_key) = env_api_key {
+            if let Some(keys) = &self.api_keys {
+                let valid_keys: Vec<_> = keys.iter().filter(|k| !k.is_empty()).collect();
+                if valid_keys.len() > 1 {
+                    overridden.push(format!("{} is set and overrides all api_keys configured in TOML ({} keys) — only the environment variable key is active", Self::API_KEY_ENV, valid_keys.len()));
+                } else if valid_keys.len() == 1 && valid_keys[0] != &env_key {
+                    overridden.push(format!("environment variable {} overrides [kora.auth].api_keys. The environment value takes precedence at runtime; if you rotated the secret in kora.toml, the stale environment value is still in effect. Unset {} or align it with the config.", Self::API_KEY_ENV, Self::API_KEY_ENV));
+                }
+            }
+        }
+
+        let check_override = |env_var: &'static str,
+                              config_label: &'static str,
+                              config_val: Option<&String>| {
+            let env_val = Self::normalize_optional_secret(env::var(env_var).ok());
+            let cfg_val = Self::normalize_optional_secret(config_val.cloned());
+            matches!((env_val, cfg_val), (Some(env), Some(cfg)) if env != cfg)
+                .then_some(format!("environment variable {} overrides {}. The environment value takes precedence at runtime; if you rotated the secret in kora.toml, the stale environment value is still in effect. Unset {} or align it with the config.", env_var, config_label, env_var))
+        };
+
+        if let Some(msg) = check_override(
+            Self::HMAC_SECRET_ENV,
+            "[kora.auth].hmac_secret",
+            self.hmac_secret.as_ref(),
+        ) {
+            overridden.push(msg);
+        }
+        if let Some(msg) = check_override(
+            Self::RECAPTCHA_SECRET_ENV,
+            "[kora.auth].recaptcha_secret",
+            self.recaptcha_secret.as_ref(),
+        ) {
+            overridden.push(msg);
+        }
+
+        overridden
     }
 }
 
@@ -911,6 +977,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_legacy_api_key_backward_compatibility() {
+        // Test that the old `api_key = "single-key"` format is successfully deserialized
+        // into `api_keys = ["single-key"]`.
+        let toml_str = r#"
+            rate_limit = 100
+            max_request_body_size = 1024
+            
+            [auth]
+            api_key = "legacy-single-key"
+        "#;
+
+        let config: KoraConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.auth.api_keys, Some(vec!["legacy-single-key".to_string()]));
+        assert!(config.auth.has_resolved_auth());
+    }
+
+    #[test]
     fn test_load_valid_config() {
         let config = ConfigBuilder::new()
             .with_programs(vec!["program1", "program2"])
@@ -933,7 +1016,7 @@ mod tests {
         );
         assert_eq!(config.validation.disallowed_accounts, vec!["account1"]);
         assert_eq!(config.validation.price_source, PriceSource::Jupiter);
-        assert_eq!(config.kora.rate_limit, 100);
+        assert_eq!(config.kora.rate_limit, Some(100));
         assert!(config.kora.enabled_methods.estimate_transaction_fee);
         assert!(config.kora.enabled_methods.sign_and_send_transaction);
     }
@@ -960,7 +1043,7 @@ mod tests {
             .build_config()
             .unwrap();
 
-        assert_eq!(config.kora.rate_limit, 100);
+        assert_eq!(config.kora.rate_limit, Some(100));
         assert!(config.kora.enabled_methods.liveness);
         assert!(!config.kora.enabled_methods.estimate_transaction_fee);
         assert!(config.kora.enabled_methods.get_supported_tokens);
@@ -1342,15 +1425,15 @@ allow_create = true
     }
 
     fn scoped_redis_env<F: FnOnce()>(value: Option<&str>, f: F) {
-        let previous = std::env::var("KORA_REDIS_URL").ok();
+        let previous = env::var("KORA_REDIS_URL").ok();
         match value {
-            Some(v) => std::env::set_var("KORA_REDIS_URL", v),
-            None => std::env::remove_var("KORA_REDIS_URL"),
+            Some(v) => env::set_var("KORA_REDIS_URL", v),
+            None => env::remove_var("KORA_REDIS_URL"),
         }
         f();
         match previous {
-            Some(v) => std::env::set_var("KORA_REDIS_URL", v),
-            None => std::env::remove_var("KORA_REDIS_URL"),
+            Some(v) => env::set_var("KORA_REDIS_URL", v),
+            None => env::remove_var("KORA_REDIS_URL"),
         }
     }
 
@@ -1361,6 +1444,26 @@ allow_create = true
         scoped_redis_env(Some("redis://from-env:6379"), || {
             assert_eq!(cfg.resolved_url(), Some("redis://from-env:6379".into()));
         });
+    }
+
+    #[test]
+    fn test_api_keys_with_empty_strings_filtered() {
+        let toml_str = r#"
+api_keys = ["valid-key", ""]
+        "#;
+        let config: AuthConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.api_keys, Some(vec!["valid-key".to_string()]));
+        assert!(config.has_resolved_auth());
+    }
+
+    #[test]
+    fn test_api_keys_all_empty_strings_filtered() {
+        let toml_str = r#"
+api_keys = ["", "  "]
+        "#;
+        let config: AuthConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.api_keys, None);
+        assert!(!config.has_resolved_auth());
     }
 
     #[test]
@@ -1449,5 +1552,30 @@ allow_create = true
             )
             .build_config();
         assert_unknown_field_error(result, "unknown_rule_field");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_env_overridden_fields_multiple_keys_backup_dropped() {
+        let auth_config = AuthConfig {
+            api_keys: Some(vec!["key1".to_string(), "key2".to_string()]),
+            ..Default::default()
+        };
+
+        let previous = env::var("KORA_API_KEY").ok();
+        env::set_var("KORA_API_KEY", "key1");
+
+        let warnings = auth_config.env_overridden_fields();
+
+        if let Some(v) = previous {
+            env::set_var("KORA_API_KEY", v);
+        } else {
+            env::remove_var("KORA_API_KEY");
+        }
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains(
+            "KORA_API_KEY is set and overrides all api_keys configured in TOML (2 keys)"
+        ));
     }
 }

@@ -421,9 +421,40 @@ impl ConfigValidator {
             }
         };
 
-        // Validate rate limit (warn if 0)
-        if config.kora.rate_limit == 0 {
-            warnings.push("Rate limit is set to 0 - this will block all requests".to_string());
+        // Validate rate limit (warn if None)
+        // Note: None is only reachable programmatically, not from TOML (TOML has no null type;
+        // omitting the field uses the default of Some(100)).
+        if config.kora.rate_limit.is_none() {
+            warnings.push("Rate limit is disabled (set to None) - per-identity rate limiting is disabled; all requests will be allowed without throttling".to_string());
+        }
+
+        if config.kora.rate_limit == Some(0) {
+            warnings.push("Per-identity rate limit is set to 0 - all requests for each identity will be rejected immediately with 429".to_string());
+        }
+
+        // Validate global rate limit (warn if Some(0))
+        if config.kora.global_rate_limit == Some(0) {
+            warnings.push("Global rate limit is set to 0 - all requests will be throttled and rejected immediately".to_string());
+        }
+
+        // Validate CORS origins
+        if config.kora.cors_allow_origins.is_empty() {
+            warnings.push("cors_allow_origins is empty or contains no valid origins - all cross-origin requests will be blocked".to_string());
+        } else if !config.kora.cors_allow_origins.iter().any(|o| o == "*") {
+            let invalid_count = config
+                .kora
+                .cors_allow_origins
+                .iter()
+                .filter(|o| o.parse::<http::HeaderValue>().is_err())
+                .count();
+
+            if invalid_count == config.kora.cors_allow_origins.len() {
+                warnings.push("cors_allow_origins is empty or contains no valid origins - all cross-origin requests will be blocked".to_string());
+            } else if invalid_count > 0 {
+                warnings.push(format!("cors_allow_origins contains {} invalid origin(s) that will be silently filtered out at runtime", invalid_count));
+            }
+        } else if config.kora.cors_allow_origins.len() > 1 {
+            warnings.push("cors_allow_origins contains '*' alongside specific origins. The specific origins are redundant and will be silently ignored.".to_string());
         }
 
         // Validate payment address
@@ -770,12 +801,8 @@ impl ConfigValidator {
 
         // The running server resolves auth env-first, so a stale KORA_* environment variable
         // silently overrides a rotated kora.toml secret and keeps the retired credential valid.
-        for (env_var, field) in config.kora.auth.env_overridden_fields() {
-            warnings.push(format!(
-                "⚠️  SECURITY: environment variable {env_var} overrides {field}. The environment \
-                 value takes precedence at runtime; if you rotated the secret in kora.toml, the \
-                 stale environment value is still in effect. Unset {env_var} or align it with the config."
-            ));
+        for msg in config.kora.auth.env_overridden_fields() {
+            warnings.push(format!("⚠️  SECURITY: {msg}"));
         }
 
         // Validate usage limit configuration
@@ -1082,7 +1109,7 @@ mod tests {
                 cross_cluster_check: false,
                 cross_cluster_endpoints: vec![],
             },
-            kora: KoraConfig::default(),
+            kora: KoraConfig { rate_limit: Some(100), ..KoraConfig::default() },
             metrics: MetricsConfig::default(),
         };
 
@@ -1136,7 +1163,7 @@ mod tests {
             validation: validation_config_with_auth(),
             kora: KoraConfig {
                 auth: AuthConfig {
-                    api_key: Some("rotated-config-key".to_string()),
+                    api_keys: Some(vec!["rotated-config-key".to_string()]),
                     ..Default::default()
                 },
                 ..KoraConfig::default()
@@ -1157,7 +1184,7 @@ mod tests {
         assert!(
             warnings
                 .iter()
-                .any(|w| w.contains("KORA_API_KEY") && w.contains("[kora.auth].api_key")),
+                .any(|w| w.contains("KORA_API_KEY") && w.contains("[kora.auth].api_keys")),
             "expected an env-override warning naming the field, got: {warnings:?}"
         );
         // Auth is in effect, so the no-auth warning must not appear.
@@ -1408,7 +1435,9 @@ mod tests {
                 cross_cluster_endpoints: vec![],
             },
             kora: KoraConfig {
-                rate_limit: 0, // Should warn
+                rate_limit: None, // Should warn
+                global_rate_limit: None,
+                cors_allow_origins: vec![], // Should warn
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods {
                     liveness: false,
@@ -1440,7 +1469,7 @@ mod tests {
         };
 
         // Initialize global config
-        let _ = update_config(config);
+        let _ = update_config(config.clone());
 
         let rpc_client = RpcClient::new_with_commitment(
             "http://localhost:8899".to_string(),
@@ -1451,11 +1480,48 @@ mod tests {
         let warnings = result.unwrap();
 
         assert!(!warnings.is_empty());
-        assert!(warnings.iter().any(|w| w.contains("Rate limit is set to 0")));
+        assert!(warnings.iter().any(|w| w.contains("Rate limit is disabled (set to None)")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("cors_allow_origins is empty or contains no valid origins")));
         assert!(warnings.iter().any(|w| w.contains("All rpc methods are disabled")));
         assert!(warnings.iter().any(|w| w.contains("Max allowed lamports is 0")));
         assert!(warnings.iter().any(|w| w.contains("Max signatures is 0")));
         assert!(warnings.iter().any(|w| w.contains("Using Mock price source")));
+
+        // Test rate_limit == Some(0)
+        let mut config_some_0 = config.clone();
+        config_some_0.kora.rate_limit = Some(0);
+        let _ = update_config(config_some_0);
+
+        let result_some_0 = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let warnings_some_0 = result_some_0.unwrap();
+        assert!(warnings_some_0.iter().any(|w| w.contains("Per-identity rate limit is set to 0")));
+
+        // Test partially invalid CORS origins
+        let mut config_cors = config.clone();
+        config_cors.kora.cors_allow_origins =
+            vec!["https://valid.com".to_string(), "invalid\norigin".to_string()];
+        let _ = update_config(config_cors);
+
+        let result_cors = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let warnings_cors = result_cors.unwrap();
+        assert!(warnings_cors.iter().any(|w| w.contains(
+            "cors_allow_origins contains 1 invalid origin(s) that will be silently filtered out"
+        )));
+
+        // Test wildcard with redundant specific origins
+        let mut config_cors_wildcard = config.clone();
+        config_cors_wildcard.kora.cors_allow_origins =
+            vec!["*".to_string(), "https://redundant.com".to_string()];
+        let _ = update_config(config_cors_wildcard);
+
+        let result_cors_wildcard = ConfigValidator::validate_with_result(&rpc_client, true).await;
+        let warnings_cors_wildcard = result_cors_wildcard.unwrap();
+        assert!(warnings_cors_wildcard
+            .iter()
+            .any(|w| w.contains("cors_allow_origins contains '*' alongside specific origins")));
+
         assert!(warnings.iter().any(|w| w.contains("No allowed programs configured")));
     }
 

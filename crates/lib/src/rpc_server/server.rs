@@ -5,12 +5,18 @@ use crate::{
     rpc_server::{
         auth::{ApiKeyAuthLayer, HmacAuthLayer},
         middleware_utils::MethodValidationLayer,
+        rate_limit::IdentityRateLimitLayer,
         recaptcha::RecaptchaLayer,
         recaptcha_util::RecaptchaConfig,
         rpc::KoraRpc,
     },
-    usage_limit::UsageTracker,
 };
+
+#[cfg(not(test))]
+use crate::usage_limit::UsageTracker;
+
+#[cfg(test)]
+use crate::tests::usage_limiter_mock::MockUsageTracker as UsageTracker;
 
 use crate::state::drain_background_tasks;
 
@@ -26,8 +32,7 @@ use jsonrpsee::{
 };
 use std::{net::SocketAddr, time::Duration};
 use tokio::task::JoinHandle;
-use tower::limit::RateLimitLayer;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 pub struct ServerHandles {
     pub rpc_handle: ServerHandle,
@@ -109,6 +114,32 @@ fn get_value_by_priority(env_var: &str, config_value: Option<String>) -> Option<
     AuthConfig::resolve_secret(env_var, config_value.as_deref())
 }
 
+fn build_allow_origin(origins: &[String]) -> AllowOrigin {
+    if origins.iter().any(|o| o == "*") {
+        if origins.len() > 1 {
+            log::warn!("CORS allow origins contains '*' alongside specific origins. The specific origins are redundant and will be silently ignored.");
+        }
+        AllowOrigin::any()
+    } else {
+        let parsed_origins: Vec<_> = origins
+            .iter()
+            .filter_map(|o| {
+                o.parse::<http::HeaderValue>()
+                    .map_err(|e| log::warn!("Invalid CORS origin '{}': {}", o, e))
+                    .ok()
+            })
+            .collect();
+
+        if parsed_origins.is_empty() {
+            log::warn!(
+                "No valid CORS origins configured. All cross-origin requests will be blocked."
+            );
+        }
+
+        AllowOrigin::list(parsed_origins)
+    }
+}
+
 pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, anyhow::Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     log::info!("RPC server started on {addr}, port {port}");
@@ -119,9 +150,13 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         return Err(anyhow::anyhow!("Usage limiter initialization failed: {e}"));
     }
 
+    let config = get_config()?;
+
+    let allow_origins = build_allow_origin(&config.kora.cors_allow_origins);
+
     // Build middleware stack with tracing and CORS
     let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
+        .allow_origin(allow_origins)
         .allow_methods([Method::POST, Method::GET])
         .allow_headers([
             header::CONTENT_TYPE,
@@ -131,8 +166,6 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
             header::HeaderName::from_static(X_TIMESTAMP),
         ])
         .max_age(Duration::from_secs(3600));
-
-    let config = get_config()?;
 
     // Get the RPC client from KoraRpc to pass to metrics initialization
     let rpc_client = rpc.get_rpc_client().clone();
@@ -151,29 +184,32 @@ pub async fn run_rpc_server(rpc: KoraRpc, port: u16) -> Result<ServerHandles, an
         )
     });
 
+    let api_keys_config = config.kora.auth.resolved_api_keys();
+
     let middleware = tower::ServiceBuilder::new()
         // Add metrics handler first (before other layers) so it can intercept /metrics
         .layer(ProxyGetRequestLayer::new("/liveness", "liveness")?)
-        .layer(RateLimitLayer::new(config.kora.rate_limit, Duration::from_secs(1)))
         // Add metrics handler layer for Prometheus metrics
         .option_layer(
             metrics_layers.as_ref().and_then(|layers| layers.metrics_handler_layer.clone()),
         )
-        .layer(cors)
-        // Method validation layer - to fail fast
-        .layer(MethodValidationLayer::new(allowed_methods.clone()))
         // Add metrics collection layer
         .option_layer(metrics_layers.as_ref().and_then(|layers| layers.http_metrics_layer.clone()))
+        // cors
+        .layer(cors)
+        // Global pre-auth rate limit (using IdentityRateLimitLayer, which uses 'unauthenticated' identity before auth layers)
+        .layer(IdentityRateLimitLayer::new(config.kora.global_rate_limit))
+        // Method validation layer - to fail fast
+        .layer(MethodValidationLayer::new(allowed_methods.clone()))
         // Add authentication layer for API key if configured
-        .option_layer(
-            get_value_by_priority("KORA_API_KEY", config.kora.auth.api_key.clone())
-                .map(ApiKeyAuthLayer::new),
-        )
+        .option_layer(api_keys_config.map(ApiKeyAuthLayer::new))
         // Add authentication layer for HMAC if configured
         .option_layer(
             get_value_by_priority("KORA_HMAC_SECRET", config.kora.auth.hmac_secret.clone())
                 .map(|secret| HmacAuthLayer::new(secret, config.kora.auth.max_timestamp_age)),
         )
+        // Identity-aware rate limiting
+        .layer(IdentityRateLimitLayer::new(config.kora.rate_limit))
         // Add reCAPTCHA verification layer if configured
         .option_layer(recaptcha_config.map(RecaptchaLayer::new));
 
@@ -318,13 +354,311 @@ mod tests {
     use super::*;
     use crate::{
         config::EnabledMethods,
+        constant::X_API_KEY,
         tests::{
             common::setup_or_get_test_signer,
-            config_mock::{ConfigMockBuilder, KoraConfigBuilder},
+            config_mock::{AuthConfigBuilder, ConfigMockBuilder, KoraConfigBuilder},
             rpc_mock::RpcMockBuilder,
         },
     };
-    use std::env;
+    use reqwest::Client;
+    use std::{env, net::TcpListener, time::Instant};
+
+    #[tokio::test]
+    async fn test_identity_rate_limit_behaviors() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let auth_config = AuthConfigBuilder::new()
+            .with_api_keys(vec!["key-a".to_string(), "key-b".to_string()])
+            .build();
+        // Set limit to 1 request per second
+        let kora_config =
+            KoraConfigBuilder::new().with_rate_limit(Some(1)).with_auth(auth_config).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let _handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Failed to start server");
+
+        let client = Client::new();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // --- Test 1: Independent identities don't throttle each other ---
+
+        // Request 1: Valid key-a
+        let res1 = client
+            .post(&url)
+            .header(X_API_KEY, "key-a")
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+        assert_eq!(res1.status(), reqwest::StatusCode::OK);
+
+        let start = Instant::now();
+
+        // Request 2: Different valid key-b
+        let res2 = client
+            .post(&url)
+            .header(X_API_KEY, "key-b")
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":2}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        // Identity rate limiter uses separate buckets; key-b does NOT wait for key-a's usage
+        assert!(
+            start.elapsed().as_millis() < 200,
+            "Expected no throttling delay for independent identity"
+        );
+        assert_eq!(res2.status(), reqwest::StatusCode::OK);
+
+        // --- Test 2: Same identity is throttled correctly ---
+
+        // Request 3: key-a AGAIN, should be rate limited immediately (HTTP 429)
+        let res3 = client
+            .post(&url)
+            .header(X_API_KEY, "key-a")
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":3}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+        assert_eq!(res3.status(), reqwest::StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn test_identity_rate_limit_none_disables_limiter() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let auth_config =
+            AuthConfigBuilder::new().with_api_keys(vec!["key-zero".to_string()]).build();
+        // rate_limit = None disables the limiter entirely
+        let kora_config =
+            KoraConfigBuilder::new().with_rate_limit(None).with_auth(auth_config).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let _handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Failed to start server");
+
+        let client = Client::new();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // Send 10 rapid requests
+        for i in 1..=10 {
+            let res = client
+                .post(&url)
+                .header(X_API_KEY, "key-zero")
+                .header("content-type", "application/json")
+                .body(format!(r#"{{"jsonrpc":"2.0","method":"getConfig","params":[],"id":{}}}"#, i))
+                .send()
+                .await
+                .expect("Failed to send request");
+            assert_eq!(res.status(), reqwest::StatusCode::OK);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_global_rate_limit() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        // Global rate limit: 1 per second
+        let kora_config = KoraConfigBuilder::new().with_global_rate_limit(Some(1)).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+        let _handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Failed to start server");
+
+        let client = Client::new();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // Request 1: Should pass
+        let res1 = client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+        assert_eq!(res1.status(), reqwest::StatusCode::OK);
+
+        // Request 2: Immediately after, should be throttled by global limiter
+        let res2 = client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":2}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+        assert_eq!(res2.status(), reqwest::StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_empty_kora_api_key_disables_auth() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        // No api_keys in config
+        let auth_config = AuthConfigBuilder::new().build();
+        let kora_config = KoraConfigBuilder::new().with_auth(auth_config).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        // Set env var to empty string
+        env::set_var("KORA_API_KEY", "");
+
+        let _handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Failed to start server");
+
+        let client = Client::new();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // Request without X-API-Key should succeed (auth disabled)
+        let res = client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(res.status(), reqwest::StatusCode::OK);
+
+        env::remove_var("KORA_API_KEY");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_empty_api_key_string_disables_auth() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        // Parse TOML with empty api_key string
+        let toml_str = r#"
+api_key = ""
+        "#;
+        let auth_config: crate::config::AuthConfig = toml::from_str(toml_str).unwrap();
+
+        // Assertions for config parsing
+        assert_eq!(auth_config.api_keys, None);
+        assert!(!auth_config.has_resolved_auth());
+
+        // We need to set rate_limit explicitly for the mock builder if we want it to be 0 or bypass
+        // but we'll just pass the parsed KoraConfig directly.
+        let kora_config = KoraConfigBuilder::new().with_auth(auth_config).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        let _handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Failed to start server");
+
+        let client = Client::new();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // Request without X-API-Key should succeed (auth disabled)
+        let res = client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(res.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_api_keys_env_var_takes_precedence_over_toml() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        // Parse TOML with some api_keys
+        let toml_str = r#"
+api_keys = ["toml-key-1", "toml-key-2"]
+        "#;
+        let auth_config: crate::config::AuthConfig = toml::from_str(toml_str).unwrap();
+
+        let kora_config = KoraConfigBuilder::new().with_auth(auth_config).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        // Set KORA_API_KEY env var
+        env::set_var("KORA_API_KEY", "env-key");
+
+        let _handles =
+            run_rpc_server(KoraRpc::new(rpc_client), port).await.expect("Failed to start server");
+
+        let client = Client::new();
+        let url = format!("http://127.0.0.1:{}", port);
+
+        // The request should only succeed with "env-key"
+        let res = client
+            .post(&url)
+            .header(X_API_KEY, "env-key")
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(res.status(), reqwest::StatusCode::OK);
+
+        // The request with "toml-key-1" should be rejected
+        let res_rejected = client
+            .post(&url)
+            .header(X_API_KEY, "toml-key-1")
+            .header("content-type", "application/json")
+            .body(r#"{"jsonrpc":"2.0","method":"getConfig","params":[],"id":1}"#)
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        assert_eq!(res_rejected.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        env::remove_var("KORA_API_KEY");
+    }
+
+    #[tokio::test]
+    async fn test_empty_cors_origins_does_not_panic() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        // cors_allow_origins = []
+        let kora_config = KoraConfigBuilder::new().with_cors_allow_origins(vec![]).build();
+        let _m = ConfigMockBuilder::new().with_kora(kora_config).build_and_setup();
+        let _ = setup_or_get_test_signer();
+
+        let rpc_client = RpcMockBuilder::new().build();
+
+        // This should not panic and should start successfully
+        let result = run_rpc_server(KoraRpc::new(rpc_client), port).await;
+        assert!(result.is_ok(), "Server failed to start with empty cors_allow_origins");
+    }
 
     #[test]
     fn test_get_value_by_priority_env_var_takes_precedence() {

@@ -1,6 +1,7 @@
 # Adversarial testing configuration file with restrictive fee payer policies
 [kora]
 rate_limit = 100
+cors_allow_origins = ["*"]
 
 [kora.auth]
 

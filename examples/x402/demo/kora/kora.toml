@@ -1,11 +1,29 @@
 [kora]
+# NOTE: rate_limit now applies per-identity (per API key/HMAC client).
+# Previously this was a shared global cap. To enforce a server-wide throughput
+# limit, use global_rate_limit instead.
+# Per-identity rate limit (requests per second per API key/HMAC client).
+# To disable per-identity limiting, remove or comment out this field entirely.
+# Setting to 0 blocks all requests immediately — use with caution.
+# Defaults to 100 if not set.
 rate_limit = 100
+
+# Global pre-auth rate limit (requests per second, applied before authentication).
+# Limits total server throughput to protect against unauthenticated spam.
+# Disabled by default (None).
+# global_rate_limit = 100
+
+# Allowed CORS origins. Defaults to ["*"] (allow all).
+# Set to specific origins for production deployments.
+# cors_allow_origins = ["https://your-app.com", "https://admin.your-app.com"]
+cors_allow_origins = ["*"]
 # Optional: Payment address to receive payment tokens (defaults to signer address)
 # payment_address = "YourPaymentAddressPubkey11111111111111111111"
 
 [kora.auth]
 # Optional: API key for simple header-based authentication (use x-api-key header)
-api_key = "kora_facilitator_api_key_example"
+# api_key = "kora_facilitator_api_key_example"  # Deprecated: use api_keys array instead
+api_keys = ["kora_facilitator_api_key_example"]  # Supports multiple API keys
 
 # Optional: HMAC secret for request signature authentication (use x-hmac-signature and x-timestamp headers)
 # hmac_secret = "your-hmac-secret"

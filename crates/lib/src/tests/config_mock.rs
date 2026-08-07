@@ -102,7 +102,9 @@ impl ConfigMockBuilder {
                     cross_cluster_endpoints: vec![],
                 },
                 kora: KoraConfig {
-                    rate_limit: 100,
+                    rate_limit: Some(100),
+                    global_rate_limit: None,
+                    cors_allow_origins: vec!["*".to_string()],
                     max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                     enabled_methods: EnabledMethods::default(),
                     auth: AuthConfig::default(),
@@ -162,8 +164,13 @@ impl ConfigMockBuilder {
         self
     }
 
-    pub fn with_rate_limit(mut self, rate_limit: u64) -> Self {
+    pub fn with_rate_limit(mut self, rate_limit: Option<u64>) -> Self {
         self.config.kora.rate_limit = rate_limit;
+        self
+    }
+
+    pub fn with_global_rate_limit(mut self, global_rate_limit: Option<u64>) -> Self {
+        self.config.kora.global_rate_limit = global_rate_limit;
         self
     }
 
@@ -202,8 +209,8 @@ impl ConfigMockBuilder {
         self
     }
 
-    pub fn with_api_key_auth(mut self, api_key: String) -> Self {
-        self.config.kora.auth.api_key = Some(api_key);
+    pub fn with_api_key(mut self, api_key: String) -> Self {
+        self.config.kora.auth.api_keys = Some(vec![api_key]);
         self
     }
 
@@ -388,7 +395,9 @@ impl KoraConfigBuilder {
     pub fn new() -> Self {
         Self {
             config: KoraConfig {
-                rate_limit: 100,
+                rate_limit: Some(100),
+                global_rate_limit: None,
+                cors_allow_origins: vec!["*".to_string()],
                 max_request_body_size: DEFAULT_MAX_REQUEST_BODY_SIZE,
                 enabled_methods: EnabledMethods::default(),
                 auth: AuthConfig::default(),
@@ -415,8 +424,13 @@ impl KoraConfigBuilder {
         self.config
     }
 
-    pub fn with_rate_limit(mut self, rate_limit: u64) -> Self {
+    pub fn with_rate_limit(mut self, rate_limit: Option<u64>) -> Self {
         self.config.rate_limit = rate_limit;
+        self
+    }
+
+    pub fn with_global_rate_limit(mut self, global_rate_limit: Option<u64>) -> Self {
+        self.config.global_rate_limit = global_rate_limit;
         self
     }
 
@@ -437,6 +451,11 @@ impl KoraConfigBuilder {
 
     pub fn with_cache(mut self, cache: CacheConfig) -> Self {
         self.config.cache = cache;
+        self
+    }
+
+    pub fn with_cors_allow_origins(mut self, origins: Vec<String>) -> Self {
+        self.config.cors_allow_origins = origins;
         self
     }
 }
@@ -520,7 +539,7 @@ impl AuthConfigBuilder {
     pub fn new() -> Self {
         Self {
             config: AuthConfig {
-                api_key: None,
+                api_keys: None,
                 hmac_secret: None,
                 recaptcha_secret: None,
                 recaptcha_score_threshold: crate::constant::DEFAULT_RECAPTCHA_SCORE_THRESHOLD,
@@ -538,7 +557,16 @@ impl AuthConfigBuilder {
     }
 
     pub fn with_api_key(mut self, api_key: String) -> Self {
-        self.config.api_key = Some(api_key);
+        if let Some(ref mut keys) = self.config.api_keys {
+            keys.push(api_key);
+        } else {
+            self.config.api_keys = Some(vec![api_key]);
+        }
+        self
+    }
+
+    pub fn with_api_keys(mut self, api_keys: Vec<String>) -> Self {
+        self.config.api_keys = Some(api_keys);
         self
     }
 
@@ -548,7 +576,7 @@ impl AuthConfigBuilder {
     }
 
     pub fn with_both_auth(mut self, api_key: String, hmac_secret: String) -> Self {
-        self.config.api_key = Some(api_key);
+        self.config.api_keys = Some(vec![api_key]);
         self.config.hmac_secret = Some(hmac_secret);
         self
     }
@@ -974,7 +1002,7 @@ pub fn get_default_config_with_cache() -> Config {
 
 pub fn get_default_config_with_auth() -> Config {
     ConfigMockBuilder::new()
-        .with_api_key_auth("test-api-key".to_string())
+        .with_api_key("test-api-key".to_string())
         .with_hmac_auth("test-hmac-secret".to_string())
         .build()
 }

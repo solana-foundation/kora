@@ -4,6 +4,7 @@ pub mod method;
 pub mod middleware_utils;
 #[cfg(feature = "docs")]
 pub mod openapi;
+pub mod rate_limit;
 pub mod recaptcha;
 pub mod recaptcha_util;
 pub mod rpc;
