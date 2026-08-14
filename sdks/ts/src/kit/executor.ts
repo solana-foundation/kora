@@ -144,11 +144,11 @@ export function createKoraTransactionPlanExecutor(
             });
 
             if (result.signature) {
-                return signature(result.signature);
+                return { signature: signature(result.signature) };
             }
             const signedTxBytes = getBase64Encoder().encode(result.signed_transaction);
             const decodedTx = getTransactionDecoder().decode(signedTxBytes);
-            return getSignatureFromTransaction(decodedTx);
+            return { signature: getSignatureFromTransaction(decodedTx), transaction: decodedTx };
         },
     });
 }
