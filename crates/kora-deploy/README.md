@@ -36,6 +36,43 @@ Flags:
 | `--user-id` | random per run | Tag the paymaster buckets by for usage limits |
 | `--wallet` | `~/.config/solana/id.json` | Owner wallet registered for upgrades; without one the program is immutable |
 | `--program-id` | _(none)_ | Existing program to upgrade; omit to deploy fresh |
+| `--resume` | `false` | Resume a previous deployment from the local `.kora-deploy-state.json` file |
+| `--no-cleanup-on-failure` | `false` | Do not close the buffer on failure, leaving it open so you can `--resume` later |
+
+## Recovering from a failed deploy
+
+When you start a fresh deployment, `kora-deploy` writes a `.kora-deploy-state.json`
+file to your directory. This stores the program and buffer keypairs required to
+deploy your code. If deployment succeeds, the file is automatically removed.
+If it fails (e.g., timeout or rate limit), the file remains for recovery.
+
+**Normal Resume Flow**:
+Run the exact same `kora-deploy` command but add the `--resume` flag.
+It reads `.kora-deploy-state.json`, skips already-written chunks,
+and continues where it left off.
+
+**Cleanup on Failure**:
+By default, failed or interrupted deploys automatically close the buffer
+to return rent to the paymaster. This prevents you from resuming.
+If you anticipate connection issues, pass `--no-cleanup-on-failure`
+on your initial run to leave the buffer open for `--resume`.
+
+**Hash Mismatch**:
+If you recompile your `.so` file before resuming, the hashes won't match.
+`kora-deploy` will refuse to resume to prevent corrupted data.
+Either restore the original `.so` file, or delete the state file
+and start a fresh deploy.
+
+**Manual Recovery / Deploy Timeout**:
+Rarely, the final transaction might time out, leaving an ambiguous state.
+You can check if the paymaster finalized it manually:
+```bash
+solana program show <PROGRAM_ID>
+```
+If it's not live, you can't resume, and automatic cleanup failed,
+the buffer may be stuck. You can manually close it using
+`solana program close` and the keypairs in `.kora-deploy-state.json`,
+then delete the state file to start over.
 
 ## Trade-offs
 
