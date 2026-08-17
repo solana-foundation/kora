@@ -526,6 +526,8 @@ pub const PARSED_DATA_FIELD_GET_ACCOUNT_DATA_SIZE: &str = "getAccountDataSize";
 pub const PARSED_DATA_FIELD_INITIALIZE_IMMUTABLE_OWNER: &str = "initializeImmutableOwner";
 pub const PARSED_DATA_FIELD_SYNC_NATIVE: &str = "syncNative";
 pub const PARSED_DATA_FIELD_EXTENSION_TYPES: &str = "extensionTypes";
+pub const PARSED_DATA_FIELD_BATCH: &str = "batch";
+pub const PARSED_DATA_FIELD_INSTRUCTIONS: &str = "instructions";
 
 // Additional field names for new instructions
 pub const PARSED_DATA_FIELD_MINT_AUTHORITY: &str = "mintAuthority";
@@ -2110,6 +2112,46 @@ impl IxUtils {
                     accounts: vec![account_idx],
                     data,
                 })
+            }
+            PARSED_DATA_FIELD_BATCH => {
+                let inner_instructions = info
+                    .get(PARSED_DATA_FIELD_INSTRUCTIONS)
+                    .and_then(|value| value.as_array())
+                    .ok_or_else(|| {
+                        KoraError::SerializationError(
+                            "Missing 'instructions' field in batch".to_string(),
+                        )
+                    })?;
+
+                let mut data = vec![BATCH_DISCRIMINATOR];
+                let mut accounts = Vec::new();
+                for inner_parsed in inner_instructions {
+                    let inner = Self::reconstruct_spl_token_instruction(
+                        &solana_transaction_status_client_types::ParsedInstruction {
+                            program: parsed.program.clone(),
+                            program_id: parsed.program_id.clone(),
+                            parsed: inner_parsed.clone(),
+                            stack_height: parsed.stack_height,
+                        },
+                        account_keys_hashmap,
+                    )?;
+                    let account_count: u8 = inner.accounts.len().try_into().map_err(|_| {
+                        KoraError::InvalidTransaction(
+                            "Batch sub-instruction account count exceeds u8".to_string(),
+                        )
+                    })?;
+                    let data_len: u8 = inner.data.len().try_into().map_err(|_| {
+                        KoraError::InvalidTransaction(
+                            "Batch sub-instruction data length exceeds u8".to_string(),
+                        )
+                    })?;
+                    data.push(account_count);
+                    data.push(data_len);
+                    data.extend_from_slice(&inner.data);
+                    accounts.extend_from_slice(&inner.accounts);
+                }
+
+                Ok(CompiledInstruction { program_id_index, accounts, data })
             }
             _ => {
                 Err(KoraError::InvalidTransaction(format!(
@@ -6150,6 +6192,54 @@ mod tests {
         assert_eq!(compiled.program_id_index, 0);
         assert_eq!(compiled.accounts, vec![1, 2, 3]); // source, destination, authority indices
         assert_eq!(compiled.data, transfer_instruction.data);
+    }
+
+    #[test]
+    fn test_reconstruct_spl_token_batch_instruction() {
+        let source = Pubkey::new_unique();
+        let destination = Pubkey::new_unique();
+        let authority = Pubkey::new_unique();
+        let token_program_id = spl_token_interface::ID;
+        let account_keys = vec![token_program_id, source, destination, authority];
+        let amount = 1000000u64;
+
+        let transfer_instruction = spl_token_interface::instruction::transfer(
+            &spl_token_interface::ID,
+            &source,
+            &destination,
+            &authority,
+            &[],
+            amount,
+        )
+        .expect("Failed to create transfer instruction");
+        let expected_batch = spl_token_interface::instruction::batch(
+            &spl_token_interface::ID,
+            &[transfer_instruction],
+        )
+        .expect("Failed to create batch instruction");
+
+        let parsed_transfer =
+            create_parsed_spl_token_transfer(&source, &destination, &authority, amount)
+                .expect("Failed to create parsed instruction");
+        let parsed_batch = solana_transaction_status_client_types::ParsedInstruction {
+            program: parsed_transfer.program.clone(),
+            program_id: parsed_transfer.program_id.clone(),
+            parsed: serde_json::json!({
+                "type": "batch",
+                "info": { "instructions": [parsed_transfer.parsed] },
+            }),
+            stack_height: None,
+        };
+
+        let compiled = IxUtils::reconstruct_spl_token_instruction(
+            &parsed_batch,
+            &IxUtils::build_account_keys_hashmap(&account_keys),
+        )
+        .expect("Failed to reconstruct batch instruction");
+
+        assert_eq!(compiled.program_id_index, 0);
+        assert_eq!(compiled.accounts, vec![1, 2, 3]);
+        assert_eq!(compiled.data, expected_batch.data);
     }
 
     #[test]
