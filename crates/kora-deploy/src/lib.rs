@@ -100,12 +100,14 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
                 .await
                 {
                     Ok(_) => {
-                        if let Err(err) = fs::remove_file(&$state_path) {
-                            log::warn!(
-                                "Buffer closed successfully, but failed to delete state file: {}. Please manually delete {} to start a fresh deployment.",
-                                err,
-                                $state_path.display()
-                            );
+                        if $state_path.exists() {
+                            if let Err(err) = fs::remove_file(&$state_path) {
+                                log::warn!(
+                                    "Buffer closed successfully, but failed to delete state file: {}. Please manually delete {} to start a fresh deployment.",
+                                    err,
+                                    $state_path.display()
+                                );
+                            }
                         }
                     }
                     Err(e) => {

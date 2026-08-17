@@ -43,6 +43,7 @@ struct Args {
     resume: bool,
     #[arg(
         long,
+        hide = true,
         overrides_with = "no_cleanup_on_failure",
         help = "Close the buffer on failure (default). Pass --no-cleanup-on-failure to skip this."
     )]
