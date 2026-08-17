@@ -42,6 +42,12 @@ pub const LIGHTHOUSE_PROGRAM_ID: &str = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA
 /// Lighthouse program binary path (relative to workspace root)
 pub const LIGHTHOUSE_PROGRAM_PATH: &str = "tests/src/common/fixtures/test-programs/lighthouse.so";
 
+/// `disable_sbpf_v0_v1_v2_deployment` feature gate. Active by default on fresh
+/// agave >= 4.2 test validators but not on any live cluster; deactivated so the
+/// prebuilt sbpf-v0 test programs remain deployable in loader-v3 tests.
+pub const DISABLE_SBPF_V0_V1_V2_DEPLOYMENT_FEATURE: &str =
+    "B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g";
+
 // ============================================================================
 // Test Configuration
 // ============================================================================
