@@ -698,6 +698,11 @@ impl IxUtils {
                     UiExtensionType::PausableAccount => {
                         spl_token_2022_interface::extension::ExtensionType::PausableAccount
                     }
+                    UiExtensionType::PermissionedBurn => {
+                        return Err(KoraError::InvalidTransaction(
+                            "Unsupported Token-2022 extension type 'PermissionedBurn'".to_string(),
+                        ))
+                    }
                 })
             })
             .collect()
@@ -6218,18 +6223,15 @@ mod tests {
         )
         .expect("Failed to create batch instruction");
 
-        let parsed_transfer =
-            create_parsed_spl_token_transfer(&source, &destination, &authority, amount)
-                .expect("Failed to create parsed instruction");
-        let parsed_batch = solana_transaction_status_client_types::ParsedInstruction {
-            program: parsed_transfer.program.clone(),
-            program_id: parsed_transfer.program_id.clone(),
-            parsed: serde_json::json!({
-                "type": "batch",
-                "info": { "instructions": [parsed_transfer.parsed] },
-            }),
-            stack_height: None,
-        };
+        let message = Message::new(&[expected_batch.clone()], None);
+        let account_keys_for_parsing = AccountKeys::new(&message.account_keys, None);
+        let parsed_batch = parse_instruction::parse(
+            &spl_token_interface::ID,
+            &message.instructions[0],
+            &account_keys_for_parsing,
+            None,
+        )
+        .expect("Failed to parse batch instruction");
 
         let compiled = IxUtils::reconstruct_spl_token_instruction(
             &parsed_batch,
