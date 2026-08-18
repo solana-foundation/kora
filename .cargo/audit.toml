@@ -11,4 +11,8 @@ ignore = [
     # rkyv is an inactive optional dependency of rust_decimal; Kora does not enable its
     # rkyv features.
     "RUSTSEC-2026-0235",
+    # h2 0.3.x has no patched release and is pinned by hyper 0.14 (jsonrpsee 0.16) and by
+    # the optional hyper-014 path in aws-smithy-http-client. h2 0.4.x is on the patched
+    # 0.4.16; drop this once jsonrpsee moves to hyper 1.x.
+    "RUSTSEC-2026-0258",
 ]
