@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{message::VersionedMessage, pubkey::Pubkey};
 use spl_token_2022_interface::extension::ExtensionType;
 use std::{fs, path::Path, str::FromStr};
 use toml;
@@ -130,6 +130,68 @@ pub enum ProgramsConfig {
     Allowlist(Vec<String>),
 }
 
+/// A transaction message version an operator can accept.
+///
+/// Serialized as the strings clients and Solana tooling already use: `"legacy"` and `"0"`. Note
+/// that `"0"` and `"1"` are quoted in TOML — these are version *names*, not numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+pub enum TransactionVersion {
+    #[serde(rename = "legacy")]
+    Legacy,
+    #[serde(rename = "0")]
+    V0,
+    #[serde(rename = "1")]
+    V1,
+}
+
+impl TransactionVersion {
+    /// The name used in config and in rejection messages.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::V0 => "0",
+            Self::V1 => "1",
+        }
+    }
+
+    /// The version of a message as it arrived on the wire.
+    pub fn of(message: &VersionedMessage) -> Self {
+        match message {
+            VersionedMessage::Legacy(_) => Self::Legacy,
+            VersionedMessage::V0(_) => Self::V0,
+            VersionedMessage::V1(_) => Self::V1,
+        }
+    }
+}
+
+/// Transaction message versions the operator accepts. Empty is not representable through the
+/// default: an operator who accepts nothing has a node that rejects everything, which is a
+/// misconfiguration rather than a policy, and `ConfigValidator` rejects it at startup.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(transparent)]
+pub struct AllowedTransactionVersions(pub Vec<TransactionVersion>);
+
+impl Default for AllowedTransactionVersions {
+    fn default() -> Self {
+        Self(vec![TransactionVersion::Legacy, TransactionVersion::V0, TransactionVersion::V1])
+    }
+}
+
+impl AllowedTransactionVersions {
+    pub fn allows(&self, version: TransactionVersion) -> bool {
+        self.0.contains(&version)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Names, in config order, for rejection messages: "legacy, 0".
+    pub fn names(&self) -> String {
+        self.0.iter().map(TransactionVersion::as_str).collect::<Vec<_>>().join(", ")
+    }
+}
+
 impl utoipa::PartialSchema for ProgramsConfig {
     fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
         string_or_string_array_schema()
@@ -206,6 +268,12 @@ pub struct ValidationConfig {
     /// WARNING: Enabling with dynamic pricing creates price arbitrage risk.
     #[serde(default)]
     pub allow_durable_transactions: bool,
+    /// Transaction message versions this operator accepts.
+    /// Default: all of them (`["legacy", "0"]`), so an operator who says nothing keeps
+    /// accepting exactly what they accepted before this option existed.
+    /// Narrow it to run legacy-only, or v0-only once every client has migrated.
+    #[serde(default)]
+    pub allowed_transaction_versions: AllowedTransactionVersions,
     /// Maximum allowed age of oracle price data in slots. 0 = disabled (default).
     /// When >0, prices with a block_id older than `current_slot - max_price_staleness_slots` are rejected.
     #[serde(default)]

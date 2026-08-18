@@ -1,11 +1,11 @@
 use crate::{
     bundle::{constant::JITO_MOCK_BLOCK_ENGINE_URL, JitoConfig},
     config::{
-        AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods,
+        AllowedTransactionVersions, AuthConfig, BundleConfig, CacheConfig, Config, EnabledMethods,
         FeePayerBalanceMetricsConfig, FeePayerPolicy, KoraConfig, LighthouseConfig, MetricsConfig,
         NonceInstructionPolicy, PluginsConfig, ProgramsConfig, SplTokenConfig,
         SplTokenInstructionPolicy, SystemInstructionPolicy, Token2022Config,
-        Token2022InstructionPolicy, ValidationConfig,
+        Token2022InstructionPolicy, TransactionVersion, ValidationConfig,
     },
     constant::DEFAULT_MAX_REQUEST_BODY_SIZE,
     fee::price::{PriceConfig, PriceModel},
@@ -96,6 +96,7 @@ impl ConfigMockBuilder {
                     price: PriceConfig::default(),
                     token_2022: Token2022Config::default(),
                     allow_durable_transactions: false,
+                    allowed_transaction_versions: AllowedTransactionVersions::default(),
                     max_price_staleness_slots: 0,
                     require_one_of_programs: vec![],
                     cross_cluster_check: false,
@@ -222,6 +223,11 @@ impl ConfigMockBuilder {
         self
     }
 
+    pub fn with_allowed_transaction_versions(mut self, versions: Vec<TransactionVersion>) -> Self {
+        self.config.validation.allowed_transaction_versions = AllowedTransactionVersions(versions);
+        self
+    }
+
     pub fn with_fee_payer_policy(mut self, policy: FeePayerPolicy) -> Self {
         self.config.validation.fee_payer_policy = policy;
         self
@@ -316,6 +322,7 @@ impl ValidationConfigBuilder {
                 price: PriceConfig::default(),
                 token_2022: Token2022Config::default(),
                 allow_durable_transactions: false,
+                allowed_transaction_versions: AllowedTransactionVersions::default(),
                 max_price_staleness_slots: 0,
                 require_one_of_programs: vec![],
                 cross_cluster_check: false,

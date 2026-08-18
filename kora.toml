@@ -54,6 +54,12 @@ max_allowed_lamports = 1000000
 max_signatures = 10
 price_source = "Mock"
 allow_durable_transactions = false
+
+# Transaction message versions this node accepts.
+# Omit the key to accept all of them, which is the default and what Kora did before this
+# option existed. Narrow it to run legacy-only, or to require v0 once every client has migrated.
+# The values are version names, so they are quoted.
+# allowed_transaction_versions = ["legacy", "0", "1"]
 cross_cluster_check = false
 cross_cluster_endpoints = [
     "https://api.mainnet-beta.solana.com",
