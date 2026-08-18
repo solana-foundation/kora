@@ -51,6 +51,9 @@ get_version = true
 
 [validation]
 max_allowed_lamports = 1000000
+# Max priority fee in lamports (unset = unlimited, 0 = none).
+# Covers ComputeBudget instructions and the v1 transaction config.
+# max_priority_fee_lamports = 100000
 max_signatures = 10
 price_source = "Mock"
 allow_durable_transactions = false

@@ -178,6 +178,8 @@ When enabled, the returned transaction message may be modified (balance assertio
 ```toml
 [validation]
 max_allowed_lamports = 1000000     # Max transaction value in lamports
+# max_priority_fee_lamports = 100000 # Max priority fee in lamports (unset = unlimited, 0 = none).
+                                     # Covers ComputeBudget instructions and the v1 transaction config.
 max_signatures = 10                # Max signatures per transaction
 price_source = "Mock"              # "Mock" or "Jupiter" (requires JUPITER_API_KEY)
 allow_durable_transactions = false # Allow durable nonce transactions (security risk!)

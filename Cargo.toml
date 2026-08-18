@@ -54,7 +54,7 @@ solana-loader-v3-interface = { version = "6.1.0", features = ["bincode", "serde"
 solana-loader-v4-interface = { version = "3.1.0", features = ["bincode", "serde"] }
 solana-program = ">=4.0.0,<4.1"
 solana-program-pack = "3.1.0"
-solana-compute-budget-interface = "3.0.0"
+solana-compute-budget-interface = { version = "3.0.0", features = ["borsh"] }
 solana-client = "4.2.1"
 solana-nonce = "3.0.0"
 bs58 = "0.5.1"

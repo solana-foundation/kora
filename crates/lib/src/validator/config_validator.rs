@@ -1020,6 +1020,7 @@ mod tests {
         let mut config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1000000000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec!["program1".to_string()]),
                 allowed_tokens: vec!["token1".to_string()],
@@ -1062,6 +1063,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -1105,6 +1107,7 @@ mod tests {
     fn validation_config_with_auth() -> ValidationConfig {
         ValidationConfig {
             max_allowed_lamports: 1_000_000,
+            max_priority_fee_lamports: None,
             max_signatures: 10,
             allowed_programs: ProgramsConfig::Allowlist(vec![
                 SYSTEM_PROGRAM_ID.to_string(),
@@ -1198,6 +1201,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -1248,6 +1252,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -1299,6 +1304,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -1344,6 +1350,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -1391,7 +1398,8 @@ mod tests {
     async fn test_validate_with_result_warnings() {
         let config = Config {
             validation: ValidationConfig {
-                max_allowed_lamports: 0,                             // Should warn
+                max_allowed_lamports: 0, // Should warn
+                max_priority_fee_lamports: None,
                 max_signatures: 0,                                   // Should warn
                 allowed_programs: ProgramsConfig::Allowlist(vec![]), // Should warn
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -1564,6 +1572,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec![],
@@ -1603,6 +1612,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec![],
@@ -1643,6 +1653,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     "11111111111111111111111111111112".to_string(),
@@ -1759,6 +1770,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec![], // Error - no tokens
@@ -1804,6 +1816,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -1850,6 +1863,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -1902,6 +1916,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -1953,6 +1968,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]), // Missing token programs
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -1995,6 +2011,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -2036,6 +2053,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -2075,6 +2093,7 @@ mod tests {
         Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()], // Required to pass basic validation
@@ -2102,6 +2121,7 @@ mod tests {
         Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![]), // No programs
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -2170,6 +2190,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -2207,6 +2228,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -2244,6 +2266,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -2280,6 +2303,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -2322,6 +2346,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -2364,6 +2389,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![SYSTEM_PROGRAM_ID.to_string()]),
                 allowed_tokens: vec!["4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU".to_string()],
@@ -2480,6 +2506,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -2876,6 +2903,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -2918,6 +2946,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -2961,6 +2990,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -3003,6 +3033,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -3052,6 +3083,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -3103,6 +3135,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),
@@ -3285,6 +3318,7 @@ mod tests {
         let config = Config {
             validation: ValidationConfig {
                 max_allowed_lamports: 1_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![
                     SYSTEM_PROGRAM_ID.to_string(),

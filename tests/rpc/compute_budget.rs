@@ -175,6 +175,98 @@ async fn test_estimate_transaction_fee_v1_config_priority_fee_wins_over_compute_
     assert!(fee == 35_050, "V1 fee must come from the config priority fee alone, got {fee}");
 }
 
+/// max_priority_fee_lamports is 5_000_000 in kora-test.toml; a V1 config priority
+/// fee above it must be rejected before signing.
+#[tokio::test]
+async fn test_sign_transaction_v1_rejects_priority_fee_above_config_cap() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+
+    let test_tx = ctx
+        .v1_transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_v1_priority_fee(6_000_000)
+        .with_transfer(&sender.pubkey(), &RecipientTestHelper::get_recipient_pubkey(), 10)
+        .build()
+        .await
+        .expect("Failed to create V1 transaction");
+
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("signTransaction", rpc_params![test_tx]).await;
+
+    let error = result.expect_err("Expected rejection for V1 priority fee above the config cap");
+    assert!(
+        error.to_string().contains("Priority fee 6000000 exceeds maximum allowed 5000000"),
+        "Expected priority fee cap rejection, got: {error}"
+    );
+}
+
+/// The same cap applies to legacy ComputeBudget priority fees:
+/// 1_400_000 CU * 5_000_000 micro-lamports = 7_000_000 lamports, over the cap.
+#[tokio::test]
+async fn test_sign_transaction_legacy_rejects_priority_fee_above_config_cap() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+
+    let test_tx = ctx
+        .transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_transfer(&sender.pubkey(), &RecipientTestHelper::get_recipient_pubkey(), 10)
+        .with_compute_budget(1_400_000, 5_000_000)
+        .build()
+        .await
+        .expect("Failed to create test transaction");
+
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("signTransaction", rpc_params![test_tx]).await;
+
+    let error =
+        result.expect_err("Expected rejection for legacy priority fee above the config cap");
+    assert!(
+        error.to_string().contains("Priority fee 7000000 exceeds maximum allowed 5000000"),
+        "Expected priority fee cap rejection, got: {error}"
+    );
+}
+
+/// A V1 priority fee under the cap signs normally when the payment covers
+/// base fee plus priority fee.
+#[tokio::test]
+async fn test_sign_transaction_v1_accepts_priority_fee_under_config_cap() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+
+    let priority_fee = 20_000;
+    let test_tx = ctx
+        .v1_transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_v1_priority_fee(priority_fee)
+        .with_spl_transfer(
+            &token_mint,
+            &sender.pubkey(),
+            &fee_payer,
+            tests::common::helpers::get_fee_for_default_transaction_in_usdc() + priority_fee,
+        )
+        .with_transfer(&sender.pubkey(), &RecipientTestHelper::get_recipient_pubkey(), 10)
+        .build()
+        .await
+        .expect("Failed to create V1 transaction");
+
+    let response: serde_json::Value = ctx
+        .rpc_call("signTransaction", rpc_params![test_tx])
+        .await
+        .expect("Failed to sign V1 transaction with priority fee under the cap");
+
+    response.assert_success();
+    assert!(
+        response["signed_transaction"].as_str().is_some(),
+        "Expected signed_transaction in response"
+    );
+}
+
 // NOTE: Lookup table is properly tested via mint address (not in transaction accounts, only ATAs)
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_compute_budget_v0_with_lookup() {

@@ -78,6 +78,7 @@ impl ConfigMockBuilder {
             config: Config {
                 validation: ValidationConfig {
                     max_allowed_lamports: 1_000_000_000,
+                    max_priority_fee_lamports: None,
                     max_signatures: 10,
                     allowed_programs: ProgramsConfig::Allowlist(vec![
                         "11111111111111111111111111111111".parse().unwrap(), // System Program
@@ -217,6 +218,11 @@ impl ConfigMockBuilder {
         self
     }
 
+    pub fn with_max_priority_fee_lamports(mut self, max_priority_fee_lamports: u64) -> Self {
+        self.config.validation.max_priority_fee_lamports = Some(max_priority_fee_lamports);
+        self
+    }
+
     pub fn with_max_signatures(mut self, max_signatures: u64) -> Self {
         self.config.validation.max_signatures = max_signatures;
         self
@@ -306,6 +312,7 @@ impl ValidationConfigBuilder {
         Self {
             config: ValidationConfig {
                 max_allowed_lamports: 1_000_000_000,
+                max_priority_fee_lamports: None,
                 max_signatures: 10,
                 allowed_programs: ProgramsConfig::Allowlist(vec![]),
                 allowed_tokens: vec![],

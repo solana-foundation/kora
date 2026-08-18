@@ -189,6 +189,12 @@ impl ProgramsConfig {
 #[serde(deny_unknown_fields)]
 pub struct ValidationConfig {
     pub max_allowed_lamports: u64,
+    /// Maximum priority fee in lamports a transaction may request. Unset = unlimited.
+    /// 0 = priority fees not allowed. Applies to ComputeBudget instructions (legacy/v0)
+    /// and the v1 transaction config; when a compute unit price is set without an
+    /// explicit compute unit limit, the 1.4M CU protocol maximum is assumed.
+    #[serde(default)]
+    pub max_priority_fee_lamports: Option<u64>,
     pub max_signatures: u64,
     pub allowed_programs: ProgramsConfig,
     pub allowed_tokens: Vec<String>,

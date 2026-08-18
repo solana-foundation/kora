@@ -5,7 +5,10 @@ use std::{
 
 use crate::{
     config::Config,
-    constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
+    constant::{
+        ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE, MAX_COMPUTE_UNIT_LIMIT,
+        MICRO_LAMPORTS_PER_LAMPORT,
+    },
     error::KoraError,
     fee::price::PriceModel,
     token::{
@@ -29,6 +32,7 @@ use crate::cache::CacheUtil;
 #[cfg(test)]
 use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableMessage};
+use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::VersionedMessage;
 use solana_program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
@@ -799,6 +803,49 @@ impl TransactionFeeUtil {
             }
         }
         .map_err(|e| KoraError::RpcError(e.to_string()))
+    }
+
+    /// Priority fee in lamports the transaction requests: the config field for V1,
+    /// or ComputeBudget price times limit for legacy/V0. When a compute unit price
+    /// is set without an explicit limit, the 1.4M CU protocol maximum is assumed
+    /// (an upper bound, so a configured cap can only over-reject, never let a
+    /// higher fee through).
+    pub fn get_requested_priority_fee(message: &VersionedMessage) -> u64 {
+        if let VersionedMessage::V1(v1_message) = message {
+            return v1_message.config.priority_fee.unwrap_or(0);
+        }
+
+        let compute_budget_program_id = solana_compute_budget_interface::id();
+        let static_keys = message.static_account_keys();
+        let mut compute_unit_price: Option<u64> = None;
+        let mut compute_unit_limit: Option<u32> = None;
+        for instruction in message.instructions() {
+            if static_keys.get(instruction.program_id_index as usize)
+                != Some(&compute_budget_program_id)
+            {
+                continue;
+            }
+            match borsh::from_slice(&instruction.data) {
+                Ok(ComputeBudgetInstruction::SetComputeUnitPrice(micro_lamports)) => {
+                    compute_unit_price.get_or_insert(micro_lamports);
+                }
+                Ok(ComputeBudgetInstruction::SetComputeUnitLimit(units)) => {
+                    compute_unit_limit.get_or_insert(units);
+                }
+                _ => {}
+            }
+        }
+
+        let Some(price) = compute_unit_price.filter(|price| *price > 0) else {
+            return 0;
+        };
+        let limit =
+            compute_unit_limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT).min(MAX_COMPUTE_UNIT_LIMIT);
+        (price as u128)
+            .saturating_mul(limit as u128)
+            .div_ceil(MICRO_LAMPORTS_PER_LAMPORT as u128)
+            .try_into()
+            .unwrap_or(u64::MAX)
     }
 }
 
@@ -2447,5 +2494,114 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, 9000, "Should return mocked base fee for V1 message");
+    }
+
+    fn legacy_message_with_instructions(instructions: &[Instruction]) -> VersionedMessage {
+        let payer = Pubkey::new_unique();
+        VersionedMessage::Legacy(Message::new(instructions, Some(&payer)))
+    }
+
+    fn v1_message_with_config(config: v1::TransactionConfig) -> VersionedMessage {
+        let payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+        let mut message = v1::Message::try_compile(
+            &payer.pubkey(),
+            &[transfer(&payer.pubkey(), &recipient, 1_000)],
+            Hash::default(),
+        )
+        .expect("Failed to compile V1 message");
+        message.config = config;
+        VersionedMessage::V1(message)
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_legacy_price_and_limit() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let message = legacy_message_with_instructions(&[
+            ComputeBudgetInstruction::set_compute_unit_limit(300_000),
+            ComputeBudgetInstruction::set_compute_unit_price(25_000),
+            transfer(&payer, &recipient, 1_000),
+        ]);
+
+        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&message), 7_500);
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_rounds_up() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let message = legacy_message_with_instructions(&[
+            ComputeBudgetInstruction::set_compute_unit_limit(100),
+            ComputeBudgetInstruction::set_compute_unit_price(1),
+            transfer(&payer, &recipient, 1_000),
+        ]);
+
+        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&message), 1);
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_price_without_limit_assumes_max() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let message = legacy_message_with_instructions(&[
+            ComputeBudgetInstruction::set_compute_unit_price(2_000),
+            transfer(&payer, &recipient, 1_000),
+        ]);
+
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&message),
+            2_000 * MAX_COMPUTE_UNIT_LIMIT as u64 / MICRO_LAMPORTS_PER_LAMPORT
+        );
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_zero_without_price() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        let no_compute_budget =
+            legacy_message_with_instructions(&[transfer(&payer, &recipient, 1_000)]);
+        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&no_compute_budget), 0);
+
+        let zero_price = legacy_message_with_instructions(&[
+            ComputeBudgetInstruction::set_compute_unit_limit(300_000),
+            ComputeBudgetInstruction::set_compute_unit_price(0),
+            transfer(&payer, &recipient, 1_000),
+        ]);
+        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&zero_price), 0);
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_v1_reads_config() {
+        let message = v1_message_with_config(
+            v1::TransactionConfig::empty().with_priority_fee(1_234).with_compute_unit_limit(200),
+        );
+        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&message), 1_234);
+
+        let no_fee = v1_message_with_config(v1::TransactionConfig::empty());
+        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&no_fee), 0);
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_v1_ignores_compute_budget_instructions() {
+        let payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+        let message = v1::Message::try_compile(
+            &payer.pubkey(),
+            &[
+                ComputeBudgetInstruction::set_compute_unit_price(50_000),
+                transfer(&payer.pubkey(), &recipient, 1_000),
+            ],
+            Hash::default(),
+        )
+        .expect("Failed to compile V1 message");
+
+        // The runtime treats ComputeBudget instructions in V1 transactions as
+        // no-ops; only the config field carries the priority fee.
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&VersionedMessage::V1(message)),
+            0
+        );
     }
 }
