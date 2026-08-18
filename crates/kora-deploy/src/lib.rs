@@ -270,7 +270,7 @@ async fn validate_state(
             if ctx.cfg.cleanup_on_failure {
                 anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup was attempted.");
             } else {
-                anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup skipped (--cleanup-on-failure=false).");
+                anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup skipped (--no-cleanup-on-failure was set).");
             }
         }
         if st.written_chunks > chunk_count {
@@ -288,7 +288,7 @@ async fn validate_state(
             if ctx.cfg.cleanup_on_failure {
                 anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup was attempted.", st.written_chunks, chunk_count);
             } else {
-                anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup skipped (--cleanup-on-failure=false).", st.written_chunks, chunk_count);
+                anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup skipped (--no-cleanup-on-failure was set).", st.written_chunks, chunk_count);
             }
         }
     }
@@ -392,13 +392,17 @@ async fn finalize_deploy(
     // Check if the program is live (programdata exists) to handle the timeout-but-success scenario.
     // NOTE: the 36-byte program stub survives forever even after reaping; only programdata
     // disappearing means the program is gone, so we must check programdata, not the stub.
-    if ctx
-        .rpc
-        .get_account_with_commitment(program_data, CommitmentConfig::confirmed())
-        .await?
-        .value
-        .is_some()
-    {
+    let is_already_live = if ctx.cfg.resume {
+        ctx.rpc
+            .get_account_with_commitment(program_data, CommitmentConfig::confirmed())
+            .await?
+            .value
+            .is_some()
+    } else {
+        false
+    };
+
+    if is_already_live {
         log::info!("Program {} is already live, skipping deployment.", program.pubkey());
         if let Err(err) = fs::remove_file(state_path) {
             log::warn!(
