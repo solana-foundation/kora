@@ -108,7 +108,7 @@ async fn test_sign_transaction_invalid_transaction() {
     assert!(result.is_err(), "Expected error for invalid transaction");
 }
 
-/// Sign a v1 transaction (SIMD-0385) through Kora
+/// Sign a v1 transaction through Kora
 #[tokio::test]
 async fn test_sign_transaction_v1() {
     let ctx = TestContext::new().await.expect("Failed to create test context");

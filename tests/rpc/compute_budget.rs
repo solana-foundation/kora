@@ -65,8 +65,8 @@ async fn test_estimate_transaction_fee_with_compute_budget_v0() {
 }
 
 /// V1 transactions carry the priority fee as flat lamports in the transaction
-/// config (SIMD-0385) instead of ComputeBudget instructions; Kora captures it
-/// through getFeeForMessage, so the estimate must include it exactly.
+/// config instead of ComputeBudget instructions; Kora captures it through
+/// getFeeForMessage, so the estimate must include it exactly.
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_v1_config_priority_fee() {
     let ctx = TestContext::new().await.expect("Failed to create test context");
