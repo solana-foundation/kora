@@ -187,15 +187,28 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
             program_hash: current_program_hash.clone(),
         };
         if let Err(e) = new_state.save(state_path) {
-            cleanup_buffer!(
-                "failed to save initial state",
-                cfg,
-                buffer,
-                kora_pubkey,
-                http,
-                rpc,
-                state_path
-            );
+            // Force buffer cleanup regardless of cfg.cleanup_on_failure.
+            // Leaving the buffer open serves no purpose here since there is no state file to resume from.
+            log::warn!("failed to save initial state, attempting to close buffer for cleanup...");
+            let close_ix =
+                loader_v3::close_any(&buffer.pubkey(), &kora_pubkey, Some(&kora_pubkey), None);
+            if let Err(cleanup_err) = submit_returning_signature(
+                &http,
+                cfg.kora_url,
+                &cfg.user_id,
+                &rpc,
+                &kora_pubkey,
+                &[close_ix],
+                &[],
+            )
+            .await
+            {
+                log::warn!(
+                    "failed to close buffer: {}; please manually close the buffer with pubkey {}",
+                    cleanup_err,
+                    buffer.pubkey()
+                );
+            }
             return Err(e.context("failed to save initial deploy state"));
         }
         state = Some(new_state);

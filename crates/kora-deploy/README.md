@@ -71,8 +71,10 @@ solana program show <PROGRAM_ID>
 ```
 If it's not live, you can't resume, and automatic cleanup failed,
 the buffer may be stuck. You can manually close it using
-`solana program close` and the keypairs in `.kora-deploy-state.json`,
-then delete the state file to start over.
+`solana program close`. The `.kora-deploy-state.json` file stores the
+`program_keypair` and `buffer_keypair` as raw JSON byte arrays. To use them
+with the Solana CLI, copy the array of numbers (e.g., `[1,2,...]`) into a new
+file and pass that file to the CLI, then delete the state file to start over.
 
 ## Trade-offs
 

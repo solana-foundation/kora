@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeployState {
     pub program_keypair: Vec<u8>,
     pub buffer_keypair: Vec<u8>,
@@ -92,7 +92,7 @@ mod tests {
         assert!(!tmp_file.exists(), "temporary file should be cleaned up after atomic rename");
 
         let loaded = DeployState::load(&temp_file)?.expect("state should exist");
-        assert_eq!(state, loaded);
+        assert!(state == loaded);
 
         fs::remove_file(&temp_file)?;
 
