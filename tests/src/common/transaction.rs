@@ -47,6 +47,7 @@ pub struct TransactionBuilder {
     fee_payer: Option<Pubkey>,
     signers: Vec<Keypair>,
     rpc_client: Option<Arc<RpcClient>>,
+    v1_priority_fee: Option<u64>,
 }
 
 impl TransactionBuilder {
@@ -58,6 +59,7 @@ impl TransactionBuilder {
             fee_payer: None,
             signers: Vec::new(),
             rpc_client: None,
+            v1_priority_fee: None,
         }
     }
 
@@ -69,6 +71,7 @@ impl TransactionBuilder {
             fee_payer: None,
             signers: Vec::new(),
             rpc_client: None,
+            v1_priority_fee: None,
         }
     }
 
@@ -80,6 +83,7 @@ impl TransactionBuilder {
             fee_payer: None,
             signers: Vec::new(),
             rpc_client: None,
+            v1_priority_fee: None,
         }
     }
 
@@ -91,6 +95,7 @@ impl TransactionBuilder {
             fee_payer: None,
             signers: Vec::new(),
             rpc_client: None,
+            v1_priority_fee: None,
         }
     }
 
@@ -266,6 +271,12 @@ impl TransactionBuilder {
         .expect("Failed to create SPL transfer_checked instruction");
 
         self.instructions.push(instruction);
+        self
+    }
+
+    /// Set the priority fee (flat lamports) in the V1 transaction config
+    pub fn with_v1_priority_fee(mut self, lamports: u64) -> Self {
+        self.v1_priority_fee = Some(lamports);
         self
     }
 
@@ -695,9 +706,12 @@ impl TransactionBuilder {
                 TransactionVersion::V1 => {
                     // An empty config mask requests 0 compute units and a 0 (32KiB)
                     // loaded-accounts-data cap, so real limits must be set explicitly.
-                    let config = TransactionConfig::empty()
+                    let mut config = TransactionConfig::empty()
                         .with_compute_unit_limit(1_400_000)
                         .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
+                    if let Some(priority_fee) = self.v1_priority_fee {
+                        config = config.with_priority_fee(priority_fee);
+                    }
                     let v1_message = V1Message::try_compile_with_config(
                         &fee_payer,
                         &self.instructions,

@@ -161,6 +161,40 @@ async fn test_sign_transaction_v1() {
     );
 }
 
+/// A V1 config priority fee is paid by the fee payer, so max_allowed_lamports
+/// must reject it just like a ComputeBudget priority fee. The payment overpays
+/// on purpose so the lamport-fee guard is the check that fires, not payment
+/// validation.
+#[tokio::test]
+async fn test_sign_transaction_v1_rejects_priority_fee_above_max_allowed_lamports() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+
+    // max_allowed_lamports is 1_000_000 in kora-test.toml
+    let v1_transaction = ctx
+        .v1_transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_v1_priority_fee(2_000_000)
+        .with_spl_transfer(&token_mint, &sender.pubkey(), &fee_payer, 3_000_000)
+        .with_transfer(&sender.pubkey(), &RecipientTestHelper::get_recipient_pubkey(), 10)
+        .build()
+        .await
+        .expect("Failed to create V1 transaction");
+
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("signTransaction", rpc_params![v1_transaction]).await;
+
+    let error =
+        result.expect_err("Expected rejection for V1 priority fee above max_allowed_lamports");
+    assert!(
+        error.to_string().contains("exceeds maximum allowed"),
+        "Expected max_allowed_lamports rejection, got: {error}"
+    );
+}
+
 // **************************************************************************************
 // Sign and send transaction tests
 // **************************************************************************************
