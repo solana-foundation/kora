@@ -1,13 +1,11 @@
-use solana_message::VersionedMessage;
+use solana_message::{v1, VersionedMessage};
 use solana_sdk::{
     signature::Signature,
     transaction::{Transaction, VersionedTransaction},
 };
 
 use crate::{
-    constant::{MAX_TRANSACTION_SIZE, MAX_V1_TRANSACTION_SIZE},
-    error::KoraError,
-    transaction::VersionedTransactionResolved,
+    constant::MAX_TRANSACTION_SIZE, error::KoraError, transaction::VersionedTransactionResolved,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
@@ -82,7 +80,7 @@ impl TransactionUtil {
 
     pub fn max_transaction_size(message: &VersionedMessage) -> usize {
         match message {
-            VersionedMessage::V1(_) => MAX_V1_TRANSACTION_SIZE,
+            VersionedMessage::V1(_) => v1::MAX_TRANSACTION_SIZE,
             _ => MAX_TRANSACTION_SIZE,
         }
     }
@@ -243,6 +241,6 @@ mod tests {
         assert_eq!(TransactionUtil::max_transaction_size(&legacy), MAX_TRANSACTION_SIZE);
 
         let v1 = VersionedMessage::V1(create_v1_message(&keypair, vec![1]));
-        assert_eq!(TransactionUtil::max_transaction_size(&v1), MAX_V1_TRANSACTION_SIZE);
+        assert_eq!(TransactionUtil::max_transaction_size(&v1), v1::MAX_TRANSACTION_SIZE);
     }
 }
