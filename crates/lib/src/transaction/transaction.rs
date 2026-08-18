@@ -20,28 +20,34 @@ impl TransactionUtil {
         })?;
 
         // First try to deserialize as VersionedTransaction (wincode is the wire
-        // codec: byte-identical to bincode for legacy/v0, required for v1)
-        if let Ok(versioned_tx) = wincode::deserialize::<VersionedTransaction>(&decoded) {
-            let max_size = Self::max_transaction_size(&versioned_tx.message);
-            if decoded.len() > max_size {
-                return Err(KoraError::InvalidTransaction(format!(
-                    "Transaction size {} exceeds maximum {max_size}",
-                    decoded.len()
-                )));
+        // codec: byte-identical to bincode for legacy/v0, required for v1), then
+        // fall back to legacy Transaction
+        let transaction = match wincode::deserialize_exact::<VersionedTransaction>(&decoded) {
+            Ok(versioned_tx) => versioned_tx,
+            Err(_) => {
+                let legacy_tx: Transaction = bincode::deserialize(&decoded).map_err(|e| {
+                    KoraError::InvalidTransaction(format!("Failed to deserialize transaction: {e}"))
+                })?;
+                VersionedTransaction {
+                    signatures: legacy_tx.signatures,
+                    message: VersionedMessage::Legacy(legacy_tx.message),
+                }
             }
-            return Ok(versioned_tx);
-        }
+        };
 
-        // Fall back to legacy Transaction and convert to VersionedTransaction
-        let legacy_tx: Transaction = bincode::deserialize(&decoded).map_err(|e| {
-            KoraError::InvalidTransaction(format!("Failed to deserialize transaction: {e}"))
+        transaction.message.sanitize().map_err(|e| {
+            KoraError::InvalidTransaction(format!("Invalid transaction message: {e}"))
         })?;
 
-        // Convert legacy Transaction to VersionedTransaction
-        Ok(VersionedTransaction {
-            signatures: legacy_tx.signatures,
-            message: VersionedMessage::Legacy(legacy_tx.message),
-        })
+        let max_size = Self::max_transaction_size(&transaction.message);
+        if decoded.len() > max_size {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Transaction size {} exceeds maximum {max_size}",
+                decoded.len()
+            )));
+        }
+
+        Ok(transaction)
     }
 
     pub fn new_unsigned_versioned_transaction(message: VersionedMessage) -> VersionedTransaction {
