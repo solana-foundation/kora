@@ -311,7 +311,13 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
         .is_some()
     {
         log::info!("Program {} is already live, skipping deployment.", program.pubkey());
-        fs::remove_file(state_path).ok();
+        if let Err(err) = fs::remove_file(state_path) {
+            log::warn!(
+                "Deploy succeeded, but failed to delete state file: {}. Please manually delete {} to start a fresh deployment.",
+                err,
+                state_path.display()
+            );
+        }
     } else {
         match submit(
             &http,
@@ -325,7 +331,13 @@ pub async fn deploy(cfg: &DeployConfig<'_>) -> Result<DeployResult> {
         .await
         {
             Ok(_) => {
-                fs::remove_file(state_path).ok();
+                if let Err(err) = fs::remove_file(state_path) {
+                    log::warn!(
+                        "Deploy succeeded, but failed to delete state file: {}. Please manually delete {} to start a fresh deployment.",
+                        err,
+                        state_path.display()
+                    );
+                }
             }
             Err(e) => {
                 cleanup_buffer!(
