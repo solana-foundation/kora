@@ -148,7 +148,7 @@ impl TransactionValidator {
 
         self.validate_programs(transaction_resolved)?;
         self.validate_require_one_of_programs(transaction_resolved)?;
-        self.validate_priority_fee(&transaction_resolved.transaction)?;
+        self.validate_priority_fee(transaction_resolved)?;
         self.validate_transfer_amounts(config, transaction_resolved, rpc_client).await?;
         self.validate_disallowed_accounts(transaction_resolved)?;
         self.validate_fee_payer_usage(config, transaction_resolved)?;
@@ -229,12 +229,18 @@ impl TransactionValidator {
         }
     }
 
-    fn validate_priority_fee(&self, transaction: &VersionedTransaction) -> Result<(), KoraError> {
+    fn validate_priority_fee(
+        &self,
+        transaction_resolved: &VersionedTransactionResolved,
+    ) -> Result<(), KoraError> {
         let Some(max_priority_fee_lamports) = self.max_priority_fee_lamports else {
             return Ok(());
         };
 
-        let priority_fee = TransactionFeeUtil::get_requested_priority_fee(&transaction.message);
+        let priority_fee = TransactionFeeUtil::get_requested_priority_fee(
+            &transaction_resolved.transaction.message,
+            &transaction_resolved.all_account_keys,
+        );
         if priority_fee > max_priority_fee_lamports {
             return Err(KoraError::InvalidTransaction(format!(
                 "Priority fee {priority_fee} exceeds maximum allowed {max_priority_fee_lamports}"
@@ -1062,7 +1068,9 @@ mod tests {
         instruction as alt_instruction, program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
     };
     use solana_compute_budget_interface::ComputeBudgetInstruction;
-    use solana_message::{v1, Message, VersionedMessage};
+    use solana_message::{
+        compiled_instruction::CompiledInstruction, v0, v1, Message, VersionedMessage,
+    };
     use solana_sdk::{
         hash::Hash,
         instruction::{AccountMeta, Instruction},
@@ -1438,15 +1446,15 @@ mod tests {
     fn legacy_transaction_with_instructions(
         fee_payer: &Pubkey,
         instructions: &[Instruction],
-    ) -> VersionedTransaction {
+    ) -> VersionedTransactionResolved {
         let message = VersionedMessage::Legacy(Message::new(instructions, Some(fee_payer)));
-        TransactionUtil::new_unsigned_versioned_transaction(message)
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
     }
 
     fn v1_transaction_with_config(
         fee_payer: &Pubkey,
         config: v1::TransactionConfig,
-    ) -> VersionedTransaction {
+    ) -> VersionedTransactionResolved {
         let recipient = Pubkey::new_unique();
         let mut message = v1::Message::try_compile(
             fee_payer,
@@ -1455,7 +1463,8 @@ mod tests {
         )
         .unwrap();
         message.config = config;
-        TransactionUtil::new_unsigned_versioned_transaction(VersionedMessage::V1(message))
+        TransactionUtil::new_unsigned_versioned_transaction_resolved(VersionedMessage::V1(message))
+            .unwrap()
     }
 
     #[test]
@@ -1551,6 +1560,55 @@ mod tests {
             v1::TransactionConfig::empty().with_priority_fee(1),
         );
         assert!(validator.validate_priority_fee(&v1_with_priority_fee).is_err());
+    }
+
+    #[test]
+    fn test_validate_priority_fee_counts_alt_loaded_compute_budget() {
+        let fee_payer = Pubkey::new_unique();
+        let config = ConfigMockBuilder::new().with_max_priority_fee_lamports(10_000).build();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
+
+        let message = VersionedMessage::V0(v0::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 0,
+            },
+            account_keys: vec![fee_payer],
+            recent_blockhash: Hash::new_unique(),
+            instructions: vec![
+                CompiledInstruction {
+                    program_id_index: 1,
+                    accounts: vec![],
+                    data: ComputeBudgetInstruction::set_compute_unit_limit(300_000).data,
+                },
+                CompiledInstruction {
+                    program_id_index: 1,
+                    accounts: vec![],
+                    data: ComputeBudgetInstruction::set_compute_unit_price(50_000).data,
+                },
+            ],
+            address_table_lookups: vec![v0::MessageAddressTableLookup {
+                account_key: Pubkey::new_unique(),
+                writable_indexes: vec![],
+                readonly_indexes: vec![0],
+            }],
+        });
+        let recipient = Pubkey::new_unique();
+        let mut resolved = legacy_transaction_with_instructions(
+            &fee_payer,
+            &[transfer(&fee_payer, &recipient, 1_000)],
+        );
+        resolved.transaction.message = message;
+        resolved.all_account_keys = vec![fee_payer, solana_compute_budget_interface::id()];
+
+        // 300_000 CU * 50_000 micro-lamports = 15_000 lamports, over the cap;
+        // the validator must see it through the resolved keys, not the static ones.
+        let error = validator.validate_priority_fee(&resolved).unwrap_err();
+        assert!(
+            error.to_string().contains("Priority fee 15000 exceeds maximum allowed 10000"),
+            "Unexpected error: {error}"
+        );
     }
 
     #[tokio::test]

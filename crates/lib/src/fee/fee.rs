@@ -810,17 +810,21 @@ impl TransactionFeeUtil {
     /// is set without an explicit limit, the 1.4M CU protocol maximum is assumed
     /// (an upper bound, so a configured cap can only over-reject, never let a
     /// higher fee through).
-    pub fn get_requested_priority_fee(message: &VersionedMessage) -> u64 {
+    ///
+    /// `account_keys` must be the fully resolved key list (static plus lookup-table
+    /// loaded, in canonical order): the runtime resolves ComputeBudget program ids
+    /// against loaded keys too, so a static-only lookup would miss an ALT-loaded
+    /// ComputeBudget program and undercount the fee.
+    pub fn get_requested_priority_fee(message: &VersionedMessage, account_keys: &[Pubkey]) -> u64 {
         if let VersionedMessage::V1(v1_message) = message {
             return v1_message.config.priority_fee.unwrap_or(0);
         }
 
         let compute_budget_program_id = solana_compute_budget_interface::id();
-        let static_keys = message.static_account_keys();
         let mut compute_unit_price: Option<u64> = None;
         let mut compute_unit_limit: Option<u32> = None;
         for instruction in message.instructions() {
-            if static_keys.get(instruction.program_id_index as usize)
+            if account_keys.get(instruction.program_id_index as usize)
                 != Some(&compute_budget_program_id)
             {
                 continue;
@@ -876,7 +880,9 @@ mod tests {
     use solana_address_lookup_table_interface::{
         instruction as alt_instruction, program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
     };
-    use solana_message::{v0, v1, Message, VersionedMessage};
+    use solana_message::{
+        compiled_instruction::CompiledInstruction, v0, v1, Message, VersionedMessage,
+    };
     use solana_sdk::{
         account::Account,
         hash::Hash,
@@ -2524,7 +2530,10 @@ mod tests {
             transfer(&payer, &recipient, 1_000),
         ]);
 
-        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&message), 7_500);
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
+            7_500
+        );
     }
 
     #[test]
@@ -2537,7 +2546,10 @@ mod tests {
             transfer(&payer, &recipient, 1_000),
         ]);
 
-        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&message), 1);
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
+            1
+        );
     }
 
     #[test]
@@ -2550,7 +2562,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(&message),
+            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
             2_000 * MAX_COMPUTE_UNIT_LIMIT as u64 / MICRO_LAMPORTS_PER_LAMPORT
         );
     }
@@ -2562,14 +2574,26 @@ mod tests {
 
         let no_compute_budget =
             legacy_message_with_instructions(&[transfer(&payer, &recipient, 1_000)]);
-        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&no_compute_budget), 0);
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(
+                &no_compute_budget,
+                no_compute_budget.static_account_keys()
+            ),
+            0
+        );
 
         let zero_price = legacy_message_with_instructions(&[
             ComputeBudgetInstruction::set_compute_unit_limit(300_000),
             ComputeBudgetInstruction::set_compute_unit_price(0),
             transfer(&payer, &recipient, 1_000),
         ]);
-        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&zero_price), 0);
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(
+                &zero_price,
+                zero_price.static_account_keys()
+            ),
+            0
+        );
     }
 
     #[test]
@@ -2577,10 +2601,16 @@ mod tests {
         let message = v1_message_with_config(
             v1::TransactionConfig::empty().with_priority_fee(1_234).with_compute_unit_limit(200),
         );
-        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&message), 1_234);
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
+            1_234
+        );
 
         let no_fee = v1_message_with_config(v1::TransactionConfig::empty());
-        assert_eq!(TransactionFeeUtil::get_requested_priority_fee(&no_fee), 0);
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&no_fee, no_fee.static_account_keys()),
+            0
+        );
     }
 
     #[test]
@@ -2599,9 +2629,47 @@ mod tests {
 
         // The runtime treats ComputeBudget instructions in V1 transactions as
         // no-ops; only the config field carries the priority fee.
+        let message = VersionedMessage::V1(message);
         assert_eq!(
-            TransactionFeeUtil::get_requested_priority_fee(&VersionedMessage::V1(message)),
+            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
             0
+        );
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_v0_with_alt_loaded_compute_budget() {
+        let payer = Pubkey::new_unique();
+        let limit_data = ComputeBudgetInstruction::set_compute_unit_limit(300_000).data;
+        let price_data = ComputeBudgetInstruction::set_compute_unit_price(2_000).data;
+
+        // The ComputeBudget program id lives past the static keys (loaded from a
+        // lookup table); the runtime still processes these instructions, so the
+        // extraction must resolve program ids against the full resolved key list.
+        let message = VersionedMessage::V0(v0::Message {
+            header: solana_message::MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 0,
+            },
+            account_keys: vec![payer],
+            recent_blockhash: Hash::new_unique(),
+            instructions: vec![
+                CompiledInstruction { program_id_index: 1, accounts: vec![], data: limit_data },
+                CompiledInstruction { program_id_index: 1, accounts: vec![], data: price_data },
+            ],
+            address_table_lookups: vec![solana_message::v0::MessageAddressTableLookup {
+                account_key: Pubkey::new_unique(),
+                writable_indexes: vec![],
+                readonly_indexes: vec![0],
+            }],
+        });
+        let resolved_keys = vec![payer, solana_compute_budget_interface::id()];
+
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&message, &resolved_keys),
+            600,
+            "300_000 CU * 2_000 micro-lamports = 600 lamports must be counted \
+             even when the ComputeBudget program is loaded via a lookup table"
         );
     }
 }
