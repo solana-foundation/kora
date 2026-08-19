@@ -31,6 +31,7 @@ solana-system-interface = { workspace = true }
 solana-program = { workspace = true }
 solana-program-pack = { workspace = true }
 solana-compute-budget-interface = { workspace = true }
+solana-compute-budget = { workspace = true }
 solana-transaction-status-client-types = { workspace = true }
 solana-transaction-status = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }

@@ -5,10 +5,7 @@ use std::{
 
 use crate::{
     config::Config,
-    constant::{
-        ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE, MAX_COMPUTE_UNIT_LIMIT,
-        MICRO_LAMPORTS_PER_LAMPORT,
-    },
+    constant::{ESTIMATED_LAMPORTS_FOR_PAYMENT_INSTRUCTION, LAMPORTS_PER_SIGNATURE},
     error::KoraError,
     fee::price::PriceModel,
     token::{
@@ -32,6 +29,7 @@ use crate::cache::CacheUtil;
 #[cfg(test)]
 use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableMessage};
+use solana_compute_budget::compute_budget_limits::{ComputeBudgetLimits, MAX_COMPUTE_UNIT_LIMIT};
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::VersionedMessage;
 use solana_program_pack::Pack;
@@ -806,15 +804,11 @@ impl TransactionFeeUtil {
     }
 
     /// Priority fee in lamports the transaction requests: the config field for V1,
-    /// or ComputeBudget price times limit for legacy/V0. When a compute unit price
-    /// is set without an explicit limit, the 1.4M CU protocol maximum is assumed
-    /// (an upper bound, so a configured cap can only over-reject, never let a
-    /// higher fee through).
+    /// ComputeBudget price times limit for legacy/V0, assuming the maximum compute
+    /// unit limit when none is set (an upper bound, so a cap can only over-reject).
     ///
-    /// `account_keys` must be the fully resolved key list (static plus lookup-table
-    /// loaded, in canonical order): the runtime resolves ComputeBudget program ids
-    /// against loaded keys too, so a static-only lookup would miss an ALT-loaded
-    /// ComputeBudget program and undercount the fee.
+    /// `account_keys` must be the resolved key list: the runtime resolves program
+    /// ids against lookup-table loaded keys too.
     pub fn get_requested_priority_fee(message: &VersionedMessage, account_keys: &[Pubkey]) -> u64 {
         if let VersionedMessage::V1(v1_message) = message {
             return v1_message.config.priority_fee.unwrap_or(0);
@@ -843,13 +837,15 @@ impl TransactionFeeUtil {
         let Some(price) = compute_unit_price.filter(|price| *price > 0) else {
             return 0;
         };
-        let limit =
-            compute_unit_limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT).min(MAX_COMPUTE_UNIT_LIMIT);
-        (price as u128)
-            .saturating_mul(limit as u128)
-            .div_ceil(MICRO_LAMPORTS_PER_LAMPORT as u128)
-            .try_into()
-            .unwrap_or(u64::MAX)
+
+        ComputeBudgetLimits {
+            compute_unit_price: price,
+            compute_unit_limit: compute_unit_limit
+                .unwrap_or(MAX_COMPUTE_UNIT_LIMIT)
+                .min(MAX_COMPUTE_UNIT_LIMIT),
+            ..Default::default()
+        }
+        .get_prioritization_fee()
     }
 }
 
@@ -871,6 +867,9 @@ mod tests {
             },
             config_mock::{mock_state::get_config, ConfigMockBuilder},
             rpc_mock::RpcMockBuilder,
+            transaction_mock::{
+                create_legacy_message, create_v0_message_with_alt_loaded_program, create_v1_message,
+            },
         },
         token::{
             interface::TokenInterface, spl_token::TokenProgram, spl_token_2022::Token2022Program,
@@ -880,9 +879,7 @@ mod tests {
     use solana_address_lookup_table_interface::{
         instruction as alt_instruction, program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
     };
-    use solana_message::{
-        compiled_instruction::CompiledInstruction, v0, v1, Message, VersionedMessage,
-    };
+    use solana_message::{v0, v1, Message, VersionedMessage};
     use solana_sdk::{
         account::Account,
         hash::Hash,
@@ -2502,33 +2499,18 @@ mod tests {
         assert_eq!(result, 9000, "Should return mocked base fee for V1 message");
     }
 
-    fn legacy_message_with_instructions(instructions: &[Instruction]) -> VersionedMessage {
-        let payer = Pubkey::new_unique();
-        VersionedMessage::Legacy(Message::new(instructions, Some(&payer)))
-    }
-
-    fn v1_message_with_config(config: v1::TransactionConfig) -> VersionedMessage {
-        let payer = Keypair::new();
-        let recipient = Pubkey::new_unique();
-        let mut message = v1::Message::try_compile(
-            &payer.pubkey(),
-            &[transfer(&payer.pubkey(), &recipient, 1_000)],
-            Hash::default(),
-        )
-        .expect("Failed to compile V1 message");
-        message.config = config;
-        VersionedMessage::V1(message)
-    }
-
     #[test]
     fn test_get_requested_priority_fee_legacy_price_and_limit() {
         let payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
-        let message = legacy_message_with_instructions(&[
-            ComputeBudgetInstruction::set_compute_unit_limit(300_000),
-            ComputeBudgetInstruction::set_compute_unit_price(25_000),
-            transfer(&payer, &recipient, 1_000),
-        ]);
+        let message = create_legacy_message(
+            &payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(300_000),
+                ComputeBudgetInstruction::set_compute_unit_price(25_000),
+                transfer(&payer, &recipient, 1_000),
+            ],
+        );
 
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
@@ -2540,11 +2522,14 @@ mod tests {
     fn test_get_requested_priority_fee_rounds_up() {
         let payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
-        let message = legacy_message_with_instructions(&[
-            ComputeBudgetInstruction::set_compute_unit_limit(100),
-            ComputeBudgetInstruction::set_compute_unit_price(1),
-            transfer(&payer, &recipient, 1_000),
-        ]);
+        let message = create_legacy_message(
+            &payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(100),
+                ComputeBudgetInstruction::set_compute_unit_price(1),
+                transfer(&payer, &recipient, 1_000),
+            ],
+        );
 
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
@@ -2556,14 +2541,18 @@ mod tests {
     fn test_get_requested_priority_fee_price_without_limit_assumes_max() {
         let payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
-        let message = legacy_message_with_instructions(&[
-            ComputeBudgetInstruction::set_compute_unit_price(2_000),
-            transfer(&payer, &recipient, 1_000),
-        ]);
+        let message = create_legacy_message(
+            &payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_price(2_000),
+                transfer(&payer, &recipient, 1_000),
+            ],
+        );
 
+        // 2_000 micro-lamports over the assumed 1.4M CU maximum = 2_800 lamports
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
-            2_000 * MAX_COMPUTE_UNIT_LIMIT as u64 / MICRO_LAMPORTS_PER_LAMPORT
+            2_800
         );
     }
 
@@ -2573,7 +2562,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
 
         let no_compute_budget =
-            legacy_message_with_instructions(&[transfer(&payer, &recipient, 1_000)]);
+            create_legacy_message(&payer, &[transfer(&payer, &recipient, 1_000)]);
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(
                 &no_compute_budget,
@@ -2582,11 +2571,14 @@ mod tests {
             0
         );
 
-        let zero_price = legacy_message_with_instructions(&[
-            ComputeBudgetInstruction::set_compute_unit_limit(300_000),
-            ComputeBudgetInstruction::set_compute_unit_price(0),
-            transfer(&payer, &recipient, 1_000),
-        ]);
+        let zero_price = create_legacy_message(
+            &payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(300_000),
+                ComputeBudgetInstruction::set_compute_unit_price(0),
+                transfer(&payer, &recipient, 1_000),
+            ],
+        );
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(
                 &zero_price,
@@ -2598,7 +2590,8 @@ mod tests {
 
     #[test]
     fn test_get_requested_priority_fee_v1_reads_config() {
-        let message = v1_message_with_config(
+        let message = create_v1_message(
+            &Pubkey::new_unique(),
             v1::TransactionConfig::empty().with_priority_fee(1_234).with_compute_unit_limit(200),
         );
         assert_eq!(
@@ -2606,7 +2599,7 @@ mod tests {
             1_234
         );
 
-        let no_fee = v1_message_with_config(v1::TransactionConfig::empty());
+        let no_fee = create_v1_message(&Pubkey::new_unique(), v1::TransactionConfig::empty());
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(&no_fee, no_fee.static_account_keys()),
             0
@@ -2645,24 +2638,8 @@ mod tests {
         // The ComputeBudget program id lives past the static keys (loaded from a
         // lookup table); the runtime still processes these instructions, so the
         // extraction must resolve program ids against the full resolved key list.
-        let message = VersionedMessage::V0(v0::Message {
-            header: solana_message::MessageHeader {
-                num_required_signatures: 1,
-                num_readonly_signed_accounts: 0,
-                num_readonly_unsigned_accounts: 0,
-            },
-            account_keys: vec![payer],
-            recent_blockhash: Hash::new_unique(),
-            instructions: vec![
-                CompiledInstruction { program_id_index: 1, accounts: vec![], data: limit_data },
-                CompiledInstruction { program_id_index: 1, accounts: vec![], data: price_data },
-            ],
-            address_table_lookups: vec![solana_message::v0::MessageAddressTableLookup {
-                account_key: Pubkey::new_unique(),
-                writable_indexes: vec![],
-                readonly_indexes: vec![0],
-            }],
-        });
+        let message =
+            create_v0_message_with_alt_loaded_program(&payer, vec![limit_data, price_data]);
         let resolved_keys = vec![payer, solana_compute_budget_interface::id()];
 
         assert_eq!(

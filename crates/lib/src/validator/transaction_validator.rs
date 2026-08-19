@@ -1056,6 +1056,10 @@ mod tests {
             account_mock::{AccountMockBuilder, MintAccountMockBuilder, TokenAccountMockBuilder},
             config_mock::{mock_state::setup_config_mock, ConfigMockBuilder},
             rpc_mock::RpcMockBuilder,
+            transaction_mock::{
+                create_legacy_message, create_resolved_with_loaded_keys,
+                create_v0_message_with_alt_loaded_program, create_v1_message,
+            },
         },
         transaction::TransactionUtil,
     };
@@ -1068,11 +1072,8 @@ mod tests {
         instruction as alt_instruction, program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
     };
     use solana_compute_budget_interface::ComputeBudgetInstruction;
-    use solana_message::{
-        compiled_instruction::CompiledInstruction, v0, v1, Message, VersionedMessage,
-    };
+    use solana_message::{v1, Message, VersionedMessage};
     use solana_sdk::{
-        hash::Hash,
         instruction::{AccountMeta, Instruction},
         signature::{Keypair, Signer},
     };
@@ -1443,28 +1444,8 @@ mod tests {
             .is_ok());
     }
 
-    fn legacy_transaction_with_instructions(
-        fee_payer: &Pubkey,
-        instructions: &[Instruction],
-    ) -> VersionedTransactionResolved {
-        let message = VersionedMessage::Legacy(Message::new(instructions, Some(fee_payer)));
+    fn resolved_from_message(message: VersionedMessage) -> VersionedTransactionResolved {
         TransactionUtil::new_unsigned_versioned_transaction_resolved(message).unwrap()
-    }
-
-    fn v1_transaction_with_config(
-        fee_payer: &Pubkey,
-        config: v1::TransactionConfig,
-    ) -> VersionedTransactionResolved {
-        let recipient = Pubkey::new_unique();
-        let mut message = v1::Message::try_compile(
-            fee_payer,
-            &[transfer(fee_payer, &recipient, 1_000)],
-            Hash::default(),
-        )
-        .unwrap();
-        message.config = config;
-        TransactionUtil::new_unsigned_versioned_transaction_resolved(VersionedMessage::V1(message))
-            .unwrap()
     }
 
     #[test]
@@ -1473,10 +1454,10 @@ mod tests {
         let config = ConfigMockBuilder::new().build();
         let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
-        let transaction = v1_transaction_with_config(
+        let transaction = resolved_from_message(create_v1_message(
             &fee_payer,
             v1::TransactionConfig::empty().with_priority_fee(u64::MAX),
-        );
+        ));
 
         assert!(validator.validate_priority_fee(&transaction).is_ok());
     }
@@ -1487,16 +1468,16 @@ mod tests {
         let config = ConfigMockBuilder::new().with_max_priority_fee_lamports(10_000).build();
         let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
-        let under_cap = v1_transaction_with_config(
+        let under_cap = resolved_from_message(create_v1_message(
             &fee_payer,
             v1::TransactionConfig::empty().with_priority_fee(10_000),
-        );
+        ));
         assert!(validator.validate_priority_fee(&under_cap).is_ok());
 
-        let over_cap = v1_transaction_with_config(
+        let over_cap = resolved_from_message(create_v1_message(
             &fee_payer,
             v1::TransactionConfig::empty().with_priority_fee(10_001),
-        );
+        ));
         let error = validator.validate_priority_fee(&over_cap).unwrap_err();
         assert!(
             error.to_string().contains("Priority fee 10001 exceeds maximum allowed 10000"),
@@ -1512,25 +1493,25 @@ mod tests {
         let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
         // 300_000 CU * 25_000 micro-lamports = 7_500 lamports, under the cap
-        let under_cap = legacy_transaction_with_instructions(
+        let under_cap = resolved_from_message(create_legacy_message(
             &fee_payer,
             &[
                 ComputeBudgetInstruction::set_compute_unit_limit(300_000),
                 ComputeBudgetInstruction::set_compute_unit_price(25_000),
                 transfer(&fee_payer, &recipient, 1_000),
             ],
-        );
+        ));
         assert!(validator.validate_priority_fee(&under_cap).is_ok());
 
         // 300_000 CU * 50_000 micro-lamports = 15_000 lamports, over the cap
-        let over_cap = legacy_transaction_with_instructions(
+        let over_cap = resolved_from_message(create_legacy_message(
             &fee_payer,
             &[
                 ComputeBudgetInstruction::set_compute_unit_limit(300_000),
                 ComputeBudgetInstruction::set_compute_unit_price(50_000),
                 transfer(&fee_payer, &recipient, 1_000),
             ],
-        );
+        ));
         let error = validator.validate_priority_fee(&over_cap).unwrap_err();
         assert!(
             error.to_string().contains("Priority fee 15000 exceeds maximum allowed 10000"),
@@ -1545,20 +1526,20 @@ mod tests {
         let config = ConfigMockBuilder::new().with_max_priority_fee_lamports(0).build();
         let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
-        let no_priority_fee = legacy_transaction_with_instructions(
+        let no_priority_fee = resolved_from_message(create_legacy_message(
             &fee_payer,
             &[transfer(&fee_payer, &recipient, 1_000)],
-        );
+        ));
         assert!(validator.validate_priority_fee(&no_priority_fee).is_ok());
 
         let v1_no_priority_fee =
-            v1_transaction_with_config(&fee_payer, v1::TransactionConfig::empty());
+            resolved_from_message(create_v1_message(&fee_payer, v1::TransactionConfig::empty()));
         assert!(validator.validate_priority_fee(&v1_no_priority_fee).is_ok());
 
-        let v1_with_priority_fee = v1_transaction_with_config(
+        let v1_with_priority_fee = resolved_from_message(create_v1_message(
             &fee_payer,
             v1::TransactionConfig::empty().with_priority_fee(1),
-        );
+        ));
         assert!(validator.validate_priority_fee(&v1_with_priority_fee).is_err());
     }
 
@@ -1568,39 +1549,17 @@ mod tests {
         let config = ConfigMockBuilder::new().with_max_priority_fee_lamports(10_000).build();
         let validator = TransactionValidator::new(&config, fee_payer).unwrap();
 
-        let message = VersionedMessage::V0(v0::Message {
-            header: solana_message::MessageHeader {
-                num_required_signatures: 1,
-                num_readonly_signed_accounts: 0,
-                num_readonly_unsigned_accounts: 0,
-            },
-            account_keys: vec![fee_payer],
-            recent_blockhash: Hash::new_unique(),
-            instructions: vec![
-                CompiledInstruction {
-                    program_id_index: 1,
-                    accounts: vec![],
-                    data: ComputeBudgetInstruction::set_compute_unit_limit(300_000).data,
-                },
-                CompiledInstruction {
-                    program_id_index: 1,
-                    accounts: vec![],
-                    data: ComputeBudgetInstruction::set_compute_unit_price(50_000).data,
-                },
-            ],
-            address_table_lookups: vec![v0::MessageAddressTableLookup {
-                account_key: Pubkey::new_unique(),
-                writable_indexes: vec![],
-                readonly_indexes: vec![0],
-            }],
-        });
-        let recipient = Pubkey::new_unique();
-        let mut resolved = legacy_transaction_with_instructions(
+        let message = create_v0_message_with_alt_loaded_program(
             &fee_payer,
-            &[transfer(&fee_payer, &recipient, 1_000)],
+            vec![
+                ComputeBudgetInstruction::set_compute_unit_limit(300_000).data,
+                ComputeBudgetInstruction::set_compute_unit_price(50_000).data,
+            ],
         );
-        resolved.transaction.message = message;
-        resolved.all_account_keys = vec![fee_payer, solana_compute_budget_interface::id()];
+        let resolved = create_resolved_with_loaded_keys(
+            message,
+            vec![fee_payer, solana_compute_budget_interface::id()],
+        );
 
         // 300_000 CU * 50_000 micro-lamports = 15_000 lamports, over the cap;
         // the validator must see it through the resolved keys, not the static ones.

@@ -3992,6 +3992,7 @@ dependencies = [
  "solana-address-lookup-table-interface",
  "solana-client",
  "solana-commitment-config",
+ "solana-compute-budget",
  "solana-compute-budget-interface",
  "solana-keychain",
  "solana-loader-v3-interface 6.1.1",
