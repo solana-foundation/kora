@@ -269,7 +269,7 @@ pub struct ValidationConfig {
     #[serde(default)]
     pub allow_durable_transactions: bool,
     /// Transaction message versions this operator accepts.
-    /// Default: all of them (`["legacy", "0"]`), so an operator who says nothing keeps
+    /// Default: all of them (`["legacy", "0", "1"]`), so an operator who says nothing keeps
     /// accepting exactly what they accepted before this option existed.
     /// Narrow it to run legacy-only, or v0-only once every client has migrated.
     #[serde(default)]

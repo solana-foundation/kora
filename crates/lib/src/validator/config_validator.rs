@@ -498,7 +498,8 @@ impl ConfigValidator {
 
         if config.validation.allowed_transaction_versions.is_empty() {
             errors.push(
-                "allowed_transaction_versions is empty. The node would reject every transaction.                 Remove the key to accept all versions, or list the ones you accept."
+                "allowed_transaction_versions is empty. The node would reject every transaction. \
+                Remove the key to accept all versions, or list the ones you accept."
                     .to_string(),
             );
         }
