@@ -431,7 +431,7 @@ allowed_spl_paid_tokens = [
 disallowed_accounts = []  # Blocked account addresses
 
 # Fee payer policy controls what actions the fee payer can perform
-# Organized by program type with 28 granular controls
+# Organized by program type with 60 granular controls
 # All default to false for security
 [validation.fee_payer_policy.system]
 allow_transfer = false           # System Transfer/TransferWithSeed
@@ -458,6 +458,8 @@ allow_initialize_account = false # InitializeAccount/InitializeAccount3
 allow_initialize_multisig = false # InitializeMultisig/InitializeMultisig2
 allow_freeze_account = false     # FreezeAccount
 allow_thaw_account = false       # ThawAccount
+allow_withdraw_excess_lamports = false # WithdrawExcessLamports
+allow_unwrap_lamports = false    # UnwrapLamports
 
 [validation.fee_payer_policy.token_2022]
 allow_transfer = false           # Transfer/TransferChecked
@@ -470,8 +472,40 @@ allow_mint_to = false            # MintTo/MintToChecked
 allow_initialize_mint = false    # InitializeMint/InitializeMint2
 allow_initialize_account = false # InitializeAccount/InitializeAccount3
 allow_initialize_multisig = false # InitializeMultisig/InitializeMultisig2
+allow_initialize_extension_authority = false # extension init plants fee payer as authority/delegate
+allow_update_extension_authority = false # extension update/admin instructions
 allow_freeze_account = false     # FreezeAccount
 allow_thaw_account = false       # ThawAccount
+allow_withdraw_excess_lamports = false # WithdrawExcessLamports
+allow_unwrap_lamports = false    # UnwrapLamports
+
+[validation.fee_payer_policy.alt]
+allow_create = false             # CreateLookupTable
+allow_extend = false             # ExtendLookupTable
+allow_freeze = false             # FreezeLookupTable
+allow_deactivate = false         # DeactivateLookupTable
+allow_close = false              # CloseLookupTable
+
+[validation.fee_payer_policy.bpf_loader_upgradeable]
+allow_initialize_buffer = false  # InitializeBuffer
+allow_write = false              # Write
+allow_deploy_with_max_data_len = false # DeployWithMaxDataLen
+allow_upgrade = false            # Upgrade
+allow_set_authority = false      # SetAuthority
+allow_set_authority_checked = false # SetAuthorityChecked
+allow_close = false              # Close
+allow_extend_program = false     # ExtendProgram
+allow_extend_program_checked = false # ExtendProgramChecked
+allow_migrate = false            # Migrate
+
+[validation.fee_payer_policy.loader_v4]
+allow_write = false              # Write
+allow_copy = false               # Copy
+allow_set_program_length = false # SetProgramLength
+allow_deploy = false             # Deploy
+allow_retract = false            # Retract
+allow_transfer_authority = false # TransferAuthority
+allow_finalize = false           # Finalize
 ```
 
 ### Environment Variables set in `signers.toml`
@@ -485,15 +519,18 @@ RUST_LOG=debug  # Logging level
 
 ### Overview
 
-The fee payer policy system provides granular control over what actions the fee payer can perform in transactions. The policy is organized by program type (System, SPL Token, Token-2022) and covers 28 different instruction types. By default, all actions are permitted to maintain backward compatibility with existing behavior.
+The fee payer policy system provides granular control over what actions the fee payer can perform in transactions. The policy is organized by program type (System, SPL Token, Token-2022, Address Lookup Table, BPF Loader Upgradeable, Loader v4) and covers 60 different instruction roles. Every flag defaults to `false`: an action is denied unless explicitly allowed.
 
 ### Policy Configuration
 
 The fee payer policy is configured via nested sections in `kora.toml`:
 - `[validation.fee_payer_policy.system]` - System program instructions (4 fields)
 - `[validation.fee_payer_policy.system.nonce]` - Nonce account operations (4 fields)
-- `[validation.fee_payer_policy.spl_token]` - SPL Token program instructions (12 fields)
-- `[validation.fee_payer_policy.token_2022]` - Token-2022 program instructions (12 fields)
+- `[validation.fee_payer_policy.spl_token]` - SPL Token program instructions (14 fields)
+- `[validation.fee_payer_policy.token_2022]` - Token-2022 program instructions (16 fields)
+- `[validation.fee_payer_policy.alt]` - Address Lookup Table program instructions (5 fields)
+- `[validation.fee_payer_policy.bpf_loader_upgradeable]` - BPF Loader Upgradeable (v3) instructions (10 fields)
+- `[validation.fee_payer_policy.loader_v4]` - Loader v4 instructions (7 fields)
 
 ### Implementation Details
 
@@ -502,14 +539,18 @@ The fee payer policy is configured via nested sections in `kora.toml`:
 - `SystemInstructionPolicy` - Controls System program operations including nested `NonceInstructionPolicy`
 - `SplTokenInstructionPolicy` - Controls SPL Token program operations
 - `Token2022InstructionPolicy` - Controls Token-2022 program operations
-- All `Default` implementations set fields to `true` (permissive) for backward compatibility
+- `AltInstructionPolicy` - Controls Address Lookup Table program operations
+- `BpfLoaderUpgradeableInstructionPolicy` - Controls BPF Loader Upgradeable (v3) operations
+- `LoaderV4InstructionPolicy` - Controls Loader v4 operations
+- All `Default` implementations set fields to `false` (deny by default)
 - `#[serde(default)]` attribute ensures backward compatibility
 
-**Validation Logic** (`crates/lib/src/transaction/validator.rs`):
+**Validation Logic** (`crates/lib/src/validator/transaction_validator.rs`):
 - `TransactionValidator` stores the policy configuration
 - Program-specific validation methods check policy flags before validating restrictions
 - Uses macro-based validation patterns for consistent enforcement across instruction types
-- Different validation logic for each program type (System, SPL Token, Token2022)
+- Different validation logic for each program type
+- Drain-safety property tests live in `validator/transaction_validator/fee_payer_policy_props/`, one file per program type implementing the `DrainRole` trait. Run with `cargo test -p kora-lib --lib fee_payer_policy_props`
 
 **Supported Actions by Program Type**:
 
@@ -523,7 +564,7 @@ The fee payer policy is configured via nested sections in `kora.toml`:
 7. **Nonce Authorize** - AuthorizeNonceAccount instruction (fee payer as current authority)
 8. **Nonce Withdraw** - WithdrawNonceAccount instruction (fee payer as authority)
 
-**SPL Token Program (12 controls)**:
+**SPL Token Program (14 controls)**:
 1. **Transfer** - Transfer and TransferChecked instructions (fee payer as owner)
 2. **Burn** - Burn and BurnChecked instructions (fee payer as owner)
 3. **CloseAccount** - CloseAccount instruction (fee payer as owner)
@@ -536,9 +577,41 @@ The fee payer policy is configured via nested sections in `kora.toml`:
 10. **InitializeMultisig** - InitializeMultisig and InitializeMultisig2 instructions (fee payer as signer)
 11. **FreezeAccount** - FreezeAccount instruction (fee payer as freeze authority)
 12. **ThawAccount** - ThawAccount instruction (fee payer as freeze authority)
+13. **WithdrawExcessLamports** - WithdrawExcessLamports instruction (fee payer as authority)
+14. **UnwrapLamports** - UnwrapLamports instruction (fee payer as authority)
 
-**Token-2022 Program (12 controls)**:
-- Identical instruction set and controls as SPL Token Program
+**Token-2022 Program (16 controls)**:
+- The same 14 controls as SPL Token Program, plus:
+- **InitializeExtensionAuthority** - fee payer planted as a future extension authority/delegate during extension initialization
+- **UpdateExtensionAuthority** - fee payer as current authority for extension update/admin instructions
+
+**Address Lookup Table Program (5 controls)**:
+1. **Create** - CreateLookupTable (fee payer as authority or payer)
+2. **Extend** - ExtendLookupTable (fee payer as authority or payer)
+3. **Freeze** - FreezeLookupTable (fee payer as authority)
+4. **Deactivate** - DeactivateLookupTable (fee payer as authority)
+5. **Close** - CloseLookupTable (fee payer as authority)
+
+**BPF Loader Upgradeable, v3 (10 controls)**:
+1. **InitializeBuffer** - fee payer as buffer authority
+2. **Write** - fee payer as buffer authority
+3. **DeployWithMaxDataLen** - fee payer as payer or upgrade authority
+4. **Upgrade** - fee payer as upgrade authority
+5. **SetAuthority** - fee payer as current authority (drainage vector: hands program control to an authority that can close and drain)
+6. **SetAuthorityChecked** - fee payer as current authority
+7. **Close** - fee payer as authority or recipient (drainage vector: recipient gets the closed-account lamports)
+8. **ExtendProgram** - fee payer as payer
+9. **ExtendProgramChecked** - fee payer as authority or payer
+10. **Migrate** - fee payer as current authority (moves the program to loader-v4)
+
+**Loader v4 (7 controls)**:
+1. **Write** - fee payer as authority
+2. **Copy** - fee payer as authority
+3. **SetProgramLength** - fee payer as authority
+4. **Deploy** - fee payer as authority
+5. **Retract** - fee payer as authority
+6. **TransferAuthority** - fee payer as current authority
+7. **Finalize** - fee payer as current authority
 
 ## Private Key Formats
 

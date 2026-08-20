@@ -20,6 +20,10 @@ dist/
 coverage/
 *.profraw
 
+# Proptest seeds: a checked-in seed for a real drain failure would publish the
+# failing case before a fix ships
+*.proptest-regressions
+
 .DS_Store
 
 # Make test files
