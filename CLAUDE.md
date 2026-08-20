@@ -550,7 +550,7 @@ The fee payer policy is configured via nested sections in `kora.toml`:
 - Program-specific validation methods check policy flags before validating restrictions
 - Uses macro-based validation patterns for consistent enforcement across instruction types
 - Different validation logic for each program type
-- Drain-safety property tests live in `validator/transaction_validator/fee_payer_policy_props/`, one file per program type implementing the `DrainRole` trait. Run with `cargo test -p kora-lib --lib fee_payer_policy_props`
+- Drain-safety property tests live in `validator/transaction_validator/fee_payer_policy_props/`, one file per gated program type implementing the `DrainRole` trait. System is covered today; SPL Token, Token-2022, ALT, BPF Loader Upgradeable, and Loader v4 are open work. Run with `cargo test -p kora-lib --lib fee_payer_policy_props`
 
 **Supported Actions by Program Type**:
 
@@ -597,9 +597,9 @@ The fee payer policy is configured via nested sections in `kora.toml`:
 2. **Write** - fee payer as buffer authority
 3. **DeployWithMaxDataLen** - fee payer as payer or upgrade authority
 4. **Upgrade** - fee payer as upgrade authority
-5. **SetAuthority** - fee payer as current authority (drainage vector: hands program control to an authority that can close and drain)
-6. **SetAuthorityChecked** - fee payer as current authority
-7. **Close** - fee payer as authority or recipient (drainage vector: recipient gets the closed-account lamports)
+5. **SetAuthority** - fee payer as current or new authority (drainage vector: hands program control to an authority that can close and drain)
+6. **SetAuthorityChecked** - fee payer as current or new authority
+7. **Close** - fee payer as authority. The recipient slot is not flag-gated: an unconditional drainage guard rejects a fee-payer authority paired with a foreign recipient
 8. **ExtendProgram** - fee payer as payer
 9. **ExtendProgramChecked** - fee payer as authority or payer
 10. **Migrate** - fee payer as current authority (moves the program to loader-v4)
@@ -607,10 +607,10 @@ The fee payer policy is configured via nested sections in `kora.toml`:
 **Loader v4 (7 controls)**:
 1. **Write** - fee payer as authority
 2. **Copy** - fee payer as authority
-3. **SetProgramLength** - fee payer as authority
+3. **SetProgramLength** - fee payer as authority or recipient. An unconditional drainage guard additionally requires the recipient to be the fee payer whenever the fee payer is the authority
 4. **Deploy** - fee payer as authority
 5. **Retract** - fee payer as authority
-6. **TransferAuthority** - fee payer as current authority
+6. **TransferAuthority** - fee payer as current or new authority
 7. **Finalize** - fee payer as current authority
 
 ## Private Key Formats

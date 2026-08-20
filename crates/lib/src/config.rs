@@ -386,13 +386,14 @@ pub struct BpfLoaderUpgradeableInstructionPolicy {
     pub allow_deploy_with_max_data_len: bool,
     /// Allow fee payer to be the upgrade authority in Upgrade instructions
     pub allow_upgrade: bool,
-    /// Allow fee payer to be the current authority in SetAuthority (drainage vector — hands
-    /// program control to a new authority that can then close + drain)
+    /// Allow fee payer to be the current or the new authority in SetAuthority (drainage vector
+    /// — hands program control to a new authority that can then close + drain)
     pub allow_set_authority: bool,
-    /// Allow fee payer to be the current authority in SetAuthorityChecked
+    /// Allow fee payer to be the current or the new authority in SetAuthorityChecked
     pub allow_set_authority_checked: bool,
-    /// Allow fee payer to be the authority or recipient in Close instructions
-    /// (drainage vector — recipient gets the closed-account lamports)
+    /// Allow fee payer to be the authority in Close instructions. The recipient slot is not
+    /// flag-gated: an unconditional drainage guard rejects a fee-payer authority paired with a
+    /// foreign recipient
     pub allow_close: bool,
     /// Allow fee payer to be the payer in ExtendProgram instructions
     pub allow_extend_program: bool,
@@ -411,13 +412,15 @@ pub struct LoaderV4InstructionPolicy {
     pub allow_write: bool,
     /// Allow fee payer to be the authority in Copy instructions
     pub allow_copy: bool,
-    /// Allow fee payer to be the authority in SetProgramLength instructions
+    /// Allow fee payer to be the authority or the recipient in SetProgramLength instructions. An
+    /// unconditional drainage guard additionally requires the recipient to be the fee payer
+    /// whenever the fee payer is the authority
     pub allow_set_program_length: bool,
     /// Allow fee payer to be the authority in Deploy instructions
     pub allow_deploy: bool,
     /// Allow fee payer to be the authority in Retract instructions
     pub allow_retract: bool,
-    /// Allow fee payer to be the current authority in TransferAuthority instructions
+    /// Allow fee payer to be the current or the new authority in TransferAuthority instructions
     pub allow_transfer_authority: bool,
     /// Allow fee payer to be the current authority in Finalize instructions
     pub allow_finalize: bool,

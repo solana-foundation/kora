@@ -34,4 +34,4 @@ A crash writes a reproducer to `fuzz/artifacts/<target>/`; re-run it with `cargo
 
 ## Property tests
 
-Structural invariants (e.g. fee-payer drain safety across the policy matrix) live as `proptest` cases in the `kora-lib` unit tests, not here — see `crates/lib/src/validator/transaction_validator/fee_payer_policy_props/`, one file per gated program type implementing the `DrainRole` trait. Run with `cargo test -p kora-lib --lib fee_payer_policy_props`.
+Structural invariants (e.g. fee-payer drain safety across the policy matrix) live as `proptest` cases in the `kora-lib` unit tests, not here — see `crates/lib/src/validator/transaction_validator/fee_payer_policy_props/`, one file per gated program type implementing the `DrainRole` trait. System is covered today; SPL Token, Token-2022, ALT, BPF Loader Upgradeable, and Loader v4 are open work. Run with `cargo test -p kora-lib --lib fee_payer_policy_props`.
