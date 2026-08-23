@@ -1,4 +1,5 @@
 mod alt;
+mod bpf_loader_upgradeable;
 mod spl_token;
 mod system;
 
