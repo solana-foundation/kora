@@ -29,7 +29,9 @@ use crate::cache::CacheUtil;
 #[cfg(test)]
 use crate::tests::cache_mock::MockCacheUtil as CacheUtil;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableMessage};
-use solana_compute_budget::compute_budget_limits::{ComputeBudgetLimits, MAX_COMPUTE_UNIT_LIMIT};
+use solana_compute_budget::compute_budget_limits::{
+    ComputeBudgetLimits, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
+};
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_message::VersionedMessage;
 use solana_program_pack::Pack;
@@ -804,8 +806,13 @@ impl TransactionFeeUtil {
     }
 
     /// Priority fee in lamports the transaction requests: the config field for V1,
-    /// ComputeBudget price times limit for legacy/V0, assuming the maximum compute
-    /// unit limit when none is set (an upper bound, so a cap can only over-reject).
+    /// ComputeBudget price times limit for legacy/V0.
+    ///
+    /// When no SetComputeUnitLimit is present the runtime derives a default limit per
+    /// instruction, charging a builtin less than a program. Deriving it here would take the
+    /// cluster's feature set, so every instruction is billed at the higher per-instruction
+    /// default instead: an upper bound on the runtime's own default, so the cap can only
+    /// over-reject, never under.
     ///
     /// `account_keys` must be the resolved key list: the runtime resolves program
     /// ids against lookup-table loaded keys too.
@@ -817,10 +824,12 @@ impl TransactionFeeUtil {
         let compute_budget_program_id = solana_compute_budget_interface::id();
         let mut compute_unit_price: Option<u64> = None;
         let mut compute_unit_limit: Option<u32> = None;
+        let mut non_compute_budget_instructions: u32 = 0;
         for instruction in message.instructions() {
             if account_keys.get(instruction.program_id_index as usize)
                 != Some(&compute_budget_program_id)
             {
+                non_compute_budget_instructions = non_compute_budget_instructions.saturating_add(1);
                 continue;
             }
             match borsh::from_slice(&instruction.data) {
@@ -838,10 +847,13 @@ impl TransactionFeeUtil {
             return 0;
         };
 
+        let default_compute_unit_limit =
+            non_compute_budget_instructions.saturating_mul(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
+
         ComputeBudgetLimits {
             compute_unit_price: price,
             compute_unit_limit: compute_unit_limit
-                .unwrap_or(MAX_COMPUTE_UNIT_LIMIT)
+                .unwrap_or(default_compute_unit_limit)
                 .min(MAX_COMPUTE_UNIT_LIMIT),
             ..Default::default()
         }
@@ -2538,7 +2550,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_requested_priority_fee_price_without_limit_assumes_max() {
+    fn test_get_requested_priority_fee_price_without_limit_bills_per_instruction_default() {
         let payer = Pubkey::new_unique();
         let recipient = Pubkey::new_unique();
         let message = create_legacy_message(
@@ -2549,7 +2561,24 @@ mod tests {
             ],
         );
 
-        // 2_000 micro-lamports over the assumed 1.4M CU maximum = 2_800 lamports
+        // The lone transfer defaults to 200_000 CU, so 2_000 micro-lamports over it = 400 lamports.
+        // Billing the 1.4M protocol maximum instead would overstate this sevenfold.
+        assert_eq!(
+            TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
+            400
+        );
+    }
+
+    #[test]
+    fn test_get_requested_priority_fee_default_limit_clamps_to_protocol_maximum() {
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let mut instructions = vec![ComputeBudgetInstruction::set_compute_unit_price(2_000)];
+        instructions.extend((0..8).map(|_| transfer(&payer, &recipient, 1_000)));
+        let message = create_legacy_message(&payer, &instructions);
+
+        // 8 instructions x 200_000 = 1.6M CU, over the 1.4M the runtime will grant,
+        // so the fee is 2_000 micro-lamports over 1.4M = 2_800 lamports.
         assert_eq!(
             TransactionFeeUtil::get_requested_priority_fee(&message, message.static_account_keys()),
             2_800
