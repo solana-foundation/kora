@@ -91,12 +91,21 @@ pub fn create_legacy_message(fee_payer: &Pubkey, instructions: &[Instruction]) -
 
 /// V1 message carrying a transfer instruction and the given transaction config.
 pub fn create_v1_message(fee_payer: &Pubkey, config: v1::TransactionConfig) -> VersionedMessage {
-    let mut message = v1::Message::try_compile(
+    create_v1_message_with_instructions(
         fee_payer,
         &[transfer(fee_payer, &Pubkey::new_unique(), 1_000)],
-        Hash::new_unique(),
+        config,
     )
-    .unwrap();
+}
+
+/// V1 message carrying the given instructions and transaction config.
+pub fn create_v1_message_with_instructions(
+    fee_payer: &Pubkey,
+    instructions: &[Instruction],
+    config: v1::TransactionConfig,
+) -> VersionedMessage {
+    let mut message =
+        v1::Message::try_compile(fee_payer, instructions, Hash::new_unique()).unwrap();
     message.config = config;
     VersionedMessage::V1(message)
 }

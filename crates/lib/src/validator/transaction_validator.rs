@@ -1059,6 +1059,7 @@ mod tests {
             transaction_mock::{
                 create_legacy_message, create_resolved_with_loaded_keys,
                 create_v0_message_with_alt_loaded_program, create_v1_message,
+                create_v1_message_with_instructions,
             },
         },
         transaction::TransactionUtil,
@@ -1515,6 +1516,59 @@ mod tests {
         let error = validator.validate_priority_fee(&over_cap).unwrap_err();
         assert!(
             error.to_string().contains("Priority fee 15000 exceeds maximum allowed 10000"),
+            "Unexpected error: {error}"
+        );
+    }
+
+    /// The runtime ignores ComputeBudget instructions in a V1 transaction, so the cap must
+    /// read the transaction config alone. Billing the instructions instead would reject a
+    /// transaction whose real priority fee is under the cap.
+    #[test]
+    fn test_validate_priority_fee_v1_ignores_over_cap_compute_budget_instructions() {
+        let fee_payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let config = ConfigMockBuilder::new().with_max_priority_fee_lamports(10_000).build();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
+
+        // Config asks 9_000, under the cap; the inert instructions ask
+        // 300_000 CU * 100_000 micro-lamports = 30_000 lamports, well over it.
+        let transaction = resolved_from_message(create_v1_message_with_instructions(
+            &fee_payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(300_000),
+                ComputeBudgetInstruction::set_compute_unit_price(100_000),
+                transfer(&fee_payer, &recipient, 1_000),
+            ],
+            v1::TransactionConfig::empty().with_priority_fee(9_000),
+        ));
+
+        assert!(validator.validate_priority_fee(&transaction).is_ok());
+    }
+
+    /// The mirror case: under-cap ComputeBudget instructions must not rescue a V1
+    /// transaction whose config priority fee is over the cap.
+    #[test]
+    fn test_validate_priority_fee_v1_rejects_over_cap_config_despite_cheap_instructions() {
+        let fee_payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let config = ConfigMockBuilder::new().with_max_priority_fee_lamports(10_000).build();
+        let validator = TransactionValidator::new(&config, fee_payer).unwrap();
+
+        // Config asks 11_000, over the cap; the inert instructions ask
+        // 300_000 CU * 10_000 micro-lamports = 3_000 lamports, under it.
+        let transaction = resolved_from_message(create_v1_message_with_instructions(
+            &fee_payer,
+            &[
+                ComputeBudgetInstruction::set_compute_unit_limit(300_000),
+                ComputeBudgetInstruction::set_compute_unit_price(10_000),
+                transfer(&fee_payer, &recipient, 1_000),
+            ],
+            v1::TransactionConfig::empty().with_priority_fee(11_000),
+        ));
+
+        let error = validator.validate_priority_fee(&transaction).unwrap_err();
+        assert!(
+            error.to_string().contains("Priority fee 11000 exceeds maximum allowed 10000"),
             "Unexpected error: {error}"
         );
     }
