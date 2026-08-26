@@ -304,6 +304,7 @@ impl LighthouseUtil {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::transaction_mock::create_mock_v1_transaction_with_max_addresses;
     use solana_message::{v0, v1, Message, VersionedMessage};
     use solana_sdk::{hash::Hash, instruction::AccountMeta, signature::Keypair, signer::Signer};
 
@@ -490,37 +491,10 @@ mod tests {
         assert!(transaction.message.static_account_keys().contains(&LIGHTHOUSE_PROGRAM_ID));
     }
 
-    /// Build a V1 transaction whose account list already sits at the format's 64-address
-    /// limit, so appending any account the message does not already hold makes it
-    /// unsanitary.
-    fn v1_transaction_with_max_addresses(keypair: &Keypair) -> VersionedTransaction {
-        let mut account_keys = vec![keypair.pubkey()];
-        account_keys
-            .extend((1..v1::MAX_ADDRESSES).map(|index| Pubkey::new_from_array([index; 32])));
-
-        let v1_message = v1::Message {
-            header: solana_message::MessageHeader {
-                num_required_signatures: 1,
-                num_readonly_signed_accounts: 0,
-                num_readonly_unsigned_accounts: v1::MAX_ADDRESSES - 1,
-            },
-            config: v1::TransactionConfig::empty(),
-            lifetime_specifier: Hash::new_from_array([7; 32]),
-            account_keys,
-            instructions: vec![solana_message::compiled_instruction::CompiledInstruction {
-                program_id_index: 1,
-                accounts: vec![0],
-                data: vec![1, 2, 3],
-            }],
-        };
-
-        VersionedTransaction::try_new(VersionedMessage::V1(v1_message), &[keypair]).unwrap()
-    }
-
     #[test]
     fn test_append_lighthouse_assertion_v1_rejects_exceeding_address_limit() {
         let keypair = Keypair::new_from_array([1; 32]);
-        let mut transaction = v1_transaction_with_max_addresses(&keypair);
+        let mut transaction = create_mock_v1_transaction_with_max_addresses(&keypair);
 
         let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
         let config = LighthouseConfig { enabled: true, fail_if_transaction_size_overflow: true };
@@ -539,7 +513,7 @@ mod tests {
     #[test]
     fn test_append_lighthouse_assertion_v1_skips_exceeding_address_limit_when_configured() {
         let keypair = Keypair::new_from_array([2; 32]);
-        let mut transaction = v1_transaction_with_max_addresses(&keypair);
+        let mut transaction = create_mock_v1_transaction_with_max_addresses(&keypair);
         let original_ix_count = transaction.message.instructions().len();
 
         let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);

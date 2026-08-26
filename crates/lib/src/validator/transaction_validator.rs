@@ -16,6 +16,7 @@ use crate::{
     },
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_message::VersionedMessage;
 use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 use std::{collections::HashSet, str::FromStr};
 
@@ -133,6 +134,7 @@ impl TransactionValidator {
         }
 
         self.validate_has_non_compute_instruction(transaction_resolved)?;
+        Self::warn_on_ignored_compute_budget_instructions(transaction_resolved);
 
         if transaction_resolved.all_account_keys.is_empty() {
             return Err(KoraError::InvalidTransaction(
@@ -199,6 +201,29 @@ impl TransactionValidator {
         }
 
         Ok(())
+    }
+
+    /// ComputeBudget instructions are neither parsed nor rejected in a V1 transaction: they
+    /// execute successfully while doing nothing, so a client that sets its resource limits
+    /// there silently gets the transaction config's limits instead of the ones it asked for.
+    fn warn_on_ignored_compute_budget_instructions(
+        transaction_resolved: &VersionedTransactionResolved,
+    ) {
+        if !matches!(transaction_resolved.transaction.message, VersionedMessage::V1(_)) {
+            return;
+        }
+
+        let compute_budget_program_id = solana_compute_budget_interface::id();
+        if transaction_resolved
+            .all_instructions
+            .iter()
+            .any(|ix| ix.program_id == compute_budget_program_id)
+        {
+            log::warn!(
+                "V1 transaction contains ComputeBudget instructions, which the runtime ignores; \
+                 its resource limits come from the transaction config"
+            );
+        }
     }
 
     pub fn validate_lamport_fee(&self, fee: u64) -> Result<(), KoraError> {
