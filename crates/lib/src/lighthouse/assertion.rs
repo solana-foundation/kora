@@ -495,7 +495,8 @@ mod tests {
     /// unsanitary.
     fn v1_transaction_with_max_addresses(keypair: &Keypair) -> VersionedTransaction {
         let mut account_keys = vec![keypair.pubkey()];
-        account_keys.extend((1..v1::MAX_ADDRESSES).map(|_| Pubkey::new_unique()));
+        account_keys
+            .extend((1..v1::MAX_ADDRESSES).map(|index| Pubkey::new_from_array([index; 32])));
 
         let v1_message = v1::Message {
             header: solana_message::MessageHeader {
@@ -504,7 +505,7 @@ mod tests {
                 num_readonly_unsigned_accounts: v1::MAX_ADDRESSES - 1,
             },
             config: v1::TransactionConfig::empty(),
-            lifetime_specifier: Hash::new_unique(),
+            lifetime_specifier: Hash::new_from_array([7; 32]),
             account_keys,
             instructions: vec![solana_message::compiled_instruction::CompiledInstruction {
                 program_id_index: 1,
@@ -518,7 +519,7 @@ mod tests {
 
     #[test]
     fn test_append_lighthouse_assertion_v1_rejects_exceeding_address_limit() {
-        let keypair = Keypair::new();
+        let keypair = Keypair::new_from_array([1; 32]);
         let mut transaction = v1_transaction_with_max_addresses(&keypair);
 
         let assertion_ix = LighthouseUtil::build_fee_payer_assertion(&keypair.pubkey(), 1_000_000);
@@ -537,7 +538,7 @@ mod tests {
 
     #[test]
     fn test_append_lighthouse_assertion_v1_skips_exceeding_address_limit_when_configured() {
-        let keypair = Keypair::new();
+        let keypair = Keypair::new_from_array([2; 32]);
         let mut transaction = v1_transaction_with_max_addresses(&keypair);
         let original_ix_count = transaction.message.instructions().len();
 

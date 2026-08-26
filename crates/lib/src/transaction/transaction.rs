@@ -284,20 +284,32 @@ mod tests {
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
     }
 
-    #[test]
-    fn test_decode_b64_transaction_v1_rejects_unset_resource_limits() {
-        let keypair = Keypair::new();
+    /// Encode a signed V1 transaction carrying `config`, from fixed key material so a
+    /// failure reproduces from the test alone.
+    fn encoded_v1_transaction_with_config(config: v1::TransactionConfig) -> String {
+        let keypair = Keypair::new_from_array([3; 32]);
         let instruction = Instruction::new_with_bytes(
-            Pubkey::new_unique(),
+            Pubkey::new_from_array([9; 32]),
             &[1, 2, 3],
             vec![AccountMeta::new(keypair.pubkey(), true)],
         );
         let message = VersionedMessage::V1(
-            v1::Message::try_compile(&keypair.pubkey(), &[instruction], Hash::new_unique())
-                .unwrap(),
+            v1::Message::try_compile_with_config(
+                &keypair.pubkey(),
+                &[instruction],
+                Hash::new_from_array([5; 32]),
+                config,
+            )
+            .unwrap(),
         );
         let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
-        let encoded = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
+
+        TransactionUtil::encode_versioned_transaction(&transaction).unwrap()
+    }
+
+    #[test]
+    fn test_decode_b64_transaction_v1_rejects_unset_resource_limits() {
+        let encoded = encoded_v1_transaction_with_config(v1::TransactionConfig::empty());
 
         let error = TransactionUtil::decode_b64_transaction(&encoded)
             .expect_err("an empty V1 config requests zero compute units and zero loaded bytes");
@@ -311,23 +323,9 @@ mod tests {
 
     #[test]
     fn test_decode_b64_transaction_v1_rejects_unset_loaded_accounts_data_size_limit() {
-        let keypair = Keypair::new();
-        let instruction = Instruction::new_with_bytes(
-            Pubkey::new_unique(),
-            &[1, 2, 3],
-            vec![AccountMeta::new(keypair.pubkey(), true)],
+        let encoded = encoded_v1_transaction_with_config(
+            v1::TransactionConfig::empty().with_compute_unit_limit(200_000),
         );
-        let message = VersionedMessage::V1(
-            v1::Message::try_compile_with_config(
-                &keypair.pubkey(),
-                &[instruction],
-                Hash::new_unique(),
-                v1::TransactionConfig::empty().with_compute_unit_limit(200_000),
-            )
-            .unwrap(),
-        );
-        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
-        let encoded = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
 
         let error = TransactionUtil::decode_b64_transaction(&encoded)
             .expect_err("a V1 config without a data size limit requests zero loaded bytes");
