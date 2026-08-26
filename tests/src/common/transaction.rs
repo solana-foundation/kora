@@ -48,6 +48,7 @@ pub struct TransactionBuilder {
     signers: Vec<Keypair>,
     rpc_client: Option<Arc<RpcClient>>,
     v1_priority_fee: Option<u64>,
+    v1_unset_resource_limits: bool,
 }
 
 impl TransactionBuilder {
@@ -60,6 +61,7 @@ impl TransactionBuilder {
             signers: Vec::new(),
             rpc_client: None,
             v1_priority_fee: None,
+            v1_unset_resource_limits: false,
         }
     }
 
@@ -72,6 +74,7 @@ impl TransactionBuilder {
             signers: Vec::new(),
             rpc_client: None,
             v1_priority_fee: None,
+            v1_unset_resource_limits: false,
         }
     }
 
@@ -84,6 +87,7 @@ impl TransactionBuilder {
             signers: Vec::new(),
             rpc_client: None,
             v1_priority_fee: None,
+            v1_unset_resource_limits: false,
         }
     }
 
@@ -96,6 +100,7 @@ impl TransactionBuilder {
             signers: Vec::new(),
             rpc_client: None,
             v1_priority_fee: None,
+            v1_unset_resource_limits: false,
         }
     }
 
@@ -277,6 +282,13 @@ impl TransactionBuilder {
     /// Set the priority fee (flat lamports) in the V1 transaction config
     pub fn with_v1_priority_fee(mut self, lamports: u64) -> Self {
         self.v1_priority_fee = Some(lamports);
+        self
+    }
+
+    /// Leave the compute unit limit and loaded accounts data size limit out of the V1
+    /// transaction config, which requests zero of each.
+    pub fn with_v1_unset_resource_limits(mut self) -> Self {
+        self.v1_unset_resource_limits = true;
         self
     }
 
@@ -706,9 +718,13 @@ impl TransactionBuilder {
                 TransactionVersion::V1 => {
                     // An empty config mask requests 0 compute units and a 0 (32KiB)
                     // loaded-accounts-data cap, so real limits must be set explicitly.
-                    let mut config = TransactionConfig::empty()
-                        .with_compute_unit_limit(1_400_000)
-                        .with_loaded_accounts_data_size_limit(64 * 1024 * 1024);
+                    let mut config = if self.v1_unset_resource_limits {
+                        TransactionConfig::empty()
+                    } else {
+                        TransactionConfig::empty()
+                            .with_compute_unit_limit(1_400_000)
+                            .with_loaded_accounts_data_size_limit(64 * 1024 * 1024)
+                    };
                     if let Some(priority_fee) = self.v1_priority_fee {
                         config = config.with_priority_fee(priority_fee);
                     }

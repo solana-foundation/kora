@@ -113,6 +113,68 @@ async fn test_estimate_transaction_fee_with_v1_config_priority_fee() {
     assert!(fee_with == 35_050, "Fee should include the V1 config priority fee, got {fee_with}");
 }
 
+/// ComputeBudget instructions are inert in V1: the runtime neither parses nor rejects
+/// them, so their priority fee must not reach the estimate. The fee has to match the same
+/// transaction built without them.
+#[tokio::test]
+async fn test_estimate_transaction_fee_v1_ignores_compute_budget_instructions() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+
+    let test_tx = ctx
+        .v1_transaction_builder()
+        .with_fee_payer(fee_payer.pubkey())
+        .with_transfer(&sender.pubkey(), &recipient, 500_000)
+        .with_compute_budget(1_400_000, 50_000)
+        .build()
+        .await
+        .expect("Failed to create V1 transaction with compute budget instructions");
+
+    let response: serde_json::Value = ctx
+        .rpc_call("estimateTransactionFee", rpc_params![test_tx])
+        .await
+        .expect("Failed to estimate transaction fee");
+
+    let fee = response["fee_in_lamports"].as_u64().expect("Fee should be a number");
+
+    // Base transaction fee (2 signatures) 10_000 + payment instruction fee 50, with nothing
+    // from the 1_400_000 * 50_000 / 1_000_000 = 70_000 lamports the instructions ask for
+    assert!(fee == 10_050, "V1 fee must ignore ComputeBudget instructions, got {fee}");
+}
+
+/// When a V1 transaction carries both a config priority fee and ComputeBudget
+/// instructions, only the config counts.
+#[tokio::test]
+async fn test_estimate_transaction_fee_v1_config_priority_fee_wins_over_compute_budget() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+    let fee_payer = FeePayerTestHelper::get_fee_payer_keypair();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+    let recipient = RecipientTestHelper::get_recipient_pubkey();
+
+    let test_tx = ctx
+        .v1_transaction_builder()
+        .with_fee_payer(fee_payer.pubkey())
+        .with_transfer(&sender.pubkey(), &recipient, 500_000)
+        .with_compute_budget(1_400_000, 50_000)
+        .with_v1_priority_fee(25_000)
+        .build()
+        .await
+        .expect("Failed to create V1 transaction with compute budget instructions");
+
+    let response: serde_json::Value = ctx
+        .rpc_call("estimateTransactionFee", rpc_params![test_tx])
+        .await
+        .expect("Failed to estimate transaction fee");
+
+    let fee = response["fee_in_lamports"].as_u64().expect("Fee should be a number");
+
+    // Base transaction fee (2 signatures) 10_000 + payment instruction fee 50 + the flat
+    // 25_000 lamport config priority fee
+    assert!(fee == 35_050, "V1 fee must come from the config priority fee alone, got {fee}");
+}
+
 // NOTE: Lookup table is properly tested via mint address (not in transaction accounts, only ATAs)
 #[tokio::test]
 async fn test_estimate_transaction_fee_with_compute_budget_v0_with_lookup() {

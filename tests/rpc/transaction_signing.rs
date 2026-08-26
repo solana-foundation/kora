@@ -195,6 +195,39 @@ async fn test_sign_transaction_v1_rejects_priority_fee_above_max_allowed_lamport
     );
 }
 
+/// An unset V1 resource limit means zero, not a runtime default, so a transaction that
+/// leaves one out cannot execute: it is rejected while loading accounts, after the fee
+/// payer has been charged. Kora must reject it before signing.
+#[tokio::test]
+async fn test_sign_transaction_v1_rejects_unset_resource_limits() {
+    let ctx = TestContext::new().await.expect("Failed to create test context");
+
+    let fee_payer = FeePayerTestHelper::get_fee_payer_pubkey();
+    let token_mint = USDCMintTestHelper::get_test_usdc_mint_pubkey();
+    let sender = SenderTestHelper::get_test_sender_keypair();
+
+    let v1_transaction = ctx
+        .v1_transaction_builder()
+        .with_fee_payer(fee_payer)
+        .with_v1_unset_resource_limits()
+        .with_spl_transfer(&token_mint, &sender.pubkey(), &fee_payer, 3_000_000)
+        .with_transfer(&sender.pubkey(), &RecipientTestHelper::get_recipient_pubkey(), 10)
+        .build()
+        .await
+        .expect("Failed to create V1 transaction");
+
+    let result: Result<serde_json::Value, _> =
+        ctx.rpc_call("signTransaction", rpc_params![v1_transaction]).await;
+
+    let error = result.expect_err("Expected rejection for V1 transaction with unset limits");
+    let message = error.to_string();
+    assert!(message.contains("compute_unit_limit"), "Expected limit rejection, got: {message}");
+    assert!(
+        message.contains("loaded_accounts_data_size_limit"),
+        "Expected limit rejection, got: {message}"
+    );
+}
+
 // **************************************************************************************
 // Sign and send transaction tests
 // **************************************************************************************

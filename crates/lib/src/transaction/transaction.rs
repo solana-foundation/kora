@@ -37,6 +37,8 @@ impl TransactionUtil {
             KoraError::InvalidTransaction(format!("Invalid transaction message: {e}"))
         })?;
 
+        Self::validate_v1_resource_limits(&transaction.message)?;
+
         let max_size = Self::max_transaction_size(&transaction.message);
         if decoded.len() > max_size {
             return Err(KoraError::InvalidTransaction(format!(
@@ -46,6 +48,41 @@ impl TransactionUtil {
         }
 
         Ok(transaction)
+    }
+
+    /// A limit a V1 transaction config leaves unset is zero, not the runtime default legacy
+    /// and V0 transactions fall back to, and zero compute units or zero loadable account
+    /// bytes cannot run any instruction. Rejecting that here means the caller gets an
+    /// actionable error before Kora simulates, signs, or pays for a transaction that cannot
+    /// execute.
+    fn validate_v1_resource_limits(message: &VersionedMessage) -> Result<(), KoraError> {
+        let VersionedMessage::V1(v1_message) = message else {
+            return Ok(());
+        };
+
+        let mut unset_limits = Vec::new();
+        if v1_message.config.compute_unit_limit.unwrap_or(0) == 0 {
+            unset_limits.push("compute_unit_limit");
+        }
+        if v1_message.config.loaded_accounts_data_size_limit.unwrap_or(0) == 0 {
+            unset_limits.push("loaded_accounts_data_size_limit");
+        }
+
+        if !unset_limits.is_empty() {
+            return Err(KoraError::InvalidTransaction(format!(
+                "V1 transaction config must set {} to a non-zero value",
+                unset_limits.join(" and ")
+            )));
+        }
+
+        if v1_message.account_keys.contains(&solana_compute_budget_interface::id()) {
+            log::warn!(
+                "V1 transaction references the ComputeBudget program, whose instructions the \
+                 runtime ignores; its resource limits come from the transaction config"
+            );
+        }
+
+        Ok(())
     }
 
     pub fn new_unsigned_versioned_transaction(message: VersionedMessage) -> VersionedTransaction {
@@ -105,7 +142,21 @@ mod tests {
             &data,
             vec![AccountMeta::new(keypair.pubkey(), true)],
         );
-        v1::Message::try_compile(&keypair.pubkey(), &[instruction], Hash::new_unique()).unwrap()
+        v1::Message::try_compile_with_config(
+            &keypair.pubkey(),
+            &[instruction],
+            Hash::new_unique(),
+            v1_resource_limits(),
+        )
+        .unwrap()
+    }
+
+    /// V1 resource limits have to be set explicitly for a transaction to be executable, so
+    /// every V1 fixture that is meant to be valid carries them.
+    fn v1_resource_limits() -> v1::TransactionConfig {
+        v1::TransactionConfig::empty()
+            .with_compute_unit_limit(200_000)
+            .with_loaded_accounts_data_size_limit(64 * 1024)
     }
 
     #[test]
@@ -231,6 +282,59 @@ mod tests {
         let result = TransactionUtil::decode_b64_transaction(&encoded);
 
         assert!(matches!(result, Err(KoraError::InvalidTransaction(_))));
+    }
+
+    #[test]
+    fn test_decode_b64_transaction_v1_rejects_unset_resource_limits() {
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message = VersionedMessage::V1(
+            v1::Message::try_compile(&keypair.pubkey(), &[instruction], Hash::new_unique())
+                .unwrap(),
+        );
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+        let encoded = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
+
+        let error = TransactionUtil::decode_b64_transaction(&encoded)
+            .expect_err("an empty V1 config requests zero compute units and zero loaded bytes");
+        let error_message = error.to_string();
+        assert!(error_message.contains("compute_unit_limit"), "unexpected error: {error_message}");
+        assert!(
+            error_message.contains("loaded_accounts_data_size_limit"),
+            "unexpected error: {error_message}"
+        );
+    }
+
+    #[test]
+    fn test_decode_b64_transaction_v1_rejects_unset_loaded_accounts_data_size_limit() {
+        let keypair = Keypair::new();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(keypair.pubkey(), true)],
+        );
+        let message = VersionedMessage::V1(
+            v1::Message::try_compile_with_config(
+                &keypair.pubkey(),
+                &[instruction],
+                Hash::new_unique(),
+                v1::TransactionConfig::empty().with_compute_unit_limit(200_000),
+            )
+            .unwrap(),
+        );
+        let transaction = VersionedTransaction::try_new(message, &[&keypair]).unwrap();
+        let encoded = TransactionUtil::encode_versioned_transaction(&transaction).unwrap();
+
+        let error = TransactionUtil::decode_b64_transaction(&encoded)
+            .expect_err("a V1 config without a data size limit requests zero loaded bytes");
+        assert!(
+            error.to_string().contains("loaded_accounts_data_size_limit"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
