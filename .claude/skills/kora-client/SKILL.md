@@ -5,182 +5,78 @@ description: "Kora TypeScript SDK and JSON-RPC API integration for Solana gasles
 
 # Kora Client Integration
 
-Kora is a Solana paymaster that enables gasless transactions. Users pay fees in SPL tokens (e.g. USDC) instead of SOL.
+Kora is a Solana paymaster: users pay fees in SPL tokens (e.g. USDC) instead of SOL.
 
-**Docs**: https://launch.solana.com/docs/kora/
-**SDK**: `@solana/kora` (npm)
+**Docs**: https://launch.solana.com/docs/kora/ · **SDK**: `@solana/kora` (npm)
 **Peer deps**: `@solana/kit` v6+, `@solana-program/token` v0.10+
 
-## Two Client Patterns
+## Where things are
 
-### 1. Standalone KoraClient
+| Topic | Reference |
+|---|---|
+| Per-method params, responses, TS types, error format | [references/rpc-api.md](references/rpc-api.md) |
+| Complete worked gasless flow, Jito bundles, x402, troubleshooting | [references/guides.md](references/guides.md) |
+
+## Two client shapes
+
+`KoraClient` is standalone; `koraPlugin` composes into a Kit client and returns Kit types
+(`Address`, `Blockhash`) rather than raw strings.
 
 ```ts
 import { KoraClient } from '@solana/kora';
+const client = new KoraClient({ rpcUrl, apiKey, hmacSecret, getRecaptchaToken });
 
-const client = new KoraClient({
-  rpcUrl: 'https://kora.example.com',
-  apiKey: 'optional-api-key',           // x-api-key header
-  hmacSecret: 'optional-hmac-secret',   // x-timestamp + x-hmac-signature headers
-  getRecaptchaToken: async () => {      // optional: reCAPTCHA v3 bot protection
-    return await grecaptcha.execute('site-key', { action: 'sign' });
-  },
-});
-```
-
-### 2. Kit Plugin (composable)
-
-```ts
+// or
 import { createEmptyClient } from '@solana/kit';
 import { koraPlugin } from '@solana/kora';
-
-const client = createEmptyClient()
-  .use(koraPlugin({
-    endpoint: 'https://kora.example.com',
-    apiKey: 'optional',
-    getRecaptchaToken: async () => token,
-  }));
-
-// Access via client.kora.* - responses use Kit types (Address, Blockhash)
-const config = await client.kora.getConfig();
+const client = createEmptyClient().use(koraPlugin({ endpoint, apiKey, getRecaptchaToken }));
+await client.kora.getConfig();
 ```
 
-## Core Transaction Flow
+## The transaction flow
 
-The gasless transaction pattern has 6 steps:
+Build instructions → build an estimate transaction with a **noop signer** as fee payer →
+`getPaymentInstruction()` → rebuild the final transaction with a **fresh blockhash** including the
+payment instruction → user partially signs → Kora co-signs via `signTransaction` or
+`signAndSendTransaction`.
 
-1. **Build instructions** - Create the user's intended operations using `@solana-program/*` libraries
-2. **Build estimate tx** - Wrap instructions in a transaction with noop signer as fee payer
-3. **Get payment instruction** - Call `getPaymentInstruction()` to get the fee transfer instruction
-4. **Build final tx** - Combine user instructions + payment instruction with fresh blockhash
-5. **User signs** - User partially signs (authorizes transfers + payment)
-6. **Kora co-signs** - Call `signTransaction()` or `signAndSendTransaction()` for Kora's fee payer signature
+Worked end-to-end code is in [references/guides.md](references/guides.md).
 
-### Key Concepts
+The parts that trip people up:
 
-- **Noop signer**: Placeholder for Kora's fee payer when building transactions before Kora signs
-  ```ts
-  const noopSigner = createNoopSigner(address(signerAddress));
-  ```
-- **Partial signing**: User signs their parts, Kora adds fee payer signature
-- **Fresh blockhash**: Always get a new blockhash for the final transaction
-- **`signer_key` param**: Optional on all methods - use when working with multi-signer pools for consistency
-- **`user_id` param**: Optional on signing methods - required when pricing is `free` and usage tracking is enabled
+- **The estimate transaction is thrown away.** It exists only so Kora can price the transaction.
+  The final transaction needs a new blockhash, not the estimate's.
+- **Noop signer**: `createNoopSigner(address(signerAddress))` reserves the fee payer slot before
+  Kora has signed. Get the address from `getPayerSigner()`.
+- **Signing order**: the user signs their own instructions *and* the payment transfer. Kora only
+  adds the fee payer signature; it will not fix a missing user signature.
+- **`signer_key`**: optional, but pass it when the node runs a multi-signer pool so estimate and
+  signature come from the same signer.
+- **`user_id`**: required on signing methods when the operator runs `free` pricing with usage
+  tracking enabled.
 
-## Quick Examples
+## Lighthouse invalidates your signatures
 
-### User Pays Fees in Token
+If the operator enables Lighthouse, `signTransaction` and `signBundle` may return a transaction
+with an extra balance-assertion instruction. That changes the message, so any signature already
+applied is void: re-sign the returned transaction client-side and submit it yourself.
 
-```ts
-import { getTransferInstruction, findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
-import { getTransferSolInstruction } from '@solana-program/system';
+Lighthouse never applies to `signAndSendTransaction` / `signAndSendBundle` — Kora broadcasts those
+itself, so there is no opportunity to re-sign and the assertion is skipped.
 
-// 1. Build instructions using @solana-program libraries
-const [sourceAta] = await findAssociatedTokenPda({ owner: sender.address, mint: address(usdcMint), tokenProgram: TOKEN_PROGRAM_ADDRESS });
-const [destAta] = await findAssociatedTokenPda({ owner: recipient.address, mint: address(usdcMint), tokenProgram: TOKEN_PROGRAM_ADDRESS });
-const tokenTransferIx = getTransferInstruction({ source: sourceAta, destination: destAta, authority: sender, amount: 10_000_000n });
+## Bundles
 
-// 2. Build estimate transaction with noop signer
-const { signer_address } = await client.getPayerSigner();
-const noopSigner = createNoopSigner(address(signer_address));
-const { blockhash } = await client.getBlockhash();
-
-const estimateTx = pipe(
-  createTransactionMessage({ version: 0 }),
-  tx => setTransactionMessageFeePayerSigner(noopSigner, tx),
-  tx => setTransactionMessageLifetimeUsingBlockhash({ blockhash: blockhash as Blockhash, lastValidBlockHeight: 0n }, tx),
-  tx => appendTransactionMessageInstructions([tokenTransferIx], tx),
-);
-const signedEstimate = await partiallySignTransactionMessageWithSigners(estimateTx);
-
-// 3. Get payment instruction
-const { payment_instruction } = await client.getPaymentInstruction({
-  transaction: getBase64EncodedWireTransaction(signedEstimate),
-  fee_token: usdcMint,
-  source_wallet: sender.address,
-});
-
-// 4. Build final tx with payment instruction appended
-const newBlockhash = await client.getBlockhash();
-const finalTx = pipe(
-  createTransactionMessage({ version: 0 }),
-  tx => setTransactionMessageFeePayerSigner(noopSigner, tx),
-  tx => setTransactionMessageLifetimeUsingBlockhash({ blockhash: newBlockhash.blockhash as Blockhash, lastValidBlockHeight: 0n }, tx),
-  tx => appendTransactionMessageInstructions([tokenTransferIx, payment_instruction], tx),
-);
-
-// 5. User signs
-const partiallySigned = await partiallySignTransactionMessageWithSigners(finalTx);
-const userSigned = await partiallySignTransaction([sender.keyPair], partiallySigned);
-
-// 6. Kora co-signs and sends
-const result = await client.signAndSendTransaction({
-  transaction: getBase64EncodedWireTransaction(userSigned),
-  signer_key: signer_address,
-});
-```
-
-### Fee Estimation
-
-```ts
-const fees = await client.estimateTransactionFee({
-  transaction: base64Tx,
-  fee_token: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-});
-// fees.fee_in_lamports, fees.fee_in_token, fees.signer_pubkey, fees.payment_address
-```
-
-### Jito Bundle
-
-```ts
-// Sign and submit bundle atomically via Jito (max 5 transactions)
-const { bundle_uuid, signed_transactions } = await client.signAndSendBundle({
-  transactions: [base64Tx1, base64Tx2, base64Tx3],
-  signer_key: signerAddress,
-});
-
-// Or sign without submitting (for client-side Jito submission)
-const { signed_transactions } = await client.signBundle({
-  transactions: [base64Tx1, base64Tx2],
-  sign_only_indices: [0],  // only sign first transaction
-});
-
-// Estimate bundle fees
-const estimate = await client.estimateBundleFee({
-  transactions: [base64Tx1, base64Tx2],
-  fee_token: usdcMint,
-});
-```
-
-### Lighthouse Re-sign Flow
-
-When the operator has Lighthouse fee payer protection enabled, `signTransaction`/`signBundle` may modify the transaction message (adding a balance assertion). Client signatures become invalid and must be re-applied:
-
-```
-signTransaction → client receives modified tx → client re-signs → client sends to network
-```
-
-Note: Lighthouse does NOT apply to `signAndSendTransaction`/`signAndSendBundle` (broadcast methods).
-
-## RPC Methods Reference
-
-For detailed method specs (params, responses, types), see [references/rpc-api.md](references/rpc-api.md).
-
-## Full Transaction Flow Guide
-
-For a complete step-by-step gasless transaction tutorial, see [references/guides.md](references/guides.md).
+`signBundle` / `signAndSendBundle` take up to 5 transactions and execute atomically via Jito.
+`sign_only_indices` restricts which ones Kora signs. `estimateBundleFee` prices the set.
 
 ## Authentication
 
-Three optional methods (all can be active simultaneously):
+| Method | Header | Constructor option |
+|---|---|---|
+| API key | `x-api-key` | `apiKey` |
+| HMAC | `x-timestamp` + `x-hmac-signature` | `hmacSecret` |
+| reCAPTCHA v3 | `x-recaptcha-token` | `getRecaptchaToken` callback |
 
-| Method | Headers | Config |
-|--------|---------|--------|
-| API Key | `x-api-key` | `apiKey` in constructor |
-| HMAC | `x-timestamp` + `x-hmac-signature` | `hmacSecret` in constructor |
-| reCAPTCHA v3 | `x-recaptcha-token` | `getRecaptchaToken` callback in constructor |
-
-HMAC: SHA256 of `timestamp + JSON body`. SDK handles this automatically.
-reCAPTCHA: Token auto-attached via callback. Only verified on server-configured protected methods (signing methods by default).
-
-The `/liveness` endpoint always bypasses authentication.
+All three can be active together, and the SDK builds the HMAC (SHA256 of `timestamp + JSON body`)
+for you. reCAPTCHA is checked only on the methods the operator marked protected, and only after
+API key / HMAC pass. `/liveness` always bypasses auth.

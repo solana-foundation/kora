@@ -234,53 +234,33 @@ Block specific Token-2022 extensions from being used in transactions.
 
 ## Fee Payer Policy
 
-Controls what actions the fee payer signer can perform. All default to `false` (restrictive via Rust's `#[derive(Default)]` on bool). Explicitly enable only what you need.
+Controls what actions the fee payer signer can perform. Every flag defaults to `false`, so an
+omitted section denies everything in it. Enable only what your flows need.
+
+Sections, each named after the program it gates:
 
 ```toml
-# All fields default to false if omitted. Only enable what you need.
-[validation.fee_payer_policy.system]
-allow_transfer = false         # System Transfer/TransferWithSeed
-allow_assign = false           # System Assign/AssignWithSeed
-allow_create_account = false   # System CreateAccount/CreateAccountWithSeed
-allow_allocate = false         # System Allocate/AllocateWithSeed
-
-[validation.fee_payer_policy.system.nonce]
-allow_initialize = false       # InitializeNonceAccount
-allow_advance = false          # AdvanceNonceAccount
-allow_authorize = false        # AuthorizeNonceAccount
-allow_withdraw = false         # WithdrawNonceAccount
-
+[validation.fee_payer_policy.system]                  # transfer, assign, create_account, allocate
+[validation.fee_payer_policy.system.nonce]            # initialize, advance, authorize, withdraw
 [validation.fee_payer_policy.spl_token]
-allow_transfer = false         # Transfer/TransferChecked
-allow_burn = false             # Burn/BurnChecked
-allow_close_account = false    # CloseAccount
-allow_approve = false          # Approve/ApproveChecked
-allow_revoke = false           # Revoke
-allow_set_authority = false    # SetAuthority
-allow_mint_to = false          # MintTo/MintToChecked
-allow_initialize_mint = false  # InitializeMint/InitializeMint2
-allow_initialize_account = false # InitializeAccount/InitializeAccount3
-allow_initialize_multisig = false # InitializeMultisig/InitializeMultisig2
-allow_freeze_account = false   # FreezeAccount
-allow_thaw_account = false     # ThawAccount
-
-[validation.fee_payer_policy.token_2022]
-# Same 12 fields as spl_token above, all default to false
-allow_transfer = false
-allow_burn = false
-allow_close_account = false
-allow_approve = false
-allow_revoke = false
-allow_set_authority = false
-allow_mint_to = false
-allow_initialize_mint = false
-allow_initialize_account = false
-allow_initialize_multisig = false
-allow_freeze_account = false
-allow_thaw_account = false
+[validation.fee_payer_policy.token_2022]              # spl_token's flags plus extension-authority ones
+[validation.fee_payer_policy.alt]                     # create, extend, freeze, deactivate, close
+[validation.fee_payer_policy.bpf_loader_upgradeable]
+[validation.fee_payer_policy.loader_v4]
 ```
 
-**Security note**: Since all fields default to `false`, the fee payer policy is secure by default. Only enable operations your use case requires. For `fixed`/`free` pricing, ensure transfer operations remain `false` to prevent fee payer fund drain.
+Every flag is named `allow_<instruction>` in snake_case. The token and loader sections carry more
+than a dozen flags each and gain new ones as instructions are gated, so read the policy structs in
+`crates/lib/src/config.rs` for the current list instead of copying a table. `kora config validate`
+rejects unknown keys, which makes it a reliable check on a hand-written policy.
+
+A couple of guards are deliberately *not* flag-gated and always apply: BPF Loader Upgradeable
+`Close` with a foreign recipient, and Loader v4 `SetProgramLength` with a recipient other than the
+fee payer.
+
+**Security note**: defaulting to `false` means the policy is safe when under-specified, and each
+`true` is an explicit acceptance of that drain vector. Under `fixed`/`free` pricing the node does
+not price its own SOL outflow, so transfer flags in particular must stay `false`.
 
 ---
 

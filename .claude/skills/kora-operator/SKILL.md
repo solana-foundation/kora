@@ -7,244 +7,93 @@ description: "Kora paymaster node operator guide. Use when the user asks about: 
 
 Run Kora nodes to validate, sign, and sponsor Solana transaction fees for your users.
 
-**Docs**: https://launch.solana.com/docs/kora/operators
-**Install**: `cargo install kora-cli`
-**Docker**: `docker pull ghcr.io/solana-foundation/kora:latest`
-**Source**: https://github.com/solana-foundation/kora
+**Docs**: https://launch.solana.com/docs/kora/operators · **Install**: `cargo install kora-cli`
+**Docker**: `ghcr.io/solana-foundation/kora:latest` · **Source**: https://github.com/solana-foundation/kora
 
-## Quick Start
+## Where things are
+
+| Topic | Reference |
+|---|---|
+| Every `kora.toml` section and field, production example | [references/configuration.md](references/configuration.md) |
+| `signers.toml`: memory, Turnkey, Privy, Vault, pools, multi-signer | [references/signers.md](references/signers.md) |
+| Fee components, pricing models, drain vectors | [references/fees.md](references/fees.md) |
+| Docker and Railway deployment | [references/deployment.md](references/deployment.md) |
+
+`crates/lib/src/config.rs` is the authority on config shape, and `kora config validate` is the
+fastest way to check a real file. Prefer both over any enumeration written down in prose.
+
+## Getting running
+
+Two files are required: `kora.toml` (validation, auth, pricing, caching, methods, bundles,
+lighthouse, metrics) and `signers.toml` (keys, types, selection strategy).
 
 ```bash
-# Install
-cargo install kora-cli
-
-# Minimal config files needed: kora.toml + signers.toml
-
-# Validate config
 kora --config kora.toml config validate
-
-# Start server
 kora --config kora.toml rpc start --signers-config signers.toml
-
-# Initialize payment ATAs (for receiving token payments)
 kora --config kora.toml rpc initialize-atas --signers-config signers.toml
 ```
 
-## CLI Reference
+`config validate-with-rpc` additionally checks the config against live chain state (that allowed
+mints exist, that the fee payer is funded). Worth running before a first deploy.
 
-```bash
-# Global flags
-kora --config <path>     # kora.toml location (default: ./kora.toml)
-kora --rpc-url <url>     # Solana RPC URL (overrides config, env: RPC_URL)
+`initialize-atas` is required before the node can receive token payments — without it the payment
+destination has no associated token accounts and transactions fail at execution, not validation.
 
-# Commands
-kora config validate                    # Validate kora.toml
-kora config validate-with-rpc           # Validate with live RPC calls
-kora rpc start --signers-config <path>  # Start RPC server
-kora rpc start --no-load-signer         # Start without loading signers (limited functionality)
-kora rpc start --port 8080              # Custom port (default: 8080)
-kora rpc start --logging-format json    # JSON logging (default: standard)
-kora rpc initialize-atas --signers-config <path>  # Initialize payment ATAs
+`--rpc-url` (env `RPC_URL`) overrides the config. `kora rpc start --help` covers port, logging
+format, `--no-load-signer`, and the ATA batching flags.
 
-# ATA init options
---fee-payer-key <base58>     # Custom fee payer for ATA creation
---compute-unit-price <num>   # Priority fee
---compute-unit-limit <num>   # Compute budget
---chunk-size <num>           # Batch size for ATA creation
-```
+## Decisions that matter
 
-## Configuration Overview
+### Pricing, and the drain risk it carries
 
-Two config files required:
+| Model | Use case | Risk |
+|---|---|---|
+| `margin` (default) | cost + markup | Safest — prices in fee payer outflow |
+| `fixed` | flat fee per transaction | Fee payer can be drained |
+| `free` | full sponsorship | Fee payer can be drained |
 
-| File | Purpose |
-|------|---------|
-| `kora.toml` | Server config: validation, auth, pricing, caching, methods, bundles, lighthouse, metrics |
-| `signers.toml` | Signer pool: keys, types, selection strategy |
+With `fixed` or `free`, the node is not pricing the SOL it spends, so a transaction that moves fee
+payer funds is a direct loss. Keep `allow_transfer = false` on the system and token policies.
+[references/fees.md](references/fees.md) works through the vectors.
 
-### Minimal kora.toml
+### Fee payer policy
 
-```toml
-[kora]
-rate_limit = 100
+Controls what the fee payer signer may do inside a submitted transaction. Every flag defaults to
+`false`, so an unlisted action is denied — enable only what your flows need, and treat each `true`
+as a deliberate acceptance of the corresponding drain vector.
 
-[validation]
-max_allowed_lamports = 1000000
-max_signatures = 10
-price_source = "Mock"  # or "Jupiter" (requires JUPITER_API_KEY env var)
+Sections exist for `system` (plus `system.nonce`), `spl_token`, `token_2022`, `alt`,
+`bpf_loader_upgradeable`, and `loader_v4`. For the current field list read the policy structs in
+`config.rs` rather than trusting a copied table.
 
-allowed_programs = [
-    "11111111111111111111111111111111",
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
-    "ComputeBudget111111111111111111111111111111",
-]
+### Lighthouse does nothing on broadcast methods
 
-allowed_tokens = ["<your-token-mint>"]
-allowed_spl_paid_tokens = ["<your-token-mint>"]
+Lighthouse appends a fee-payer balance assertion, which changes the message and requires the client
+to re-sign. It is therefore skipped outright when Kora broadcasts: enabling it buys **zero**
+protection on `signAndSendTransaction` and `signAndSendBundle`, with no error raised.
+`config validate` warns about this; it does not block startup.
 
-[validation.price]
-type = "margin"
-margin = 0.1  # 10% markup
-```
-
-### Minimal signers.toml
-
-```toml
-[signer_pool]
-strategy = "round_robin"  # or "random", "weighted"
-
-[[signers]]
-name = "signer_1"
-type = "memory"
-private_key_env = "KORA_PRIVATE_KEY"
-weight = 1
-```
-
-## Detailed References
-
-- **Full kora.toml reference**: See [references/configuration.md](references/configuration.md) - all sections, fields, and production examples
-- **Signer types and setup**: See [references/signers.md](references/signers.md) - memory, Turnkey, Privy, Vault configuration
-- **Fee calculation and pricing**: See [references/fees.md](references/fees.md) - fee components, pricing models, security considerations
-
-## Key Operator Decisions
-
-### Pricing Model
-
-| Model | Use Case | Security |
-|-------|----------|----------|
-| `margin` (default) | Charge users cost + markup | Safest - includes fee payer outflow |
-| `fixed` | Flat fee per transaction | Must disable fee payer transfers in policy |
-| `free` | Sponsor all fees | Must disable fee payer transfers in policy |
+If lighthouse is the drain protection, the node must serve `signTransaction` / `signBundle` and the
+client must re-sign. Add `L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95` to `allowed_programs`.
 
 ### Authentication
 
-Three optional methods, can be used simultaneously:
-- **API Key**: Simple `x-api-key` header. Set `api_key` in `[kora.auth]` or `KORA_API_KEY` env var.
-- **HMAC**: Cryptographic signature with timestamp. Set `hmac_secret` in `[kora.auth]` or `KORA_HMAC_SECRET` env var.
-- **reCAPTCHA v3**: Bot protection for signing methods. Set `recaptcha_secret` in `[kora.auth]` or `KORA_RECAPTCHA_SECRET` env var. Configurable `recaptcha_score_threshold` (default: 0.5) and `protected_methods`.
+API key (`x-api-key`), HMAC (`x-timestamp` + `x-hmac-signature`), and reCAPTCHA v3 can all be
+active at once. Each reads from `[kora.auth]` or an env var (`KORA_API_KEY`, `KORA_HMAC_SECRET`,
+`KORA_RECAPTCHA_SECRET`). reCAPTCHA runs only after API key and HMAC have passed, and only on
+`protected_methods`. `/liveness` bypasses all of it.
 
-### Fee Payer Policy
+### Jito bundles
 
-Control what actions the fee payer can perform in transactions. All default to `false` (restrictive). Explicitly set to `true` only what you need.
+Atomic multi-transaction execution via `[kora.bundle]` + `[kora.bundle.jito]`. If Kora pays the
+Jito tip, that tip is a system transfer from the fee payer, so it needs
+`allow_transfer = true` in `[validation.fee_payer_policy.system]` — which reopens the drain vector
+above. Pair it with `margin` pricing.
 
-Critical for `fixed`/`free` pricing: ensure `allow_transfer` remains `false` (the default) on system and token programs to prevent fee payer fund drain.
+### Usage limits, caching, metrics
 
-### Jito Bundle Support
-
-Enable atomic multi-transaction execution via Jito:
-```toml
-[kora.bundle]
-enabled = true
-
-[kora.bundle.jito]
-block_engine_url = "https://mainnet.block-engine.jito.wtf"
-```
-
-When using Jito tips paid by Kora, set `allow_transfer = true` in `[validation.fee_payer_policy.system]`.
-
-### Lighthouse Fee Payer Protection
-
-Adds balance assertion instructions to protect the fee payer from drainage attacks:
-```toml
-[kora.lighthouse]
-enabled = true
-fail_if_transaction_size_overflow = true
-```
-
-Only works with `signTransaction`/`signBundle` (not broadcast methods). Requires Lighthouse program in `allowed_programs`: `L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95`
-
-### Usage Limits
-
-Rule-based per-user limiting with Redis backend:
-```toml
-[kora.usage_limit]
-enabled = true
-cache_url = "redis://redis:6379"
-fallback_if_unavailable = false
-
-[[kora.usage_limit.rules]]
-type = "transaction"
-max = 100
-window_seconds = 3600
-
-[[kora.usage_limit.rules]]
-type = "instruction"
-program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-instruction = "Transfer"
-max = 10
-window_seconds = 3600
-```
-
-Requires `user_id` parameter in signing requests when enabled with free pricing.
-
-### Caching
-
-Optional Redis caching for token account lookups:
-```toml
-[kora.cache]
-enabled = true
-url = "redis://localhost:6379"
-default_ttl = 300
-account_ttl = 60
-```
-
-### Monitoring
-
-Optional Prometheus metrics at `/metrics`:
-```toml
-[metrics]
-enabled = true
-endpoint = "/metrics"
-port = 9090
-```
-
-Key metrics: `kora_http_requests_total`, `kora_http_request_duration_seconds`, `signer_balance_lamports`.
-
-## Deployment
-
-### Docker
-
-Pre-built image available (tags: `latest`, `beta`, `v<version>`):
-```bash
-docker pull ghcr.io/solana-foundation/kora:latest
-docker run -v ./kora.toml:/kora.toml -v ./signers.toml:/signers.toml \
-  -e RPC_URL=https://api.mainnet-beta.solana.com \
-  -e KORA_PRIVATE_KEY=<key> \
-  -p 8080:8080 \
-  ghcr.io/solana-foundation/kora:latest
-```
-
-Or build from source:
-```dockerfile
-FROM rust:1.86-bookworm AS builder
-RUN cargo install kora-cli
-FROM debian:bookworm-slim
-COPY --from=builder /usr/local/cargo/bin/kora /usr/local/bin/kora
-COPY kora.toml signers.toml ./
-ENV RPC_URL=https://api.mainnet-beta.solana.com
-CMD ["kora", "rpc", "start", "--signers-config", "signers.toml"]
-```
-
-### Railway
-
-1. Create project with kora.toml, signers.toml, Dockerfile
-2. `railway login && railway init && railway up`
-3. Set env vars in dashboard: `RPC_URL`, `KORA_PRIVATE_KEY`, `RUST_LOG`
-4. Generate public domain from settings
-
-**Docs**: https://launch.solana.com/docs/kora/operators/deployment/railway
-
-## Kora Core Development
-
-For contributors working on the Kora codebase itself:
-
-```bash
-just build          # Build all crates
-just build-lib      # Build kora-lib only
-just build-cli      # Build kora-cli only
-just check          # Check formatting
-just fmt            # Format + lint with auto-fix
-just unit-test      # Run unit tests
-just integration-test  # Run full integration test suite
-```
+Usage limits are rule-based per user with a Redis backend, and require a `user_id` on signing
+requests once enabled. `fallback_if_unavailable` decides whether a Redis outage fails open or
+closed — the default (`false`) fails closed. Redis account caching and Prometheus metrics at
+`/metrics` are both independent opt-ins. Config shapes in
+[references/configuration.md](references/configuration.md).

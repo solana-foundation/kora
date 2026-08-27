@@ -5,163 +5,69 @@ description: "Prepare a Kora release PR. Bumps Rust crate versions (kora-lib + k
 
 # Kora Release Preparation
 
-Prepare a release PR for Kora. This updates version numbers, generates the CHANGELOG, and opens a PR against `main`. For mainline releases, publishing happens after merge via CI.
+Bump versions, generate the CHANGELOG, open a PR against `main`. Publishing happens after merge
+via CI — see the `complete-release` skill.
 
----
+## Decide first
 
-## Prerequisites
-
-Verify these tools are installed before starting:
-
-```bash
-cargo set-version --version   # from cargo-edit: cargo install cargo-edit
-git cliff --version           # cargo install git-cliff
-gh --version                  # GitHub CLI
-jq --version
-```
-
----
-
-## Step 1 — Get current versions
+Read current versions, then ask the user which components to release and at what versions:
 
 ```bash
-# Rust (workspace root Cargo.toml)
-cargo metadata --no-deps --format-version 1 \
-  | jq -r '.packages[] | select(.name == "kora-lib") | .version'
-
-# TypeScript SDK
+cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="kora-lib") | .version'
 node -p "require('./sdks/ts/package.json').version"
 ```
 
-Ask the user which component(s) to release and what version(s) to use.
+Rust and TypeScript release independently. Prereleases use semver suffixes (`2.3.0-beta.1`).
 
----
+Work on a `chore/release-v${VERSION}` branch off `main` with a clean tree.
 
-## Step 2 — Verify clean working directory
+## Bump only kora-lib and kora-cli
 
-```bash
-git status --porcelain
-```
+**Do not run `cargo set-version --workspace`.** The workspace also contains `crates/kora-deploy`
+(published separately, currently on its own `0.x` line) and `examples/devnet-deploy-paymaster`.
+A workspace-wide bump drags both onto the Kora version and `kora-deploy` has no `publish = false`
+to stop it reaching crates.io.
 
-If output is non-empty, stop and ask the user to commit or stash first.
-
----
-
-## Step 3 — Create release branch
+Four places move together, and `kora-lib` + `kora-cli` always share one version:
 
 ```bash
-# Rust-only release
-git checkout -b "chore/release-v${RUST_VERSION}"
-
-# Both Rust + TypeScript
-git checkout -b "chore/release-v${RUST_VERSION}-ts-v${TS_VERSION}"
+cargo set-version -p kora-lib -p kora-cli "${RUST_VERSION}"
 ```
 
----
+Then edit by hand in the root `Cargo.toml`:
+- `[workspace.package] version` — `tests` inherits this
+- the `kora-lib = { path = "crates/lib", version = "..." }` pin in `[workspace.dependencies]`
 
-## Step 4 — Bump Rust versions
+Confirm nothing else moved before committing:
 
 ```bash
-# Update all workspace crates to the new version
-cargo set-version --workspace "${RUST_VERSION}"
-
-# Update the kora-lib version pin in workspace.dependencies
-sed -i.bak \
-  "s/kora-lib = { path = \"crates\/lib\", version = \"[^\"]*\" }/kora-lib = { path = \"crates\/lib\", version = \"${RUST_VERSION}\" }/" \
-  Cargo.toml
-rm -f Cargo.toml.bak
+git diff --stat
+grep -rn '^version' crates/*/Cargo.toml Cargo.toml
 ```
 
----
+`crates/kora-deploy/Cargo.toml` must be untouched.
 
-## Step 5 — Generate CHANGELOG
+## CHANGELOG
 
-```bash
-last_tag=$(git tag -l "v*" --sort=-version:refname | head -1)
+git-cliff appends rather than regenerates, and the invocation differs depending on whether a
+previous tag and CHANGELOG exist. See [references/changelog.md](references/changelog.md).
 
-if [ -z "$last_tag" ]; then
-  git cliff "$(git rev-list --max-parents=0 HEAD)"..HEAD \
-    --tag "v${RUST_VERSION}" \
-    --config .github/cliff.toml \
-    --output CHANGELOG.md \
-    --strip all
-elif [ -f CHANGELOG.md ]; then
-  git cliff "${last_tag}"..HEAD \
-    --tag "v${RUST_VERSION}" \
-    --config .github/cliff.toml \
-    --strip all > CHANGELOG.new.md
-  cat CHANGELOG.md >> CHANGELOG.new.md
-  mv CHANGELOG.new.md CHANGELOG.md
-else
-  git cliff "${last_tag}"..HEAD \
-    --tag "v${RUST_VERSION}" \
-    --config .github/cliff.toml \
-    --output CHANGELOG.md \
-    --strip all
-fi
-```
-
----
-
-## Step 6 — Bump TypeScript SDK (if releasing TS)
+## TypeScript
 
 ```bash
 npm version "${TS_VERSION}" --no-git-tag-version --prefix sdks/ts
 ```
 
----
+## Commit and PR
 
-## Step 7 — Stage and commit
+Commit message: `chore: release v${RUST_VERSION}`, plus ` rust + ts-sdk v${TS_VERSION}` when both
+move. PR targets `main`, reviewers `dev-jodee,amilz`. Body should list the crates and versions
+being released and point at the `complete-release` skill for publishing.
 
-```bash
-git add Cargo.toml Cargo.lock CHANGELOG.md crates/*/Cargo.toml
+## Constraints
 
-# If TS was bumped
-git add sdks/ts/package.json
-
-# Rust-only commit message
-git commit -m "chore: release v${RUST_VERSION}"
-
-# Combined commit message
-git commit -m "chore: release v${RUST_VERSION} rust + ts-sdk v${TS_VERSION}"
-```
-
----
-
-## Step 8 — Push and open PR
-
-```bash
-git push -u origin HEAD
-
-gh pr create \
-  --base main \
-  --title "chore: release v${RUST_VERSION}" \
-  --reviewer dev-jodee,amilz \
-  --body "$(cat <<EOF
-## Release v${RUST_VERSION}
-
-### Rust Crates
-- **kora-lib** \`${RUST_VERSION}\`
-- **kora-cli** \`${RUST_VERSION}\`
-- CHANGELOG updated from commits since last tag
-
-### TypeScript SDK
-- **@solana/kora** \`${TS_VERSION}\` *(omit section if not releasing)*
-
-## Publish
-For mainline releases from \`main\`, trigger CI workflows from \`main\` using the \`complete-release\` skill (or manually):
-- **Rust**: Actions → "Publish Rust Crates"
-- **TypeScript**: Actions → "Publish TypeScript SDK"
-EOF
-)"
-```
-
----
-
-## Notes
-
-- All release PRs target `main` regardless of current branch.
-- Hotfix patch releases are published from `hotfix/*` before merge-back to `main`.
-- Do NOT call `just release` or `just release-ts-sdk` — both are interactive.
-- Tags (`v{VERSION}`, `kora-lib-v{VERSION}`, `kora-cli-v{VERSION}`) are created by CI after merge.
-- Prerelease versions use semver suffixes, e.g. `2.3.0-beta.1`.
+- Release PRs always target `main`, regardless of the current branch.
+- Hotfix patches publish from `hotfix/*` *before* merge-back to `main`.
+- Never call `just release` or `just release-ts-sdk` — both are interactive and will hang.
+- Tags (`v{VERSION}`, `kora-lib-v{VERSION}`, `kora-cli-v{VERSION}`) are created by CI after merge,
+  not here.
