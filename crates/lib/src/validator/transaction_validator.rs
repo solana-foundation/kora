@@ -1,5 +1,7 @@
 use crate::{
-    config::{Config, FeePayerPolicy, ProgramsConfig},
+    config::{
+        AllowedTransactionVersions, Config, FeePayerPolicy, ProgramsConfig, TransactionVersion,
+    },
     error::KoraError,
     fee::fee::{FeeConfigUtil, TotalFeeCalculation, TransactionFeeUtil},
     oracle::PriceSource,
@@ -35,6 +37,7 @@ pub struct TransactionValidator {
     _price_source: PriceSource,
     fee_payer_policy: FeePayerPolicy,
     allow_durable_transactions: bool,
+    allowed_transaction_versions: AllowedTransactionVersions,
 }
 
 impl TransactionValidator {
@@ -99,6 +102,7 @@ impl TransactionValidator {
                 })?,
             fee_payer_policy: config.fee_payer_policy.clone(),
             allow_durable_transactions: config.allow_durable_transactions,
+            allowed_transaction_versions: config.allowed_transaction_versions.clone(),
         })
     }
 
@@ -144,6 +148,7 @@ impl TransactionValidator {
             ));
         }
 
+        self.validate_transaction_version(&transaction_resolved.transaction)?;
         self.validate_signatures(&transaction_resolved.transaction)?;
 
         self.validate_programs(transaction_resolved)?;
@@ -257,6 +262,27 @@ impl TransactionValidator {
                 fee, self.max_allowed_lamports
             )));
         }
+        Ok(())
+    }
+
+    /// Reject message versions this operator has not opted into.
+    ///
+    /// Runs before the signature and program checks so that a node narrowed to one version answers
+    /// "this version is not accepted here" rather than failing later on some unrelated detail of a
+    /// transaction it was never going to take.
+    fn validate_transaction_version(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<(), KoraError> {
+        let version = TransactionVersion::of(&transaction.message);
+        if !self.allowed_transaction_versions.allows(version) {
+            return Err(KoraError::InvalidTransaction(format!(
+                "Transaction version {} is not accepted by this node. Accepted versions: {}",
+                version.as_str(),
+                self.allowed_transaction_versions.names()
+            )));
+        }
+
         Ok(())
     }
 
@@ -7169,6 +7195,66 @@ mod tests {
             result.is_ok(),
             "allow_update_extension_authority opt-in should allow group authority use: {result:?}"
         );
+    }
+
+    fn legacy_transfer(fee_payer: &Keypair) -> VersionedTransaction {
+        let message = VersionedMessage::Legacy(Message::new(
+            &[transfer(&fee_payer.pubkey(), &Keypair::new().pubkey(), 1_000)],
+            Some(&fee_payer.pubkey()),
+        ));
+        VersionedTransaction { signatures: vec![], message }
+    }
+
+    #[test]
+    #[serial]
+    fn test_transaction_version_allowed_by_default() {
+        // An operator who says nothing keeps accepting what they accepted before this option
+        // existed. That is the whole non-breaking claim, so it gets its own test.
+        setup_default_config();
+        let fee_payer = Keypair::new();
+        let validator =
+            TransactionValidator::new(&get_config().unwrap(), fee_payer.pubkey()).unwrap();
+
+        assert!(validator.validate_transaction_version(&legacy_transfer(&fee_payer)).is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_transaction_version_rejected_when_not_listed() {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_allowed_transaction_versions(vec![TransactionVersion::V0])
+            .build();
+        setup_both_configs(config);
+
+        let fee_payer = Keypair::new();
+        let validator =
+            TransactionValidator::new(&get_config().unwrap(), fee_payer.pubkey()).unwrap();
+
+        let err = validator.validate_transaction_version(&legacy_transfer(&fee_payer)).unwrap_err();
+        let message = err.to_string();
+        // The rejection has to name the version refused AND what would be taken, or the caller
+        // cannot act on it.
+        assert!(message.contains("legacy"), "should name the rejected version: {message}");
+        assert!(message.contains("0"), "should name the accepted versions: {message}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_transaction_version_legacy_only_accepts_legacy() {
+        let config = ConfigMockBuilder::new()
+            .with_price_source(PriceSource::Mock)
+            .with_allowed_programs(vec![SYSTEM_PROGRAM_ID.to_string()])
+            .with_allowed_transaction_versions(vec![TransactionVersion::Legacy])
+            .build();
+        setup_both_configs(config);
+
+        let fee_payer = Keypair::new();
+        let validator =
+            TransactionValidator::new(&get_config().unwrap(), fee_payer.pubkey()).unwrap();
+
+        assert!(validator.validate_transaction_version(&legacy_transfer(&fee_payer)).is_ok());
     }
 }
 
