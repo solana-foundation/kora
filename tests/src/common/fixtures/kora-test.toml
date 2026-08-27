@@ -1,6 +1,7 @@
 # This file is used for integration testing
 [kora]
 rate_limit = 100
+cors_allow_origins = ["*"]
 
 [kora.auth]
 

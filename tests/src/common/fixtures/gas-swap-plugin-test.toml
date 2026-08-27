@@ -1,6 +1,7 @@
 # This file is used for integration testing with the gas_swap plugin enabled
 [kora]
 rate_limit = 100
+cors_allow_origins = ["*"]
 
 [kora.auth]
 

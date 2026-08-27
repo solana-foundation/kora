@@ -1,6 +1,7 @@
 # This file is used for free pricing tests (no payment validation)
 [kora]
 rate_limit = 100
+cors_allow_origins = ["*"]
 
 [kora.auth]
 

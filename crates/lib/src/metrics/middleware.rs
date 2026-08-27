@@ -1,8 +1,11 @@
-use crate::rpc_server::middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method};
+use crate::rpc_server::{
+    auth::RejectionReason,
+    middleware_utils::{extract_parts_and_body_bytes, get_jsonrpc_method},
+};
 use http::{Request, Response};
 use jsonrpsee::server::logger::Body;
 use prometheus::{CounterVec, HistogramVec, Opts};
-use std::{sync::OnceLock, time::Instant};
+use std::{future::Future, pin::Pin, sync::OnceLock, time::Instant};
 use tower::Layer;
 
 static HTTP_METRICS: OnceLock<HttpMetrics> = OnceLock::new();
@@ -13,6 +16,7 @@ const ERROR_STATUS: &str = "error";
 pub struct HttpMetrics {
     pub requests_total: CounterVec,
     pub request_duration_seconds: HistogramVec,
+    pub http_rejections_total: CounterVec,
 }
 
 impl HttpMetrics {
@@ -40,6 +44,15 @@ impl HttpMetrics {
             panic!("Metrics initialization failed - cannot continue")
         });
 
+        let http_rejections_total = CounterVec::new(
+            Opts::new("http_rejections_total", "Total number of HTTP rejections").namespace("kora"),
+            &["method", "reason"],
+        )
+        .unwrap_or_else(|e| {
+            log::error!("Failed to create http_rejections_total metric: {e:?}");
+            panic!("Metrics initialization failed - cannot continue")
+        });
+
         prometheus::register(Box::new(requests_total.clone())).unwrap_or_else(|e| {
             log::error!("Failed to register http_requests_total metric: {e:?}");
             panic!("Metrics initialization failed - cannot continue")
@@ -48,8 +61,12 @@ impl HttpMetrics {
             log::error!("Failed to register http_request_duration_seconds metric: {e:?}");
             panic!("Metrics initialization failed - cannot continue")
         });
+        prometheus::register(Box::new(http_rejections_total.clone())).unwrap_or_else(|e| {
+            log::error!("Failed to register http_rejections_total metric: {e:?}");
+            panic!("Metrics initialization failed - cannot continue")
+        });
 
-        Self { requests_total, request_duration_seconds }
+        Self { requests_total, request_duration_seconds, http_rejections_total }
     }
 
     pub fn get() -> &'static HttpMetrics {
@@ -93,9 +110,7 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
-    >;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(
         &mut self,
@@ -131,6 +146,13 @@ where
                         .request_duration_seconds
                         .with_label_values(&[&method])
                         .observe(duration.as_secs_f64());
+
+                    if let Some(reason) = response.extensions().get::<RejectionReason>() {
+                        metrics
+                            .http_rejections_total
+                            .with_label_values(&[&method, reason.as_str()])
+                            .inc();
+                    }
                 }
                 Err(_) => {
                     metrics
