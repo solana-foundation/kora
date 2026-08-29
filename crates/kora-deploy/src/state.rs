@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{fs, io::Write, path::Path};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -39,7 +39,6 @@ impl DeployState {
             let mut file = options.open(&temp_path).with_context(|| {
                 format!("failed to open temp deploy state for writing: {}", temp_path.display())
             })?;
-            use std::io::Write;
             file.write_all(data.as_bytes()).with_context(|| {
                 format!("failed to write temp deploy state to {}", temp_path.display())
             })?;
@@ -47,10 +46,18 @@ impl DeployState {
         }
         #[cfg(not(unix))]
         {
-            let mut file = fs::File::create(&temp_path).with_context(|| {
-                format!("failed to create temp deploy state: {}", temp_path.display())
-            })?;
-            use std::io::Write;
+            // share_mode(0) limits concurrent access, but does not enforce
+            // file-level ACL restrictions (unlike Unix 0o600).
+            use std::os::windows::fs::OpenOptionsExt;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .share_mode(0)
+                .open(&temp_path)
+                .with_context(|| {
+                    format!("failed to create temp deploy state: {}", temp_path.display())
+                })?;
             file.write_all(data.as_bytes()).with_context(|| {
                 format!("failed to write temp deploy state to {}", temp_path.display())
             })?;

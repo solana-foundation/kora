@@ -244,6 +244,28 @@ async fn load_or_init_state(
     }
 }
 
+enum StateInvariantViolation {
+    HashMismatch,
+    ChunkOverflow { written: usize, total: usize },
+}
+
+fn check_state_invariants(
+    state: &DeployState,
+    current_program_hash: &str,
+    chunk_count: usize,
+) -> Option<StateInvariantViolation> {
+    if state.program_hash != current_program_hash {
+        return Some(StateInvariantViolation::HashMismatch);
+    }
+    if state.written_chunks > chunk_count {
+        return Some(StateInvariantViolation::ChunkOverflow {
+            written: state.written_chunks,
+            total: chunk_count,
+        });
+    }
+    None
+}
+
 /// Validates that the loaded deployment state matches the current `.so` file.
 /// Aborts the deployment if a hash mismatch is detected or if the state is corrupted.
 async fn validate_state(
@@ -255,41 +277,44 @@ async fn validate_state(
     chunk_count: usize,
 ) -> Result<()> {
     if let Some(ref st) = state {
-        if st.program_hash != current_program_hash {
-            cleanup_buffer!(
-                false,
-                "hash mismatch detected during resume",
-                |e| log::warn!(
-                    "failed to close buffer: {}; keeping state file for manual recovery",
-                    e
-                ),
-                ctx,
-                buffer,
-                kora_pubkey
-            );
-            if ctx.cfg.cleanup_on_failure {
-                anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup was attempted.");
-            } else {
-                anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup skipped (--no-cleanup-on-failure was set).");
+        match check_state_invariants(st, current_program_hash, chunk_count) {
+            Some(StateInvariantViolation::HashMismatch) => {
+                cleanup_buffer!(
+                    false,
+                    "hash mismatch detected during resume",
+                    |e| log::warn!(
+                        "failed to close buffer: {}; keeping state file for manual recovery",
+                        e
+                    ),
+                    ctx,
+                    buffer,
+                    kora_pubkey
+                );
+                if ctx.cfg.cleanup_on_failure {
+                    anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup was attempted.");
+                } else {
+                    anyhow::bail!("The .so file has changed (hash mismatch). Cannot resume. Buffer cleanup skipped (--no-cleanup-on-failure was set).");
+                }
             }
-        }
-        if st.written_chunks > chunk_count {
-            cleanup_buffer!(
-                false,
-                "written_chunks exceeds chunk_count (corrupted state or smaller .so file)",
-                |e| log::warn!(
-                    "failed to close buffer: {}; keeping state file for manual recovery",
-                    e
-                ),
-                ctx,
-                buffer,
-                kora_pubkey
-            );
-            if ctx.cfg.cleanup_on_failure {
-                anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup was attempted.", st.written_chunks, chunk_count);
-            } else {
-                anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup skipped (--no-cleanup-on-failure was set).", st.written_chunks, chunk_count);
+            Some(StateInvariantViolation::ChunkOverflow { written, total }) => {
+                cleanup_buffer!(
+                    false,
+                    "written_chunks exceeds chunk_count (corrupted state or smaller .so file)",
+                    |e| log::warn!(
+                        "failed to close buffer: {}; keeping state file for manual recovery",
+                        e
+                    ),
+                    ctx,
+                    buffer,
+                    kora_pubkey
+                );
+                if ctx.cfg.cleanup_on_failure {
+                    anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup was attempted.", written, total);
+                } else {
+                    anyhow::bail!("State file is corrupted or .so file is smaller: written_chunks ({}) > total chunk count ({}). Cannot resume. Buffer cleanup skipped (--no-cleanup-on-failure was set).", written, total);
+                }
             }
+            None => {}
         }
     }
     Ok(())
@@ -744,4 +769,59 @@ async fn wait_for_next_slot(rpc: &RpcClient) -> Result<()> {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     bail!("slot never advanced past {start}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::DeployState;
+
+    fn make_state(program_hash: &str, written_chunks: usize) -> DeployState {
+        DeployState {
+            program_keypair: vec![0u8; 64],
+            buffer_keypair: vec![0u8; 64],
+            program_data: "11111111111111111111111111111111".to_string(),
+            written_chunks,
+            kora_pubkey: "11111111111111111111111111111111".to_string(),
+            program_hash: program_hash.to_string(),
+        }
+    }
+
+    #[test]
+    fn check_state_invariants_passes_when_valid() {
+        let st = make_state("abc123", 5);
+        assert!(check_state_invariants(&st, "abc123", 10).is_none());
+    }
+
+    #[test]
+    fn check_state_invariants_passes_at_exact_chunk_count() {
+        // written_chunks == chunk_count is valid (all chunks written, ready to finalize)
+        let st = make_state("abc123", 10);
+        assert!(check_state_invariants(&st, "abc123", 10).is_none());
+    }
+
+    #[test]
+    fn check_state_invariants_detects_hash_mismatch() {
+        let st = make_state("old_hash", 5);
+        let violation = check_state_invariants(&st, "new_hash", 10);
+        assert!(matches!(violation, Some(StateInvariantViolation::HashMismatch)));
+    }
+
+    #[test]
+    fn check_state_invariants_hash_mismatch_takes_priority() {
+        // Both conditions true — hash mismatch is checked first.
+        let st = make_state("old_hash", 99);
+        let violation = check_state_invariants(&st, "new_hash", 5);
+        assert!(matches!(violation, Some(StateInvariantViolation::HashMismatch)));
+    }
+
+    #[test]
+    fn check_state_invariants_detects_chunk_overflow() {
+        let st = make_state("abc123", 11);
+        let violation = check_state_invariants(&st, "abc123", 10);
+        assert!(matches!(
+            violation,
+            Some(StateInvariantViolation::ChunkOverflow { written: 11, total: 10 })
+        ));
+    }
 }
